@@ -41,7 +41,7 @@ export interface FlowTemplateConfig {
   /** Nome amigável do fluxo gerado. */
   flowName: string;
   /** Variante (A/B/C/D) onde o fluxo será criado. */
-  variant: "A" | "B" | "C" | "D";
+  variant: "A" | "B" | "C" | "D" | "M";
   /** Estilo de renderização das opções. */
   renderStyle: RenderStyle;
   /** Provedor de IA preferido (afeta button_intent + duvidas_ia). */
@@ -78,7 +78,7 @@ export interface GeneratedStep {
  */
 export interface GeneratedFlow {
   flowName: string;
-  variant: "A" | "B" | "C" | "D";
+  variant: "A" | "B" | "C" | "D" | "M";
   steps: GeneratedStep[];
   /** Resumo de mídias que precisam ser carregadas (slot_key → descrição). */
   mediaRequirements: Array<{ slot_key: string; description: string }>;

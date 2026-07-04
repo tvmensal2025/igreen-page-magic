@@ -183,7 +183,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
     try {
       const { sendStepWithFeedback } = await import("@/lib/whatsapp/send");
       const res = await sendStepWithFeedback({
-        consultantId, customerId, stepId: row.id, part: "all", continueFlow, variant: row.variant as "A" | "B" | "C" | "D" | "E",
+        consultantId, customerId, stepId: row.id, part: "all", continueFlow, variant: row.variant as "A" | "B" | "C" | "D" | "E" | "M",
       });
       if (res.ok) {
         onSent(groupKey);

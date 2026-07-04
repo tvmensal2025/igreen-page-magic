@@ -218,7 +218,7 @@ export interface BotFlowStep {
 export interface BotFlow {
   id: string;
   consultantId: string;
-  variant: "A" | "B" | "C" | "D";
+  variant: "A" | "B" | "C" | "D" | "M";
   /**
    * `bot_flows.strict_mode`. When true, the engine blocks any AI fallback
    * (`ai`, `ai_answer`) regardless of per-step config (Requirement 7.1).

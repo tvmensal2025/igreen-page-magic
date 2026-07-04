@@ -46,7 +46,7 @@ interface Body {
   part: Part;        // which piece to send (or "all")
   mediaId?: string;  // when there are multiple medias of same kind, target one
   continueFlow?: boolean; // resume flow after sending the selected full step
-  variant?: "A" | "B" | "C" | "D" | "E"; // override de variante (consultor escolheu nos chips)
+  variant?: "A" | "B" | "C" | "D" | "E" | "M"; // override de variante (consultor escolheu nos chips)
   force?: boolean;   // ignora trava awaiting_inbound (reenvio explícito)
 }
 
@@ -308,7 +308,7 @@ Deno.serve(async (req) => {
     // Override de variante: se o consultor escolheu A/B/C nos chips, persiste no
     // customer pra não misturar variantes na mesma conversa.
     let variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-    if (body.variant && ["A", "B", "C", "D", "E"].includes(body.variant) && body.variant !== variant) {
+    if (body.variant && ["A", "B", "C", "D", "E", "M"].includes(body.variant) && body.variant !== variant) {
       await supabase.from("customers")
         .update({ flow_variant: body.variant, updated_at: new Date().toISOString() })
         .eq("id", customer.id);
@@ -472,8 +472,8 @@ Deno.serve(async (req) => {
     const nameSource = inferNameSource((customer as any).name, (customer as any).name_source);
     const NAME_NOT_TRUSTED = new Set(["", "unknown", "whatsapp_profile"]);
     const stepAsksName = isNameAskingStep(step);
-    // Fluxo D é automático por botões e captura o nome ao longo do avanço — sem guard.
-    const skipNameGuardForVariantD = variant === "D";
+    // Fluxo D e Fluxo MG são automáticos por botões e capturam o nome ao longo do avanço — sem guard.
+    const skipNameGuardForVariantD = variant === "D" || variant === "M";
     if (!body.skipNameGuard && !skipNameGuardForVariantD && NAME_NOT_TRUSTED.has(nameSource) && !stepAsksName) {
       return json({
         ok: false,

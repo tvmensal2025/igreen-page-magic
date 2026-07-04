@@ -2346,7 +2346,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             }
 
             const _fbVarAi = String((customer as any)?.flow_variant || "").toUpperCase();
-            if (_fbVarAi === "D" && !baseUpdates.bot_paused) {
+            if ((_fbVarAi === "D" || _fbVarAi === "M") && !baseUpdates.bot_paused) {
               try {
                 const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
                 await reemitStepButtons({
@@ -3194,7 +3194,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               } : null;
             };
             const _flowDQuickCadastroIntent = (() => {
-              if (String((customer as any)?.flow_variant || "").toUpperCase() !== "D") return false;
+              const _fv = String((customer as any)?.flow_variant || "").toUpperCase();
+              if (_fv !== "D" && _fv !== "M") return false;
               const raw = `${buttonId || ""} ${messageText || ""}`.toLowerCase()
                 .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
               return /cadastro[_\s-]*rapido|cadastrar\s*e\s*finalizar|quero\s*me\s*cadastrar|\bcadastrar\b/.test(raw)

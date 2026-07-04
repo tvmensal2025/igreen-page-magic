@@ -39,7 +39,7 @@ export interface FlowDAlertInput {
  */
 export async function recordFlowDAlert(input: FlowDAlertInput): Promise<boolean> {
   const variant = (input.flowVariant ?? "D").toString().toUpperCase();
-  if (variant !== "D") return false;
+  if (variant !== "D" && variant !== "M") return false;
 
   try {
     const { error } = await input.supabase.from("bot_handoff_alerts").insert({

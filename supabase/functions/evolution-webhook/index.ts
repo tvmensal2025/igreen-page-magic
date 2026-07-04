@@ -2266,14 +2266,14 @@ Deno.serve(async (req) => {
       //  - cadastro + freeform_question → Cérebro (sem mexer no estado)
       //  - cadastro + expected/mídia → determinístico (pula Cérebro)
       const _rodarCerebro = _isAtivoOrigin
-        || (!_emCadastro && !(_fbVarCerebro === "D"))
+        || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M"))
         || (_emCadastro && _cadKind === "freeform_question" && _fbVarCerebro !== "A");
 
       if (!_rodarCerebro) {
         if (_emCadastro) {
           console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
-        } else if (_fbVarCerebro === "D") {
-          console.log(`[fluxo-d-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+        } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M") {
+          console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
         }
       } else try {
         if (_isAtivoOrigin) {

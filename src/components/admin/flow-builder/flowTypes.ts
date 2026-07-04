@@ -6,7 +6,7 @@ export type IconKey = "msg" | "video" | "sparkle" | "user" | "file";
 
 // Variantes de fluxo — ilimitadas até Z. D continua reservado para o padrão Camila.
 export type Variant =
-  | "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
+  | "A" | "B" | "C" | "D" | "E" | "M" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M"
   | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z";
 export const ALL_VARIANTS: Variant[] = (
   "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") as Variant[]
@@ -214,6 +214,7 @@ const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
   C: "Fluxo C (vídeo inicial)",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
+  M: "Fluxo MG",
 };
 export const VARIANT_LABEL: Record<Variant, string> = ALL_VARIANTS.reduce(
   (acc, v) => {

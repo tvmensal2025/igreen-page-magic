@@ -315,7 +315,7 @@ export function hash(content: string): string {
  * function total — the runner's invariant is that `pickVariant` always
  * returns a non-null `VariantStrategy`.
  */
-export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
+export function pickVariant(variant: "A" | "B" | "C" | "D" | "M"): VariantStrategy {
   switch (variant) {
     case "A":
       // Alias: variante A (rótulo "CEMIG" na UI) roda EXATAMENTE como D —
@@ -324,17 +324,14 @@ export function pickVariant(variant: "A" | "B" | "C" | "D"): VariantStrategy {
       // quando não há template A. Ver .lovable/plan.md.
       return variantD;
     case "B":
-      // Variant B = Fluxo B (antiga Vendedora V2). No caminho do Cérebro IA,
-      // o fluxo B passa a ser comandado por `bot_flow_steps` (construtor
-      // visual), então renderiza os passos EXATAMENTE como a variant A
-      // (texto + mídia + botões do passo). O Escritor (N4) é quem reescreve o
-      // texto final; aqui só montamos o outbound-base do passo decidido.
-      // Obs.: o engine v3 nunca chega aqui (o loader bloqueia B sem
-      // `permitirVariantB`), então esta delegação só vale para o Cérebro.
       return variantA;
     case "C":
       return variantC;
     case "D":
+      return variantD;
+    case "M":
+      // Fluxo MG: clone lógico do Fluxo D. Reutiliza a mesma estratégia
+      // (botões interativos, mesma máquina), com seu próprio bot_flow.
       return variantD;
   }
 }

@@ -63,7 +63,7 @@ Deno.serve(async (req) => {
   const { data: candidates, error: fetchErr } = await supabase
     .from("customers")
     .select("id, consultant_id, conversation_step, flow_variant, updated_at")
-    .eq("flow_variant", "D")
+    .in("flow_variant", ["D", "M"])
     .not("status", "in", "(approved,cancelled)")
     .not("conversation_step", "is", null)
     .lt("updated_at", stuckBoundary)

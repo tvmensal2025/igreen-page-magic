@@ -131,8 +131,8 @@ export default function VariantDistributionBar({
   }
 
   async function renameVariant(v: Variant) {
-    if (v === "D") {
-      toast.error("O fluxo D não pode ser renomeado.");
+    if (v === "D" || v === "M") {
+      toast.error(`O fluxo ${v === "M" ? "MG" : v} não pode ser renomeado.`);
       return;
     }
     const { data: row } = await supabase

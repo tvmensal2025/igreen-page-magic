@@ -59,7 +59,7 @@ async function loadStepParts(consultantId: string, step: Step): Promise<Part[]> 
 // Evita o flicker "encolhe e cresce" quando o consultor reabre o ⚡ no mesmo
 // lead/variante. Chave: `${consultantId}|${variant}`.
 const STEPS_CACHE = new Map<string, Step[]>();
-const VARIANTS_CACHE = new Map<string, { byVariant: Map<"A" | "B" | "C" | "D" | "E", string>; available: Array<"A" | "B" | "C" | "D" | "E">; defaultVariant: "A" | "B" | "C" | "D" | "E" }>();
+const VARIANTS_CACHE = new Map<string, { byVariant: Map<"A" | "B" | "C" | "D" | "E" | "M", string>; available: Array<"A" | "B" | "C" | "D" | "E" | "M">; defaultVariant: "A" | "B" | "C" | "D" | "E" | "M" }>();
 
 export function FlowQuickBar({ consultantId, customerId, customerName, disabled }: Props) {
   const { toast } = useToast();
@@ -75,9 +75,9 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
   const [confirmFrom, setConfirmFrom] = useState<number | null>(null);
   const [fromParts, setFromParts] = useState<Record<string, Part[]>>({});
   const [oneByOneStepId, setOneByOneStepId] = useState<string | null>(null);
-  const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E">("A");
-  const [variantsAvailable, setVariantsAvailable] = useState<Array<"A" | "B" | "C" | "D" | "E">>(["A"]);
-  const [byVariant, setByVariant] = useState<Map<"A" | "B" | "C" | "D" | "E", string>>(new Map());
+  const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E" | "M">("A");
+  const [variantsAvailable, setVariantsAvailable] = useState<Array<"A" | "B" | "C" | "D" | "E" | "M">>(["A"]);
+  const [byVariant, setByVariant] = useState<Map<"A" | "B" | "C" | "D" | "E" | "M", string>>(new Map());
 
   // Efeito 1 — inicialização: roda quando o popover abre ou o cliente muda.
   // Define a variante default a partir de customers.flow_variant SEM ouvir mudanças
@@ -97,7 +97,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
         setLoading(true);
       }
 
-      let custVariant: "A" | "B" | "C" | "D" | "E" = "A";
+      let custVariant: "A" | "B" | "C" | "D" | "E" | "M" = "A";
       if (customerId) {
         const { data: cust } = await supabase
           .from("customers").select("flow_variant")
@@ -111,13 +111,13 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
         .eq("consultant_id", consultantId).eq("is_active", true)
         .order("created_at", { ascending: false });
       const flowsList = ((flowsAll as Array<{ id: string; variant: string }> | null) || []);
-      const byV = new Map<"A" | "B" | "C" | "D" | "E", string>();
+      const byV = new Map<"A" | "B" | "C" | "D" | "E" | "M", string>();
       flowsList.forEach((f) => {
-        const v = String(f.variant || "A").toUpperCase() as "A" | "B" | "C" | "D" | "E";
-        if (["A", "B", "C", "D", "E"].includes(v) && !byV.has(v)) byV.set(v, f.id);
+        const v = String(f.variant || "A").toUpperCase() as "A" | "B" | "C" | "D" | "E" | "M";
+        if (["A", "B", "C", "D", "E", "M"].includes(v) && !byV.has(v)) byV.set(v, f.id);
       });
-      const available = (["A", "B", "C", "D", "E"] as const).filter((v) => byV.has(v));
-      const defaultVariant: "A" | "B" | "C" | "D" | "E" = byV.has(custVariant)
+      const available = (["A", "B", "C", "D", "E", "M"] as const).filter((v) => byV.has(v));
+      const defaultVariant: "A" | "B" | "C" | "D" | "E" | "M" = byV.has(custVariant)
         ? custVariant
         : (available[0] || "A");
       VARIANTS_CACHE.set(consultantId, { byVariant: byV, available: [...available], defaultVariant });
@@ -282,7 +282,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
           <div className="px-3 py-2 border-b border-border flex items-center gap-2">
             <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Fluxo</span>
             <div className="flex gap-1">
-              {(["A", "B", "C", "D", "E"] as const).map((v) => {
+              {(["A", "B", "C", "D", "E", "M"] as const).map((v) => {
                 const enabled = variantsAvailable.includes(v);
                 const active = variant === v;
                 return (

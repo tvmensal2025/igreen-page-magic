@@ -1444,7 +1444,7 @@ Deno.serve(async (req) => {
       // 133 leads (132 A + 1 C) afetados nos últimos 30 dias.
       const _flowVariant = String((customer as any)?.flow_variant || "").toUpperCase();
       let _hasActiveFlow = false;
-      if (_flowVariant !== "D") {
+      if (_flowVariant !== "D" && _flowVariant !== "M") {
         // D já é bypass por padrão; checa se A/B/C têm bot_flow ativo do consultor.
         try {
           const { count } = await supabase
@@ -1456,7 +1456,7 @@ Deno.serve(async (req) => {
           _hasActiveFlow = (count ?? 0) > 0;
         } catch (_) { /* fail-open: assume sem flow → mantém bypass desligado */ }
       }
-      if (_flowVariant === "D" || _hasActiveFlow) {
+      if (_flowVariant === "D" || _flowVariant === "M" || _hasActiveFlow) {
         console.log(`[manual-capture-stop] BYPASS — customer=${customer.id} flow_variant=${_flowVariant} hasActiveFlow=${_hasActiveFlow}`);
       } else {
       try {
@@ -1758,7 +1758,7 @@ Deno.serve(async (req) => {
       // são automáticos — não cair no short-circuit que silencia o bot.
       const _flowVariantA = String((customer as any)?.flow_variant || "").toUpperCase();
       let _hasActiveFlowA = false;
-      if (_flowVariantA !== "D") {
+      if (_flowVariantA !== "D" && _flowVariantA !== "M") {
         try {
           const { count } = await supabase
             .from("bot_flows")
@@ -1769,7 +1769,7 @@ Deno.serve(async (req) => {
           _hasActiveFlowA = (count ?? 0) > 0;
         } catch (_) { /* fail-open */ }
       }
-      if (_flowVariantA === "D" || _hasActiveFlowA) {
+      if (_flowVariantA === "D" || _flowVariantA === "M" || _hasActiveFlowA) {
         console.log(`[manual-capture-stop-audio] BYPASS — customer=${customer.id} flow_variant=${_flowVariantA} hasActiveFlow=${_hasActiveFlowA}`);
       } else {
       try {
@@ -2461,7 +2461,7 @@ Deno.serve(async (req) => {
         : null;
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
 
-      if (_fbVarCerebro === "D" && !_isAtivoOrigin) {
+      if ((_fbVarCerebro === "D" || _fbVarCerebro === "M") && !_isAtivoOrigin) {
         console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
       } else if (_fbVarCerebro === "A" && _emCadastro && !_isAtivoOrigin) {
         console.log(`[fluxo-a-bypass] customer=${customer.id} step=${stepBefore} — cadastro determinístico, Cérebro pulado`);

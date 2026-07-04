@@ -12,7 +12,7 @@
 // IMPORTANTE: só decide para LEADS NOVOS. Lead existente mantém sua variante
 // (o split é por lead, definido uma única vez na criação).
 
-export type FlowVariant = "A" | "D";
+export type FlowVariant = "A" | "D" | "M";
 export type FlowAbMode = "split" | "only_A" | "only_D";
 
 export async function getFlowAbMode(

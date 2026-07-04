@@ -29,7 +29,7 @@ import { resetLeadConversation } from "@/services/resetConversation";
 import { ManualStepDialog } from "./ManualStepDialog";
 import WinningConversationButton from "@/components/admin/WinningConversationButton";
 
-type Variant = "A" | "B" | "C" | "D" | "E";
+type Variant = "A" | "B" | "C" | "D" | "E" | "M";
 
 type Row = {
   id: string;
@@ -64,6 +64,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
     C: { name: null, steps: [] },
     D: { name: null, steps: [] },
     E: { name: null, steps: [] },
+    M: { name: null, steps: [] },
   });
   const [confirmReset, setConfirmReset] = useState<Row | null>(null);
   const [manualStepFor, setManualStepFor] = useState<Row | null>(null);
@@ -91,8 +92,9 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       A: { name: null, steps: [] },
       B: { name: null, steps: [] },
       C: { name: null, steps: [] },
-    D: { name: null, steps: [] },
-    E: { name: null, steps: [] },
+      D: { name: null, steps: [] },
+      E: { name: null, steps: [] },
+      M: { name: null, steps: [] },
     };
 
     if (flows?.length) {
