@@ -245,35 +245,65 @@ export interface ComposeOptions {
   panelBounds?: LatLngBounds;
 }
 
-/** Desenha um retângulo rotacionado (módulo) no buffer RGBA. */
+/** Desenha um retângulo rotacionado (módulo) no buffer RGBA com anti-aliasing
+ *  e sombra sutil. Marca cada pixel coberto em `panelMask` (para o heatmap não
+ *  atropelar os módulos). Paleta monocromática azul-marinho estilo Reonic. */
 function drawPanel(
   out: Uint8Array, w: number, h: number,
   cx: number, cy: number, halfW: number, halfH: number, rot: number,
+  panelMask?: Uint8Array,
 ) {
   const cos = Math.cos(rot), sin = Math.sin(rot);
-  const reach = Math.ceil(Math.hypot(halfW, halfH)) + 1;
-  const fill: [number, number, number] = [14, 23, 42];   // navy escuro (módulo)
-  const border: [number, number, number] = [125, 211, 252]; // ciano (borda)
-  const bw = Math.max(1, Math.min(halfW, halfH) * 0.18);
+  const reach = Math.ceil(Math.hypot(halfW, halfH)) + 2;
+  const fill: [number, number, number] = [11, 18, 32];      // azul-marinho quase preto
+  const border: [number, number, number] = [30, 41, 59];    // hairline slate-800
+  const bw = Math.max(0.8, Math.min(halfW, halfH) * 0.06);  // borda hairline
+  // Sombra: desenha primeiro (offset +1,+1) escurecendo a base.
+  const shOff = 1;
+  for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
+    if (py < 0 || py >= h) continue;
+    for (let px = Math.floor(cx - reach); px <= cx + reach; px++) {
+      if (px < 0 || px >= w) continue;
+      const dx = (px - shOff) - cx, dy = (py - shOff) - cy;
+      const lx = dx * cos + dy * sin;
+      const ly = -dx * sin + dy * cos;
+      const cxCov = Math.min(1, Math.max(0, halfW - Math.abs(lx) + 0.5));
+      const cyCov = Math.min(1, Math.max(0, halfH - Math.abs(ly) + 0.5));
+      const cov = cxCov * cyCov;
+      if (cov <= 0) continue;
+      // pixel do módulo real (sem offset) — sombra só onde NÃO tem módulo
+      const dx2 = px - cx, dy2 = py - cy;
+      const lx2 = dx2 * cos + dy2 * sin;
+      const ly2 = -dx2 * sin + dy2 * cos;
+      if (Math.abs(lx2) <= halfW && Math.abs(ly2) <= halfH) continue;
+      const i = (py * w + px) * 4;
+      const a = 0.28 * cov;
+      out[i]     = Math.round(out[i]     * (1 - a));
+      out[i + 1] = Math.round(out[i + 1] * (1 - a));
+      out[i + 2] = Math.round(out[i + 2] * (1 - a));
+    }
+  }
+  // Módulo com anti-aliasing por cobertura.
   for (let py = Math.floor(cy - reach); py <= cy + reach; py++) {
     if (py < 0 || py >= h) continue;
     for (let px = Math.floor(cx - reach); px <= cx + reach; px++) {
       if (px < 0 || px >= w) continue;
       const dx = px - cx, dy = py - cy;
-      // rotação inversa para o referencial do módulo
       const lx = dx * cos + dy * sin;
       const ly = -dx * sin + dy * cos;
-      if (Math.abs(lx) <= halfW && Math.abs(ly) <= halfH) {
-        const i = (py * w + px) * 4;
-        const edge = Math.abs(lx) >= halfW - bw || Math.abs(ly) >= halfH - bw;
-        const c = edge ? border : fill;
-        // módulo sólido com leve transparência para integrar à foto
-        const a = edge ? 1 : 0.92;
-        out[i] = Math.round(out[i] * (1 - a) + c[0] * a);
-        out[i + 1] = Math.round(out[i + 1] * (1 - a) + c[1] * a);
-        out[i + 2] = Math.round(out[i + 2] * (1 - a) + c[2] * a);
-        out[i + 3] = 255;
-      }
+      const cxCov = Math.min(1, Math.max(0, halfW - Math.abs(lx) + 0.5));
+      const cyCov = Math.min(1, Math.max(0, halfH - Math.abs(ly) + 0.5));
+      const cov = cxCov * cyCov;
+      if (cov <= 0) continue;
+      const edge = Math.abs(lx) >= halfW - bw || Math.abs(ly) >= halfH - bw;
+      const c = edge ? border : fill;
+      const a = cov * (edge ? 1 : 0.94);
+      const i = (py * w + px) * 4;
+      out[i]     = Math.round(out[i]     * (1 - a) + c[0] * a);
+      out[i + 1] = Math.round(out[i + 1] * (1 - a) + c[1] * a);
+      out[i + 2] = Math.round(out[i + 2] * (1 - a) + c[2] * a);
+      out[i + 3] = 255;
+      if (panelMask && cov > 0.5) panelMask[py * w + px] = 1;
     }
   }
 }
@@ -285,7 +315,7 @@ export function composeHdRoofPng(
   opts: ComposeOptions = {},
 ): Uint8Array {
   const showFlux = opts.showFlux ?? true;
-  const fluxOpacity = opts.fluxOpacity ?? 0.35;
+  const fluxOpacity = opts.fluxOpacity ?? 0.22;
   const fluxMin = opts.fluxMin ?? 0;
   const fluxMax = opts.fluxMax ?? 1800;
   const palette = buildPalette(IRON_PALETTE);
@@ -293,30 +323,16 @@ export function composeHdRoofPng(
   const w = rgb.width, h = rgb.height;
   const src = rgb.rgba!;
   const out = new Uint8Array(w * h * 4);
-  const fW = flux?.width ?? 0, fH = flux?.height ?? 0;
-  const mW = mask?.width ?? 0, mH = mask?.height ?? 0;
-
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      let r = src[i], g = src[i + 1], b = src[i + 2];
-      if (showFlux && flux?.values) {
-        const fv = sampleNearest(flux.values, fW, fH, (x / w) * fW, (y / h) * fH);
-        let inRoof = 1;
-        if (mask?.values) inRoof = sampleNearest(mask.values, mW, mH, (x / w) * mW, (y / h) * mH) > 0.5 ? 1 : 0;
-        if (inRoof && Number.isFinite(fv) && fv > 0) {
-          const t = Math.min(1, Math.max(0, (fv - fluxMin) / (fluxMax - fluxMin)));
-          const [pr, pg, pb] = palette[Math.round(t * 255)];
-          r = Math.round(r * (1 - fluxOpacity) + pr * fluxOpacity);
-          g = Math.round(g * (1 - fluxOpacity) + pg * fluxOpacity);
-          b = Math.round(b * (1 - fluxOpacity) + pb * fluxOpacity);
-        }
-      }
-      out[i] = r; out[i + 1] = g; out[i + 2] = b; out[i + 3] = 255;
-    }
+  // Copia base RGB.
+  for (let i = 0; i < out.length; i += 4) {
+    out[i] = src[i]; out[i + 1] = src[i + 1]; out[i + 2] = src[i + 2]; out[i + 3] = 255;
   }
 
-  // Desenha os módulos nas coordenadas reais (alinhamento perfeito).
+  // Máscara de pixels ocupados por módulos (heatmap não pinta em cima).
+  const panelMask = new Uint8Array(w * h);
+
+  // 1) Desenha módulos primeiro (sombra + fill + borda), rotacionados pelo
+  //    azimute do segmento, escala isotrópica m→px para não distorcer.
   if (opts.panels?.length && opts.panelBounds) {
     const bnd = opts.panelBounds;
     const lngSpan = bnd.east - bnd.west, latSpan = bnd.north - bnd.south;
@@ -325,17 +341,58 @@ export function composeHdRoofPng(
     const mPerDegLat = 110540;
     const pxPerMx = (w / (lngSpan * mPerDegLng));
     const pxPerMy = (h / (latSpan * mPerDegLat));
+    const pxPerM = (pxPerMx + pxPerMy) / 2; // isotrópico p/ o desenho do módulo
+    const GAP = 0.96;                        // ~4% de gap entre módulos
     for (const p of opts.panels) {
       const cx = ((p.lng - bnd.west) / lngSpan) * w;
       const cy = ((bnd.north - p.lat) / latSpan) * h;
       if (cx < -50 || cx > w + 50 || cy < -50 || cy > h + 50) continue;
-      const halfW = (p.widthM * pxPerMx) / 2;
-      const halfH = (p.heightM * pxPerMy) / 2;
-      // Sem rotação por azimute: a imagem está com o norte pra cima e as
-      // coordenadas reais já posicionam cada módulo. Girar o retângulo pelo
-      // azimute do telhado deixava os módulos "tortos". Mantemos alinhados à
-      // grade da imagem, como uma instalação real vista de cima.
-      drawPanel(out, w, h, cx, cy, Math.max(2, halfW), Math.max(2, halfH), 0);
+      const halfW = (p.widthM * pxPerM * GAP) / 2;
+      const halfH = (p.heightM * pxPerM * GAP) / 2;
+      // Azimute (0=N, horário) → rotação em radianos no espaço da imagem
+      // (norte para cima, y cresce para baixo → sinal negativo em sin).
+      const az = ((p.azimuthDegrees - 180) * Math.PI) / 180;
+      drawPanel(out, w, h, cx, cy, Math.max(2, halfW), Math.max(2, halfH), az, panelMask);
+    }
+  }
+
+  // 2) Heatmap: aplica APENAS em (mask do telhado) ∧ (¬panelMask).
+  if (showFlux && flux?.values) {
+    const fW = flux.width, fH = flux.height;
+    const mW = mask?.width ?? 0, mH = mask?.height ?? 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const idx = y * w + x;
+        if (panelMask[idx]) continue;
+        if (mask?.values) {
+          const mv = sampleNearest(mask.values, mW, mH, (x / w) * mW, (y / h) * mH);
+          if (mv <= 0.5) continue;
+        }
+        const fv = sampleNearest(flux.values, fW, fH, (x / w) * fW, (y / h) * fH);
+        if (!Number.isFinite(fv) || fv <= 0) continue;
+        const t = Math.min(1, Math.max(0, (fv - fluxMin) / (fluxMax - fluxMin)));
+        const [pr, pg, pb] = palette[Math.round(t * 255)];
+        const i = idx * 4;
+        out[i]     = Math.round(out[i]     * (1 - fluxOpacity) + pr * fluxOpacity);
+        out[i + 1] = Math.round(out[i + 1] * (1 - fluxOpacity) + pg * fluxOpacity);
+        out[i + 2] = Math.round(out[i + 2] * (1 - fluxOpacity) + pb * fluxOpacity);
+      }
+    }
+  }
+
+  // 3) Vinheta sutil para focar no telhado.
+  {
+    const cx = w / 2, cy = h / 2;
+    const rMax = Math.hypot(cx, cy);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const rn = Math.hypot(x - cx, y - cy) / rMax;
+        const k = 1 - 0.15 * rn * rn;
+        const i = (y * w + x) * 4;
+        out[i]     = Math.round(out[i]     * k);
+        out[i + 1] = Math.round(out[i + 1] * k);
+        out[i + 2] = Math.round(out[i + 2] * k);
+      }
     }
   }
 

@@ -34,6 +34,7 @@ Deno.serve(async (req) => {
     const consultantId = String(body.consultantId ?? "");
     const showFlux = body.showFlux !== false; // default: mostra heatmap
     const panelsCount = body.panelsCount != null ? Number(body.panelsCount) : null;
+    const force = body.force === true;
     if (!analysisId) return json({ error: "analysisId obrigatório" }, 400);
 
     const admin = getAdminClient("solar-roof-hd");
@@ -62,8 +63,8 @@ Deno.serve(async (req) => {
       return data.publicUrl;
     };
 
-    // Cache hit: já gerada.
-    if (analysis.hd_image_path) {
+    // Cache hit: já gerada (a menos que force=true).
+    if (!force && analysis.hd_image_path) {
       return json({ url: publicUrl(), cached: true, bounds: analysis.hd_bounds ?? null });
     }
 

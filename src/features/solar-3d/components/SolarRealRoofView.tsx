@@ -181,7 +181,7 @@ export function SolarRealRoofView({
       <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3">
         <p className="text-[11px] text-center text-white/90 font-medium">
           {hdLoaded
-            ? "Foto aérea de alta resolução · mapa de calor de geração solar no telhado"
+            ? "Foto aérea · módulos alinhados ao telhado"
             : "Imagem real de satélite · simulação dos módulos sobre o telhado"}
         </p>
       </div>

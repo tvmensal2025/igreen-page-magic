@@ -314,7 +314,9 @@ export function extractPanelPositions(insights: BuildingInsightsResponse, count:
       orientation: p.orientation ?? "LANDSCAPE",
       // Azimute do segmento de telhado (graus) — para girar o módulo no desenho.
       azimuthDegrees: seg?.azimuthDegrees ?? null,
-      // Dimensão real (m) considerando a orientação.
+      // Dimensão real (m). PORTRAIT: lado curto na largura, lado longo na altura
+      // (o "eixo altura" do módulo aponta na direção do azimute do segmento).
+      // LANDSCAPE: o módulo está deitado — invertemos.
       widthM: p.orientation === "PORTRAIT" ? panelW : panelH,
       heightM: p.orientation === "PORTRAIT" ? panelH : panelW,
     };
