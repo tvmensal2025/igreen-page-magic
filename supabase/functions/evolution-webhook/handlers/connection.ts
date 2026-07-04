@@ -6,8 +6,8 @@ import {
   canReconnect,
   classifyDisconnect,
   recordRiskSignal,
-  activateRecoveryMode,
 } from "../_helpers.ts";
+import { recreateInstance } from "../recreate-instance.ts";
 import type { SupabaseClient } from "./types.ts";
 
 export interface HandleConnectionArgs {
