@@ -6,8 +6,8 @@ import {
   canReconnect,
   classifyDisconnect,
   recordRiskSignal,
-  activateRecoveryMode,
 } from "../_helpers.ts";
+import { recreateInstance } from "../recreate-instance.ts";
 import type { SupabaseClient } from "./types.ts";
 
 export interface HandleConnectionArgs {
@@ -135,6 +135,40 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       classified_as: disconnectClass,
     });
 
+    // ── FATAL (401/403/440/…): sessão morta no WhatsApp. Reconectar no mesmo
+    // instance_name não resolve — o servidor Evolution mantém o socket morto.
+    // Solução: deletar a instância no Evolution e recriar do zero, mantendo o
+    // mesmo whatsapp_instances.id. O usuário só precisa escanear o novo QR.
+    if (disconnectClass === "fatal" && evolutionApiUrl && evolutionApiKey) {
+      const { data: instRow } = await supabase
+        .from("whatsapp_instances")
+        .select("id, instance_name")
+        .eq("instance_name", connInstance)
+        .maybeSingle();
+
+      if (instRow?.id) {
+        const recreateTask = recreateInstance(supabase, {
+          instanceRowId: instRow.id,
+          oldInstanceName: connInstance,
+          evolutionApiUrl,
+          evolutionApiKey,
+          triggeredBy: "auto_fatal",
+          reason: statusReason ?? null,
+        });
+        try {
+          // @ts-ignore: EdgeRuntime global
+          if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) {
+            // @ts-ignore
+            (EdgeRuntime as any).waitUntil(recreateTask);
+          } else {
+            await recreateTask;
+          }
+        } catch (_) { void recreateTask; }
+      }
+      return true;
+    }
+
+    // ── TRANSIENTE: apenas agenda reconexão em 30s ──
     const allowedToReconnect = evolutionApiUrl && evolutionApiKey
       && await canReconnect(supabase, connInstance);
 

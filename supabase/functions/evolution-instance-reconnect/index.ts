@@ -30,6 +30,8 @@ interface ReconnectBody {
   forceLogout?: boolean;
   /** Se TRUE, ignora o bloqueio de fatal lock (somente super_admin). */
   overrideFatalLock?: boolean;
+  /** Se TRUE, deleta a instância no Evolution e recria do zero (mesmo id no Supabase). */
+  recreate?: boolean;
 }
 
 Deno.serve(async (req) => {
@@ -80,6 +82,30 @@ Deno.serve(async (req) => {
       isAdmin = !!roleRow;
     }
     if (!owns && !isAdmin) return json({ error: "forbidden" }, 403);
+
+    // ── RECREATE: apaga instância no Evolution e cria uma nova. Precede o
+    // hard-lock porque recriar é justamente COMO se destrava uma instância
+    // que caiu em fatal (chip queimado / sessão invalidada pelo WhatsApp).
+    if (body?.recreate === true) {
+      const { recreateInstance } = await import("../evolution-webhook/recreate-instance.ts");
+      const result = await recreateInstance(admin, {
+        instanceRowId: inst.id,
+        oldInstanceName: instanceName,
+        evolutionApiUrl: EVOLUTION_API_URL,
+        evolutionApiKey: EVOLUTION_API_KEY,
+        triggeredBy: "manual_admin",
+        reason: "manual_recreate",
+      });
+      if (!result.ok) {
+        return json({ error: result.error || result.skipped || "recreate_failed" }, 500);
+      }
+      return json({
+        ok: true,
+        recreated: true,
+        new_instance_name: result.new_instance_name,
+        qr_base64: result.qr_base64,
+      });
+    }
 
     // ── HARD-LOCK: bloqueia reconexão se instância está em revisão manual ──
     const fatalLockActive =

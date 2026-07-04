@@ -1,77 +1,65 @@
-## Diagnóstico
 
-**1) Links de consultores 404/vazios (Rafael Ferreira e todos os outros)** — a página LP carrega, mas o dado do consultor vem vazio. Motivo: a view `public.consultants_public` **não tem GRANT para `anon`**, e como está com `security_invoker=on`, o anon também precisaria de SELECT na tabela `consultants` — que também não tem grant.
+# Plano: Auto-recriação de instância Evolution em falha grave
 
-Teste ao vivo:
-```
-GET /rest/v1/consultants_public?license=eq.rafael-ferreira
-→ 42501 "permission denied for table consultants"
-```
+## Contexto
+Hoje, quando o Evolution devolve `connection.close` com 401/403/440 (sessão banida pelo WhatsApp), o sistema só marca `needs_reconnect` e agenda uma reconexão em 30s no mesmo `instance_name`. Como o WhatsApp já invalidou aquela sessão, o QR nunca mais autentica — o correto é **descartar a instância morta e criar uma nova**.
 
-Mesma coisa afeta `whatsapp_instances_public` (usada pelo botão WhatsApp), `products` (páginas `/conexao-*`) e `page_views` (tracking).
+## Objetivo
+Ao detectar desconexão fatal no Evolution, deletar a instância no servidor Evolution e criar automaticamente uma nova instância vinculada ao mesmo consultor/chip, deixando pronto para o usuário só escanear o QR.
 
-**2) Fluxo M (MG)** — no banco já está `is_public=true, is_active=true` (id `449f72b2-…`, nome "Fluxo MG", 16 passos, todos com 4 mídias no `media_order`). Existe SÓ um Fluxo M no sistema (o do super-admin), então nenhum consultor tem custom pra sobrescrever — todos que caírem em variant='M' pegam esse fluxo direto. Não precisa migração de propagação.
+Escopo: **apenas Evolution**. Whapi permanece como está (reautorização manual no painel Whapi).
 
-## Correção — migração SQL
+## Comportamento novo
 
-Uma migration única com GRANT/RLS pra destravar acesso anônimo às superfícies públicas. Nada é criado ou removido, só permissão de leitura ajustada:
-
-```sql
--- 1) consultants_public: view usada por TODA página /:licenca e /conexao-*/:licenca
-GRANT SELECT ON public.consultants_public TO anon, authenticated;
-
--- Como a view usa security_invoker=on, o anon precisa também de SELECT na base,
--- mas RESTRITO pelas colunas expostas — a view já filtra. Damos SELECT direto:
-GRANT SELECT (id, license, name, phone, cadastro_url, photo_url, igreen_id,
-              licenciada_cadastro_url, facebook_pixel_id, google_analytics_id,
-              created_at, referred_by)
-  ON public.consultants TO anon, authenticated;
--- (nenhum dado sensível: telefone público, licença, foto — mesmo conjunto da view)
-
--- Política de leitura anônima para os campos públicos (linhas com license não nula):
-CREATE POLICY IF NOT EXISTS "Anon read public consultant fields"
-  ON public.consultants FOR SELECT TO anon, authenticated
-  USING (license IS NOT NULL AND license <> '');
-
--- 2) whatsapp_instances_public — botão WhatsApp
-GRANT SELECT ON public.whatsapp_instances_public TO anon, authenticated;
--- (view também segue mesma lógica; se precisar, grant coluna equivalente na base)
-
--- 3) products — landing /conexao-*/:licenca
-GRANT SELECT ON public.products TO anon, authenticated;
-CREATE POLICY IF NOT EXISTS "Anon read active products"
-  ON public.products FOR SELECT TO anon, authenticated
-  USING (is_active = true);
-
--- 4) page_views — tracking (insert de leitura de página)
-GRANT INSERT ON public.page_views TO anon, authenticated;
-CREATE POLICY IF NOT EXISTS "Anyone can insert page views"
-  ON public.page_views FOR INSERT TO anon, authenticated
-  WITH CHECK (true);
+```text
+connection.close recebido
+        │
+        ▼
+statusReason ∈ {401, 403, 440}  ──não──►  fluxo atual (needs_reconnect + reconnect 30s)
+        │ sim
+        ▼
+recreate_instance(consultantId, oldInstanceName)
+   1. DELETE  /instance/delete/{oldInstanceName}   (Evolution)
+   2. gerar novo nome: `${base}-${YYYYMMDDHHmm}`
+   3. POST /instance/create  (mesmo webhook, settings)
+   4. UPDATE whatsapp_instances: novo instance_name, status='awaiting_qr',
+      needs_reconnect=false, fatal_lock_until=NULL, manual_review_required=false
+   5. registrar em admin_audit_log: action='auto_recreate_instance'
+   6. POST /instance/connect  → devolve QR
+   7. notifica frontend via realtime (channel já existente)
 ```
 
-Antes de rodar, vou reconferir o schema real de cada tabela/view (colunas, RLS já existente, se a policy já existe com outro nome) — a migration final vai só o que faz falta, sem duplicar.
+## Alterações
 
-## Fluxo M — verificação, sem alterar
+### 1. Edge function — nova rota utilitária
+`supabase/functions/evolution-instance-reconnect/recreate.ts` (novo) exportando `recreateInstance(supabase, instanceRow)`. Reusa o cliente Evolution já existente em `_shared/evolution-api.ts`.
 
-- ✅ 1 registro, `is_public=true`, `is_active=true`, variant='M'.
-- ✅ 16 steps ativos, todos com `media_order` preenchido (4 mídias cada).
-- ✅ Passos-chave presentes: `d_welcome`, `d_pedir_conta` (OCR), `d_resultado` (simulação com `{{economia_mensal}}` — agora já com 28% via `discountRates`), `d_pedir_documento`, `d_pedir_email`, `d_confirmar_telefone`, `d_finalizar` (portal + OTP), `d_simular_*` (branch valor direto).
-- ✅ Cálculo 10-28% já ativo em todos os renderizadores (mudança da conversa anterior).
+### 2. Handler de desconexão
+`supabase/functions/evolution-webhook/handlers/connection.ts`
+- Quando `state === "close"` e `statusReason` for 401/403/440 (ou `reason` contiver `logged_out`/`banned`), chamar `recreateInstance` em vez de agendar reconexão simples.
+- Para demais códigos (ex.: 500, timeout), manter o fluxo atual.
 
-Sem migração de propagação (não existem Fluxos M próprios de outros consultores para sincronizar). Novo consultor com variant='M' cai automaticamente no público.
+### 3. UI — SuperAdmin
+`src/components/superadmin/WhatsAppInstanceHealthCard.tsx`
+- Adicionar coluna "Última recriação" (lida de `admin_audit_log` filtrado por `action='auto_recreate_instance'`).
+- Adicionar botão manual **"Recriar instância"** que dispara a mesma função (fallback humano).
 
-## Teste pós-deploy
+### 4. UI — Consultor
+`src/components/whatsapp/*` (tela de conexão do consultor)
+- Toast "Sua instância foi renovada, escaneie o novo QR" quando o `instance_name` muda via realtime.
+- Sem mudança de fluxo — o componente de QR já reage a `status='awaiting_qr'`.
 
-Vou rodar 3 checagens via curl (não muda dado):
-1. `GET consultants_public?license=eq.rafael-ferreira` deve retornar 1 linha em vez de 42501.
-2. `GET whatsapp_instances_public?consultant_id=eq.<id>` idem.
-3. `GET products?slug=eq.conexao-seguros` retorna a landing.
+### 5. Migração SQL
+Nenhuma tabela nova. Apenas garantir que `admin_audit_log` aceita `action='auto_recreate_instance'` (é texto livre, ok).
+Opcional: índice em `admin_audit_log(target_id, action, created_at DESC)` para a listagem no card.
 
-Se tudo OK, os links `/rafael-ferreira` e `/conexao-seguros/rafael-ferreira` — e de qualquer outro consultor — voltam a carregar publicamente.
+## Detalhes técnicos
+- **Rate limit**: só recriar se a última recriação automática foi há > 15min (evita loop se o chip estiver realmente queimado). Após 3 recriações em 24h, para e marca `manual_review_required=true` para intervenção humana.
+- **Idempotência**: usar `instance_id` (uuid interno) como chave — o `instance_name` do Evolution muda, mas a linha em `whatsapp_instances` é a mesma.
+- **Preservação**: manter `consultant_id`, `phone_number`, contadores (`send_counters`), webhooks e settings.
+- **Whapi**: nenhuma mudança.
 
-## Fora de escopo
-
-- Não altero o auth/portal do consultor autenticado.
-- Não abro tabelas com PII (CPF, endereço, e-mail privado, chaves de token) para anon — só as colunas já expostas pela view atual.
-- Não mexo em textos/mídias do Fluxo M.
+## Fora do escopo
+- Trocar de canal (Evolution → Whapi) automaticamente.
+- Recriação preventiva por sinais de risco (só reage a `close` fatal).
+- Fluxo Whapi.

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
-import { AlertTriangle, ShieldCheck, RefreshCw, Ban } from "lucide-react";
+import { AlertTriangle, ShieldCheck, RefreshCw, Ban, RotateCcw } from "lucide-react";
 
 interface InstanceRow {
   instance_name: string;
@@ -55,6 +55,23 @@ export function WhatsAppInstanceHealthCard() {
     else { toast({ title: "Instância destravada" }); load(); }
   };
 
+  const recreate = async (instance: string) => {
+    if (!confirm(`Deletar a instância ${instance} no Evolution e criar uma NOVA (mesmo consultor)? O usuário precisará escanear um novo QR.`)) return;
+    setBusy(instance);
+    const { data, error } = await supabase.functions.invoke("evolution-instance-reconnect", {
+      body: { instanceName: instance, recreate: true },
+    });
+    setBusy(null);
+    if (error) toast({ title: "Falha ao recriar", description: error.message, variant: "destructive" });
+    else {
+      toast({
+        title: "Instância recriada",
+        description: `Nova: ${(data as any)?.new_instance_name ?? "?"}. Peça ao consultor para escanear o QR.`,
+      });
+      load();
+    }
+  };
+
   const isLocked = (r: InstanceRow) =>
     !!r.manual_review_required ||
     (!!r.fatal_lock_until && new Date(r.fatal_lock_until) > new Date());
@@ -102,7 +119,17 @@ export function WhatsAppInstanceHealthCard() {
                   {r.connected_phone ?? "sem número"}
                 </p>
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 flex-wrap justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => recreate(r.instance_name)}
+                  disabled={busy === r.instance_name}
+                  title="Deleta esta instância no Evolution e cria uma nova (mesmo consultor). Usar quando o QR não autentica mais."
+                >
+                  <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                  Recriar
+                </Button>
                 {locked ? (
                   <Button
                     size="sm"
