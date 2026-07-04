@@ -55,6 +55,23 @@ export function WhatsAppInstanceHealthCard() {
     else { toast({ title: "Instância destravada" }); load(); }
   };
 
+  const recreate = async (instance: string) => {
+    if (!confirm(`Deletar a instância ${instance} no Evolution e criar uma NOVA (mesmo consultor)? O usuário precisará escanear um novo QR.`)) return;
+    setBusy(instance);
+    const { data, error } = await supabase.functions.invoke("evolution-instance-reconnect", {
+      body: { instanceName: instance, recreate: true },
+    });
+    setBusy(null);
+    if (error) toast({ title: "Falha ao recriar", description: error.message, variant: "destructive" });
+    else {
+      toast({
+        title: "Instância recriada",
+        description: `Nova: ${(data as any)?.new_instance_name ?? "?"}. Peça ao consultor para escanear o QR.`,
+      });
+      load();
+    }
+  };
+
   const isLocked = (r: InstanceRow) =>
     !!r.manual_review_required ||
     (!!r.fatal_lock_until && new Date(r.fatal_lock_until) > new Date());
