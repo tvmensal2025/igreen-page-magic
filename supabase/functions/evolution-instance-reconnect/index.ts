@@ -100,6 +100,29 @@ Deno.serve(async (req) => {
       }, 423); // 423 Locked
     }
 
+    // ── RECREATE: apaga instância no Evolution e cria uma nova ──
+    if (body?.recreate === true) {
+      if (!isAdmin && !owns) return json({ error: "forbidden" }, 403);
+      const { recreateInstance } = await import("../evolution-webhook/recreate-instance.ts");
+      const result = await recreateInstance(admin, {
+        instanceRowId: inst.id,
+        oldInstanceName: instanceName,
+        evolutionApiUrl: EVOLUTION_API_URL,
+        evolutionApiKey: EVOLUTION_API_KEY,
+        triggeredBy: "manual_admin",
+        reason: "manual_recreate",
+      });
+      if (!result.ok) {
+        return json({ error: result.error || result.skipped || "recreate_failed" }, 500);
+      }
+      return json({
+        ok: true,
+        recreated: true,
+        new_instance_name: result.new_instance_name,
+        qr_base64: result.qr_base64,
+      });
+    }
+
     const headers = { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY };
 
     // Step 1: logout SOMENTE se foi pedido explicitamente (default = FALSE).
