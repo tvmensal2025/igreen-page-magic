@@ -84,7 +84,7 @@ async function checkFlowDHealth(supabase: any): Promise<CheckResult> {
       metadata: {
         conversation_step: c.conversation_step,
         last_bot_reply_at: c.last_bot_reply_at,
-        flow_variant: "D",
+        flow_variant: c.flow_variant || "D",
         detected_at: new Date().toISOString(),
       },
     });
