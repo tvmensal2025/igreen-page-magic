@@ -308,7 +308,7 @@ Deno.serve(async (req) => {
     // Override de variante: se o consultor escolheu A/B/C nos chips, persiste no
     // customer pra não misturar variantes na mesma conversa.
     let variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-    if (body.variant && ["A", "B", "C", "D", "E"].includes(body.variant) && body.variant !== variant) {
+    if (body.variant && ["A", "B", "C", "D", "E", "M"].includes(body.variant) && body.variant !== variant) {
       await supabase.from("customers")
         .update({ flow_variant: body.variant, updated_at: new Date().toISOString() })
         .eq("id", customer.id);
