@@ -1456,7 +1456,7 @@ Deno.serve(async (req) => {
           _hasActiveFlow = (count ?? 0) > 0;
         } catch (_) { /* fail-open: assume sem flow → mantém bypass desligado */ }
       }
-      if (_flowVariant === "D" || _hasActiveFlow) {
+      if (_flowVariant === "D" || _flowVariant === "M" || _hasActiveFlow) {
         console.log(`[manual-capture-stop] BYPASS — customer=${customer.id} flow_variant=${_flowVariant} hasActiveFlow=${_hasActiveFlow}`);
       } else {
       try {
