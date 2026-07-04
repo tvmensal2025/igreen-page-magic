@@ -67,7 +67,14 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
             kind: label,
             previous_status: slot.previousResultStatus ?? null,
           });
-          return slot.previousResultStatus !== "failed";
+          if (slot.previousResultStatus === "failed") {
+            logStructured("warn", "whapi_send_retry_after_failed", {
+              kind: label,
+              idempotency_key: idemKey,
+            });
+          } else {
+            return true;
+          }
         }
       } catch (e) {
         console.warn(`[whapi-api] idempotency pre-check threw; sending anyway`, e);
@@ -101,6 +108,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       }
       if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 300 * Math.pow(3, attempt - 1)));
     }
+    console.warn(`[whapi-api] ${label} failed status=${lastStatus} body=${lastBody}`);
     logStructured("error", `whapi_${label}_failed`, { status: lastStatus, error: lastBody });
     captureError(new Error(`Whapi ${label} failed: ${lastBody}`), {
       tags: { function: "whapi-api", kind: label },
