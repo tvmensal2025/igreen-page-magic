@@ -145,6 +145,69 @@ export function WhapiConnectionPanel({ visible }: Props) {
     }
   };
 
+  const stopReauthPoll = () => {
+    if (reauthPollRef.current) {
+      window.clearInterval(reauthPollRef.current);
+      reauthPollRef.current = null;
+    }
+  };
+
+  const handleReauth = async () => {
+    setBusy("reauth");
+    setQrImage(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-proxy", {
+        body: { action: "reauth", payload: {} },
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
+      const qr: string | null = data?.qr || null;
+      if (!qr) {
+        toast.info("A Whapi não devolveu QR agora. Aguarde 5s e clique de novo.");
+      } else {
+        setQrImage(qr.startsWith("data:") ? qr : `data:image/png;base64,${qr}`);
+        toast.success("QR gerado. Escaneie no WhatsApp.");
+      }
+      // Polling até virar AUTH
+      stopReauthPoll();
+      reauthPollRef.current = window.setInterval(async () => {
+        await health.refresh();
+      }, 3000);
+      // Para o polling depois de 3 min como safety
+      window.setTimeout(stopReauthPoll, 180_000);
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao reautenticar");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRefreshWebhook = async () => {
+    setBusy("webhook");
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-proxy", {
+        body: { action: "refresh_webhook", payload: {} },
+      });
+      if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
+      toast.success("Webhook reaplicado na Whapi.");
+      await health.refresh();
+    } catch (e: any) {
+      toast.error(e?.message || "Erro ao aplicar webhook");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Para polling quando canal volta a AUTH ou componente desmonta
+  useEffect(() => {
+    if (health.status === "AUTH" && reauthPollRef.current) {
+      stopReauthPoll();
+      setQrImage(null);
+      toast.success("Canal reconectado ✅");
+    }
+    return () => { if (!visible) stopReauthPoll(); };
+  }, [health.status, visible]);
+
+
   return (
     <Card className="border-border">
       <CardHeader className="pb-3">
