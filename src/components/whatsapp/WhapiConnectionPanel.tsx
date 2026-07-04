@@ -318,15 +318,86 @@ export function WhapiConnectionPanel({ visible }: Props) {
           </div>
         )}
 
-        {health.status !== "AUTH" && !health.reasonCode && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive flex items-start gap-2">
-            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-            <div>
-              Canal Whapi está <b>{meta.label}</b>. Atualize o token ou escaneie um novo QR
-              para voltar a enviar mensagens — sem precisar tocar em código.
+        {(health.reasonCode === "channel_error" ||
+          (health.status !== "AUTH" && !health.reasonCode)) && (
+          <div className="rounded-md border-2 border-destructive bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold mb-1">Canal desautenticado</div>
+                <div>
+                  Token OK, mas o WhatsApp saiu de "Aparelhos conectados". Clique em
+                  <b> Reautenticar canal</b> abaixo, escaneie o QR e aguarde virar
+                  <b> AUTH (code=3)</b>.
+                </div>
+              </div>
             </div>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleReauth}
+              disabled={busy === "reauth"}
+              className="w-full"
+            >
+              <QrCode className="h-3.5 w-3.5 mr-1" />
+              {busy === "reauth" ? "Gerando QR…" : "Reautenticar canal (1 clique)"}
+            </Button>
           </div>
         )}
+
+        {health.webhookOk === false && (
+          <div className="rounded-md border border-orange-500/50 bg-orange-500/10 p-3 text-xs text-orange-700 dark:text-orange-300 flex items-center justify-between gap-2">
+            <span>Webhook não está configurado na Whapi.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRefreshWebhook}
+              disabled={busy === "webhook"}
+            >
+              {busy === "webhook" ? "Aplicando…" : "Reaplicar webhook"}
+            </Button>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium flex items-center gap-1">
+            <KeyRound className="h-3.5 w-3.5" /> Atualizar token Whapi
+          </label>
+          <div className="flex gap-2">
+            <Input
+              type="password"
+              placeholder="Cole o token do painel Whapi"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              className="font-mono text-xs"
+            />
+            <Button onClick={handleSaveToken} disabled={busy === "save"} size="sm">
+              {busy === "save" ? "Salvando…" : "Salvar"}
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Pegue em panel.whapi.cloud → seu canal → Settings → Token.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => health.refresh()} variant="outline" size="sm" disabled={health.checking}>
+            <RefreshCcw className={`h-3.5 w-3.5 mr-1 ${health.checking ? "animate-spin" : ""}`} />
+            Verificar status
+          </Button>
+          <Button onClick={handleReauth} variant="outline" size="sm" disabled={busy === "reauth"}>
+            <QrCode className="h-3.5 w-3.5 mr-1" />
+            {busy === "reauth" ? "Gerando QR…" : "Reautenticar (Logout + QR)"}
+          </Button>
+          <Button onClick={handleRequestQr} variant="ghost" size="sm" disabled={busy === "qr"}>
+            <QrCode className="h-3.5 w-3.5 mr-1" />
+            {busy === "qr" ? "Pedindo…" : "Só pedir QR"}
+          </Button>
+          <Button onClick={handleLogout} variant="ghost" size="sm" disabled={busy === "logout"}>
+            <LogOut className="h-3.5 w-3.5 mr-1" />
+            {busy === "logout" ? "Saindo…" : "Só logout"}
+          </Button>
+        </div>
 
         <div className="space-y-2">
           <label className="text-xs font-medium flex items-center gap-1">
