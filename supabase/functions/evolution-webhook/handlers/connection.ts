@@ -112,43 +112,27 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
 
 
   if (connState === "close" && connInstance) {
+    // 🩹 2026-07-04: Removido o HARD-LOCK automático de 14d.
+    // Motivo: 401/403/440 em connection.close representam queda de sessão
+    // socket do Evolution (sessão substituída, restart, handshake incompleto)
+    // e NÃO ban confirmado do WhatsApp. O antiban pré-04/jun (warmup +
+    // min_interval + typing + jitter + recovery_mode + reconnect cooldown)
+    // já protege o chip sem travar 14 dias em falso positivo.
+    // Ban de verdade agora só é marcado manualmente pelo super-admin via
+    // RPC admin_mark_instance_banned.
     const disconnectClass = classifyDisconnect(statusReason);
+    const severity = disconnectClass === "fatal" ? "high" : "low";
 
-    if (disconnectClass === "fatal") {
-      console.warn(
-        `🛑 Instância ${connInstance} desconectou FATAL (reason=${statusReason}). ` +
-        `Ativando HARD-LOCK (manual_review_required + recovery 14d).`,
-      );
-      // Registra sinal crítico — bloqueia disparos via check_send_quota
-      await recordRiskSignal(supabase, connInstance, "disconnect_fatal", "critical", {
-        reason: statusReason,
-      });
-      // Hard-lock atômico: marca needs_reconnect + manual_review_required +
-      // fatal_lock_until + recovery_mode_until = now + 14d. Só super_admin
-      // destrava via admin_clear_fatal_lock.
-      try {
-        await supabase.rpc("register_fatal_disconnect", {
-          p_instance: connInstance,
-          p_reason: Number(statusReason) || 0,
-          p_lock_hours: 336,
-        });
-      } catch (e: any) {
-        console.warn(`⚠️ register_fatal_disconnect falhou para ${connInstance}:`, e?.message);
-        // Fallback: pelo menos marca status + recovery legado
-        try {
-          await supabase
-            .from("whatsapp_instances")
-            .update({ status: "needs_reconnect", updated_at: new Date().toISOString() })
-            .eq("instance_name", connInstance);
-        } catch (_) { /* swallow */ }
-        await activateRecoveryMode(supabase, connInstance, 336);
-      }
-      return true;
-    }
+    try {
+      await supabase
+        .from("whatsapp_instances")
+        .update({ status: "needs_reconnect", updated_at: new Date().toISOString() })
+        .eq("instance_name", connInstance);
+    } catch (_) { /* non-critical */ }
 
-    // Transiente: registra sinal + tenta reconectar com cooldown PERSISTENTE de 10 min
-    await recordRiskSignal(supabase, connInstance, "disconnect_transient", "low", {
+    await recordRiskSignal(supabase, connInstance, "disconnect_transient", severity, {
       reason: statusReason,
+      classified_as: disconnectClass,
     });
 
     const allowedToReconnect = evolutionApiUrl && evolutionApiKey
@@ -157,13 +141,9 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
     if (allowedToReconnect) {
       const baseUrl = evolutionApiUrl.replace(/\/$/, "");
       console.log(
-        `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). ` +
-        `Agendando reconexão em 30s (background, anti-ban).`,
+        `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, class=${disconnectClass}). ` +
+        `Agendando reconexão em 30s (background).`,
       );
-      // ⚠️ Antes: `await sleep(30s)` BLOQUEAVA a resposta do webhook,
-      // causando timeout do Evolution e re-entrega do mesmo evento.
-      // Agora: retorna 200 imediatamente e a reconexão acontece em
-      // background via EdgeRuntime.waitUntil.
       const reconnectInBackground = (async () => {
         try {
           await new Promise((r) => setTimeout(r, 30_000));
@@ -194,7 +174,6 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
           // @ts-ignore
           (EdgeRuntime as any).waitUntil(reconnectInBackground);
         } else {
-          // fallback dev/local: ainda assim não awaita, só dispara.
           void reconnectInBackground;
         }
       } catch (_) { void reconnectInBackground; }
