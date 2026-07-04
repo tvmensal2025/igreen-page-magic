@@ -8,12 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Save, GitBranch } from "lucide-react";
 
-type Mode = "A_ONLY" | "D_ONLY" | "B_ONLY" | "BOTH";
+type Mode = "A_ONLY" | "D_ONLY" | "B_ONLY" | "M_ONLY" | "BOTH";
 
 const MODE_TO_ARRAY: Record<Mode, string[]> = {
   A_ONLY: ["A"],
   D_ONLY: ["D"],
   B_ONLY: ["B"],
+  M_ONLY: ["M"],
   BOTH: ["B", "D"],
 };
 
@@ -22,6 +23,7 @@ function arrayToMode(arr: string[] | null | undefined): Mode {
   if (a.length === 1 && a[0] === "A") return "A_ONLY";
   if (a.length === 1 && a[0] === "B") return "B_ONLY";
   if (a.length === 1 && a[0] === "D") return "D_ONLY";
+  if (a.length === 1 && a[0] === "M") return "M_ONLY";
   return "BOTH";
 }
 
