@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useWhapiHealth, type WhapiHealthStatus } from "@/hooks/useWhapiHealth";
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { RefreshCcw, KeyRound, QrCode, LogOut, AlertTriangle, CheckCircle2, CreditCard, ExternalLink } from "lucide-react";
+import { RefreshCcw, KeyRound, QrCode, LogOut, AlertTriangle, CheckCircle2, CreditCard, ExternalLink, History, Download } from "lucide-react";
 
 interface Props {
   visible: boolean;
