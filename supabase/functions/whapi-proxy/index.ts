@@ -28,6 +28,7 @@ export type WhapiReasonCode =
   | "unpaid"
   | "channel_not_found"
   | "invalid_token"
+  | "channel_error"
   | "offline"
   | "rate_limited"
   | "unknown";
