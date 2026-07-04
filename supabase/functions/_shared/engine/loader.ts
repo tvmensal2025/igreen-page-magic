@@ -87,7 +87,7 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   }
 
   const consultantId = customer.consultant_id as string;
-  const variant = ((customer.flow_variant as string) || "A").toUpperCase() as "A" | "B" | "C" | "D";
+  const variant = ((customer.flow_variant as string) || "A").toUpperCase() as "A" | "B" | "C" | "D" | "M";
 
   // Variant B = Vendedora V2 (IA livre). NUNCA carregar flow V3 para B pelo
   // caminho do engine v3 — o webhook deve bypassar o V3 antes de chamar o
