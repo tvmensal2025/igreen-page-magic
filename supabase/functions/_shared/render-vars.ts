@@ -11,6 +11,8 @@
  * IMPORTANTE: NUNCA deixar uma chave `{...}` ou `{{...}}` reconhecida ir para o cliente.
  */
 
+import { discountRates } from "./discount-rates.ts";
+
 export type RenderVars = {
   name?: string | null;
   phone?: string | null;
@@ -19,6 +21,8 @@ export type RenderVars = {
   /** Nome humano explícito do consultor (consultants.display_name). Quando preenchido, tem prioridade sobre `representante` — evita vazar username/slug. */
   representante_display?: string | null;
   valor_conta?: number | string | null;
+  /** Variante do fluxo (A/B/C/D/E/M). Muda as taxas de economia — Fluxo M usa 10-28%. */
+  variant?: string | null;
   extra?: Record<string, string | number | null | undefined>;
 };
 
@@ -122,12 +126,13 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (CPF_KEYS.has(key)) return cpfFmt;
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
-    if (key === "economia_mensal") return hasBill ? fmtBRL(billNum * 0.20) : "";
-    if (key === "economia_anual") return hasBill ? fmtBRL(billNum * 0.20 * 12) : "";
+    const rates = discountRates(vars.variant);
+    if (key === "economia_mensal") return hasBill ? fmtBRL(billNum * rates.max) : "";
+    if (key === "economia_anual") return hasBill ? fmtBRL(billNum * rates.max * 12) : "";
     if (key === "economia_range" || key === "economia_faixa") {
       if (!hasBill) return "";
-      const min = Math.max(1, Math.floor(billNum * 0.08));
-      const max = Math.max(min + 1, Math.ceil(billNum * 0.20));
+      const min = Math.max(1, Math.floor(billNum * rates.min));
+      const max = Math.max(min + 1, Math.ceil(billNum * rates.max));
       return `R$ ${min} a R$ ${max}`;
     }
     if (vars.extra && Object.prototype.hasOwnProperty.call(vars.extra, key)) {
