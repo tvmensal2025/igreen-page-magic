@@ -9583,6 +9583,10 @@ export type Database = {
         Args: { p_hours?: number; p_instance: string }
         Returns: undefined
       }
+      admin_clear_ban: {
+        Args: { p_instance: string; p_note?: string }
+        Returns: Json
+      }
       admin_clear_fatal_lock: {
         Args: { p_instance: string; p_reason: string }
         Returns: undefined
@@ -9590,6 +9594,10 @@ export type Database = {
       admin_hard_reset_phone: { Args: { _phone: string }; Returns: Json }
       admin_hard_reset_phone_trace_counts: {
         Args: { _phone: string }
+        Returns: Json
+      }
+      admin_mark_instance_banned: {
+        Args: { p_instance: string; p_note?: string }
         Returns: Json
       }
       admin_unpause_global_bot: { Args: never; Returns: number }
