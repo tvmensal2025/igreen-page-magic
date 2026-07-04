@@ -310,6 +310,33 @@ export default function FluxoBuilder() {
                       </TooltipTrigger>
                       <TooltipContent>Tour guiado</TooltipContent>
                     </Tooltip>
+                    {isSuperAdmin && flowId && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="h-8 ml-1"
+                            onClick={async () => {
+                              if (!flowId) return;
+                              if (!window.confirm(
+                                `Publicar o Fluxo ${editingVariant} atual como MODELO PÚBLICO para todos os consultores? A versão atual (com todas as alterações) passa a ser a oficial.`
+                              )) return;
+                              const { error } = await supabase.rpc("publish_flow_as_public", { _flow_id: flowId });
+                              if (error) {
+                                toast.error("Não consegui publicar: " + error.message);
+                                return;
+                              }
+                              toast.success(`Fluxo ${editingVariant} publicado para todos.`);
+                              void loadData(editingVariant);
+                            }}
+                          >
+                            Publicar para todos
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Torna este fluxo o modelo público para todos os consultores</TooltipContent>
+                      </Tooltip>
+                    )}
                   </div>
                 </TooltipProvider>
               </div>
