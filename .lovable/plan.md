@@ -1,63 +1,44 @@
 ## Diagnóstico
 
-Confirmei ao vivo, agora, chamando a Whapi com o seu token:
+O canal Whapi (SHAZAM-A79TY, +55 34 9823-9056) está **funcional**:
+- Painel Whapi: "WhatsApp API authorized"
+- `GET /chats` retorna mensagens reais (envios recentes `from_me:true`)
+- Webhook aponta corretamente para `whapi-webhook`
 
-- `GET /health` → HTTP 200, mas `status.code = 5 (ERROR)`. Códigos Whapi: `3=AUTH` (ok), `2=QR` (aguardando scan), `5=ERROR` (não pareado), `6=OFFLINE`.
-- Token e webhook estão certos. O que não está OK é o **estado do canal no lado da Whapi**.
+O bug é **nosso**: `whapi-proxy` faz `health_check` via `/health` e trata `status.code=5 ("ERROR")` como canal desautenticado (`channel_error` / OFFLINE), bloqueando o botão de importar histórico e mostrando banner vermelho. Mas `/health` do Whapi devolve `code=5` mesmo com o canal operando normalmente — a verdade está nos endpoints de dados.
 
-Isso não é código nosso — é o WhatsApp que não completou o pareamento ou caiu depois. Trocar token não muda nada.
+## Correção
 
-## O que vou construir para destravar
+### 1. `supabase/functions/whapi-proxy/index.ts` — `health_check`
+Substituir a lógica baseada no numérico de `/health` por uma **prova de vida real**:
 
-### 1. Painel de diagnóstico ao vivo (em `WhapiConnectionPanel.tsx`)
+- Chamar em paralelo: `GET /health` (informativo) + `GET /users/profile` (ou `GET /chats?count=1` como fallback).
+- Regra nova:
+  - Se `/users/profile` responder **200** → `status = "AUTH"`, `reasonCode = null`, canal OK (independente do code do `/health`).
+  - Se responder **401/403** → `reasonCode = "invalid_token"`.
+  - Se responder **402** → `reasonCode = "unpaid"`.
+  - Se responder **404** com `channel not found` → `reasonCode = "channel_not_found"`.
+  - Só devolver `channel_error` quando `/users/profile` falhar com erro específico de canal desautenticado (mensagem contendo "not authorized"/"logout"/"qr").
+- Continuar retornando `statusCode` numérico do `/health` apenas como campo informativo no painel de diagnóstico (sem gatear o resto do UI).
+- Manter validação do webhook (`webhookOk`).
 
-Substituir o texto atual "Telefone conectado: …" por um bloco que mostra em tempo real:
+### 2. `supabase/functions/whapi-proxy/index.ts` — `mapWhapiError`
+Já existe o fallback que consulta `/health` antes de devolver `invalid_token`. Ajustar para também aceitar `/users/profile` OK como sinal de canal saudável — assim um 401 esporádico em outro endpoint não vira "token inválido" enganoso.
 
-```
-Whapi /health
-├─ HTTP status: 200
-├─ status.code: 5 (ERROR)
-├─ user.id: 553498239056
-├─ channel_id: SHAZAM-A79TY
-├─ webhook: ✅ correto
-└─ Última verificação: 14:14:47
-```
+### 3. `src/components/whatsapp/WhapiConnectionPanel.tsx`
+- Remover o bloqueio do botão **"Importar histórico completo"** quando `reasonCode === "channel_error"` isoladamente — passar a habilitar sempre que `status === "AUTH"`.
+- No painel de Diagnóstico ao vivo, exibir `code=5` em amarelo (informativo) em vez de vermelho, quando `/users/profile` estiver OK.
+- Manter banner de reautenticação apenas quando a nova regra realmente detectar desautenticação.
 
-Atualiza a cada 5s. Cores por estado (verde AUTH, amarelo QR/INIT, vermelho ERROR/OFFLINE).
+### 4. `src/hooks/useWhapiHealth.ts`
+Sem mudança de contrato; apenas se beneficia do novo payload correto.
 
-Assim você e eu vemos o mesmo estado da Whapi, e ficamos com certeza se é ERROR ou AUTH.
+## Fora do escopo
 
-### 2. `whapi-proxy` — melhorar o `mapWhapiError`
+- Não mexer no token (funciona).
+- Não recriar/logout do canal (funciona).
+- Não alterar `whapi-webhook` nem `whapi-history-backfill`.
 
-Antes de devolver `invalid_token` num 401, o proxy chama `/health`:
-- `/health 200 + code=3` → surpresa, canal está OK → devolve o erro original real.
-- `/health 200 + code=5|6` → devolve novo `reasonCode: "channel_error"` com mensagem "Canal desautenticado (Whapi status ERROR). Reescaneie o QR."
-- `/health 401` → aí sim `invalid_token`.
+## Resultado esperado
 
-Nada de mensagem enganosa.
-
-### 3. Botão "Reautenticar canal" em um clique
-
-No mesmo painel, adicionar botão único que:
-1. Chama `whapi-proxy { action: "logout" }`.
-2. Espera 2s.
-3. Chama `whapi-proxy { action: "request_qr" }` e mostra o QR.
-4. Faz polling de `/health` a cada 3s até `code=3`.
-5. Ao virar AUTH, some com o QR, mostra "Canal reconectado ✅" e habilita o botão de importar histórico.
-
-### 4. Refresh do webhook (garantia)
-
-Adicionar action `refresh_webhook` no `whapi-proxy` que faz `PATCH /settings` mandando o webhook correto para `whapi-webhook`. Rodo essa action uma vez após reautenticação para ter certeza de que o webhook não caiu. (Hoje já está OK, mas é blindagem.)
-
-## O que você precisa fazer
-
-Depois do deploy:
-1. Abrir Admin → Conexão Whapi. O novo bloco de diagnóstico vai mostrar exatamente qual é o `status.code` do canal agora mesmo.
-2. Se aparecer `code=5 (ERROR)`: clique em **Reautenticar canal**, escaneie o QR de novo, confirme que virou `code=3 (AUTH)`.
-3. Se aparecer `code=3 (AUTH)`: aí sim clique em **Importar histórico completo**.
-
-## O que NÃO vou fazer
-
-- Não vou "trocar o token" — ele já está salvo, correto e a Whapi está aceitando (HTTP 200).
-- Não vou tocar em `whapi-history-backfill` — vai funcionar automaticamente quando `code=3`.
-- Não posso escanear o QR por você.
+Após deploy, o painel Admin mostra status verde AUTH, sem banner falso de "canal desautenticado", e o botão **"Importar histórico completo"** fica liberado imediatamente.
