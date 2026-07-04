@@ -399,41 +399,8 @@ export function WhapiConnectionPanel({ visible }: Props) {
           </Button>
         </div>
 
-        <div className="space-y-2">
-          <label className="text-xs font-medium flex items-center gap-1">
-            <KeyRound className="h-3.5 w-3.5" /> Atualizar token Whapi
-          </label>
-          <div className="flex gap-2">
-            <Input
-              type="password"
-              placeholder="Cole o token do painel Whapi"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="font-mono text-xs"
-            />
-            <Button onClick={handleSaveToken} disabled={busy === "save"} size="sm">
-              {busy === "save" ? "Salvando…" : "Salvar"}
-            </Button>
-          </div>
-          <p className="text-[10px] text-muted-foreground">
-            Pegue em panel.whapi.cloud → seu canal → Settings → Token.
-          </p>
-        </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={() => health.refresh()} variant="outline" size="sm" disabled={health.checking}>
-            <RefreshCcw className={`h-3.5 w-3.5 mr-1 ${health.checking ? "animate-spin" : ""}`} />
-            Verificar status
-          </Button>
-          <Button onClick={handleRequestQr} variant="outline" size="sm" disabled={busy === "qr"}>
-            <QrCode className="h-3.5 w-3.5 mr-1" />
-            {busy === "qr" ? "Pedindo…" : "Pedir QR"}
-          </Button>
-          <Button onClick={handleLogout} variant="outline" size="sm" disabled={busy === "logout"}>
-            <LogOut className="h-3.5 w-3.5 mr-1" />
-            {busy === "logout" ? "Saindo…" : "Logout do canal"}
-          </Button>
-        </div>
+
 
         {qrImage && (
           <div className="border rounded-md p-3 flex flex-col items-center gap-2">
