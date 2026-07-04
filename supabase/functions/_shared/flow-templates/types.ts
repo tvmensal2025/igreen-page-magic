@@ -78,7 +78,7 @@ export interface GeneratedStep {
  */
 export interface GeneratedFlow {
   flowName: string;
-  variant: "A" | "B" | "C" | "D";
+  variant: "A" | "B" | "C" | "D" | "M";
   steps: GeneratedStep[];
   /** Resumo de mídias que precisam ser carregadas (slot_key → descrição). */
   mediaRequirements: Array<{ slot_key: string; description: string }>;
