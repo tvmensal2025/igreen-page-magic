@@ -30,6 +30,8 @@ interface ReconnectBody {
   forceLogout?: boolean;
   /** Se TRUE, ignora o bloqueio de fatal lock (somente super_admin). */
   overrideFatalLock?: boolean;
+  /** Se TRUE, deleta a instância no Evolution e recria do zero (mesmo id no Supabase). */
+  recreate?: boolean;
 }
 
 Deno.serve(async (req) => {
