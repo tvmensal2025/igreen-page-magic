@@ -2346,7 +2346,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             }
 
             const _fbVarAi = String((customer as any)?.flow_variant || "").toUpperCase();
-            if (_fbVarAi === "D" && !baseUpdates.bot_paused) {
+            if ((_fbVarAi === "D" || _fbVarAi === "M") && !baseUpdates.bot_paused) {
               try {
                 const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
                 await reemitStepButtons({
