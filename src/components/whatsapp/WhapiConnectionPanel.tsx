@@ -223,17 +223,52 @@ export function WhapiConnectionPanel({ visible }: Props) {
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid gap-1 text-xs text-muted-foreground">
+        {/* Diagnóstico ao vivo do canal Whapi */}
+        <div className="rounded-md border bg-muted/30 p-3 text-[11px] font-mono space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Whapi /health (ao vivo)</span>
+            <span className="text-muted-foreground">
+              {health.lastCheckedAt
+                ? new Date(health.lastCheckedAt).toLocaleTimeString()
+                : "—"}
+            </span>
+          </div>
           <div>
-            Telefone conectado: <span className="font-mono text-foreground">{health.phone || "—"}</span>
+            status.code:{" "}
+            <span
+              className={
+                health.statusCode === 3
+                  ? "text-green-600 font-bold"
+                  : health.statusCode === 2
+                  ? "text-yellow-600 font-bold"
+                  : "text-destructive font-bold"
+              }
+            >
+              {health.statusCode ?? "?"} ({health.statusText || meta.label})
+            </span>
+          </div>
+          <div>
+            user.id:{" "}
+            <span className="text-foreground">{health.phone || "—"}</span>
           </div>
           {health.channelId && (
             <div>
-              Canal: <span className="font-mono text-foreground">{health.channelId}</span>
+              channel_id:{" "}
+              <span className="text-foreground">{health.channelId}</span>
             </div>
           )}
+          <div>
+            webhook:{" "}
+            {health.webhookOk === true ? (
+              <span className="text-green-600">✅ apontando pro app</span>
+            ) : health.webhookOk === false ? (
+              <span className="text-destructive">❌ não configurado</span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
           {health.error && (
-            <div className="text-destructive">Último erro: {health.error}</div>
+            <div className="text-destructive">erro: {health.error}</div>
           )}
         </div>
 
