@@ -34,6 +34,7 @@ Deno.serve(async (req) => {
     const consultantId = String(body.consultantId ?? "");
     const showFlux = body.showFlux !== false; // default: mostra heatmap
     const panelsCount = body.panelsCount != null ? Number(body.panelsCount) : null;
+    const force = body.force === true;
     if (!analysisId) return json({ error: "analysisId obrigatório" }, 400);
 
     const admin = getAdminClient("solar-roof-hd");
