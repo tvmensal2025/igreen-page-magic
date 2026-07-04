@@ -1444,7 +1444,7 @@ Deno.serve(async (req) => {
       // 133 leads (132 A + 1 C) afetados nos últimos 30 dias.
       const _flowVariant = String((customer as any)?.flow_variant || "").toUpperCase();
       let _hasActiveFlow = false;
-      if (_flowVariant !== "D") {
+      if (_flowVariant !== "D" && _flowVariant !== "M") {
         // D já é bypass por padrão; checa se A/B/C têm bot_flow ativo do consultor.
         try {
           const { count } = await supabase
