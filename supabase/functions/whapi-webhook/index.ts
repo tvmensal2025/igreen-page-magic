@@ -1769,7 +1769,7 @@ Deno.serve(async (req) => {
           _hasActiveFlowA = (count ?? 0) > 0;
         } catch (_) { /* fail-open */ }
       }
-      if (_flowVariantA === "D" || _hasActiveFlowA) {
+      if (_flowVariantA === "D" || _flowVariantA === "M" || _hasActiveFlowA) {
         console.log(`[manual-capture-stop-audio] BYPASS — customer=${customer.id} flow_variant=${_flowVariantA} hasActiveFlow=${_hasActiveFlowA}`);
       } else {
       try {
