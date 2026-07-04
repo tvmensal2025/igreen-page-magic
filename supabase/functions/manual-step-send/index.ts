@@ -472,8 +472,8 @@ Deno.serve(async (req) => {
     const nameSource = inferNameSource((customer as any).name, (customer as any).name_source);
     const NAME_NOT_TRUSTED = new Set(["", "unknown", "whatsapp_profile"]);
     const stepAsksName = isNameAskingStep(step);
-    // Fluxo D é automático por botões e captura o nome ao longo do avanço — sem guard.
-    const skipNameGuardForVariantD = variant === "D";
+    // Fluxo D e Fluxo MG são automáticos por botões e capturam o nome ao longo do avanço — sem guard.
+    const skipNameGuardForVariantD = variant === "D" || variant === "M";
     if (!body.skipNameGuard && !skipNameGuardForVariantD && NAME_NOT_TRUSTED.has(nameSource) && !stepAsksName) {
       return json({
         ok: false,
