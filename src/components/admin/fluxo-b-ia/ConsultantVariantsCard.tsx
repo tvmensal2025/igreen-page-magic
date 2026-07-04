@@ -8,12 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { Loader2, Save, GitBranch } from "lucide-react";
 
-type Mode = "A_ONLY" | "D_ONLY" | "B_ONLY" | "BOTH";
+type Mode = "A_ONLY" | "D_ONLY" | "B_ONLY" | "M_ONLY" | "BOTH";
 
 const MODE_TO_ARRAY: Record<Mode, string[]> = {
   A_ONLY: ["A"],
   D_ONLY: ["D"],
   B_ONLY: ["B"],
+  M_ONLY: ["M"],
   BOTH: ["B", "D"],
 };
 
@@ -22,6 +23,7 @@ function arrayToMode(arr: string[] | null | undefined): Mode {
   if (a.length === 1 && a[0] === "A") return "A_ONLY";
   if (a.length === 1 && a[0] === "B") return "B_ONLY";
   if (a.length === 1 && a[0] === "D") return "D_ONLY";
+  if (a.length === 1 && a[0] === "M") return "M_ONLY";
   return "BOTH";
 }
 
@@ -115,6 +117,13 @@ export default function ConsultantVariantsCard({ consultantId }: Props) {
             <Label htmlFor="m-b" className="cursor-pointer flex-1">
               <div className="font-medium">Apenas Fluxo B (IA livre)</div>
               <div className="text-xs text-muted-foreground">Camila IA conduz toda a conversa até pedir a foto da conta.</div>
+            </Label>
+          </div>
+          <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("M_ONLY")}>
+            <RadioGroupItem value="M_ONLY" id="m-m" className="mt-1" />
+            <Label htmlFor="m-m" className="cursor-pointer flex-1">
+              <div className="font-medium">Apenas Fluxo M (MG) — CEMIG Minas Gerais</div>
+              <div className="text-xs text-muted-foreground">Fluxo público mantido pelo Super Admin. Simulação com desconto 10–28%. Todos os consultores compartilham as mesmas mídias e textos.</div>
             </Label>
           </div>
           <div className="flex items-start gap-3 p-3 border rounded-md hover:bg-muted/30 cursor-pointer" onClick={() => setMode("BOTH")}>
