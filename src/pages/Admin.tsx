@@ -457,7 +457,7 @@ const AdminContent = () => {
                 consultantId={userId}
                 consultantIgreenId={form.igreen_id || undefined}
                 consultantName={form.name || undefined}
-                onCustomersChange={fetchCustomers}
+                onCustomersChange={() => fetchCustomers({ bypassCache: true })}
                 instanceName={instanceName}
                 onOpenChat={handleOpenChatFromCustomer}
               />
