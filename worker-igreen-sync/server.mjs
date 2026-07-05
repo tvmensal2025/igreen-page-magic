@@ -479,17 +479,48 @@ async function getOrCreateSession(email, password) {
     const s = sessions.get(email);
     if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
     if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
+
+    // Cooldown por e-mail: se acabamos de queimar tentativas em WAF, evita
+    // torrar Playwright + IP Tor de novo. UI pode reagendar retry mais tarde.
+    const cooldownLeft = isEmailInWafCooldown(email);
+    if (cooldownLeft > 0) {
+      throw new HttpError(503, `Portal iGreen em cooldown pós-WAF (~${Math.ceil(cooldownLeft/1000)}s). Reprocesse em instantes.`, 'igreen_waf_blocked');
+    }
+
     let lastErr = null;
     const attempts = Math.max(1, LOGIN_MAX_ATTEMPTS);
+    let wafHits = 0;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         if (attempt > 1) dbg(`[login] tentativa ${attempt}/${attempts} após falha transitória`);
+        // Preflight: se a home já vem 403/CF, roda NEWNYM antes de gastar Chromium.
+        if (attempt > 1 || wafHits > 0) {
+          const pf = await preflightPortalCheck();
+          if (pf.blocked) {
+            dbg(`[preflight] portal bloqueado (${pf.status}); rotacionando circuito antes de tentar Playwright`);
+            await rotateTorCircuit('preflight_waf');
+            await new Promise((r) => setTimeout(r, 4000));
+          }
+        }
         const fresh = await loginWithPlaywright(email, password);
         sessions.set(email, fresh);
         return fresh;
       } catch (e) {
         lastErr = e;
-        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'igreen_waf_blocked', 'tor_no_exits'].includes(e?.code);
+        const isWaf = e?.code === 'igreen_waf_blocked';
+        if (isWaf) {
+          wafHits++;
+          const rotated = await rotateTorCircuit('login_waf');
+          const backoff = rotated ? (3000 + 3000 * wafHits) : (5000 + 5000 * wafHits);
+          dbg(`[login] WAF hit #${wafHits} → aguardando ${Math.round(backoff/1000)}s antes de retry`);
+          await new Promise((r) => setTimeout(r, backoff));
+          if (attempt >= attempts) {
+            setEmailWafCooldown(email);
+            throw e;
+          }
+          continue;
+        }
+        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'tor_no_exits'].includes(e?.code);
         if (!transient || attempt >= attempts) throw e;
         await new Promise((r) => setTimeout(r, 2500 * attempt));
       }
@@ -501,22 +532,34 @@ async function getOrCreateSession(email, password) {
   }
 }
 
+// Single-flight por e-mail: em vez de rejeitar (409), coalesce — o segundo
+// request espera o primeiro terminar e depois executa. Sessão fica em cache,
+// então a fila anda rápido. TTL evita lock preso caso o processo trave.
 async function withEmailOperationLock(email, fn) {
   const key = String(email || '').toLowerCase();
-  if (operationLocks.has(key)) {
-    throw new HttpError(409, 'Já existe uma sincronização iGreen em andamento para este e-mail. Aguarde finalizar ou reinicie o worker para limpar a fila.', 'sync_already_running');
+  const existing = operationLocks.get(key);
+  if (existing && (Date.now() - existing.startedAt) > OPERATION_LOCK_TTL_MS) {
+    dbg(`[lock] descartando lock stale de ${key} (${Math.round((Date.now() - existing.startedAt)/1000)}s)`);
+    operationLocks.delete(key);
   }
-  const prev = operationLocks.get(key) || Promise.resolve();
+  const cur = operationLocks.get(key);
+  const prev = cur?.promise || Promise.resolve();
+  if (cur) {
+    cur.queued = (cur.queued || 0) + 1;
+    dbg(`[lock] ${key}: aguardando fila (queued=${cur.queued})`);
+  }
   let release;
   const current = new Promise((resolve) => { release = resolve; });
   const chained = prev.catch(() => {}).then(() => current);
-  operationLocks.set(key, chained);
+  const entry = { promise: chained, startedAt: Date.now(), queued: 0 };
+  operationLocks.set(key, entry);
   await prev.catch(() => {});
+  entry.startedAt = Date.now();
   try {
     return await fn();
   } finally {
     try { release(); } catch {}
-    if (operationLocks.get(key) === chained) operationLocks.delete(key);
+    if (operationLocks.get(key) === entry) operationLocks.delete(key);
   }
 }
 
