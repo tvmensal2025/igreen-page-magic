@@ -287,6 +287,19 @@ export function useAnalytics(
             return filterMyClients([c], myClientsSettings).length > 0;
           });
 
+      // Log de diagnóstico — abrir F12 → Console. Aparece quando o Dashboard
+      // reporta 0 mesmo tendo cliente no banco, mostra em qual filtro sumiu.
+      try {
+        console.info("[analytics.fetch]", {
+          userId: consultantId,
+          scope: useTeam ? "team" : "me",
+          total: allCustomers.length,
+          wallet: walletCustomers.length,
+          scoped: scopedWalletCustomers.length,
+          myIgreenIds: myIgreenIds.length,
+        });
+      } catch { /* noop */ }
+
       const totalCustomers = scopedWalletCustomers.length;
       const statusMap = new Map<string, number>();
       for (const c of scopedWalletCustomers) {
