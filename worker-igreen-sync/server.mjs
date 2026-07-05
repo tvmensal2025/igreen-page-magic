@@ -22,6 +22,9 @@
 //   POST /sync-all           { portal_email, portal_password, month? }  (recomendado)
 
 import http from 'node:http';
+import net from 'node:net';
+import fs from 'node:fs';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import { chromium } from 'playwright-chromium';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
@@ -31,6 +34,9 @@ const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
+const TOR_CONTROL_HOST = process.env.TOR_CONTROL_HOST || '127.0.0.1';
+const TOR_CONTROL_PORT = parseInt(process.env.TOR_CONTROL_PORT || '9051', 10);
+const TOR_COOKIE_PATH = process.env.TOR_COOKIE_PATH || '/tmp/tor-data/control_auth_cookie';
 
 const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
 // Portal novo (Virtual Office). Antes era api-voffice + /v1/login; migrou para
@@ -39,7 +45,10 @@ const API_BASE = 'https://api-vo.igreenenergy.com.br/v1';
 const AUTH_PATH = '/auth/session';
 // Sitekey só é usada se o portal voltar a exigir reCAPTCHA (hoje não exige).
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
-const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '2', 10);
+const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '4', 10);
+const OPERATION_LOCK_TTL_MS = parseInt(process.env.OPERATION_LOCK_TTL_MS || '480000', 10); // 8min
+const WAF_COOLDOWN_MS = parseInt(process.env.WAF_COOLDOWN_MS || '300000', 10); // 5min por e-mail
+const TOR_ROTATE_MIN_INTERVAL_MS = parseInt(process.env.TOR_ROTATE_MIN_INTERVAL_MS || '10000', 10);
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
