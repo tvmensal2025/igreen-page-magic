@@ -1114,6 +1114,16 @@ const bootAt = Date.now();
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
+      const nowT = Date.now();
+      const locks = [];
+      for (const [k, v] of operationLocks) {
+        locks.push({ email: k, age_s: Math.round((nowT - v.startedAt) / 1000), queued: v.queued || 0 });
+      }
+      const cooldowns = [];
+      for (const [k, v] of wafCooldowns) {
+        const left = v - nowT;
+        if (left > 0) cooldowns.push({ email: k, remaining_s: Math.round(left / 1000) });
+      }
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
@@ -1125,6 +1135,9 @@ const server = http.createServer(async (req, res) => {
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
         tor_proxy: TOR_PROXY,
         api_health: { ...apiHealth, tor_likely_broken: torLikelyBroken() },
+        operation_locks: locks,
+        waf_cooldowns: cooldowns,
+        last_tor_rotate_s: lastTorRotateAt ? Math.round((nowT - lastTorRotateAt) / 1000) : null,
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
@@ -1132,6 +1145,25 @@ const server = http.createServer(async (req, res) => {
       if (!lastScreenshot) return sendJson(res, 404, { ok: false, error: 'sem screenshot' });
       res.writeHead(200, { 'content-type': 'image/png', 'content-length': lastScreenshot.length });
       return res.end(lastScreenshot);
+    }
+
+    // DELETE /sync-lock?email=... → limpa lock/cooldown manualmente.
+    if (req.method === 'DELETE' && req.url.startsWith('/sync-lock')) {
+      if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' });
+      const u = new URL(req.url, 'http://x');
+      const em = String(u.searchParams.get('email') || '').trim().toLowerCase();
+      if (!em) return sendJson(res, 400, { ok: false, error: 'email obrigatório' });
+      const hadLock = operationLocks.delete(em);
+      const hadCd = wafCooldowns.delete(em);
+      dbg(`[lock] limpeza manual ${em} → lock=${hadLock} cooldown=${hadCd}`);
+      return sendJson(res, 200, { ok: true, cleared_lock: hadLock, cleared_cooldown: hadCd });
+    }
+
+    // POST /tor-rotate → força NEWNYM (debug).
+    if (req.method === 'POST' && req.url === '/tor-rotate') {
+      if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' });
+      const ok = await rotateTorCircuit('manual');
+      return sendJson(res, 200, { ok });
     }
 
     if (req.method !== 'POST') return sendJson(res, 404, { ok: false, error: 'not_found' });
