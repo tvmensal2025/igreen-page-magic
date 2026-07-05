@@ -65,6 +65,7 @@ export default function FluxoBuilder() {
   // se a edição grava direto ('custom') ou exige "Personalizar" antes ('public').
   const [flowId, setFlowId] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState<"public" | "custom">("public");
+  const [isPublicTemplate, setIsPublicTemplate] = useState<boolean>(false);
   
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<any>("conteudo");
@@ -126,6 +127,7 @@ export default function FluxoBuilder() {
       // consultor precisa "Personalizar" primeiro ('public' = herdado).
       setFlowId((flow as any).id ?? null);
       setSyncMode(String((flow as any).sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public");
+      setIsPublicTemplate(Boolean((flow as any).is_public));
       const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
         ...s,
         transitions: parseTransitions(s.transitions),
@@ -136,6 +138,7 @@ export default function FluxoBuilder() {
     } else {
       setFlowId(null);
       setSyncMode("public");
+      setIsPublicTemplate(false);
       setSteps([]);
     }
     
@@ -314,14 +317,15 @@ export default function FluxoBuilder() {
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
-                            variant="default"
+                            variant={isPublicTemplate ? "outline" : "default"}
                             size="sm"
-                            className="h-8 ml-1"
+                            className={`h-8 ml-1 ${isPublicTemplate ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
                             onClick={async () => {
                               if (!flowId) return;
-                              if (!window.confirm(
-                                `Publicar o Fluxo ${editingVariant} atual como MODELO PÚBLICO para todos os consultores? A versão atual (com todas as alterações) passa a ser a oficial.`
-                              )) return;
+                              const msg = isPublicTemplate
+                                ? `Republicar o Fluxo ${editingVariant} como MODELO PÚBLICO (sobrescreve a versão oficial atual com o estado atual)?`
+                                : `Publicar o Fluxo ${editingVariant} atual como MODELO PÚBLICO para todos os consultores? A versão atual (com todas as alterações) passa a ser a oficial.`;
+                              if (!window.confirm(msg)) return;
                               const { error } = await supabase.rpc("publish_flow_as_public", { _flow_id: flowId });
                               if (error) {
                                 toast.error("Não consegui publicar: " + error.message);
@@ -331,10 +335,14 @@ export default function FluxoBuilder() {
                               void loadData(editingVariant);
                             }}
                           >
-                            Publicar para todos
+                            {isPublicTemplate ? `✓ Público (${editingVariant})` : "Publicar para todos"}
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Torna este fluxo o modelo público para todos os consultores</TooltipContent>
+                        <TooltipContent>
+                          {isPublicTemplate
+                            ? "Este fluxo já é o modelo público. Clique para republicar o estado atual."
+                            : "Torna este fluxo o modelo público para todos os consultores"}
+                        </TooltipContent>
                       </Tooltip>
                     )}
                   </div>
