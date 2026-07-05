@@ -158,6 +158,10 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
     try {
+      // 1) Refetch imediato: os clientes JÁ gravados no banco aparecem em <1s
+      //    sem esperar o worker (10-40s). Cobre o caso "cliquei e continua zero".
+      await queryClient.refetchQueries({ queryKey: ["analytics", userId] });
+
       const res = await runIgreenSync(userId, "sync_all");
       if (res.ok === false) {
         if (res.reason === "not_configured") {
@@ -172,8 +176,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
         return;
       }
       startCooldown();
-      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
-      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar…" });
+      // 2) Invalidação com prefixo — pega todas as variantes de queryKey.
+      await queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      // 3) Worker finaliza segundos depois: repolla o analytics 2× (10s e 30s).
+      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 10_000);
+      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 30_000);
     } catch (err: unknown) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
     } finally {
