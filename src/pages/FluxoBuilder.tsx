@@ -146,14 +146,25 @@ export default function FluxoBuilder() {
       .select("variant, name")
       .eq("consultant_id", user.id)
       .eq("is_active", true);
-    
-    if (allFlows) {
-      const variants = allFlows.map(f => f.variant as Variant);
-      setExistingVariants(variants.length > 0 ? variants : ["A"]);
-      const names: Record<string, string> = {};
-      allFlows.forEach(f => { names[f.variant] = f.name || `Fluxo ${f.variant}`; });
-      setFlowNames(names);
-    }
+
+    // Modelos públicos (D, M, etc.) — aparecem como variantes disponíveis
+    // mesmo quando o consultor ainda não tem row própria. Ao selecionar,
+    // o fork_flow_from_public cria a cópia editável sob demanda.
+    const { data: publicFlows } = await supabase.from("bot_flows")
+      .select("variant, name")
+      .eq("is_public", true)
+      .eq("is_active", true);
+
+    const own = allFlows || [];
+    const pub = publicFlows || [];
+    const merged = new Map<string, string>();
+    for (const f of pub) merged.set(String(f.variant), (f as any).name || `Fluxo ${f.variant}`);
+    for (const f of own) merged.set(String(f.variant), (f as any).name || `Fluxo ${f.variant}`);
+    const variants = Array.from(merged.keys()) as Variant[];
+    setExistingVariants(variants.length > 0 ? variants : ["A"]);
+    const names: Record<string, string> = {};
+    merged.forEach((n, k) => { names[k] = n; });
+    setFlowNames(names);
 
     setLoading(false);
   }, []);
