@@ -1070,6 +1070,7 @@ async function syncOneConsultant(
     if (consultantId && baseConsultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
     }
+    out.portal_identity = { igreen_consultor_id: baseConsultorId };
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
     catch (e) {
       return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
@@ -1123,8 +1124,12 @@ async function syncOneConsultant(
     console.log(`[worker] sync-telecom for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-telecom", { portal_email: emailNorm, portal_password: passwordNorm });
     if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
     const saved = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    return { success: true, mode: "sync_telecom", ...saved };
+    return { success: true, mode: "sync_telecom", portal_identity: { igreen_consultor_id: consultorId }, telecom: saved, diagnostics: r.data?.diagnostics || null };
   }
 
   // === SYNC SEGUROS MODE ===
@@ -1132,8 +1137,12 @@ async function syncOneConsultant(
     console.log(`[worker] sync-seguros for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-seguros", { portal_email: emailNorm, portal_password: passwordNorm });
     if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
     const saved = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    return { success: true, mode: "sync_seguros", ...saved };
+    return { success: true, mode: "sync_seguros", portal_identity: { igreen_consultor_id: consultorId }, seguros: saved, diagnostics: r.data?.diagnostics || null };
   }
 
   // === SYNC NETWORK MODE ===
