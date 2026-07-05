@@ -204,6 +204,10 @@ export function CustomerManager({
   async function handleSyncIgreen() {
     setSyncing(true);
     try {
+      // Refetch imediato do que já está no banco (não espera o worker).
+      onCustomersChange();
+      await queryClient.refetchQueries({ queryKey: ["analytics"] });
+
       const res = await runIgreenSync(consultantId, "sync_all");
       if (res.ok === false) {
         if (res.reason === "not_configured") {
@@ -222,17 +226,17 @@ export function CustomerManager({
       setLastSync(syncedAt);
       toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar os clientes…" });
       onCustomersChange();
+      await queryClient.invalidateQueries({ queryKey: ["analytics"] });
       // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
       // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
       void (async () => {
         const finished = await waitIgreenSyncFinished(consultantId);
         onCustomersChange();
-        await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
+        await queryClient.invalidateQueries({ queryKey: ["analytics"] });
         if (finished) {
           toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
         }
       })();
-      await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
 
     } catch (err) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
