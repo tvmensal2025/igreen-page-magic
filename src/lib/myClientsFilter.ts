@@ -9,11 +9,19 @@ export type CustomerOriginSlice = {
   registered_by_name?: string | null;
 };
 
-/** Lead WhatsApp/manual sempre é "meu"; carteira iGreen só se cadastrado pelo meu ID iGreen. */
+/**
+ * Lead WhatsApp/manual sempre é "meu".
+ * Carteira iGreen com ID do cadastrador confiável continua separando CP/rede.
+ * Quando o sync do portal não traz esse ID, o registro já veio escopado pelo
+ * consultant_id da conta sincronizada; nesses casos não podemos esconder da aba.
+ */
 export function isMyClient(customer: CustomerOriginSlice, settings: MyClientsSettings): boolean {
   const origin = customer.customer_origin || "whatsapp_lead";
   if (origin === "whatsapp_lead" || origin === "manual") return true;
   if (isIgreenWalletOrigin(origin)) {
+    if (customer.registered_by_igreen_id == null || String(customer.registered_by_igreen_id).trim() === "") {
+      return true;
+    }
     return isDirectCustomer(
       customer.registered_by_igreen_id != null ? String(customer.registered_by_igreen_id) : null,
       customer.registered_by_name,
