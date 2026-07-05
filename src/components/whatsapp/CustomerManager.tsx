@@ -70,6 +70,18 @@ export function CustomerManager({
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const refreshIgreenQueries = async () => {
+    onCustomersChange();
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["analytics"] }),
+      queryClient.invalidateQueries({ queryKey: ["cm-telecom", consultantId] }),
+      queryClient.invalidateQueries({ queryKey: ["cm-seguros", consultantId] }),
+      queryClient.invalidateQueries({ queryKey: ["network-licenciados", consultantId] }),
+      queryClient.invalidateQueries({ queryKey: ["network-igreen-ids", consultantId] }),
+      queryClient.invalidateQueries({ queryKey: ["igreen-sync-status", consultantId] }),
+      queryClient.invalidateQueries({ queryKey: ["my-clients-settings", consultantId] }),
+    ]);
+  };
   const { data: myClientsSettings } = useMyClientsSettings(consultantId, {
     myIgreenId: consultantIgreenId || null,
     consultantName: consultantName ?? null,
@@ -205,10 +217,10 @@ export function CustomerManager({
 
   async function handleSyncIgreen() {
     setSyncing(true);
+    const requestedAt = new Date().toISOString();
     try {
       // Refetch imediato do que já está no banco (não espera o worker).
-      onCustomersChange();
-      await queryClient.refetchQueries({ queryKey: ["analytics"] });
+      await refreshIgreenQueries();
 
       const res = await runIgreenSync(consultantId, "sync_all");
       if (res.ok === false) {
@@ -226,17 +238,21 @@ export function CustomerManager({
       startCooldown();
       const syncedAt = new Date().toISOString();
       setLastSync(syncedAt);
-      toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar os clientes…" });
-      onCustomersChange();
-      await queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      toast({ title: "✅ Sincronização enviada!", description: "Energia aparece primeiro; rede, Telecom e Seguros entram em instantes." });
+      await refreshIgreenQueries();
       // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
       // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
       void (async () => {
-        const finished = await waitIgreenSyncFinished(consultantId);
-        onCustomersChange();
-        await queryClient.invalidateQueries({ queryKey: ["analytics"] });
+        const finished = await waitIgreenSyncFinished(consultantId, { minStartedAt: requestedAt });
+        await refreshIgreenQueries();
         if (finished) {
-          toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
+          const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
+          const telecom = extras.telecom?.telecom_received ?? extras.telecom?.telecom_saved;
+          const seguros = extras.seguros?.seguros_received ?? extras.seguros?.seguros_saved;
+          toast({
+            title: "✅ Sincronização concluída!",
+            description: `Clientes, rede e produtos atualizados. Telecom: ${telecom ?? "—"} · Seguros: ${seguros ?? "—"}.`,
+          });
         }
       })();
 
@@ -570,13 +586,18 @@ export function CustomerManager({
                       className="mt-3 h-8 text-xs"
                       onClick={async () => {
                         setSyncing(true);
+                        const requestedAt = new Date().toISOString();
                         try {
                           const res = await runIgreenSync(consultantId, syncMode as "sync_telecom" | "sync_seguros");
                           if (res.ok === false) {
                             toast({ title: `Falha ao buscar ${productLabel}`, description: res.error, variant: "destructive" });
                           } else {
                             toast({ title: `Buscando ${productLabel} novamente…` });
-                            await queryClient.invalidateQueries({ queryKey: [isTelecom ? "cm-telecom" : "cm-seguros", consultantId] });
+                            const finished = await waitIgreenSyncFinished(consultantId, { timeoutMs: 90_000, minStartedAt: requestedAt });
+                            await refreshIgreenQueries();
+                            const productCounts = (finished?.counts?.[isTelecom ? "telecom" : "seguros"] ?? {}) as Record<string, unknown>;
+                            const received = productCounts[isTelecom ? "telecom_received" : "seguros_received"];
+                            if (received != null) toast({ title: `${productLabel} atualizado`, description: `Portal retornou ${received} registro(s).` });
                           }
                         } finally { setSyncing(false); }
                       }}

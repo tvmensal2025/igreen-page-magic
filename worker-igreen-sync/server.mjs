@@ -665,21 +665,32 @@ async function fetchNetwork(session, month) {
 
 // TELECOM: /crm/telecom é um Kanban. Achata os cards + anexa financeiro das
 // faturas (/telecom/faturas) casando por nome do cliente (quando possível).
-async function fetchTelecom(session) {
+async function fetchTelecomPayload(session) {
   const j = await apiGet(session, '/crm/telecom');
   const cols = Array.isArray(j?.data) ? j.data : [];
   const out = [];
+  const diagnostics = {
+    endpoints: ['/crm/telecom', '/telecom/faturas?status=todos&search=&page=N&perPage=100'],
+    crm_columns: cols.length,
+    crm_cards: 0,
+    faturas_pages: 0,
+    faturas_items: 0,
+    faturas_error: null,
+  };
   for (const col of cols) {
     for (const card of (col.cards || [])) {
       out.push({ ...card, status_coluna: col.id, status_label: col.label });
     }
   }
+  diagnostics.crm_cards = out.length;
   // financeiro (faturas) — indexado por nome para enriquecer os cards; pagina de 100
   const faturasByName = new Map();
   try {
     for (let p = 1; p <= 50; p++) {
       const f = await apiGet(session, `/telecom/faturas?status=todos&search=&page=${p}&perPage=100`);
       const items = f?.data?.items || [];
+      diagnostics.faturas_pages = p;
+      diagnostics.faturas_items += items.length;
       for (const it of items) {
         const key = String(it.cliente || '').trim().toLowerCase();
         if (key && !faturasByName.has(key)) faturasByName.set(key, it);
@@ -687,27 +698,37 @@ async function fetchTelecom(session) {
       const total = Number(f?.data?.total || 0);
       if (items.length < 100 || (total && p * 100 >= total)) break;
     }
-  } catch (e) { dbg(`[telecom] faturas: ${e.message}`); }
+  } catch (e) { diagnostics.faturas_error = e.message; dbg(`[telecom] faturas: ${e.message}`); }
   for (const c of out) {
     const fat = faturasByName.get(String(c.cliente || '').trim().toLowerCase());
     if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = fat.idcnxtelecom; }
   }
-  dbg(`[telecom] /crm/telecom: ${out.length} clientes`);
-  return out;
+  dbg(`[telecom] /crm/telecom: ${out.length} clientes; faturas=${diagnostics.faturas_items}`);
+  return { items: out, diagnostics };
+}
+
+async function fetchTelecom(session) {
+  return (await fetchTelecomPayload(session)).items;
 }
 
 // SEGUROS: /crm/seguros é um Kanban (seguro de veículo).
-async function fetchSeguros(session) {
+async function fetchSegurosPayload(session) {
   const j = await apiGet(session, '/crm/seguros');
   const cols = Array.isArray(j?.data) ? j.data : [];
   const out = [];
+  const diagnostics = { endpoints: ['/crm/seguros'], crm_columns: cols.length, crm_cards: 0 };
   for (const col of cols) {
     for (const card of (col.cards || [])) {
       out.push({ ...card, status_coluna: col.id, status_label: col.label });
     }
   }
+  diagnostics.crm_cards = out.length;
   dbg(`[seguros] /crm/seguros: ${out.length} apólices`);
-  return out;
+  return { items: out, diagnostics };
+}
+
+async function fetchSeguros(session) {
+  return (await fetchSegurosPayload(session)).items;
 }
 
 // BOLETOS: /clientes-green/boletos (lista paginada). Traz boletos por cliente
@@ -1196,13 +1217,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.url === '/sync-telecom') {
       const s = await getOrCreateSession(email, password);
-      const telecom = await fetchTelecom(s);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, telecom });
+      const telecomPayload = await fetchTelecomPayload(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, telecom: telecomPayload.items, diagnostics: { telecom: telecomPayload.diagnostics } });
     }
     if (req.url === '/sync-seguros') {
       const s = await getOrCreateSession(email, password);
-      const seguros = await fetchSeguros(s);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, seguros });
+      const segurosPayload = await fetchSegurosPayload(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, seguros: segurosPayload.items, diagnostics: { seguros: segurosPayload.diagnostics } });
     }
     if (req.url === '/sync-devolutivas') {
       const s = await getOrCreateSession(email, password);
@@ -1229,16 +1250,18 @@ const server = http.createServer(async (req, res) => {
       const s = await getOrCreateSession(email, password);
       const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
       const want = (k) => !only || only.has(k);
-      const [customers, members, metrics, boletos, telecom, seguros, devolutivas, cashback] = await Promise.all([
+      const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback] = await Promise.all([
         want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
         want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
         want('metrics') ? fetchMetrics(s, body.month).catch((e) => { dbg(`[sync-all] metrics: ${e.message}`); return null; }) : Promise.resolve(null),
         want('boletos') ? fetchBoletos(s).catch((e) => { dbg(`[sync-all] boletos: ${e.message}`); return []; }) : Promise.resolve([]),
-        want('telecom') ? fetchTelecom(s).catch((e) => { dbg(`[sync-all] telecom: ${e.message}`); return []; }) : Promise.resolve([]),
-        want('seguros') ? fetchSeguros(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('telecom') ? fetchTelecomPayload(s).catch((e) => { dbg(`[sync-all] telecom: ${e.message}`); return { items: [], diagnostics: { endpoints: ['/crm/telecom', '/telecom/faturas'], error: e.message } }; }) : Promise.resolve({ items: [], diagnostics: { skipped: true } }),
+        want('seguros') ? fetchSegurosPayload(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return { items: [], diagnostics: { endpoints: ['/crm/seguros'], error: e.message } }; }) : Promise.resolve({ items: [], diagnostics: { skipped: true } }),
         want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
         want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
       ]);
+      const telecom = telecomPayload.items || [];
+      const seguros = segurosPayload.items || [];
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
       // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
@@ -1250,7 +1273,24 @@ const server = http.createServer(async (req, res) => {
         details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
+      return sendJson(res, 200, {
+        ok: true,
+        consultor_id: s.consultorId,
+        customers,
+        members,
+        metrics,
+        boletos,
+        details,
+        telecom,
+        seguros,
+        devolutivas,
+        cashback,
+        diagnostics: {
+          telecom: telecomPayload.diagnostics,
+          seguros: segurosPayload.diagnostics,
+          only: only ? Array.from(only) : null,
+        },
+      });
     }
     // /debug-customer-scan: dump completo do Kanban /crm/green +
     // varredura em endpoints alternativos de listagem, procurando por

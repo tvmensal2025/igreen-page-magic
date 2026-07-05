@@ -337,7 +337,7 @@ async function logSyncFinish(
   const errText = success ? null : String(result?.error || "");
   const status = success ? "ok" : classifyError(errText || undefined);
   const counts: Record<string, unknown> = {};
-  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background"]) {
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics"]) {
     if (result[k] != null) counts[k] = result[k];
   }
   if (runId) {
@@ -411,6 +411,26 @@ function extractCustomerCodes(customers: any[]): string[] {
   return codes;
 }
 
+function buildProductDiagnostics(data: any, only: string[] | null = null): Record<string, unknown> {
+  const telecom = Array.isArray(data?.telecom) ? data.telecom : [];
+  const seguros = Array.isArray(data?.seguros) ? data.seguros : [];
+  const workerDiag = data?.diagnostics && typeof data.diagnostics === "object" ? data.diagnostics : {};
+  return {
+    ...(workerDiag || {}),
+    only,
+    telecom: {
+      source: "/crm/telecom",
+      returned: telecom.length,
+      ...((workerDiag as Record<string, any>)?.telecom || {}),
+    },
+    seguros: {
+      source: "/crm/seguros",
+      returned: seguros.length,
+      ...((workerDiag as Record<string, any>)?.seguros || {}),
+    },
+  };
+}
+
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
 // cliente aparecer na carteira; a Fase A já persistiu todos do Kanban.
 // deno-lint-ignore no-explicit-any
@@ -443,6 +463,8 @@ async function runSyncAllBackgroundPhase(
     if (consultantId && consultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
+    out.portal_identity = { igreen_consultor_id: consultorId };
+    out.diagnostics = buildProductDiagnostics(r.data, buildExtrasOnly(toggles));
 
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
@@ -500,7 +522,7 @@ async function runSyncAllBackgroundPhase(
           .maybeSingle();
         if (lastRun?.id) {
           const extras: Record<string, unknown> = {};
-          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts"]) {
+          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics"]) {
             if (out[k] != null) extras[k] = out[k];
           }
           extras._background_finished_at = new Date().toISOString();
@@ -532,7 +554,7 @@ function scheduleSyncAllBackgroundPhase(...args: any[]): void {
 // =====================================================
 // deno-lint-ignore no-explicit-any
 async function persistMetrics(supabase: any, consultantId: string | null, metrics: any): Promise<Record<string, unknown>> {
-  if (!consultantId || !metrics) return { metrics_saved: false };
+  if (!consultantId || !metrics) return { metrics_saved: false, metrics_received: metrics ? 1 : 0 };
   const mes = safeStr(metrics.mes) || new Date().toISOString().slice(0, 7);
   const kpis = metrics.overview?.kpis || {};
   const det = kpis.clientesDetalhe || {};
@@ -576,13 +598,13 @@ async function persistMetrics(supabase: any, consultantId: string | null, metric
   const { error } = await supabase
     .from("igreen_consultant_metrics")
     .upsert(row, { onConflict: "consultant_id,mes_ref", ignoreDuplicates: false });
-  if (error) { console.error("metrics upsert:", error.message); return { metrics_saved: false, metrics_error: error.message }; }
-  return { metrics_saved: true, mes_ref: mes };
+  if (error) { console.error("metrics upsert:", error.message); return { metrics_saved: false, metrics_received: 1, metrics_error: error.message }; }
+  return { metrics_saved: true, metrics_received: 1, mes_ref: mes };
 }
 
 // deno-lint-ignore no-explicit-any
 async function persistBoletos(supabase: any, consultantId: string | null, boletos: any[]): Promise<Record<string, unknown>> {
-  if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0 };
+  if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0, boletos_received: Array.isArray(boletos) ? boletos.length : 0 };
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -631,7 +653,7 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
 // Persiste carteira TELECOM (Opção A — tabela dedicada).
 // deno-lint-ignore no-explicit-any
 async function persistTelecom(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
-  if (!consultantId || !Array.isArray(items) || items.length === 0) return { telecom_saved: 0 };
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { telecom_saved: 0, telecom_received: Array.isArray(items) ? items.length : 0 };
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -672,13 +694,13 @@ async function persistTelecom(supabase: any, consultantId: string | null, items:
     if (error) console.error("telecom upsert:", error.message);
     else saved += data?.length || 0;
   }
-  return { telecom_saved: saved, telecom_received: items.length };
+  return { telecom_saved: saved, telecom_received: items.length, telecom_valid_rows: rows.length };
 }
 
 // Persiste CASHBACK por origem no snapshot de métricas (raw) + colunas de saldo.
 // deno-lint-ignore no-explicit-any
 async function persistCashback(supabase: any, consultantId: string | null, cashback: any): Promise<Record<string, unknown>> {
-  if (!consultantId || !cashback || typeof cashback !== "object") return { cashback_saved: false };
+  if (!consultantId || !cashback || typeof cashback !== "object") return { cashback_saved: false, cashback_received: cashback ? 1 : 0 };
   const mes = new Date().toISOString().slice(0, 7);
   const green = cashback.green || {};
   const telecom = cashback.telecom || {};
@@ -694,8 +716,8 @@ async function persistCashback(supabase: any, consultantId: string | null, cashb
     })
     .eq("consultant_id", consultantId)
     .eq("mes_ref", mes);
-  if (error) { console.error("cashback update:", error.message); return { cashback_saved: false }; }
-  return { cashback_saved: true };
+  if (error) { console.error("cashback update:", error.message); return { cashback_saved: false, cashback_received: 1, cashback_error: error.message }; }
+  return { cashback_saved: true, cashback_received: 1 };
 }
 
 // Gera ALERTAS acionáveis (bot_handoff_alerts) a partir dos dados sincronizados,
@@ -787,7 +809,7 @@ async function generateAlerts(supabase: any, consultantId: string | null, toggle
 // Persiste carteira SEGUROS (Opção A — tabela dedicada).
 // deno-lint-ignore no-explicit-any
 async function persistSeguros(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
-  if (!consultantId || !Array.isArray(items) || items.length === 0) return { seguros_saved: 0 };
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { seguros_saved: 0, seguros_received: Array.isArray(items) ? items.length : 0 };
   const seen = new Set<string>();
   const rows = [];
   for (const c of items) {
@@ -822,13 +844,13 @@ async function persistSeguros(supabase: any, consultantId: string | null, items:
     if (error) console.error("seguros upsert:", error.message);
     else saved += data?.length || 0;
   }
-  return { seguros_saved: saved, seguros_received: items.length };
+  return { seguros_saved: saved, seguros_received: items.length, seguros_valid_rows: rows.length };
 }
 
 // Persiste DEVOLUTIVAS detalhadas (categoria/impeditiva/campo/data).
 // deno-lint-ignore no-explicit-any
 async function persistDevolutivas(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
-  if (!consultantId || !Array.isArray(items) || items.length === 0) return { devolutivas_saved: 0 };
+  if (!consultantId || !Array.isArray(items) || items.length === 0) return { devolutivas_saved: 0, devolutivas_received: Array.isArray(items) ? items.length : 0 };
   // resolve customer_id por igreen_code (codigo) quando possível
   const codes = items.map((d) => safeStr(d._codigo ?? d.codigo)).filter(Boolean) as string[];
   const codeToCustomer = new Map<string, string>();
@@ -1068,6 +1090,7 @@ async function syncOneConsultant(
     if (consultantId && baseConsultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
     }
+    out.portal_identity = { igreen_consultor_id: baseConsultorId };
     try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
     catch (e) {
       return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
@@ -1121,8 +1144,12 @@ async function syncOneConsultant(
     console.log(`[worker] sync-telecom for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-telecom", { portal_email: emailNorm, portal_password: passwordNorm });
     if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
     const saved = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    return { success: true, mode: "sync_telecom", ...saved };
+    return { success: true, mode: "sync_telecom", portal_identity: { igreen_consultor_id: consultorId }, telecom: saved, diagnostics: buildProductDiagnostics(r.data, ["telecom"]) };
   }
 
   // === SYNC SEGUROS MODE ===
@@ -1130,8 +1157,12 @@ async function syncOneConsultant(
     console.log(`[worker] sync-seguros for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-seguros", { portal_email: emailNorm, portal_password: passwordNorm });
     if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
+    const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    if (consultantId && consultorId) {
+      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+    }
     const saved = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    return { success: true, mode: "sync_seguros", ...saved };
+    return { success: true, mode: "sync_seguros", portal_identity: { igreen_consultor_id: consultorId }, seguros: saved, diagnostics: buildProductDiagnostics(r.data, ["seguros"]) };
   }
 
   // === SYNC NETWORK MODE ===
