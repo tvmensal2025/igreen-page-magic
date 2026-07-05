@@ -1217,13 +1217,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.url === '/sync-telecom') {
       const s = await getOrCreateSession(email, password);
-      const telecom = await fetchTelecom(s);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, telecom });
+      const telecomPayload = await fetchTelecomPayload(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, telecom: telecomPayload.items, diagnostics: { telecom: telecomPayload.diagnostics } });
     }
     if (req.url === '/sync-seguros') {
       const s = await getOrCreateSession(email, password);
-      const seguros = await fetchSeguros(s);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, seguros });
+      const segurosPayload = await fetchSegurosPayload(s);
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, seguros: segurosPayload.items, diagnostics: { seguros: segurosPayload.diagnostics } });
     }
     if (req.url === '/sync-devolutivas') {
       const s = await getOrCreateSession(email, password);
@@ -1250,16 +1250,18 @@ const server = http.createServer(async (req, res) => {
       const s = await getOrCreateSession(email, password);
       const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
       const want = (k) => !only || only.has(k);
-      const [customers, members, metrics, boletos, telecom, seguros, devolutivas, cashback] = await Promise.all([
+      const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback] = await Promise.all([
         want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
         want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
         want('metrics') ? fetchMetrics(s, body.month).catch((e) => { dbg(`[sync-all] metrics: ${e.message}`); return null; }) : Promise.resolve(null),
         want('boletos') ? fetchBoletos(s).catch((e) => { dbg(`[sync-all] boletos: ${e.message}`); return []; }) : Promise.resolve([]),
-        want('telecom') ? fetchTelecom(s).catch((e) => { dbg(`[sync-all] telecom: ${e.message}`); return []; }) : Promise.resolve([]),
-        want('seguros') ? fetchSeguros(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return []; }) : Promise.resolve([]),
+        want('telecom') ? fetchTelecomPayload(s).catch((e) => { dbg(`[sync-all] telecom: ${e.message}`); return { items: [], diagnostics: { endpoints: ['/crm/telecom', '/telecom/faturas'], error: e.message } }; }) : Promise.resolve({ items: [], diagnostics: { skipped: true } }),
+        want('seguros') ? fetchSegurosPayload(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return { items: [], diagnostics: { endpoints: ['/crm/seguros'], error: e.message } }; }) : Promise.resolve({ items: [], diagnostics: { skipped: true } }),
         want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
         want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
       ]);
+      const telecom = telecomPayload.items || [];
+      const seguros = segurosPayload.items || [];
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
       // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
@@ -1271,7 +1273,24 @@ const server = http.createServer(async (req, res) => {
         details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, members, metrics, boletos, details, telecom, seguros, devolutivas, cashback });
+      return sendJson(res, 200, {
+        ok: true,
+        consultor_id: s.consultorId,
+        customers,
+        members,
+        metrics,
+        boletos,
+        details,
+        telecom,
+        seguros,
+        devolutivas,
+        cashback,
+        diagnostics: {
+          telecom: telecomPayload.diagnostics,
+          seguros: segurosPayload.diagnostics,
+          only: only ? Array.from(only) : null,
+        },
+      });
     }
     // /debug-customer-scan: dump completo do Kanban /crm/green +
     // varredura em endpoints alternativos de listagem, procurando por
