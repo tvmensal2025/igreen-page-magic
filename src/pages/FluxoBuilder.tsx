@@ -91,7 +91,7 @@ export default function FluxoBuilder() {
   const setViewMode = useCallback((next: ViewMode) => {
     setViewModeState(next);
     localStorage.setItem("flow-view-mode", next);
-  }, []);
+  }, [isSuperAdmin]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
