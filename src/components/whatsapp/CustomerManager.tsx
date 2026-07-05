@@ -23,6 +23,8 @@ import { CustomerEditDialog } from "./CustomerEditDialog";
 import { CustomerImportExport } from "./CustomerImportExport";
 import { useCustomerDeals } from "@/hooks/useCustomerDeals";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
+import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
+import { IGreenSyncStatusBar } from "@/components/admin/IGreenSyncStatusBar";
 import { filterMyClients } from "@/lib/myClientsFilter";
 import {
   type Customer, type StatusFilter,
