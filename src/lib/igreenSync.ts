@@ -90,19 +90,26 @@ export async function waitIgreenSyncFinished(
   consultantId: string,
   opts?: { timeoutMs?: number; intervalMs?: number },
 ): Promise<{ status: string; counts: Record<string, unknown> | null } | null> {
-  const timeoutMs = opts?.timeoutMs ?? 90_000;
+  const timeoutMs = opts?.timeoutMs ?? 150_000;
   const intervalMs = opts?.intervalMs ?? 4_000;
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const { data } = await supabase
       .from("igreen_sync_runs")
-      .select("status, counts, finished_at")
+      .select("mode, status, counts, finished_at")
       .eq("consultant_id", consultantId)
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const row = data as { status?: string; counts?: Record<string, unknown> | null; finished_at?: string | null } | null;
+    const row = data as { mode?: string; status?: string; counts?: Record<string, unknown> | null; finished_at?: string | null } | null;
     if (row?.status && row.status !== "running" && row.finished_at) {
+      if (row.mode === "sync_all") {
+        const extras = (row.counts?.extras ?? null) as Record<string, unknown> | null;
+        if (!extras?._background_finished_at) {
+          await new Promise((r) => setTimeout(r, intervalMs));
+          continue;
+        }
+      }
       return { status: row.status, counts: row.counts ?? null };
     }
     await new Promise((r) => setTimeout(r, intervalMs));
