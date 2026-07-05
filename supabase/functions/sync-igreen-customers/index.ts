@@ -1130,7 +1130,8 @@ async function syncOneConsultant(
     portal_password: passwordNorm,
   });
   if (!r.ok) {
-    return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
+    return workerErrorResponse(emailNorm, r, { retry_at: retry });
   }
   const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
   if (consultantId && consultorId) {
