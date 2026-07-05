@@ -540,14 +540,48 @@ export function CustomerManager({
             items={filtered}
             pageSize={20}
             flow
-            renderEmpty={() => (
-              <div className="text-center py-16">
-                <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
-                  <Users className="w-7 h-7 text-muted-foreground/30" />
+            renderEmpty={() => {
+              const isTelecom = selectedTipo === "telefonia";
+              const isSeguros = selectedTipo === "seguros";
+              const showResyncCta = (isTelecom || isSeguros) && myCustomers.length === 0 && !syncing;
+              const productLabel = isTelecom ? "Telecom" : "Seguros";
+              const syncMode = isTelecom ? "sync_telecom" : "sync_seguros";
+              return (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
+                    <Users className="w-7 h-7 text-muted-foreground/30" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {showResyncCta
+                      ? `O portal iGreen não devolveu clientes de ${productLabel} para você.`
+                      : myCustomers.length === 0
+                      ? "Nenhum cliente cadastrado por você"
+                      : "Nenhum resultado"}
+                  </p>
+                  {showResyncCta && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 h-8 text-xs"
+                      onClick={async () => {
+                        setSyncing(true);
+                        try {
+                          const res = await runIgreenSync(consultantId, syncMode as "sync_telecom" | "sync_seguros");
+                          if (res.ok === false) {
+                            toast({ title: `Falha ao buscar ${productLabel}`, description: res.error, variant: "destructive" });
+                          } else {
+                            toast({ title: `Buscando ${productLabel} novamente…` });
+                            await queryClient.invalidateQueries({ queryKey: [isTelecom ? "cm-telecom" : "cm-seguros", consultantId] });
+                          }
+                        } finally { setSyncing(false); }
+                      }}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Buscar {productLabel} de novo
+                    </Button>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">{myCustomers.length === 0 ? "Nenhum cliente cadastrado por você" : "Nenhum resultado"}</p>
-              </div>
-            )}
+              );
+            }}
             renderItem={(c) => (
               <CustomerListItem
                 key={c.id}
