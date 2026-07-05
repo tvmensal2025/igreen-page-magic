@@ -2,8 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
 /**
- * Retorna todos os igreen_ids da rede (downline) de um consultor, a partir de
- * consultant_network. Deduplicado, como string[]. Vazio quando não há rede.
+ * IDs iGreen de toda a rede/downline do consultor. Usa como fonte principal
+ * a tabela `network_members` (onde a sync-igreen-customers grava hoje).
+ * Cai para `consultant_network` (legado) apenas se a nova estiver vazia,
+ * pra não quebrar contas antigas.
  */
 export function useNetworkIgreenIds(consultantId: string | null | undefined) {
   return useQuery({
@@ -12,24 +14,34 @@ export function useNetworkIgreenIds(consultantId: string | null | undefined) {
     staleTime: 10 * 60_000,
     gcTime: 60 * 60_000,
     queryFn: async (): Promise<string[]> => {
-      const pageSize = 1000;
       const ids = new Set<string>();
-      let page = 0;
-      while (true) {
-        const { data, error } = await supabase
+
+      // Fonte principal: network_members (nova tabela do sync worker)
+      const { data: nm } = await supabase
+        .from("network_members" as never)
+        .select("igreen_id")
+        .eq("consultant_id", consultantId!)
+        .not("igreen_id", "is", null)
+        .limit(5000);
+      for (const row of (nm ?? []) as Array<{ igreen_id: unknown }>) {
+        const v = row.igreen_id;
+        if (v != null && String(v).length > 0) ids.add(String(v));
+      }
+
+      // Fallback legado — só consulta se a rede nova ainda não estiver populada.
+      if (ids.size === 0) {
+        const { data: cn } = await supabase
           .from("consultant_network")
           .select("codigo_igreen")
           .eq("consultant_id", consultantId!)
           .not("codigo_igreen", "is", null)
-          .range(page * pageSize, (page + 1) * pageSize - 1);
-        if (error) throw error;
-        for (const row of data ?? []) {
-          const v = (row as { codigo_igreen: unknown }).codigo_igreen;
+          .limit(5000);
+        for (const row of (cn ?? []) as Array<{ codigo_igreen: unknown }>) {
+          const v = row.codigo_igreen;
           if (v != null && String(v).length > 0) ids.add(String(v));
         }
-        if (!data || data.length < pageSize) break;
-        page++;
       }
+
       return Array.from(ids);
     },
   });

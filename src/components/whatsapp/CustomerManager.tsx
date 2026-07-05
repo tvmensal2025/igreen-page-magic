@@ -23,6 +23,8 @@ import { CustomerEditDialog } from "./CustomerEditDialog";
 import { CustomerImportExport } from "./CustomerImportExport";
 import { useCustomerDeals } from "@/hooks/useCustomerDeals";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
+import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
+import { IGreenSyncStatusBar } from "@/components/admin/IGreenSyncStatusBar";
 import { filterMyClients } from "@/lib/myClientsFilter";
 import {
   type Customer, type StatusFilter,
@@ -245,13 +247,19 @@ export function CustomerManager({
     }
   }
 
+  const { data: networkLicenciados = [] } = useNetworkLicenciados(consultantId);
   const licenciadoOptions = useMemo(() => {
     const names = new Set<string>();
     for (const c of myCustomers) {
       if (c.registered_by_name) names.add(c.registered_by_name);
     }
+    // União com licenciados da rede sincronizada (network_members), pra o
+    // dropdown mostrar TODOS mesmo os que ainda não têm cliente no CRM local.
+    for (const l of networkLicenciados) {
+      if (l.name) names.add(l.name);
+    }
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [myCustomers]);
+  }, [myCustomers, networkLicenciados]);
 
   const distribuidoraOptions = useMemo(() => {
     const names = new Set<string>();
@@ -413,6 +421,11 @@ export function CustomerManager({
           </div>
         </div>
 
+        {/* Barra de status da última sync iGreen — quantos vieram por produto */}
+        <div className="px-4 sm:px-5 pt-3">
+          <IGreenSyncStatusBar consultantId={consultantId} />
+        </div>
+
         {/* Search & Filters — barra única consolidada */}
         <div className="px-4 sm:px-5 pt-3 sm:pt-4 pb-3 sm:pb-4 space-y-2.5">
           {/* Search bar */}
@@ -532,14 +545,48 @@ export function CustomerManager({
             items={filtered}
             pageSize={20}
             flow
-            renderEmpty={() => (
-              <div className="text-center py-16">
-                <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
-                  <Users className="w-7 h-7 text-muted-foreground/30" />
+            renderEmpty={() => {
+              const isTelecom = selectedTipo === "telefonia";
+              const isSeguros = selectedTipo === "seguros";
+              const showResyncCta = (isTelecom || isSeguros) && myCustomers.length === 0 && !syncing;
+              const productLabel = isTelecom ? "Telecom" : "Seguros";
+              const syncMode = isTelecom ? "sync_telecom" : "sync_seguros";
+              return (
+                <div className="text-center py-16">
+                  <div className="w-16 h-16 rounded-2xl bg-secondary/50 flex items-center justify-center mx-auto mb-3">
+                    <Users className="w-7 h-7 text-muted-foreground/30" />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {showResyncCta
+                      ? `O portal iGreen não devolveu clientes de ${productLabel} para você.`
+                      : myCustomers.length === 0
+                      ? "Nenhum cliente cadastrado por você"
+                      : "Nenhum resultado"}
+                  </p>
+                  {showResyncCta && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 h-8 text-xs"
+                      onClick={async () => {
+                        setSyncing(true);
+                        try {
+                          const res = await runIgreenSync(consultantId, syncMode as "sync_telecom" | "sync_seguros");
+                          if (res.ok === false) {
+                            toast({ title: `Falha ao buscar ${productLabel}`, description: res.error, variant: "destructive" });
+                          } else {
+                            toast({ title: `Buscando ${productLabel} novamente…` });
+                            await queryClient.invalidateQueries({ queryKey: [isTelecom ? "cm-telecom" : "cm-seguros", consultantId] });
+                          }
+                        } finally { setSyncing(false); }
+                      }}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Buscar {productLabel} de novo
+                    </Button>
+                  )}
                 </div>
-                <p className="text-sm text-muted-foreground">{myCustomers.length === 0 ? "Nenhum cliente cadastrado por você" : "Nenhum resultado"}</p>
-              </div>
-            )}
+              );
+            }}
             renderItem={(c) => (
               <CustomerListItem
                 key={c.id}
