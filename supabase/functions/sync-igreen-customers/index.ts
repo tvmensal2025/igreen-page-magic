@@ -1348,6 +1348,10 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     }
   }
 
+  console.log(
+    `[sync-igreen-customers] upsert done consultant=${consultantId} total_from_portal=${allCustomers.length} processed=${records.length} updated=${updatedCount} errors=${errorCount} skipped_no_phone=${skippedNoPhone}`,
+  );
+
   return {
     total_from_portal: allCustomers.length,
     processed: records.length,
@@ -1359,6 +1363,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     cleaned_deals: cleanedDeals,
   };
 }
+
 
 // =====================================================
 // Main handler
