@@ -1032,7 +1032,10 @@ async function syncOneConsultant(
       portal_email: emailNorm,
       portal_password: passwordNorm,
     });
-    if (!base.ok) return { success: false, email: emailNorm, error: `Worker falhou em clientes: ${base.error}`, status: base.status };
+    if (!base.ok) {
+      const retry = classifyError(base.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
+      return workerErrorResponse(emailNorm, base, { retry_at: retry });
+    }
 
     const baseConsultorId = base.data?.consultor_id ? String(base.data.consultor_id) : null;
     if (consultantId && baseConsultorId) {
