@@ -79,6 +79,16 @@ export function useAnalytics(
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     queryFn: async () => {
+      // Refresh de sessão defensivo: se o JWT expirou, RLS devolve 0 linhas sem
+      // erro visível — o Dashboard aparece zerado mesmo com dados no banco.
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const expMs = (sess?.session?.expires_at ?? 0) * 1000;
+        if (!sess?.session || expMs - Date.now() < 60_000) {
+          await supabase.auth.refreshSession();
+        }
+      } catch { /* segue o baile */ }
+
       const sinceDate = new Date();
       sinceDate.setDate(sinceDate.getDate() - periodDays);
       const since = sinceDate.toISOString();
@@ -276,6 +286,19 @@ export function useAnalytics(
             // fallback: mantém compatibilidade com filtro por nome/consultor local
             return filterMyClients([c], myClientsSettings).length > 0;
           });
+
+      // Log de diagnóstico — abrir F12 → Console. Aparece quando o Dashboard
+      // reporta 0 mesmo tendo cliente no banco, mostra em qual filtro sumiu.
+      try {
+        console.info("[analytics.fetch]", {
+          userId: consultantId,
+          scope: useTeam ? "team" : "me",
+          total: allCustomers.length,
+          wallet: walletCustomers.length,
+          scoped: scopedWalletCustomers.length,
+          myIgreenIds: myIgreenIds.length,
+        });
+      } catch { /* noop */ }
 
       const totalCustomers = scopedWalletCustomers.length;
       const statusMap = new Map<string, number>();

@@ -158,6 +158,10 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
     try {
+      // 1) Refetch imediato: os clientes JÁ gravados no banco aparecem em <1s
+      //    sem esperar o worker (10-40s). Cobre o caso "cliquei e continua zero".
+      await queryClient.refetchQueries({ queryKey: ["analytics", userId] });
+
       const res = await runIgreenSync(userId, "sync_all");
       if (res.ok === false) {
         if (res.reason === "not_configured") {
@@ -172,8 +176,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
         return;
       }
       startCooldown();
-      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
-      queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar…" });
+      // 2) Invalidação com prefixo — pega todas as variantes de queryKey.
+      await queryClient.invalidateQueries({ queryKey: ["analytics"] });
+      // 3) Worker finaliza segundos depois: repolla o analytics 2× (10s e 30s).
+      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 10_000);
+      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 30_000);
     } catch (err: unknown) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
     } finally {
@@ -276,6 +284,41 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
           </ToggleGroup>
         </div>
       )}
+
+      {/* BARRA DE DIAGNÓSTICO — mostra se há cliente no banco mas o filtro está escondendo.
+          Só aparece quando algo está "estranho": zero exibido com dado no banco,
+          ou analytics indefinido (erro/loading depois de tentar). */}
+      {(() => {
+        const walletTotal = (analytics?.allCustomers || []).filter((c: any) => isIgreenWalletOrigin(c.customer_origin)).length;
+        const shown = filteredMetrics?.totalCustomers ?? 0;
+        const analyticsMissing = analytics === undefined;
+        const showBar = analyticsMissing || (walletTotal > 0 && shown === 0) || (walletTotal === 0 && (analytics?.allCustomers?.length ?? 0) === 0);
+        if (!showBar) return null;
+        return (
+          <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px]">
+            <div className="flex flex-wrap items-center gap-2 text-amber-200/90">
+              {analyticsMissing ? (
+                <span>Não consegui ler seus clientes agora.</span>
+              ) : walletTotal > 0 ? (
+                <>
+                  <span>No banco: <b>{walletTotal}</b> clientes iGreen · Exibidos: <b>{shown}</b>{selectedLicenciado !== "all" && <> · Filtro: <b>{selectedLicenciado}</b></>}</span>
+                </>
+              ) : (
+                <span>Sem clientes iGreen no banco para este consultor. Clique em Sincronizar acima.</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {walletTotal > 0 && shown === 0 && selectedLicenciado !== "all" && (
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => setSelectedLicenciado("all")}>Limpar filtros</Button>
+              )}
+              <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={async () => {
+                try { await supabase.auth.refreshSession(); } catch { /* noop */ }
+                await queryClient.refetchQueries({ queryKey: ["analytics", userId] });
+              }}>Recarregar</Button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* CLIENTES iGREEN — 4 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">

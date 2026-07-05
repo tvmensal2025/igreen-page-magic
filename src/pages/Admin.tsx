@@ -285,11 +285,15 @@ const AdminContent = () => {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "customers", filter: `consultant_id=eq.${userId}` },
-        () => { void fetchCustomers({ bypassCache: true }); },
+        () => {
+          void fetchCustomers({ bypassCache: true });
+          // Também invalida analytics (dashboard/gráficos) — prefixo pega todas as variantes.
+          void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+        },
       )
       .subscribe();
     return () => { void supabase.removeChannel(channel); };
-  }, [userId, fetchCustomers]);
+  }, [userId, fetchCustomers, queryClient]);
 
   // Cleanup: cancela fetch pendente ao desmontar.
   React.useEffect(() => () => { fetchAbortRef.current?.abort(); }, []);
