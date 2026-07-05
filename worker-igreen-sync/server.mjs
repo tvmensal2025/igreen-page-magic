@@ -24,7 +24,6 @@
 import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
-import { SocksProxyAgent } from 'socks-proxy-agent';
 import { chromium } from 'playwright-chromium';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
