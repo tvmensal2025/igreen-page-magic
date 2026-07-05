@@ -65,6 +65,7 @@ export default function FluxoBuilder() {
   // se a edição grava direto ('custom') ou exige "Personalizar" antes ('public').
   const [flowId, setFlowId] = useState<string | null>(null);
   const [syncMode, setSyncMode] = useState<"public" | "custom">("public");
+  const [isPublicTemplate, setIsPublicTemplate] = useState<boolean>(false);
   
   const [inspectorId, setInspectorId] = useState<string | null>(null);
   const [inspectorTab, setInspectorTab] = useState<any>("conteudo");
