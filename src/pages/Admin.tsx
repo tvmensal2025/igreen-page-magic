@@ -198,12 +198,16 @@ const AdminContent = () => {
   const fetchAbortRef = React.useRef<AbortController | null>(null);
   const { notifications, unreadCount, markAllRead, markRead, clearAll } = useNotifications(userId);
 
-  const fetchCustomers = React.useCallback(async () => {
+  const fetchCustomers = React.useCallback(async (opts?: { bypassCache?: boolean }) => {
     if (!userId) return;
     // Cancela qualquer fetch em voo (evita race entre trocas de aba).
     fetchAbortRef.current?.abort();
     const controller = new AbortController();
     fetchAbortRef.current = controller;
+
+    if (opts?.bypassCache) {
+      try { sessionStorage.removeItem(`customers_cache_${userId}`); } catch { /* ignore */ }
+    }
 
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const MAX_ATTEMPTS = 3;
@@ -273,8 +277,23 @@ const AdminContent = () => {
     }
   }, [activeTab, fetchCustomers]);
 
+  // Realtime: reflete alterações do worker/edge sem exigir novo clique.
+  React.useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`cust-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "customers", filter: `consultant_id=eq.${userId}` },
+        () => { void fetchCustomers({ bypassCache: true }); },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [userId, fetchCustomers]);
+
   // Cleanup: cancela fetch pendente ao desmontar.
   React.useEffect(() => () => { fetchAbortRef.current?.abort(); }, []);
+
 
   const handleOpenChatFromCustomer = React.useCallback((phone: string, suggestedMessage?: string) => {
     setPendingChatPhone(phone);
@@ -438,7 +457,7 @@ const AdminContent = () => {
                 consultantId={userId}
                 consultantIgreenId={form.igreen_id || undefined}
                 consultantName={form.name || undefined}
-                onCustomersChange={fetchCustomers}
+                onCustomersChange={() => fetchCustomers({ bypassCache: true })}
                 instanceName={instanceName}
                 onOpenChat={handleOpenChatFromCustomer}
               />

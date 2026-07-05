@@ -211,6 +211,23 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
               {syncing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
               Sincronizar agora
             </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem(`customers_cache_${userId}`);
+                  localStorage.removeItem("sync_cooldown_until");
+                } catch { /* ignore */ }
+                void queryClient.invalidateQueries();
+                toast({ title: "Cache limpo", description: "A lista de clientes vai recarregar." });
+              }}
+              title="Limpar cache local e recarregar a lista de clientes"
+            >
+              Recarregar clientes
+            </Button>
+
             {credStatus && (
               <span
                 className={

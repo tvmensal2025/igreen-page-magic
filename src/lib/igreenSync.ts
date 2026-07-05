@@ -81,7 +81,37 @@ export async function runIgreenSync(consultantId: string, mode: SyncMode = "sync
   }
 }
 
+/**
+ * Poll no último run do consultor até detectar `success`/`partial`/`error`.
+ * A edge/worker às vezes só grava as linhas alguns segundos depois de responder;
+ * este helper deixa a UI aguardar antes de recarregar a lista.
+ */
+export async function waitIgreenSyncFinished(
+  consultantId: string,
+  opts?: { timeoutMs?: number; intervalMs?: number },
+): Promise<{ status: string; counts: Record<string, unknown> | null } | null> {
+  const timeoutMs = opts?.timeoutMs ?? 90_000;
+  const intervalMs = opts?.intervalMs ?? 4_000;
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const { data } = await supabase
+      .from("igreen_sync_runs")
+      .select("status, counts, finished_at")
+      .eq("consultant_id", consultantId)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const row = data as { status?: string; counts?: Record<string, unknown> | null; finished_at?: string | null } | null;
+    if (row?.status && row.status !== "running" && row.finished_at) {
+      return { status: row.status, counts: row.counts ?? null };
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
+}
+
 /** Mensagem amigável para cada motivo de falha. */
 export function syncErrorMessage(reason: SyncResult extends { ok: false } ? never : string, fallback?: string): string {
   return fallback || "Falha ao sincronizar. Tente novamente em instantes.";
 }
+
