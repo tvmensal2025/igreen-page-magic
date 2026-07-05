@@ -283,6 +283,9 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
 
 
+      {/* Status resumido da última sync iGreen (por produto) */}
+      <IGreenSyncStatusBar consultantId={userId} />
+
       {/* Toggle Líder */}
       {isLeader && (
         <div className="flex items-center gap-2">
