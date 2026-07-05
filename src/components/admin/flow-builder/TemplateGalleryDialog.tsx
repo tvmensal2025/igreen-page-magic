@@ -51,7 +51,7 @@ export default function TemplateGalleryDialog({
     try {
       const { data: submissions, error: submissionsError } = await supabase
         .from("flow_template_submissions")
-        .select("id, name, description, author_name, author_phone, show_phone, variant, steps_snapshot")
+        .select("id, source_flow_id, name, description, author_name, author_phone, show_phone, variant, steps_snapshot")
         .eq("status", "approved")
         .order("created_at", { ascending: false });
 

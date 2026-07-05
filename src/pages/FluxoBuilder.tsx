@@ -628,6 +628,7 @@ export default function FluxoBuilder() {
         onOpenChange={setGalleryOpen} 
         consultantId={userId}
         existingVariants={existingVariants}
+        onSelectVariant={setEditingVariant}
       />
       <FlowHealthDialog
         open={healthOpen}
