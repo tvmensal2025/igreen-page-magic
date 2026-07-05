@@ -84,15 +84,22 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
   const startCooldown = () => { setSyncCooldown(30); localStorage.setItem("sync_cooldown_until", String(Date.now() + 30000)); };
 
+  const { data: networkLicenciados = [] } = useNetworkLicenciados(userId);
   const licenciadoOptions = useMemo(() => {
-    if (!analytics?.allCustomers) return [];
     const names = new Set<string>();
-    for (const c of analytics.allCustomers) {
-      if (!isIgreenWalletOrigin(c.customer_origin)) continue;
-      if (c.registered_by_name) names.add(c.registered_by_name);
+    if (analytics?.allCustomers) {
+      for (const c of analytics.allCustomers) {
+        if (!isIgreenWalletOrigin(c.customer_origin)) continue;
+        if (c.registered_by_name) names.add(c.registered_by_name);
+      }
     }
-    return Array.from(names).sort();
-  }, [analytics?.allCustomers]);
+    // União com licenciados da rede sincronizada — mostra todos, mesmo os
+    // que ainda não têm cliente atribuído no CRM local.
+    for (const l of networkLicenciados) {
+      if (l.name) names.add(l.name);
+    }
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [analytics?.allCustomers, networkLicenciados]);
 
   const filteredMetrics = useMemo(() => {
     if (!analytics) return null;
