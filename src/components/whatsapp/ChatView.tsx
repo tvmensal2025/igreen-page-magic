@@ -729,6 +729,14 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             // Destinatário: telefone real do cliente (mesma fonte do bot) quando
             // disponível — cobre conversas `@lid` onde o JID não tem telefone.
             const override = normalizeBrazilPhone(customerPhone);
+            if (!override && chat?.remoteJid.endsWith("@lid") && !chat?.sendTargetJid?.endsWith("@s.whatsapp.net")) {
+              // Conversa só com LID (ID criptografado) — não temos telefone real.
+              // Enviar o LID cru quebra na Evolution. Peça pro cliente mandar msg
+              // ou cadastre manualmente.
+              throw new Error(
+                "Este contato ainda não expôs o telefone real (só ID criptografado). Peça uma mensagem do cliente ou cadastre o número manualmente para conseguir responder.",
+              );
+            }
             await sendMessage(text, override);
             scheduleScrollToBottom(true);
           } catch (err) {
