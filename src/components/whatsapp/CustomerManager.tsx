@@ -247,13 +247,19 @@ export function CustomerManager({
     }
   }
 
+  const { data: networkLicenciados = [] } = useNetworkLicenciados(consultantId);
   const licenciadoOptions = useMemo(() => {
     const names = new Set<string>();
     for (const c of myCustomers) {
       if (c.registered_by_name) names.add(c.registered_by_name);
     }
+    // União com licenciados da rede sincronizada (network_members), pra o
+    // dropdown mostrar TODOS mesmo os que ainda não têm cliente no CRM local.
+    for (const l of networkLicenciados) {
+      if (l.name) names.add(l.name);
+    }
     return Array.from(names).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  }, [myCustomers]);
+  }, [myCustomers, networkLicenciados]);
 
   const distribuidoraOptions = useMemo(() => {
     const names = new Set<string>();
