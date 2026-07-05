@@ -35,6 +35,15 @@ describe("myClientsFilter", () => {
     ).toBe(false);
   });
 
+  it("inclui carteira iGreen sincronizada quando o portal não trouxe código do cadastrador", () => {
+    expect(
+      isMyClient(
+        { customer_origin: "igreen_sync", registered_by_igreen_id: null, registered_by_name: "Outro licenciado" },
+        settings,
+      ),
+    ).toBe(true);
+  });
+
   it("filterMyClients separa carteira própria da rede", () => {
     const rows = [
       { id: "1", customer_origin: "igreen_sync", registered_by_igreen_id: "124170" },
