@@ -421,6 +421,11 @@ export function CustomerManager({
           </div>
         </div>
 
+        {/* Barra de status da última sync iGreen — quantos vieram por produto */}
+        <div className="px-4 sm:px-5 pt-3">
+          <IGreenSyncStatusBar consultantId={consultantId} />
+        </div>
+
         {/* Search & Filters — barra única consolidada */}
         <div className="px-4 sm:px-5 pt-3 sm:pt-4 pb-3 sm:pb-4 space-y-2.5">
           {/* Search bar */}
