@@ -127,6 +127,7 @@ export default function FluxoBuilder() {
       // consultor precisa "Personalizar" primeiro ('public' = herdado).
       setFlowId((flow as any).id ?? null);
       setSyncMode(String((flow as any).sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public");
+      setIsPublicTemplate(Boolean((flow as any).is_public));
       const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
         ...s,
         transitions: parseTransitions(s.transitions),
@@ -137,6 +138,7 @@ export default function FluxoBuilder() {
     } else {
       setFlowId(null);
       setSyncMode("public");
+      setIsPublicTemplate(false);
       setSteps([]);
     }
     
