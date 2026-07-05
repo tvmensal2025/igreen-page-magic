@@ -220,9 +220,20 @@ export function CustomerManager({
       startCooldown();
       const syncedAt = new Date().toISOString();
       setLastSync(syncedAt);
-      toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
+      toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar os clientes…" });
       onCustomersChange();
+      // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
+      // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
+      void (async () => {
+        const finished = await waitIgreenSyncFinished(consultantId);
+        onCustomersChange();
+        await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
+        if (finished) {
+          toast({ title: "✅ Sincronização concluída!", description: "Clientes e rede atualizados a partir do portal iGreen." });
+        }
+      })();
       await queryClient.invalidateQueries({ queryKey: ["analytics", consultantId] });
+
     } catch (err) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
     } finally {
