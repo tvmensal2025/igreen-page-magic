@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
-import { runIgreenSync } from "@/lib/igreenSync";
+import { runIgreenSync, waitIgreenSyncFinished } from "@/lib/igreenSync";
 import { StatCard } from "./StatCard";
 import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
@@ -70,6 +70,18 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
   const [resettingPerf, setResettingPerf] = useState(false);
+
+  const refreshDashboardQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["analytics"] }),
+      queryClient.invalidateQueries({ queryKey: ["network-licenciados", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["network-igreen-ids", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["igreen-sync-status", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["my-clients-settings", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["cm-telecom", userId] }),
+      queryClient.invalidateQueries({ queryKey: ["cm-seguros", userId] }),
+    ]);
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem("sync_cooldown_until");
@@ -166,10 +178,11 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
+    const requestedAt = new Date().toISOString();
     try {
       // 1) Refetch imediato: os clientes JÁ gravados no banco aparecem em <1s
       //    sem esperar o worker (10-40s). Cobre o caso "cliquei e continua zero".
-      await queryClient.refetchQueries({ queryKey: ["analytics", userId] });
+      await refreshDashboardQueries();
 
       const res = await runIgreenSync(userId, "sync_all");
       if (res.ok === false) {
@@ -185,12 +198,20 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
         return;
       }
       startCooldown();
-      toast({ title: "✅ Sincronização enviada!", description: "Aguardando o portal iGreen terminar de gravar…" });
+      toast({ title: "✅ Sincronização enviada!", description: "Energia aparece primeiro; rede, Telecom e Seguros entram em instantes." });
       // 2) Invalidação com prefixo — pega todas as variantes de queryKey.
-      await queryClient.invalidateQueries({ queryKey: ["analytics"] });
-      // 3) Worker finaliza segundos depois: repolla o analytics 2× (10s e 30s).
-      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 10_000);
-      setTimeout(() => { void queryClient.invalidateQueries({ queryKey: ["analytics"] }); }, 30_000);
+      await refreshDashboardQueries();
+      // 3) Worker finaliza segundos depois: aguarda extras e repolla tudo.
+      void (async () => {
+        const finished = await waitIgreenSyncFinished(userId, { minStartedAt: requestedAt });
+        await refreshDashboardQueries();
+        if (finished) {
+          const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
+          const telecom = extras.telecom?.telecom_received ?? extras.telecom?.telecom_saved;
+          const seguros = extras.seguros?.seguros_received ?? extras.seguros?.seguros_saved;
+          toast({ title: "✅ Sincronização concluída!", description: `Rede e produtos atualizados. Telecom: ${telecom ?? "—"} · Seguros: ${seguros ?? "—"}.` });
+        }
+      })();
     } catch (err: unknown) {
       toast({ title: "Erro na sincronização", description: err instanceof Error ? err.message : "Erro desconhecido", variant: "destructive" });
     } finally {
