@@ -20,6 +20,8 @@ import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
+import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
+import { IGreenSyncStatusBar } from "@/components/admin/IGreenSyncStatusBar";
 import { TeamRankingTab } from "./TeamRankingTab";
 import { TeamDashboard } from "./team-dashboard/TeamDashboard";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
