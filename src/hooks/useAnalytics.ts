@@ -79,6 +79,16 @@ export function useAnalytics(
     retry: 3,
     retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 8000),
     queryFn: async () => {
+      // Refresh de sessão defensivo: se o JWT expirou, RLS devolve 0 linhas sem
+      // erro visível — o Dashboard aparece zerado mesmo com dados no banco.
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const expMs = (sess?.session?.expires_at ?? 0) * 1000;
+        if (!sess?.session || expMs - Date.now() < 60_000) {
+          await supabase.auth.refreshSession();
+        }
+      } catch { /* segue o baile */ }
+
       const sinceDate = new Date();
       sinceDate.setDate(sinceDate.getDate() - periodDays);
       const since = sinceDate.toISOString();
