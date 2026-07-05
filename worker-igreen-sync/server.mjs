@@ -230,30 +230,30 @@ async function rotateTorCircuit(reason = 'waf') {
 }
 
 // ---------- Preflight: verifica se a página de login vem bloqueada pelo CF ----------
+// Usa Playwright leve (request context via Tor) porque undici não aceita
+// SOCKS proxy nativamente. Só é chamado entre retries — custo controlado.
 async function preflightPortalCheck() {
+  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
+  let browser = null;
   try {
-    const agent = new SocksProxyAgent(TOR_PROXY);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 12000);
-    const res = await fetch(PORTAL_URL, {
-      // @ts-ignore node undici accepts agent via dispatcher; usamos fetch nativo com agent-adapter
-      agent,
-      dispatcher: undefined,
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-    }).catch((e) => ({ ok: false, status: 0, __err: e?.message || String(e) }));
-    clearTimeout(timer);
-    if (!res || res.__err) return { blocked: false, unknown: true, reason: res?.__err };
-    const status = res.status || 0;
-    const text = typeof res.text === 'function' ? await res.text().catch(() => '') : '';
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox'],
+      ...(useTor ? { proxy: { server: TOR_PROXY } } : {}),
+    });
+    const ctx = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+    const res = await ctx.request.get(PORTAL_URL, { timeout: 15000, failOnStatusCode: false });
+    const status = res.status();
+    const text = await res.text().catch(() => '');
     const lower = text.toLowerCase();
     const blocked = status === 403 || /sorry, you have been blocked|attention required|cloudflare|access denied|ray id/.test(lower);
     return { blocked, status, sample: text.slice(0, 200) };
   } catch (e) {
     return { blocked: false, unknown: true, reason: e?.message || String(e) };
+  } finally {
+    try { if (browser) await browser.close(); } catch {}
   }
 }
 
