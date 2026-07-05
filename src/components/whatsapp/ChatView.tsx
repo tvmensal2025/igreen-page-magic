@@ -269,9 +269,36 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   // Check if this contact is already a customer; auto-create a minimal
   // whatsapp_lead row so flow shortcuts (⚡) always have a customerId.
+  // IMPORTANTE: conversas com remoteJid `@lid` (ID criptografado do WhatsApp)
+  // NÃO carregam telefone real. Extrair "phone" do LID gera lixo tipo
+  // "217145610871031", que quebra envio e polui a tabela customers. Só
+  // criamos/vinculamos cliente quando temos telefone real — via `sendTargetJid`
+  // (@s.whatsapp.net) ou remoteJid já não-lid.
   useEffect(() => {
     if (!chat) { setIsCustomer(false); setCustomerId(null); setCustomerPhone(null); return; }
-    const rawPhone = chat.remoteJid.split("@")[0].replace(/\D/g, "");
+
+    const realJid =
+      (chat.sendTargetJid && chat.sendTargetJid.endsWith("@s.whatsapp.net"))
+        ? chat.sendTargetJid
+        : (!chat.remoteJid.endsWith("@lid") ? chat.remoteJid : null);
+
+    if (!realJid) {
+      // Sem telefone real (só LID): não cria customer nem tenta vincular.
+      // O envio manual ficará bloqueado (getResolvedPhone → null) e o composer
+      // avisa. Evita salvar LID como phone_whatsapp e nome "Contato XXXX".
+      setIsCustomer(false);
+      setCustomerId(null);
+      setCustomerPhone(null);
+      return;
+    }
+
+    const rawPhone = realJid.split("@")[0].replace(/\D/g, "");
+    if (!rawPhone || rawPhone.length < 10) {
+      setIsCustomer(false);
+      setCustomerId(null);
+      setCustomerPhone(null);
+      return;
+    }
     // BR phone pode estar gravado com ou sem DDI 55 — gera candidatos
     // pra garantir que o lookup ache o cliente existente e o botão ⚡
     // não fique cinza por falta de match.
@@ -328,7 +355,15 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         }
       }
 
-      const fallbackName = (chat as { pushName?: string | null }).pushName || (chat as { name?: string | null }).name || insertPhone;
+      const pushName = (chat as { pushName?: string | null }).pushName;
+      const chatName = (chat as { name?: string | null }).name;
+      // Só usa `chat.name` como nome do lead se NÃO for o fallback "Contato XXXX"
+      // nem o próprio número — evita salvar "Contato 8950" como nome.
+      const isPlaceholderName =
+        !chatName ||
+        chatName.startsWith("Contato ") ||
+        chatName.replace(/\D/g, "") === rawPhone;
+      const fallbackName = pushName || (!isPlaceholderName ? chatName! : insertPhone);
       const { data: created, error } = await supabase
         .from("customers")
         .insert({
