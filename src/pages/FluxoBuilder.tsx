@@ -113,12 +113,29 @@ export default function FluxoBuilder() {
       setConsultantPhoto(consultant.photo_url || "");
     }
 
-    const { data: flow } = await supabase.from("bot_flows")
+    const { data: ownFlow } = await supabase.from("bot_flows")
       .select("*, bot_flow_steps(*)")
       .eq("consultant_id", user.id)
       .eq("variant", v)
       .eq("is_active", true)
       .maybeSingle();
+
+    let flow = ownFlow as any;
+    const ownSyncMode = String((ownFlow as any)?.sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public";
+    const shouldUsePublicModel = !ownFlow || (!isSuperAdmin && ownSyncMode === "public" && !(ownFlow as any).is_public);
+
+    if (shouldUsePublicModel) {
+      const { data: publicFlow } = await supabase.from("bot_flows")
+        .select("*, bot_flow_steps(*)")
+        .eq("variant", v)
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      flow = publicFlow as any;
+    }
 
     if (flow) {
       // Captura o flow_id próprio e o sync_mode (antes eram descartados). O
@@ -126,7 +143,7 @@ export default function FluxoBuilder() {
       // sync_mode para decidir se a edição é permitida ('custom') ou se o
       // consultor precisa "Personalizar" primeiro ('public' = herdado).
       setFlowId((flow as any).id ?? null);
-      setSyncMode(String((flow as any).sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public");
+      setSyncMode(shouldUsePublicModel && !isSuperAdmin ? "public" : (String((flow as any).sync_mode ?? "public").toLowerCase() === "custom" ? "custom" : "public"));
       setIsPublicTemplate(Boolean((flow as any).is_public));
       const mappedSteps = (flow.bot_flow_steps || []).map((s: any) => ({
         ...s,
