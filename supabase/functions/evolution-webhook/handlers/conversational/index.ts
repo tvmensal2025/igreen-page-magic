@@ -819,14 +819,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     : null;
   const _isDocCapture = _captureRedirect === "aguardando_doc_auto";
 
+  // 🛡️ Guard anti-pula-welcome: se é a PRIMEIRA mensagem real do lead
+  // (nunca teve conversation_step definido, ou ainda está no welcome default)
+  // NÃO desvia direto pra OCR — precisa cumprimentar antes.
+  // Sem isso, lead que abre a conversa mandando foto entra em "aguardando_conta"
+  // sem nunca ouvir "oi, tudo bem". Reclamação real: Bruna 5511916827893 (2026-07-05).
+  const _isTrulyFirstInbound =
+    !ctx.customer.conversation_step || ctx.customer.conversation_step === "welcome";
+
   if (
     (ctx.isFile || ctx.hasImage || ctx.hasDocument) &&
     !ctx.hasAudio && // 🎧 áudio NUNCA vai pra OCR de conta — trata como mensagem comum
+    !_isTrulyFirstInbound && // 👋 primeira msg: welcome primeiro
     // Conta: só redireciona se ainda não temos a foto. Documento: sempre
     // (a foto da conta já existir é o caso NORMAL nesse ponto do funil).
     (_isDocCapture || !(ctx.customer as any).electricity_bill_photo_url) &&
     !CADASTRO_STEPS.has(stepKey)
   ) {
+
     // Prioridade: passo de captura explícito (capture_conta/_documento) define
     // o destino canônico. Senão, usa o resolver genérico (fallback legado).
     const targetStep = _captureRedirect
