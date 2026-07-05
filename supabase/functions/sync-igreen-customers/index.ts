@@ -256,9 +256,41 @@ async function callWorker(
 function classifyError(err: string | undefined): string {
   const msg = String(err || "").toLowerCase();
   if (/invalid|credenc|senha|password|unauth|401|403/.test(msg)) return "invalid_credentials";
-  if (/cloudflare|challenge|blocked|waf|captcha|429/.test(msg)) return "waf_blocked";
+  if (/cloudflare|challenge|blocked|waf|captcha|429|cooldown/.test(msg)) return "waf_blocked";
+  if (/sync_already_running|em andamento|409/.test(msg)) return "already_running";
   return "failed";
 }
+
+// deno-lint-ignore no-explicit-any
+async function scheduleWafRetry(supabase: any, consultantId: string | null, mode: string, delayMs = 300_000): Promise<string | null> {
+  if (!consultantId) return null;
+  const at = new Date(Date.now() + delayMs).toISOString();
+  try {
+    await supabase.from("settings").upsert(
+      { key: `igreen_retry:${consultantId}`, value: { at, mode, scheduled_at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    console.log(`[retry] agendado ${mode} para ${consultantId} em ${Math.round(delayMs/1000)}s`);
+    return at;
+  } catch (e) {
+    console.warn(`[retry] falha ao agendar: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+function workerErrorResponse(email: string, r: { status: number; error?: string }, opts?: { retry_at?: string | null }) {
+  const reason = classifyError(r.error);
+  return {
+    success: false,
+    email,
+    error: `Worker falhou: ${r.error}`,
+    status: r.status,
+    reason,
+    retry_scheduled_at: opts?.retry_at || null,
+  };
+}
+
 
 // deno-lint-ignore no-explicit-any
 async function logSyncStart(supabase: any, consultantId: string | null, mode: string): Promise<string | null> {
@@ -1000,7 +1032,10 @@ async function syncOneConsultant(
       portal_email: emailNorm,
       portal_password: passwordNorm,
     });
-    if (!base.ok) return { success: false, email: emailNorm, error: `Worker falhou em clientes: ${base.error}`, status: base.status };
+    if (!base.ok) {
+      const retry = classifyError(base.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
+      return workerErrorResponse(emailNorm, base, { retry_at: retry });
+    }
 
     const baseConsultorId = base.data?.consultor_id ? String(base.data.consultor_id) : null;
     if (consultantId && baseConsultorId) {
@@ -1035,7 +1070,7 @@ async function syncOneConsultant(
   if (mode === "sync_metrics") {
     console.log(`[worker] sync-metrics for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-metrics", { portal_email: emailNorm, portal_password: passwordNorm });
-    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
     if (consultantId && consultorId) {
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
@@ -1048,7 +1083,7 @@ async function syncOneConsultant(
   if (mode === "sync_boletos") {
     console.log(`[worker] sync-boletos for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-boletos", { portal_email: emailNorm, portal_password: passwordNorm });
-    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
     const saved = await persistBoletos(supabase, consultorId ? (consultantId || null) : consultantId, r.data?.boletos || []);
     return { success: true, mode: "sync_boletos", ...saved };
@@ -1058,7 +1093,7 @@ async function syncOneConsultant(
   if (mode === "sync_telecom") {
     console.log(`[worker] sync-telecom for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-telecom", { portal_email: emailNorm, portal_password: passwordNorm });
-    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
     const saved = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
     return { success: true, mode: "sync_telecom", ...saved };
   }
@@ -1067,7 +1102,7 @@ async function syncOneConsultant(
   if (mode === "sync_seguros") {
     console.log(`[worker] sync-seguros for ${emailNorm}`);
     const r = await callWorker(worker, "/sync-seguros", { portal_email: emailNorm, portal_password: passwordNorm });
-    if (!r.ok) return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
     const saved = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
     return { success: true, mode: "sync_seguros", ...saved };
   }
@@ -1098,7 +1133,8 @@ async function syncOneConsultant(
     portal_password: passwordNorm,
   });
   if (!r.ok) {
-    return { success: false, email: emailNorm, error: `Worker falhou: ${r.error}`, status: r.status };
+    const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
+    return workerErrorResponse(emailNorm, r, { retry_at: retry });
   }
   const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
   if (consultantId && consultorId) {

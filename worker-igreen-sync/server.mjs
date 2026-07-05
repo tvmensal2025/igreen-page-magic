@@ -22,6 +22,8 @@
 //   POST /sync-all           { portal_email, portal_password, month? }  (recomendado)
 
 import http from 'node:http';
+import net from 'node:net';
+import fs from 'node:fs';
 import { chromium } from 'playwright-chromium';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
@@ -31,6 +33,9 @@ const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
+const TOR_CONTROL_HOST = process.env.TOR_CONTROL_HOST || '127.0.0.1';
+const TOR_CONTROL_PORT = parseInt(process.env.TOR_CONTROL_PORT || '9051', 10);
+const TOR_COOKIE_PATH = process.env.TOR_COOKIE_PATH || '/tmp/tor-data/control_auth_cookie';
 
 const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
 // Portal novo (Virtual Office). Antes era api-voffice + /v1/login; migrou para
@@ -39,7 +44,10 @@ const API_BASE = 'https://api-vo.igreenenergy.com.br/v1';
 const AUTH_PATH = '/auth/session';
 // Sitekey só é usada se o portal voltar a exigir reCAPTCHA (hoje não exige).
 const RECAPTCHA_SITEKEY = '6LemKQktAAAAAM626YG0ZoBi-PAbOIvwb5QD0Vi6';
-const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '2', 10);
+const LOGIN_MAX_ATTEMPTS = parseInt(process.env.IGREEN_LOGIN_MAX_ATTEMPTS || '4', 10);
+const OPERATION_LOCK_TTL_MS = parseInt(process.env.OPERATION_LOCK_TTL_MS || '480000', 10); // 8min
+const WAF_COOLDOWN_MS = parseInt(process.env.WAF_COOLDOWN_MS || '300000', 10); // 5min por e-mail
+const TOR_ROTATE_MIN_INTERVAL_MS = parseInt(process.env.TOR_ROTATE_MIN_INTERVAL_MS || '10000', 10);
 
 if (!WORKER_TOKEN) console.warn('[boot] WARN: WORKER_TOKEN não definido!');
 if (!TWOCAPTCHA_API_KEY) console.warn('[boot] WARN: TWOCAPTCHA_API_KEY não definido!');
@@ -176,7 +184,92 @@ async function solveRecaptcha(sitekey = RECAPTCHA_SITEKEY) {
 // ---------- Login Playwright ----------
 const sessions = new Map(); // email → { token, consultorId, browser, context, createdAt }
 const loginLocks = new Map();
-const operationLocks = new Map();
+const operationLocks = new Map(); // email → { promise, startedAt, queued }
+const wafCooldowns = new Map();   // email → expiresAt (ms)
+let lastTorRotateAt = 0;
+
+// ---------- Tor NEWNYM (troca de circuito) ----------
+async function rotateTorCircuit(reason = 'waf') {
+  const now = Date.now();
+  if (now - lastTorRotateAt < TOR_ROTATE_MIN_INTERVAL_MS) {
+    dbg(`[tor] rotate skip (throttle, last ${Math.round((now - lastTorRotateAt)/1000)}s atrás)`);
+    return false;
+  }
+  lastTorRotateAt = now;
+  return await new Promise((resolve) => {
+    let cookieHex = '';
+    try {
+      const cookie = fs.readFileSync(TOR_COOKIE_PATH);
+      cookieHex = cookie.toString('hex').toUpperCase();
+    } catch (e) {
+      dbg(`[tor] cookie leitura falhou (${TOR_COOKIE_PATH}): ${e.message}`);
+      return resolve(false);
+    }
+    const sock = net.createConnection({ host: TOR_CONTROL_HOST, port: TOR_CONTROL_PORT }, () => {
+      sock.write(`AUTHENTICATE ${cookieHex}\r\nSIGNAL NEWNYM\r\nQUIT\r\n`);
+    });
+    let buf = '';
+    const timer = setTimeout(() => {
+      try { sock.destroy(); } catch {}
+      dbg(`[tor] rotate timeout`);
+      resolve(false);
+    }, 4000);
+    sock.on('data', (chunk) => { buf += chunk.toString(); });
+    sock.on('end', () => {
+      clearTimeout(timer);
+      const ok = /250 OK[\s\S]*250 OK/.test(buf);
+      dbg(`[tor] NEWNYM (${reason}) → ${ok ? 'ok' : 'falhou'} :: ${buf.replace(/\s+/g,' ').slice(0,120)}`);
+      resolve(ok);
+    });
+    sock.on('error', (e) => {
+      clearTimeout(timer);
+      dbg(`[tor] control socket erro: ${e.message}`);
+      resolve(false);
+    });
+  });
+}
+
+// ---------- Preflight: verifica se a página de login vem bloqueada pelo CF ----------
+// Usa Playwright leve (request context via Tor) porque undici não aceita
+// SOCKS proxy nativamente. Só é chamado entre retries — custo controlado.
+async function preflightPortalCheck() {
+  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
+  let browser = null;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox'],
+      ...(useTor ? { proxy: { server: TOR_PROXY } } : {}),
+    });
+    const ctx = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+    const res = await ctx.request.get(PORTAL_URL, { timeout: 15000, failOnStatusCode: false });
+    const status = res.status();
+    const text = await res.text().catch(() => '');
+    const lower = text.toLowerCase();
+    const blocked = status === 403 || /sorry, you have been blocked|attention required|cloudflare|access denied|ray id/.test(lower);
+    return { blocked, status, sample: text.slice(0, 200) };
+  } catch (e) {
+    return { blocked: false, unknown: true, reason: e?.message || String(e) };
+  } finally {
+    try { if (browser) await browser.close(); } catch {}
+  }
+}
+
+// ---------- WAF cooldown por e-mail ----------
+function isEmailInWafCooldown(email) {
+  const exp = wafCooldowns.get(String(email || '').toLowerCase());
+  if (!exp) return 0;
+  const remaining = exp - Date.now();
+  if (remaining <= 0) { wafCooldowns.delete(String(email || '').toLowerCase()); return 0; }
+  return remaining;
+}
+function setEmailWafCooldown(email, ms = WAF_COOLDOWN_MS) {
+  wafCooldowns.set(String(email || '').toLowerCase(), Date.now() + ms);
+  dbg(`[waf] cooldown ${email} por ${Math.round(ms/1000)}s`);
+}
+
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
@@ -385,17 +478,48 @@ async function getOrCreateSession(email, password) {
     const s = sessions.get(email);
     if (s && (now - s.createdAt) < SESSION_TTL_MS) return s;
     if (s) { try { await s.browser.close(); } catch {} sessions.delete(email); }
+
+    // Cooldown por e-mail: se acabamos de queimar tentativas em WAF, evita
+    // torrar Playwright + IP Tor de novo. UI pode reagendar retry mais tarde.
+    const cooldownLeft = isEmailInWafCooldown(email);
+    if (cooldownLeft > 0) {
+      throw new HttpError(503, `Portal iGreen em cooldown pós-WAF (~${Math.ceil(cooldownLeft/1000)}s). Reprocesse em instantes.`, 'igreen_waf_blocked');
+    }
+
     let lastErr = null;
     const attempts = Math.max(1, LOGIN_MAX_ATTEMPTS);
+    let wafHits = 0;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         if (attempt > 1) dbg(`[login] tentativa ${attempt}/${attempts} após falha transitória`);
+        // Preflight: se a home já vem 403/CF, roda NEWNYM antes de gastar Chromium.
+        if (attempt > 1 || wafHits > 0) {
+          const pf = await preflightPortalCheck();
+          if (pf.blocked) {
+            dbg(`[preflight] portal bloqueado (${pf.status}); rotacionando circuito antes de tentar Playwright`);
+            await rotateTorCircuit('preflight_waf');
+            await new Promise((r) => setTimeout(r, 4000));
+          }
+        }
         const fresh = await loginWithPlaywright(email, password);
         sessions.set(email, fresh);
         return fresh;
       } catch (e) {
         lastErr = e;
-        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'igreen_waf_blocked', 'tor_no_exits'].includes(e?.code);
+        const isWaf = e?.code === 'igreen_waf_blocked';
+        if (isWaf) {
+          wafHits++;
+          const rotated = await rotateTorCircuit('login_waf');
+          const backoff = rotated ? (3000 + 3000 * wafHits) : (5000 + 5000 * wafHits);
+          dbg(`[login] WAF hit #${wafHits} → aguardando ${Math.round(backoff/1000)}s antes de retry`);
+          await new Promise((r) => setTimeout(r, backoff));
+          if (attempt >= attempts) {
+            setEmailWafCooldown(email);
+            throw e;
+          }
+          continue;
+        }
+        const transient = ['portal_login_timeout', 'network_fetch_failed', 'no_login_response', 'tor_no_exits'].includes(e?.code);
         if (!transient || attempt >= attempts) throw e;
         await new Promise((r) => setTimeout(r, 2500 * attempt));
       }
@@ -407,22 +531,34 @@ async function getOrCreateSession(email, password) {
   }
 }
 
+// Single-flight por e-mail: em vez de rejeitar (409), coalesce — o segundo
+// request espera o primeiro terminar e depois executa. Sessão fica em cache,
+// então a fila anda rápido. TTL evita lock preso caso o processo trave.
 async function withEmailOperationLock(email, fn) {
   const key = String(email || '').toLowerCase();
-  if (operationLocks.has(key)) {
-    throw new HttpError(409, 'Já existe uma sincronização iGreen em andamento para este e-mail. Aguarde finalizar ou reinicie o worker para limpar a fila.', 'sync_already_running');
+  const existing = operationLocks.get(key);
+  if (existing && (Date.now() - existing.startedAt) > OPERATION_LOCK_TTL_MS) {
+    dbg(`[lock] descartando lock stale de ${key} (${Math.round((Date.now() - existing.startedAt)/1000)}s)`);
+    operationLocks.delete(key);
   }
-  const prev = operationLocks.get(key) || Promise.resolve();
+  const cur = operationLocks.get(key);
+  const prev = cur?.promise || Promise.resolve();
+  if (cur) {
+    cur.queued = (cur.queued || 0) + 1;
+    dbg(`[lock] ${key}: aguardando fila (queued=${cur.queued})`);
+  }
   let release;
   const current = new Promise((resolve) => { release = resolve; });
   const chained = prev.catch(() => {}).then(() => current);
-  operationLocks.set(key, chained);
+  const entry = { promise: chained, startedAt: Date.now(), queued: 0 };
+  operationLocks.set(key, entry);
   await prev.catch(() => {});
+  entry.startedAt = Date.now();
   try {
     return await fn();
   } finally {
     try { release(); } catch {}
-    if (operationLocks.get(key) === chained) operationLocks.delete(key);
+    if (operationLocks.get(key) === entry) operationLocks.delete(key);
   }
 }
 
@@ -977,6 +1113,16 @@ const bootAt = Date.now();
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
+      const nowT = Date.now();
+      const locks = [];
+      for (const [k, v] of operationLocks) {
+        locks.push({ email: k, age_s: Math.round((nowT - v.startedAt) / 1000), queued: v.queued || 0 });
+      }
+      const cooldowns = [];
+      for (const [k, v] of wafCooldowns) {
+        const left = v - nowT;
+        if (left > 0) cooldowns.push({ email: k, remaining_s: Math.round(left / 1000) });
+      }
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
@@ -988,6 +1134,9 @@ const server = http.createServer(async (req, res) => {
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
         tor_proxy: TOR_PROXY,
         api_health: { ...apiHealth, tor_likely_broken: torLikelyBroken() },
+        operation_locks: locks,
+        waf_cooldowns: cooldowns,
+        last_tor_rotate_s: lastTorRotateAt ? Math.round((nowT - lastTorRotateAt) / 1000) : null,
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
@@ -995,6 +1144,25 @@ const server = http.createServer(async (req, res) => {
       if (!lastScreenshot) return sendJson(res, 404, { ok: false, error: 'sem screenshot' });
       res.writeHead(200, { 'content-type': 'image/png', 'content-length': lastScreenshot.length });
       return res.end(lastScreenshot);
+    }
+
+    // DELETE /sync-lock?email=... → limpa lock/cooldown manualmente.
+    if (req.method === 'DELETE' && req.url.startsWith('/sync-lock')) {
+      if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' });
+      const u = new URL(req.url, 'http://x');
+      const em = String(u.searchParams.get('email') || '').trim().toLowerCase();
+      if (!em) return sendJson(res, 400, { ok: false, error: 'email obrigatório' });
+      const hadLock = operationLocks.delete(em);
+      const hadCd = wafCooldowns.delete(em);
+      dbg(`[lock] limpeza manual ${em} → lock=${hadLock} cooldown=${hadCd}`);
+      return sendJson(res, 200, { ok: true, cleared_lock: hadLock, cleared_cooldown: hadCd });
+    }
+
+    // POST /tor-rotate → força NEWNYM (debug).
+    if (req.method === 'POST' && req.url === '/tor-rotate') {
+      if (!authOk(req)) return sendJson(res, 401, { ok: false, error: 'unauthorized' });
+      const ok = await rotateTorCircuit('manual');
+      return sendJson(res, 200, { ok });
     }
 
     if (req.method !== 'POST') return sendJson(res, 404, { ok: false, error: 'not_found' });

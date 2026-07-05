@@ -6,7 +6,28 @@ export type SyncMode = "sync" | "sync_network" | "sync_metrics" | "sync_boletos"
 
 export type SyncResult =
   | { ok: true; data: Record<string, unknown> }
-  | { ok: false; reason: "not_configured" | "waf_blocked" | "invalid_credentials" | "failed"; error: string };
+  | {
+      ok: false;
+      reason: "not_configured" | "waf_blocked" | "invalid_credentials" | "already_running" | "failed";
+      error: string;
+      retry_scheduled_at?: string | null;
+    };
+
+// Auto-retry: quando a edge devolve `retry_scheduled_at` (WAF), agendamos uma
+// nova chamada no cliente para que o consultor não precise reclicar. Um único
+// timer ativo por consultor+mode; se o usuário forçar sync antes, cancela.
+const pendingAutoRetries = new Map<string, ReturnType<typeof setTimeout>>();
+function scheduleAutoRetry(consultantId: string, mode: SyncMode, retryAtIso: string) {
+  const key = `${consultantId}:${mode}`;
+  const prev = pendingAutoRetries.get(key);
+  if (prev) clearTimeout(prev);
+  const delay = Math.max(15_000, new Date(retryAtIso).getTime() - Date.now());
+  const t = setTimeout(() => {
+    pendingAutoRetries.delete(key);
+    void runIgreenSync(consultantId, mode);
+  }, delay);
+  pendingAutoRetries.set(key, t);
+}
 
 /**
  * Dispara a sincronização do consultor logado. As credenciais do portal iGreen
@@ -24,15 +45,36 @@ export async function runIgreenSync(consultantId: string, mode: SyncMode = "sync
     const d = data as Record<string, unknown> | null;
     if (!d || (d as { success?: boolean }).success === false) {
       const err = String((d as { error?: string })?.error || "Falha na sincronização.");
+      const reasonFromEdge = String((d as { reason?: string })?.reason || "").toLowerCase();
+      const retryAt = (d as { retry_scheduled_at?: string | null })?.retry_scheduled_at || null;
       const low = err.toLowerCase();
-      if (low.includes("não configurado") || low.includes("nao configurado") || low.includes("credenciais"))
-        return { ok: false, reason: "not_configured", error: err };
-      if (low.includes("waf") || low.includes("cloudflare") || low.includes("bloque"))
-        return { ok: false, reason: "waf_blocked", error: err };
-      if (low.includes("login") || low.includes("senha") || low.includes("invalid"))
-        return { ok: false, reason: "invalid_credentials", error: err };
-      return { ok: false, reason: "failed", error: err };
+
+      let reason: "not_configured" | "waf_blocked" | "invalid_credentials" | "already_running" | "failed";
+      if (reasonFromEdge === "waf_blocked" || low.includes("waf") || low.includes("cloudflare") || low.includes("bloque") || low.includes("cooldown"))
+        reason = "waf_blocked";
+      else if (reasonFromEdge === "already_running" || low.includes("já existe uma sincroniz") || low.includes("em andamento"))
+        reason = "already_running";
+      else if (reasonFromEdge === "invalid_credentials" || low.includes("credenciais") || low.includes("senha") || low.includes("invalid"))
+        reason = "invalid_credentials";
+      else if (low.includes("não configurado") || low.includes("nao configurado"))
+        reason = "not_configured";
+      else
+        reason = "failed";
+
+      if (reason === "waf_blocked" && retryAt) {
+        scheduleAutoRetry(consultantId, mode, retryAt);
+      }
+      if (reason === "already_running") {
+        // A fila do worker já vai processar; refazemos o poll em 12s.
+        scheduleAutoRetry(consultantId, mode, new Date(Date.now() + 12_000).toISOString());
+      }
+
+      return { ok: false, reason, error: err, retry_scheduled_at: retryAt };
     }
+    // Sucesso: cancela retry pendente pra esse consultor+mode.
+    const key = `${consultantId}:${mode}`;
+    const prev = pendingAutoRetries.get(key);
+    if (prev) { clearTimeout(prev); pendingAutoRetries.delete(key); }
     return { ok: true, data: d };
   } catch (e) {
     return { ok: false, reason: "failed", error: e instanceof Error ? e.message : "Erro desconhecido" };
