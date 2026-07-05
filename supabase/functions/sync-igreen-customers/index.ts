@@ -486,6 +486,33 @@ async function runSyncAllBackgroundPhase(
     console.error("[sync-all background]", err);
   } finally {
     if (out.success) await updateAutomationTimestamps(supabase, consultantId, out);
+    // Persiste os counts da Fase B no último run do consultor. Sem isso a UI
+    // (IGreenSyncStatusBar) nunca sabe se network/telecom/seguros/boletos
+    // rodaram — a Fase A já tinha finalizado o `igreen_sync_runs` antes.
+    if (consultantId) {
+      try {
+        const { data: lastRun } = await supabase
+          .from("igreen_sync_runs")
+          .select("id, counts")
+          .eq("consultant_id", consultantId)
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (lastRun?.id) {
+          const extras: Record<string, unknown> = {};
+          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts"]) {
+            if (out[k] != null) extras[k] = out[k];
+          }
+          extras._background_finished_at = new Date().toISOString();
+          extras._background_success = out.success;
+          if (out.error) extras._background_error = out.error;
+          const mergedCounts = { ...(lastRun.counts as Record<string, unknown> || {}), extras };
+          await supabase.from("igreen_sync_runs").update({ counts: mergedCounts }).eq("id", lastRun.id);
+        }
+      } catch (persistErr) {
+        console.warn("[sync-all background] failed to persist extras:", persistErr instanceof Error ? persistErr.message : String(persistErr));
+      }
+    }
     console.log("[sync-all background] finished", JSON.stringify(out).slice(0, 500));
   }
 }
