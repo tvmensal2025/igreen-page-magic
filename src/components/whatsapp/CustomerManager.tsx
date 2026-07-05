@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { runIgreenSync } from "@/lib/igreenSync";
+import { runIgreenSync, waitIgreenSyncFinished } from "@/lib/igreenSync";
 import { getProfilePicture } from "@/services/evolutionApi";
 import { AddCustomerDialog } from "./AddCustomerDialog";
 import { CustomerListItem } from "./CustomerListItem";
