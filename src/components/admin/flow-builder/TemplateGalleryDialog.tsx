@@ -1,9 +1,8 @@
-// Galeria de templates de fluxo (aprovados pelo super-admin).
+// Galeria de modelos de fluxo (oficiais públicos + aprovados pelo super-admin).
 //
-// Mostra os templates que a comunidade publicou e o super-admin aprovou. Cada
-// card traz nome, descrição, autor (nome sempre; telefone só se o autor
-// permitiu) e um botão "Usar este modelo", que recria os passos num fluxo NOVO
-// e vazio do consultor (RPC `use_flow_template`) — sem tocar no fluxo do autor.
+// Mostra os modelos oficiais publicados em `bot_flows.is_public` e os templates
+// que a comunidade publicou e o super-admin aprovou. Modelos oficiais abrem a
+// variante pública; templates da comunidade criam um fluxo novo via RPC.
 import { useEffect, useState, useCallback } from "react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -18,6 +17,7 @@ import { ALL_VARIANTS, type Variant } from "./flowTypes";
 
 interface TemplateRow {
   id: string;
+  source: "official" | "submission";
   name: string;
   description: string | null;
   author_name: string | null;
@@ -33,12 +33,14 @@ interface Props {
   consultantId: string | null;
   /** Variantes já existentes do consultor (para achar um espaço livre). */
   existingVariants: Variant[];
+  /** Abre uma variante pública oficial direto no editor. */
+  onSelectVariant?: (variant: Variant) => void;
   /** Chamado após usar um template (recarrega a lista de fluxos). */
   onUsed?: (flowId: string) => void;
 }
 
 export default function TemplateGalleryDialog({
-  open, onOpenChange, consultantId, existingVariants, onUsed,
+  open, onOpenChange, consultantId, existingVariants, onSelectVariant, onUsed,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<TemplateRow[]>([]);
@@ -47,14 +49,41 @@ export default function TemplateGalleryDialog({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const { data: submissions, error: submissionsError } = await supabase
         .from("flow_template_submissions")
-        .select("id, name, description, author_name, author_phone, show_phone, variant, steps_snapshot")
+        .select("id, source_flow_id, name, description, author_name, author_phone, show_phone, variant, steps_snapshot")
         .eq("status", "approved")
         .order("created_at", { ascending: false });
-      if (error) throw error;
-      const mapped: TemplateRow[] = ((data as any[]) || []).map((r) => ({
+
+      if (submissionsError) throw submissionsError;
+
+      const { data: publicFlows, error: publicFlowsError } = await supabase
+        .from("bot_flows")
+        .select("id, name, variant, bot_flow_steps(id)")
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .order("variant", { ascending: true });
+
+      if (publicFlowsError) throw publicFlowsError;
+
+      const official: TemplateRow[] = ((publicFlows as any[]) || []).map((f) => ({
+        id: f.id,
+        source: "official" as const,
+        name: f.name || `Fluxo ${f.variant}`,
+        description: "Modelo oficial público disponível para todos os consultores.",
+        author_name: "iGreen",
+        author_phone: null,
+        show_phone: false,
+        variant: f.variant,
+        steps_count: Array.isArray(f.bot_flow_steps) ? f.bot_flow_steps.length : 0,
+      }));
+
+      const officialFlowIds = new Set(official.map((r) => r.id));
+      const community: TemplateRow[] = ((submissions as any[]) || [])
+        .filter((r) => !officialFlowIds.has(String(r.source_flow_id || "")))
+        .map((r) => ({
         id: r.id,
+        source: "submission" as const,
         name: r.name,
         description: r.description,
         author_name: r.author_name,
@@ -63,7 +92,8 @@ export default function TemplateGalleryDialog({
         variant: r.variant,
         steps_count: Array.isArray(r.steps_snapshot) ? r.steps_snapshot.length : 0,
       }));
-      setRows(mapped);
+
+      setRows([...official, ...community]);
     } catch (e: any) {
       toast.error("Erro ao carregar a galeria: " + (e?.message || String(e)));
     } finally {
@@ -75,6 +105,14 @@ export default function TemplateGalleryDialog({
 
   async function applyTemplate(tpl: TemplateRow) {
     if (!consultantId) return;
+
+    if (tpl.source === "official") {
+      onSelectVariant?.(tpl.variant as Variant);
+      toast.success(`Modelo público "${tpl.name}" aberto.`);
+      onOpenChange(false);
+      return;
+    }
+
     // Acha o próximo espaço (letra) livre para o novo fluxo.
     const freeVariant = ALL_VARIANTS.find((v) => !existingVariants.includes(v));
     if (!freeVariant) {
@@ -109,8 +147,8 @@ export default function TemplateGalleryDialog({
             Galeria de modelos
           </DialogTitle>
           <DialogDescription>
-            Modelos de fluxo publicados pela comunidade e aprovados. Use um como
-            ponto de partida — ele vira um novo fluxo seu, que você pode editar à vontade.
+            Modelos oficiais públicos e modelos publicados pela comunidade. Abra um
+            modelo oficial ou use um template aprovado como ponto de partida.
           </DialogDescription>
         </DialogHeader>
 
@@ -122,7 +160,7 @@ export default function TemplateGalleryDialog({
           <div className="rounded-xl border border-dashed bg-muted/20 p-10 text-center">
             <Sparkles className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              Ainda não há modelos na galeria. Publique o seu e ajude a comunidade!
+              Ainda não há modelos na galeria.
             </p>
           </div>
         ) : (
@@ -132,7 +170,14 @@ export default function TemplateGalleryDialog({
                 <div key={tpl.id} className="rounded-xl border bg-card p-3.5 shadow-sm transition hover:border-primary/40 hover:shadow-md">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <h3 className="truncate text-sm font-semibold">{tpl.name}</h3>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <h3 className="truncate text-sm font-semibold">{tpl.name}</h3>
+                        {tpl.source === "official" && (
+                          <Badge variant="outline" className="shrink-0 text-[10px]">
+                            Oficial
+                          </Badge>
+                        )}
+                      </div>
                       {tpl.description && (
                         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{tpl.description}</p>
                       )}
@@ -163,7 +208,7 @@ export default function TemplateGalleryDialog({
                       {usingId === tpl.id
                         ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                         : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
-                      Usar este modelo
+                      {tpl.source === "official" ? "Abrir modelo" : "Usar este modelo"}
                     </Button>
                   </div>
                 </div>
