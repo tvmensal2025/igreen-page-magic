@@ -256,9 +256,41 @@ async function callWorker(
 function classifyError(err: string | undefined): string {
   const msg = String(err || "").toLowerCase();
   if (/invalid|credenc|senha|password|unauth|401|403/.test(msg)) return "invalid_credentials";
-  if (/cloudflare|challenge|blocked|waf|captcha|429/.test(msg)) return "waf_blocked";
+  if (/cloudflare|challenge|blocked|waf|captcha|429|cooldown/.test(msg)) return "waf_blocked";
+  if (/sync_already_running|em andamento|409/.test(msg)) return "already_running";
   return "failed";
 }
+
+// deno-lint-ignore no-explicit-any
+async function scheduleWafRetry(supabase: any, consultantId: string | null, mode: string, delayMs = 300_000): Promise<string | null> {
+  if (!consultantId) return null;
+  const at = new Date(Date.now() + delayMs).toISOString();
+  try {
+    await supabase.from("settings").upsert(
+      { key: `igreen_retry:${consultantId}`, value: { at, mode, scheduled_at: new Date().toISOString() } },
+      { onConflict: "key" },
+    );
+    console.log(`[retry] agendado ${mode} para ${consultantId} em ${Math.round(delayMs/1000)}s`);
+    return at;
+  } catch (e) {
+    console.warn(`[retry] falha ao agendar: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+function workerErrorResponse(email: string, r: { status: number; error?: string }, opts?: { retry_at?: string | null }) {
+  const reason = classifyError(r.error);
+  return {
+    success: false,
+    email,
+    error: `Worker falhou: ${r.error}`,
+    status: r.status,
+    reason,
+    retry_scheduled_at: opts?.retry_at || null,
+  };
+}
+
 
 // deno-lint-ignore no-explicit-any
 async function logSyncStart(supabase: any, consultantId: string | null, mode: string): Promise<string | null> {
