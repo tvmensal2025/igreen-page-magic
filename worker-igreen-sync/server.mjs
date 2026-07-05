@@ -185,7 +185,92 @@ async function solveRecaptcha(sitekey = RECAPTCHA_SITEKEY) {
 // ---------- Login Playwright ----------
 const sessions = new Map(); // email → { token, consultorId, browser, context, createdAt }
 const loginLocks = new Map();
-const operationLocks = new Map();
+const operationLocks = new Map(); // email → { promise, startedAt, queued }
+const wafCooldowns = new Map();   // email → expiresAt (ms)
+let lastTorRotateAt = 0;
+
+// ---------- Tor NEWNYM (troca de circuito) ----------
+async function rotateTorCircuit(reason = 'waf') {
+  const now = Date.now();
+  if (now - lastTorRotateAt < TOR_ROTATE_MIN_INTERVAL_MS) {
+    dbg(`[tor] rotate skip (throttle, last ${Math.round((now - lastTorRotateAt)/1000)}s atrás)`);
+    return false;
+  }
+  lastTorRotateAt = now;
+  return await new Promise((resolve) => {
+    let cookieHex = '';
+    try {
+      const cookie = fs.readFileSync(TOR_COOKIE_PATH);
+      cookieHex = cookie.toString('hex').toUpperCase();
+    } catch (e) {
+      dbg(`[tor] cookie leitura falhou (${TOR_COOKIE_PATH}): ${e.message}`);
+      return resolve(false);
+    }
+    const sock = net.createConnection({ host: TOR_CONTROL_HOST, port: TOR_CONTROL_PORT }, () => {
+      sock.write(`AUTHENTICATE ${cookieHex}\r\nSIGNAL NEWNYM\r\nQUIT\r\n`);
+    });
+    let buf = '';
+    const timer = setTimeout(() => {
+      try { sock.destroy(); } catch {}
+      dbg(`[tor] rotate timeout`);
+      resolve(false);
+    }, 4000);
+    sock.on('data', (chunk) => { buf += chunk.toString(); });
+    sock.on('end', () => {
+      clearTimeout(timer);
+      const ok = /250 OK[\s\S]*250 OK/.test(buf);
+      dbg(`[tor] NEWNYM (${reason}) → ${ok ? 'ok' : 'falhou'} :: ${buf.replace(/\s+/g,' ').slice(0,120)}`);
+      resolve(ok);
+    });
+    sock.on('error', (e) => {
+      clearTimeout(timer);
+      dbg(`[tor] control socket erro: ${e.message}`);
+      resolve(false);
+    });
+  });
+}
+
+// ---------- Preflight: verifica se a página de login vem bloqueada pelo CF ----------
+async function preflightPortalCheck() {
+  try {
+    const agent = new SocksProxyAgent(TOR_PROXY);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 12000);
+    const res = await fetch(PORTAL_URL, {
+      // @ts-ignore node undici accepts agent via dispatcher; usamos fetch nativo com agent-adapter
+      agent,
+      dispatcher: undefined,
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml',
+      },
+    }).catch((e) => ({ ok: false, status: 0, __err: e?.message || String(e) }));
+    clearTimeout(timer);
+    if (!res || res.__err) return { blocked: false, unknown: true, reason: res?.__err };
+    const status = res.status || 0;
+    const text = typeof res.text === 'function' ? await res.text().catch(() => '') : '';
+    const lower = text.toLowerCase();
+    const blocked = status === 403 || /sorry, you have been blocked|attention required|cloudflare|access denied|ray id/.test(lower);
+    return { blocked, status, sample: text.slice(0, 200) };
+  } catch (e) {
+    return { blocked: false, unknown: true, reason: e?.message || String(e) };
+  }
+}
+
+// ---------- WAF cooldown por e-mail ----------
+function isEmailInWafCooldown(email) {
+  const exp = wafCooldowns.get(String(email || '').toLowerCase());
+  if (!exp) return 0;
+  const remaining = exp - Date.now();
+  if (remaining <= 0) { wafCooldowns.delete(String(email || '').toLowerCase()); return 0; }
+  return remaining;
+}
+function setEmailWafCooldown(email, ms = WAF_COOLDOWN_MS) {
+  wafCooldowns.set(String(email || '').toLowerCase(), Date.now() + ms);
+  dbg(`[waf] cooldown ${email} por ${Math.round(ms/1000)}s`);
+}
+
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
