@@ -411,6 +411,26 @@ function extractCustomerCodes(customers: any[]): string[] {
   return codes;
 }
 
+function buildProductDiagnostics(data: any, only: string[] | null = null): Record<string, unknown> {
+  const telecom = Array.isArray(data?.telecom) ? data.telecom : [];
+  const seguros = Array.isArray(data?.seguros) ? data.seguros : [];
+  const workerDiag = data?.diagnostics && typeof data.diagnostics === "object" ? data.diagnostics : {};
+  return {
+    ...(workerDiag || {}),
+    only,
+    telecom: {
+      source: "/crm/telecom",
+      returned: telecom.length,
+      ...((workerDiag as Record<string, any>)?.telecom || {}),
+    },
+    seguros: {
+      source: "/crm/seguros",
+      returned: seguros.length,
+      ...((workerDiag as Record<string, any>)?.seguros || {}),
+    },
+  };
+}
+
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
 // cliente aparecer na carteira; a Fase A já persistiu todos do Kanban.
 // deno-lint-ignore no-explicit-any
@@ -444,7 +464,7 @@ async function runSyncAllBackgroundPhase(
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
     out.portal_identity = { igreen_consultor_id: consultorId };
-    if (r.data?.diagnostics) out.diagnostics = r.data.diagnostics;
+    out.diagnostics = buildProductDiagnostics(r.data, buildExtrasOnly(toggles));
 
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
@@ -1129,7 +1149,7 @@ async function syncOneConsultant(
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
     const saved = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    return { success: true, mode: "sync_telecom", portal_identity: { igreen_consultor_id: consultorId }, telecom: saved, diagnostics: r.data?.diagnostics || null };
+    return { success: true, mode: "sync_telecom", portal_identity: { igreen_consultor_id: consultorId }, telecom: saved, diagnostics: buildProductDiagnostics(r.data, ["telecom"]) };
   }
 
   // === SYNC SEGUROS MODE ===
@@ -1142,7 +1162,7 @@ async function syncOneConsultant(
       await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
     }
     const saved = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    return { success: true, mode: "sync_seguros", portal_identity: { igreen_consultor_id: consultorId }, seguros: saved, diagnostics: r.data?.diagnostics || null };
+    return { success: true, mode: "sync_seguros", portal_identity: { igreen_consultor_id: consultorId }, seguros: saved, diagnostics: buildProductDiagnostics(r.data, ["seguros"]) };
   }
 
   // === SYNC NETWORK MODE ===
