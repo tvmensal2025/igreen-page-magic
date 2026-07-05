@@ -217,6 +217,7 @@ export function CustomerManager({
 
   async function handleSyncIgreen() {
     setSyncing(true);
+    const requestedAt = new Date().toISOString();
     try {
       // Refetch imediato do que já está no banco (não espera o worker).
       await refreshIgreenQueries();
@@ -242,7 +243,7 @@ export function CustomerManager({
       // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
       // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
       void (async () => {
-        const finished = await waitIgreenSyncFinished(consultantId);
+        const finished = await waitIgreenSyncFinished(consultantId, { minStartedAt: requestedAt });
         await refreshIgreenQueries();
         if (finished) {
           const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
@@ -585,13 +586,14 @@ export function CustomerManager({
                       className="mt-3 h-8 text-xs"
                       onClick={async () => {
                         setSyncing(true);
+                        const requestedAt = new Date().toISOString();
                         try {
                           const res = await runIgreenSync(consultantId, syncMode as "sync_telecom" | "sync_seguros");
                           if (res.ok === false) {
                             toast({ title: `Falha ao buscar ${productLabel}`, description: res.error, variant: "destructive" });
                           } else {
                             toast({ title: `Buscando ${productLabel} novamente…` });
-                            const finished = await waitIgreenSyncFinished(consultantId, { timeoutMs: 90_000 });
+                            const finished = await waitIgreenSyncFinished(consultantId, { timeoutMs: 90_000, minStartedAt: requestedAt });
                             await refreshIgreenQueries();
                             const productCounts = (finished?.counts?.[isTelecom ? "telecom" : "seguros"] ?? {}) as Record<string, unknown>;
                             const received = productCounts[isTelecom ? "telecom_received" : "seguros_received"];
