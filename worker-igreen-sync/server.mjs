@@ -1,4 +1,4 @@
-// server.mjs — igreen-sync-worker v17 (API nova api-vo)
+// server.mjs — igreen-sync-worker v18 (API nova api-vo, cobertura total)
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
@@ -124,10 +124,11 @@ function totalFromPayload(j) {
   return Number(j?.data?.total ?? j?.total ?? j?.meta?.total ?? j?.pagination?.total ?? 0) || 0;
 }
 
-async function fetchPaged(session, basePath, { perPage = 100, maxPages = 30 } = {}) {
+async function fetchPaged(session, basePath, { perPage = 100, maxPages = Infinity } = {}) {
   const all = [];
   const diag = { path: basePath, pages: 0, items: 0, total: 0, error: null };
-  for (let page = 1; page <= maxPages; page++) {
+  const cap = Number.isFinite(maxPages) ? maxPages : 500; // limite duro de segurança
+  for (let page = 1; page <= cap; page++) {
     const sep = basePath.includes('?') ? '&' : '?';
     const path = `${basePath}${sep}page=${page}&perPage=${perPage}&pageSize=${perPage}&limit=${perPage}&search=`;
     try {
@@ -139,6 +140,8 @@ async function fetchPaged(session, basePath, { perPage = 100, maxPages = 30 } = 
       if (total) diag.total = total;
       all.push(...items);
       if (items.length < perPage || (total && page * perPage >= total)) break;
+      // rate-limit brando entre páginas (250ms)
+      await new Promise((r) => setTimeout(r, 250));
     } catch (e) {
       diag.error = e.message;
       break;
@@ -1092,6 +1095,116 @@ async function fetchMetrics(session, month) {
 
 
 // =============================================================================
+// v18 — collectFullExtras: cobertura total página-a-página do portal.
+// Para cada rota da lista abaixo, paginação sem cap (fetchPaged com maxPages=Infinity).
+// Retorna { blocks: { [route]: { items, diagnostics } }, per_route_summary }
+// A edge usa isso para popular igreen_telecom_linhas, igreen_telecom_faturas,
+// igreen_telecom_comissoes, igreen_seguros_comissoes, igreen_network_snapshots, etc.
+// =============================================================================
+async function collectFullExtras(session, month) {
+  const mes = month || new Date().toISOString().slice(0, 7);
+  const routes = [
+    // Clientes Green
+    { key: 'clientes_green.lista', path: '/clientes-green?status=todos&injecao=todos&tipo=todos' },
+    { key: 'clientes_green.faturas', path: '/clientes-green/faturas?status=todos' },
+    { key: 'clientes_green.injecao', path: '/clientes-green/injecao?status=todos' },
+    { key: 'clientes_green.devolutivas_resolvidas', path: '/clientes-green/devolutivas-resolvidas' },
+    // Telecom
+    { key: 'telecom.clientes', path: '/telecom/clientes?status=todos' },
+    { key: 'telecom.linhas', path: '/telecom/linhas?status=todos' },
+    { key: 'telecom.portabilidade', path: '/telecom/portabilidade?status=todos' },
+    { key: 'telecom.faturas', path: '/telecom/faturas?status=todos' },
+    { key: 'telecom.comissoes', path: '/telecom/comissoes?status=todos' },
+    { key: 'telecom.recargas', path: '/telecom/recargas?status=todos' },
+    { key: 'telecom.bonus', path: '/telecom/bonus?status=todos' },
+    { key: 'telecom.licenciados', path: '/telecom/licenciados?status=todos' },
+    // Seguros
+    { key: 'seguros.apolices', path: '/seguros/apolices?status=todos' },
+    { key: 'seguros.clientes', path: '/seguros/clientes?status=todos' },
+    { key: 'seguros.comissoes', path: '/seguros/comissoes?status=todos' },
+    { key: 'seguros.sinistros', path: '/seguros/sinistros?status=todos' },
+    { key: 'seguros.renovacoes', path: '/seguros/renovacoes?status=todos' },
+    { key: 'seguros.licenciados', path: '/seguros/licenciados?status=todos' },
+  ];
+
+  const blocks = {};
+  const per_route_summary = {};
+  // Sequencial para não sobrecarregar o portal (250ms entre páginas dentro de cada
+  // rota já é aplicado por fetchPaged; entre rotas damos mais 200ms).
+  for (const r of routes) {
+    try {
+      const t0 = Date.now();
+      const res = await fetchPaged(session, r.path, { perPage: 100, maxPages: 500 });
+      blocks[r.key] = { items: res.items, diagnostics: res.diagnostics };
+      per_route_summary[r.key] = {
+        path: r.path,
+        pages: res.diagnostics.pages,
+        items: res.items.length,
+        portal_total: res.diagnostics.total || null,
+        error: res.diagnostics.error,
+        ms: Date.now() - t0,
+      };
+      dbg(`[full_extras] ${r.key}: ${res.items.length} itens (pages=${res.diagnostics.pages}, total=${res.diagnostics.total || '?'})`);
+    } catch (e) {
+      blocks[r.key] = { items: [], diagnostics: { error: e.message, path: r.path } };
+      per_route_summary[r.key] = { path: r.path, items: 0, error: e.message };
+      dbg(`[full_extras] ${r.key} FAIL: ${e.message}`);
+    }
+    await new Promise((r2) => setTimeout(r2, 200));
+  }
+
+  // Resumos gerais (não paginados) — objetos únicos
+  const singles = [
+    { key: 'clientes_green.summary', path: '/clientes-green/summary' },
+    { key: 'clientes_green.resumo_geral', path: '/clientes-green/resumo-geral' },
+    { key: 'telecom.resumo_geral', path: '/telecom/resumo-geral' },
+    { key: 'telecom.client_map', path: '/telecom/client-map' },
+    { key: 'seguros.resumo_geral', path: '/seguros/resumo-geral' },
+    { key: 'seguros.cashback_resumo', path: '/seguros/cashback/resumo' },
+    { key: 'estatisticas_pro', path: '/estatisticas-pro' },
+  ];
+  for (const r of singles) {
+    try {
+      const j = await apiGet(session, r.path);
+      blocks[r.key] = { data: j?.data ?? j, single: true };
+      per_route_summary[r.key] = { path: r.path, single: true, ok: true };
+    } catch (e) {
+      blocks[r.key] = { data: null, single: true, error: e.message };
+      per_route_summary[r.key] = { path: r.path, single: true, error: e.message };
+    }
+    await new Promise((r2) => setTimeout(r2, 150));
+  }
+
+  // Histórico de rede — últimos 12 meses
+  try {
+    const netHistory = [];
+    const [y, m] = mes.split('-').map(Number);
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(Date.UTC(y, (m - 1) - i, 1));
+      const label = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+      try {
+        const j = await apiGet(session, `/network-map/data?month=${label}`);
+        const items = firstArrayPayload(j);
+        netHistory.push({ mes: label, count: items.length, items });
+      } catch (e) {
+        netHistory.push({ mes: label, error: e.message });
+      }
+      await new Promise((r2) => setTimeout(r2, 150));
+    }
+    blocks['network.history'] = { items: netHistory, months: netHistory.length };
+    per_route_summary['network.history'] = { months: netHistory.length };
+  } catch (e) {
+    per_route_summary['network.history'] = { error: e.message };
+  }
+
+  return { blocks, per_route_summary, mes };
+}
+
+
+
+
+
+// =============================================================================
 // Probe genérico de endpoints da API iGreen (api-vo).
 // - PROBE_ALLOWLIST: paths antigos, mantido para `/probe-endpoints` (retorna shape).
 // - PROBE_FULL_CATALOG: catálogo consolidado do SPA + do worker; usado no
@@ -1306,7 +1419,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+api-vo-v17',
+        mode: 'tor+playwright+api-vo-v18',
         api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
@@ -1405,10 +1518,13 @@ const server = http.createServer(async (req, res) => {
     }
     // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
     // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
+    // Com `full_history=true` (v18), executa também `collectFullExtras`
+    // (paginação máxima em todas as páginas de Telecom/Seguros/Clientes-Green).
     if (req.url === '/sync-all') {
       const s = await getOrCreateSession(email, password);
       const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
       const want = (k) => !only || only.has(k);
+      const fullHistory = body.full_history !== false; // v18: default TRUE
       const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback] = await Promise.all([
         want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
         want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
@@ -1421,6 +1537,17 @@ const server = http.createServer(async (req, res) => {
       ]);
       const telecom = telecomPayload.items || [];
       const seguros = segurosPayload.items || [];
+      // v18: cobertura total página-a-página (sempre executa, salvo full_history=false)
+      let fullExtras = null;
+      if (fullHistory) {
+        try {
+          fullExtras = await collectFullExtras(s, body.month);
+          dbg(`[sync-all] full_extras: rotas=${Object.keys(fullExtras.blocks).length}`);
+        } catch (e) {
+          dbg(`[sync-all] full_extras: ${e.message}`);
+          fullExtras = { error: e.message, blocks: {} };
+        }
+      }
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
       // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
@@ -1444,10 +1571,13 @@ const server = http.createServer(async (req, res) => {
         seguros,
         devolutivas,
         cashback,
+        full_extras: fullExtras,
         diagnostics: {
           telecom: telecomPayload.diagnostics,
           seguros: segurosPayload.diagnostics,
           only: only ? Array.from(only) : null,
+          full_history: fullHistory,
+          worker_version: 'v18',
         },
       });
     }
@@ -1829,7 +1959,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v17 (tor+playwright+api-vo) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v18 (tor+playwright+api-vo, cobertura total) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas

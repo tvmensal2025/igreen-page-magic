@@ -1,11 +1,44 @@
-# igreen-sync-worker (v16 — API nova api-vo)
+# igreen-sync-worker (v18 — cobertura total de páginas)
+
+> **v18 (2026-07-06):** o `/sync-all` agora coleta TODAS as páginas do portal
+> (Clientes Green, Telecom completo, Seguros completo, Rede histórica) com
+> paginação sem cap. Cada rota é retornada como bloco separado em
+> `full_extras.blocks` e persistida em `igreen_telecom_linhas`,
+> `igreen_telecom_faturas`, `igreen_telecom_comissoes`,
+> `igreen_seguros_comissoes`, `igreen_seguros_customers` (sinistros/renovação)
+> e `igreen_network_snapshots`. **Precisa redeploy do container** — veja seção
+> "Deploy" abaixo. Boot log mostra `v18` quando estiver certo.
 
 > **v16 (2026-07-01):** o portal iGreen migrou de arquitetura. Não há mais
 > "Exportar Excel" nem os endpoints antigos. Agora é uma API REST em
 > `https://api-vo.igreenenergy.com.br/v1`, autenticada por JWT
 > (`POST /auth/session`). O login **não tem mais reCAPTCHA** (confirmado ao vivo).
-> O worker foi adaptado para consumir a nova API. Ver
-> `ESTRATEGIA_CAPTURA_TOTAL_IGREEN.md` na raiz.
+> Ver `ESTRATEGIA_CAPTURA_TOTAL_IGREEN.md` na raiz.
+
+## Deploy (EasyPanel / VPS Docker)
+
+O worker roda fora do Lovable. Após qualquer mudança em `server.mjs`:
+
+```bash
+# no host onde o container está
+cd /caminho/do/repo/worker-igreen-sync
+git pull
+docker build -t igreen-sync-worker:latest .
+docker stop igreen-sync-worker || true
+docker rm igreen-sync-worker || true
+docker run -d --name igreen-sync-worker \
+  -p 3102:3102 \
+  --env-file .env \
+  --restart unless-stopped \
+  igreen-sync-worker:latest
+docker logs -f igreen-sync-worker | head -20   # confirme "v18" no boot
+```
+
+No EasyPanel: use o botão "Rebuild" no serviço `igreen-sync-worker` — ele já
+puxa o commit mais recente do Git. Após subir, confirme em
+`GET /health` que `mode` retorna `tor+playwright+api-vo-v18`.
+
+
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes, rede e
 métricas de gestão), individual por consultor. Consumido pela edge function
