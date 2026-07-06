@@ -41,31 +41,76 @@ Deno.serve(async (req) => {
     let consultantName: string | null = null;
 
     if (!email || !password) {
-      let q = supabase
-        .from("consultants")
-        .select("id, name, igreen_portal_email, igreen_portal_password")
-        .not("igreen_portal_email", "is", null)
-        .not("igreen_portal_password", "is", null)
-        .limit(1);
-      if (consultantId) q = q.eq("id", consultantId).limit(1);
-      const { data, error } = await q;
-      if (error || !data || data.length === 0) {
-        return new Response(
-          JSON.stringify({
-            ok: false,
-            error: consultantId
-              ? "Consultor sem credenciais iGreen cadastradas."
-              : "Nenhum consultor com credenciais iGreen encontrado.",
-          }),
-          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
-        );
+      // 1) Se veio email, buscar password no banco pelo email
+      if (email && !password) {
+        const { data } = await supabase
+          .from("consultants")
+          .select("id, name, igreen_portal_email, igreen_portal_password")
+          .eq("igreen_portal_email", email)
+          .not("igreen_portal_password", "is", null)
+          .limit(1)
+          .maybeSingle();
+        if (data) {
+          const c = data as any;
+          password = c.igreen_portal_password;
+          consultantId = c.id;
+          consultantName = c.name;
+        }
       }
-      const c = data[0] as any;
-      email = c.igreen_portal_email;
-      password = c.igreen_portal_password;
-      consultantId = c.id;
-      consultantName = c.name;
+      // 2) Fallback: pegar por consultant_id ou primeiro disponível
+      if (!password) {
+        let q = supabase
+          .from("consultants")
+          .select("id, name, igreen_portal_email, igreen_portal_password")
+          .not("igreen_portal_email", "is", null)
+          .not("igreen_portal_password", "is", null)
+          .limit(1);
+        if (consultantId) q = q.eq("id", consultantId).limit(1);
+        const { data, error } = await q;
+        if (error || !data || data.length === 0) {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              error: consultantId
+                ? "Consultor sem credenciais iGreen cadastradas."
+                : email
+                  ? `Nenhum consultor com email ${email} e credenciais encontrado.`
+                  : "Nenhum consultor com credenciais iGreen encontrado.",
+            }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        const c = data[0] as any;
+        email = c.igreen_portal_email;
+        password = c.igreen_portal_password;
+        consultantId = c.id;
+        consultantName = c.name;
+      }
     }
+
+    // Anti-lockout: recusa se última chamada foi < 3 min atrás
+    const cooldownCutoff = new Date(Date.now() - 3 * 60_000).toISOString();
+    const { data: recentRecon } = await supabase
+      .from("igreen_endpoint_discovery")
+      .select("checked_at")
+      .eq("bucket", "portal_recon")
+      .gte("checked_at", cooldownCutoff)
+      .order("checked_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recentRecon) {
+      const elapsedSec = Math.floor((Date.now() - new Date((recentRecon as any).checked_at).getTime()) / 1000);
+      const waitSec = Math.max(0, 180 - elapsedSec);
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "cooldown",
+          message: `Aguarde ${waitSec}s antes de rodar outro recon (evita bloqueio do portal iGreen).`,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
 
     // 2) Resolver worker
     const { data: settingsRows } = await supabase.from("settings").select("key, value");
