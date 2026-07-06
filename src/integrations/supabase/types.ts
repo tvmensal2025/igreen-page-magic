@@ -5876,6 +5876,66 @@ export type Database = {
         }
         Relationships: []
       }
+      igreen_recon_routes: {
+        Row: {
+          ai_fields: Json | null
+          ai_summary: string | null
+          consultant_email: string | null
+          consultant_id: string | null
+          created_at: string
+          dom_outline: Json | null
+          elapsed_ms: number | null
+          error: string | null
+          final_path: string | null
+          html_length: number | null
+          html_snippet: string | null
+          id: string
+          new_endpoints: Json | null
+          route: string
+          run_id: string
+          screenshot_path: string | null
+          title: string | null
+        }
+        Insert: {
+          ai_fields?: Json | null
+          ai_summary?: string | null
+          consultant_email?: string | null
+          consultant_id?: string | null
+          created_at?: string
+          dom_outline?: Json | null
+          elapsed_ms?: number | null
+          error?: string | null
+          final_path?: string | null
+          html_length?: number | null
+          html_snippet?: string | null
+          id?: string
+          new_endpoints?: Json | null
+          route: string
+          run_id: string
+          screenshot_path?: string | null
+          title?: string | null
+        }
+        Update: {
+          ai_fields?: Json | null
+          ai_summary?: string | null
+          consultant_email?: string | null
+          consultant_id?: string | null
+          created_at?: string
+          dom_outline?: Json | null
+          elapsed_ms?: number | null
+          error?: string | null
+          final_path?: string | null
+          html_length?: number | null
+          html_snippet?: string | null
+          id?: string
+          new_endpoints?: Json | null
+          route?: string
+          run_id?: string
+          screenshot_path?: string | null
+          title?: string | null
+        }
+        Relationships: []
+      }
       igreen_seguros_comissoes: {
         Row: {
           consultant_id: string
