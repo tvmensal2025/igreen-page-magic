@@ -99,16 +99,49 @@ function parseProxyEnv() {
 }
 const EXTERNAL_PROXY = parseProxyEnv();
 
+// SESSÃO FIXA (sticky) — CRÍTICO para passar no Cloudflare.
+// O Cloudflare amarra a liberação (cf_clearance) a UM IP. Proxies residenciais
+// como a Evomi trocam de IP a cada requisição por padrão, o que derruba a
+// liberação e volta o "Sorry, you have been blocked". Para resolver, a Evomi
+// aceita fixar o IP anexando `_session-XXXX` na senha (mantém o mesmo IP
+// durante a sessão). Testado ao vivo: sem sessão fixa = bloqueio; com sessão
+// fixa = formulário de login carrega 100%.
+//
+// IGREEN_PROXY_STICKY=0 desativa esse comportamento (caso o provedor não use
+// esse formato de senha). Ligado por padrão quando há proxy externo.
+const PROXY_STICKY = !['0', 'false', 'off', 'no'].includes(
+  String(process.env.IGREEN_PROXY_STICKY ?? '1').trim().toLowerCase(),
+);
+// Sufixos extras opcionais para a senha do proxy (ex.: "_lifetime-30m").
+const PROXY_PASS_SUFFIX = String(process.env.IGREEN_PROXY_PASS_SUFFIX || '').trim();
+
+// Gera uma senha de proxy com sessão fixa nova. Só mexe se:
+//   - houver proxy externo com senha, E
+//   - sticky estiver ligado, E
+//   - a senha ainda NÃO tiver um `_session-` definido pelo usuário.
+function buildStickyPassword(basePassword) {
+  if (!basePassword) return basePassword;
+  if (!PROXY_STICKY) return basePassword;
+  if (/_session-/i.test(basePassword)) return basePassword; // usuário já definiu
+  // ATENÇÃO: a Evomi limita o ID de sessão a ~15 caracteres (IDs maiores
+  // retornam "session limit should..." e a conexão falha). Por isso geramos
+  // um ID curto (12 chars) só com letras/números. Validado ao vivo.
+  const sid = Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-6);
+  return `${basePassword}_session-${sid.slice(0, 12)}${PROXY_PASS_SUFFIX}`;
+}
+
 // Monta o objeto de proxy que o Playwright entende, escolhendo a fonte:
 //   1º proxy externo (PROXY_URL/PROXY_SERVER)  → prioridade
 //   2º Tor (se IGREEN_USE_TOR ligado)
 //   senão: sem proxy (acesso direto)
+// Cada chamada gera uma sessão fixa nova (todas as requisições daquele login
+// saem pelo mesmo IP).
 function buildProxyConfig() {
   if (EXTERNAL_PROXY?.server) {
     const cfg = { server: EXTERNAL_PROXY.server };
     if (EXTERNAL_PROXY.username) cfg.username = EXTERNAL_PROXY.username;
-    if (EXTERNAL_PROXY.password) cfg.password = EXTERNAL_PROXY.password;
-    return { proxy: cfg, kind: 'external', label: EXTERNAL_PROXY.server };
+    if (EXTERNAL_PROXY.password) cfg.password = buildStickyPassword(EXTERNAL_PROXY.password);
+    return { proxy: cfg, kind: 'external', label: EXTERNAL_PROXY.server, sticky: PROXY_STICKY };
   }
   const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
   if (useTor) return { proxy: { server: TOR_PROXY }, kind: 'tor', label: TOR_PROXY };
@@ -426,7 +459,7 @@ async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
   // Escolhe a fonte de saída: proxy externo (prioridade) → Tor → direto.
   const proxyCfg = buildProxyConfig();
-  const proxyDesc = proxyCfg.kind === 'external' ? `proxy externo (${proxyCfg.label})`
+  const proxyDesc = proxyCfg.kind === 'external' ? `proxy externo (${proxyCfg.label}${proxyCfg.sticky ? ', sessão fixa' : ''})`
     : proxyCfg.kind === 'tor' ? `Tor (${proxyCfg.label})` : 'acesso direto (sem proxy)';
   dbg(`[login] ${email} → iniciando browser via ${proxyDesc}`);
 
@@ -465,6 +498,52 @@ async function loginWithPlaywright(email, password) {
     } catch (e) {
       throw new HttpError(502, `Falha de rede ao abrir login iGreen: ${e.message}`, 'network_fetch_failed');
     }
+
+    // ─── LOGIN DIRETO VIA API (caminho principal) ─────────────────────────
+    // O login real é um POST em /auth/session. NÃO precisamos que a SPA (React)
+    // renderize o formulário — só precisamos do cf_clearance que a página já
+    // pegou no goto acima. Isso evita o travamento anterior: pelo proxy
+    // residencial, alguns bundles JS pesados (dist-*.js do vo.igreenenergy)
+    // falhavam intermitentemente e o formulário nunca montava. Fazendo o POST
+    // direto (herdando cookies/cf_clearance da página), o login fica leve e
+    // estável. Validado ao vivo: a API responde JSON (passou o Cloudflare).
+    dbg('[login] tentando login direto via API (sem depender do formulário)');
+    try {
+      const apiOut = await page.evaluate(async (args) => {
+        try {
+          const res = await fetch(args.url, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json, text/plain, */*', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: args.email, password: args.password, keepConnected: true }),
+          });
+          const text = await res.text();
+          return { status: res.status, text, contentType: res.headers.get('content-type') || '' };
+        } catch (e) { return { error: String((e && e.message) || e) }; }
+      }, { url: `${API_BASE}${AUTH_PATH}`, email, password });
+
+      if (apiOut && !apiOut.error) {
+        let body; try { body = JSON.parse(apiOut.text); } catch { body = { raw: String(apiOut.text || '').slice(0, 1200) }; }
+        const fb = { status: apiOut.status, contentType: apiOut.contentType, body };
+        // Só aceita como login válido se NÃO for HTML (bloqueio Cloudflare).
+        if (!isHtmlResponse(fb)) {
+          loginResponseData = fb;
+          dbg(`[login] API direta respondeu status=${fb.status} (sem depender do form)`);
+        } else {
+          dbg('[login] API direta veio HTML (possível Cloudflare); cairá no fluxo de formulário');
+        }
+      } else {
+        dbg(`[login] API direta falhou (${apiOut?.error}); cairá no fluxo de formulário`);
+      }
+    } catch (e) {
+      dbg(`[login] erro na API direta: ${e.message}; cairá no fluxo de formulário`);
+    }
+
+    // Se a API direta já resolveu (token ou credencial inválida), pulamos todo
+    // o fluxo de formulário/captcha — mais rápido e estável.
+    if (loginResponseData && !isHtmlResponse(loginResponseData)) {
+      await snapStep(page, 'login_via_api');
+    } else {
+    // ─── FALLBACK: fluxo de formulário (só se a API direta não resolveu) ───
     try {
       await page.waitForSelector('input[type="email"], input[name="email"]', { timeout: 45000 });
     } catch (e) {
@@ -570,6 +649,7 @@ async function loginWithPlaywright(email, password) {
       }
     }
     await snapStep(page, 'pos_submit');
+    } // fim do fallback de formulário (bloco else do login via API)
 
     if (!loginResponseData) {
       const info = await classifyPortalPage(page);
@@ -2747,9 +2827,9 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const bootProxy = buildProxyConfig();
-  const netState = bootProxy.kind === 'external' ? `proxy-externo(${bootProxy.label})`
+  const netState = bootProxy.kind === 'external' ? `proxy-externo(${bootProxy.label}${bootProxy.sticky ? ',sticky' : ''})`
     : bootProxy.kind === 'tor' ? `tor(${bootProxy.label})` : 'direto(sem-proxy)';
-  console.log(`[boot] igreen-sync-worker v25 (${netState}+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v27 (${netState}+playwright+api-vo, login-api-first + cadastros-by-day + recon-one-route) porta ${PORT}`);
 });
 
 
