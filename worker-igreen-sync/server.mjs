@@ -2217,12 +2217,13 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, {
         ok: true,
-        worker_version: 'v20',
+        worker_version: 'v21',
         consultor_id: s.consultorId,
         elapsed_ms: Date.now() - started,
         endpoints_discovered: out.length,
         host_histogram: hostHist,
         catalog: out,
+        route_captures: routeCaptures,
         steps,
       });
     }
@@ -2239,7 +2240,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v20 (tor+playwright+api-vo, recon-menu-click) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v21 (tor+playwright+api-vo, recon-menu-click+captures) porta ${PORT}`);
 });
 
 
