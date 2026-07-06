@@ -599,6 +599,169 @@ function scheduleSyncAllBackgroundPhase(...args: any[]): void {
 }
 
 // =====================================================
+// v18 — persistFullExtras: consome o payload `full_extras` do worker (v18)
+// e grava cada bloco na tabela específica. Todos os upserts são idempotentes.
+// Blocos suportados: telecom.linhas, telecom.faturas, telecom.comissoes,
+// seguros.comissoes, seguros.sinistros, seguros.apolices (enriquece
+// igreen_seguros_customers), network.history (snapshot mensal).
+// =====================================================
+// deno-lint-ignore no-explicit-any
+async function persistFullExtras(supabase: any, consultantId: string | null, fullExtras: any): Promise<Record<string, unknown>> {
+  if (!consultantId || !fullExtras?.blocks) return { skipped: true };
+  const summary: Record<string, unknown> = {};
+  const blocks = fullExtras.blocks as Record<string, { items?: any[]; data?: any; single?: boolean }>;
+
+  const strOrNull = (v: unknown): string | null => {
+    if (v == null || v === "") return null;
+    return String(v).trim() || null;
+  };
+  const centsFromValor = (v: unknown): number | null => {
+    if (v == null || v === "") return null;
+    const n = parseFloat(String(v).replace(/[^\d,.-]/g, "").replace(",", "."));
+    return isNaN(n) ? null : Math.round(n * 100);
+  };
+  const dateOrNull = (v: unknown): string | null => {
+    if (!v) return null;
+    const s = String(v).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  };
+  const mesRef = (v: unknown, fallback = new Date().toISOString().slice(0, 7)): string => {
+    if (!v) return fallback;
+    const s = String(v);
+    const m = s.match(/(\d{4})[-/](\d{1,2})/);
+    if (m) return `${m[1]}-${String(m[2]).padStart(2, "0")}`;
+    return fallback;
+  };
+  const upsertBatch = async (table: string, rows: any[], onConflict: string): Promise<number> => {
+    if (rows.length === 0) return 0;
+    let saved = 0;
+    for (let i = 0; i < rows.length; i += 100) {
+      const batch = rows.slice(i, i + 100);
+      const { error, count } = await supabase.from(table).upsert(batch, { onConflict, ignoreDuplicates: false, count: "exact" });
+      if (error) { console.warn(`[full_extras] ${table} upsert:`, error.message); }
+      else saved += count ?? batch.length;
+    }
+    return saved;
+  };
+
+  // Telecom → linhas
+  const linhas = blocks["telecom.linhas"]?.items || [];
+  if (linhas.length) {
+    const rows = linhas.map((it: any) => ({
+      consultant_id: consultantId,
+      idcnxtelecom: strOrNull(it.idcnxtelecom ?? it.idConexao ?? it.id),
+      msisdn: strOrNull(it.msisdn ?? it.numero ?? it.linha ?? it.telefone) ?? `auto:${stableIntId(JSON.stringify(it))}`,
+      iccid: strOrNull(it.iccid ?? it.chipIccid),
+      plano: strOrNull(it.plano ?? it.planoNome ?? it.plan),
+      status: strOrNull(it.status ?? it.situacao),
+      cliente_nome: strOrNull(it.cliente ?? it.nome ?? it.titular),
+      cliente_cpf: strOrNull(it.cpf ?? it.documento),
+      ativada_em: dateOrNull(it.ativadaEm ?? it.dataAtivacao ?? it.ativada_em),
+      cancelada_em: dateOrNull(it.canceladaEm ?? it.dataCancelamento ?? it.cancelada_em),
+      raw: it,
+    }));
+    summary.telecom_linhas = await upsertBatch("igreen_telecom_linhas", rows, "consultant_id,msisdn");
+  }
+
+  // Telecom → faturas
+  const faturas = blocks["telecom.faturas"]?.items || [];
+  if (faturas.length) {
+    const rows = faturas.map((it: any) => ({
+      consultant_id: consultantId,
+      idcnxtelecom: strOrNull(it.idcnxtelecom ?? it.idConexao ?? it.id) ?? String(stableIntId(JSON.stringify(it))),
+      msisdn: strOrNull(it.msisdn ?? it.numero ?? it.linha),
+      mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia ?? it.vencimento),
+      valor_cents: centsFromValor(it.valor ?? it.valorTotal ?? it.valorPago),
+      status: strOrNull(it.status ?? it.situacao),
+      vencimento: dateOrNull(it.vencimento ?? it.dataVencimento),
+      pago_em: dateOrNull(it.pagoEm ?? it.dataPagamento),
+      raw: it,
+    }));
+    summary.telecom_faturas = await upsertBatch("igreen_telecom_faturas", rows, "consultant_id,idcnxtelecom,mes_referencia");
+  }
+
+  // Telecom → comissões
+  const telecomComissoes = blocks["telecom.comissoes"]?.items || [];
+  if (telecomComissoes.length) {
+    const rows = telecomComissoes.map((it: any) => ({
+      consultant_id: consultantId,
+      mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia),
+      origem: strOrNull(it.origem ?? it.tipo ?? it.categoria),
+      valor_cents: centsFromValor(it.valor ?? it.valorComissao),
+      status: strOrNull(it.status ?? it.situacao),
+      descricao: strOrNull(it.descricao ?? it.detalhes),
+      external_id: strOrNull(it.id ?? it.idComissao) ?? String(stableIntId(JSON.stringify(it))),
+      raw: it,
+    }));
+    summary.telecom_comissoes = await upsertBatch("igreen_telecom_comissoes", rows, "consultant_id,external_id,mes_referencia");
+  }
+
+  // Seguros → comissões
+  const segurosComissoes = blocks["seguros.comissoes"]?.items || [];
+  if (segurosComissoes.length) {
+    const rows = segurosComissoes.map((it: any) => ({
+      consultant_id: consultantId,
+      mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia),
+      origem: strOrNull(it.origem ?? it.tipo ?? it.categoria),
+      valor_cents: centsFromValor(it.valor ?? it.valorComissao),
+      status: strOrNull(it.status ?? it.situacao),
+      descricao: strOrNull(it.descricao ?? it.detalhes),
+      external_id: strOrNull(it.id ?? it.idComissao) ?? String(stableIntId(JSON.stringify(it))),
+      raw: it,
+    }));
+    summary.seguros_comissoes = await upsertBatch("igreen_seguros_comissoes", rows, "consultant_id,external_id,mes_referencia");
+  }
+
+  // Seguros → sinistros/renovações → enriquecem igreen_seguros_customers por apolice
+  const sinistros = blocks["seguros.sinistros"]?.items || [];
+  const renovacoes = blocks["seguros.renovacoes"]?.items || [];
+  if (sinistros.length || renovacoes.length) {
+    const byApolice = new Map<string, { sinistros: any[]; renov: any }>();
+    for (const s of sinistros) {
+      const key = String(s.apoliceId ?? s.apolice_id ?? s.idApolice ?? "");
+      if (!key) continue;
+      if (!byApolice.has(key)) byApolice.set(key, { sinistros: [], renov: null });
+      byApolice.get(key)!.sinistros.push(s);
+    }
+    for (const r of renovacoes) {
+      const key = String(r.apoliceId ?? r.apolice_id ?? r.idApolice ?? "");
+      if (!key) continue;
+      if (!byApolice.has(key)) byApolice.set(key, { sinistros: [], renov: null });
+      byApolice.get(key)!.renov = r;
+    }
+    let updated = 0;
+    for (const [apoliceId, v] of byApolice) {
+      const patch: Record<string, unknown> = {};
+      if (v.sinistros.length) patch.sinistros = v.sinistros;
+      if (v.renov) {
+        patch.renovacao_prevista_at = dateOrNull(v.renov.dataRenovacao ?? v.renov.previsao);
+        patch.cashback_previsto_cents = centsFromValor(v.renov.cashback ?? v.renov.valorCashback);
+      }
+      if (Object.keys(patch).length === 0) continue;
+      const { error } = await supabase.from("igreen_seguros_customers")
+        .update(patch).eq("consultant_id", consultantId).eq("apolice_id", apoliceId);
+      if (!error) updated++;
+    }
+    summary.seguros_enrich_updated = updated;
+  }
+
+  // Rede → snapshot mensal
+  const netHist = blocks["network.history"]?.items || [];
+  if (Array.isArray(netHist) && netHist.length) {
+    const rows = netHist.filter((h: any) => h.mes).map((h: any) => ({
+      consultant_id: consultantId,
+      mes_referencia: h.mes,
+      payload: { count: h.count ?? (h.items?.length || 0), error: h.error ?? null, items: h.items?.slice(0, 500) ?? null },
+    }));
+    summary.network_snapshots = await upsertBatch("igreen_network_snapshots", rows, "consultant_id,mes_referencia");
+  }
+
+  summary.per_route_summary = fullExtras.per_route_summary || null;
+  return summary;
+}
+
+
+// =====================================================
 // syncOneConsultant — chama o worker e processa os dados
 // =====================================================
 // =====================================================
