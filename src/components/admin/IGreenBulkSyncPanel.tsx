@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, PlayCircle, RefreshCw, Users2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, PlayCircle, RefreshCw, Users2, AlertTriangle, CheckCircle2, Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
