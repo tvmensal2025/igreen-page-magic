@@ -2291,6 +2291,7 @@ const server = http.createServer(async (req, res) => {
         /\/(auth|login|logout|telemetry|health|healthcheck|analytics|gtm|hotjar)\b/i.test(u) ||
         /\.(png|jpg|jpeg|gif|svg|css|js|woff2?|ico|map)(\?|$)/i.test(u);
 
+      let xhrCount = 0;
       const respListener = async (resp) => {
         try {
           const u = resp.url();
@@ -2298,6 +2299,7 @@ const server = http.createServer(async (req, res) => {
           const rq = resp.request();
           const rt = rq.resourceType();
           if (rt !== 'xhr' && rt !== 'fetch') return;
+          xhrCount++;
           const method = rq.method();
           const host = (() => { try { return new URL(u).host; } catch { return '?'; } })();
           const tpl = pathTemplate(u);
@@ -2319,19 +2321,78 @@ const server = http.createServer(async (req, res) => {
       };
       s.page.on('response', respListener);
 
+      // Espera SPA hidratar (React montou menu com >5 links internos)
+      async function waitSpaMounted(timeoutMs = 15000) {
+        try {
+          await s.page.waitForFunction(
+            () => document.querySelectorAll('a[href^="/"]').length > 5,
+            { timeout: timeoutMs, polling: 300 },
+          );
+          return true;
+        } catch { return false; }
+      }
+
       const capture = { route: target };
       try {
-        const url = `https://escritorio.igreenenergy.com.br${target}`;
-        try {
-          await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        } catch (e) {
-          capture.nav_error = e.message?.slice(0, 200);
+        // 1) Garante que a SPA está carregada. Se veio de sessão nova, o page pode
+        //    estar em /login ou about:blank. Só faz goto absoluto se necessário.
+        const curUrl = s.page.url();
+        const needsBootstrap = !/escritorio\.igreenenergy\.com\.br/.test(curUrl) ||
+          /\/login\b/.test(curUrl) || curUrl.startsWith('about:');
+        if (needsBootstrap) {
+          try {
+            await s.page.goto('https://escritorio.igreenenergy.com.br/dashboard', {
+              waitUntil: 'domcontentloaded', timeout: 30000,
+            });
+          } catch (e) { capture.nav_error = e.message?.slice(0, 200); }
         }
-        await new Promise((r) => setTimeout(r, 1200));
-        try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+        await waitSpaMounted(15000);
 
-        capture.final_path = await s.page.evaluate(() => location.pathname).catch(() => target);
+        // 2) Navega client-side via history.pushState + popstate (mantém SPA viva)
+        const beforeXhr = xhrCount;
+        const navigated = await s.page.evaluate((tgt) => {
+          try {
+            window.history.pushState({}, '', tgt);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+            return true;
+          } catch { return false; }
+        }, target).catch(() => false);
+        capture.nav_method = navigated ? 'pushState' : 'none';
 
+        // 3) Aguarda XHR triggerado pela mudança de rota
+        await new Promise((r) => setTimeout(r, 800));
+        try { await s.page.waitForLoadState('networkidle', { timeout: 6000 }); } catch {}
+
+        capture.final_path = await s.page.evaluate(() => location.pathname + location.search).catch(() => target);
+
+        // 4) Fallback: se pushState não gerou XHR novo, tenta clicar num <a href=target> do menu
+        if (xhrCount === beforeXhr) {
+          try {
+            const clicked = await s.page.evaluate((tgt) => {
+              const links = Array.from(document.querySelectorAll('a[href]'));
+              const match = links.find((a) => {
+                const h = a.getAttribute('href') || '';
+                return h === tgt || h.endsWith(tgt);
+              });
+              if (match) { match.click(); return true; }
+              return false;
+            }, target);
+            capture.nav_method = clicked ? 'menu_click' : capture.nav_method;
+            if (clicked) {
+              await new Promise((r) => setTimeout(r, 1000));
+              try { await s.page.waitForLoadState('networkidle', { timeout: 6000 }); } catch {}
+              capture.final_path = await s.page.evaluate(() => location.pathname + location.search).catch(() => target);
+            }
+          } catch {}
+        }
+
+        // 5) Se a rota redirecionou (SPA não conhece o path) → skipped
+        const finalPathOnly = (capture.final_path || '').split('?')[0];
+        if (finalPathOnly && finalPathOnly !== target && !target.startsWith(finalPathOnly)) {
+          capture.redirected = true;
+        }
+
+        // 6) Clica algumas abas e faz scroll para provocar mais XHRs
         try {
           const tabsCount = await s.page.evaluate(() => document.querySelectorAll('[role="tab"], .tab, .nav-tabs a').length);
           for (let i = 0; i < Math.min(tabsCount, 4); i++) {
@@ -2367,7 +2428,11 @@ const server = http.createServer(async (req, res) => {
             headings: Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(x => (x.textContent || '').trim().slice(0, 120)),
             tabs: Array.from(document.querySelectorAll('[role="tab"], .nav-tabs a')).slice(0, 20).map(x => (x.textContent || '').trim().slice(0, 60)),
             buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map(x => (x.textContent || '').trim().slice(0, 60)).filter(Boolean),
-            links: Array.from(document.querySelectorAll('a[href]')).slice(0, 40).map(a => ({ text: (a.textContent || '').trim().slice(0, 60), href: a.getAttribute('href') })),
+            links: Array.from(document.querySelectorAll('a[href]')).slice(0, 60).map(a => ({
+              text: (a.textContent || '').trim().slice(0, 60),
+              href: a.getAttribute('href'),
+              aria: a.getAttribute('aria-label') || null,
+            })),
             tables: Array.from(document.querySelectorAll('table')).slice(0, 5).map(t => ({
               headers: Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').trim().slice(0, 60)),
               rows: t.querySelectorAll('tbody tr').length,
@@ -2392,6 +2457,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       capture.new_endpoints = Array.from(catalog.values());
+      capture.xhr_count = xhrCount;
       capture.elapsed_ms = Date.now() - started;
       return sendJson(res, 200, { ok: true, kind, target, capture });
     }
