@@ -27,8 +27,10 @@ interface BulkState {
 export function IGreenBulkSyncPanel() {
   const { toast } = useToast();
   const [starting, setStarting] = useState(false);
+  const [reconRunning, setReconRunning] = useState(false);
   const [eligibleCount, setEligibleCount] = useState<number | null>(null);
   const [state, setState] = useState<BulkState | null>(null);
+
 
   // Conta consultores elegíveis (têm email+senha do portal).
   useEffect(() => {
