@@ -96,8 +96,10 @@ export function IGreenBulkSyncPanel() {
     try {
       const { data, error } = await supabase.functions.invoke("recon-igreen-endpoints", {
         body: {
-          portal_email: "censuralivrealiaad@gmail.com",
-          portal_password: "201097De",
+          // rafael.ids (consultor 124170) é o único com dados densos:
+          // 159 clientes green, 6 telecom, 5 seguros, 32 membros de rede.
+          // A senha é lida do banco (consultants.igreen_portal_password).
+          portal_email: "rafael.ids@icloud.com",
         },
       });
       if (error) throw error;
