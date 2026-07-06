@@ -308,6 +308,10 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       {/* Status resumido da última sync iGreen (por produto) */}
       <IGreenSyncStatusBar consultantId={userId} />
 
+      {/* Painel admin: sincroniza TODOS os consultores com credenciais */}
+      <IGreenBulkSyncPanel />
+
+
       {/* Toggle Líder */}
       {isLeader && (
         <div className="flex items-center gap-2">
