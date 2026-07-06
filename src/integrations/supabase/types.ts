@@ -3721,6 +3721,7 @@ export type Database = {
           followup_count: number
           followup_hook: string | null
           fornecedora: string | null
+          historico_completo_at: string | null
           id: string
           igreen_code: string | null
           igreen_link: string | null
@@ -3955,6 +3956,7 @@ export type Database = {
           followup_count?: number
           followup_hook?: string | null
           fornecedora?: string | null
+          historico_completo_at?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -4189,6 +4191,7 @@ export type Database = {
           followup_count?: number
           followup_hook?: string | null
           fornecedora?: string | null
+          historico_completo_at?: string | null
           id?: string
           igreen_code?: string | null
           igreen_link?: string | null
@@ -5358,6 +5361,51 @@ export type Database = {
           },
         ]
       }
+      igreen_bulk_sync_state: {
+        Row: {
+          completed: number
+          consultant_ids: Json
+          created_at: string
+          current_consultant_id: string | null
+          failed: number
+          full_history: boolean
+          id: string
+          results: Json
+          started_by: string | null
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          completed?: number
+          consultant_ids?: Json
+          created_at?: string
+          current_consultant_id?: string | null
+          failed?: number
+          full_history?: boolean
+          id?: string
+          results?: Json
+          started_by?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          completed?: number
+          consultant_ids?: Json
+          created_at?: string
+          current_consultant_id?: string | null
+          failed?: number
+          full_history?: boolean
+          id?: string
+          results?: Json
+          started_by?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       igreen_consultant_metrics: {
         Row: {
           ag_assinatura_n: number | null
@@ -5388,13 +5436,16 @@ export type Database = {
           painel_onboarding_json: Json | null
           painel_ranking_json: Json | null
           raw_json: Json | null
+          rede_ranking_pos: number | null
           rede_tamanho: number | null
           reprovados_n: number | null
           rotina_diaria: Json | null
           rotina_mensal: Json | null
           rotina_semanal: Json | null
+          seguros_apolices_total: number | null
           seguros_resumo_json: Json | null
           synced_at: string
+          telecom_ativos_total: number | null
           telecom_resumo_json: Json | null
           total_cadastros: number | null
           updated_at: string
@@ -5429,13 +5480,16 @@ export type Database = {
           painel_onboarding_json?: Json | null
           painel_ranking_json?: Json | null
           raw_json?: Json | null
+          rede_ranking_pos?: number | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
           rotina_diaria?: Json | null
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
+          seguros_apolices_total?: number | null
           seguros_resumo_json?: Json | null
           synced_at?: string
+          telecom_ativos_total?: number | null
           telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
@@ -5470,13 +5524,16 @@ export type Database = {
           painel_onboarding_json?: Json | null
           painel_ranking_json?: Json | null
           raw_json?: Json | null
+          rede_ranking_pos?: number | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
           rotina_diaria?: Json | null
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
+          seguros_apolices_total?: number | null
           seguros_resumo_json?: Json | null
           synced_at?: string
+          telecom_ativos_total?: number | null
           telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
@@ -5795,8 +5852,76 @@ export type Database = {
         }
         Relationships: []
       }
+      igreen_network_snapshots: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          id: string
+          mes_referencia: string
+          payload: Json
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          id?: string
+          mes_referencia: string
+          payload?: Json
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          mes_referencia?: string
+          payload?: Json
+        }
+        Relationships: []
+      }
+      igreen_seguros_comissoes: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          descricao: string | null
+          external_id: string | null
+          id: string
+          mes_referencia: string
+          origem: string | null
+          raw: Json
+          status: string | null
+          updated_at: string
+          valor_cents: number | null
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          mes_referencia: string
+          origem?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          mes_referencia?: string
+          origem?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+        }
+        Relationships: []
+      }
       igreen_seguros_customers: {
         Row: {
+          apolice_id: string | null
+          cashback_previsto_cents: number | null
           cidade: string | null
           consultant_id: string
           created_at: string
@@ -5807,8 +5932,10 @@ export type Database = {
           modelo: string | null
           placa: string | null
           raw_json: Json | null
+          renovacao_prevista_at: string | null
           segurado: string | null
           seguro_id: string
+          sinistros: Json | null
           status: string | null
           status_label: string | null
           synced_at: string
@@ -5816,6 +5943,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          apolice_id?: string | null
+          cashback_previsto_cents?: number | null
           cidade?: string | null
           consultant_id: string
           created_at?: string
@@ -5826,8 +5955,10 @@ export type Database = {
           modelo?: string | null
           placa?: string | null
           raw_json?: Json | null
+          renovacao_prevista_at?: string | null
           segurado?: string | null
           seguro_id: string
+          sinistros?: Json | null
           status?: string | null
           status_label?: string | null
           synced_at?: string
@@ -5835,6 +5966,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          apolice_id?: string | null
+          cashback_previsto_cents?: number | null
           cidade?: string | null
           consultant_id?: string
           created_at?: string
@@ -5845,8 +5978,10 @@ export type Database = {
           modelo?: string | null
           placa?: string | null
           raw_json?: Json | null
+          renovacao_prevista_at?: string | null
           segurado?: string | null
           seguro_id?: string
+          sinistros?: Json | null
           status?: string | null
           status_label?: string | null
           synced_at?: string
@@ -5946,6 +6081,48 @@ export type Database = {
           },
         ]
       }
+      igreen_telecom_comissoes: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          descricao: string | null
+          external_id: string | null
+          id: string
+          mes_referencia: string
+          origem: string | null
+          raw: Json
+          status: string | null
+          updated_at: string
+          valor_cents: number | null
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          mes_referencia: string
+          origem?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          descricao?: string | null
+          external_id?: string | null
+          id?: string
+          mes_referencia?: string
+          origem?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+        }
+        Relationships: []
+      }
       igreen_telecom_customers: {
         Row: {
           cidade: string | null
@@ -6037,6 +6214,102 @@ export type Database = {
             referencedColumns: ["consultant_id"]
           },
         ]
+      }
+      igreen_telecom_faturas: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          id: string
+          idcnxtelecom: string | null
+          mes_referencia: string
+          msisdn: string | null
+          pago_em: string | null
+          raw: Json
+          status: string | null
+          updated_at: string
+          valor_cents: number | null
+          vencimento: string | null
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          id?: string
+          idcnxtelecom?: string | null
+          mes_referencia: string
+          msisdn?: string | null
+          pago_em?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+          vencimento?: string | null
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          idcnxtelecom?: string | null
+          mes_referencia?: string
+          msisdn?: string | null
+          pago_em?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+          valor_cents?: number | null
+          vencimento?: string | null
+        }
+        Relationships: []
+      }
+      igreen_telecom_linhas: {
+        Row: {
+          ativada_em: string | null
+          cancelada_em: string | null
+          cliente_cpf: string | null
+          cliente_nome: string | null
+          consultant_id: string
+          created_at: string
+          iccid: string | null
+          id: string
+          idcnxtelecom: string | null
+          msisdn: string | null
+          plano: string | null
+          raw: Json
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativada_em?: string | null
+          cancelada_em?: string | null
+          cliente_cpf?: string | null
+          cliente_nome?: string | null
+          consultant_id: string
+          created_at?: string
+          iccid?: string | null
+          id?: string
+          idcnxtelecom?: string | null
+          msisdn?: string | null
+          plano?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativada_em?: string | null
+          cancelada_em?: string | null
+          cliente_cpf?: string | null
+          cliente_nome?: string | null
+          consultant_id?: string
+          created_at?: string
+          iccid?: string | null
+          id?: string
+          idcnxtelecom?: string | null
+          msisdn?: string | null
+          plano?: string | null
+          raw?: Json
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       inbound_media_failures: {
         Row: {
@@ -6508,6 +6781,7 @@ export type Database = {
           phone: string | null
           placas_mes: number | null
           pro: string | null
+          produtos: Json | null
           qtde_diretos: number | null
           sponsor_id: number | null
           total_pontos: number | null
@@ -6550,6 +6824,7 @@ export type Database = {
           phone?: string | null
           placas_mes?: number | null
           pro?: string | null
+          produtos?: Json | null
           qtde_diretos?: number | null
           sponsor_id?: number | null
           total_pontos?: number | null
@@ -6592,6 +6867,7 @@ export type Database = {
           phone?: string | null
           placas_mes?: number | null
           pro?: string | null
+          produtos?: Json | null
           qtde_diretos?: number | null
           sponsor_id?: number | null
           total_pontos?: number | null

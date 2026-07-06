@@ -1,185 +1,108 @@
-## Diagnóstico encontrado
 
-O problema não é só visual. Hoje o app salva poucos dados porque o sync detalhado está incompleto:
+# Sincronização Total iGreen — todos os consultores, todas as páginas
 
-- **Clientes Green:** o worker busca principalmente `/crm/green`, que é o Kanban. Para `tvmensal12`, ele retornou **21 cards**, enquanto o portal mostra resumo acumulado com **141 cadastros** e **42 validados**. Ou seja: o Kanban não representa toda a base histórica/acumulada.
-- **Telecom:** o portal mostra no print **6 total cadastradas**, **2 portabilidade pendente**, **1 cancelada**, mas a tabela `igreen_telecom_customers` está com **0 linhas**. O sync atual lê `/crm/telecom`; essa rota retorna **0 cards** para essa conta, apesar do resumo `/telecom/resumo-geral` trazer números.
-- **Seguros:** o portal mostra **1 apólice vigente** e **R$ 377,06/mês**, mas `igreen_seguros_customers` está com **0 linhas**. O sync atual lê `/crm/seguros`; essa rota retorna **0 cards**, apesar de `/seguros/resumo-geral` trazer o resumo correto.
-- **Rede/licenciados:** `network_members` trouxe **7 membros**, mas o detalhe de Telecom/Seguros não está sendo varrido por endpoints de listagem adequados nem por rotas de licenciados/apólices/clientes.
-- **Métricas:** `igreen_consultant_metrics` já tem os resumos corretos: `telecom_resumo_json` com total 6 e `seguros_resumo_json` com total 1. O gargalo está na coleta/persistência dos detalhes.
+Objetivo: adicionar botão "Sincronizar TODOS" no admin, garantir que cada página do portal (Clientes Green, Telecom, Seguros, Rede) seja coletada por completo (com paginação máxima e histórico total), e persistir cada campo no lugar certo — sem quebrar o fluxo atual (single-consultant continua funcionando igual).
 
-## Causa raiz
+---
 
-O worker trata estas rotas como fonte principal de detalhe:
+## 1. Novo botão "Sincronizar TODOS" (admin)
 
-- Clientes Green: `/crm/green`
-- Telecom: `/crm/telecom` + `/telecom/faturas`
-- Seguros: `/crm/seguros`
+- Novo componente `IGreenBulkSyncPanel.tsx` na aba admin (perto do `IGreenSyncStatusBar`).
+- Lista consultores elegíveis (têm `portal_email`+`portal_password` em `consultants` ou credenciais em vault).
+- Fila client-side com concorrência 1 (portal não gosta de paralelo) chamando a edge `sync-igreen-customers` uma vez por consultor.
+- Progresso ao vivo: `X/Y concluídos, atual: tvmensal12`, com log dos gaps detectados por consultor.
+- Botões: "Sincronizar todos", "Retomar falhas", "Cancelar".
+- Persistência do estado da fila em `app_settings` (chave `igreen_bulk_sync_state`) para sobreviver a refresh.
+- Nenhum cron/agendado nesta fase — 100% manual como pedido.
 
-Mas pelos prints e pelo banco, para este consultor as telas reais usam também rotas de produto/resumo/listagem como:
+## 2. Cobertura página por página
 
-- `/clientes-green`, `/clientes-green/resumo-geral`, `/clientes-green/boletos`, possivelmente paginações e filtros
-- `/produtos/telecom`, `/telecom/resumo-geral`, `/telecom/licenciados`, `/telecom/clientes`, `/telecom/linhas`, `/telecom/portabilidade`
-- `/seguros`, `/seguros/resumo-geral`, `/seguros/licenciados`, `/seguros/apolices`, `/seguros/clientes`
+Para cada página do portal, adicionar as rotas faltantes ao worker com paginação `perPage=100` até esvaziar, e loop `mes_referencia` desde o primeiro registro (usar `/resumo-geral` para descobrir range).
 
-O código já tem catálogo/probe dessas rotas, mas o sync de produção ainda não usa esses endpoints como fontes oficiais para preencher as tabelas detalhadas.
+### 2a. Clientes Green (`/clientes-green`)
+Confirmar/estender coletas:
+- `/crm/green` (Kanban — já ok)
+- `/clientes-green?status=todos&injecao=todos&tipo=todos` — lista mestre (pagina)
+- `/clientes-green/boletos` — histórico mensal (loop de meses)
+- `/clientes-green/boletos/{idcliente}` — ficha completa por cliente (enrich)
+- `/clientes-green/devolutivas` + `/clientes-green/devolutivas-resolvidas`
+- `/clientes-green/faturas`, `/clientes-green/injecao`, `/clientes-green/summary`
+- Persistência: `customers` (perfil + situacao), `igreen_customer_boletos` (todos os meses), `igreen_customer_devolutivas`.
+- Novo campo `historico_completo_at` em `customers` para marcar que já foi feito full-history uma vez.
 
-## Plano de correção
+### 2b. Telecom (`/produtos/telecom`)
+- `/crm/telecom` (Kanban — ok)
+- `/telecom/clientes?status=todos` (pagina) → tabela principal `igreen_telecom_customers`
+- `/telecom/linhas?status=todos` (pagina) → nova coluna `linhas` (jsonb) em `igreen_telecom_customers` OU nova tabela `igreen_telecom_linhas` (a escolher — plano: adicionar tabela dedicada)
+- `/telecom/faturas` (pagina, todos meses)
+- `/telecom/comissoes`, `/telecom/portabilidade`, `/telecom/recargas`, `/telecom/bonus`, `/telecom/client-map`, `/telecom/licenciados`
+- Nova tabela `igreen_telecom_faturas` (id, consultant_id, idcnxtelecom, mes, valor, status, raw jsonb).
+- Nova tabela `igreen_telecom_comissoes` (para casar com carteira do consultor).
 
-### 1. Descobrir a fonte real das listas do portal
+### 2c. Seguros (`/seguros`)
+- `/crm/seguros` (Kanban — ok)
+- `/seguros/apolices?status=todos` (pagina)
+- `/seguros/clientes?status=todos` (pagina)
+- `/seguros/comissoes`, `/seguros/sinistros`, `/seguros/renovacoes`, `/seguros/cashback/resumo`, `/seguros/licenciados`
+- Tabela atual `igreen_seguros_customers` recebe: `apolice_id`, `sinistros` (jsonb), `renovacao_prevista_at`, `cashback_previsto_cents`.
+- Nova tabela `igreen_seguros_comissoes` para carteira do consultor.
 
-Adicionar/usar diagnóstico controlado no worker para capturar as requisições XHR reais das três páginas:
+### 2d. Rede / Licenciados + Resumos gerais
+- `/clientes-green/resumo-geral`, `/telecom/resumo-geral`, `/seguros/resumo-geral`, `/estatisticas-pro` → já vão em `igreen_consultant_metrics`; adicionar colunas faltantes (`telecom_ativos_total`, `seguros_apolices_total`, `rede_ranking_pos`).
+- `/network` + `/telecom/licenciados` + `/seguros/licenciados` → mesclar em `network_members` com flag `produtos` (jsonb) indicando em quais produtos o licenciado está ativo.
+- Painéis: onboarding, inativos, ranking → tabela nova `igreen_network_snapshots` (mes_referencia, consultant_id, jsonb) para timeline.
 
-- `https://escritorio.igreenenergy.com.br/clientes-green`
-- `https://escritorio.igreenenergy.com.br/produtos/telecom`
-- `https://escritorio.igreenenergy.com.br/seguros`
+## 3. Gaps & diagnósticos
 
-O objetivo é identificar exatamente quais endpoints alimentam:
+- Estender `igreen_sync_runs.counts.extras` para conter, por produto: `summary_total`, `rows_paginated`, `rows_saved`, `pages_read`, `gap`, `gap_reason`.
+- `IGreenSyncStatusBar` ganha seção "Gaps por página" listando exatamente qual rota deu diferença.
+- Log estruturado no worker: `[telecom.clientes] page=3 perPage=100 got=27 total_seen=227`.
 
-- Total acumulado de Clientes Green
-- Lista de cadastros/validados/cancelados/inativos
-- Lista de conexões Telecom
-- Portabilidade Telecom
-- Licenciados com ativação Telecom
-- Apólices Seguros
-- Cotações/Pendências/Financeiro/Licenciados Seguros
+## 4. Migrações (Supabase, com GRANTs)
 
-### 2. Refatorar o worker para fontes completas por produto
+Criar em uma única migração:
+- `igreen_telecom_linhas`
+- `igreen_telecom_faturas`
+- `igreen_telecom_comissoes`
+- `igreen_seguros_comissoes`
+- `igreen_network_snapshots`
+- ALTER TABLE nas existentes só ADD COLUMN (sem drop) para não quebrar código atual.
+- Cada CREATE TABLE seguido de GRANT para `authenticated`/`service_role` e RLS via `has_role(auth.uid(),'admin')` (já é o padrão do projeto).
 
-Substituir o uso exclusivo das rotas de CRM por uma estratégia em camadas:
+## 5. Frontend — mostrar tudo no lugar certo
 
-#### Clientes Green
+- `CustomerManager.tsx` (aba Telecom): passa a ler `igreen_telecom_faturas` para mostrar histórico de faturas por cliente, e `igreen_telecom_linhas` para mostrar linhas ativas.
+- `CustomerManager.tsx` (aba Seguros): mostra ap ólice + sinistros + renovação prevista.
+- `DashboardTab.tsx`: adiciona painel "Cobertura de sync por consultor" (X/Y com gaps).
+- Invalidação de cache: adicionar as novas queryKeys em `refreshIgreenQueries`.
 
-- Manter `/crm/green` para Kanban atual.
-- Adicionar fonte paginada/histórica quando disponível, para bater com o resumo acumulado do portal.
-- Continuar enriquecendo detalhe por cliente quando houver `idcliente`.
-- Não descartar clientes sem telefone; manter fallback seguro como já existe.
+## 6. Segurança & desempenho (não quebrar nada)
 
-#### Telecom
+- Todas as novas rotas do worker envolvidas em `try/catch` individual — se uma quebrar, as outras continuam (padrão já usado no `sync-all`).
+- Timeout do worker sobe para 8 min só quando `mode=full_history=true`; default continua 4-6 min.
+- Rate limit no worker: mínimo 250ms entre requisições ao portal por consultor.
+- Feature flag `igreen.full_history_enabled` em `app_settings` (default true, permite desligar rápido).
 
-- Manter `/crm/telecom` como uma fonte, mas não depender só dela.
-- Adicionar endpoints de produto/listagem descobertos, por exemplo:
-  - `/telecom/clientes`
-  - `/telecom/linhas`
-  - `/telecom/portabilidade`
-  - `/telecom/licenciados`
-  - `/telecom/faturas`
-- Normalizar tudo para `igreen_telecom_customers`.
-- Preencher corretamente:
-  - cliente/nome
-  - número/linha
-  - status e status_label
-  - licenciado
-  - cidade/UF quando existir
-  - fatura_valor/status/mês
-  - identificador estável (`idcnxtelecom` ou equivalente)
+---
 
-#### Seguros
+## Detalhes técnicos
 
-- Manter `/crm/seguros` como uma fonte, mas não depender só dela.
-- Adicionar endpoints de produto/listagem descobertos, por exemplo:
-  - `/seguros/apolices`
-  - `/seguros/clientes`
-  - `/seguros/licenciados`
-  - `/seguros/comissoes`
-  - `/seguros/cashback/resumo` se existir para esta conta
-- Normalizar tudo para `igreen_seguros_customers`.
-- Preencher corretamente:
-  - segurado
-  - modelo
-  - placa
-  - FIPE
-  - mensalidade
-  - status/status_label
-  - licenciado
-  - cidade/UF
-  - identificador estável (`seguro_id` ou equivalente)
+- Worker (`worker-igreen-sync/server.mjs`): novas fns `fetchTelecomLinhas`, `fetchTelecomFaturas`, `fetchTelecomComissoes`, `fetchSegurosComissoes`, `fetchSegurosSinistros`, `fetchClientesGreenHistorico`. Todas usam helper `paginate(session, path, params)` já existente (linha ~132) — estender para aceitar `maxPages: Infinity` quando `full_history=true`.
+- Edge (`supabase/functions/sync-igreen-customers/index.ts`): novo `persistTelecomLinhas`, `persistTelecomFaturas`, etc.; upsert com `onConflict` estável (`consultant_id, idcnxtelecom, mes_referencia`).
+- Bulk runner: nova edge `sync-igreen-bulk` que só enfileira e chama a existing `sync-igreen-customers` por consultor (não duplica lógica).
+- UI: `IGreenBulkSyncPanel` usa `supabase.functions.invoke('sync-igreen-bulk', { mode:'queue', consultant_ids:[...] })` e poll em `igreen_sync_runs` filtrando pelos ids.
 
-### 3. Garantir paginação total e não só primeira tela
+## Ordem de execução (para não quebrar)
 
-Para cada endpoint de listagem:
+1. Migração (novas tabelas + colunas com default seguro).
+2. Worker: adicionar novas fns SEM remover as atuais.
+3. Edge: adicionar novos persist SEM alterar os antigos.
+4. Testar sync single-consultant `tvmensal12` — precisa continuar igual + preencher novas tabelas.
+5. Criar edge `sync-igreen-bulk` + UI do painel.
+6. Rodar bulk num subset (3 consultores) → validar → liberar geral.
 
-- Detectar `items`, `data.items`, arrays diretos e estruturas aninhadas.
-- Rodar paginação até acabar, respeitando `total`, `perPage`, `page`, `pageSize` ou ausência de itens.
-- Limitar por segurança com `maxPages`, mas suficiente para bases maiores.
-- Registrar no diagnóstico:
-  - endpoint chamado
-  - páginas lidas
-  - itens recebidos
-  - itens válidos salvos
-  - erros por endpoint
+## Fora deste plano
 
-### 4. Corrigir persistência para não perder linhas válidas
-
-Hoje Telecom exige `idcnxtelecom` numérico e Seguros exige `id/seguro_id`. Se o endpoint novo trouxer outro campo, o app pode receber dados e salvar 0.
-
-Ajustar normalização para aceitar identificadores alternativos:
-
-- Telecom: `idcnxtelecom`, `id`, `codigo`, `numero`, hash estável de nome+numero quando necessário.
-- Seguros: `id`, `seguro_id`, `codigo`, `placa`, hash estável de segurado+placa quando necessário.
-
-Sem isso, a busca pode estar correta mas a gravação continuar zerada.
-
-### 5. Fazer o sync sempre comparar detalhe vs resumo
-
-Após o sync, comparar:
-
-- `telecom_resumo_json.total` vs linhas salvas em `igreen_telecom_customers`
-- `seguros_resumo_json.total` vs linhas salvas em `igreen_seguros_customers`
-- `clientes-green/resumo-geral.totalCadastros` vs linhas salvas/atualizadas em `customers`
-
-Se o resumo indicar dados e a lista detalhada vier 0, gravar alerta claro em `igreen_sync_runs.counts.extras.diagnostics`, por exemplo:
-
-- `telecom_summary_total: 6`
-- `telecom_saved: 0`
-- `telecom_gap: true`
-- `probable_reason: endpoint_detail_not_mapped`
-
-### 6. Ajustar frontend para mostrar estado correto
-
-No app:
-
-- Quando o resumo tiver dados mas a tabela detalhada estiver vazia, mostrar aviso de diagnóstico em vez de parecer que não existe produto.
-- Exibir os cards de resumo de Telecom/Seguros a partir de `igreen_consultant_metrics`, mesmo antes de ter lista detalhada.
-- Manter listas detalhadas de `igreen_telecom_customers` e `igreen_seguros_customers` quando preenchidas.
-- Atualizar invalidação de cache após sync para incluir métricas, listas, rede e produtos.
-
-### 7. Validar com o consultor tvmensal12/Sirlene
-
-Depois da implementação:
-
-- Rodar sync completo para `tvmensal12`.
-- Confirmar no banco:
-  - Clientes Green aproximando/igualando os totais do portal conforme a fonte disponível.
-  - Telecom deixando de ser 0 e chegando aos números do resumo: esperado pelo print, **6 cadastradas**.
-  - Seguros deixando de ser 0 e chegando ao resumo: esperado pelo print, **1 apólice vigente** e carteira mensal **R$ 377,06**.
-  - Network/licenciados permanecendo com os 7 membros ou mais se o portal retornar mais.
-- Confirmar que os dados aparecem no lugar certo no frontend.
-
-## Arquivos principais a alterar
-
-- `worker-igreen-sync/server.mjs`
-  - novas funções de listagem/paginação para Clientes Green, Telecom e Seguros
-  - normalização robusta por produto
-  - diagnóstico de endpoints e gaps
-
-- `supabase/functions/sync-igreen-customers/index.ts`
-  - persistência aceitando novos formatos
-  - comparação resumo vs detalhe
-  - gravação de diagnóstico completo em `igreen_sync_runs`
-
-- `src/components/admin/IGreenSyncStatusBar.tsx`
-  - mostrar gaps entre resumo e detalhes
-
-- `src/components/whatsapp/CustomerManager.tsx` e/ou telas de produtos
-  - mostrar resumo mesmo quando a lista detalhada ainda está vazia
-  - recarregar caches corretos após sync
-
-- Hooks/listas de produtos, se necessário:
-  - `src/features/produtos/acompanhamento/multiprodutoHooks.ts`
-  - `src/features/produtos/carteira-green/TelecomClientesList.tsx`
-  - `src/features/produtos/carteira-green/SegurosClientesList.tsx`
-
-## Observação importante
-
-Não vou usar nem repetir a senha enviada no chat. As credenciais já estão salvas no consultor e serão usadas pela edge function/worker de forma interna.
+- Cron automático (usuário pediu só botão manual agora).
+- Refatorar código legado do CRM Kanban (continua como fonte primária para status).
+- Mudanças visuais além do painel bulk e das seções novas de histórico.
