@@ -2016,22 +2016,49 @@ const server = http.createServer(async (req, res) => {
 
       const NAV_ROUTES = [
         '/dashboard', '/home',
-        '/clientes-green', '/clientes-green/faturas', '/clientes-green/injecao',
+        // Clientes Green (URL confirmada pelo usuário)
+        '/clientes-green',
+        '/clientes-green/faturas', '/clientes-green/injecao',
         '/clientes-green/boletos', '/clientes-green/devolutivas',
         '/clientes-green/devolutivas-resolvidas', '/clientes-green/cashback',
         '/clientes-green/resumo-geral', '/clientes-green/summary',
+        '/clientes-green/comissoes', '/clientes-green/historico',
         '/crm/green',
+        // Telecom — URL real: /produtos/telecom
+        '/produtos/telecom',
+        '/produtos/telecom/clientes', '/produtos/telecom/linhas',
+        '/produtos/telecom/faturas', '/produtos/telecom/comissoes',
+        '/produtos/telecom/recargas', '/produtos/telecom/bonus',
+        '/produtos/telecom/portabilidade', '/produtos/telecom/licenciados',
+        '/produtos/telecom/client-map', '/produtos/telecom/planos',
+        // fallbacks legado
         '/telecom', '/telecom/clientes', '/telecom/linhas', '/telecom/faturas',
         '/telecom/comissoes', '/telecom/recargas', '/telecom/bonus',
         '/telecom/portabilidade', '/telecom/licenciados', '/telecom/client-map',
         '/crm/telecom',
-        '/seguros', '/seguros/apolices', '/seguros/clientes', '/seguros/comissoes',
+        // Seguros (URL confirmada)
+        '/seguros',
+        '/seguros/apolices', '/seguros/clientes', '/seguros/comissoes',
         '/seguros/sinistros', '/seguros/renovacoes', '/seguros/cashback',
+        '/seguros/licenciados', '/seguros/produtos', '/seguros/propostas',
         '/crm/seguros',
+        // Rede-lider (URL confirmada)
+        '/rede-lider',
+        '/rede-lider/membros', '/rede-lider/licenciados', '/rede-lider/ranking',
+        '/rede-lider/comissoes', '/rede-lider/bonus', '/rede-lider/carreira',
         '/rede', '/rede/licenciados', '/network-map', '/network',
-        '/comissoes', '/comissoes/resumo', '/financeiro', '/financeiro/boletos',
-        '/relatorios', '/rotinas',
+        // Rotinas (URL confirmada)
+        '/rotinas',
+        '/rotinas/tarefas', '/rotinas/agenda', '/rotinas/pendencias',
+        // Financeiro / comissões
+        '/comissoes', '/comissoes/resumo', '/comissoes/extrato',
+        '/financeiro', '/financeiro/boletos', '/financeiro/extrato',
+        '/financeiro/carteira', '/financeiro/notas',
+        '/relatorios',
+        // perfil/config (podem expor endpoints /me, /perfil, /config)
+        '/perfil', '/configuracoes',
       ];
+
 
       try {
         for (const route of NAV_ROUTES) {
