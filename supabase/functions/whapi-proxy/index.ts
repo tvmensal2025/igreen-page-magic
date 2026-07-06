@@ -510,11 +510,16 @@ Deno.serve(async (req) => {
 
       case "health_check": {
         // Prova de vida REAL: /health é informativo, mas /users/profile diz se o canal opera.
-        const [r, profileResp, settingsResp] = await Promise.all([
+        // Além disso, buscamos as últimas mensagens outbound para detectar
+        // "device físico offline" — cenário em que a Whapi autentica (token OK),
+        // mas o celular perdeu conexão com o WhatsApp e as msgs ficam em `pending`.
+        const [r, profileResp, settingsResp, messagesResp] = await Promise.all([
           whapiFetch(whapiToken, `/health`, { method: "GET" }),
           whapiFetch(whapiToken, `/users/profile`, { method: "GET" })
             .catch(() => ({ ok: false, status: 0, data: null })),
           whapiFetch(whapiToken, `/settings`, { method: "GET" })
+            .catch(() => ({ ok: false, status: 0, data: null })),
+          whapiFetch(whapiToken, `/messages/list?count=30&sort=desc`, { method: "GET" })
             .catch(() => ({ ok: false, status: 0, data: null })),
         ]);
 
@@ -538,6 +543,52 @@ Deno.serve(async (req) => {
               { onConflict: "key" },
             );
           } catch (_) { /* ignora */ }
+        }
+
+        // ── Device presence: analisa msgs outbound recentes ──
+        // Se houver >=3 msgs enviadas nos últimos 10min TODAS em "pending"
+        // (sem sent/delivered/read), o celular provavelmente está offline.
+        let outboundRecentCount = 0;
+        let outboundPendingCount = 0;
+        let outboundDeliveredCount = 0;
+        let lastOutboundAt: number | null = null;
+        let lastOutboundStatus: string | null = null;
+        let deviceLikelyOffline = false;
+        try {
+          const msgs: any[] = Array.isArray((messagesResp as any)?.data?.messages)
+            ? (messagesResp as any).data.messages
+            : Array.isArray((messagesResp as any)?.data)
+            ? (messagesResp as any).data
+            : [];
+          const nowSec = Math.floor(Date.now() / 1000);
+          const windowSec = 10 * 60; // 10 minutos
+          for (const m of msgs) {
+            if (!m?.from_me) continue;
+            const ts = Number(m?.timestamp || 0);
+            if (!ts) continue;
+            if (lastOutboundAt === null || ts > lastOutboundAt) {
+              lastOutboundAt = ts;
+              lastOutboundStatus = String(m?.status || "").toLowerCase() || null;
+            }
+            if (nowSec - ts > windowSec) continue;
+            outboundRecentCount++;
+            const s = String(m?.status || "").toLowerCase();
+            if (s === "pending" || s === "" || s === "queued") {
+              outboundPendingCount++;
+            } else if (s === "sent" || s === "delivered" || s === "read") {
+              outboundDeliveredCount++;
+            }
+          }
+          // Regra: >=3 msgs em 10min e >=80% ainda em pending = celular offline
+          if (
+            outboundRecentCount >= 3 &&
+            outboundPendingCount / outboundRecentCount >= 0.8 &&
+            outboundDeliveredCount === 0
+          ) {
+            deviceLikelyOffline = true;
+          }
+        } catch (e) {
+          console.warn("[whapi-proxy] device presence probe falhou:", (e as any)?.message);
         }
 
         // Fonte da verdade: /users/profile. Se responder 200, canal está saudável
@@ -603,6 +654,13 @@ Deno.serve(async (req) => {
           reasonMessage,
           helpUrl,
           profile_ok: profileOk,
+          // Presença do device físico (celular do super admin)
+          device_likely_offline: deviceLikelyOffline,
+          outbound_recent_count: outboundRecentCount,
+          outbound_pending_count: outboundPendingCount,
+          outbound_delivered_count: outboundDeliveredCount,
+          last_outbound_at: lastOutboundAt,
+          last_outbound_status: lastOutboundStatus,
         });
       }
 
