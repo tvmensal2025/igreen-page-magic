@@ -18,6 +18,10 @@ O deploy NÃO é feito localmente pelo CLI do Supabase. Ele roda pelo
   repositório) e faz checkout do código **do repositório remoto** (branch
   `main`). Por isso é preciso commitar e dar push ANTES de disparar o deploy.
 - O `project-ref` do Supabase é `zlzasfhcxcznaprrragl`.
+- **Repositório correto: `tvmensal2025/igreen-page-magic`** (é onde o time
+  trabalha e onde o `origin` aponta). O repo antigo `igreen-official-portal`
+  está parado (últimos commits de junho/2026) — NÃO usar. Sempre disparar o
+  deploy no `igreen-page-magic`.
 
 ### Passo a passo
 
@@ -43,7 +47,7 @@ GHTOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/
 curl -s -o /dev/null -w "%{http_code}" -X POST \
   -H "Authorization: token $GHTOKEN" \
   -H "Accept: application/vnd.github+json" \
-  https://api.github.com/repos/tvmensal2025/igreen-official-portal/actions/workflows/deploy-edge-functions.yml/dispatches \
+  https://api.github.com/repos/tvmensal2025/igreen-page-magic/actions/workflows/deploy-edge-functions.yml/dispatches \
   -d '{"ref":"main","inputs":{"function_name":"all"}}'
 # 204 = aceito
 ```
@@ -57,12 +61,12 @@ GHTOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/
 
 # Pega o run mais recente de workflow_dispatch:
 curl -s -H "Authorization: token $GHTOKEN" \
-  "https://api.github.com/repos/tvmensal2025/igreen-official-portal/actions/runs?event=workflow_dispatch&per_page=3" \
+  "https://api.github.com/repos/tvmensal2025/igreen-page-magic/actions/runs?event=workflow_dispatch&per_page=3" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); [print(r['id'], r['name'], r['status'], r['conclusion']) for r in d['workflow_runs']]"
 
 # Status de um run específico (troque o ID):
 curl -s -H "Authorization: token $GHTOKEN" \
-  "https://api.github.com/repos/tvmensal2025/igreen-official-portal/actions/runs/<RUN_ID>" \
+  "https://api.github.com/repos/tvmensal2025/igreen-page-magic/actions/runs/<RUN_ID>" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['status'], d['conclusion'])"
 ```
 
