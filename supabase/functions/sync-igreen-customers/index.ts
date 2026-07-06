@@ -65,6 +65,16 @@ function safeNum(val: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+function stableIntId(input: unknown): number {
+  const s = String(input || "").trim();
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
 function get(obj: Record<string, unknown>, ...keys: string[]): unknown {
   for (const key of keys) {
     if (obj[key] != null && obj[key] !== "") return obj[key];
@@ -414,6 +424,8 @@ function extractCustomerCodes(customers: any[]): string[] {
 function buildProductDiagnostics(data: any, only: string[] | null = null): Record<string, unknown> {
   const telecom = Array.isArray(data?.telecom) ? data.telecom : [];
   const seguros = Array.isArray(data?.seguros) ? data.seguros : [];
+  const telecomSummaryTotal = safeNum(data?.metrics?.telecom_resumo?.total ?? data?.metrics?.telecom_resumo?.totalCadastradas);
+  const segurosSummaryTotal = safeNum(data?.metrics?.seguros_resumo?.total ?? data?.metrics?.seguros_resumo?.vigentes ?? data?.metrics?.seguros_resumo?.apolicesVigentes);
   const workerDiag = data?.diagnostics && typeof data.diagnostics === "object" ? data.diagnostics : {};
   return {
     ...(workerDiag || {}),
@@ -421,14 +433,41 @@ function buildProductDiagnostics(data: any, only: string[] | null = null): Recor
     telecom: {
       source: "/crm/telecom",
       returned: telecom.length,
+      summary_total: telecomSummaryTotal,
+      gap: telecomSummaryTotal != null && telecomSummaryTotal > 0 && telecom.length === 0,
       ...((workerDiag as Record<string, any>)?.telecom || {}),
     },
     seguros: {
       source: "/crm/seguros",
       returned: seguros.length,
+      summary_total: segurosSummaryTotal,
+      gap: segurosSummaryTotal != null && segurosSummaryTotal > 0 && seguros.length === 0,
       ...((workerDiag as Record<string, any>)?.seguros || {}),
     },
   };
+}
+
+function augmentProductGaps(out: Record<string, unknown>, rawData: any): void {
+  const diagnostics = (out.diagnostics && typeof out.diagnostics === "object" ? out.diagnostics : {}) as Record<string, any>;
+  const telecomDiag = (diagnostics.telecom ||= {});
+  const segurosDiag = (diagnostics.seguros ||= {});
+  const telecomSummary = safeNum(rawData?.metrics?.telecom_resumo?.total ?? rawData?.metrics?.telecom_resumo?.totalCadastradas);
+  const segurosSummary = safeNum(rawData?.metrics?.seguros_resumo?.total ?? rawData?.metrics?.seguros_resumo?.vigentes ?? rawData?.metrics?.seguros_resumo?.apolicesVigentes);
+  const telecomSaved = safeNum((out.telecom as any)?.telecom_valid_rows ?? (out.telecom as any)?.telecom_saved ?? 0) ?? 0;
+  const segurosSaved = safeNum((out.seguros as any)?.seguros_valid_rows ?? (out.seguros as any)?.seguros_saved ?? 0) ?? 0;
+  if (telecomSummary != null) {
+    telecomDiag.summary_total = telecomSummary;
+    telecomDiag.saved_rows = telecomSaved;
+    telecomDiag.gap = telecomSummary > 0 && telecomSaved === 0;
+    if (telecomDiag.gap) telecomDiag.probable_reason = "summary_has_data_but_detail_sources_saved_zero";
+  }
+  if (segurosSummary != null) {
+    segurosDiag.summary_total = segurosSummary;
+    segurosDiag.saved_rows = segurosSaved;
+    segurosDiag.gap = segurosSummary > 0 && segurosSaved === 0;
+    if (segurosDiag.gap) segurosDiag.probable_reason = "summary_has_data_but_detail_sources_saved_zero";
+  }
+  out.diagnostics = diagnostics;
 }
 
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
@@ -474,6 +513,7 @@ async function runSyncAllBackgroundPhase(
     if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
     if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
     if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    augmentProductGaps(out, r.data);
     out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
 
     const started = Date.now();
