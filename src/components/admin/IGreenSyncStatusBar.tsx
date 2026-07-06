@@ -94,13 +94,17 @@ export function IGreenSyncStatusBar({ consultantId, className }: IGreenSyncStatu
   const metrics = extractCount(extras, "metrics", ["metrics_received", "persisted", "saved", "processed"]) ?? pickBoolAsNumber(extras.metrics, ["metrics_saved"]);
   const telecomDiag = (extras.diagnostics as { telecom?: Record<string, unknown> } | undefined)?.telecom;
   const segurosDiag = (extras.diagnostics as { seguros?: Record<string, unknown> } | undefined)?.seguros;
+  const telecomGap = Boolean(telecomDiag?.gap);
+  const segurosGap = Boolean(segurosDiag?.gap);
+  const telecomSummary = pickNumber(telecomDiag, ["summary_total", "summaryTotal"]);
+  const segurosSummary = pickNumber(segurosDiag, ["summary_total", "summaryTotal"]);
   const identityMismatch = data.consultant_igreen_id && data.portal_igreen_id && data.consultant_igreen_id !== data.portal_igreen_id;
 
   const items: Array<{ icon: JSX.Element; label: string; value: number | null; hint?: string }> = [
     { icon: <Zap className="w-3 h-3" />, label: "Energia", value: energia },
     { icon: <Network className="w-3 h-3" />, label: "Rede", value: network },
-    { icon: <Phone className="w-3 h-3" />, label: "Telecom", value: telecom, hint: telecom === 0 ? `Portal iGreen devolveu 0 clientes de Telecom${telecomDiag?.crm_columns != null ? ` (${telecomDiag.crm_columns} colunas lidas)` : ""}` : undefined },
-    { icon: <Shield className="w-3 h-3" />, label: "Seguros", value: seguros, hint: seguros === 0 ? `Portal iGreen devolveu 0 clientes de Seguros${segurosDiag?.crm_columns != null ? ` (${segurosDiag.crm_columns} colunas lidas)` : ""}` : undefined },
+    { icon: <Phone className="w-3 h-3" />, label: "Telecom", value: telecom, hint: telecomGap ? `Resumo do portal indica ${telecomSummary ?? "dados"}, mas a lista detalhada salvou 0. O sync vai tentar fontes alternativas.` : telecom === 0 ? `Portal iGreen devolveu 0 clientes de Telecom${telecomDiag?.crm_columns != null ? ` (${telecomDiag.crm_columns} colunas lidas)` : ""}` : undefined },
+    { icon: <Shield className="w-3 h-3" />, label: "Seguros", value: seguros, hint: segurosGap ? `Resumo do portal indica ${segurosSummary ?? "dados"}, mas a lista detalhada salvou 0. O sync vai tentar fontes alternativas.` : seguros === 0 ? `Portal iGreen devolveu 0 clientes de Seguros${segurosDiag?.crm_columns != null ? ` (${segurosDiag.crm_columns} colunas lidas)` : ""}` : undefined },
     { icon: <FileText className="w-3 h-3" />, label: "Boletos", value: boletos },
     { icon: <TrendingUp className="w-3 h-3" />, label: "Métricas", value: metrics },
   ];
@@ -132,6 +136,7 @@ export function IGreenSyncStatusBar({ consultantId, className }: IGreenSyncStatu
             "inline-flex items-center gap-1",
             it.value == null && "opacity-40",
             it.value === 0 && "text-amber-500/70",
+            ((it.label === "Telecom" && telecomGap) || (it.label === "Seguros" && segurosGap)) && "text-rose-500/80",
           )}
         >
           {it.icon}
