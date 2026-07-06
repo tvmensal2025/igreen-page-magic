@@ -91,6 +91,39 @@ export function IGreenBulkSyncPanel() {
     }
   };
 
+  const runRecon = async () => {
+    setReconRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recon-igreen-endpoints", {
+        body: {
+          portal_email: "censuralivrealiaad@gmail.com",
+          portal_password: "201097De",
+        },
+      });
+      if (error) throw error;
+      const d = data as any;
+      if (!d?.ok) {
+        throw new Error(d?.message || d?.error || "Falha no recon");
+      }
+      toast({
+        title: "Recon concluído",
+        description: `${d.endpoints_discovered} endpoints descobertos · ${d.persisted} salvos em igreen_endpoint_discovery (worker ${d.worker_version}).`,
+      });
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      toast({
+        title: "Recon falhou",
+        description: msg.includes("worker_outdated") || msg.includes("v18")
+          ? "Worker rodando ainda é v18. Refaça docker build/run no VPS antes de rodar o recon."
+          : msg,
+        variant: "destructive",
+      });
+    } finally {
+      setReconRunning(false);
+    }
+  };
+
+
   return (
     <div className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
