@@ -88,8 +88,8 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Anti-lockout: recusa se última chamada foi < 3 min atrás
-    const cooldownCutoff = new Date(Date.now() - 3 * 60_000).toISOString();
+    // Anti-lockout leve: recusa se última chamada foi < 60s atrás
+    const cooldownCutoff = new Date(Date.now() - 60_000).toISOString();
     const { data: recentRecon } = await supabase
       .from("igreen_endpoint_discovery")
       .select("checked_at")
@@ -100,16 +100,17 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (recentRecon) {
       const elapsedSec = Math.floor((Date.now() - new Date((recentRecon as any).checked_at).getTime()) / 1000);
-      const waitSec = Math.max(0, 180 - elapsedSec);
+      const waitSec = Math.max(0, 60 - elapsedSec);
       return new Response(
         JSON.stringify({
           ok: false,
           error: "cooldown",
-          message: `Aguarde ${waitSec}s antes de rodar outro recon (evita bloqueio do portal iGreen).`,
+          message: `Aguarde ${waitSec}s antes de rodar outro recon.`,
         }),
         { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+
 
 
     // 2) Resolver worker
