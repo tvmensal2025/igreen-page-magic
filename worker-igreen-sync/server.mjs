@@ -1,9 +1,9 @@
-// server.mjs — igreen-sync-worker v19 (API nova api-vo, cobertura 100%)
+// server.mjs — igreen-sync-worker v23 (API nova api-vo, cobertura 100% + recon)
 //
-// v19: CLIENTES agora vêm da varredura por dia de /clientes-green/cadastros
+// v23: CLIENTES agora vêm da varredura por dia de /clientes-green/cadastros
 // (fonte COMPLETA = 571 clientes, validado ao vivo). O Kanban /crm/green
 // truncava colunas grandes e só trazia ~159. Mesma correção para telecom/seguros.
-// Ver worker-igreen-sync/PORTAL_ENDPOINTS_OFICIAL.md para o catálogo oficial.
+// Mantém o /recon-one-route (v22). Ver PORTAL_ENDPOINTS_OFICIAL.md.
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
@@ -768,13 +768,17 @@ async function fetchCadastrosByDays(session, days, { perDayMaxPages = 10 } = {})
   return { items: Array.from(byId.values()), req_erros: reqErros };
 }
 
-// CLIENTES (v19): fonte COMPLETA = varredura por dia de /clientes-green/cadastros
+// CLIENTES (v23): fonte COMPLETA = varredura por dia de /clientes-green/cadastros
 // (recupera 100% — o Kanban /crm/green trunca colunas grandes e só traz ~159).
 // O Kanban é usado como COMPLEMENTO para o status financeiro (adimplente/
 // menos_30d/inadimplente) e para o kwh/distribuidora que o cadastros não traz.
 // Casa por `codigo`. `sinceMonth` limita o histórico (default: ativação do consultor).
-async function fetchCustomers(session, { sinceMonth } = {}) {
-  const diagnostics = { source: 'cadastros_by_day', kanban_cards: 0, cadastro_days: 0, cadastro_clients: 0, req_erros: 0 };
+//
+// `fast=true` → retorna SÓ o Kanban (rápido, ~5s). Usado na Fase A da edge para
+// o cliente aparecer imediatamente. A varredura completa (lenta, ~2min) roda na
+// Fase B em background via fast=false (default).
+async function fetchCustomers(session, { sinceMonth, fast = false } = {}) {
+  const diagnostics = { source: fast ? 'kanban_fast' : 'cadastros_by_day', kanban_cards: 0, cadastro_days: 0, cadastro_clients: 0, req_erros: 0 };
 
   // 1) Kanban (complemento — status financeiro/kwh/distribuidora)
   let kanbanCards = [];
@@ -787,6 +791,14 @@ async function fetchCustomers(session, { sinceMonth } = {}) {
   for (const c of kanbanCards) {
     const code = String(c.codigo ?? c.idcliente ?? c.id ?? '');
     if (code) kanbanByCode.set(code, c);
+  }
+
+  // Modo rápido: só o Kanban (Fase A). Retorna já.
+  if (fast) {
+    const list = Array.from(kanbanByCode.values()).map((kb) => ({ ...kb, codigo: kb.codigo ?? kb.idcliente ?? kb.id }));
+    dbg(`[customers] FAST kanban=${kanbanCards.length}`);
+    list._diagnostics = diagnostics;
+    return list;
   }
 
   // 2) Fonte completa: varredura por dia
@@ -1653,8 +1665,9 @@ const server = http.createServer(async (req, res) => {
     return await withEmailOperationLock(email, async () => {
     if (req.url === '/sync-customers') {
       const s = await getOrCreateSession(email, password);
-      const customers = await fetchCustomers(s);
-      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers });
+      // fast=true → só Kanban (Fase A rápida). Default: varredura completa (571).
+      const customers = await fetchCustomers(s, { fast: body.fast === true });
+      return sendJson(res, 200, { ok: true, consultor_id: s.consultorId, customers, diagnostics: { customers: customers._diagnostics } });
     }
     if (req.url === '/sync-network') {
       const s = await getOrCreateSession(email, password);
@@ -2658,7 +2671,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v22 (tor+playwright+api-vo, recon-one-route) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v23 (tor+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
 });
 
 

@@ -400,11 +400,12 @@ async function loadIgreenToggles(supabase: any, consultantId: string | null): Pr
 }
 
 function buildExtrasOnly(_toggles: Record<string, boolean>): string[] {
-  // Captura SEMPRE completa: clientes, rede, métricas, boletos, telecom, seguros,
-  // devolutivas e cashback. Os toggles NÃO limitam mais a coleta de dados — eles
-  // controlam apenas as AUTOMAÇÕES (alertas e envio proativo de WhatsApp).
-  // Assim a página nunca fica sem dado por um toggle desligado.
-  return ["network", "metrics", "boletos", "telecom", "seguros", "devolutivas", "cashback"];
+  // Captura SEMPRE completa: clientes (varredura por dia = 571), rede, métricas,
+  // boletos, telecom, seguros, devolutivas e cashback. Os toggles NÃO limitam
+  // mais a coleta de dados — eles controlam apenas as AUTOMAÇÕES (alertas e
+  // envio proativo de WhatsApp). Assim a página nunca fica sem dado.
+  // "customers" aqui = varredura COMPLETA por dia (a Fase A já trouxe o Kanban rápido).
+  return ["customers", "network", "metrics", "boletos", "telecom", "seguros", "devolutivas", "cashback"];
 }
 
 function extractCustomerCodes(customers: any[]): string[] {
@@ -504,6 +505,16 @@ async function runSyncAllBackgroundPhase(
     out.portal_identity = { igreen_consultor_id: consultorId };
     out.diagnostics = buildProductDiagnostics(r.data, buildExtrasOnly(toggles));
 
+    // Persiste a lista COMPLETA de clientes (varredura por dia = 571). A Fase A
+    // já gravou o Kanban rápido; aqui completamos com os que faltavam.
+    const fullCustomers: any[] = r.data?.customers || [];
+    if (fullCustomers.length > 0) {
+      try {
+        out.customers_full = await persistCustomers(supabase, consultantId, fullCustomers);
+        out.portfolio_full = await markOutOfPortfolio(supabase, consultantId, fullCustomers);
+      } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
+    }
+
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
@@ -530,7 +541,8 @@ async function runSyncAllBackgroundPhase(
     const started = Date.now();
     let detailsApplied = 0;
     let detailsReceived = 0;
-    const codes = extractCustomerCodes(baseCustomers);
+    // Enriquece a lista COMPLETA (571) quando disponível; senão a base (Kanban).
+    const codes = extractCustomerCodes(fullCustomers.length > 0 ? fullCustomers : baseCustomers);
     for (let i = 0; i < codes.length; i += 30) {
       if (Date.now() - started > 100_000) {
         out.details_stopped_reason = "edge_time_budget";
@@ -1292,12 +1304,13 @@ async function syncOneConsultant(
 
     const out: Record<string, unknown> = { success: true, mode: "sync_all", email: emailNorm, toggles };
 
-    // Fase A: salva a lista-base de clientes numa chamada curta. Essa é a parte
-    // que não pode falhar por timeout de enriquecimento/extras: cliente do Kanban
-    // precisa aparecer em "Meus clientes" imediatamente.
+    // Fase A: salva a lista-base de clientes numa chamada CURTA (fast=true → só
+    // o Kanban, ~5s). Cliente aparece em "Meus clientes" imediatamente. A lista
+    // COMPLETA (571, varredura por dia) vem na Fase B em background.
     const base = await callWorker(worker, "/sync-customers", {
       portal_email: emailNorm,
       portal_password: passwordNorm,
+      fast: true,
     });
     if (!base.ok) {
       const retry = classifyError(base.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
