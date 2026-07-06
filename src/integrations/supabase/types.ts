@@ -5876,6 +5876,54 @@ export type Database = {
         }
         Relationships: []
       }
+      igreen_recon_queue: {
+        Row: {
+          attempts: number
+          claimed_at: string | null
+          created_at: string
+          done_at: string | null
+          id: string
+          kind: string
+          last_error: string | null
+          params: Json
+          priority: number
+          result_id: string | null
+          status: string
+          target: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          done_at?: string | null
+          id?: string
+          kind: string
+          last_error?: string | null
+          params?: Json
+          priority?: number
+          result_id?: string | null
+          status?: string
+          target: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          claimed_at?: string | null
+          created_at?: string
+          done_at?: string | null
+          id?: string
+          kind?: string
+          last_error?: string | null
+          params?: Json
+          priority?: number
+          result_id?: string | null
+          status?: string
+          target?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       igreen_recon_routes: {
         Row: {
           ai_fields: Json | null
@@ -5890,10 +5938,14 @@ export type Database = {
           html_length: number | null
           html_snippet: string | null
           id: string
+          job_id: string | null
+          kind: string | null
           new_endpoints: Json | null
+          raw_response: Json | null
           route: string
           run_id: string
           screenshot_path: string | null
+          suggested_columns: Json | null
           title: string | null
         }
         Insert: {
@@ -5909,10 +5961,14 @@ export type Database = {
           html_length?: number | null
           html_snippet?: string | null
           id?: string
+          job_id?: string | null
+          kind?: string | null
           new_endpoints?: Json | null
+          raw_response?: Json | null
           route: string
           run_id: string
           screenshot_path?: string | null
+          suggested_columns?: Json | null
           title?: string | null
         }
         Update: {
@@ -5928,13 +5984,25 @@ export type Database = {
           html_length?: number | null
           html_snippet?: string | null
           id?: string
+          job_id?: string | null
+          kind?: string | null
           new_endpoints?: Json | null
+          raw_response?: Json | null
           route?: string
           run_id?: string
           screenshot_path?: string | null
+          suggested_columns?: Json | null
           title?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_recon_routes_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_recon_queue"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       igreen_seguros_comissoes: {
         Row: {
@@ -9781,6 +9849,14 @@ export type Database = {
           source?: string | null
           updated_at?: string | null
           value?: string | null
+        }
+        Relationships: []
+      }
+      igreen_recon_queue_progress: {
+        Row: {
+          count: number | null
+          kind: string | null
+          status: string | null
         }
         Relationships: []
       }
