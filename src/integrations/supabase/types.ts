@@ -10051,6 +10051,16 @@ export type Database = {
         }[]
       }
       check_send_quota: { Args: { p_instance: string }; Returns: Json }
+      claim_recon_job: {
+        Args: never
+        Returns: {
+          attempts: number
+          id: string
+          kind: string
+          params: Json
+          target: string
+        }[]
+      }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
       clear_pending_inbound: {
