@@ -44,12 +44,76 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 // Tor DESLIGADO por padrão. O Cloudflare do portal iGreen passou a bloquear os
 // IPs de saída do Tor (403 "Sorry, you have been blocked"), então o padrão
-// agora é acessar direto pelo IP do servidor. Para reativar o Tor, basta
-// definir TOR_SOCKS_PROXY=socks5://127.0.0.1:9050 nas variáveis de ambiente.
-const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'none';
+// agora é acessar direto pelo IP do servidor.
+//
+// IMPORTANTE: o Tor só é usado se IGREEN_USE_TOR estiver explicitamente ligado
+// (=1/true/on). Fazemos assim de propósito: mesmo que a variável antiga
+// TOR_SOCKS_PROXY continue definida no EasyPanel, ela sozinha NÃO reativa o Tor.
+// Para voltar a usar Tor no futuro: setar IGREEN_USE_TOR=1.
+const USE_TOR_FLAG = ['1', 'true', 'on', 'yes'].includes(
+  String(process.env.IGREEN_USE_TOR || '').trim().toLowerCase(),
+);
+const TOR_PROXY = USE_TOR_FLAG
+  ? (process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050')
+  : 'none';
 const TOR_CONTROL_HOST = process.env.TOR_CONTROL_HOST || '127.0.0.1';
 const TOR_CONTROL_PORT = parseInt(process.env.TOR_CONTROL_PORT || '9051', 10);
 const TOR_COOKIE_PATH = process.env.TOR_COOKIE_PATH || '/tmp/tor-data/control_auth_cookie';
+
+// ---------- Proxy externo (residencial/datacenter) ----------
+// Proxy pago com IP brasileiro para passar no Cloudflare. Tem PRIORIDADE sobre
+// o Tor: se PROXY_SERVER estiver definido, o worker usa ele e ignora o Tor.
+// Aceita autenticação (usuário/senha), que a maioria dos provedores exige.
+//
+// Formas de configurar no EasyPanel (qualquer uma funciona):
+//   A) Tudo numa variável só (padrão de mercado):
+//        PROXY_URL=http://usuario:senha@host:porta
+//        (também aceita socks5://usuario:senha@host:porta)
+//   B) Separado:
+//        PROXY_SERVER=http://host:porta   (ou socks5://host:porta)
+//        PROXY_USERNAME=usuario
+//        PROXY_PASSWORD=senha
+function parseProxyEnv() {
+  const url = String(process.env.PROXY_URL || '').trim();
+  if (url) {
+    try {
+      const u = new URL(url);
+      const server = `${u.protocol}//${u.host}`; // inclui porta
+      const username = decodeURIComponent(u.username || '') || undefined;
+      const password = decodeURIComponent(u.password || '') || undefined;
+      return { server, username, password };
+    } catch {
+      // Se não for URL válida, trata como "host:porta" cru (assume http).
+      return { server: url.includes('://') ? url : `http://${url}`, username: undefined, password: undefined };
+    }
+  }
+  const server = String(process.env.PROXY_SERVER || '').trim();
+  if (server) {
+    return {
+      server: server.includes('://') ? server : `http://${server}`,
+      username: String(process.env.PROXY_USERNAME || '').trim() || undefined,
+      password: String(process.env.PROXY_PASSWORD || '').trim() || undefined,
+    };
+  }
+  return null;
+}
+const EXTERNAL_PROXY = parseProxyEnv();
+
+// Monta o objeto de proxy que o Playwright entende, escolhendo a fonte:
+//   1º proxy externo (PROXY_URL/PROXY_SERVER)  → prioridade
+//   2º Tor (se IGREEN_USE_TOR ligado)
+//   senão: sem proxy (acesso direto)
+function buildProxyConfig() {
+  if (EXTERNAL_PROXY?.server) {
+    const cfg = { server: EXTERNAL_PROXY.server };
+    if (EXTERNAL_PROXY.username) cfg.username = EXTERNAL_PROXY.username;
+    if (EXTERNAL_PROXY.password) cfg.password = EXTERNAL_PROXY.password;
+    return { proxy: cfg, kind: 'external', label: EXTERNAL_PROXY.server };
+  }
+  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
+  if (useTor) return { proxy: { server: TOR_PROXY }, kind: 'tor', label: TOR_PROXY };
+  return { proxy: null, kind: 'direct', label: 'direto' };
+}
 
 const PORTAL_URL = 'https://escritorio.igreenenergy.com.br/login';
 // Portal novo (Virtual Office). Antes era api-voffice + /v1/login; migrou para
@@ -320,13 +384,13 @@ async function rotateTorCircuit(reason = 'waf') {
 // Usa Playwright leve (request context via Tor) porque undici não aceita
 // SOCKS proxy nativamente. Só é chamado entre retries — custo controlado.
 async function preflightPortalCheck() {
-  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
+  const proxyCfg = buildProxyConfig();
   let browser = null;
   try {
     browser = await chromium.launch({
       headless: true,
       args: ['--no-sandbox'],
-      ...(useTor ? { proxy: { server: TOR_PROXY } } : {}),
+      ...(proxyCfg.proxy ? { proxy: proxyCfg.proxy } : {}),
     });
     const ctx = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -360,16 +424,17 @@ function setEmailWafCooldown(email, ms = WAF_COOLDOWN_MS) {
 
 async function loginWithPlaywright(email, password) {
   lastDebug = { ts: new Date().toISOString(), steps: [] };
-  // TOR_SOCKS_PROXY vazio/"none"/"direct" desativa o Tor (útil p/ teste local ou
-  // quando o IP do host já passa no Cloudflare). Em produção, manter o Tor.
-  const useTor = TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase());
-  dbg(`[login] ${email} → iniciando browser${useTor ? ` via Tor (${TOR_PROXY})` : ' (sem proxy)'}`);
+  // Escolhe a fonte de saída: proxy externo (prioridade) → Tor → direto.
+  const proxyCfg = buildProxyConfig();
+  const proxyDesc = proxyCfg.kind === 'external' ? `proxy externo (${proxyCfg.label})`
+    : proxyCfg.kind === 'tor' ? `Tor (${proxyCfg.label})` : 'acesso direto (sem proxy)';
+  dbg(`[login] ${email} → iniciando browser via ${proxyDesc}`);
 
   const launchOpts = {
     headless: true,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled'],
   };
-  if (useTor) launchOpts.proxy = { server: TOR_PROXY };
+  if (proxyCfg.proxy) launchOpts.proxy = proxyCfg.proxy;
   const browser = await chromium.launch(launchOpts);
 
   let context, page;
@@ -1631,6 +1696,7 @@ const server = http.createServer(async (req, res) => {
         ia_vision: Boolean(OPENAI_API_KEY),
         ia_model: OPENAI_API_KEY ? OPENAI_VISION_MODEL : null,
         tor_proxy: TOR_PROXY,
+        egress: (() => { const p = buildProxyConfig(); return { kind: p.kind, label: p.label, auth: p.kind === 'external' ? Boolean(EXTERNAL_PROXY?.username) : false }; })(),
         api_health: { ...apiHealth, tor_likely_broken: torLikelyBroken() },
         operation_locks: locks,
         waf_cooldowns: cooldowns,
@@ -2680,9 +2746,10 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  const torState = (TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase()))
-    ? `tor(${TOR_PROXY})` : 'sem-tor(direto)';
-  console.log(`[boot] igreen-sync-worker v24 (${torState}+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
+  const bootProxy = buildProxyConfig();
+  const netState = bootProxy.kind === 'external' ? `proxy-externo(${bootProxy.label})`
+    : bootProxy.kind === 'tor' ? `tor(${bootProxy.label})` : 'direto(sem-proxy)';
+  console.log(`[boot] igreen-sync-worker v25 (${netState}+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
 });
 
 
