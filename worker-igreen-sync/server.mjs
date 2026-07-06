@@ -124,10 +124,11 @@ function totalFromPayload(j) {
   return Number(j?.data?.total ?? j?.total ?? j?.meta?.total ?? j?.pagination?.total ?? 0) || 0;
 }
 
-async function fetchPaged(session, basePath, { perPage = 100, maxPages = 30 } = {}) {
+async function fetchPaged(session, basePath, { perPage = 100, maxPages = Infinity } = {}) {
   const all = [];
   const diag = { path: basePath, pages: 0, items: 0, total: 0, error: null };
-  for (let page = 1; page <= maxPages; page++) {
+  const cap = Number.isFinite(maxPages) ? maxPages : 500; // limite duro de segurança
+  for (let page = 1; page <= cap; page++) {
     const sep = basePath.includes('?') ? '&' : '?';
     const path = `${basePath}${sep}page=${page}&perPage=${perPage}&pageSize=${perPage}&limit=${perPage}&search=`;
     try {
@@ -139,6 +140,8 @@ async function fetchPaged(session, basePath, { perPage = 100, maxPages = 30 } = 
       if (total) diag.total = total;
       all.push(...items);
       if (items.length < perPage || (total && page * perPage >= total)) break;
+      // rate-limit brando entre páginas (250ms)
+      await new Promise((r) => setTimeout(r, 250));
     } catch (e) {
       diag.error = e.message;
       break;
