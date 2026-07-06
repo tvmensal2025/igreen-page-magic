@@ -183,12 +183,13 @@ Deno.serve(async (req) => {
     }
 
     const catalog: any[] = Array.isArray(data.catalog) ? data.catalog : [];
+    const routeCaptures: any[] = Array.isArray(data.route_captures) ? data.route_captures : [];
 
     // 4) Persistir catálogo — uma linha por endpoint
     const rows = catalog.map((e) => ({
       method: e.method || "GET",
       path: e.path_template,
-      category: "recon_v19",
+      category: "recon_v21",
       status: 200,
       content_type: "application/json",
       bytes: null,
@@ -196,20 +197,15 @@ Deno.serve(async (req) => {
       sample_body: (() => {
         try {
           return JSON.stringify({
-            shape: e.shape,
-            first_total: e.first_total,
-            statuses: e.statuses,
-            hits: e.hits,
-            seen_query: e.seen_query,
-            samples: (e.samples || []).map((x: any) => ({
-              url: x.url, status: x.status, body: (x.body || "").slice(0, 2000),
-            })),
+            shape: e.shape, first_total: e.first_total, statuses: e.statuses,
+            hits: e.hits, seen_query: e.seen_query,
+            samples: (e.samples || []).map((x: any) => ({ url: x.url, status: x.status, body: (x.body || "").slice(0, 2000) })),
           }).slice(0, 8000);
         } catch { return null; }
       })(),
       is_alive: true,
       bucket: "portal_recon",
-      notes: `recon consultor=${consultantId} (${consultantName || "?"}) worker=${data.worker_version || "v19"}`,
+      notes: `recon consultor=${consultantId} (${consultantName || "?"}) worker=${data.worker_version || "v21"}`,
       checked_at: new Date().toISOString(),
     }));
 
@@ -222,6 +218,104 @@ Deno.serve(async (req) => {
       else persisted = count || rows.length;
     }
 
+    // 5) Persistir CAPTURAS por rota: upload screenshot + análise IA + linha em igreen_recon_routes
+    const runId = crypto.randomUUID();
+    const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+    let capturesSaved = 0;
+    const captureSummaries: any[] = [];
+
+    const analyzeWithAI = async (capture: any): Promise<{ summary: string; fields: any } | null> => {
+      if (!lovableKey || !capture.screenshot_b64) return null;
+      try {
+        const messages = [{
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: `Você é um mapeador de APIs. Analise a tela do portal iGreen (rota ${capture.route}).
+Responda em JSON com as chaves:
+{
+  "summary": "resumo em 2 linhas do que a tela mostra (dados, filtros, tabs, ações)",
+  "purpose": "para que serve essa página no negócio",
+  "data_entities": ["lista de entidades/tabelas de negócio visíveis, ex: clientes, faturas, comissoes"],
+  "columns_seen": ["colunas de tabela que aparecem"],
+  "filters_seen": ["filtros/inputs visíveis"],
+  "actions_seen": ["botões de ação: exportar, editar, ver detalhe..."],
+  "suggested_db_table": "nome sugerido para tabela de destino no supabase",
+  "suggested_columns": [{ "name": "...", "type": "text|numeric|date|jsonb|uuid|boolean", "note": "..." }]
+}
+Contexto DOM: ${JSON.stringify(capture.dom_outline || {}).slice(0, 4000)}
+Endpoints observados nesta rota: ${JSON.stringify(capture.new_endpoints || []).slice(0, 1500)}`,
+            },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${capture.screenshot_b64}` } },
+          ],
+        }];
+        const r = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Lovable-API-Key": lovableKey },
+          body: JSON.stringify({
+            model: "google/gemini-3-flash-preview",
+            messages,
+            response_format: { type: "json_object" },
+          }),
+        });
+        if (!r.ok) { console.error("[ai] status", r.status, await r.text()); return null; }
+        const j = await r.json();
+        const txt = j?.choices?.[0]?.message?.content || "{}";
+        try {
+          const parsed = JSON.parse(txt);
+          return { summary: parsed.summary || parsed.purpose || "", fields: parsed };
+        } catch { return { summary: txt.slice(0, 500), fields: null }; }
+      } catch (e) {
+        console.error("[ai] err", (e as Error).message);
+        return null;
+      }
+    };
+
+    for (const cap of routeCaptures) {
+      let screenshotPath: string | null = null;
+      if (cap.screenshot_b64) {
+        try {
+          const bin = Uint8Array.from(atob(cap.screenshot_b64), (c) => c.charCodeAt(0));
+          const safeName = String(cap.route || "root").replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "") || "root";
+          const path = `${runId}/${safeName}.png`;
+          const { error: upErr } = await supabase.storage.from("igreen-recon").upload(path, bin, {
+            contentType: "image/png", upsert: true,
+          });
+          if (!upErr) screenshotPath = path;
+          else console.error("[storage] upload err", upErr);
+        } catch (e) { console.error("[storage] decode err", (e as Error).message); }
+      }
+
+      const ai = await analyzeWithAI(cap);
+
+      const { error: rErr } = await supabase.from("igreen_recon_routes").insert({
+        run_id: runId,
+        consultant_id: consultantId,
+        consultant_email: email,
+        route: cap.route,
+        final_path: cap.final || null,
+        title: cap.dom_outline?.title || null,
+        screenshot_path: screenshotPath,
+        html_length: cap.html_length || null,
+        html_snippet: cap.html_snippet || null,
+        dom_outline: cap.dom_outline || null,
+        new_endpoints: cap.new_endpoints || [],
+        ai_summary: ai?.summary || null,
+        ai_fields: ai?.fields || null,
+        elapsed_ms: cap.elapsed_ms || null,
+        error: cap.error || null,
+      });
+      if (rErr) console.error("[recon] route insert err", rErr);
+      else capturesSaved++;
+
+      captureSummaries.push({
+        route: cap.route, final: cap.final, title: cap.dom_outline?.title,
+        endpoints_found: (cap.new_endpoints || []).length, ai_summary: ai?.summary || null,
+        screenshot_path: screenshotPath,
+      });
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -230,10 +324,12 @@ Deno.serve(async (req) => {
         consultant_id: consultantId,
         consultant_name: consultantName,
         elapsed_ms: data.elapsed_ms,
-        routes_navigated: data.routes_navigated,
+        routes_navigated: routeCaptures.length,
         endpoints_discovered: catalog.length,
         persisted,
-        catalog,
+        captures_saved: capturesSaved,
+        run_id: runId,
+        captures: captureSummaries,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
