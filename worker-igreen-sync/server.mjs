@@ -1829,7 +1829,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v17 (tor+playwright+api-vo) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v18 (tor+playwright+api-vo, cobertura total) porta ${PORT}`);
 });
 
 // Garbage collect de sessões expiradas
