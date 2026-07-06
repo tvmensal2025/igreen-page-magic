@@ -347,7 +347,7 @@ async function logSyncFinish(
   const errText = success ? null : String(result?.error || "");
   const status = success ? "ok" : classifyError(errText || undefined);
   const counts: Record<string, unknown> = {};
-  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics"]) {
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics","full_extras","full_extras_error"]) {
     if (result[k] != null) counts[k] = result[k];
   }
   if (runId) {
