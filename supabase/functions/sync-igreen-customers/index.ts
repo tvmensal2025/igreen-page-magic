@@ -399,14 +399,12 @@ async function loadIgreenToggles(supabase: any, consultantId: string | null): Pr
   return toggles;
 }
 
-function buildExtrasOnly(toggles: Record<string, boolean>): string[] {
-  const only = ["network", "metrics"];
-  if (toggles.capture_boletos) only.push("boletos");
-  if (toggles.capture_telecom) only.push("telecom");
-  if (toggles.capture_seguros) only.push("seguros");
-  if (toggles.capture_devolutivas) only.push("devolutivas");
-  if (toggles.capture_cashback) only.push("cashback");
-  return only;
+function buildExtrasOnly(_toggles: Record<string, boolean>): string[] {
+  // Captura SEMPRE completa: clientes, rede, métricas, boletos, telecom, seguros,
+  // devolutivas e cashback. Os toggles NÃO limitam mais a coleta de dados — eles
+  // controlam apenas as AUTOMAÇÕES (alertas e envio proativo de WhatsApp).
+  // Assim a página nunca fica sem dado por um toggle desligado.
+  return ["network", "metrics", "boletos", "telecom", "seguros", "devolutivas", "cashback"];
 }
 
 function extractCustomerCodes(customers: any[]): string[] {
@@ -509,11 +507,12 @@ async function runSyncAllBackgroundPhase(
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
-    if (toggles.capture_boletos) out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
-    if (toggles.capture_telecom) out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
-    if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    // Persiste SEMPRE tudo (não depende de toggle). A página nunca fica vazia.
+    out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
+    out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
+    out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
+    out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
+    out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
     // v18: cobertura total das páginas (telecom/linhas, faturas, comissoes,
     // seguros/apolices, sinistros, network history). Só roda se o worker
     // devolveu `full_extras` (worker v18+).

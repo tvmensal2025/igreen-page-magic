@@ -1,4 +1,9 @@
-// server.mjs — igreen-sync-worker v18 (API nova api-vo, cobertura total)
+// server.mjs — igreen-sync-worker v19 (API nova api-vo, cobertura 100%)
+//
+// v19: CLIENTES agora vêm da varredura por dia de /clientes-green/cadastros
+// (fonte COMPLETA = 571 clientes, validado ao vivo). O Kanban /crm/green
+// truncava colunas grandes e só trazia ~159. Mesma correção para telecom/seguros.
+// Ver worker-igreen-sync/PORTAL_ENDPOINTS_OFICIAL.md para o catálogo oficial.
 //
 // Pipeline:
 //   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
@@ -679,46 +684,150 @@ async function apiGet(session, path) {
   return body;
 }
 
-// CLIENTES: /crm/green é um Kanban { data: [ {id,label,cards:[...]} ] }.
-// Achata todos os cards numa lista de clientes, anexando o status da coluna.
-async function fetchCustomers(session) {
+// Descobre o mês de ativação do consultor (nível 0 em /network-map/data) para
+// limitar a varredura por dia. Fallback conservador: 2024-01.
+async function discoverSinceMonth(session) {
+  try {
+    const mesAtual = new Date().toISOString().slice(0, 7);
+    const j = await apiGet(session, `/network-map/data?month=${mesAtual}`);
+    const arr = Array.isArray(j?.data) ? j.data : [];
+    const head = arr.find((m) => Number(m.nivel) === 0) || arr[0];
+    const dataAtivo = head?.dataAtivo;
+    if (dataAtivo && /^\d{4}-\d{2}/.test(String(dataAtivo))) {
+      // Recua 1 mês por segurança: pode haver cadastros anteriores à ativação.
+      let y = Number(String(dataAtivo).slice(0, 4));
+      let m = Number(String(dataAtivo).slice(5, 7)) - 1;
+      if (m < 1) { m = 12; y--; }
+      return `${y}-${String(m).padStart(2, '0')}`;
+    }
+  } catch (e) { dbg(`[customers] discoverSinceMonth falhou: ${e.message}`); }
+  return '2024-01';
+}
+
+// Achata o Kanban /crm/green em lista de cards com status da coluna.
+async function fetchKanbanGreen(session) {
   const j = await apiGet(session, '/crm/green');
   const cols = Array.isArray(j?.data) ? j.data : [];
   const out = [];
   for (const col of cols) {
     for (const card of (col.cards || [])) {
-      out.push({
-        ...card,
-        status_coluna: col.id,      // ex.: validado, devolutiva, reprovado...
-        status_label: col.label,
-      });
+      out.push({ ...card, status_coluna: col.id, status_label: col.label });
     }
   }
+  return { cards: out, cols };
+}
 
-  const diagnostics = { crm_columns: cols.length, crm_cards: out.length, extra_sources: [] };
-  const extraPaths = [
-    '/clientes-green?status=todos&injecao=todos&tipo=todos',
-    '/clientes-green/boletos?status=todos&injecao=todos&tipo=todos',
-  ];
-  const extra = [];
-  for (const path of extraPaths) {
-    const r = await fetchPaged(session, path, { perPage: 100, maxPages: 50 });
-    diagnostics.extra_sources.push(r.diagnostics);
-    for (const item of r.items) {
-      extra.push({
-        ...item,
-        codigo: item.codigo ?? item.idcliente ?? item.id ?? item.codigoCliente,
-        nomeCliente: item.nomeCliente ?? item.nome ?? item.cliente,
-        status_coluna: item.status_coluna ?? item.status ?? item.situacao,
-        status_label: item.status_label ?? item.status ?? item.situacao,
-      });
+// Descobre TODOS os dias a varrer. Para cada mês desde `sinceMonth`, consulta
+// /clientes-green/overview?mes=X: se resumo.totalCadastros > 0, varre o mês
+// INTEIRO dia-a-dia. (O campo cadastrosPorDia usa `dia` como número do dia,
+// ex.: {"dia":16,"n":1}, então não dá para extrair a data direto dali de forma
+// confiável — varrer o mês inteiro quando há cadastros é o que garante 100%.)
+// Validado ao vivo: recupera exatamente os 571 clientes da carteira.
+async function discoverCadastroDays(session, sinceMonth) {
+  const days = new Set();
+  const now = new Date();
+  const [sy, sm] = (sinceMonth || '2024-01').split('-').map(Number);
+  let y = sy, m = sm;
+  while (y < now.getUTCFullYear() || (y === now.getUTCFullYear() && m <= now.getUTCMonth() + 1)) {
+    const mes = `${y}-${String(m).padStart(2, '0')}`;
+    try {
+      const ov = await apiGet(session, `/clientes-green/overview?mes=${mes}`);
+      const totalMes = Number(ov?.data?.resumo?.totalCadastros || 0);
+      if (totalMes > 0) {
+        const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        for (let d = 1; d <= lastDay; d++) days.add(`${mes}-${String(d).padStart(2, '0')}`);
+      }
+    } catch (e) { dbg(`[customers] overview ${mes} falhou: ${e.message}`); }
+    m++; if (m > 12) { m = 1; y++; }
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  return Array.from(days).sort();
+}
+
+// Varre /clientes-green/cadastros?dia=YYYY-MM-DD nos dias informados, paginando
+// dentro de cada dia. Fonte COMPLETA (100%) — o Kanban /crm/green trunca.
+async function fetchCadastrosByDays(session, days, { perDayMaxPages = 10 } = {}) {
+  const byId = new Map();
+  let reqErros = 0;
+  for (const dia of days) {
+    for (let p = 1; p <= perDayMaxPages; p++) {
+      let j;
+      try { j = await apiGet(session, `/clientes-green/cadastros?dia=${dia}&status=todos&search=&page=${p}&perPage=100`); }
+      catch (e) { reqErros++; break; }
+      const items = j?.data?.items || [];
+      for (const it of items) {
+        const id = String(it.codigo ?? it.idcliente ?? it.id ?? `${it.nome}|${it.cidade}`);
+        byId.set(id, { ...it, _dia_cadastro: dia });
+      }
+      const total = Number(j?.data?.total || 0);
+      if (items.length < 100 || p * 100 >= total) break;
+      await new Promise((r) => setTimeout(r, 100));
     }
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  return { items: Array.from(byId.values()), req_erros: reqErros };
+}
+
+// CLIENTES (v19): fonte COMPLETA = varredura por dia de /clientes-green/cadastros
+// (recupera 100% — o Kanban /crm/green trunca colunas grandes e só traz ~159).
+// O Kanban é usado como COMPLEMENTO para o status financeiro (adimplente/
+// menos_30d/inadimplente) e para o kwh/distribuidora que o cadastros não traz.
+// Casa por `codigo`. `sinceMonth` limita o histórico (default: ativação do consultor).
+async function fetchCustomers(session, { sinceMonth } = {}) {
+  const diagnostics = { source: 'cadastros_by_day', kanban_cards: 0, cadastro_days: 0, cadastro_clients: 0, req_erros: 0 };
+
+  // 1) Kanban (complemento — status financeiro/kwh/distribuidora)
+  let kanbanCards = [];
+  try {
+    const k = await fetchKanbanGreen(session);
+    kanbanCards = k.cards;
+    diagnostics.kanban_cards = kanbanCards.length;
+  } catch (e) { dbg(`[customers] kanban falhou: ${e.message}`); }
+  const kanbanByCode = new Map();
+  for (const c of kanbanCards) {
+    const code = String(c.codigo ?? c.idcliente ?? c.id ?? '');
+    if (code) kanbanByCode.set(code, c);
   }
 
-  const merged = mergeByKey([...out, ...extra], (c) => String(c.codigo ?? c.idcliente ?? c.id ?? c.cpf ?? `${c.nomeCliente || c.nome}|${c.cidade}` ?? '').trim());
-  dbg(`[customers] /crm/green: ${cols.length} colunas → ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
-  merged._diagnostics = diagnostics;
-  return merged;
+  // 2) Fonte completa: varredura por dia
+  const since = sinceMonth || await discoverSinceMonth(session);
+  diagnostics.since_month = since;
+  const days = await discoverCadastroDays(session, since);
+  diagnostics.cadastro_days = days.length;
+  const { items: cadastros, req_erros } = await fetchCadastrosByDays(session, days);
+  diagnostics.cadastro_clients = cadastros.length;
+  diagnostics.req_erros = req_erros;
+
+  // 3) Merge: base = cadastros (completo); enriquece com dados do Kanban.
+  const merged = new Map();
+  for (const c of cadastros) {
+    const code = String(c.codigo ?? c.idcliente ?? c.id ?? `${c.nome}|${c.cidade}`);
+    const kb = kanbanByCode.get(code);
+    merged.set(code, {
+      ...(kb || {}),
+      ...c,
+      codigo: c.codigo ?? c.idcliente ?? c.id ?? kb?.codigo,
+      nome: c.nome ?? c.nomeCliente ?? kb?.nome,
+      // status do cadastros é o oficial; se faltar, usa o da coluna do Kanban
+      status_coluna: c.status ?? c.situacao ?? kb?.status_coluna,
+      status_label: c.status ?? kb?.status_label,
+      // campos que só o Kanban traz
+      kwh: c.kwh ?? kb?.kwh,
+      distribuidora: c.distribuidora ?? kb?.distribuidora,
+      fornecedora: c.fornecedora ?? kb?.fornecedora,
+      celular: c.celular ?? kb?.celular,
+      diasAtraso: c.diasAtraso ?? kb?.diasAtraso,
+    });
+  }
+  // Inclui cards do Kanban que (por algum motivo) não apareceram no cadastros.
+  for (const [code, kb] of kanbanByCode) {
+    if (!merged.has(code)) merged.set(code, { ...kb, codigo: code });
+  }
+
+  const list = Array.from(merged.values());
+  dbg(`[customers] cadastros=${cadastros.length} (${days.length} dias) + kanban=${kanbanCards.length} → total=${list.length}`);
+  list._diagnostics = diagnostics;
+  return list;
 }
 
 // REDE: /network-map/data?month=YYYY-MM devolve { data: [ ...membros ] }.
@@ -832,13 +941,69 @@ async function fetchTelecomPayload(session) {
     if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = c._idcnxtelecom ?? fat.idcnxtelecom; }
     if (!c._idcnxtelecom) c._idcnxtelecom = stableIntId(`${c.numero || ''}|${c.cliente || ''}|${c.licenciado || ''}`);
   }
-  const merged = mergeByKey([...out, ...extra], (c) => String(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id ?? c.numero ?? `${c.cliente}|${c.licenciado}` ?? '').trim());
-  dbg(`[telecom] /crm/telecom: ${out.length} cards; extras=${extra.length}; faturas=${diagnostics.faturas_items}; total=${merged.length}`);
+  // Fonte COMPLETA: varredura por dia de /telecom/cadastros (o Kanban trunca).
+  let cadastros = [];
+  try {
+    const since = await discoverSinceMonth(session);
+    const cad = await fetchProdutoCadastrosByDays(session, 'telecom', since, (mes) => `/telecom/resumo-mes?mes=${mes}`);
+    cadastros = cad.items;
+    diagnostics.cadastros_by_day = { days: cad.days, items: cad.items.length, req_erros: cad.req_erros };
+  } catch (e) { dbg(`[telecom] cadastros by day: ${e.message}`); }
+  for (const c of cadastros) {
+    const fat = faturasByName.get(String(c.cliente || '').trim().toLowerCase());
+    if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = c._idcnxtelecom ?? c.idcnxtelecom ?? fat.idcnxtelecom; }
+    if (!c._idcnxtelecom) c._idcnxtelecom = c.idcnxtelecom ?? stableIntId(`${c.numero || ''}|${c.cliente || ''}|${c.licenciado || ''}`);
+  }
+
+  const merged = mergeByKey([...out, ...extra, ...cadastros], (c) => String(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id ?? c.numero ?? `${c.cliente}|${c.licenciado}` ?? '').trim());
+  dbg(`[telecom] cards=${out.length}; extras=${extra.length}; cadastros=${cadastros.length}; faturas=${diagnostics.faturas_items}; total=${merged.length}`);
   return { items: merged, diagnostics };
 }
 
 async function fetchTelecom(session) {
   return (await fetchTelecomPayload(session)).items;
+}
+
+// Varredura por dia genérica para telecom/seguros (mesma lógica dos clientes
+// green: o Kanban trunca; /{produto}/cadastros?dia=YYYY-MM-DD é a fonte completa).
+// `overviewPath(mes)` deve devolver algo com resumo.totalCadastros (ou total).
+async function fetchProdutoCadastrosByDays(session, produto, sinceMonth, overviewPathFn) {
+  const days = new Set();
+  const now = new Date();
+  const [sy, sm] = (sinceMonth || '2024-01').split('-').map(Number);
+  let y = sy, m = sm;
+  while (y < now.getUTCFullYear() || (y === now.getUTCFullYear() && m <= now.getUTCMonth() + 1)) {
+    const mes = `${y}-${String(m).padStart(2, '0')}`;
+    try {
+      const ov = await apiGet(session, overviewPathFn(mes));
+      const total = Number(ov?.data?.resumo?.totalCadastros ?? ov?.data?.novas ?? ov?.data?.total ?? 0);
+      if (total > 0) {
+        const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+        for (let d = 1; d <= lastDay; d++) days.add(`${mes}-${String(d).padStart(2, '0')}`);
+      }
+    } catch (e) { dbg(`[${produto}] overview ${mes} falhou: ${e.message}`); }
+    m++; if (m > 12) { m = 1; y++; }
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  const byId = new Map();
+  let reqErros = 0;
+  for (const dia of Array.from(days).sort()) {
+    for (let p = 1; p <= 10; p++) {
+      let j;
+      try { j = await apiGet(session, `/${produto}/cadastros?dia=${dia}&status=todos&search=&page=${p}&perPage=100`); }
+      catch (e) { reqErros++; break; }
+      const items = j?.data?.items || [];
+      for (const it of items) {
+        const id = String(it.idcnxtelecom ?? it.id ?? it.codigo ?? it.idcliente ?? `${it.cliente}|${it.numero}`);
+        byId.set(id, { ...it, _dia_cadastro: dia });
+      }
+      const total = Number(j?.data?.total || 0);
+      if (items.length < 100 || p * 100 >= total) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  return { items: Array.from(byId.values()), days: days.size, req_erros: reqErros };
 }
 
 // SEGUROS: /crm/seguros é um Kanban (seguro de veículo).
@@ -884,8 +1049,27 @@ async function fetchSegurosPayload(session) {
   for (const c of extra) {
     if (!c.id) c.id = `auto:${stableIntId(`${c.segurado || ''}|${c.placa || ''}|${c.modelo || ''}|${c.licenciado || ''}`)}`;
   }
-  const merged = mergeByKey([...out, ...extra], (c) => String(c.id ?? c.seguro_id ?? c.apolice_id ?? c.placa ?? `${c.segurado}|${c.modelo}` ?? '').trim());
-  dbg(`[seguros] /crm/seguros: ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
+  // Fonte COMPLETA: varredura por dia de /seguros/cadastros (o Kanban trunca).
+  let cadastros = [];
+  try {
+    const since = await discoverSinceMonth(session);
+    const cad = await fetchProdutoCadastrosByDays(session, 'seguros', since, (mes) => `/seguros/overview?mes=${mes}`);
+    cadastros = cad.items.map((it) => ({
+      ...it,
+      id: it.id ?? it.seguro_id ?? it.apolice_id ?? it.codigo ?? it.idcotacao,
+      segurado: it.segurado ?? it.cliente ?? it.nome ?? it.nomeCliente,
+      modelo: it.modelo ?? it.veiculo ?? it.descricaoVeiculo,
+      mensal: it.mensal ?? it.mensalidade ?? it.valorMensal ?? it.valor,
+      licenciado: it.licenciado ?? it.nomeLicenciado ?? it.consultor ?? it.consultorNome,
+      status_coluna: it.status_coluna ?? it.status ?? it.situacao ?? it.tipo,
+      status_label: it.status_label ?? it.statusLabel ?? it.status ?? it.situacao ?? it.tipo,
+    }));
+    for (const c of cadastros) { if (!c.id) c.id = `auto:${stableIntId(`${c.segurado || ''}|${c.placa || ''}|${c.modelo || ''}|${c.licenciado || ''}`)}`; }
+    diagnostics.cadastros_by_day = { days: cad.days, items: cad.items.length, req_erros: cad.req_erros };
+  } catch (e) { dbg(`[seguros] cadastros by day: ${e.message}`); }
+
+  const merged = mergeByKey([...out, ...extra, ...cadastros], (c) => String(c.id ?? c.seguro_id ?? c.apolice_id ?? c.placa ?? `${c.segurado}|${c.modelo}` ?? '').trim());
+  dbg(`[seguros] cards=${out.length}; extras=${extra.length}; cadastros=${cadastros.length}; total=${merged.length}`);
   return { items: merged, diagnostics };
 }
 
@@ -895,7 +1079,7 @@ async function fetchSeguros(session) {
 
 // BOLETOS: /clientes-green/boletos (lista paginada). Traz boletos por cliente
 // com valores, vencimento, status, urls e celular. Pagina até acabar.
-async function fetchBoletos(session, { perPage = 100, maxPages = 50 } = {}) {
+async function fetchBoletos(session, { perPage = 100, maxPages = 200 } = {}) {
   const all = [];
   for (let p = 1; p <= maxPages; p++) {
     const q = `status=todos&injecao=todos&tipo=todos&search=&page=${p}&perPage=${perPage}`;
@@ -1419,7 +1603,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+api-vo-v18',
+        mode: 'tor+playwright+api-vo-v19',
         api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
@@ -1577,7 +1761,7 @@ const server = http.createServer(async (req, res) => {
           seguros: segurosPayload.diagnostics,
           only: only ? Array.from(only) : null,
           full_history: fullHistory,
-          worker_version: 'v18',
+          worker_version: 'v19',
         },
       });
     }
