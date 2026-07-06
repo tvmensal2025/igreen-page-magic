@@ -829,7 +829,7 @@ async function fetchTelecomPayload(session) {
     if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = c._idcnxtelecom ?? fat.idcnxtelecom; }
     if (!c._idcnxtelecom) c._idcnxtelecom = stableIntId(`${c.numero || ''}|${c.cliente || ''}|${c.licenciado || ''}`);
   }
-  const merged = mergeByKey([...out, ...extra], (c) => String(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id ?? c.numero ?? `${c.cliente}|${c.licenciado}` || '').trim());
+  const merged = mergeByKey([...out, ...extra], (c) => String(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id ?? c.numero ?? `${c.cliente}|${c.licenciado}` ?? '').trim());
   dbg(`[telecom] /crm/telecom: ${out.length} cards; extras=${extra.length}; faturas=${diagnostics.faturas_items}; total=${merged.length}`);
   return { items: merged, diagnostics };
 }
@@ -881,7 +881,7 @@ async function fetchSegurosPayload(session) {
   for (const c of extra) {
     if (!c.id) c.id = `auto:${stableIntId(`${c.segurado || ''}|${c.placa || ''}|${c.modelo || ''}|${c.licenciado || ''}`)}`;
   }
-  const merged = mergeByKey([...out, ...extra], (c) => String(c.id ?? c.seguro_id ?? c.apolice_id ?? c.placa ?? `${c.segurado}|${c.modelo}` || '').trim());
+  const merged = mergeByKey([...out, ...extra], (c) => String(c.id ?? c.seguro_id ?? c.apolice_id ?? c.placa ?? `${c.segurado}|${c.modelo}` ?? '').trim());
   dbg(`[seguros] /crm/seguros: ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
   return { items: merged, diagnostics };
 }
