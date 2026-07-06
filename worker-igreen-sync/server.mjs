@@ -2408,7 +2408,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v21 (tor+playwright+api-vo, recon-menu-click+captures) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v22 (tor+playwright+api-vo, recon-one-route) porta ${PORT}`);
 });
 
 
