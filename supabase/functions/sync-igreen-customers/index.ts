@@ -574,7 +574,7 @@ async function runSyncAllBackgroundPhase(
           .maybeSingle();
         if (lastRun?.id) {
           const extras: Record<string, unknown> = {};
-          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics"]) {
+          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics","full_extras","full_extras_error"]) {
             if (out[k] != null) extras[k] = out[k];
           }
           extras._background_finished_at = new Date().toISOString();
