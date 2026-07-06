@@ -1,93 +1,77 @@
 
-# Sync completo em todos os consultores — sem deixar nada
+## Diagnóstico do que aconteceu
 
-Diagnóstico do log: worker roda **v17** na VPS e chama só as rotas antigas (`/crm/*`, `/network-map`, `/clientes-green/boletos`, devolutivas). Tudo que adicionamos nas rodadas anteriores (paginação, `/telecom/clientes|linhas|faturas|comissoes`, `/seguros/apolices|clientes|comissoes|sinistros`, `/clientes-green?status=todos`) **está dormente no repositório**. Além disso, "Sincronizar TODOS" precisa disparar exatamente o mesmo pacote que o botão single-consultant (100%, sem cortes).
+O worker v18 já está no ar, mas 17 das 18 rotas paginadas do `collectFullExtras` voltaram `pages=0` — sinal de erro na página 1 (path errado). Só `telecom.faturas` (5 itens) funcionou porque já era um endpoint conhecido. Os totais que já batem com o portal são `/crm/green` (21 e 159), `/crm/telecom` (0 e 6), `/crm/seguros` (0 e 5), `/network-map/data`, `/telecom/faturas`, `/clientes-green/boletos` e `/rotinas/devolutivas-*`. Todo o resto que adicionei foi chute e por isso "faltou muito".
 
-## Objetivo
+Não dá para continuar chutando URLs. A solução definitiva é fazer o worker **descobrir sozinho** todas as rotas que o portal realmente chama, usando a sessão do rafael.ids (o consultor com dados) e navegando o SPA inteiro com Playwright interceptando XHR.
 
-1 clique em "Sincronizar TODOS" → cada consultor recebe o pacote **completo** (energia + rede + telecom completo + seguros completo + devolutivas + cashback + histórico de boletos), com paginação máxima em cada rota, persistência nas tabelas certas, e diagnóstico transparente do que veio de cada endpoint.
+## Etapa 1 — Recon endpoint no worker (v19)
 
----
+Adicionar rota `POST /recon-endpoints` em `worker-igreen-sync/server.mjs`:
 
-## 1. Worker v18 — cobertura total das páginas
+1. Faz login normal (rafael.ids@icloud.com, consultor 124170).
+2. Registra listener `page.on('request'|'response')` filtrando `api-vo.igreenenergy.com.br/v1/*`.
+3. Navega sequencialmente por cada rota do SPA do portal:
+   - `/dashboard`, `/crm/green`, `/crm/green/*` (abrir 1 card), `/clientes-green/*` (todas abas: lista, faturas, injeção, boletos, devolutivas, cashback, resumo)
+   - `/crm/telecom`, `/telecom/*` (linhas, faturas, comissões, recargas, bônus, portabilidade, licenciados)
+   - `/crm/seguros`, `/seguros/*` (apólices, clientes, comissões, sinistros, renovações, cashback)
+   - `/network-map`, `/rede/*`, `/rede/licenciados`, `/comissoes/*`, `/relatorios/*`, `/financeiro/*`
+   - Em cada tela: rolar até o fim, trocar filtros de status para "todos", trocar mês para os últimos 12 meses.
+4. Agrega os requests por `{method, path_template}` (com query params substituídos por placeholders), guarda: shape da resposta (chaves top-level), primeiro `total`, quantidade de páginas observada, exemplo de item (1 objeto).
+5. Persiste em `igreen_endpoint_discovery` (tabela já existe) e devolve JSON com o catálogo.
 
-Reescrever o handler `/sync-all` do `worker-igreen-sync/server.mjs` para SEMPRE executar as coletas extras (hoje já existem funções `fetchTelecomPayload` etc., mas o payload retornado só inclui o Kanban + poucas rotas extras). Vou:
+## Etapa 2 — Reescrever `collectFullExtras` baseado no catálogo real
 
-- **Bumpar versão para v18** no log de boot, para você confirmar visualmente no log da VPS.
-- Trocar `Promise.all` por execução **sequencial por produto** (evita 429 do portal) com try/catch individual.
-- Para cada página do portal, iterar `page=1..N` até `items.length < perPage` **sem cap**, respeitando `Retry-After` do portal.
-- Novas rotas obrigatórias no pacote (todas com paginação):
-  - **Clientes Green**: `/clientes-green?status=todos&injecao=todos&tipo=todos`, `/clientes-green/summary`, `/clientes-green/faturas`, `/clientes-green/injecao`, `/clientes-green/devolutivas-resolvidas`, `/clientes-green/boletos/{idcliente}` (ficha completa por cliente do Kanban).
-  - **Telecom**: `/telecom/clientes?status=todos`, `/telecom/linhas?status=todos`, `/telecom/portabilidade?status=todos`, `/telecom/faturas?status=todos` (todos os meses), `/telecom/comissoes`, `/telecom/recargas`, `/telecom/bonus`, `/telecom/licenciados`, `/telecom/resumo-geral`, `/telecom/client-map`.
-  - **Seguros**: `/seguros/apolices?status=todos`, `/seguros/clientes?status=todos`, `/seguros/comissoes`, `/seguros/sinistros`, `/seguros/renovacoes`, `/seguros/cashback/resumo`, `/seguros/licenciados`, `/seguros/resumo-geral`.
-  - **Rede**: `/network-map/data?month=YYYY-MM` (mês corrente + últimos 12), `/estatisticas-pro`, `/network` (raiz), painéis onboarding/inativos/ranking.
-- Cada rota entra no payload como bloco separado: `{ items:[], diagnostics:{ path, pages, items_total, portal_total, error } }` para que a edge saiba distinguir "portal retornou 0" de "erro no fetch".
+Após o recon rodar, uso o catálogo para:
 
-## 2. Edge `sync-igreen-customers` — persistência nas tabelas certas
+1. Substituir a lista atual de 18 rotas chute por **exatamente** os paths que o portal usa (com os query params corretos: nomes de status, nomes de campo de paginação, se é `perPage`/`pageSize`/`limit`, etc.).
+2. Ajustar `fetchPaged` se algum grupo de endpoints usar convenção diferente (ex.: `pagina`/`porPagina` em vez de `page`/`perPage`).
+3. Ajustar `firstArrayPayload` e `totalFromPayload` se aparecerem chaves novas no wrapper.
+4. Marcar cada rota com o "grupo" (green/telecom/seguros/rede/comissoes) e persistir tudo com upsert idempotente.
 
-Cada bloco novo do worker vai para a tabela apropriada (todas já existem, criadas na migração da última rodada):
+## Etapa 3 — Persistência completa no Supabase
 
-- `/telecom/linhas` → `igreen_telecom_linhas` (upsert por `consultant_id, msisdn`).
-- `/telecom/faturas` → `igreen_telecom_faturas` (upsert por `consultant_id, idcnxtelecom, mes_referencia`).
-- `/telecom/comissoes` → `igreen_telecom_comissoes` (upsert por `consultant_id, external_id, mes_referencia`).
-- `/seguros/comissoes` → `igreen_seguros_comissoes` (mesma chave).
-- `/seguros/sinistros` + `/seguros/renovacoes` + `/seguros/cashback` → colunas novas em `igreen_seguros_customers` (`sinistros`, `renovacao_prevista_at`, `cashback_previsto_cents`).
-- `/network-map` histórico → `igreen_network_snapshots` (1 linha por mes_referencia).
-- Nada é apagado das persistências antigas; só ADIÇÃO de blocos de upsert.
+Para cada bloco descoberto, garantir que existe:
+- Tabela de destino (usar as já existentes: `igreen_telecom_linhas/faturas/comissoes`, `igreen_seguros_customers/comissoes`, `igreen_customer_boletos`, `igreen_customer_devolutivas`, `igreen_network_snapshots`, `network_members`).
+- Migração criando o que faltar (ex.: `igreen_telecom_recargas`, `igreen_telecom_bonus`, `igreen_seguros_sinistros`, `igreen_seguros_cashback`, `igreen_green_faturas`, `igreen_green_injecao`) com `GRANT`s e RLS (admin lê tudo, consultor lê só o próprio).
+- Chave de conflito clara para upsert (sem duplicar em re-sync).
 
-Todos os upserts com fallback `stableIntId` quando o portal não trouxer ID (já implementado).
+## Etapa 4 — Auditoria "nada de fora"
 
-## 3. Diagnóstico "gaps" por página
-
-Estender `igreen_sync_runs.counts.extras` para conter, por rota:
-```json
-{ "telecom.clientes": { "portal_total": 6, "rows_saved": 6, "pages": 1, "gap": false },
-  "telecom.faturas":  { "portal_total": 127, "rows_saved": 0, "pages": 2, "gap": true, "reason": "erro parse" } }
+No fim de cada sync gravar em `igreen_sync_runs.counts` um diff:
 ```
-O `IGreenSyncStatusBar` já suporta gaps — vou expandir a seção para listar cada rota que ficou com gap, com o motivo.
+{ route, portal_total, rows_saved, gap, sample_missing_id }
+```
+Se `gap > 0`, marca `status='partial'` e o admin destaca em vermelho.
 
-## 4. Botão "Sincronizar TODOS" = pacote 100%
+## Etapa 5 — Botão "Sincronizar TODOS"
 
-O botão já existe e chama `source=bulk_manual`. Vou garantir que ele:
-- Passe `mode=sync_all` com `full_history=true` e `enrich=true` (ficha completa por cliente).
-- Timeout do worker sobe para 8 min por consultor quando `full_history=true`.
-- Rate limit de 250ms entre requests dentro de um consultor + 3s de espaço entre consultores (já existe).
-- Estado em `igreen_bulk_sync_state` já grava progresso; adiciono um resumo agregado por produto no `results[consultant_id]` (ex: `{ energy: 21, telecom: {clientes:6, linhas:6, faturas:127}, seguros: {apolices:1, comissoes:12} }`) para você ver de bater o olho o que veio.
+Continua igual (já passa `full_history:true`), mas o worker agora usa a lista real de rotas e cobre 100%. Timeout já está em 8min/consultor.
 
-## 5. Verificação (sem quebrar nada)
+## Passo a passo de execução
 
-Depois do deploy do worker v18:
-1. Rodar sync single em `rafael.ids@icloud.com` (consultor 124170, sabemos que tem dados) e conferir se `igreen_telecom_linhas`, `igreen_telecom_faturas`, `igreen_seguros_comissoes` recebem linhas.
-2. Rodar single em `censuralivrealiaad@gmail.com` (consultor 124661) — se continuar 0 telecom/seguros, o log agora vai mostrar quais rotas foram tentadas e o `portal_total` de cada uma, provando se é o portal que retorna vazio ou se é bug.
-3. Só depois clicar em "Sincronizar TODOS".
-
----
+```text
+1. Escrevo /recon-endpoints no worker (v19) e faço build local.
+2. Você redeploya (docker build/run) e me confirma "v19" no boot.
+3. Rodo o recon via curl no rafael.ids e recebo o catálogo.
+4. Reescrevo collectFullExtras + persistência com base no catálogo.
+5. Migração criando tabelas que faltam.
+6. Deploy edge sync-igreen-customers (automático).
+7. Você redeploya worker (v20) com collectFullExtras final.
+8. Testo Sincronizar TODOS e comparo portal vs banco por consultor.
+```
 
 ## Detalhes técnicos
 
-**Worker (`worker-igreen-sync/server.mjs`)**
-- Bump `[boot] igreen-sync-worker v18 (…)`.
-- Helper `paginate(session, path, {perPage=100, maxPages=Infinity})` já existe; retirar cap `maxPages=30`.
-- Novas fns: `fetchTelecomLinhasAll`, `fetchTelecomFaturasAll`, `fetchTelecomComissoesAll`, `fetchSegurosApolicesAll`, `fetchSegurosComissoesAll`, `fetchSegurosSinistros`, `fetchClientesGreenListaMestre`, `fetchNetworkSnapshotsHistorico(month, monthsBack=12)`.
-- `/sync-all` retorna cada bloco separadamente + `diagnostics.per_route`.
-
-**Edge (`supabase/functions/sync-igreen-customers/index.ts`)**
-- Novos `persistTelecomLinhas`, `persistTelecomFaturas`, `persistTelecomComissoes`, `persistSegurosComissoes`, `persistSegurosSinistros`, `persistNetworkSnapshots`.
-- `logSyncFinish` inclui `counts.extras.per_route` bruto do worker.
-
-**UI**
-- `IGreenBulkSyncPanel`: mostrar contagem por produto no snapshot final de cada consultor.
-- `IGreenSyncStatusBar`: seção "Cobertura por página" com badge verde/laranja por rota (`portal_total vs rows_saved`).
-
-## Deploy
-
-Você redeployará o Docker do worker manualmente (é o único jeito, o worker roda fora do Lovable). Vou preparar:
-1. Código v18 comitado (Lovable já commita automaticamente).
-2. `worker-igreen-sync/README.md` atualizado com o comando exato do EasyPanel (`git pull && docker build && docker up`).
-3. Log de boot mudando para `v18` para você confirmar que pegou.
-
-## Fora deste plano
-
-- Cron automático (sob demanda depois).
-- Realtime updates no painel bulk (polling de 5s já basta).
-- Refactor do CRM Kanban.
+- **Playwright recon**: usa o mesmo context autenticado, aguarda `networkidle` entre navegações, ignora requests para `/auth/*` e `/telemetry/*`, deduplica por `${method} ${pathTemplate}`.
+- **Path template**: regex substitui UUIDs, dígitos longos e datas por `{id}`/`{n}`/`{yyyy-mm}`.
+- **Shape sampling**: guarda só top-level keys + tipo (evita PII grande no log).
+- **Rate limit**: 300ms entre navegações, respeita 429 (backoff 15s).
+- **Tabelas novas** (migração):
+  ```
+  igreen_telecom_recargas, igreen_telecom_bonus,
+  igreen_seguros_sinistros, igreen_seguros_cashback,
+  igreen_green_faturas, igreen_green_injecao
+  ```
+  Todas com `consultant_id uuid`, `raw jsonb`, `synced_at timestamptz`, GRANT `authenticated`/`service_role`, RLS `has_role(admin) OR consultant_id = auth.uid()`.
+- **Sem quebrar nada existente**: o v17/v18 continua funcionando; o v19 só adiciona a rota `/recon-endpoints` e não muda o `/sync-all` até a etapa 4.
