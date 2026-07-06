@@ -27,6 +27,13 @@ export interface WhapiHealth {
   reasonCode: WhapiReasonCode;
   reasonMessage: string | null;
   helpUrl: string | null;
+  // Presença do device físico (celular)
+  deviceLikelyOffline: boolean;
+  outboundRecentCount: number;
+  outboundPendingCount: number;
+  outboundDeliveredCount: number;
+  lastOutboundAt: number | null;
+  lastOutboundStatus: string | null;
 }
 
 const POLL_MS = 30_000;
