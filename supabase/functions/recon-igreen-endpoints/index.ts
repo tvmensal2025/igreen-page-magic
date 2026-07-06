@@ -98,7 +98,6 @@ Deno.serve(async (req) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Worker-Token": secret,
           "x-worker-token": secret,
         },
         body: JSON.stringify({ portal_email: email, portal_password: password }),
