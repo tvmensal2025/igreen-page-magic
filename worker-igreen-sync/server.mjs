@@ -2229,6 +2229,174 @@ const server = http.createServer(async (req, res) => {
     }
 
 
+    // ================= /recon-one-route (v22) =================
+    // Processa UMA rota/endpoint por vez para caber no timeout de edge functions.
+    // Body: { portal_email, portal_password, kind: 'route'|'endpoint'|'nm_month', target, params? }
+    if (req.url === '/recon-one-route') {
+      const s = await getOrCreateSession(email, password);
+      const kind = String(body.kind || 'route');
+      const target = String(body.target || '');
+      const params = body.params || {};
+      const started = Date.now();
+
+      if (kind === 'endpoint') {
+        try {
+          const j = await apiGet(s, target);
+          const arr = firstArrayPayload(j);
+          return sendJson(res, 200, {
+            ok: true, kind, target,
+            elapsed_ms: Date.now() - started,
+            raw_response: j,
+            shape: {
+              top_keys: j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j).slice(0, 30) : null,
+              array_len: arr.length,
+              first_item_keys: arr[0] && typeof arr[0] === 'object' ? Object.keys(arr[0]).slice(0, 40) : null,
+            },
+          });
+        } catch (e) {
+          return sendJson(res, 200, { ok: false, kind, target, error: e.message?.slice(0, 400), elapsed_ms: Date.now() - started });
+        }
+      }
+
+      if (kind === 'nm_month') {
+        const mes = String(params.mes || target);
+        try {
+          const j = await apiGet(s, `/network-map/data?month=${mes}`);
+          const arr = firstArrayPayload(j);
+          return sendJson(res, 200, {
+            ok: true, kind, target: `nm_month:${mes}`,
+            elapsed_ms: Date.now() - started,
+            raw_response: j,
+            shape: { array_len: arr.length, first_item_keys: arr[0] ? Object.keys(arr[0]).slice(0, 40) : null },
+          });
+        } catch (e) {
+          return sendJson(res, 200, { ok: false, kind, target: `nm_month:${mes}`, error: e.message?.slice(0, 400), elapsed_ms: Date.now() - started });
+        }
+      }
+
+      // kind === 'route' — visita 1 rota UI e captura tudo
+      const catalog = new Map();
+      const pathTemplate = (url) => {
+        try {
+          const u = new URL(url);
+          let p = u.pathname;
+          p = p.replace(/\/\d{4}-\d{2}(-\d{2})?/g, '/{date}');
+          p = p.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/{uuid}');
+          p = p.replace(/\/\d{4,}/g, '/{n}');
+          return p;
+        } catch { return url; }
+      };
+      const isTracked = (u) => /igreenenergy\.com\.br/i.test(u);
+      const isIgnored = (u) =>
+        /\/(auth|login|logout|telemetry|health|healthcheck|analytics|gtm|hotjar)\b/i.test(u) ||
+        /\.(png|jpg|jpeg|gif|svg|css|js|woff2?|ico|map)(\?|$)/i.test(u);
+
+      const respListener = async (resp) => {
+        try {
+          const u = resp.url();
+          if (!isTracked(u) || isIgnored(u)) return;
+          const rq = resp.request();
+          const rt = rq.resourceType();
+          if (rt !== 'xhr' && rt !== 'fetch') return;
+          const method = rq.method();
+          const host = (() => { try { return new URL(u).host; } catch { return '?'; } })();
+          const tpl = pathTemplate(u);
+          const key = `${method} ${host}${tpl}`;
+          const entry = catalog.get(key) || { method, host, path_template: tpl, hits: 0, statuses: {}, sample: null };
+          entry.hits++;
+          entry.statuses[resp.status()] = (entry.statuses[resp.status()] || 0) + 1;
+          if (!entry.sample) {
+            try {
+              const ct = resp.headers()['content-type'] || '';
+              if (/json/i.test(ct)) {
+                const txt = await resp.text();
+                entry.sample = { url: u.slice(0, 240), status: resp.status(), body: txt.slice(0, 3000) };
+              }
+            } catch {}
+          }
+          catalog.set(key, entry);
+        } catch {}
+      };
+      s.page.on('response', respListener);
+
+      const capture = { route: target };
+      try {
+        const url = `https://escritorio.igreenenergy.com.br${target}`;
+        try {
+          await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (e) {
+          capture.nav_error = e.message?.slice(0, 200);
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+        try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+
+        capture.final_path = await s.page.evaluate(() => location.pathname).catch(() => target);
+
+        try {
+          const tabsCount = await s.page.evaluate(() => document.querySelectorAll('[role="tab"], .tab, .nav-tabs a').length);
+          for (let i = 0; i < Math.min(tabsCount, 4); i++) {
+            try {
+              await s.page.evaluate((idx) => {
+                const el = document.querySelectorAll('[role="tab"], .tab, .nav-tabs a')[idx];
+                if (el) el.click();
+              }, i);
+              await new Promise((r) => setTimeout(r, 600));
+              try { await s.page.waitForLoadState('networkidle', { timeout: 3000 }); } catch {}
+            } catch {}
+          }
+        } catch {}
+        try {
+          await s.page.evaluate(async () => {
+            for (let i = 0; i < 2; i++) {
+              window.scrollTo(0, document.body.scrollHeight);
+              await new Promise((r) => setTimeout(r, 400));
+            }
+            window.scrollTo(0, 0);
+          });
+          try { await s.page.waitForLoadState('networkidle', { timeout: 3000 }); } catch {}
+        } catch {}
+
+        try {
+          const png = await s.page.screenshot({ type: 'png', fullPage: false });
+          capture.screenshot_b64 = Buffer.from(png).toString('base64');
+        } catch (e) { capture.screenshot_err = e.message?.slice(0, 100); }
+
+        try {
+          capture.dom_outline = await s.page.evaluate(() => ({
+            title: document.title,
+            headings: Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(x => (x.textContent || '').trim().slice(0, 120)),
+            tabs: Array.from(document.querySelectorAll('[role="tab"], .nav-tabs a')).slice(0, 20).map(x => (x.textContent || '').trim().slice(0, 60)),
+            buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map(x => (x.textContent || '').trim().slice(0, 60)).filter(Boolean),
+            links: Array.from(document.querySelectorAll('a[href]')).slice(0, 40).map(a => ({ text: (a.textContent || '').trim().slice(0, 60), href: a.getAttribute('href') })),
+            tables: Array.from(document.querySelectorAll('table')).slice(0, 5).map(t => ({
+              headers: Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').trim().slice(0, 60)),
+              rows: t.querySelectorAll('tbody tr').length,
+              first_row: Array.from(t.querySelectorAll('tbody tr:first-child td')).map(td => (td.textContent || '').trim().slice(0, 80)),
+            })),
+            inputs: Array.from(document.querySelectorAll('input, select, textarea')).slice(0, 20).map(i => ({
+              name: i.getAttribute('name') || i.getAttribute('id') || null,
+              type: i.getAttribute('type') || i.tagName.toLowerCase(),
+              placeholder: i.getAttribute('placeholder') || null,
+            })),
+            body_text_preview: (document.body.innerText || '').slice(0, 3000),
+          }));
+        } catch (e) { capture.dom_err = e.message?.slice(0, 100); }
+
+        try {
+          const html = await s.page.content();
+          capture.html_snippet = html.slice(0, 40000);
+          capture.html_length = html.length;
+        } catch {}
+      } finally {
+        s.page.off('response', respListener);
+      }
+
+      capture.new_endpoints = Array.from(catalog.values());
+      capture.elapsed_ms = Date.now() - started;
+      return sendJson(res, 200, { ok: true, kind, target, capture });
+    }
+
+
     return sendJson(res, 404, { ok: false, error: 'not_found' });
     });
 
@@ -2240,7 +2408,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v21 (tor+playwright+api-vo, recon-menu-click+captures) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v22 (tor+playwright+api-vo, recon-one-route) porta ${PORT}`);
 });
 
 
