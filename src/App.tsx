@@ -23,6 +23,7 @@ const AdminFluxoB = lazy(() => import("./pages/AdminFluxoB"));
 const SaudeBot = lazy(() => import("./pages/SaudeBot"));
 const AdminKnowledge = lazy(() => import("./pages/AdminKnowledge"));
 const AdminReaquecimento = lazy(() => import("./pages/AdminReaquecimento"));
+const AdminReconIgreen = lazy(() => import("./pages/AdminReconIgreen"));
 const AdminConversao = lazy(() => import("./pages/AdminConversao"));
 const AdminMetaAds = lazy(() => import("./pages/AdminMetaAds"));
 const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
@@ -92,6 +93,7 @@ const App = () => (
               <Route path="/admin/portal-monitor" element={<ProtectedRoute><AdminPortalMonitor /></ProtectedRoute>} />
               <Route path="/admin/conhecimento" element={<ProtectedRoute><AdminKnowledge /></ProtectedRoute>} />
               <Route path="/admin/reaquecimento" element={<ProtectedRoute><AdminReaquecimento /></ProtectedRoute>} />
+              <Route path="/admin/recon" element={<ProtectedRoute><AdminReconIgreen /></ProtectedRoute>} />
               <Route path="/admin/conversao" element={<ProtectedRoute><AdminConversao /></ProtectedRoute>} />
               <Route path="/admin/agendamentos" element={<Navigate to="/admin?tab=agendamentos" replace />} />
               <Route path="/admin/meta-ads" element={<ProtectedRoute><AdminMetaAds /></ProtectedRoute>} />
