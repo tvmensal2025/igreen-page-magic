@@ -1408,10 +1408,13 @@ const server = http.createServer(async (req, res) => {
     }
     // /sync-all: 1 login -> tudo. `only` (array opcional) limita o que coletar
     // conforme os toggles do consultor (ex.: ['customers','network','devolutivas']).
+    // Com `full_history=true` (v18), executa também `collectFullExtras`
+    // (paginação máxima em todas as páginas de Telecom/Seguros/Clientes-Green).
     if (req.url === '/sync-all') {
       const s = await getOrCreateSession(email, password);
       const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
       const want = (k) => !only || only.has(k);
+      const fullHistory = body.full_history !== false; // v18: default TRUE
       const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback] = await Promise.all([
         want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
         want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
@@ -1424,6 +1427,17 @@ const server = http.createServer(async (req, res) => {
       ]);
       const telecom = telecomPayload.items || [];
       const seguros = segurosPayload.items || [];
+      // v18: cobertura total página-a-página (sempre executa, salvo full_history=false)
+      let fullExtras = null;
+      if (fullHistory) {
+        try {
+          fullExtras = await collectFullExtras(s, body.month);
+          dbg(`[sync-all] full_extras: rotas=${Object.keys(fullExtras.blocks).length}`);
+        } catch (e) {
+          dbg(`[sync-all] full_extras: ${e.message}`);
+          fullExtras = { error: e.message, blocks: {} };
+        }
+      }
       // Enriquecimento: ficha COMPLETA (endereço, CEP, bairro, número,
       // concessionária, PJ, procurador, login distribuidora) de TODOS os
       // clientes do Kanban — sem filtro de status. Pool paralelo (concurrency=6)
@@ -1447,10 +1461,13 @@ const server = http.createServer(async (req, res) => {
         seguros,
         devolutivas,
         cashback,
+        full_extras: fullExtras,
         diagnostics: {
           telecom: telecomPayload.diagnostics,
           seguros: segurosPayload.diagnostics,
           only: only ? Array.from(only) : null,
+          full_history: fullHistory,
+          worker_version: 'v18',
         },
       });
     }
