@@ -88,6 +88,76 @@ function bodyPreview(body) {
   return JSON.stringify(body || {}).slice(0, 300);
 }
 
+function stableIntId(input) {
+  const s = String(input || '').trim();
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
+function getAny(obj, keys) {
+  if (!obj || typeof obj !== 'object') return null;
+  for (const key of keys) {
+    if (obj[key] != null && obj[key] !== '') return obj[key];
+    const found = Object.keys(obj).find((k) => k.toLowerCase() === String(key).toLowerCase());
+    if (found && obj[found] != null && obj[found] !== '') return obj[found];
+  }
+  return null;
+}
+
+function firstArrayPayload(j) {
+  if (Array.isArray(j)) return j;
+  const candidates = [
+    j?.data?.items, j?.data?.data, j?.data?.rows, j?.data?.clientes,
+    j?.data?.apolices, j?.data?.linhas, j?.data?.licenciados,
+    j?.items, j?.rows, j?.clientes, j?.apolices, j?.linhas, j?.licenciados,
+    j?.data,
+  ];
+  for (const c of candidates) if (Array.isArray(c)) return c;
+  return [];
+}
+
+function totalFromPayload(j) {
+  return Number(j?.data?.total ?? j?.total ?? j?.meta?.total ?? j?.pagination?.total ?? 0) || 0;
+}
+
+async function fetchPaged(session, basePath, { perPage = 100, maxPages = 30 } = {}) {
+  const all = [];
+  const diag = { path: basePath, pages: 0, items: 0, total: 0, error: null };
+  for (let page = 1; page <= maxPages; page++) {
+    const sep = basePath.includes('?') ? '&' : '?';
+    const path = `${basePath}${sep}page=${page}&perPage=${perPage}&pageSize=${perPage}&limit=${perPage}&search=`;
+    try {
+      const j = await apiGet(session, path);
+      const items = firstArrayPayload(j);
+      const total = totalFromPayload(j);
+      diag.pages = page;
+      diag.items += items.length;
+      if (total) diag.total = total;
+      all.push(...items);
+      if (items.length < perPage || (total && page * perPage >= total)) break;
+    } catch (e) {
+      diag.error = e.message;
+      break;
+    }
+  }
+  return { items: all, diagnostics: diag };
+}
+
+function mergeByKey(items, keyFn) {
+  const map = new Map();
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!key) continue;
+    const cur = map.get(key) || {};
+    map.set(key, { ...cur, ...item });
+  }
+  return Array.from(map.values());
+}
+
 async function classifyPortalPage(page) {
   try {
     return await page.evaluate(() => {
@@ -621,8 +691,31 @@ async function fetchCustomers(session) {
       });
     }
   }
-  dbg(`[customers] /crm/green: ${cols.length} colunas → ${out.length} clientes`);
-  return out;
+
+  const diagnostics = { crm_columns: cols.length, crm_cards: out.length, extra_sources: [] };
+  const extraPaths = [
+    '/clientes-green?status=todos&injecao=todos&tipo=todos',
+    '/clientes-green/boletos?status=todos&injecao=todos&tipo=todos',
+  ];
+  const extra = [];
+  for (const path of extraPaths) {
+    const r = await fetchPaged(session, path, { perPage: 100, maxPages: 50 });
+    diagnostics.extra_sources.push(r.diagnostics);
+    for (const item of r.items) {
+      extra.push({
+        ...item,
+        codigo: item.codigo ?? item.idcliente ?? item.id ?? item.codigoCliente,
+        nomeCliente: item.nomeCliente ?? item.nome ?? item.cliente,
+        status_coluna: item.status_coluna ?? item.status ?? item.situacao,
+        status_label: item.status_label ?? item.status ?? item.situacao,
+      });
+    }
+  }
+
+  const merged = mergeByKey([...out, ...extra], (c) => String(c.codigo ?? c.idcliente ?? c.id ?? c.cpf ?? `${c.nomeCliente || c.nome}|${c.cidade}` ?? '').trim());
+  dbg(`[customers] /crm/green: ${cols.length} colunas → ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
+  merged._diagnostics = diagnostics;
+  return merged;
 }
 
 // REDE: /network-map/data?month=YYYY-MM devolve { data: [ ...membros ] }.
@@ -676,6 +769,8 @@ async function fetchTelecomPayload(session) {
     faturas_pages: 0,
     faturas_items: 0,
     faturas_error: null,
+    extra_sources: [],
+    extra_items: 0,
   };
   for (const col of cols) {
     for (const card of (col.cards || [])) {
@@ -699,12 +794,44 @@ async function fetchTelecomPayload(session) {
       if (items.length < 100 || (total && p * 100 >= total)) break;
     }
   } catch (e) { diagnostics.faturas_error = e.message; dbg(`[telecom] faturas: ${e.message}`); }
+
+  const extraPaths = [
+    '/telecom/clientes?status=todos',
+    '/telecom/linhas?status=todos',
+    '/telecom/portabilidade?status=todos',
+    '/telecom/licenciados?status=todos',
+  ];
+  const extra = [];
+  for (const path of extraPaths) {
+    const r = await fetchPaged(session, path, { perPage: 100, maxPages: 50 });
+    diagnostics.extra_sources.push(r.diagnostics);
+    diagnostics.extra_items += r.items.length;
+    for (const item of r.items) {
+      extra.push({
+        ...item,
+        _source_path: path,
+        cliente: item.cliente ?? item.nome ?? item.nomeCliente ?? item.titular ?? item.assinante,
+        numero: item.numero ?? item.linha ?? item.telefone ?? item.msisdn ?? item.celular,
+        licenciado: item.licenciado ?? item.nomeLicenciado ?? item.consultor ?? item.consultorNome,
+        status_coluna: item.status_coluna ?? item.status ?? item.situacao ?? item.tipo,
+        status_label: item.status_label ?? item.statusLabel ?? item.status ?? item.situacao ?? item.tipo,
+        _idcnxtelecom: item.idcnxtelecom ?? item.idConexao ?? item.id ?? item.codigo ?? item.idcliente,
+      });
+    }
+  }
+
   for (const c of out) {
     const fat = faturasByName.get(String(c.cliente || '').trim().toLowerCase());
     if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = fat.idcnxtelecom; }
   }
-  dbg(`[telecom] /crm/telecom: ${out.length} clientes; faturas=${diagnostics.faturas_items}`);
-  return { items: out, diagnostics };
+  for (const c of extra) {
+    const fat = faturasByName.get(String(c.cliente || '').trim().toLowerCase());
+    if (fat) { c._fatura_valor = fat.valor; c._fatura_status = fat.status; c._fatura_mes = fat.mesReferencia; c._idcnxtelecom = c._idcnxtelecom ?? fat.idcnxtelecom; }
+    if (!c._idcnxtelecom) c._idcnxtelecom = stableIntId(`${c.numero || ''}|${c.cliente || ''}|${c.licenciado || ''}`);
+  }
+  const merged = mergeByKey([...out, ...extra], (c) => String(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id ?? c.numero ?? `${c.cliente}|${c.licenciado}` ?? '').trim());
+  dbg(`[telecom] /crm/telecom: ${out.length} cards; extras=${extra.length}; faturas=${diagnostics.faturas_items}; total=${merged.length}`);
+  return { items: merged, diagnostics };
 }
 
 async function fetchTelecom(session) {
@@ -716,15 +843,47 @@ async function fetchSegurosPayload(session) {
   const j = await apiGet(session, '/crm/seguros');
   const cols = Array.isArray(j?.data) ? j.data : [];
   const out = [];
-  const diagnostics = { endpoints: ['/crm/seguros'], crm_columns: cols.length, crm_cards: 0 };
+  const diagnostics = { endpoints: ['/crm/seguros'], crm_columns: cols.length, crm_cards: 0, extra_sources: [], extra_items: 0 };
   for (const col of cols) {
     for (const card of (col.cards || [])) {
       out.push({ ...card, status_coluna: col.id, status_label: col.label });
     }
   }
   diagnostics.crm_cards = out.length;
-  dbg(`[seguros] /crm/seguros: ${out.length} apólices`);
-  return { items: out, diagnostics };
+
+  const extraPaths = [
+    '/seguros/apolices?status=todos',
+    '/seguros/clientes?status=todos',
+    '/seguros/licenciados?status=todos',
+    '/seguros/comissoes?status=todos',
+  ];
+  const extra = [];
+  for (const path of extraPaths) {
+    const r = await fetchPaged(session, path, { perPage: 100, maxPages: 50 });
+    diagnostics.extra_sources.push(r.diagnostics);
+    diagnostics.extra_items += r.items.length;
+    for (const item of r.items) {
+      extra.push({
+        ...item,
+        _source_path: path,
+        id: item.id ?? item.seguro_id ?? item.apolice_id ?? item.codigo ?? item.idcotacao,
+        segurado: item.segurado ?? item.cliente ?? item.nome ?? item.nomeCliente,
+        modelo: item.modelo ?? item.veiculo ?? item.descricaoVeiculo,
+        placa: item.placa,
+        fipe: item.fipe ?? item.valorFipe,
+        mensal: item.mensal ?? item.mensalidade ?? item.valorMensal ?? item.valor,
+        licenciado: item.licenciado ?? item.nomeLicenciado ?? item.consultor ?? item.consultorNome,
+        status_coluna: item.status_coluna ?? item.status ?? item.situacao ?? item.tipo,
+        status_label: item.status_label ?? item.statusLabel ?? item.status ?? item.situacao ?? item.tipo,
+      });
+    }
+  }
+  for (const c of extra) {
+    if (!c.id) c.id = `auto:${stableIntId(`${c.segurado || ''}|${c.placa || ''}|${c.modelo || ''}|${c.licenciado || ''}`)}`;
+  }
+  const merged = mergeByKey([...out, ...extra], (c) => String(c.id ?? c.seguro_id ?? c.apolice_id ?? c.placa ?? `${c.segurado}|${c.modelo}` ?? '').trim());
+  dbg(`[seguros] /crm/seguros: ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
+  return { items: merged, diagnostics };
 }
 
 async function fetchSeguros(session) {

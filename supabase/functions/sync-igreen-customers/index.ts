@@ -65,6 +65,16 @@ function safeNum(val: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+function stableIntId(input: unknown): number {
+  const s = String(input || "").trim();
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h >>> 0);
+}
+
 function get(obj: Record<string, unknown>, ...keys: string[]): unknown {
   for (const key of keys) {
     if (obj[key] != null && obj[key] !== "") return obj[key];
@@ -414,6 +424,8 @@ function extractCustomerCodes(customers: any[]): string[] {
 function buildProductDiagnostics(data: any, only: string[] | null = null): Record<string, unknown> {
   const telecom = Array.isArray(data?.telecom) ? data.telecom : [];
   const seguros = Array.isArray(data?.seguros) ? data.seguros : [];
+  const telecomSummaryTotal = safeNum(data?.metrics?.telecom_resumo?.total ?? data?.metrics?.telecom_resumo?.totalCadastradas);
+  const segurosSummaryTotal = safeNum(data?.metrics?.seguros_resumo?.total ?? data?.metrics?.seguros_resumo?.vigentes ?? data?.metrics?.seguros_resumo?.apolicesVigentes);
   const workerDiag = data?.diagnostics && typeof data.diagnostics === "object" ? data.diagnostics : {};
   return {
     ...(workerDiag || {}),
@@ -421,14 +433,41 @@ function buildProductDiagnostics(data: any, only: string[] | null = null): Recor
     telecom: {
       source: "/crm/telecom",
       returned: telecom.length,
+      summary_total: telecomSummaryTotal,
+      gap: telecomSummaryTotal != null && telecomSummaryTotal > 0 && telecom.length === 0,
       ...((workerDiag as Record<string, any>)?.telecom || {}),
     },
     seguros: {
       source: "/crm/seguros",
       returned: seguros.length,
+      summary_total: segurosSummaryTotal,
+      gap: segurosSummaryTotal != null && segurosSummaryTotal > 0 && seguros.length === 0,
       ...((workerDiag as Record<string, any>)?.seguros || {}),
     },
   };
+}
+
+function augmentProductGaps(out: Record<string, unknown>, rawData: any): void {
+  const diagnostics = (out.diagnostics && typeof out.diagnostics === "object" ? out.diagnostics : {}) as Record<string, any>;
+  const telecomDiag = (diagnostics.telecom ||= {});
+  const segurosDiag = (diagnostics.seguros ||= {});
+  const telecomSummary = safeNum(rawData?.metrics?.telecom_resumo?.total ?? rawData?.metrics?.telecom_resumo?.totalCadastradas);
+  const segurosSummary = safeNum(rawData?.metrics?.seguros_resumo?.total ?? rawData?.metrics?.seguros_resumo?.vigentes ?? rawData?.metrics?.seguros_resumo?.apolicesVigentes);
+  const telecomSaved = safeNum((out.telecom as any)?.telecom_valid_rows ?? (out.telecom as any)?.telecom_saved ?? 0) ?? 0;
+  const segurosSaved = safeNum((out.seguros as any)?.seguros_valid_rows ?? (out.seguros as any)?.seguros_saved ?? 0) ?? 0;
+  if (telecomSummary != null) {
+    telecomDiag.summary_total = telecomSummary;
+    telecomDiag.saved_rows = telecomSaved;
+    telecomDiag.gap = telecomSummary > 0 && telecomSaved === 0;
+    if (telecomDiag.gap) telecomDiag.probable_reason = "summary_has_data_but_detail_sources_saved_zero";
+  }
+  if (segurosSummary != null) {
+    segurosDiag.summary_total = segurosSummary;
+    segurosDiag.saved_rows = segurosSaved;
+    segurosDiag.gap = segurosSummary > 0 && segurosSaved === 0;
+    if (segurosDiag.gap) segurosDiag.probable_reason = "summary_has_data_but_detail_sources_saved_zero";
+  }
+  out.diagnostics = diagnostics;
 }
 
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
@@ -474,6 +513,7 @@ async function runSyncAllBackgroundPhase(
     if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
     if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
     if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    augmentProductGaps(out, r.data);
     out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
 
     const started = Date.now();
@@ -657,28 +697,31 @@ async function persistTelecom(supabase: any, consultantId: string | null, items:
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+    if (m) { const [, d, mo, y] = m; return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`; }
     return null;
   };
   const seen = new Set<number>();
   const rows = [];
   for (const c of items) {
-    const idc = Number(c._idcnxtelecom ?? c.idcnxtelecom ?? c.id);
+    const identity = `${safeStr(c.numero ?? c.linha ?? c.telefone ?? c.msisdn) || ""}|${safeStr(c.cliente ?? c.nome ?? c.nomeCliente ?? c.titular ?? c.assinante) || ""}|${safeStr(c.licenciado ?? c.nomeLicenciado ?? c.consultor ?? c.consultorNome) || ""}`;
+    const idc = Number(c._idcnxtelecom ?? c.idcnxtelecom ?? c.idConexao ?? c.id ?? c.codigo ?? c.idcliente) || stableIntId(identity);
     if (!Number.isFinite(idc) || idc <= 0 || seen.has(idc)) continue;
     seen.add(idc);
     rows.push({
       consultant_id: consultantId,
       idcnxtelecom: idc,
-      nome: safeStr(c.cliente ?? c.nome),
+      nome: safeStr(c.cliente ?? c.nome ?? c.nomeCliente ?? c.titular ?? c.assinante),
       cidade: safeStr(c.cidade),
       uf: safeStr(c.uf),
-      numero: safeStr(c.numero),
-      licenciado: safeStr(c.licenciado),
-      status: safeStr(c.status_coluna),
-      status_label: safeStr(c.status_label),
-      data: parseDate(c.data),
-      fatura_valor: safeNum(c._fatura_valor),
-      fatura_status: safeStr(c._fatura_status),
-      fatura_mes_referencia: safeStr(c._fatura_mes),
+      numero: safeStr(c.numero ?? c.linha ?? c.telefone ?? c.msisdn ?? c.celular),
+      licenciado: safeStr(c.licenciado ?? c.nomeLicenciado ?? c.consultor ?? c.consultorNome),
+      status: safeStr(c.status_coluna ?? c.status ?? c.situacao ?? c.tipo),
+      status_label: safeStr(c.status_label ?? c.statusLabel ?? c.status ?? c.situacao ?? c.tipo),
+      data: parseDate(c.data ?? c.createdAt ?? c.dataCadastro ?? c.dataAtivacao),
+      fatura_valor: safeNum(c._fatura_valor ?? c.valor ?? c.valorFatura ?? c.mensalidade),
+      fatura_status: safeStr(c._fatura_status ?? c.statusFatura ?? c.fatura_status),
+      fatura_mes_referencia: safeStr(c._fatura_mes ?? c.mesReferencia ?? c.mes_referencia),
       raw_json: c,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -813,22 +856,23 @@ async function persistSeguros(supabase: any, consultantId: string | null, items:
   const seen = new Set<string>();
   const rows = [];
   for (const c of items) {
-    const sid = safeStr(c.id ?? c.seguro_id);
+    const sid = safeStr(c.id ?? c.seguro_id ?? c.apolice_id ?? c.codigo ?? c.idcotacao)
+      || `auto:${stableIntId(`${safeStr(c.segurado ?? c.cliente ?? c.nome ?? c.nomeCliente) || ""}|${safeStr(c.placa) || ""}|${safeStr(c.modelo ?? c.veiculo ?? c.descricaoVeiculo) || ""}`)}`;
     if (!sid || seen.has(sid)) continue;
     seen.add(sid);
     rows.push({
       consultant_id: consultantId,
       seguro_id: sid,
-      segurado: safeStr(c.segurado),
-      modelo: safeStr(c.modelo),
+      segurado: safeStr(c.segurado ?? c.cliente ?? c.nome ?? c.nomeCliente),
+      modelo: safeStr(c.modelo ?? c.veiculo ?? c.descricaoVeiculo),
       placa: safeStr(c.placa),
-      fipe: safeNum(c.fipe),
-      mensal: safeNum(c.mensal),
-      status: safeStr(c.status_coluna),
-      status_label: safeStr(c.status_label),
+      fipe: safeNum(c.fipe ?? c.valorFipe),
+      mensal: safeNum(c.mensal ?? c.mensalidade ?? c.valorMensal ?? c.valor),
+      status: safeStr(c.status_coluna ?? c.status ?? c.situacao ?? c.tipo),
+      status_label: safeStr(c.status_label ?? c.statusLabel ?? c.status ?? c.situacao ?? c.tipo),
       cidade: safeStr(c.cidade),
       uf: safeStr(c.uf),
-      licenciado: safeStr(c.licenciado),
+      licenciado: safeStr(c.licenciado ?? c.nomeLicenciado ?? c.consultor ?? c.consultorNome),
       raw_json: c,
       synced_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
