@@ -1,4 +1,9 @@
-// server.mjs — igreen-sync-worker v23 (API nova api-vo, cobertura 100% + recon)
+// server.mjs — igreen-sync-worker v24 (API nova api-vo, cobertura 100% + recon)
+//
+// v24: TOR DESLIGADO por padrão. O Cloudflare do portal passou a bloquear os
+// IPs de saída do Tor (403 "Sorry, you have been blocked"). Agora o acesso é
+// direto pelo IP do servidor. Para reativar o Tor (se voltar a ser necessário),
+// definir TOR_SOCKS_PROXY=socks5://127.0.0.1:9050 nas variáveis de ambiente.
 //
 // v23: CLIENTES agora vêm da varredura por dia de /clientes-green/cadastros
 // (fonte COMPLETA = 571 clientes, validado ao vivo). O Kanban /crm/green
@@ -6,7 +11,7 @@
 // Mantém o /recon-one-route (v22). Ver PORTAL_ENDPOINTS_OFICIAL.md.
 //
 // Pipeline:
-//   1. Playwright lança Chromium via Tor SOCKS5  → IP residencial passa Cloudflare
+//   1. Playwright lança Chromium direto (ou via Tor se TOR_SOCKS_PROXY definido)
 //   2. Abre https://escritorio.igreenenergy.com.br/login           (recebe cf_clearance)
 //   3. (reCAPTCHA é OPCIONAL agora — só resolve via 2captcha se o widget existir)
 //   4. Preenche email/senha + clica "Entrar"
@@ -37,7 +42,11 @@ const SESSION_TTL_MS = parseInt(process.env.SESSION_TTL_MS || '1800000', 10);
 const TWOCAPTCHA_API_KEY = process.env.TWOCAPTCHA_API_KEY || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
-const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050';
+// Tor DESLIGADO por padrão. O Cloudflare do portal iGreen passou a bloquear os
+// IPs de saída do Tor (403 "Sorry, you have been blocked"), então o padrão
+// agora é acessar direto pelo IP do servidor. Para reativar o Tor, basta
+// definir TOR_SOCKS_PROXY=socks5://127.0.0.1:9050 nas variáveis de ambiente.
+const TOR_PROXY = process.env.TOR_SOCKS_PROXY || 'none';
 const TOR_CONTROL_HOST = process.env.TOR_CONTROL_HOST || '127.0.0.1';
 const TOR_CONTROL_PORT = parseInt(process.env.TOR_CONTROL_PORT || '9051', 10);
 const TOR_COOKIE_PATH = process.env.TOR_COOKIE_PATH || '/tmp/tor-data/control_auth_cookie';
@@ -2671,7 +2680,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v23 (tor+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
+  const torState = (TOR_PROXY && !['none', 'direct', 'off', ''].includes(String(TOR_PROXY).toLowerCase()))
+    ? `tor(${TOR_PROXY})` : 'sem-tor(direto)';
+  console.log(`[boot] igreen-sync-worker v24 (${torState}+playwright+api-vo, cadastros-by-day + recon-one-route) porta ${PORT}`);
 });
 
 
