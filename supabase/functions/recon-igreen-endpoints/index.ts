@@ -136,7 +136,7 @@ Deno.serve(async (req) => {
 
     // 3) Disparar recon (timeout longo — recon navega ~40 rotas + 12 meses)
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 540_000);
+    const t = setTimeout(() => ctrl.abort(), 900_000); // 15 min (recon cobre ~60 rotas)
     let workerRes: Response;
     try {
       workerRes = await fetch(`${url}/recon-endpoints`, {
