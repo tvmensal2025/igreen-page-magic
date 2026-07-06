@@ -1948,11 +1948,18 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // ================= /recon-endpoints =================
-    // Descoberta automática do catálogo real de rotas do portal iGreen.
-    // Loga com o consultor informado (idealmente um com dados — ex.: rafael.ids),
-    // navega o SPA inteiro e intercepta cada XHR para api-vo/v1/*, agregando
-    // por {method, pathTemplate} com shape da resposta + total + amostra.
+    // ================= /recon-endpoints (v20) =================
+    // Descoberta REAL do catálogo do portal iGreen. Estratégia:
+    //  1) Login (usa sessão cacheada).
+    //  2) Extrai TODOS os <a href> do dashboard/menu lateral = rotas REAIS.
+    //  3) Para cada rota: page.goto + espera fetchers + tenta clicar em tabs
+    //     internas (role=tab), botões de paginação e "próxima página".
+    //  4) Captura TODAS as requisições XHR/fetch para qualquer subdomínio
+    //     igreenenergy.com.br (api-vo, api-voffice, escritorio/api/*, etc.).
+    //  5) Além disso, força navegação em rotas conhecidas do usuário
+    //     (/clientes-green, /produtos/telecom, /seguros, /rede-lider, /rotinas).
+    //  6) Devolve catálogo agregado por {method, host, pathTemplate} com shape,
+    //     total, amostras, host histograma e rotas visitadas.
     if (req.url === '/recon-endpoints') {
       const s = await getOrCreateSession(email, password);
       const started = Date.now();
@@ -1967,121 +1974,187 @@ const server = http.createServer(async (req, res) => {
           return p;
         } catch { return url; }
       };
-      const isApi = (u) => /\/\/api-vo\.igreenenergy\.com\.br\/v1\//i.test(u);
-      const isAuth = (u) => /\/v1\/auth\//i.test(u) || /\/v1\/telemetry\//i.test(u);
+      // Filtro AMPLO: qualquer coisa em igreenenergy.com.br que seja XHR/fetch.
+      const isTracked = (u) => /igreenenergy\.com\.br/i.test(u);
+      const isIgnored = (u) =>
+        /\/(auth|login|logout|telemetry|health|healthcheck|analytics|gtm|hotjar)\b/i.test(u) ||
+        /\.(png|jpg|jpeg|gif|svg|css|js|woff2?|ico|map)(\?|$)/i.test(u);
 
       const catalog = new Map();
+      const hostHist = {};
       const respListener = async (resp) => {
-        const u = resp.url();
-        if (!isApi(u) || isAuth(u)) return;
-        const rq = resp.request();
-        const method = rq.method();
-        const tpl = pathTemplate(u);
-        const key = `${method} ${tpl}`;
-        const entry = catalog.get(key) || {
-          method, path_template: tpl, hits: 0, statuses: {},
-          samples: [], shape: null, first_total: null, seen_query: new Set(),
-        };
-        entry.hits++;
-        entry.statuses[resp.status()] = (entry.statuses[resp.status()] || 0) + 1;
         try {
-          const q = new URL(u).search.replace(/=[^&]*/g, '=').replace(/^\?/, '');
-          if (q) entry.seen_query.add(q);
-        } catch {}
-        try {
-          if (entry.samples.length < 2 && /json/i.test(resp.headers()['content-type'] || '')) {
-            const txt = await resp.text();
-            const j = JSON.parse(txt);
-            if (entry.shape == null) {
-              const top = j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j).slice(0, 20) : (Array.isArray(j) ? ['<array>'] : [typeof j]);
-              const arr = firstArrayPayload(j);
-              const totalV = totalFromPayload(j);
-              entry.shape = {
-                top_keys: top,
-                array_len: arr.length,
-                first_item_keys: arr[0] && typeof arr[0] === 'object' ? Object.keys(arr[0]).slice(0, 40) : null,
-                has_total: !!totalV,
-              };
-              if (totalV) entry.first_total = totalV;
+          const u = resp.url();
+          if (!isTracked(u) || isIgnored(u)) return;
+          const rq = resp.request();
+          const rt = rq.resourceType();
+          if (rt !== 'xhr' && rt !== 'fetch') return;
+          const method = rq.method();
+          const host = (() => { try { return new URL(u).host; } catch { return '?'; } })();
+          hostHist[host] = (hostHist[host] || 0) + 1;
+          const tpl = pathTemplate(u);
+          const key = `${method} ${host}${tpl}`;
+          const entry = catalog.get(key) || {
+            method, host, path_template: tpl, hits: 0, statuses: {},
+            samples: [], shape: null, first_total: null, seen_query: new Set(),
+          };
+          entry.hits++;
+          entry.statuses[resp.status()] = (entry.statuses[resp.status()] || 0) + 1;
+          try {
+            const q = new URL(u).search.replace(/=[^&]*/g, '=').replace(/^\?/, '');
+            if (q) entry.seen_query.add(q);
+          } catch {}
+          try {
+            const ct = resp.headers()['content-type'] || '';
+            if (entry.samples.length < 2 && /json/i.test(ct)) {
+              const txt = await resp.text();
+              const j = JSON.parse(txt);
+              if (entry.shape == null) {
+                const top = j && typeof j === 'object' && !Array.isArray(j)
+                  ? Object.keys(j).slice(0, 20)
+                  : (Array.isArray(j) ? ['<array>'] : [typeof j]);
+                const arr = firstArrayPayload(j);
+                const totalV = totalFromPayload(j);
+                entry.shape = {
+                  top_keys: top,
+                  array_len: arr.length,
+                  first_item_keys: arr[0] && typeof arr[0] === 'object' ? Object.keys(arr[0]).slice(0, 40) : null,
+                  has_total: !!totalV,
+                };
+                if (totalV) entry.first_total = totalV;
+              }
+              entry.samples.push({ url: u.slice(0, 240), status: resp.status(), body: txt.slice(0, 2500) });
             }
-            entry.samples.push({ url: u.slice(0, 200), status: resp.status(), body: txt.slice(0, 1500) });
-          }
-        } catch {}
-        catalog.set(key, entry);
+          } catch {}
+          catalog.set(key, entry);
+        } catch (e) { /* listener nunca deve derrubar */ }
       };
       s.page.on('response', respListener);
 
       const steps = [];
-      const step = (name, extra = {}) => { steps.push({ t: Date.now() - started, name, ...extra }); dbg(`[recon] ${name} ${JSON.stringify(extra).slice(0, 120)}`); };
+      const step = (name, extra = {}) => { steps.push({ t: Date.now() - started, name, ...extra }); dbg(`[recon] ${name} ${JSON.stringify(extra).slice(0, 140)}`); };
 
-      const NAV_ROUTES = [
-        '/dashboard', '/home',
-        // Clientes Green (URL confirmada pelo usuário)
-        '/clientes-green',
-        '/clientes-green/faturas', '/clientes-green/injecao',
-        '/clientes-green/boletos', '/clientes-green/devolutivas',
-        '/clientes-green/devolutivas-resolvidas', '/clientes-green/cashback',
-        '/clientes-green/resumo-geral', '/clientes-green/summary',
-        '/clientes-green/comissoes', '/clientes-green/historico',
-        '/crm/green',
-        // Telecom — URL real: /produtos/telecom
-        '/produtos/telecom',
-        '/produtos/telecom/clientes', '/produtos/telecom/linhas',
-        '/produtos/telecom/faturas', '/produtos/telecom/comissoes',
-        '/produtos/telecom/recargas', '/produtos/telecom/bonus',
-        '/produtos/telecom/portabilidade', '/produtos/telecom/licenciados',
-        '/produtos/telecom/client-map', '/produtos/telecom/planos',
-        // fallbacks legado
-        '/telecom', '/telecom/clientes', '/telecom/linhas', '/telecom/faturas',
-        '/telecom/comissoes', '/telecom/recargas', '/telecom/bonus',
-        '/telecom/portabilidade', '/telecom/licenciados', '/telecom/client-map',
-        '/crm/telecom',
-        // Seguros (URL confirmada)
-        '/seguros',
-        '/seguros/apolices', '/seguros/clientes', '/seguros/comissoes',
-        '/seguros/sinistros', '/seguros/renovacoes', '/seguros/cashback',
-        '/seguros/licenciados', '/seguros/produtos', '/seguros/propostas',
-        '/crm/seguros',
-        // Rede-lider (URL confirmada)
-        '/rede-lider',
-        '/rede-lider/membros', '/rede-lider/licenciados', '/rede-lider/ranking',
-        '/rede-lider/comissoes', '/rede-lider/bonus', '/rede-lider/carreira',
-        '/rede', '/rede/licenciados', '/network-map', '/network',
-        // Rotinas (URL confirmada)
-        '/rotinas',
-        '/rotinas/tarefas', '/rotinas/agenda', '/rotinas/pendencias',
-        // Financeiro / comissões
-        '/comissoes', '/comissoes/resumo', '/comissoes/extrato',
-        '/financeiro', '/financeiro/boletos', '/financeiro/extrato',
-        '/financeiro/carteira', '/financeiro/notas',
-        '/relatorios',
-        // perfil/config (podem expor endpoints /me, /perfil, /config)
-        '/perfil', '/configuracoes',
-      ];
+      // Helper: navega, aguarda fetchers, tenta interagir com tabs/paginação.
+      const visitAndInteract = async (route) => {
+        const url = `https://escritorio.igreenenergy.com.br${route}`;
+        try {
+          await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (e) {
+          step('nav_err', { route, msg: e.message.slice(0, 100) });
+          return;
+        }
+        // Espera SPA hidratar
+        await new Promise((r) => setTimeout(r, 1200));
+        try { await s.page.waitForLoadState('networkidle', { timeout: 10000 }); } catch {}
 
+        const before = catalog.size;
+        // Confirma URL final (SPA pode redirecionar para /dashboard se rota não existir)
+        const finalPath = await s.page.evaluate(() => location.pathname).catch(() => route);
+
+        // Tenta clicar em cada tab (Radix/Chakra/Mui usam role="tab")
+        try {
+          const tabsCount = await s.page.evaluate(() => document.querySelectorAll('[role="tab"], .tab, .nav-tabs a').length);
+          for (let i = 0; i < Math.min(tabsCount, 8); i++) {
+            try {
+              await s.page.evaluate((idx) => {
+                const el = document.querySelectorAll('[role="tab"], .tab, .nav-tabs a')[idx];
+                if (el) el.click();
+              }, i);
+              await new Promise((r) => setTimeout(r, 800));
+              try { await s.page.waitForLoadState('networkidle', { timeout: 5000 }); } catch {}
+            } catch {}
+          }
+        } catch {}
+
+        // Scroll infinito / lazy load
+        try {
+          await s.page.evaluate(async () => {
+            for (let i = 0; i < 4; i++) {
+              window.scrollTo(0, document.body.scrollHeight);
+              await new Promise((r) => setTimeout(r, 600));
+            }
+            window.scrollTo(0, 0);
+          });
+          try { await s.page.waitForLoadState('networkidle', { timeout: 5000 }); } catch {}
+        } catch {}
+
+        // Clica em botões "Próxima"/"2"/"Ver mais" (paginação)
+        try {
+          const paginators = await s.page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a'));
+            return btns.filter(b => /pr[óo]xim|ver mais|carregar mais|next|>\s*$|^\s*2\s*$/i.test(b.textContent || '')).length;
+          });
+          for (let i = 0; i < Math.min(paginators, 3); i++) {
+            try {
+              await s.page.evaluate(() => {
+                const b = Array.from(document.querySelectorAll('button, a'))
+                  .find(x => /pr[óo]xim|ver mais|carregar mais|next|>\s*$/i.test(x.textContent || ''));
+                if (b) b.click();
+              });
+              await new Promise((r) => setTimeout(r, 900));
+              try { await s.page.waitForLoadState('networkidle', { timeout: 4000 }); } catch {}
+            } catch {}
+          }
+        } catch {}
+
+        step('visited', { route, final: finalPath, new_endpoints: catalog.size - before });
+      };
 
       try {
-        for (const route of NAV_ROUTES) {
-          const url = `https://escritorio.igreenenergy.com.br${route}`;
-          try {
-            await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          } catch (e) {
-            step('nav_err', { route, msg: e.message.slice(0, 100) });
-            continue;
-          }
-          try {
-            await s.page.evaluate(async () => {
-              await new Promise((r) => setTimeout(r, 800));
-              window.scrollTo(0, document.body.scrollHeight);
-              await new Promise((r) => setTimeout(r, 800));
-              window.scrollTo(0, 0);
-            });
-          } catch {}
-          try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
-          step('navigated', { route, catalog_size: catalog.size });
-          await new Promise((r) => setTimeout(r, 400));
+        // FASE 1: carregar dashboard e extrair menu REAL
+        await s.page.goto('https://escritorio.igreenenergy.com.br/dashboard', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await new Promise((r) => setTimeout(r, 2000));
+        try { await s.page.waitForLoadState('networkidle', { timeout: 10000 }); } catch {}
+
+        const menuLinks = await s.page.evaluate(() => {
+          const out = new Set();
+          document.querySelectorAll('a[href]').forEach(a => {
+            const href = a.getAttribute('href') || '';
+            try {
+              const p = href.startsWith('/') ? href : new URL(href, location.origin).pathname;
+              if (p.startsWith('/') && !p.startsWith('//') && p !== '/' && p !== '/login') out.add(p);
+            } catch {}
+          });
+          return Array.from(out);
+        });
+        step('menu_extracted', { count: menuLinks.length, links: menuLinks.slice(0, 30) });
+
+        // FASE 2: rotas conhecidas do usuário + expansões
+        const KNOWN_ROUTES = [
+          '/dashboard',
+          '/clientes-green', '/clientes-green/faturas', '/clientes-green/injecao',
+          '/clientes-green/boletos', '/clientes-green/devolutivas',
+          '/clientes-green/devolutivas-resolvidas', '/clientes-green/cashback',
+          '/clientes-green/resumo-geral', '/clientes-green/comissoes',
+          '/produtos/telecom', '/produtos/telecom/clientes', '/produtos/telecom/linhas',
+          '/produtos/telecom/faturas', '/produtos/telecom/comissoes',
+          '/produtos/telecom/recargas', '/produtos/telecom/bonus',
+          '/produtos/telecom/portabilidade', '/produtos/telecom/licenciados',
+          '/produtos/telecom/planos', '/produtos/telecom/resumo-geral',
+          '/seguros', '/seguros/apolices', '/seguros/clientes', '/seguros/comissoes',
+          '/seguros/sinistros', '/seguros/renovacoes', '/seguros/cashback',
+          '/seguros/licenciados', '/seguros/produtos', '/seguros/propostas',
+          '/seguros/resumo-geral',
+          '/rede-lider', '/rede-lider/membros', '/rede-lider/licenciados',
+          '/rede-lider/ranking', '/rede-lider/comissoes', '/rede-lider/bonus',
+          '/rede-lider/carreira', '/rede-lider/graduacao',
+          '/rotinas', '/rotinas/diaria', '/rotinas/semanal', '/rotinas/mensal',
+          '/comissoes', '/comissoes/resumo', '/comissoes/extrato',
+          '/financeiro', '/financeiro/boletos', '/financeiro/extrato',
+          '/financeiro/carteira', '/financeiro/notas', '/financeiro/saques',
+          '/relatorios', '/perfil', '/configuracoes',
+        ];
+
+        // Unir menu real + rotas conhecidas (deduplicando)
+        const allRoutes = Array.from(new Set([...menuLinks, ...KNOWN_ROUTES]));
+        step('routes_planned', { total: allRoutes.length });
+
+        for (const route of allRoutes) {
+          await visitAndInteract(route);
+          await new Promise((r) => setTimeout(r, 300));
         }
 
+        // FASE 3: network-map para os últimos 12 meses
         const now = new Date();
         for (let i = 0; i < 12; i++) {
           const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
@@ -2097,20 +2170,21 @@ const server = http.createServer(async (req, res) => {
       }
 
       const out = Array.from(catalog.values())
-        .map((e) => ({ ...e, seen_query: Array.from(e.seen_query).slice(0, 8) }))
-        .sort((a, b) => a.path_template.localeCompare(b.path_template));
+        .map((e) => ({ ...e, seen_query: Array.from(e.seen_query).slice(0, 10) }))
+        .sort((a, b) => (a.host + a.path_template).localeCompare(b.host + b.path_template));
 
       return sendJson(res, 200, {
         ok: true,
-        worker_version: 'v19',
+        worker_version: 'v20',
         consultor_id: s.consultorId,
         elapsed_ms: Date.now() - started,
-        routes_navigated: NAV_ROUTES.length,
         endpoints_discovered: out.length,
+        host_histogram: hostHist,
         catalog: out,
         steps,
       });
     }
+
 
     return sendJson(res, 404, { ok: false, error: 'not_found' });
     });
@@ -2123,7 +2197,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v19 (tor+playwright+api-vo, recon-endpoints) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v20 (tor+playwright+api-vo, recon-menu-click) porta ${PORT}`);
 });
 
 
