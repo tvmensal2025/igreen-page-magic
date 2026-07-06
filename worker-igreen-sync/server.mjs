@@ -2032,26 +2032,28 @@ const server = http.createServer(async (req, res) => {
       s.page.on('response', respListener);
 
       const steps = [];
+      const routeCaptures = [];
       const step = (name, extra = {}) => { steps.push({ t: Date.now() - started, name, ...extra }); dbg(`[recon] ${name} ${JSON.stringify(extra).slice(0, 140)}`); };
 
-      // Helper: navega, aguarda fetchers, tenta interagir com tabs/paginação.
+      // Helper: navega, aguarda fetchers, interage e CAPTURA screenshot+HTML+outline.
       const visitAndInteract = async (route) => {
         const url = `https://escritorio.igreenenergy.com.br${route}`;
+        const routeStart = Date.now();
+        const endpointsBeforeRoute = new Set(catalog.keys());
         try {
           await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (e) {
           step('nav_err', { route, msg: e.message.slice(0, 100) });
+          routeCaptures.push({ route, error: e.message.slice(0, 200) });
           return;
         }
-        // Espera SPA hidratar
         await new Promise((r) => setTimeout(r, 1200));
         try { await s.page.waitForLoadState('networkidle', { timeout: 10000 }); } catch {}
 
         const before = catalog.size;
-        // Confirma URL final (SPA pode redirecionar para /dashboard se rota não existir)
         const finalPath = await s.page.evaluate(() => location.pathname).catch(() => route);
 
-        // Tenta clicar em cada tab (Radix/Chakra/Mui usam role="tab")
+        // Tabs
         try {
           const tabsCount = await s.page.evaluate(() => document.querySelectorAll('[role="tab"], .tab, .nav-tabs a').length);
           for (let i = 0; i < Math.min(tabsCount, 8); i++) {
@@ -2066,7 +2068,7 @@ const server = http.createServer(async (req, res) => {
           }
         } catch {}
 
-        // Scroll infinito / lazy load
+        // Scroll
         try {
           await s.page.evaluate(async () => {
             for (let i = 0; i < 4; i++) {
@@ -2078,7 +2080,7 @@ const server = http.createServer(async (req, res) => {
           try { await s.page.waitForLoadState('networkidle', { timeout: 5000 }); } catch {}
         } catch {}
 
-        // Clica em botões "Próxima"/"2"/"Ver mais" (paginação)
+        // Paginação
         try {
           const paginators = await s.page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button, a'));
@@ -2096,6 +2098,46 @@ const server = http.createServer(async (req, res) => {
             } catch {}
           }
         } catch {}
+
+        // ============= CAPTURA: screenshot + HTML + outline DOM =============
+        const capture = { route, final: finalPath };
+        try {
+          const png = await s.page.screenshot({ type: 'png', fullPage: false });
+          capture.screenshot_b64 = Buffer.from(png).toString('base64');
+        } catch (e) { capture.screenshot_err = e.message.slice(0, 100); }
+
+        try {
+          capture.dom_outline = await s.page.evaluate(() => ({
+            title: document.title,
+            headings: Array.from(document.querySelectorAll('h1, h2, h3')).slice(0, 10).map(x => (x.textContent || '').trim().slice(0, 120)),
+            tabs: Array.from(document.querySelectorAll('[role="tab"], .nav-tabs a')).slice(0, 20).map(x => (x.textContent || '').trim().slice(0, 60)),
+            buttons: Array.from(document.querySelectorAll('button')).slice(0, 30).map(x => (x.textContent || '').trim().slice(0, 60)).filter(Boolean),
+            links: Array.from(document.querySelectorAll('a[href]')).slice(0, 40).map(a => ({ text: (a.textContent || '').trim().slice(0, 60), href: a.getAttribute('href') })),
+            tables: Array.from(document.querySelectorAll('table')).slice(0, 5).map(t => ({
+              headers: Array.from(t.querySelectorAll('thead th, thead td')).map(th => (th.textContent || '').trim().slice(0, 60)),
+              rows: t.querySelectorAll('tbody tr').length,
+              first_row: Array.from(t.querySelectorAll('tbody tr:first-child td')).map(td => (td.textContent || '').trim().slice(0, 80)),
+            })),
+            inputs: Array.from(document.querySelectorAll('input, select, textarea')).slice(0, 20).map(i => ({
+              name: i.getAttribute('name') || i.getAttribute('id') || null,
+              type: i.getAttribute('type') || i.tagName.toLowerCase(),
+              placeholder: i.getAttribute('placeholder') || null,
+            })),
+            body_text_preview: (document.body.innerText || '').slice(0, 3000),
+          }));
+        } catch (e) { capture.dom_err = e.message.slice(0, 100); }
+
+        try {
+          const html = await s.page.content();
+          capture.html_snippet = html.slice(0, 40000);
+          capture.html_length = html.length;
+        } catch {}
+
+        const newEndpoints = [];
+        for (const k of catalog.keys()) if (!endpointsBeforeRoute.has(k)) newEndpoints.push(k);
+        capture.new_endpoints = newEndpoints;
+        capture.elapsed_ms = Date.now() - routeStart;
+        routeCaptures.push(capture);
 
         step('visited', { route, final: finalPath, new_endpoints: catalog.size - before });
       };
@@ -2175,12 +2217,13 @@ const server = http.createServer(async (req, res) => {
 
       return sendJson(res, 200, {
         ok: true,
-        worker_version: 'v20',
+        worker_version: 'v21',
         consultor_id: s.consultorId,
         elapsed_ms: Date.now() - started,
         endpoints_discovered: out.length,
         host_histogram: hostHist,
         catalog: out,
+        route_captures: routeCaptures,
         steps,
       });
     }
@@ -2197,7 +2240,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v20 (tor+playwright+api-vo, recon-menu-click) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v21 (tor+playwright+api-vo, recon-menu-click+captures) porta ${PORT}`);
 });
 
 
