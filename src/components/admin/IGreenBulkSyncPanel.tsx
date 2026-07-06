@@ -138,7 +138,18 @@ export function IGreenBulkSyncPanel() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runRecon}
+            disabled={reconRunning}
+            title="Descobre automaticamente todas as rotas reais da API iGreen (worker v19+)"
+            className="h-7 text-[11px] gap-1"
+          >
+            {reconRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Radar className="w-3 h-3" />}
+            {reconRunning ? "Mapeando…" : "Mapear rotas (recon)"}
+          </Button>
           {failedIds.length > 0 && !running && (
             <Button size="sm" variant="outline" onClick={() => startAll(true)} disabled={starting} className="h-7 text-[11px] gap-1">
               <RefreshCw className="w-3 h-3" /> Retomar falhas ({failedIds.length})
