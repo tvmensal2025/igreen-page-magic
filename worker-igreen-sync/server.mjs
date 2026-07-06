@@ -712,7 +712,7 @@ async function fetchCustomers(session) {
     }
   }
 
-  const merged = mergeByKey([...out, ...extra], (c) => String(c.codigo ?? c.idcliente ?? c.id ?? c.cpf ?? `${c.nomeCliente || c.nome}|${c.cidade}` || '').trim());
+  const merged = mergeByKey([...out, ...extra], (c) => String(c.codigo ?? c.idcliente ?? c.id ?? c.cpf ?? `${c.nomeCliente || c.nome}|${c.cidade}` ?? '').trim());
   dbg(`[customers] /crm/green: ${cols.length} colunas → ${out.length} cards; extras=${extra.length}; total=${merged.length}`);
   merged._diagnostics = diagnostics;
   return merged;
