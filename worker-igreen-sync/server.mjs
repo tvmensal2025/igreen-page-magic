@@ -1948,6 +1948,143 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    // ================= /recon-endpoints =================
+    // Descoberta automática do catálogo real de rotas do portal iGreen.
+    // Loga com o consultor informado (idealmente um com dados — ex.: rafael.ids),
+    // navega o SPA inteiro e intercepta cada XHR para api-vo/v1/*, agregando
+    // por {method, pathTemplate} com shape da resposta + total + amostra.
+    if (req.url === '/recon-endpoints') {
+      const s = await getOrCreateSession(email, password);
+      const started = Date.now();
+
+      const pathTemplate = (url) => {
+        try {
+          const u = new URL(url);
+          let p = u.pathname;
+          p = p.replace(/\/\d{4}-\d{2}(-\d{2})?/g, '/{date}');
+          p = p.replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '/{uuid}');
+          p = p.replace(/\/\d{4,}/g, '/{n}');
+          return p;
+        } catch { return url; }
+      };
+      const isApi = (u) => /\/\/api-vo\.igreenenergy\.com\.br\/v1\//i.test(u);
+      const isAuth = (u) => /\/v1\/auth\//i.test(u) || /\/v1\/telemetry\//i.test(u);
+
+      const catalog = new Map();
+      const respListener = async (resp) => {
+        const u = resp.url();
+        if (!isApi(u) || isAuth(u)) return;
+        const rq = resp.request();
+        const method = rq.method();
+        const tpl = pathTemplate(u);
+        const key = `${method} ${tpl}`;
+        const entry = catalog.get(key) || {
+          method, path_template: tpl, hits: 0, statuses: {},
+          samples: [], shape: null, first_total: null, seen_query: new Set(),
+        };
+        entry.hits++;
+        entry.statuses[resp.status()] = (entry.statuses[resp.status()] || 0) + 1;
+        try {
+          const q = new URL(u).search.replace(/=[^&]*/g, '=').replace(/^\?/, '');
+          if (q) entry.seen_query.add(q);
+        } catch {}
+        try {
+          if (entry.samples.length < 2 && /json/i.test(resp.headers()['content-type'] || '')) {
+            const txt = await resp.text();
+            const j = JSON.parse(txt);
+            if (entry.shape == null) {
+              const top = j && typeof j === 'object' && !Array.isArray(j) ? Object.keys(j).slice(0, 20) : (Array.isArray(j) ? ['<array>'] : [typeof j]);
+              const arr = firstArrayPayload(j);
+              const totalV = totalFromPayload(j);
+              entry.shape = {
+                top_keys: top,
+                array_len: arr.length,
+                first_item_keys: arr[0] && typeof arr[0] === 'object' ? Object.keys(arr[0]).slice(0, 40) : null,
+                has_total: !!totalV,
+              };
+              if (totalV) entry.first_total = totalV;
+            }
+            entry.samples.push({ url: u.slice(0, 200), status: resp.status(), body: txt.slice(0, 1500) });
+          }
+        } catch {}
+        catalog.set(key, entry);
+      };
+      s.page.on('response', respListener);
+
+      const steps = [];
+      const step = (name, extra = {}) => { steps.push({ t: Date.now() - started, name, ...extra }); dbg(`[recon] ${name} ${JSON.stringify(extra).slice(0, 120)}`); };
+
+      const NAV_ROUTES = [
+        '/dashboard', '/home',
+        '/clientes-green', '/clientes-green/faturas', '/clientes-green/injecao',
+        '/clientes-green/boletos', '/clientes-green/devolutivas',
+        '/clientes-green/devolutivas-resolvidas', '/clientes-green/cashback',
+        '/clientes-green/resumo-geral', '/clientes-green/summary',
+        '/crm/green',
+        '/telecom', '/telecom/clientes', '/telecom/linhas', '/telecom/faturas',
+        '/telecom/comissoes', '/telecom/recargas', '/telecom/bonus',
+        '/telecom/portabilidade', '/telecom/licenciados', '/telecom/client-map',
+        '/crm/telecom',
+        '/seguros', '/seguros/apolices', '/seguros/clientes', '/seguros/comissoes',
+        '/seguros/sinistros', '/seguros/renovacoes', '/seguros/cashback',
+        '/crm/seguros',
+        '/rede', '/rede/licenciados', '/network-map', '/network',
+        '/comissoes', '/comissoes/resumo', '/financeiro', '/financeiro/boletos',
+        '/relatorios', '/rotinas',
+      ];
+
+      try {
+        for (const route of NAV_ROUTES) {
+          const url = `https://escritorio.igreenenergy.com.br${route}`;
+          try {
+            await s.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          } catch (e) {
+            step('nav_err', { route, msg: e.message.slice(0, 100) });
+            continue;
+          }
+          try {
+            await s.page.evaluate(async () => {
+              await new Promise((r) => setTimeout(r, 800));
+              window.scrollTo(0, document.body.scrollHeight);
+              await new Promise((r) => setTimeout(r, 800));
+              window.scrollTo(0, 0);
+            });
+          } catch {}
+          try { await s.page.waitForLoadState('networkidle', { timeout: 8000 }); } catch {}
+          step('navigated', { route, catalog_size: catalog.size });
+          await new Promise((r) => setTimeout(r, 400));
+        }
+
+        const now = new Date();
+        for (let i = 0; i < 12; i++) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const mes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          try {
+            const j = await apiGet(s, `/network-map/data?month=${mes}`);
+            const arr = firstArrayPayload(j);
+            step('nm_month', { mes, items: arr.length });
+          } catch (e) { step('nm_month_err', { mes, msg: e.message.slice(0, 80) }); }
+        }
+      } finally {
+        s.page.off('response', respListener);
+      }
+
+      const out = Array.from(catalog.values())
+        .map((e) => ({ ...e, seen_query: Array.from(e.seen_query).slice(0, 8) }))
+        .sort((a, b) => a.path_template.localeCompare(b.path_template));
+
+      return sendJson(res, 200, {
+        ok: true,
+        worker_version: 'v19',
+        consultor_id: s.consultorId,
+        elapsed_ms: Date.now() - started,
+        routes_navigated: NAV_ROUTES.length,
+        endpoints_discovered: out.length,
+        catalog: out,
+        steps,
+      });
+    }
+
     return sendJson(res, 404, { ok: false, error: 'not_found' });
     });
 
@@ -1959,8 +2096,9 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`[boot] igreen-sync-worker v18 (tor+playwright+api-vo, cobertura total) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v19 (tor+playwright+api-vo, recon-endpoints) porta ${PORT}`);
 });
+
 
 // Garbage collect de sessões expiradas
 setInterval(async () => {
