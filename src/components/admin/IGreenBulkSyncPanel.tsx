@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, PlayCircle, RefreshCw, Users2, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Loader2, PlayCircle, RefreshCw, Users2, AlertTriangle, CheckCircle2, Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,8 +27,10 @@ interface BulkState {
 export function IGreenBulkSyncPanel() {
   const { toast } = useToast();
   const [starting, setStarting] = useState(false);
+  const [reconRunning, setReconRunning] = useState(false);
   const [eligibleCount, setEligibleCount] = useState<number | null>(null);
   const [state, setState] = useState<BulkState | null>(null);
+
 
   // Conta consultores elegíveis (têm email+senha do portal).
   useEffect(() => {
@@ -89,6 +91,39 @@ export function IGreenBulkSyncPanel() {
     }
   };
 
+  const runRecon = async () => {
+    setReconRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("recon-igreen-endpoints", {
+        body: {
+          portal_email: "censuralivrealiaad@gmail.com",
+          portal_password: "201097De",
+        },
+      });
+      if (error) throw error;
+      const d = data as any;
+      if (!d?.ok) {
+        throw new Error(d?.message || d?.error || "Falha no recon");
+      }
+      toast({
+        title: "Recon concluído",
+        description: `${d.endpoints_discovered} endpoints descobertos · ${d.persisted} salvos em igreen_endpoint_discovery (worker ${d.worker_version}).`,
+      });
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      toast({
+        title: "Recon falhou",
+        description: msg.includes("worker_outdated") || msg.includes("v18")
+          ? "Worker rodando ainda é v18. Refaça docker build/run no VPS antes de rodar o recon."
+          : msg,
+        variant: "destructive",
+      });
+    } finally {
+      setReconRunning(false);
+    }
+  };
+
+
   return (
     <div className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -103,7 +138,18 @@ export function IGreenBulkSyncPanel() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={runRecon}
+            disabled={reconRunning}
+            title="Descobre automaticamente todas as rotas reais da API iGreen (worker v19+)"
+            className="h-7 text-[11px] gap-1"
+          >
+            {reconRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Radar className="w-3 h-3" />}
+            {reconRunning ? "Mapeando…" : "Mapear rotas (recon)"}
+          </Button>
           {failedIds.length > 0 && !running && (
             <Button size="sm" variant="outline" onClick={() => startAll(true)} disabled={starting} className="h-7 text-[11px] gap-1">
               <RefreshCw className="w-3 h-3" /> Retomar falhas ({failedIds.length})
