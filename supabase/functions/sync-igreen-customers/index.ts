@@ -564,6 +564,18 @@ async function runSyncAllBackgroundPhase(
       detailsApplied += Number(applied.details_applied || 0);
     }
     out.details = { details_received: detailsReceived, details_applied: detailsApplied, total_codes: codes.length };
+
+    // Recalcula o estágio de pós-venda dos clientes sincronizados (espera →
+    // aprovado → d30/d60/d90/d120). Assim os clientes aparecem no Kanban de
+    // pós-venda logo após o sync, sem esperar o cron. A função é segura:
+    // respeita pos_venda_manual e não rebaixa quem está em "espera".
+    try {
+      const { error: rpcErr } = await supabase.rpc("recompute_pos_venda_stages");
+      out.pos_venda_recompute = rpcErr ? { error: rpcErr.message } : { ok: true };
+    } catch (e) {
+      out.pos_venda_recompute = { error: e instanceof Error ? e.message : String(e) };
+    }
+
     await supabase.from("settings").upsert({ key: "last_igreen_sync_background", value: new Date().toISOString() }, { onConflict: "key" });
   } catch (err) {
     out.success = false;
