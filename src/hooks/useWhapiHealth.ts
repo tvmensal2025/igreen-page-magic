@@ -64,6 +64,12 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
     reasonCode: null,
     reasonMessage: null,
     helpUrl: null,
+    deviceLikelyOffline: false,
+    outboundRecentCount: 0,
+    outboundPendingCount: 0,
+    outboundDeliveredCount: 0,
+    lastOutboundAt: null,
+    lastOutboundStatus: null,
   });
   const mountedRef = useRef(true);
 
@@ -90,6 +96,12 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
         reasonCode: (data?.reasonCode ?? null) as WhapiReasonCode,
         reasonMessage: data?.reasonMessage ?? null,
         helpUrl: data?.helpUrl ?? null,
+        deviceLikelyOffline: !!data?.device_likely_offline,
+        outboundRecentCount: Number(data?.outbound_recent_count ?? 0),
+        outboundPendingCount: Number(data?.outbound_pending_count ?? 0),
+        outboundDeliveredCount: Number(data?.outbound_delivered_count ?? 0),
+        lastOutboundAt: typeof data?.last_outbound_at === "number" ? data.last_outbound_at : null,
+        lastOutboundStatus: data?.last_outbound_status ?? null,
       });
     } catch (e: any) {
       if (!mountedRef.current) return;
