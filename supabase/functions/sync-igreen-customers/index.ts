@@ -514,6 +514,17 @@ async function runSyncAllBackgroundPhase(
     if (toggles.capture_seguros) out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
     if (toggles.capture_devolutivas) out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
     if (toggles.capture_cashback) out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    // v18: cobertura total das páginas (telecom/linhas, faturas, comissoes,
+    // seguros/apolices, sinistros, network history). Só roda se o worker
+    // devolveu `full_extras` (worker v18+).
+    if (r.data?.full_extras) {
+      try {
+        out.full_extras = await persistFullExtras(supabase, consultantId, r.data.full_extras);
+      } catch (e) {
+        out.full_extras_error = e instanceof Error ? e.message : String(e);
+        console.warn("[full_extras] persist error:", out.full_extras_error);
+      }
+    }
     augmentProductGaps(out, r.data);
     out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
 
