@@ -491,6 +491,7 @@ async function runSyncAllBackgroundPhase(
       portal_password: passwordNorm,
       only: buildExtrasOnly(toggles),
       enrich: false,
+      full_history: true,
     });
     if (!r.ok) {
       out.success = false;
