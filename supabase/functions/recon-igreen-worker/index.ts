@@ -193,9 +193,14 @@ Deno.serve(async (req) => {
           }
         }
 
+        const isRoute = job.kind === "route";
+        const newEpCount = Array.isArray(capture.new_endpoints) ? capture.new_endpoints.length : 0;
+        const redirected = !!capture.redirected;
+        const finalStatus = isRoute && redirected && newEpCount === 0 ? "skipped" : "done";
+
         await supabase
           .from("igreen_recon_queue")
-          .update({ status: "done", done_at: new Date().toISOString(), result_id: routeRow?.id || null })
+          .update({ status: finalStatus, done_at: new Date().toISOString(), result_id: routeRow?.id || null })
           .eq("id", job.id);
 
         results.push({ id: job.id, target: job.target, ok: true, ms: Date.now() - jobStart });
