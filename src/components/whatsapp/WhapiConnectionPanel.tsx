@@ -276,7 +276,72 @@ export function WhapiConnectionPanel({ visible }: Props) {
           {health.error && (
             <div className="text-destructive">erro: {health.error}</div>
           )}
+
+          {/* Presença do device físico */}
+          <div className="pt-1 mt-1 border-t border-border/50 flex items-center justify-between">
+            <span className="text-muted-foreground">device (celular):</span>
+            {health.status === "AUTH" && health.deviceLikelyOffline ? (
+              <span className="text-destructive font-bold flex items-center gap-1">
+                <Smartphone className="h-3 w-3" /> OFFLINE (msgs pending)
+              </span>
+            ) : health.status === "AUTH" && health.outboundDeliveredCount > 0 ? (
+              <span className="text-green-600 font-bold flex items-center gap-1">
+                <SmartphoneNfc className="h-3 w-3" /> ONLINE
+              </span>
+            ) : health.status === "AUTH" ? (
+              <span className="text-muted-foreground flex items-center gap-1">
+                <Smartphone className="h-3 w-3" /> sem tráfego recente
+              </span>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </div>
+          {health.status === "AUTH" && health.outboundRecentCount > 0 && (
+            <div className="text-muted-foreground">
+              últ. 10min: {health.outboundDeliveredCount}✓ entregue / {health.outboundPendingCount}⏳ pending
+              {" / "}{health.outboundRecentCount} total
+            </div>
+          )}
+          {health.lastOutboundAt && (
+            <div className="text-muted-foreground">
+              última msg enviada:{" "}
+              {new Date(health.lastOutboundAt * 1000).toLocaleTimeString()}{" "}
+              {health.lastOutboundStatus && (
+                <span className={
+                  health.lastOutboundStatus === "read" || health.lastOutboundStatus === "delivered"
+                    ? "text-green-600"
+                    : health.lastOutboundStatus === "sent"
+                    ? "text-yellow-600"
+                    : "text-destructive"
+                }>[{health.lastOutboundStatus}]</span>
+              )}
+            </div>
+          )}
         </div>
+
+        {/* Alerta: device físico offline (msgs travando em pending) */}
+        {health.status === "AUTH" && health.deviceLikelyOffline && (
+          <div className="rounded-md border-2 border-destructive bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+            <div className="flex items-start gap-2">
+              <Smartphone className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1">
+                <div className="font-semibold mb-1">Celular do super admin está offline</div>
+                <div>
+                  O canal Whapi está autenticado (token OK), mas{" "}
+                  <b>{health.outboundPendingCount} das últimas {health.outboundRecentCount} mensagens</b>{" "}
+                  enviadas ficaram travadas em <b>pending</b> — o celular físico
+                  {health.phone ? ` (${health.phone})` : ""} perdeu conexão com o WhatsApp.
+                </div>
+                <div className="mt-2 text-[11px]">
+                  <b>Como resolver:</b> abra o WhatsApp no celular do super admin,
+                  confirme que ele está com internet e aparece em "Aparelhos conectados".
+                  Se não estiver, use <b>Reautenticar canal</b> abaixo para gerar novo QR.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
 
         {/* Banner específico por motivo — pagamento bloqueado tem prioridade */}
         {health.reasonCode === "unpaid" && (
