@@ -1510,14 +1510,27 @@ Deno.serve(async (req) => {
     }
 
 
-    if (source === "cron") {
-      console.log("=== CRON MODE: Syncing ALL consultants ===");
-      // No cron, por padrão puxa TUDO (clientes + rede + métricas + boletos).
+    if (source === "cron" || source === "bulk_manual") {
+      const label = source === "bulk_manual" ? "MANUAL BULK" : "CRON";
+      console.log(`=== ${label} MODE: Syncing consultants ===`);
       const cronMode = mode && mode !== "sync" ? mode : "sync_all";
-      const { data: consultants, error: cErr } = await supabase
+
+      // Body pode limitar quais consultores rodar (para retry de falhas).
+      let filterIds: string[] | null = null;
+      try {
+        const b = await req.clone().json();
+        if (Array.isArray(b?.consultant_ids) && b.consultant_ids.length > 0) {
+          filterIds = b.consultant_ids.map(String);
+        }
+      } catch (_) { /* body vazio */ }
+
+      const q = supabase
         .from("consultants")
         .select("id, name, igreen_portal_email, igreen_portal_password")
         .eq("approved", true);
+      const { data: consultants, error: cErr } = filterIds
+        ? await q.in("id", filterIds)
+        : await q;
 
       const usable = (consultants || []).filter((c: Record<string, unknown>) =>
         !!c.igreen_portal_email && !!c.igreen_portal_password
@@ -1538,39 +1551,69 @@ Deno.serve(async (req) => {
 
       console.log(`Found ${usable.length} consultants with credentials.`);
 
+      // Estado de bulk (visível para o painel admin).
+      const { data: bulkRow } = await supabase
+        .from("igreen_bulk_sync_state")
+        .insert({
+          status: "running",
+          total: usable.length,
+          completed: 0,
+          failed: 0,
+          consultant_ids: usable.map((c: Record<string, unknown>) => c.id),
+          results: {},
+          full_history: true,
+        })
+        .select("id")
+        .single();
+      const bulkId: string | null = bulkRow?.id ?? null;
+
       // Roda tudo em background para escapar do IDLE_TIMEOUT (150s) da Edge.
       const runAll = async () => {
+        let completed = 0;
+        let failed = 0;
+        const results: Record<string, unknown> = {};
         for (const c of usable) {
           console.log(`--- [bg] Syncing: ${c.name} (${c.igreen_portal_email}) ---`);
+          if (bulkId) {
+            await supabase.from("igreen_bulk_sync_state").update({
+              current_consultant_id: c.id, updated_at: new Date().toISOString(),
+            }).eq("id", bulkId);
+          }
           const runId = await logSyncStart(supabase, c.id, cronMode);
           let r: Record<string, unknown> = { success: false, error: "unknown" };
           try {
-            r = await syncOneConsultant(
-              supabase,
-              worker,
-              c.igreen_portal_email,
-              c.igreen_portal_password,
-              c.id,
-              cronMode,
-            );
+            r = await syncOneConsultant(supabase, worker, c.igreen_portal_email, c.igreen_portal_password, c.id, cronMode);
           } catch (err) {
             r = { success: false, error: err instanceof Error ? err.message : String(err) };
             console.error(`[bg] Error syncing ${c.name}:`, err);
           } finally {
             await logSyncFinish(supabase, runId, c.id, r);
           }
-          await new Promise((r) => setTimeout(r, 3000));
+          if (r?.success) completed++; else failed++;
+          results[c.id] = { name: c.name, success: !!r?.success, error: r?.error ?? null };
+          if (bulkId) {
+            await supabase.from("igreen_bulk_sync_state").update({
+              completed, failed, results, updated_at: new Date().toISOString(),
+            }).eq("id", bulkId);
+          }
+          await new Promise((res) => setTimeout(res, 3000));
         }
-        console.log(`[bg] cron sync finished (${usable.length} consultants)`);
+        if (bulkId) {
+          await supabase.from("igreen_bulk_sync_state").update({
+            status: "finished", current_consultant_id: null, updated_at: new Date().toISOString(),
+          }).eq("id", bulkId);
+        }
+        console.log(`[bg] ${label} sync finished (${usable.length} consultants)`);
       };
       // @ts-ignore EdgeRuntime existe no Supabase edge runtime
       try { EdgeRuntime.waitUntil(runAll()); } catch { runAll(); }
 
       return new Response(JSON.stringify({
         success: true,
-        mode: "cron_all",
+        mode: source === "bulk_manual" ? "bulk_manual" : "cron_all",
         background: true,
         total_consultants: usable.length,
+        bulk_id: bulkId,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
