@@ -542,7 +542,13 @@ async function runSyncAllBackgroundPhase(
     let detailsApplied = 0;
     let detailsReceived = 0;
     // Enriquece a lista COMPLETA (571) quando disponível; senão a base (Kanban).
-    const codes = extractCustomerCodes(fullCustomers.length > 0 ? fullCustomers : baseCustomers);
+    const allCodes = extractCustomerCodes(fullCustomers.length > 0 ? fullCustomers : baseCustomers);
+    // PRIORIDADE: quem nunca foi enriquecido vem primeiro. Sem isso, o loop
+    // (limitado a ~100s) reprocessava sempre os mesmos primeiros códigos e
+    // nunca alcançava o fim da fila — deixando centenas de clientes com
+    // "Contato incompleto" (sem telefone/CPF/distribuidora) para sempre.
+    const codes = await prioritizeUnenrichedCodes(supabase, consultantId, allCodes);
+    out.details_pending_before = codes.length;
     for (let i = 0; i < codes.length; i += 30) {
       if (Date.now() - started > 100_000) {
         out.details_stopped_reason = "edge_time_budget";
@@ -1142,6 +1148,37 @@ async function persistDevolutivas(supabase: any, consultantId: string | null, it
     else saved += data?.length || 0;
   }
   return { devolutivas_saved: saved, devolutivas_received: items.length };
+}
+
+// Reordena os códigos para enriquecer PRIMEIRO quem ainda não tem ficha
+// detalhada (last_enriched_at IS NULL). Como o loop de enriquecimento tem
+// orçamento de tempo limitado, sem essa priorização os mesmos primeiros
+// códigos eram reprocessados a cada sync e o fim da fila nunca era alcançado.
+// deno-lint-ignore no-explicit-any
+async function prioritizeUnenrichedCodes(supabase: any, consultantId: string | null, codes: string[]): Promise<string[]> {
+  if (!consultantId || !Array.isArray(codes) || codes.length === 0) return codes;
+  try {
+    const enriched = new Set<string>();
+    for (let i = 0; i < codes.length; i += 200) {
+      const chunk = codes.slice(i, i + 200);
+      const { data } = await supabase
+        .from("customers")
+        .select("igreen_code")
+        .eq("consultant_id", consultantId)
+        .not("last_enriched_at", "is", null)
+        .in("igreen_code", chunk);
+      for (const c of (data || []) as Array<{ igreen_code: string }>) {
+        if (c.igreen_code) enriched.add(String(c.igreen_code));
+      }
+    }
+    const pending = codes.filter((c) => !enriched.has(c));
+    const done = codes.filter((c) => enriched.has(c));
+    // Pendentes primeiro; os já enriquecidos no fim (re-checagem se sobrar tempo).
+    return [...pending, ...done];
+  } catch {
+    // Em qualquer falha, mantém a ordem original (não quebra o sync).
+    return codes;
+  }
 }
 
 // Aplica a ficha detalhada (/clientes-green/boletos/{id}) nos customers:
