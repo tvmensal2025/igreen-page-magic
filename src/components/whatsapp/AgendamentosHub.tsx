@@ -694,7 +694,135 @@ export function AgendamentosHub({
           </TabsContent>
         </Tabs>
       </div>
+
+      <TimelineItemDialog
+        item={selected}
+        onClose={() => setSelected(null)}
+        onGoToConfig={(tab) => { setActiveTab(tab); setSelected(null); }}
+        editText={editText}
+        setEditText={setEditText}
+        editAt={editAt}
+        setEditAt={setEditAt}
+        savingEdit={savingEdit}
+        onSaveManual={async () => {
+          if (!selected || selected.kind !== "manual_scheduled") return;
+          setSavingEdit(true);
+          try {
+            const id = selected.id.replace(/^manual-/, "");
+            const { error } = await supabase
+              .from("scheduled_messages")
+              .update({
+                message_text: editText,
+                scheduled_at: new Date(editAt).toISOString(),
+              })
+              .eq("id", id);
+            if (error) throw error;
+            toast({ title: "Agendamento atualizado" });
+            setSelected(null);
+            refresh();
+          } catch {
+            toast({ title: "Erro ao atualizar", variant: "destructive" });
+          } finally {
+            setSavingEdit(false);
+          }
+        }}
+        onDeleteManual={async () => {
+          if (!selected || selected.kind !== "manual_scheduled") return;
+          const id = selected.id.replace(/^manual-/, "");
+          await handleDeleteManual(id);
+          setSelected(null);
+        }}
+      />
     </div>
+  );
+}
+
+function TimelineItemDialog({
+  item, onClose, onGoToConfig,
+  editText, setEditText, editAt, setEditAt, savingEdit, onSaveManual, onDeleteManual,
+}: {
+  item: AgendamentoTimelineItem | null;
+  onClose: () => void;
+  onGoToConfig: (tab: AgendamentosHubTab) => void;
+  editText: string;
+  setEditText: (v: string) => void;
+  editAt: string;
+  setEditAt: (v: string) => void;
+  savingEdit: boolean;
+  onSaveManual: () => void;
+  onDeleteManual: () => void;
+}) {
+  if (!item) return null;
+  const src = describeSource(item);
+  const isManual = item.kind === "manual_scheduled";
+  return (
+    <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-primary" />
+            {item.title}
+          </DialogTitle>
+          <DialogDescription>
+            {formatScheduleDate(item.at)} · {item.badge}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Onde está configurado</p>
+            <p className="text-sm font-semibold">{src.where}</p>
+            <p className="text-xs text-muted-foreground mt-1">{src.hint}</p>
+          </div>
+
+          {isManual ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mensagem</Label>
+                <Textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  rows={4}
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Enviar em</Label>
+                <Input
+                  type="datetime-local"
+                  value={editAt}
+                  onChange={(e) => setEditAt(e.target.value)}
+                />
+              </div>
+            </div>
+          ) : item.preview ? (
+            <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia</p>
+              <p className="text-sm whitespace-pre-wrap">{item.preview}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter className="gap-2 flex-wrap">
+          {isManual && (
+            <>
+              <Button variant="ghost" className="text-destructive gap-1.5" onClick={onDeleteManual}>
+                <Trash2 className="w-3.5 h-3.5" />
+                Apagar
+              </Button>
+              <Button onClick={onSaveManual} disabled={savingEdit || !editText.trim() || !editAt} className="gap-1.5">
+                {savingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Salvar mudanças
+              </Button>
+            </>
+          )}
+          <Button variant="outline" onClick={() => onGoToConfig(src.targetTab)} className="gap-1.5">
+            <Settings2 className="w-3.5 h-3.5" />
+            {src.ctaLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
