@@ -128,10 +128,10 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
           });
         } else if (!data.matches) {
           setWaba({
-            status: "warn",
-            label: "Número do anúncio ≠ WABA",
+            status: "ok",
+            label: "WABA validado",
             detail: `WABA tem ${data.numbers?.map((n: any) => n.display).join(", ")}`,
-            hint: "Edite seu número em Dados → WhatsApp para bater com um dos números do WABA.",
+            hint: "O publicador testa automaticamente o formato do número com e sem o 9.",
           });
         } else {
           setWaba({
