@@ -1,65 +1,41 @@
+## Problema
 
-## Diagnóstico
+Ao usar o suporte remoto, o operador não consegue interagir com as bordas da tela do consultor — topo, esquerda, direita e inferior ficam "mortos". Causas identificadas:
 
-O erro **"Este navegador não conseguiu tocar"** não é problema do navegador — o arquivo de áudio **não existe mais no Storage**. O WhatsApp também não consegue enviar pelo mesmo motivo (Whapi/Evolution baixa a URL e recebe 404).
+**1. Letterbox do `object-contain` (principal)**
+`src/pages/SuperAdminRemoteSupport.tsx` L836‑845 renderiza o `<video>` com `w-full h-full object-contain` dentro de um container preto. Quando a proporção do container ≠ proporção do vídeo capturado, o vídeo é centralizado com **faixas pretas em volta** (letterbox). O overlay de controle (`absolute inset-0`) cobre também essas faixas, mas `toNorm` (L1488‑1523) retorna `null` para qualquer ponto fora de `dispW×dispH`, ignorando cliques/movimentos → sensação de "borda cortada" nos 4 lados.
 
-**Verificação feita:**
-- `ai_media_library` tem 4 rows para `sofia-mg.mp3` apontando para `…/passo_mp8yc0bp/ec2e4859-….mp3`
-- `curl HEAD` nessa URL → `404 Object not found`
-- Bucket `ai-agent-media` é público, mas o objeto sumiu
+**2. Banner do consultor cobre o topo real da página**
+`src/features/remote-support/ActiveSessionBanner.tsx` L83 monta um banner `fixed top-0 inset-x-0 z-[9999]` com `data-remote-support-banner`. Esse selector está em `PROTECTED_SELECTOR` (`actionHandler.ts` L21), então qualquer coordenada que caia sobre a faixa do banner é bloqueada — mesmo depois de resolver o letterbox, o operador continua "sem topo" porque o topo do vídeo É o banner. Além disso o banner empurra o conteúdo real da página para baixo (o body não tem `padding-top`), então parte inferior da página some do viewport enquanto o banner está aberto.
 
-**Causa raiz** (bug em `StepMediaPanel.tsx`):
+**3. `toNorm` descarta as bordas exatas**
+`if (px < 0 || py < 0 || px > dispW || py > dispH) return null;` — em arredondamentos de `getBoundingClientRect` a última coluna/linha de pixels vira `null`, causando micro‑cortes nas bordas mesmo sem letterbox.
 
-`linkFromLibrary` (linhas 114-144) faz **cópia da URL** para criar uma nova row apontando pro **mesmo arquivo físico**, mas grava `storage_path: null` na cópia. Resultado: várias rows de `ai_media_library` compartilham o mesmo arquivo em Storage.
+## O que fazer
 
-Depois, `saveAllChanges` (linhas 376-412) marca a row antiga como `active=false` e chama `storage.remove([m.storage_path])`. Como a row **original** ainda tem o `storage_path`, o arquivo real é apagado — e todas as demais rows (ativas, com URL apontando pro mesmo path) ficam **quebradas silenciosamente**.
+### A. Eliminar letterbox no operador
+`src/pages/SuperAdminRemoteSupport.tsx`
+- Passar do container preto `object-contain` para um container que **assume a proporção real do consultor**: aplicar `style={{ aspectRatio: requesterVp ? `${requesterVp.innerWidth} / ${requesterVp.innerHeight}` : undefined }}` no `containerRef` e trocar `object-contain` por `object-fill` no `<video>`. Como o vídeo é a captura fiel da aba do consultor, `object-fill` no container com a proporção correta = 1:1 sem distorção e sem faixas.
+- No modo fullscreen, envolver o container em um wrapper flex `items-center justify-center` para o container manter a proporção sem esticar em telas com aspect diferente (mantém máximo `max-h-full max-w-full`).
+- Em `RemoteControlOverlay.toNorm` (L1488‑1523): remover a lógica de letterbox (offsetX/offsetY/dispW/dispH) e passar a normalizar direto contra `rect.width`/`rect.height`, clampando `normX`/`normY` em `[0,1]` (sem retornar `null` para pontos "fora"). Isso garante que a borda extrema clicável funcione.
 
-Foi exatamente o que aconteceu: row `4e3267a1` (inativa, com storage_path preenchido) foi removida junto com o arquivo; rows `648332f7`, `e9c847f4`, `a9af418c` (ativas, ligadas ao mesmo path via URL) agora retornam 404 tanto no player quanto no envio do bot.
+### B. Remover a "faixa morta" do topo no consultor
+`src/features/remote-support/ActiveSessionBanner.tsx` + `RemoteSupportProvider.tsx`
+- Enquanto a sessão está `active` e `sharing=true`, colapsar o banner para uma barra fina (≈24px) com apenas o status + botões Pausar/Encerrar. Isso reduz a área bloqueada no topo do vídeo capturado.
+- Publicar a altura atual do banner numa CSS var (`--remote-support-banner-h`) e aplicar `padding-top` correspondente no `<body>` (ou no root do app) só enquanto o banner existe, para que nenhum conteúdo real da página fique escondido embaixo do banner (o operador deixa de perder a parte inferior).
+- Manter `data-remote-support-banner` (segurança: operador não consegue clicar no banner do próprio consultor), mas com footprint mínimo.
 
----
+### C. Sanitizar bordas em `toNorm`
+`src/pages/SuperAdminRemoteSupport.tsx` (dentro do RemoteControlOverlay)
+- Substituir o `return null` por `clamp(0,1)` para `normX/normY`, garantindo que cliques em `y=0`, `y=rect.height`, `x=0`, `x=rect.width` sejam entregues como coordenadas 0 ou 1 (o consultor mapeia para pixels válidos).
 
-## Correções
-
-### 1. Não deletar arquivo do Storage se houver outras rows usando (`StepMediaPanel.saveAllChanges`)
-
-Antes de chamar `storage.remove([path])`, verificar se **alguma outra row ativa** referencia o mesmo `storage_path` **ou** a mesma `url`. Se sim, pular o remove (soft-delete apenas na row).
-
-```ts
-// Para cada storage_path a remover:
-const { count } = await supabase
-  .from("ai_media_library")
-  .select("id", { count: "exact", head: true })
-  .eq("active", true)
-  .or(`storage_path.eq.${path},url.eq.${url}`);
-if ((count ?? 0) === 0) {
-  await supabase.storage.from("ai-agent-media").remove([path]);
-}
-```
-
-### 2. Recuperar o áudio quebrado agora (execução única)
-
-- Marcar as 3 rows órfãs (`648332f7`, `e9c847f4`, `a9af418c`) com `active=false` para tirar do fluxo até novo upload
-- Toast/UI passará a mostrar "Inativo" em vez de player quebrado
-- Consultor sobe o `sofia-mg.mp3` de novo pelo painel (upload direto)
-
-### 3. Melhorar diagnóstico no `AudioPlayer`
-
-Quando `<audio>` dispara `onError`, fazer um `HEAD` na URL. Se retornar 404, trocar a mensagem para:
-
-> **"Arquivo não encontrado no Storage — reenvie o áudio"**
-
-em vez de "navegador não conseguiu tocar". Isso evita confusão futura e sinaliza claramente o problema real.
-
-### 4. Preencher `storage_path` também nas cópias (`linkFromLibrary`)
-
-Ao vincular da biblioteca, copiar também o `storage_path` da row de origem (não gravar `null`). Assim a lógica de "há mais rows apontando pra esse arquivo?" fica trivialmente correta.
-
----
+### D. Sanity check
+- Após as mudanças, rodar a sessão e conferir com o cursor virtual que ele acompanha o mouse até as 4 bordas do container e que cliques em `top:0`, `bottom:0`, `left:0`, `right:0` disparam ações reais.
 
 ## Arquivos afetados
 
-- `src/components/admin/fluxo/StepMediaPanel.tsx` — corrigir `saveAllChanges` (guard antes do remove) e `linkFromLibrary` (copiar storage_path)
-- `src/components/admin/media/AudioPlayer.tsx` — melhorar mensagem de erro (HEAD check → "arquivo não encontrado")
-- Query manual única: `UPDATE ai_media_library SET active=false WHERE id IN ('648332f7-3f83-44ff-8e0c-240005791a0c','e9c847f4-3277-4c8e-b5f3-0e5fcb0f1195','a9af418c-24f9-4d87-ab28-e8d753a79cde')` — para o consultor reenviar o áudio limpo
+- `src/pages/SuperAdminRemoteSupport.tsx` — container do vídeo (aspect ratio + object-fill), `toNorm` (sem letterbox, com clamp)
+- `src/features/remote-support/ActiveSessionBanner.tsx` — variante colapsada durante `sharing`
+- `src/features/remote-support/RemoteSupportProvider.tsx` — expor CSS var + `padding-top` no root enquanto banner ativo
 
-Após: o consultor faz upload novo do `sofia-mg.mp3` e o fluxo M passa a enviar corretamente.
+Sem mudanças no `actionHandler.ts` nem em API/DB — é 100% ajuste de UI/mapeamento.
