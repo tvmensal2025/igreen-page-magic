@@ -54,7 +54,16 @@ function timeAgo(iso: string): string {
  * Tabela de boletos com filtros, ordenação, seleção em lote, template
  * configurável, coluna "Última cobrança" e export CSV.
  */
-export function BoletosAdminTable({ rows, currentUserId }: { rows: BoletoAdminRow[]; currentUserId: string }) {
+export function BoletosAdminTable({
+  rows,
+  currentUserId,
+  onOpenChat,
+}: {
+  rows: BoletoAdminRow[];
+  currentUserId: string;
+  /** Quando fornecida, o botão "Conversar" abre o chat interno em vez do wa.me externo. */
+  onOpenChat?: (phone: string) => void;
+}) {
   const { toast } = useToast();
   const [status, setStatus] = useState<FilterKey>("todos");
   const [consultantId, setConsultantId] = useState<string>("all");
@@ -196,19 +205,26 @@ export function BoletosAdminTable({ rows, currentUserId }: { rows: BoletoAdminRo
   };
 
   const sendSingle = async (b: BoletoAdminRow) => {
-    if (!b.phone_whatsapp || !b.url_boleto) return;
-    const text = renderCobrancaTemplate(activeTemplate, {
-      nome: b.nome || b.customer_name,
-      mes: b.mes_referencia,
-      valor: Number(b.total || 0),
-      vencimento: b.vencimento,
-      url_boleto: b.url_boleto,
-    });
-    window.open(
-      `https://wa.me/${b.phone_whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`,
-      "_blank",
-      "noopener",
-    );
+    if (!b.phone_whatsapp) return;
+    const phone = b.phone_whatsapp.replace(/\D/g, "");
+    if (onOpenChat) {
+      // Abre o chat interno — o nome do cliente já aparece na conversa
+      onOpenChat(phone);
+    } else {
+      // Fallback: abre wa.me externo (quando não há chat interno disponível)
+      const text = renderCobrancaTemplate(activeTemplate, {
+        nome: b.nome || b.customer_name,
+        mes: b.mes_referencia,
+        valor: Number(b.total || 0),
+        vencimento: b.vencimento,
+        url_boleto: b.url_boleto,
+      });
+      window.open(
+        `https://wa.me/${phone}?text=${encodeURIComponent(text)}`,
+        "_blank",
+        "noopener",
+      );
+    }
     await logCobrancas([b], currentUserId);
   };
 
@@ -396,9 +412,15 @@ export function BoletosAdminTable({ rows, currentUserId }: { rows: BoletoAdminRo
                         </Button>
                       </a>
                     )}
-                    {b.phone_whatsapp && b.url_boleto && (
-                      <Button size="sm" className="h-7 px-2 text-[11px]" onClick={() => sendSingle(b)}>
-                        <MessageCircle className="h-3 w-3 mr-1" /> Cobrar
+                    {b.phone_whatsapp && (
+                      <Button
+                        size="sm"
+                        className="h-7 px-2 text-[11px]"
+                        title={onOpenChat ? "Abrir conversa interna" : "Cobrar via WhatsApp"}
+                        onClick={() => sendSingle(b)}
+                      >
+                        <MessageCircle className="h-3 w-3 mr-1" />
+                        {onOpenChat ? "Conversar" : "Cobrar"}
                       </Button>
                     )}
                   </div>

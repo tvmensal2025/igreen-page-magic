@@ -10,10 +10,11 @@ const BRL = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 interface Props {
   userId: string;
   scope: "all" | "self";
+  onOpenChat?: (phone: string) => void;
 }
 
 /** Bloco de boletos: KPIs + gráfico + tabela filtrável + export CSV + cobrança em lote. */
-export function BoletosPanel({ userId, scope }: Props) {
+export function BoletosPanel({ userId, scope, onOpenChat }: Props) {
   const { data: rows = [], isLoading } = useBoletosAdmin({ userId, scope });
   const kpis = useMemo(() => computeFinanceiroKpis(rows), [rows]);
 
@@ -84,7 +85,7 @@ export function BoletosPanel({ userId, scope }: Props) {
       ) : (
         <>
           <BoletosTrendChart rows={rows} />
-          <BoletosAdminTable rows={rows} currentUserId={userId} />
+          <BoletosAdminTable rows={rows} currentUserId={userId} onOpenChat={onOpenChat} />
         </>
       )}
 

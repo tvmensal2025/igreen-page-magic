@@ -25,7 +25,7 @@ function readInitialSub(): FinanceiroSubTab {
  *   - Carteira     (adimplência + métricas iGreen)
  *   - Extrato      (wallet_transactions + recargas manuais — só admin)
  */
-export function FinanceiroPanel({ userId }: { userId: string }) {
+export function FinanceiroPanel({ userId, onOpenChat }: { userId: string; onOpenChat?: (phone: string) => void }) {
   const { isSuperAdmin, isAdmin, loading: roleLoading } = useUserRole(userId);
   const canAdmin = isSuperAdmin || isAdmin;
   const scope: "all" | "self" = canAdmin ? "all" : "self";
@@ -62,7 +62,7 @@ export function FinanceiroPanel({ userId }: { userId: string }) {
           </div>
         }
       >
-        {effectiveSub === "boletos" && <BoletosPanel userId={userId} scope={scope} />}
+        {effectiveSub === "boletos" && <BoletosPanel userId={userId} scope={scope} onOpenChat={onOpenChat} />}
         {effectiveSub === "recebiveis" && <RecebiveisPanel consultantId={userId} />}
         {effectiveSub === "carteira" && (
           <CarteiraGreenAdminPanel userId={userId} canPickConsultant={canAdmin} />

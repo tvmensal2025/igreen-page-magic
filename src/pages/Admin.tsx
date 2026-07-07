@@ -470,7 +470,7 @@ const AdminContent = () => {
 
           {userId && activeTab === "financeiro" && (
             <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div>}>
-              <FinanceiroPanel userId={userId} />
+              <FinanceiroPanel userId={userId} onOpenChat={handleOpenChatFromCustomer} />
             </Suspense>
           )}
 
