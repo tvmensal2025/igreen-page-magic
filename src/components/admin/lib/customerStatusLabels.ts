@@ -12,7 +12,7 @@ export const customerStatusLabels: Record<string, string> = {
   data_complete: "Dados completos",
   registered_igreen: "Cadastrado iGreen",
   contract_sent: "Contrato enviado",
-  contato_incompleto: "Contato incompleto",
+  contato_incompleto: "Rede indireta",
 };
 
 export const customerStatusBadge: Record<string, string> = {
@@ -25,7 +25,7 @@ export const customerStatusBadge: Record<string, string> = {
   data_complete: "bg-primary/10 text-primary",
   registered_igreen: "bg-primary/10 text-primary",
   contract_sent: "bg-primary/10 text-primary",
-  contato_incompleto: "bg-destructive/10 text-destructive",
+  contato_incompleto: "bg-muted text-muted-foreground",
   lead: "bg-muted text-muted-foreground",
 };
 

@@ -1739,10 +1739,64 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   const records: Record<string, unknown>[] = [];
   let skippedNoPhone = 0;
 
+  // ---------------------------------------------------------------------------
+  // Anti-duplicação: quando o portal iGreen devolve o cliente sem celular numa
+  // run posterior, buildRecord gera placeholder 'sem_celular_<code>'. Se já
+  // existe uma linha desse mesmo cliente com telefone real (identificada por
+  // igreen_code + consultant_id), reusamos o telefone real — assim o upsert
+  // por (phone_whatsapp,consultant_id) atualiza a linha existente em vez de
+  // criar uma segunda cópia. Índice único parcial em (consultant_id,igreen_code)
+  // também bloqueia o problema a partir do banco.
+  // ---------------------------------------------------------------------------
+  const codeToRealPhone = new Map<string, string>();
+  if (consultantId) {
+    const codes = new Set<string>();
+    for (const c of allCustomers) {
+      const code = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo", "Código"));
+      if (code) codes.add(code);
+    }
+    const codeList = Array.from(codes);
+    for (let i = 0; i < codeList.length; i += 200) {
+      const chunk = codeList.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from("customers")
+        .select("igreen_code, phone_whatsapp")
+        .eq("consultant_id", consultantId)
+        .in("igreen_code", chunk);
+      if (!error && data) {
+        for (const row of data as Array<{ igreen_code: string; phone_whatsapp: string | null }>) {
+          const p = String(row.phone_whatsapp || "");
+          if (row.igreen_code && p && !p.startsWith("sem_celular_")) {
+            codeToRealPhone.set(String(row.igreen_code), p);
+          }
+        }
+      }
+    }
+    if (codeToRealPhone.size > 0) {
+      console.log(`[persistCustomers] real-phone lookup: ${codeToRealPhone.size}/${codeList.length} clientes já têm telefone real cadastrado`);
+    }
+  }
+
+  let placeholderReused = 0;
   for (const c of allCustomers) {
     const record = buildRecord(c);
     if (!record || !record.phone_whatsapp) { skippedNoPhone++; continue; }
-    const phone = String(record.phone_whatsapp);
+    let phone = String(record.phone_whatsapp);
+
+    // Se buildRecord gerou placeholder mas já temos telefone real no banco,
+    // reusa o real para o upsert atualizar a linha existente.
+    if (phone.startsWith("sem_celular_")) {
+      const icode = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo", "Código"));
+      const real = icode ? codeToRealPhone.get(icode) : undefined;
+      if (real) {
+        record.phone_whatsapp = real;
+        // Se voltou a ter telefone real, o status não deve ser 'contato_incompleto'.
+        // Preserva o que já está no banco removendo os campos derivados do placeholder.
+        if (record.status === "contato_incompleto") delete record.status;
+        phone = real;
+        placeholderReused++;
+      }
+    }
 
     if (seenPhones.has(phone)) {
       const icode = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo"));
@@ -1759,6 +1813,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     if (igreenAccountId) record.igreen_account_id = igreenAccountId;
     records.push(record);
   }
+  if (placeholderReused > 0) console.log(`[persistCustomers] ${placeholderReused} placeholders 'sem_celular_*' substituídos por telefone real do banco`);
 
   // Proteção mid-conversation + detecção de leads que viram carteira
   const allPhones = records.map((r) => String(r.phone_whatsapp));
