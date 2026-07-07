@@ -828,11 +828,21 @@ function SessionWorkbench({
               sidePanel && !isFullscreen ? "grid-cols-1 md:grid-cols-3" : "grid-cols-1"
             }`}
           >
-            {/* Player */}
+            {/* Player wrapper — centraliza mantendo aspect real, sem letterbox interno */}
             <div
-              ref={containerRef}
-              className={`${sidePanel && !isFullscreen ? "md:col-span-2" : ""} bg-black rounded-md overflow-hidden relative`}
+              className={`${sidePanel && !isFullscreen ? "md:col-span-2" : ""} min-h-0 min-w-0 flex items-center justify-center overflow-hidden`}
             >
+              <div
+                ref={containerRef}
+                className="bg-black rounded-md overflow-hidden relative max-w-full max-h-full"
+                style={{
+                  aspectRatio: requesterVp
+                    ? `${requesterVp.innerWidth} / ${requesterVp.innerHeight}`
+                    : "16 / 10",
+                  width: requesterVp ? `${requesterVp.innerWidth}px` : "100%",
+                  height: requesterVp ? `${requesterVp.innerHeight}px` : "100%",
+                }}
+              >
               <video
                 ref={videoRef}
                 onLoadedMetadata={() => {
@@ -840,9 +850,10 @@ function SessionWorkbench({
                   toast.success("Controle ativo", { duration: 2_500 });
                 }}
                 onEmptied={() => setVideoReady(false)}
-                className="w-full h-full object-contain pointer-events-none select-none"
+                className="w-full h-full object-fill pointer-events-none select-none"
                 autoPlay playsInline muted
               />
+
 
               {/* Toolbar flutuante */}
               {hasStream && (
