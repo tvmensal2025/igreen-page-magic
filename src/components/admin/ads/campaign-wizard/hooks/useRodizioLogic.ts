@@ -14,12 +14,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   listActiveReferralPartners,
   createReferralPartner,
+  normalizeBrPhone,
 } from "@/services/referralPartners";
 import type {
   WizardState,
   RodizioPartnerDraft,
   RodizioInlineForm,
 } from "./useWizardState";
+
 
 interface Deps {
   open: boolean;
