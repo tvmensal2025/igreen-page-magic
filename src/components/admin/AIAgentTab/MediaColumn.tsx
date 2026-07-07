@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import AudioPlayer from "@/components/admin/media/AudioPlayer";
 import {
   Loader2,
   Plus,
@@ -665,7 +666,14 @@ export function MediaColumn({ userId }: { userId: string }) {
                 <video src={previewMedia.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
               )}
               {previewMedia.kind === "audio" && (
-                <audio src={previewMedia.url} controls autoPlay className="w-full p-4" />
+                <div className="p-4">
+                  <AudioPlayer
+                    mediaId={previewMedia.id}
+                    url={previewMedia.url}
+                    fileName={previewMedia.label}
+                    isActive={previewMedia.active}
+                  />
+                </div>
               )}
               {previewMedia.kind === "image" && (
                 <img src={previewMedia.url} alt={previewMedia.label} className="w-full max-h-[70vh] object-contain" />
