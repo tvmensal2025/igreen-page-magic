@@ -1,67 +1,81 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Zap, Users, Phone, Shield, FileText, TrendingUp, Network } from "lucide-react";
+import { Zap, Phone, Shield, FileText, TrendingUp, Network, RefreshCw, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 interface IGreenSyncStatusBarProps {
   consultantId: string;
   className?: string;
 }
 
-interface Row {
-  status: string | null;
-  counts: Record<string, unknown> | null;
-  finished_at: string | null;
-  started_at: string | null;
-  consultant_igreen_id?: string | null;
-  portal_igreen_id?: string | null;
+interface Snapshot {
+  energia: number | null;
+  rede: number | null;
+  telecom: number | null;
+  seguros: number | null;
+  boletos: number | null;
+  metricas: number | null;
+  metricasUpdatedAt: string | null;
+  lastRunAt: string | null;
+  lastRunStatus: string | null;
+  consultantIgreenId: string | null;
+  portalIgreenId: string | null;
 }
 
-function pickNumber(obj: unknown, keys: string[]): number | null {
-  if (!obj || typeof obj !== "object") return null;
-  const o = obj as Record<string, unknown>;
-  for (const k of keys) {
-    const v = o[k];
-    if (typeof v === "number") return v;
-    if (typeof v === "string" && v.trim() && !Number.isNaN(Number(v))) return Number(v);
+async function countTable(
+  table: string,
+  consultantId: string,
+): Promise<number | null> {
+  try {
+    const { count, error } = await supabase
+      .from(table as never)
+      .select("*", { count: "exact", head: true })
+      .eq("consultant_id", consultantId);
+    if (error) return null;
+    return count ?? 0;
+  } catch {
+    return null;
   }
-  return null;
-}
-
-function extractCount(counts: Record<string, unknown> | null, key: string, subkeys: string[]): number | null {
-  if (!counts) return null;
-  const node = counts[key];
-  if (typeof node === "number") return node;
-  return pickNumber(node, subkeys);
-}
-
-function pickBoolAsNumber(obj: unknown, keys: string[]): number | null {
-  if (!obj || typeof obj !== "object") return null;
-  const o = obj as Record<string, unknown>;
-  for (const key of keys) {
-    const v = o[key];
-    if (typeof v === "boolean") return v ? 1 : 0;
-  }
-  return null;
 }
 
 /**
- * Mostra em uma barrinha o que a última sync do consultor efetivamente
- * trouxe do portal iGreen — clientes, rede, telecom, seguros, boletos,
- * métricas. Números vindos direto de `igreen_sync_runs.counts` e da
- * fase B agregada em `counts.extras` (o worker grava lá quando termina).
+ * Card de "Última sincronização iGreen" — mostra a fotografia real
+ * do que está no banco pro consultor logado, contando direto nas
+ * tabelas de destino (não depende do shape do último run).
  */
 export function IGreenSyncStatusBar({ consultantId, className }: IGreenSyncStatusBarProps) {
-  const { data } = useQuery({
-    queryKey: ["igreen-sync-status", consultantId],
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["igreen-sync-snapshot", consultantId],
     enabled: !!consultantId,
     staleTime: 30_000,
     refetchInterval: 60_000,
-    queryFn: async (): Promise<Row | null> => {
-      const [{ data: run }, { data: consultant }] = await Promise.all([
+    queryFn: async (): Promise<Snapshot> => {
+      const [
+        energia,
+        rede,
+        telecom,
+        seguros,
+        boletos,
+        metricasRow,
+        lastRun,
+        consultant,
+      ] = await Promise.all([
+        countTable("customers", consultantId),
+        countTable("network_members", consultantId),
+        countTable("igreen_telecom_customers", consultantId),
+        countTable("igreen_seguros_customers", consultantId),
+        countTable("igreen_customer_boletos", consultantId),
+        supabase
+          .from("igreen_consultant_metrics" as never)
+          .select("updated_at, created_at")
+          .eq("consultant_id", consultantId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
         supabase
           .from("igreen_sync_runs" as never)
-          .select("status, counts, finished_at, started_at")
+          .select("status, finished_at, started_at")
           .eq("consultant_id", consultantId)
           .order("started_at", { ascending: false })
           .limit(1)
@@ -72,79 +86,160 @@ export function IGreenSyncStatusBar({ consultantId, className }: IGreenSyncStatu
           .eq("id", consultantId)
           .maybeSingle(),
       ]);
-      if (!run) return null;
+
+      const metricRow = (metricasRow.data ?? null) as { updated_at?: string | null; created_at?: string | null } | null;
+      const runRow = (lastRun.data ?? null) as { status?: string | null; finished_at?: string | null; started_at?: string | null } | null;
+      const consultantRow = (consultant.data ?? null) as { igreen_id?: string | null; igreen_consultor_id?: string | null } | null;
+
       return {
-        ...(run as Row),
-        consultant_igreen_id: (consultant as { igreen_id?: string | null } | null)?.igreen_id ?? null,
-        portal_igreen_id: (consultant as { igreen_consultor_id?: string | null } | null)?.igreen_consultor_id ?? null,
+        energia,
+        rede,
+        telecom,
+        seguros,
+        boletos,
+        metricas: metricRow ? 1 : 0,
+        metricasUpdatedAt: metricRow?.updated_at ?? metricRow?.created_at ?? null,
+        lastRunAt: runRow?.finished_at ?? runRow?.started_at ?? null,
+        lastRunStatus: runRow?.status ?? null,
+        consultantIgreenId: consultantRow?.igreen_id ?? null,
+        portalIgreenId: consultantRow?.igreen_consultor_id ?? null,
       };
     },
   });
 
-  if (!data) return null;
+  if (!data) {
+    return (
+      <div className={cn("rounded-lg border border-border/50 bg-card/60 p-4 text-xs text-muted-foreground", className)}>
+        Carregando status do iGreen…
+      </div>
+    );
+  }
 
-  const counts = data.counts ?? {};
-  const extras = ((counts as any).extras ?? {}) as Record<string, unknown>;
+  const identityMismatch =
+    data.consultantIgreenId &&
+    data.portalIgreenId &&
+    data.consultantIgreenId !== data.portalIgreenId;
 
-  const energia = extractCount(counts, "customers", ["processed", "total_from_portal", "updated"]);
-  const network = extractCount(extras, "network", ["total_members", "updated", "persisted", "imported", "processed", "total"]);
-  const telecom = extractCount(extras, "telecom", ["telecom_received", "telecom_saved", "telecom_valid_rows", "persisted", "imported", "processed", "total"]);
-  const seguros = extractCount(extras, "seguros", ["seguros_received", "seguros_saved", "seguros_valid_rows", "persisted", "imported", "processed", "total"]);
-  const boletos = extractCount(extras, "boletos", ["boletos_received", "boletos_saved", "persisted", "imported", "processed", "total"]);
-  const metrics = extractCount(extras, "metrics", ["metrics_received", "persisted", "saved", "processed"]) ?? pickBoolAsNumber(extras.metrics, ["metrics_saved"]);
-  const telecomDiag = (extras.diagnostics as { telecom?: Record<string, unknown> } | undefined)?.telecom;
-  const segurosDiag = (extras.diagnostics as { seguros?: Record<string, unknown> } | undefined)?.seguros;
-  const telecomGap = Boolean(telecomDiag?.gap);
-  const segurosGap = Boolean(segurosDiag?.gap);
-  const telecomSummary = pickNumber(telecomDiag, ["summary_total", "summaryTotal"]);
-  const segurosSummary = pickNumber(segurosDiag, ["summary_total", "summaryTotal"]);
-  const identityMismatch = data.consultant_igreen_id && data.portal_igreen_id && data.consultant_igreen_id !== data.portal_igreen_id;
+  const whenLabel = data.lastRunAt
+    ? new Date(data.lastRunAt).toLocaleString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
 
-  const items: Array<{ icon: JSX.Element; label: string; value: number | null; hint?: string }> = [
-    { icon: <Zap className="w-3 h-3" />, label: "Energia", value: energia },
-    { icon: <Network className="w-3 h-3" />, label: "Rede", value: network },
-    { icon: <Phone className="w-3 h-3" />, label: "Telecom", value: telecom, hint: telecomGap ? `Resumo do portal indica ${telecomSummary ?? "dados"}, mas a lista detalhada salvou 0. O sync vai tentar fontes alternativas.` : telecom === 0 ? `Portal iGreen devolveu 0 clientes de Telecom${telecomDiag?.crm_columns != null ? ` (${telecomDiag.crm_columns} colunas lidas)` : ""}` : undefined },
-    { icon: <Shield className="w-3 h-3" />, label: "Seguros", value: seguros, hint: segurosGap ? `Resumo do portal indica ${segurosSummary ?? "dados"}, mas a lista detalhada salvou 0. O sync vai tentar fontes alternativas.` : seguros === 0 ? `Portal iGreen devolveu 0 clientes de Seguros${segurosDiag?.crm_columns != null ? ` (${segurosDiag.crm_columns} colunas lidas)` : ""}` : undefined },
-    { icon: <FileText className="w-3 h-3" />, label: "Boletos", value: boletos },
-    { icon: <TrendingUp className="w-3 h-3" />, label: "Métricas", value: metrics },
+  const metricasLabel = (() => {
+    if (data.metricas === null) return null;
+    if (data.metricas === 0) return 0;
+    if (data.metricasUpdatedAt) {
+      return new Date(data.metricasUpdatedAt).toLocaleDateString("pt-BR", {
+        day: "2-digit",
+        month: "2-digit",
+      });
+    }
+    return "OK";
+  })();
+
+  const tiles: Array<{
+    icon: JSX.Element;
+    label: string;
+    value: number | string | null;
+  }> = [
+    { icon: <Zap className="w-4 h-4" />, label: "Energia", value: data.energia },
+    { icon: <Network className="w-4 h-4" />, label: "Rede", value: data.rede },
+    { icon: <Phone className="w-4 h-4" />, label: "Telecom", value: data.telecom },
+    { icon: <Shield className="w-4 h-4" />, label: "Seguros", value: data.seguros },
+    { icon: <FileText className="w-4 h-4" />, label: "Boletos", value: data.boletos },
+    { icon: <TrendingUp className="w-4 h-4" />, label: "Métricas", value: metricasLabel },
   ];
 
-  const when = data.finished_at || data.started_at;
-  const whenLabel = when ? new Date(when).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : null;
+  const statusColor =
+    data.lastRunStatus === "success"
+      ? "text-emerald-500"
+      : data.lastRunStatus === "error" || data.lastRunStatus === "failed"
+        ? "text-rose-500"
+        : "text-muted-foreground";
 
   return (
-    <div className={cn(
-      "flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-border/50 bg-card/60 px-3 py-2 text-[11px] text-muted-foreground",
-      className,
-    )}>
-      <div className="flex items-center gap-1.5 font-medium text-foreground/80">
-        <Users className="w-3.5 h-3.5 text-primary" /> iGreen sync
+    <div className={cn("rounded-xl border border-border/60 bg-card p-4 space-y-4", className)}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">
+            Última sincronização iGreen
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {whenLabel ? (
+              <>
+                {whenLabel}
+                {data.lastRunStatus && (
+                  <>
+                    {" · "}
+                    <span className={statusColor}>{data.lastRunStatus}</span>
+                  </>
+                )}
+              </>
+            ) : (
+              "Ainda não sincronizado"
+            )}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="h-8 gap-1.5 text-xs"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5", isFetching && "animate-spin")} />
+          Atualizar
+        </Button>
       </div>
+
       {identityMismatch && (
-        <span
-          className="inline-flex items-center gap-1 text-amber-500/80"
-          title="O ID salvo no cadastro é diferente do ID retornado pelo login do Escritório iGreen. O sistema usa o ID do portal para a sincronização."
-        >
-          Portal: <b className="text-foreground/90">{data.portal_igreen_id}</b>
-        </span>
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div>
+            O ID do cadastro (<b>{data.consultantIgreenId}</b>) é diferente do ID retornado pelo Portal iGreen (<b>{data.portalIgreenId}</b>). O sync usa o ID do portal.
+          </div>
+        </div>
       )}
-      {items.map((it) => (
-        <span
-          key={it.label}
-          title={it.hint}
-          className={cn(
-            "inline-flex items-center gap-1",
-            it.value == null && "opacity-40",
-            it.value === 0 && "text-amber-500/70",
-            ((it.label === "Telecom" && telecomGap) || (it.label === "Seguros" && segurosGap)) && "text-rose-500/80",
-          )}
-        >
-          {it.icon}
-          <span>{it.label}:</span>
-          <b className="text-foreground/90">{it.value ?? "—"}</b>
-        </span>
-      ))}
-      {whenLabel && <span className="ml-auto text-[10px]">Última: {whenLabel}</span>}
+
+      <div className="grid grid-cols-3 gap-2">
+        {tiles.map((t) => {
+          const isEmpty = t.value === 0;
+          const isUnknown = t.value === null || t.value === undefined;
+          return (
+            <div
+              key={t.label}
+              className={cn(
+                "flex flex-col items-start gap-1 rounded-lg border border-border/50 bg-background/40 p-3",
+                isUnknown && "opacity-60",
+              )}
+            >
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="text-primary">{t.icon}</span>
+                {t.label}
+              </div>
+              <div
+                className={cn(
+                  "text-xl font-semibold tabular-nums text-foreground",
+                  isEmpty && "text-amber-500",
+                  isUnknown && "text-muted-foreground",
+                )}
+              >
+                {isUnknown
+                  ? "—"
+                  : typeof t.value === "number"
+                    ? t.value.toLocaleString("pt-BR")
+                    : t.value}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
