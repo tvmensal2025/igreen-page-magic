@@ -316,6 +316,7 @@ export function AgendamentosHub({
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <AutomacoesAtivasBadge consultantId={consultantId} variant="chips" />
             {showAdminShortcut && (
               <Button
                 variant="outline"
