@@ -74,26 +74,126 @@ function previewMessage(text: string): string {
   return text.replace(/\*([^*]+)\*/g, "$1").replace(/\n+/g, " ").trim();
 }
 
-function BirthdayMessageButton({ customer }: { customer: Customer }) {
+/**
+ * Editor de pré-visualização — mostra o texto exato que vai pro WhatsApp,
+ * deixa editar, sortear outra e só envia quando o consultor clica em "Abrir WhatsApp".
+ */
+function MessagePreviewEditor({
+  initialText,
+  templates,
+  customerName,
+  phone,
+  onBack,
+  onSent,
+  accent = "accent",
+}: {
+  initialText: string;
+  templates: readonly string[];
+  customerName?: string | null;
+  phone: string;
+  onBack: () => void;
+  onSent: () => void;
+  accent?: "accent" | "primary";
+}) {
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
-  const hasPhone = isValidWhatsAppPhone(customer.phone_whatsapp);
+  const [text, setText] = useState(initialText);
 
-  const send = (template: string) => {
-    const msg = fillBirthdayMessage(template, customer.name);
-    if (!openBirthdayWhatsApp(customer.phone_whatsapp || "", msg)) {
-      toast({
-        title: "Sem WhatsApp cadastrado",
-        description: "Este cliente não tem celular válido para envio.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setOpen(false);
-    toast({ title: "🎂 Mensagem pronta!", description: `Abrindo WhatsApp para ${customer.name || "o cliente"}.` });
+  // Se o template inicial mudar (ex: clicou em outro template na lista), atualiza o textarea.
+  useEffect(() => { setText(initialText); }, [initialText]);
+
+  const shuffle = () => {
+    const tpl = pickRandom(templates);
+    setText(fillBirthdayMessage(tpl, customerName));
   };
 
-  const sendRandom = () => send(pickRandomBirthdayMessage());
+  const send = () => {
+    if (!text.trim()) {
+      toast({ title: "Escreva uma mensagem antes de enviar", variant: "destructive" });
+      return;
+    }
+    if (!openBirthdayWhatsApp(phone, text)) {
+      toast({ title: "Sem WhatsApp cadastrado", variant: "destructive" });
+      return;
+    }
+    toast({ title: "📱 Abrindo WhatsApp", description: `Mensagem pronta para ${customerName || "o cliente"}.` });
+    onSent();
+  };
+
+  return (
+    <div className="p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition"
+        >
+          <ArrowLeft className="w-3 h-3" /> Trocar mensagem
+        </button>
+        <button
+          type="button"
+          onClick={shuffle}
+          className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition"
+        >
+          <Shuffle className="w-3 h-3" /> Sortear outra
+        </button>
+      </div>
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={7}
+        className="text-xs leading-relaxed resize-none"
+      />
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">{text.length} caracteres</span>
+        <span className="text-[10px] text-muted-foreground">*negrito* funciona no WhatsApp</span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        className={`w-full h-9 gap-1.5 text-xs font-bold ${accent === "accent" ? "bg-accent text-accent-foreground hover:bg-accent/90" : ""}`}
+        onClick={send}
+      >
+        <Send className="w-3.5 h-3.5" />
+        Abrir WhatsApp com esta mensagem
+      </Button>
+    </div>
+  );
+}
+
+/** Botão + popover: pré-visualiza e edita antes de enviar. Reusado por aniversário e reativação. */
+function MessageButton({
+  customer,
+  templates,
+  triggerLabel,
+  triggerIcon,
+  triggerClassName,
+  headerIcon,
+  headerTitle,
+  headerSub,
+  accent = "accent",
+}: {
+  customer: Customer;
+  templates: readonly string[];
+  triggerLabel: string;
+  triggerIcon: React.ReactNode;
+  triggerClassName: string;
+  headerIcon: React.ReactNode;
+  headerTitle: string;
+  headerSub: string;
+  accent?: "accent" | "primary";
+}) {
+  const [open, setOpen] = useState(false);
+  const [screen, setScreen] = useState<"list" | "edit">("list");
+  const [selectedText, setSelectedText] = useState("");
+  const hasPhone = isValidWhatsAppPhone(customer.phone_whatsapp);
+
+  useEffect(() => {
+    if (!open) {
+      // reset ao fechar
+      setScreen("list");
+      setSelectedText("");
+    }
+  }, [open]);
 
   if (!hasPhone) {
     return (
@@ -103,6 +203,15 @@ function BirthdayMessageButton({ customer }: { customer: Customer }) {
     );
   }
 
+  const openWith = (tpl: string) => {
+    setSelectedText(fillBirthdayMessage(tpl, customer.name));
+    setScreen("edit");
+  };
+
+  const firstName = firstNameFrom(customer.name);
+  const accentText = accent === "accent" ? "text-accent" : "text-primary";
+  const accentBg = accent === "accent" ? "bg-accent/5" : "bg-primary/5";
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -110,60 +219,111 @@ function BirthdayMessageButton({ customer }: { customer: Customer }) {
           type="button"
           variant="outline"
           size="sm"
-          className="h-7 gap-1 px-2 text-[10px] rounded-lg border-accent/40 text-accent hover:bg-accent/10"
-          title="Parabenizar no WhatsApp"
+          className={triggerClassName}
+          title={triggerLabel}
         >
-          <Gift className="w-3 h-3" />
-          <span className="hidden sm:inline">Parabenizar</span>
+          {triggerIcon}
+          <span className="hidden sm:inline">{triggerLabel}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[min(100vw-2rem,22rem)] p-0" align="end">
-        <div className="px-3 py-2.5 border-b border-border/50 bg-accent/5">
+        <div className={`px-3 py-2.5 border-b border-border/50 ${accentBg}`}>
           <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
-            <Cake className="w-3.5 h-3.5 text-accent" />
-            Parabenizar {customer.name?.split(/\s+/)[0] || "cliente"}
+            {headerIcon}
+            {headerTitle} {firstName}
           </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">10 mensagens prontas — sem IA</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{headerSub}</p>
         </div>
-        <div className="p-2 border-b border-border/40">
-          <Button
-            type="button"
-            size="sm"
-            className="w-full h-8 gap-1.5 text-xs font-bold"
-            onClick={sendRandom}
-          >
-            <Shuffle className="w-3.5 h-3.5" />
-            Enviar mensagem aleatória
-          </Button>
-        </div>
-        <ul className="max-h-[240px] overflow-y-auto divide-y divide-border/30">
-          {BIRTHDAY_MESSAGE_TEMPLATES.map((tpl, i) => (
-            <li key={i}>
-              <button
+
+        {screen === "list" ? (
+          <>
+            <div className="p-2 border-b border-border/40">
+              <Button
                 type="button"
-                className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                onClick={() => send(tpl)}
+                size="sm"
+                className="w-full h-8 gap-1.5 text-xs font-bold"
+                onClick={() => openWith(pickRandom(templates))}
               >
-                <span className="text-[10px] font-bold text-accent uppercase tracking-wide">
-                  Mensagem {i + 1}
-                </span>
-                <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
-                  {previewMessage(fillBirthdayMessage(tpl, customer.name))}
-                </p>
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="px-3 py-2 border-t border-border/40 bg-muted/20">
-          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <MessageCircle className="w-3 h-3" />
-            Abre o WhatsApp com a mensagem formatada
-          </p>
-        </div>
+                <Shuffle className="w-3.5 h-3.5" />
+                Sortear e personalizar
+              </Button>
+            </div>
+            <ul className="max-h-[240px] overflow-y-auto divide-y divide-border/30">
+              {templates.map((tpl, i) => (
+                <li key={i}>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                    onClick={() => openWith(tpl)}
+                  >
+                    <span className={`text-[10px] font-bold uppercase tracking-wide ${accentText}`}>
+                      Mensagem {i + 1} — clique para ver e editar
+                    </span>
+                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
+                      {previewMessage(fillBirthdayMessage(tpl, customer.name))}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="px-3 py-2 border-t border-border/40 bg-muted/20">
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <MessageCircle className="w-3 h-3" />
+                Você vê e edita antes de mandar.
+              </p>
+            </div>
+          </>
+        ) : (
+          <MessagePreviewEditor
+            initialText={selectedText}
+            templates={templates}
+            customerName={customer.name}
+            phone={customer.phone_whatsapp || ""}
+            onBack={() => setScreen("list")}
+            onSent={() => setOpen(false)}
+            accent={accent}
+          />
+        )}
       </PopoverContent>
     </Popover>
   );
 }
+
+function BirthdayMessageButton({ customer }: { customer: Customer }) {
+  return (
+    <MessageButton
+      customer={customer}
+      templates={BIRTHDAY_MESSAGE_TEMPLATES}
+      triggerLabel="Parabenizar"
+      triggerIcon={<Gift className="w-3 h-3" />}
+      triggerClassName="h-7 gap-1 px-2 text-[10px] rounded-lg border-accent/40 text-accent hover:bg-accent/10"
+      headerIcon={<Cake className="w-3.5 h-3.5 text-accent" />}
+      headerTitle="Parabenizar"
+      headerSub="10 mensagens prontas — clique pra ver e editar antes de enviar"
+      accent="accent"
+    />
+  );
+}
+
+function ReactivationMessageButton({ customer }: { customer: Customer }) {
+  return (
+    <MessageButton
+      customer={customer}
+      templates={REACTIVATION_TEMPLATES}
+      triggerLabel="Mandar oi"
+      triggerIcon={<MessageCircle className="w-3 h-3" />}
+      triggerClassName="h-7 gap-1 px-2 text-[10px] rounded-lg border-primary/40 text-primary hover:bg-primary/10"
+      headerIcon={<MessageCircle className="w-3.5 h-3.5 text-primary" />}
+      headerTitle="Reativar"
+      headerSub="Mensagens curtas — clique pra ver e editar antes de enviar"
+      accent="primary"
+    />
+  );
+}
+
+// silêncio de lint: pickRandomBirthdayMessage não é mais usado diretamente
+void pickRandomBirthdayMessage;
+
 
 export function RetentionCard({ customers }: { customers: Customer[] | undefined }) {
   const list = customers ?? [];
