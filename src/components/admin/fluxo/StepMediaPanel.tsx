@@ -514,7 +514,9 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
 
           </div>
         </div>
-        {m.url && m.kind === "audio" && <audio controls src={m.url} className="w-full h-8" />}
+        {m.url && m.kind === "audio" && (
+          <AudioPlayer mediaId={m.id} url={m.url} fileName={m.label} onConverted={() => window.location.reload()} />
+        )}
         {m.kind === "audio" && variant === "B" && (
           <AudioTranscriptEditor media={m} onChange={(t) => setItems(prev => prev.map(x => x.id === m.id ? { ...x, transcript: t } : x))} />
         )}
