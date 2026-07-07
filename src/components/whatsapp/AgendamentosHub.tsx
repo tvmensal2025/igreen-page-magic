@@ -852,21 +852,78 @@ function LoadingRow() {
 }
 
 function PosVendaList({ items }: { items: import("@/lib/posVendaSchedule").UpcomingPosVendaItem[] }) {
+  const [selected, setSelected] = useState<import("@/lib/posVendaSchedule").UpcomingPosVendaItem | null>(null);
   return (
-    <ScrollArea className="max-h-[400px]">
-      <div className="space-y-2">
-        {items.map((item) => (
-          <div key={item.id} className={`rounded-xl border px-4 py-3 ${item.isOverdue ? "border-warning/30 bg-warning/5" : "border-accent/20 bg-accent/5"}`}>
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className="text-sm font-bold">{item.customerName}</span>
-              <Badge className="text-[9px] bg-accent/15 text-accent border-accent/30">{item.stageLabel}</Badge>
-            </div>
-            {item.messagePreview && <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.messagePreview}</p>}
-            <p className="text-[11px] text-muted-foreground">{formatScheduleDate(item.scheduledAt)}</p>
-          </div>
-        ))}
-      </div>
-    </ScrollArea>
+    <>
+      <ScrollArea className="max-h-[400px]">
+        <div className="space-y-2">
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelected(item)}
+              className={`w-full text-left rounded-xl border px-4 py-3 transition-colors hover:border-primary/40 ${item.isOverdue ? "border-warning/30 bg-warning/5" : "border-accent/20 bg-accent/5"}`}
+            >
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="text-sm font-bold">{item.customerName}</span>
+                <Badge className="text-[9px] bg-accent/15 text-accent border-accent/30">{item.stageLabel}</Badge>
+                <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para configurar</span>
+              </div>
+              {item.messagePreview && <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.messagePreview}</p>}
+              <p className="text-[11px] text-muted-foreground">{formatScheduleDate(item.scheduledAt)}</p>
+            </button>
+          ))}
+        </div>
+      </ScrollArea>
+
+      <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
+        <DialogContent className="max-w-lg">
+          {selected && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-accent" />
+                  {selected.customerName}
+                </DialogTitle>
+                <DialogDescription>
+                  {formatScheduleDate(selected.scheduledAt)} · {selected.stageLabel}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Onde está configurado</p>
+                  <p className="text-sm font-semibold">Pós-venda automático → coluna “{selected.stageLabel}”</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    O texto e a mídia desta mensagem vêm da configuração desta coluna. Ao clicar em editar, você abre a tela com todas as colunas ({selected.stageLabel} incluída) para alterar.
+                  </p>
+                </div>
+
+                {selected.messagePreview && (
+                  <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia do que vai sair</p>
+                    <p className="text-sm whitespace-pre-wrap">{selected.messagePreview}</p>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button
+                  onClick={() => {
+                    dispatchAgendamentosNav({ tab: "crm-clientes" });
+                    setSelected(null);
+                  }}
+                  className="gap-1.5"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />
+                  Editar mensagens desta coluna
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
