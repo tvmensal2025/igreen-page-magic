@@ -1,56 +1,50 @@
-## Botão de pré-visualizar e personalizar a mensagem antes de enviar
+## Remover o painel "Sincronizar TODOS os consultores" do dashboard
 
-**Objetivo:** no card do dashboard (`RetentionCard`), o consultor precisa poder **clicar, ver exatamente o texto que vai pro WhatsApp e editar antes de enviar**. Hoje o popover de aniversário dispara direto e a lista de "Reativar parados" não tem botão nenhum.
+### Análise da estrutura de sync (o que o botão de cima já faz)
 
-Só UI. Sem mexer em banco, envio automático, edge functions ou templates existentes.
+O botão **"Sincronizar"** no topo do dashboard chama `runIgreenSync(userId, "sync_all")`. O modo `sync_all` **já puxa 100% dos dados do consultor logado**, em duas fases:
 
-### 1. Popover de aniversário — passar de "clicou = envia" para "clicou = pré-visualiza e edita"
+**Fase A — síncrona (aparece em segundos):**
+- Clientes / carteira / energia
+- Rede de indicados (consultores abaixo)
+- Métricas básicas
 
-Arquivo: `src/components/admin/RetentionCard.tsx` (componente `BirthdayMessageButton`).
+**Fase B — em background no worker (`EdgeRuntime.waitUntil`, marcada em `extras._background_finished_at`):**
+- Boletos
+- Telecom
+- Seguros
+- Cashback
+- Devolutivas
+- Enriquecimento (dados detalhados de cada cliente via portal 2)
 
-Fluxo novo dentro do mesmo Popover:
-- **Tela 1 (lista de templates)** — igual está hoje: "Enviar aleatória" + 10 mensagens.
-  - Clicar em qualquer template **não envia mais**. Pré-carrega o texto (com nome já preenchido via `fillBirthdayMessage`) num campo editável e vai pra Tela 2.
-  - "Enviar aleatória" também vai pra Tela 2 com uma mensagem sorteada.
-- **Tela 2 (pré-visualização editável)**:
-  - `Textarea` grande com o texto final (asteriscos do WhatsApp preservados, o consultor vê exatamente o que vai chegar).
-  - Contador de caracteres.
-  - Botão "← Trocar mensagem" (volta pra Tela 1).
-  - Botão "Sortear outra" (recarrega o textarea com um template aleatório).
-  - Botão principal "📱 Abrir WhatsApp" — chama `openBirthdayWhatsApp(phone, textoAtualDoTextarea)`.
-- O estado `open` do popover continua igual. Reset da tela para "lista" quando o popover fecha.
+O front espera essa fase B via `waitIgreenSyncFinished` (poll a cada 4s até 150s), e quando termina dispara um segundo toast "✅ Sincronização concluída!" com contagem de Telecom/Seguros. Se o portal iGreen estiver muito lento, o worker continua puxando em segundo plano mesmo depois do timeout do poll — os dados aparecem no próximo refresh.
 
-### 2. Botão "Mandar oi" para cada cliente parado
+**Conclusão:** o botão do topo já cobre 100% dos dados **do consultor logado**. Nada fica de fora.
 
-No card **"Reativar clientes parados"**, cada `<li>` ganha um botão à direita (mesmo estilo compacto do botão de aniversário, ícone `MessageCircle`).
+### O que o `IGreenBulkSyncPanel` faz de diferente (e por que vale confirmar)
 
-Novo componente **`ReactivationMessageButton`** no mesmo arquivo, com mesma estrutura do popover de aniversário:
-- Se cliente não tem WhatsApp válido (`isValidWhatsAppPhone`) → mostra `sem zap` no lugar do botão.
-- Popover com 5–6 templates curtos de reativação (definidos localmente no arquivo — não precisa lib nova). Exemplos:
-  - "Oi *{{firstName}}*! Tudo bem? Faz um tempinho que a gente não conversa. Passei pra saber se posso te ajudar com algo. 🌱"
-  - "Oi *{{firstName}}*, aqui é da iGreen. Vi que seu cadastro ficou pendente — quer que eu te ajude a finalizar? Leva 2 minutos."
-  - "*{{firstName}}*, tudo certo? Notei que ficamos um tempão sem falar. Se preferir, posso te mandar de novo as informações da economia na conta de luz."
-  - "Oi *{{firstName}}*! Já já a gente fecha as vagas do mês. Se quiser garantir o desconto, me chama aqui. 👋"
-  - "*{{firstName}}*, tudo joia? Só passando pra lembrar que sua economia com a iGreen ainda está te esperando. Bora conversar?"
-- Mesmo fluxo em duas telas do aniversário: lista → pré-visualização editável → botão "Abrir WhatsApp".
-- Usa a mesma helper `openBirthdayWhatsApp` (é genérica — abre `wa.me/<phone>?text=<msg>` — só o nome sugere aniversário). Se preferir clareza, envolver numa helper `openWhatsAppWithText(phone, text)` que delega para a existente, para não misturar semântica.
+Ele dispara `source=bulk_manual` que roda `sync_all` **para TODOS os consultores da base** (com credenciais configuradas), um por um a cada 3s, em background no edge. Estado gravado em `igreen_bulk_sync_state`.
 
-### 3. Extração de helpers pra evitar duplicação
+Ou seja: **não é redundância** com o botão do topo — é sync em massa da base inteira, útil pra admin popular tudo de uma vez após deploy ou quando você quer refresh geral sem ter que logar como cada consultor.
 
-Como o fluxo "lista → edita → envia" fica igual pros dois cards, extrair um sub-componente **`MessagePreviewEditor`** interno ao arquivo com props:
-- `initialText: string`
-- `firstName?: string`
-- `templates: string[]` (para o botão "Sortear outra")
-- `phone: string`
-- `onSent?: () => void`
+Pelo texto do usuário ("já temos o sincronizar no topo"), a decisão é remover mesmo. Isso é seguro porque:
+1. O sync individual já é 100% completo.
+2. Cada consultor faz seu próprio sync quando abre o dashboard (o botão do topo, ou via cron automático que a edge já dispara — código `cronMode` em `sync-igreen-customers`).
+3. O componente/edge continuam existindo — dá pra reativar depois se precisar.
 
-Ele renderiza o Textarea + contador + botões "← Trocar", "Sortear", "Abrir WhatsApp". Assim `BirthdayMessageButton` e `ReactivationMessageButton` reusam a mesma tela 2.
+### Mudanças
 
-### 4. Fora do escopo
-- Não altera `src/lib/birthdayMessages.ts` (só usa).
-- Não muda envio automático (`auto_wa_aniversariante`, `auto_wa_boleto_vencendo`) nem edge functions — este botão é envio manual assistido.
-- Não persiste o texto editado; é one-shot pra abrir o WhatsApp.
-- Não mexe no restante do `DashboardTab` — só no `RetentionCard`.
+**Arquivo:** `src/components/admin/DashboardTab.tsx`
+- Remover a linha `<IGreenBulkSyncPanel />` (linha 312) e o comentário acima.
+- Remover o import `import { IGreenBulkSyncPanel } from "@/components/admin/IGreenBulkSyncPanel";` (linha 25).
 
-### Arquivo afetado
-- `src/components/admin/RetentionCard.tsx` (única mudança).
+**Não mexer em:**
+- `IGreenBulkSyncPanel.tsx` (fica no repo, sem uso — pode ser reativado depois).
+- `IGreenSyncStatusBar` (esse continua — mostra "última sync por produto", útil pro consultor saber o que tá fresh).
+- Edge function `sync-igreen-customers` — nada muda.
+- Cron / worker — nada muda.
+
+### Fora do escopo
+- Não altero a lógica de sync.
+- Não deleto o arquivo `IGreenBulkSyncPanel.tsx` (só desuso do dashboard).
+- Não mexo em nenhum outro card do `DashboardTab`.

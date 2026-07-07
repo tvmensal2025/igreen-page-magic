@@ -22,7 +22,7 @@ import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
 import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
 import { IGreenSyncStatusBar } from "@/components/admin/IGreenSyncStatusBar";
-import { IGreenBulkSyncPanel } from "@/components/admin/IGreenBulkSyncPanel";
+
 import { TeamRankingTab } from "./TeamRankingTab";
 import { TeamDashboard } from "./team-dashboard/TeamDashboard";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
@@ -308,8 +308,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       {/* Status resumido da última sync iGreen (por produto) */}
       <IGreenSyncStatusBar consultantId={userId} />
 
-      {/* Painel admin: sincroniza TODOS os consultores com credenciais */}
-      <IGreenBulkSyncPanel />
+
 
 
       {/* Toggle Líder */}
