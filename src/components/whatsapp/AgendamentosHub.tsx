@@ -30,6 +30,7 @@ const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ defa
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
+import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 /** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
 function describeSource(item: AgendamentoTimelineItem): {
