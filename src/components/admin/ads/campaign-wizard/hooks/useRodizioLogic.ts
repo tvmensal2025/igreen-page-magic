@@ -153,13 +153,14 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
       });
       if (!added) {
         toast({
-          title: "Participante já adicionado",
-          description: `${partner.nome} já está na lista do rodízio.`,
+          title: "♻️ Já está no rodízio",
+          description: `${partner.nome} já está na lista.`,
         });
       }
     },
     [patchFn, toast],
   );
+
 
   /** Remove um participante da lista ordenada pelo id. */
   const removePartner = useCallback(
