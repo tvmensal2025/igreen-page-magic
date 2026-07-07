@@ -172,7 +172,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
     const currentVariants = brPhoneVariants(currentDigits);
-    const matches = numbers.some((n) => brPhoneVariants(n.digits).intersection(currentVariants).size > 0);
+    const matches = numbers.some((n) => {
+      const numberVariants = brPhoneVariants(n.digits);
+      return Array.from(numberVariants).some((v) => currentVariants.has(v));
+    });
 
     // 4) Auto-preencher se vazio
     let autoFilled = false;
