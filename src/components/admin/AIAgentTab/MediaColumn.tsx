@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import AudioPlayer from "@/components/admin/media/AudioPlayer";
 import {
   Loader2,
   Plus,
