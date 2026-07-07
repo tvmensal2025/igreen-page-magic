@@ -399,11 +399,23 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         .update({ active: false })
         .in("id", ids);
       if (error) throw error;
-      // 2. Remover do storage (best-effort).
+      // 2. Remover do storage (best-effort) — MAS só se nenhuma outra row
+      //    ativa ainda referencia o mesmo arquivo (mesmo storage_path OU
+      //    mesma url). Sem esse guard, remover uma cópia órfã apagava o
+      //    arquivo real e quebrava todas as demais entradas (404 no player
+      //    e no envio via Whapi/Evolution). Bug observado em 2026-07-07.
       for (const m of toRemove) {
-        if (m.storage_path) {
-          await supabase.storage.from("ai-agent-media").remove([m.storage_path]).catch(() => {});
+        if (!m.storage_path) continue;
+        const { count } = await supabase
+          .from("ai_media_library")
+          .select("id", { count: "exact", head: true })
+          .eq("active", true)
+          .or(`storage_path.eq.${m.storage_path},url.eq.${m.url}`);
+        if ((count ?? 0) > 0) {
+          console.log(`[StepMediaPanel] Pulando remove do storage: ${count} row(s) ativa(s) ainda usam ${m.storage_path}`);
+          continue;
         }
+        await supabase.storage.from("ai-agent-media").remove([m.storage_path]).catch(() => {});
       }
       // 3. Atualizar UI.
       setItems(prev => prev.filter(x => !ids.includes(x.id)));
