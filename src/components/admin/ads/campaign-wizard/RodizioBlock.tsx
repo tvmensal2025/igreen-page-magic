@@ -49,6 +49,7 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
     minParticipantsError,
     setRodizioEnabled,
     addPartner,
+    addMyself,
     removePartner,
     openInlineForm,
     closeInlineForm,
