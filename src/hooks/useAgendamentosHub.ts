@@ -90,6 +90,13 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("consultant_id", consultantId)
           .eq("is_active", true)
           .eq("auto_reactivate", true),
+        supabase
+          .from("customers")
+          .select("id", { count: "exact", head: true })
+          .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
+          .eq("customer_origin", "igreen_sync")
+          .not("pos_venda_pending_stage", "is", null)
+          .eq("pos_venda_invalid", false),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
