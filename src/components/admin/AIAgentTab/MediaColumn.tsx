@@ -666,7 +666,14 @@ export function MediaColumn({ userId }: { userId: string }) {
                 <video src={previewMedia.url} controls autoPlay playsInline className="w-full max-h-[70vh]" />
               )}
               {previewMedia.kind === "audio" && (
-                <audio src={previewMedia.url} controls autoPlay className="w-full p-4" />
+                <div className="p-4">
+                  <AudioPlayer
+                    mediaId={previewMedia.id}
+                    url={previewMedia.url}
+                    fileName={previewMedia.label}
+                    isActive={previewMedia.active}
+                  />
+                </div>
               )}
               {previewMedia.kind === "image" && (
                 <img src={previewMedia.url} alt={previewMedia.label} className="w-full max-h-[70vh] object-contain" />
