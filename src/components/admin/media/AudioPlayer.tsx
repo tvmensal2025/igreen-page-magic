@@ -70,6 +70,7 @@ export default function AudioPlayer({
   onActiveChange,
 }: Props) {
   const [error, setError] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [converting, setConverting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -77,6 +78,18 @@ export default function AudioPlayer({
   const ext = extFromUrl(url);
   const mime = mimeFromExt(ext);
   const isWebm = ext === "webm";
+
+  async function handleAudioError() {
+    setError(true);
+    // Diferencia "arquivo sumiu do storage" de "codec não suportado".
+    // Sem isso o consultor pensa que é problema do navegador quando na
+    // verdade o objeto foi deletado (ver bug de 2026-07-07 no
+    // StepMediaPanel.saveAllChanges).
+    try {
+      const r = await fetch(url, { method: "HEAD" });
+      if (r.status === 404 || r.status === 400) setNotFound(true);
+    } catch { /* rede — mantém erro genérico */ }
+  }
 
   async function convertToOgg() {
     setConverting(true);
