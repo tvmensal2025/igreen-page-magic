@@ -343,6 +343,26 @@ export function AgendamentosHub({
           </p>
         </div>
 
+        {stats.pendingValidation > 0 && (
+          <button
+            type="button"
+            onClick={() => dispatchAgendamentosNav({ tab: "crm-clientes" })}
+            className="w-full text-left mb-5 rounded-xl border border-warning/40 bg-warning/10 p-3 flex items-start gap-3 hover:bg-warning/15 transition-colors"
+          >
+            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">
+                {stats.pendingValidation} {stats.pendingValidation === 1 ? "cliente aguardando" : "clientes aguardando"} sua validação
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Nenhuma mensagem sai para esses clientes até você abrir “Validar novos clientes” e confirmar aprovado ou reprovado.
+              </p>
+            </div>
+            <ExternalLink className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+          </button>
+        )}
+
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
           <div className="rounded-xl border border-border/50 bg-muted/20 p-2.5 text-center">
             <p className="text-lg font-bold text-foreground">{stats.timelineUpcoming}</p>
