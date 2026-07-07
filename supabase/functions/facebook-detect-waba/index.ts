@@ -40,6 +40,27 @@ function normalizeDigits(s: string | null | undefined): string {
   return String(s || "").replace(/\D/g, "");
 }
 
+function brPhoneVariants(raw: string | null | undefined): Set<string> {
+  const digits = normalizeDigits(raw);
+  const variants = new Set<string>();
+  if (!digits) return variants;
+  variants.add(digits);
+  const national = digits.startsWith("55") ? digits.slice(2) : digits;
+  if (national.length < 10) return variants;
+  variants.add(national);
+  variants.add(`55${national}`);
+  const ddd = national.slice(0, 2);
+  const local = national.slice(2);
+  if (local.length === 9 && local.startsWith("9")) {
+    variants.add(`${ddd}${local.slice(1)}`);
+    variants.add(`55${ddd}${local.slice(1)}`);
+  } else if (local.length === 8) {
+    variants.add(`${ddd}9${local}`);
+    variants.add(`55${ddd}9${local}`);
+  }
+  return variants;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -150,7 +171,8 @@ Deno.serve(async (req) => {
       .eq("consultant_id", userId)
       .maybeSingle();
     const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
-    const matches = numbers.some((n) => n.digits === currentDigits);
+    const currentVariants = brPhoneVariants(currentDigits);
+    const matches = numbers.some((n) => brPhoneVariants(n.digits).intersection(currentVariants).size > 0);
 
     // 4) Auto-preencher se vazio
     let autoFilled = false;
