@@ -1,50 +1,65 @@
-## Remover o painel "Sincronizar TODOS os consultores" do dashboard
+## Mover a barra de status iGreen pra Configurações e mostrar dados reais
 
-### Análise da estrutura de sync (o que o botão de cima já faz)
+### Estado atual
 
-O botão **"Sincronizar"** no topo do dashboard chama `runIgreenSync(userId, "sync_all")`. O modo `sync_all` **já puxa 100% dos dados do consultor logado**, em duas fases:
+Hoje a barra fica em `DashboardTab.tsx` (linha 309) e mostra tudo com "—" porque `IGreenSyncStatusBar` lê **contagens do último `igreen_sync_runs.counts`**, que nem sempre traz todas as chaves esperadas (`processed`, `persisted`, `imported`, etc.). Resultado: aparece "Energia: — Rede: — Telecom: —" mesmo com dados salvos.
 
-**Fase A — síncrona (aparece em segundos):**
-- Clientes / carteira / energia
-- Rede de indicados (consultores abaixo)
-- Métricas básicas
+### O que vai mudar
 
-**Fase B — em background no worker (`EdgeRuntime.waitUntil`, marcada em `extras._background_finished_at`):**
-- Boletos
-- Telecom
-- Seguros
-- Cashback
-- Devolutivas
-- Enriquecimento (dados detalhados de cada cliente via portal 2)
+**1. Sair do Dashboard**
+- Remover `<IGreenSyncStatusBar consultantId={userId} />` e o import em `src/components/admin/DashboardTab.tsx`.
 
-O front espera essa fase B via `waitIgreenSyncFinished` (poll a cada 4s até 150s), e quando termina dispara um segundo toast "✅ Sincronização concluída!" com contagem de Telecom/Seguros. Se o portal iGreen estiver muito lento, o worker continua puxando em segundo plano mesmo depois do timeout do poll — os dados aparecem no próximo refresh.
+**2. Entrar em Configurações (Sheet "Dados")**
+- Em `src/pages/Admin.tsx`, dentro do bloco Suspense do `SheetContent`, adicionar a barra logo abaixo do `IGreenConnectionCard`:
+  ```
+  {userId && <IGreenConnectionCard userId={userId} />}
+  {userId && <IGreenSyncStatusBar consultantId={userId} />}
+  ```
+- Vai ficar visível quando o consultor abrir Configurações → aba/seção "Dados do consultor".
 
-**Conclusão:** o botão do topo já cobre 100% dos dados **do consultor logado**. Nada fica de fora.
+**3. Refatorar `IGreenSyncStatusBar` pra mostrar dados REAIS (não depender do shape do último run)**
 
-### O que o `IGreenBulkSyncPanel` faz de diferente (e por que vale confirmar)
+Trocar a fonte: em vez de ler `igreen_sync_runs.counts`, contar direto nas tabelas de destino (mesmas tabelas onde o worker grava). Assim os números batem 100% com o que está no banco naquele momento.
 
-Ele dispara `source=bulk_manual` que roda `sync_all` **para TODOS os consultores da base** (com credenciais configuradas), um por um a cada 3s, em background no edge. Estado gravado em `igreen_bulk_sync_state`.
+Queries paralelas (`Promise.all`), todas com `select("id", { count: "exact", head: true }).eq("consultant_id", consultantId)`:
+- **Energia:** `customers` (opcionalmente filtro `origem_igreen = true` se existir).
+- **Rede:** `network_members`.
+- **Telecom:** `igreen_telecom_customers`.
+- **Seguros:** `igreen_seguros_customers`.
+- **Boletos:** `igreen_customer_boletos`.
+- **Métricas:** `igreen_consultant_metrics` — head/count; se ≥1, mostra "OK" com a data do último snapshot; se 0, mostra "—".
 
-Ou seja: **não é redundância** com o botão do topo — é sync em massa da base inteira, útil pra admin popular tudo de uma vez após deploy ou quando você quer refresh geral sem ter que logar como cada consultor.
+Manter o "Última sync" lendo `igreen_sync_runs` (última linha `finished_at`).
 
-Pelo texto do usuário ("já temos o sincronizar no topo"), a decisão é remover mesmo. Isso é seguro porque:
-1. O sync individual já é 100% completo.
-2. Cada consultor faz seu próprio sync quando abre o dashboard (o botão do topo, ou via cron automático que a edge já dispara — código `cronMode` em `sync-igreen-customers`).
-3. O componente/edge continuam existindo — dá pra reativar depois se precisar.
+Manter o alerta de `identityMismatch` (igreen_id vs portal_igreen_id) — só que agora aparece dentro de Configurações, exatamente onde faz sentido resolver.
 
-### Mudanças
+**4. Layout ajustado pra caber em Configurações (não é mais barra compacta)**
 
-**Arquivo:** `src/components/admin/DashboardTab.tsx`
-- Remover a linha `<IGreenBulkSyncPanel />` (linha 312) e o comentário acima.
-- Remover o import `import { IGreenBulkSyncPanel } from "@/components/admin/IGreenBulkSyncPanel";` (linha 25).
+Como agora vive num sheet largo, trocar o layout de "barrinha inline" pra um card com grid 3 colunas de tiles:
+```
+┌─────────────────────────────────────┐
+│  Última sincronização iGreen        │
+│  07/07 09:50 · Sucesso              │
+├─────────────────────────────────────┤
+│  ⚡ Energia   👥 Rede    📞 Telecom │
+│   1.204        87         432       │
+│                                     │
+│  🛡 Seguros   📄 Boletos 📈 Métricas│
+│   58          912        OK/07/07   │
+└─────────────────────────────────────┘
+```
+Cada tile mostra número grande + label. Se contagem `== 0` fica amber suave (avisando "nada salvo"). Se `null` (erro na query) fica cinza com "—".
 
-**Não mexer em:**
-- `IGreenBulkSyncPanel.tsx` (fica no repo, sem uso — pode ser reativado depois).
-- `IGreenSyncStatusBar` (esse continua — mostra "última sync por produto", útil pro consultor saber o que tá fresh).
-- Edge function `sync-igreen-customers` — nada muda.
-- Cron / worker — nada muda.
+Adicionar botão discreto "Atualizar contagens" no header do card que faz refetch das queries (não dispara sync, só relê o banco).
 
 ### Fora do escopo
-- Não altero a lógica de sync.
-- Não deleto o arquivo `IGreenBulkSyncPanel.tsx` (só desuso do dashboard).
-- Não mexo em nenhum outro card do `DashboardTab`.
+
+- Não muda o sync em si (`sync-igreen-customers` continua igual).
+- Não muda o botão "Sincronizar" do topo.
+- Não deleta `IGreenSyncStatusBar.tsx` — refatora ele in-place.
+- Não altera `IGreenConnectionCard`.
+
+### Arquivos afetados
+- `src/components/admin/DashboardTab.tsx` (remover uso + import).
+- `src/pages/Admin.tsx` (adicionar no sheet Configurações, lazy import).
+- `src/components/admin/IGreenSyncStatusBar.tsx` (refatorar para contagens reais + novo layout).
