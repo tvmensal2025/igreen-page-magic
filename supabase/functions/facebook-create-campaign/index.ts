@@ -297,6 +297,23 @@ Deno.serve(async (req) => {
         code: "WHATSAPP_INVALID_FORMAT",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    // Gera duas variantes (com 9 e sem 9) pra tentar ambas no Meta caso o número
+    // esteja cadastrado no WABA num formato diferente do que o consultor salvou.
+    // Meta CTWA (subcode 1487246) exige match EXATO com o registro em WhatsApp Manager.
+    const _ddd = waNumberSetting.slice(2, 4);
+    const _local = waNumberSetting.slice(4);
+    let waWith9: string;
+    let waWithout9: string;
+    if (_local.length === 9 && _local[0] === "9") {
+      waWith9 = waNumberSetting;
+      waWithout9 = `55${_ddd}${_local.slice(1)}`;
+    } else if (_local.length === 8) {
+      waWith9 = `55${_ddd}9${_local}`;
+      waWithout9 = waNumberSetting;
+    } else {
+      waWith9 = waNumberSetting;
+      waWithout9 = waNumberSetting;
+    }
     // Trava de saldo já validada acima (linha ~165) com fee e safety. Aqui só
     // garantimos a wallet existe; remoção do bypass admin pra zero prejuízo.
     const wallet = await getOrCreateWallet(auth.id);
