@@ -271,6 +271,7 @@ Deno.serve(async (req) => {
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
+      .eq("pos_venda_manual", true)
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90"])
       .not("pos_venda_approved_at", "is", null);
 
