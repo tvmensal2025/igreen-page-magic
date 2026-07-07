@@ -383,8 +383,10 @@ Deno.serve(async (req) => {
     // Se o usuário definiu duration_days, usa LIFETIME_BUDGET (teto absoluto
     // que a Meta não estoura). Senão, daily_budget contínuo com spend_cap.
     const hasFixedDuration = !!(body.duration_days && body.duration_days > 0);
+    // Meta não aceita spend_cap junto com lifetime_budget (subcode 2446474):
+    // o próprio lifetime_budget já funciona como teto absoluto.
     const campaignBudgetParams: Record<string, string> = hasFixedDuration
-      ? { lifetime_budget: String(exactBudgetCents), spend_cap: String(lifetimeCapCents) }
+      ? { lifetime_budget: String(exactBudgetCents) }
       : { daily_budget: String(body.daily_budget_cents), spend_cap: String(lifetimeCapCents) };
     console.log("[fb-create] step=campaign_create budget=", campaignBudgetParams);
     const camp = await fbFetch(`/${accId}/campaigns`, {
