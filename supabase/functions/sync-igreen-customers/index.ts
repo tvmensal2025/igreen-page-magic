@@ -1396,6 +1396,55 @@ async function syncOneConsultant(
     return out;
   }
 
+  // === ENRICH ONLY MODE ===
+  // Enriquece SO os clientes que ainda nao tem ficha (last_enriched_at IS NULL),
+  // sem refazer a varredura completa. Leve e focado: cabe no orcamento de tempo
+  // e pode ser chamado repetidamente (cron) ate zerar a fila de pendentes.
+  // Resolve o gargalo: antes o enrich ficava no fim da Fase B e o tempo acabava
+  // antes de chegar nele.
+  if (mode === "enrich_only") {
+    console.log(`[worker] enrich-only for ${emailNorm}`);
+    const enrichCap = 120; // 4 lotes de 30 por chamada
+    const { data: pend } = await supabase
+      .from("customers")
+      .select("igreen_code")
+      .eq("consultant_id", consultantId)
+      .in("customer_origin", ["igreen_sync", "igreen_extension"])
+      .is("last_enriched_at", null)
+      .not("igreen_code", "is", null)
+      .limit(enrichCap);
+    const codes = ((pend || []) as Array<{ igreen_code: string }>)
+      .map((c) => String(c.igreen_code)).filter(Boolean);
+    if (codes.length === 0) {
+      return { success: true, mode: "enrich_only", details_applied: 0, pending_remaining: 0, message: "nada a enriquecer" };
+    }
+    const startedEnrich = Date.now();
+    let applied = 0, received = 0;
+    for (let i = 0; i < codes.length; i += 30) {
+      if (Date.now() - startedEnrich > 110_000) break; // respeita o orcamento
+      const chunk = codes.slice(i, i + 30);
+      const er = await callWorker(worker, "/enrich-batch", {
+        portal_email: emailNorm, portal_password: passwordNorm, codigos: chunk,
+      });
+      if (!er.ok) {
+        const retry = classifyError(er.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null;
+        if (i === 0) return workerErrorResponse(emailNorm, er, { retry_at: retry });
+        break;
+      }
+      const details = er.data?.details || [];
+      received += details.length;
+      const res = await applyCustomerDetails(supabase, consultantId, details);
+      applied += Number(res.details_applied || 0);
+    }
+    const { count: remaining } = await supabase
+      .from("customers")
+      .select("id", { count: "exact", head: true })
+      .eq("consultant_id", consultantId)
+      .in("customer_origin", ["igreen_sync", "igreen_extension"])
+      .is("last_enriched_at", null);
+    return { success: true, mode: "enrich_only", details_received: received, details_applied: applied, pending_remaining: remaining ?? null };
+  }
+
   // === SYNC METRICS MODE ===
   if (mode === "sync_metrics") {
     console.log(`[worker] sync-metrics for ${emailNorm}`);
