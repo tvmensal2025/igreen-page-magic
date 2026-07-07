@@ -208,8 +208,9 @@ export function RodizioInlineForm({
         </Button>
         <Button type="submit" size="sm" disabled={submitting}>
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Salvar participante
+          ✅ Adicionar ao rodízio
         </Button>
+
       </div>
     </form>
   );
