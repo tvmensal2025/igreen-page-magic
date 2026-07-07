@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,7 @@ import {
   type AgendamentosHubTab,
   type AgendamentoTimelineItem,
 } from "@/lib/agendamentosHub";
+import { labelForStageKey } from "@/lib/posVendaSchedule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
@@ -26,6 +30,48 @@ const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ defa
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
+
+/** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
+function describeSource(item: AgendamentoTimelineItem): {
+  where: string;
+  hint: string;
+  targetTab: AgendamentosHubTab;
+  ctaLabel: string;
+} {
+  switch (item.kind) {
+    case "manual_scheduled":
+      return {
+        where: "Agenda manual",
+        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou apagar aqui mesmo.",
+        targetTab: "manual",
+        ctaLabel: "Abrir Agenda manual",
+      };
+    case "pos_venda_auto": {
+      const stageKey = item.id.split("-").slice(-1)[0];
+      const stageLabel = labelForStageKey(stageKey);
+      return {
+        where: `Pós-venda automático → ${stageLabel}`,
+        hint: "O texto e a mídia desta mensagem estão em Pós-venda automático, no botão “Autoprogressão”. Ao abrir, edite a coluna correspondente.",
+        targetTab: "pos-venda",
+        ctaLabel: "Abrir Pós-venda automático",
+      };
+    }
+    case "bot_followup":
+      return {
+        where: "Reaquecimento de leads",
+        hint: "O bot marcou uma continuação para este lead. Ajuste janelas, intervalos e templates em Reaquecimento.",
+        targetTab: "reaquecimento",
+        ctaLabel: "Abrir Reaquecimento",
+      };
+    case "bulk_campaign":
+      return {
+        where: "Campanhas em massa",
+        hint: "Este item faz parte de uma campanha em massa. Abra Campanhas para pausar, editar ou ver o progresso.",
+        targetTab: "campanhas",
+        ctaLabel: "Abrir Campanhas",
+      };
+  }
+}
 
 function formatScheduleDate(dateStr: string | Date) {
   try {
