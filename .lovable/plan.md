@@ -1,91 +1,58 @@
-## Objetivo
+## Problema 1 — Não dá para deixar só o Fluxo M ativo
 
-Você vai cadastrar **2 participantes no rodízio** (2 nomes + 2 telefones) direto no wizard do anúncio. Analisei o fluxo (`RodizioBlock` → `RodizioInlineForm` → `useRodizioLogic` → `referralPartners.ts`) e ele **funciona**, mas tem 5 pontos que geram confusão / erro silencioso quando o parceiro é cadastrado no calor da hora. Vou corrigir tudo em uma única passada, só na camada de UI/validação — sem tocar em regras de rodízio nem em banco.
+**Causa raiz:** existem duas UIs que gravam `consultants.active_variants` e uma "briga" com a outra:
 
-## O que quebra hoje
+1. `ConsultantVariantsCard` (radio: A/B/D/M/Both) — sobrescreve com `['M']` quando você clica em "Apenas Fluxo M".
+2. `VariantDistributionBar` (switches por variante, mostrado dentro do editor de fluxos) — recarrega da base e continua mostrando D ligado; se você mexer nela depois, volta a ativar D.
 
-1. **Telefone aceita qualquer coisa** — "11 99999-8888", "(11) 99999-8888" ou até "abc" são salvos como estão. Depois o `notifyPartnerNewLead` tenta mandar WhatsApp e falha em silêncio — o parceiro nunca recebe o lead.
-2. **Sem checagem de duplicado** — mesmo telefone / mesmo código iGreen / mesmo `cli` em 2 participantes passa. Isso quebra o rodízio (dois "slots" apontam pro mesmo WhatsApp).
-3. **Mensagens sem emoji e vagas** — "Informe o telefone de aviso." não diz *pra quê* serve o telefone nem *que formato* usar. Idem "cli é obrigatório" (o usuário não sabe o que é `cli`).
-4. **Toast concatena todos os erros numa linha só** (`erros.join(" ")`) — vira um blocão ilegível.
-5. **Mapeamento de erro por campo é frágil** — `mapInlineErrors` usa `msg.includes("nome")` etc. Se eu mudar o texto do erro pra ficar mais amigável, o erro deixa de aparecer embaixo do input certo.
+Hoje o consultor Rafael Ferreira está com `active_variants = ['D','M']` (round-robin metade e metade — dá pra ver nos leads recentes alternando D/M/D/M).
 
-## O que vou mudar
+Além disso, o toast "Fluxo D pausado" fica na tela após clicar porque o botão de fechar do toast não é chamado — o mesmo `toast.success` reaparece quando a UI reavalia.
 
-Todas as edições ficam em **3 arquivos** — nenhuma migração, nada de rodízio novo:
+**Correção:**
 
-- `src/services/referralPartners.ts`
-- `src/components/admin/ads/campaign-wizard/hooks/useRodizioLogic.ts`
-- `src/components/admin/ads/campaign-wizard/RodizioInlineForm.tsx`
-- `src/components/admin/ads/campaign-wizard/RodizioBlock.tsx` (só remover o `mapInlineErrors` frágil)
+- **Unificar as duas UIs em uma só fonte de verdade.** Remover o `ConsultantVariantsCard` da tela de configuração do consultor e deixar só um card único com switches independentes (A / D / M / B / C / …), igual ao `VariantDistributionBar`, com regra "no mínimo 1 ativo".
+- **Toggle real "liga/desliga" para o D:** quando o switch do D é desligado e o M está ligado, salvar `['M']` sem reintroduzir D.
+- **Toast único:** substituir `toast.success` por `toast.message` com `id` fixo por variante (`toast.success(..., { id: 'flow-' + v })`) — assim ao clicar de novo o toast é substituído, não acumulado.
+- **Recarregar `activeVariants` após salvar** para não voltar ao estado antigo por race condition.
 
-### 1. Validar e normalizar telefone (Brasil)
+Sem mexer em `assign_flow_variant`, no webhook nem no schema — só na UI de configuração.
 
-Em `referralPartners.ts` (e reusar no hook):
+## Problema 2 — Áudio do Fluxo M não reproduz na biblioteca
 
-- Nova função `normalizeBrPhone(raw)` — tira máscara, aceita 10/11 dígitos (com/sem 9), rejeita repetidos ("11111111111") e devolve `55DDDNNNNNNNNN` (formato que o webhook já usa).
-- Retorna `null` se inválido → o hook mostra alerta claro.
+**Causa raiz:** os áudios do Fluxo M estão salvos como `ai_media_library` com `is_public=true` e `consultant_id=0c2711ad…` (Rafael, o super admin do M). O player `<audio controls src={m.url}>` funciona para `.ogg/opus`, mas parte dos arquivos antigos foi gravada como `.webm` (ex.: `gravacao-1778896961171.webm`) e nem todo browser roda WebM/Opus embutido (Safari desktop falha silenciosamente; iOS idem).
 
-### 2. Bloquear duplicado no próprio wizard
+Além disso vários áudios estão com `active=false`, então mesmo quando o player toca no admin, o dispatcher do bot descarta na hora de enviar (regra "active media filter").
 
-No `useRodizioLogic.submitInlineForm`, antes de chamar `createReferralPartner`:
+**Correção:**
 
-- Checar se o telefone normalizado já existe em `availablePartners` **ou** em `state.rodizioPartners`.
-- Checar se `partner_igreen_id` (consultor) ou `cli` (parceiro) já existe.
-- Se sim, mostrar alerta específico e **não** cria.
+- **Player robusto**: trocar `<audio src>` por `<audio><source src=... type=...></audio>` com `type="audio/ogg; codecs=opus"` deduzido pela extensão, e adicionar `onError` que mostra "Não foi possível reproduzir neste navegador — baixar" com link `download` — assim o usuário sempre consegue ouvir mesmo em Safari.
+- **Botão "Converter para ogg"** nos áudios `.webm` (chama o `tts-proxy` ou um novo `audio-transcode` só para re-empacotar em OGG/Opus) — o WhatsApp/Whapi rejeita `.webm` como mensagem de voz; isso é o motivo do "não consegue enviar".
+- **Aviso visual "Áudio inativo — não será enviado ao lead"** quando `active=false`, com botão "Ativar", para o super admin identificar rapidamente quais áudios do M estão desligados.
 
-### 3. Reescrever validação com códigos de campo
+## Arquivos a alterar (apenas UI)
 
-Trocar `validateInlineForm(): string[]` por:
-
-```ts
-type FieldError = { field: 'nome'|'notification_phone'|'partner_igreen_id'|'cli'; message: string };
-validateInlineForm(form): FieldError[]
+```text
+src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx    → remover ou reduzir a wrapper do bar
+src/pages/Admin.tsx (ou onde o card é montado)                → montar VariantDistributionBar no topo de "Dados do Consultor"
+src/components/admin/flow-builder/VariantDistributionBar.tsx  → toast com id fixo, reload após save
+src/components/admin/fluxo/StepMediaPanel.tsx                 → player com <source>+onError+download; badge "inativo"
+src/components/admin/AIAgentTab/MediaColumn.tsx               → mesma melhoria de player
 ```
 
-Aí `RodizioBlock` deixa de fazer `msg.includes(...)` — pega direto pelo `field`.
+Nova edge function opcional para reencodar webm→ogg (só se você quiser botão "Converter"): sim quero o botao
 
-### 4. Mensagens novas (com emoji + passo claro)
+```text
+supabase/functions/audio-transcode-ogg/index.ts
+```
 
-**Toast de sucesso:**
-- `✅ Participante criado` — "Fulano entrou no rodízio. Ele vai receber os avisos no WhatsApp {telefone}."
+## Fora de escopo
 
-**Toast de erro (por caso):**
-- `⚠️ Confira os campos abaixo` — sem lista concatenada; o próprio form destaca cada campo.
-- `📵 Telefone inválido` — "Use DDD + número, ex.: 11 99999-8888. Sem espaços ou traços é ok."
-- `♻️ Este telefone já está no rodízio` — "O participante {nome} já usa este WhatsApp. Cada participante precisa de um número diferente."
-- `🆔 Código iGreen já cadastrado` — "{nome} já usa este código. Um mesmo consultor não pode aparecer duas vezes."
-- `🔢 cli já cadastrado` — mesma ideia para parceiro.
-- `❌ Não consegui salvar` — mensagem do backend.
+- Regras do `assign_flow_variant` / round-robin / trigger de re-alinhamento — já funcionam corretamente para `['M']`.
+- Estrutura de `bot_flows` / `bot_flow_steps` do Fluxo M — o M já roda como clone do D.
+- `evolution-webhook` e `whapi-webhook`.
+- Dispatcher de áudio (regra `active media filter` já é a correta — só vamos deixar claro na UI).
 
-**Erro embaixo do input (menores, direto):**
-- Nome: "Digite o nome do participante."
-- Telefone: "📱 Ex.: 11 99999-8888 (com DDD)."
-- Código iGreen: "🆔 O código iGreen aparece no painel do consultor."
-- `cli`: "🔢 Código de indicação (o iGreen chama de `cli`). Peça pro parceiro te passar."
+## Dúvida antes de codar
 
-**Aviso do mínimo (banner amarelo):**
-- `⚠️ Faltam participantes` — "O rodízio precisa de pelo menos 2 pessoas pra alternar. Adicione mais {n} participante(s) ou desligue o rodízio."
-
-### 5. Melhorias de UX pequenas
-
-- Renomear label `cli` → **"Código de indicação"** (com hint "no iGreen aparece como `cli`") — o campo continua chamado `cli` no banco.
-- Placeholder do telefone → `Ex.: 11 99999-8888` (formato que gente entende).
-- Hint abaixo do telefone: "Este WhatsApp vai receber uma mensagem cada vez que chegar um lead deste anúncio."
-- Botão "Salvar participante" vira `✅ Adicionar ao rodízio`.
-- Toast do "já adicionado" ganha emoji: `♻️ Já está no rodízio`.
-
-## Fora de escopo (não vou mexer)
-
-- Regra do rodízio (`rodizio_next`, `rodizio_pools`, atribuição no `evolution-webhook`) — está OK.
-- Tabela `referral_partners` (nenhuma migração, nenhum GRANT novo).
-- `PartnerRedirectPage`, edge functions, notifications.
-
-## Verificação
-
-- Rodar `tsgo` (typecheck) — só pra pegar o rename de `validateInlineForm`.
-- Rodar os testes existentes (`rodizio-*.property.test.ts`, `portal2-payload.property.test.ts`) — não devem quebrar (não tocamos na lógica).
-
-## Resultado esperado
-
-Você cadastra os 2 participantes com 2 telefones diferentes; se digitar telefone bagunçado ou repetir número/código, aparece um alerta claro **com emoji** dizendo exatamente o que corrigir. O parceiro passa a receber a notificação (porque o telefone foi normalizado antes de salvar).
+Você quer que eu **remova completamente** o `ConsultantVariantsCard` (o card de radio "A_ONLY/D_ONLY/M_ONLY…") e deixe só a barra de switches, ou prefere manter o card com um design novo tipo "só switches A/D/M/B/C, 1 fluxo mínimo ativo"? Se não responder, sigo com a barra de switches única (mais simples e sem conflito).
