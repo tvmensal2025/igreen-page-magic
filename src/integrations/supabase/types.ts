@@ -3723,6 +3723,7 @@ export type Database = {
           fornecedora: string | null
           historico_completo_at: string | null
           id: string
+          igreen_account_id: string | null
           igreen_code: string | null
           igreen_link: string | null
           intent_signals: Json | null
@@ -3958,6 +3959,7 @@ export type Database = {
           fornecedora?: string | null
           historico_completo_at?: string | null
           id?: string
+          igreen_account_id?: string | null
           igreen_code?: string | null
           igreen_link?: string | null
           intent_signals?: Json | null
@@ -4193,6 +4195,7 @@ export type Database = {
           fornecedora?: string | null
           historico_completo_at?: string | null
           id?: string
+          igreen_account_id?: string | null
           igreen_code?: string | null
           igreen_link?: string | null
           intent_signals?: Json | null
@@ -4416,6 +4419,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "customers_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "customers_referral_partner_id_fkey"
@@ -5875,6 +5885,80 @@ export type Database = {
           payload?: Json
         }
         Relationships: []
+      }
+      igreen_portal_accounts: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          credential_checked_at: string | null
+          credential_status: string | null
+          id: string
+          igreen_consultor_id: string | null
+          label: string | null
+          last_sync_at: string | null
+          portal_email: string
+          portal_password: string
+          position: number
+          updated_at: string
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          credential_checked_at?: string | null
+          credential_status?: string | null
+          id?: string
+          igreen_consultor_id?: string | null
+          label?: string | null
+          last_sync_at?: string | null
+          portal_email: string
+          portal_password: string
+          position?: number
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          credential_checked_at?: string | null
+          credential_status?: string | null
+          id?: string
+          igreen_consultor_id?: string | null
+          label?: string | null
+          last_sync_at?: string | null
+          portal_email?: string
+          portal_password?: string
+          position?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_portal_accounts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_portal_accounts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_portal_accounts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_portal_accounts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       igreen_recon_queue: {
         Row: {
