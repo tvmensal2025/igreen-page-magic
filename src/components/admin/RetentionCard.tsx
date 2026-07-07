@@ -1,15 +1,32 @@
-import { useState } from "react";
-import { AlertTriangle, Cake, Gift, MessageCircle, PartyPopper, Shuffle } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, ArrowLeft, Cake, Gift, MessageCircle, PartyPopper, Send, Shuffle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import {
   BIRTHDAY_MESSAGE_TEMPLATES,
   fillBirthdayMessage,
+  firstNameFrom,
   isValidWhatsAppPhone,
   openBirthdayWhatsApp,
   pickRandomBirthdayMessage,
 } from "@/lib/birthdayMessages";
+
+/** Templates locais de reativação — usam {{nome}} igual aniversário. */
+const REACTIVATION_TEMPLATES: readonly string[] = [
+  `Oi *{{nome}}*! Tudo bem? Faz um tempinho que a gente não conversa. Passei aqui pra saber se posso te ajudar com alguma coisa. 🌱`,
+  `Oi *{{nome}}*, aqui é da iGreen. Vi que seu cadastro ficou pendente — quer que eu te ajude a finalizar? Leva 2 minutinhos. 💚`,
+  `*{{nome}}*, tudo certo? Notei que ficamos um bom tempo sem falar. Se quiser, posso te mandar de novo como funciona a economia na conta de luz. ⚡`,
+  `Oi *{{nome}}*! Já já a gente fecha as vagas do mês. Se quiser garantir o desconto na sua conta de luz, me chama aqui. 👋`,
+  `*{{nome}}*, tudo joia? Só passando pra lembrar que sua economia com a iGreen ainda tá te esperando. Bora conversar? 🌿`,
+  `Oi *{{nome}}*, sumida(o)! 😅 Tô aqui se precisar de qualquer coisa sobre a iGreen. Qualquer dúvida é só chamar.`,
+];
+
+function pickRandom(list: readonly string[]): string {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
 
 interface Customer {
   id: string;
