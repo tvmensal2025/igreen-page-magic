@@ -25,12 +25,12 @@ import {
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
   Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap,
 } from "lucide-react";
+import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
-import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 /** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
 function describeSource(item: AgendamentoTimelineItem): {
