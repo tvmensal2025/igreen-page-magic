@@ -1,56 +1,56 @@
-## Mostrar automações ativas em todos os lugares (fácil de ver e desligar)
+## Botão de pré-visualizar e personalizar a mensagem antes de enviar
 
-**Objetivo:** quando o consultor liga um toggle em "Automações iGreen" (boleto no WhatsApp, aniversário, cross-sell), isso precisa ficar visível na tela inicial, no topo do WhatsApp/Mensagens e ao lado de cada conversa. Clicar em qualquer indicador abre um mini-painel flutuante com os mesmos toggles pra ligar/desligar sem sair da tela.
+**Objetivo:** no card do dashboard (`RetentionCard`), o consultor precisa poder **clicar, ver exatamente o texto que vai pro WhatsApp e editar antes de enviar**. Hoje o popover de aniversário dispara direto e a lista de "Reativar parados" não tem botão nenhum.
 
-Só camada visual — nada de banco, edge function ou lógica de envio.
+Só UI. Sem mexer em banco, envio automático, edge functions ou templates existentes.
 
-### 1. Componente novo: `AutomacoesAtivasBadge`
-Arquivo: `src/features/produtos/acompanhamento/AutomacoesAtivasBadge.tsx`
+### 1. Popover de aniversário — passar de "clicou = envia" para "clicou = pré-visualiza e edita"
 
-- Lê `useAutomationSettings(consultantId)` e conta quantos dos 3 toggles proativos estão ligados: `auto_wa_boleto_vencendo`, `auto_wa_aniversariante`, `cross_sell_bot`.
-- Se **0** ativos → renderiza nada (fica invisível, não polui).
-- Se **≥1** → renderiza um chip/pílula compacto:
-  - Ícone raio + texto: "**N automações ligadas**" (ou nome curto quando `variant="chips"`, ex: `Boleto WA · Aniversário`).
-  - Cor de alerta suave (amber/warning) pra sinalizar "isso está agindo sozinho".
-- Ao clicar → abre `AutomacoesAtivasPopover` (mini-painel flutuante).
-- Props: `consultantId`, `variant?: "chip" | "chips" | "dot"`, `className?`.
-  - `chip` = pílula única com contador (usada no topo/home).
-  - `chips` = lista horizontal de nomes curtos (topo do WhatsApp).
-  - `dot` = pontinho colorido pequeno (ao lado de cada conversa).
+Arquivo: `src/components/admin/RetentionCard.tsx` (componente `BirthdayMessageButton`).
 
-### 2. Componente novo: `AutomacoesAtivasPopover`
-Mesmo arquivo. Usa `Popover` do shadcn.
+Fluxo novo dentro do mesmo Popover:
+- **Tela 1 (lista de templates)** — igual está hoje: "Enviar aleatória" + 10 mensagens.
+  - Clicar em qualquer template **não envia mais**. Pré-carrega o texto (com nome já preenchido via `fillBirthdayMessage`) num campo editável e vai pra Tela 2.
+  - "Enviar aleatória" também vai pra Tela 2 com uma mensagem sorteada.
+- **Tela 2 (pré-visualização editável)**:
+  - `Textarea` grande com o texto final (asteriscos do WhatsApp preservados, o consultor vê exatamente o que vai chegar).
+  - Contador de caracteres.
+  - Botão "← Trocar mensagem" (volta pra Tela 1).
+  - Botão "Sortear outra" (recarrega o textarea com um template aleatório).
+  - Botão principal "📱 Abrir WhatsApp" — chama `openBirthdayWhatsApp(phone, textoAtualDoTextarea)`.
+- O estado `open` do popover continua igual. Reset da tela para "lista" quando o popover fecha.
 
-- Título: "Automações ligadas para este consultor"
-- Lista os 3 toggles proativos com Switch (reaproveita `useUpdateAutomationSetting`) e labels em português claro (iguais aos do card grande).
-- Rodapé com link "Ver todas as automações" que rola até o card completo no `AgendamentosHub`.
-- Toast de confirmação ao ligar/desligar (mesmo padrão do card).
+### 2. Botão "Mandar oi" para cada cliente parado
 
-### 3. Pontos onde vai aparecer
+No card **"Reativar clientes parados"**, cada `<li>` ganha um botão à direita (mesmo estilo compacto do botão de aniversário, ícone `MessageCircle`).
 
-**a) Home / Dashboard inicial** — `src/pages/Index.tsx` (ou o painel inicial equivalente já existente)
-- Adicionar `<AutomacoesAtivasBadge consultantId={...} variant="chip" />` no topo, ao lado do saudação/header do consultor.
+Novo componente **`ReactivationMessageButton`** no mesmo arquivo, com mesma estrutura do popover de aniversário:
+- Se cliente não tem WhatsApp válido (`isValidWhatsAppPhone`) → mostra `sem zap` no lugar do botão.
+- Popover com 5–6 templates curtos de reativação (definidos localmente no arquivo — não precisa lib nova). Exemplos:
+  - "Oi *{{firstName}}*! Tudo bem? Faz um tempinho que a gente não conversa. Passei pra saber se posso te ajudar com algo. 🌱"
+  - "Oi *{{firstName}}*, aqui é da iGreen. Vi que seu cadastro ficou pendente — quer que eu te ajude a finalizar? Leva 2 minutos."
+  - "*{{firstName}}*, tudo certo? Notei que ficamos um tempão sem falar. Se preferir, posso te mandar de novo as informações da economia na conta de luz."
+  - "Oi *{{firstName}}*! Já já a gente fecha as vagas do mês. Se quiser garantir o desconto, me chama aqui. 👋"
+  - "*{{firstName}}*, tudo joia? Só passando pra lembrar que sua economia com a iGreen ainda está te esperando. Bora conversar?"
+- Mesmo fluxo em duas telas do aniversário: lista → pré-visualização editável → botão "Abrir WhatsApp".
+- Usa a mesma helper `openBirthdayWhatsApp` (é genérica — abre `wa.me/<phone>?text=<msg>` — só o nome sugere aniversário). Se preferir clareza, envolver numa helper `openWhatsAppWithText(phone, text)` que delega para a existente, para não misturar semântica.
 
-**b) Topo da tela do WhatsApp/Mensagens** — no cabeçalho do `AgendamentosHub.tsx` e da lista de conversas (`WhatsAppClientsPage.tsx` ou componente equivalente)
-- `variant="chips"` mostrando pílulas curtas ("Boleto WA", "Aniversário", "Cross-sell") só das que estão ligadas.
+### 3. Extração de helpers pra evitar duplicação
 
-**c) Ao lado de cada conversa na lista**
-- Localizar o item de lista de conversa (dentro de `WhatsAppClientsPage`/lista de leads) e adicionar `variant="dot"` — um pontinho amber pequeno com tooltip "Este cliente pode receber mensagens automáticas". Só aparece se pelo menos 1 automação proativa estiver ligada para o consultor dono da conversa.
+Como o fluxo "lista → edita → envia" fica igual pros dois cards, extrair um sub-componente **`MessagePreviewEditor`** interno ao arquivo com props:
+- `initialText: string`
+- `firstName?: string`
+- `templates: string[]` (para o botão "Sortear outra")
+- `phone: string`
+- `onSent?: () => void`
+
+Ele renderiza o Textarea + contador + botões "← Trocar", "Sortear", "Abrir WhatsApp". Assim `BirthdayMessageButton` e `ReactivationMessageButton` reusam a mesma tela 2.
 
 ### 4. Fora do escopo
-- Não muda `automationSettings.ts` nem os defaults.
-- Não muda envio/edge functions.
-- Não muda o card `AutomacaoIgreenCard` em si (continua sendo a fonte primária).
-- Não filtra por cliente individual — o toggle é por consultor, então o indicador é global do consultor. O "dot" na conversa só reflete "consultor tem automação ligada", não status por cliente.
+- Não altera `src/lib/birthdayMessages.ts` (só usa).
+- Não muda envio automático (`auto_wa_aniversariante`, `auto_wa_boleto_vencendo`) nem edge functions — este botão é envio manual assistido.
+- Não persiste o texto editado; é one-shot pra abrir o WhatsApp.
+- Não mexe no restante do `DashboardTab` — só no `RetentionCard`.
 
-### Arquivos afetados
-- **Novo:** `src/features/produtos/acompanhamento/AutomacoesAtivasBadge.tsx` (badge + popover)
-- **Editar:** `src/pages/Index.tsx` (ou home equivalente) — inserir badge chip
-- **Editar:** `src/components/whatsapp/AgendamentosHub.tsx` — inserir chips no header
-- **Editar:** componente de lista de conversas do WhatsApp — inserir dot por item
-
-### Detalhes técnicos
-- Cor amber vem de token semântico (`bg-amber-500/10 text-amber-700 dark:text-amber-400` via classes utilitárias já usadas no projeto; se houver token `warning` no design system, prefere ele).
-- Popover reusa `@/components/ui/popover` já disponível (shadcn).
-- Query `useAutomationSettings` já tem cache do React Query — múltiplas instâncias do badge compartilham a mesma request.
-- O badge não renderiza nada se `consultantId` estiver ausente ou se query ainda estiver carregando (evita flicker).
+### Arquivo afetado
+- `src/components/admin/RetentionCard.tsx` (única mudança).
