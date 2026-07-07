@@ -70,6 +70,7 @@ export default function AudioPlayer({
   onActiveChange,
 }: Props) {
   const [error, setError] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [converting, setConverting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -77,6 +78,18 @@ export default function AudioPlayer({
   const ext = extFromUrl(url);
   const mime = mimeFromExt(ext);
   const isWebm = ext === "webm";
+
+  async function handleAudioError() {
+    setError(true);
+    // Diferencia "arquivo sumiu do storage" de "codec não suportado".
+    // Sem isso o consultor pensa que é problema do navegador quando na
+    // verdade o objeto foi deletado (ver bug de 2026-07-07 no
+    // StepMediaPanel.saveAllChanges).
+    try {
+      const r = await fetch(url, { method: "HEAD" });
+      if (r.status === 404 || r.status === 400) setNotFound(true);
+    } catch { /* rede — mantém erro genérico */ }
+  }
 
   async function convertToOgg() {
     setConverting(true);
@@ -121,12 +134,20 @@ export default function AudioPlayer({
           preload="metadata"
           className="w-full h-8"
           onClick={(e) => e.stopPropagation()}
-          onError={() => setError(true)}
+          onError={handleAudioError}
         >
           <source src={url} type={mime} />
           <source src={url} />
           Seu navegador não suporta reprodução de áudio.
         </audio>
+      ) : notFound ? (
+        <div className="flex items-center gap-2 rounded border border-destructive/60 bg-destructive/10 p-2 text-xs">
+          <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
+          <span className="flex-1">
+            <strong>Arquivo não encontrado no Storage.</strong> Este áudio foi apagado do bucket
+            — o bot não consegue enviar. Reenvie o arquivo pelo botão de upload acima.
+          </span>
+        </div>
       ) : (
         <div className="flex items-center gap-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-xs">
           <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />

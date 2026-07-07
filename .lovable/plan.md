@@ -1,58 +1,65 @@
-## Problema 1 — Não dá para deixar só o Fluxo M ativo
 
-**Causa raiz:** existem duas UIs que gravam `consultants.active_variants` e uma "briga" com a outra:
+## Diagnóstico
 
-1. `ConsultantVariantsCard` (radio: A/B/D/M/Both) — sobrescreve com `['M']` quando você clica em "Apenas Fluxo M".
-2. `VariantDistributionBar` (switches por variante, mostrado dentro do editor de fluxos) — recarrega da base e continua mostrando D ligado; se você mexer nela depois, volta a ativar D.
+O erro **"Este navegador não conseguiu tocar"** não é problema do navegador — o arquivo de áudio **não existe mais no Storage**. O WhatsApp também não consegue enviar pelo mesmo motivo (Whapi/Evolution baixa a URL e recebe 404).
 
-Hoje o consultor Rafael Ferreira está com `active_variants = ['D','M']` (round-robin metade e metade — dá pra ver nos leads recentes alternando D/M/D/M).
+**Verificação feita:**
+- `ai_media_library` tem 4 rows para `sofia-mg.mp3` apontando para `…/passo_mp8yc0bp/ec2e4859-….mp3`
+- `curl HEAD` nessa URL → `404 Object not found`
+- Bucket `ai-agent-media` é público, mas o objeto sumiu
 
-Além disso, o toast "Fluxo D pausado" fica na tela após clicar porque o botão de fechar do toast não é chamado — o mesmo `toast.success` reaparece quando a UI reavalia.
+**Causa raiz** (bug em `StepMediaPanel.tsx`):
 
-**Correção:**
+`linkFromLibrary` (linhas 114-144) faz **cópia da URL** para criar uma nova row apontando pro **mesmo arquivo físico**, mas grava `storage_path: null` na cópia. Resultado: várias rows de `ai_media_library` compartilham o mesmo arquivo em Storage.
 
-- **Unificar as duas UIs em uma só fonte de verdade.** Remover o `ConsultantVariantsCard` da tela de configuração do consultor e deixar só um card único com switches independentes (A / D / M / B / C / …), igual ao `VariantDistributionBar`, com regra "no mínimo 1 ativo".
-- **Toggle real "liga/desliga" para o D:** quando o switch do D é desligado e o M está ligado, salvar `['M']` sem reintroduzir D.
-- **Toast único:** substituir `toast.success` por `toast.message` com `id` fixo por variante (`toast.success(..., { id: 'flow-' + v })`) — assim ao clicar de novo o toast é substituído, não acumulado.
-- **Recarregar `activeVariants` após salvar** para não voltar ao estado antigo por race condition.
+Depois, `saveAllChanges` (linhas 376-412) marca a row antiga como `active=false` e chama `storage.remove([m.storage_path])`. Como a row **original** ainda tem o `storage_path`, o arquivo real é apagado — e todas as demais rows (ativas, com URL apontando pro mesmo path) ficam **quebradas silenciosamente**.
 
-Sem mexer em `assign_flow_variant`, no webhook nem no schema — só na UI de configuração.
+Foi exatamente o que aconteceu: row `4e3267a1` (inativa, com storage_path preenchido) foi removida junto com o arquivo; rows `648332f7`, `e9c847f4`, `a9af418c` (ativas, ligadas ao mesmo path via URL) agora retornam 404 tanto no player quanto no envio do bot.
 
-## Problema 2 — Áudio do Fluxo M não reproduz na biblioteca
+---
 
-**Causa raiz:** os áudios do Fluxo M estão salvos como `ai_media_library` com `is_public=true` e `consultant_id=0c2711ad…` (Rafael, o super admin do M). O player `<audio controls src={m.url}>` funciona para `.ogg/opus`, mas parte dos arquivos antigos foi gravada como `.webm` (ex.: `gravacao-1778896961171.webm`) e nem todo browser roda WebM/Opus embutido (Safari desktop falha silenciosamente; iOS idem).
+## Correções
 
-Além disso vários áudios estão com `active=false`, então mesmo quando o player toca no admin, o dispatcher do bot descarta na hora de enviar (regra "active media filter").
+### 1. Não deletar arquivo do Storage se houver outras rows usando (`StepMediaPanel.saveAllChanges`)
 
-**Correção:**
+Antes de chamar `storage.remove([path])`, verificar se **alguma outra row ativa** referencia o mesmo `storage_path` **ou** a mesma `url`. Se sim, pular o remove (soft-delete apenas na row).
 
-- **Player robusto**: trocar `<audio src>` por `<audio><source src=... type=...></audio>` com `type="audio/ogg; codecs=opus"` deduzido pela extensão, e adicionar `onError` que mostra "Não foi possível reproduzir neste navegador — baixar" com link `download` — assim o usuário sempre consegue ouvir mesmo em Safari.
-- **Botão "Converter para ogg"** nos áudios `.webm` (chama o `tts-proxy` ou um novo `audio-transcode` só para re-empacotar em OGG/Opus) — o WhatsApp/Whapi rejeita `.webm` como mensagem de voz; isso é o motivo do "não consegue enviar".
-- **Aviso visual "Áudio inativo — não será enviado ao lead"** quando `active=false`, com botão "Ativar", para o super admin identificar rapidamente quais áudios do M estão desligados.
-
-## Arquivos a alterar (apenas UI)
-
-```text
-src/components/admin/fluxo-b-ia/ConsultantVariantsCard.tsx    → remover ou reduzir a wrapper do bar
-src/pages/Admin.tsx (ou onde o card é montado)                → montar VariantDistributionBar no topo de "Dados do Consultor"
-src/components/admin/flow-builder/VariantDistributionBar.tsx  → toast com id fixo, reload após save
-src/components/admin/fluxo/StepMediaPanel.tsx                 → player com <source>+onError+download; badge "inativo"
-src/components/admin/AIAgentTab/MediaColumn.tsx               → mesma melhoria de player
+```ts
+// Para cada storage_path a remover:
+const { count } = await supabase
+  .from("ai_media_library")
+  .select("id", { count: "exact", head: true })
+  .eq("active", true)
+  .or(`storage_path.eq.${path},url.eq.${url}`);
+if ((count ?? 0) === 0) {
+  await supabase.storage.from("ai-agent-media").remove([path]);
+}
 ```
 
-Nova edge function opcional para reencodar webm→ogg (só se você quiser botão "Converter"): sim quero o botao
+### 2. Recuperar o áudio quebrado agora (execução única)
 
-```text
-supabase/functions/audio-transcode-ogg/index.ts
-```
+- Marcar as 3 rows órfãs (`648332f7`, `e9c847f4`, `a9af418c`) com `active=false` para tirar do fluxo até novo upload
+- Toast/UI passará a mostrar "Inativo" em vez de player quebrado
+- Consultor sobe o `sofia-mg.mp3` de novo pelo painel (upload direto)
 
-## Fora de escopo
+### 3. Melhorar diagnóstico no `AudioPlayer`
 
-- Regras do `assign_flow_variant` / round-robin / trigger de re-alinhamento — já funcionam corretamente para `['M']`.
-- Estrutura de `bot_flows` / `bot_flow_steps` do Fluxo M — o M já roda como clone do D.
-- `evolution-webhook` e `whapi-webhook`.
-- Dispatcher de áudio (regra `active media filter` já é a correta — só vamos deixar claro na UI).
+Quando `<audio>` dispara `onError`, fazer um `HEAD` na URL. Se retornar 404, trocar a mensagem para:
 
-## Dúvida antes de codar
+> **"Arquivo não encontrado no Storage — reenvie o áudio"**
 
-Você quer que eu **remova completamente** o `ConsultantVariantsCard` (o card de radio "A_ONLY/D_ONLY/M_ONLY…") e deixe só a barra de switches, ou prefere manter o card com um design novo tipo "só switches A/D/M/B/C, 1 fluxo mínimo ativo"? Se não responder, sigo com a barra de switches única (mais simples e sem conflito).
+em vez de "navegador não conseguiu tocar". Isso evita confusão futura e sinaliza claramente o problema real.
+
+### 4. Preencher `storage_path` também nas cópias (`linkFromLibrary`)
+
+Ao vincular da biblioteca, copiar também o `storage_path` da row de origem (não gravar `null`). Assim a lógica de "há mais rows apontando pra esse arquivo?" fica trivialmente correta.
+
+---
+
+## Arquivos afetados
+
+- `src/components/admin/fluxo/StepMediaPanel.tsx` — corrigir `saveAllChanges` (guard antes do remove) e `linkFromLibrary` (copiar storage_path)
+- `src/components/admin/media/AudioPlayer.tsx` — melhorar mensagem de erro (HEAD check → "arquivo não encontrado")
+- Query manual única: `UPDATE ai_media_library SET active=false WHERE id IN ('648332f7-3f83-44ff-8e0c-240005791a0c','e9c847f4-3277-4c8e-b5f3-0e5fcb0f1195','a9af418c-24f9-4d87-ab28-e8d753a79cde')` — para o consultor reenviar o áudio limpo
+
+Após: o consultor faz upload novo do `sofia-mg.mp3` e o fluxo M passa a enviar corretamente.
