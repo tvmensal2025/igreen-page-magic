@@ -235,55 +235,57 @@ function MessageButton({
           <p className="text-[10px] text-muted-foreground mt-0.5">{headerSub}</p>
         </div>
 
-        {screen === "list" ? (
-          <>
-            <div className="p-2 border-b border-border/40">
-              <Button
-                type="button"
-                size="sm"
-                className="w-full h-8 gap-1.5 text-xs font-bold"
-                onClick={() => openWith(pickRandom(templates))}
-              >
-                <Shuffle className="w-3.5 h-3.5" />
-                Sortear e personalizar
-              </Button>
+        <div>
+          {screen === "list" ? (
+            <div>
+              <div className="p-2 border-b border-border/40">
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full h-8 gap-1.5 text-xs font-bold"
+                  onClick={() => openWith(pickRandom(templates))}
+                >
+                  <Shuffle className="w-3.5 h-3.5" />
+                  Sortear e personalizar
+                </Button>
+              </div>
+              <ul className="max-h-[240px] overflow-y-auto divide-y divide-border/30">
+                {templates.map((tpl, i) => (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors"
+                      onClick={() => openWith(tpl)}
+                    >
+                      <span className={`text-[10px] font-bold uppercase tracking-wide ${accentText}`}>
+                        Mensagem {i + 1} — clique para ver e editar
+                      </span>
+                      <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
+                        {previewMessage(fillBirthdayMessage(tpl, customer.name))}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <div className="px-3 py-2 border-t border-border/40 bg-muted/20">
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <MessageCircle className="w-3 h-3" />
+                  Você vê e edita antes de mandar.
+                </p>
+              </div>
             </div>
-            <ul className="max-h-[240px] overflow-y-auto divide-y divide-border/30">
-              {templates.map((tpl, i) => (
-                <li key={i}>
-                  <button
-                    type="button"
-                    className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors"
-                    onClick={() => openWith(tpl)}
-                  >
-                    <span className={`text-[10px] font-bold uppercase tracking-wide ${accentText}`}>
-                      Mensagem {i + 1} — clique para ver e editar
-                    </span>
-                    <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
-                      {previewMessage(fillBirthdayMessage(tpl, customer.name))}
-                    </p>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="px-3 py-2 border-t border-border/40 bg-muted/20">
-              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                <MessageCircle className="w-3 h-3" />
-                Você vê e edita antes de mandar.
-              </p>
-            </div>
-          </>
-        ) : (
-          <MessagePreviewEditor
-            initialText={selectedText}
-            templates={templates}
-            customerName={customer.name}
-            phone={customer.phone_whatsapp || ""}
-            onBack={() => setScreen("list")}
-            onSent={() => setOpen(false)}
-            accent={accent}
-          />
-        )}
+          ) : (
+            <MessagePreviewEditor
+              initialText={selectedText}
+              templates={templates}
+              customerName={customer.name}
+              phone={customer.phone_whatsapp || ""}
+              onBack={() => setScreen("list")}
+              onSent={() => setOpen(false)}
+              accent={accent}
+            />
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
