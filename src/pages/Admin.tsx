@@ -30,6 +30,7 @@ const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCo
 const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
+const IGreenSyncStatusBar = lazy(() => import("@/components/admin/IGreenSyncStatusBar").then(m => ({ default: m.IGreenSyncStatusBar })));
 const ChangePasswordCard = lazy(() => import("@/components/admin/ChangePasswordCard").then(m => ({ default: m.ChangePasswordCard })));
 const BonusTiersAdminCard = lazy(() => import("@/components/admin/BonusTiersAdminCard").then(m => ({ default: m.BonusTiersAdminCard })));
 const LinksTab = lazy(() => import("@/components/admin/LinksTab").then(m => ({ default: m.LinksTab })));
@@ -583,6 +584,7 @@ const AdminContent = () => {
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
               {userId && <IGreenConnectionCard userId={userId} />}
+              {userId && <IGreenSyncStatusBar consultantId={userId} />}
               <BonusTiersAdminCard />
               <ChangePasswordCard />
               {userId && (
