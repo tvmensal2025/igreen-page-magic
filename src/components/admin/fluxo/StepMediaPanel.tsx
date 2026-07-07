@@ -125,7 +125,11 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         label: m.label,
         slot_key: slotKey,
         url: m.url,
-        storage_path: null,
+        // 🔧 2026-07-07: copia o storage_path da origem para que o guard
+        // "há outra row usando esse arquivo?" no saveAllChanges funcione.
+        // Antes gravávamos null, e o arquivo real acabava deletado quando
+        // qualquer uma das rows-irmãs era removida.
+        storage_path: m.storage_path ?? null,
         active: true,
         is_public: false,
         send_order: 100 + items.length,
