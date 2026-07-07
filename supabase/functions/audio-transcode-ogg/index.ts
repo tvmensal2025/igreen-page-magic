@@ -24,7 +24,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-const BUCKET = "ai-media";
+const BUCKET = "ai-agent-media";
 
 // ffmpeg.wasm carregado sob demanda (~30MB). O cold-start fica pesado, mas
 // só chamamos quando o usuário clica "Converter" — tudo bem.
