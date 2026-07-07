@@ -154,9 +154,11 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
           <Sparkles className="w-5 h-5 text-primary" /> Nova campanha
         </div>
         <div className="flex items-center gap-2">
-          {state.step === 5 && (
+          {state.step >= 3 && (
             <Button type="button" variant="outline" size="sm" className="gap-1.5"
-              onClick={() => patch({ saveTplOpen: true })} disabled={state.submitting || state.savingTemplate}>
+              onClick={() => patch({ saveTplOpen: true })}
+              disabled={state.submitting || state.savingTemplate || !state.headline.trim() || !state.primaryText.trim()}
+              title={!state.headline.trim() || !state.primaryText.trim() ? "Preencha título e texto antes" : "Salvar esta campanha como modelo reutilizável"}>
               {state.savingTemplate ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Salvar template
             </Button>
           )}
