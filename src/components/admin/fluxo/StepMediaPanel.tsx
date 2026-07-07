@@ -741,7 +741,11 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
                     <div className="text-xs font-medium truncate">{m.label}</div>
                     {linking === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-muted-foreground" />}
                   </div>
-                  {m.url && m.kind === "audio" && <audio controls src={m.url} className="w-full h-8" onClick={e => e.stopPropagation()} />}
+                  {m.url && m.kind === "audio" && (
+                    <div onClick={(e) => e.stopPropagation()}>
+                      <AudioPlayer mediaId={m.id} url={m.url} fileName={m.label} />
+                    </div>
+                  )}
                   {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" />}
                   {m.url && m.kind === "video" && <video controls src={m.url} className="w-full max-h-40 rounded" onClick={e => e.stopPropagation()} />}
                   {m.slot_key && <div className="text-[10px] text-muted-foreground mt-1">já usada em: {prettyStepLabel(m.slot_key)}</div>}
