@@ -1251,12 +1251,30 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     patch.last_enriched_at = new Date().toISOString();
     if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from("customers")
       .update(patch)
       .eq("consultant_id", consultantId)
       .eq("igreen_code", code);
+    // Alguns clientes têm registros DUPLICADOS com o mesmo igreen_code (dado
+    // legado/importação). O update acima afeta as duas linhas de uma vez; se
+    // o telefone real colidir com o índice único (phone_whatsapp,
+    // consultant_id) — porque a outra linha duplicada ainda tem um placeholder
+    // "sem_celular_..." — o update falha por completo e o enrich nunca marca
+    // last_enriched_at, travando esse cliente para sempre. Retry sem o
+    // telefone resolve: aplica os demais dados (CPF, endereço, etc.) e marca
+    // como enriquecido mesmo assim.
+    if (error && patch.phone_whatsapp) {
+      const { phone_whatsapp: _drop, ...patchNoPhone } = patch;
+      const retry = await supabase
+        .from("customers")
+        .update(patchNoPhone)
+        .eq("consultant_id", consultantId)
+        .eq("igreen_code", code);
+      error = retry.error;
+    }
     if (!error) applied++;
+    else console.warn(`[enrich] update falhou para igreen_code=${code}:`, error.message);
   }
   return { details_applied: applied };
 }
