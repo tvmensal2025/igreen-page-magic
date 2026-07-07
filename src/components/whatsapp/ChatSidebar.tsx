@@ -101,13 +101,16 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
           <span className="h-1 w-1 rounded-full bg-primary" />
           Conversas
         </h3>
-        <button
-          onClick={() => setShowNewChat((v) => !v)}
-          className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all hover:scale-105"
-          title="Nova conversa"
-        >
-          <MessageCirclePlus className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <AutomacoesAtivasBadge consultantId={consultantId} variant="dot" />
+          <button
+            onClick={() => setShowNewChat((v) => !v)}
+            className="h-7 w-7 flex items-center justify-center rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition-all hover:scale-105"
+            title="Nova conversa"
+          >
+            <MessageCirclePlus className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* New chat input */}
