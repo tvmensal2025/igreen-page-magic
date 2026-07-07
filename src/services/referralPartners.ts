@@ -124,11 +124,14 @@ export async function createReferralPartner(
   const nome = (input.nome ?? "").trim();
   if (!nome) throw new Error("Nome é obrigatório");
 
-  const notificationPhone = (input.notification_phone ?? "").trim();
-  if (!notificationPhone) throw new Error("Telefone de aviso é obrigatório");
+  const notificationPhone = normalizeBrPhone(input.notification_phone);
+  if (!notificationPhone) {
+    throw new Error("Telefone inválido. Use DDD + número (ex.: 11 99999-8888).");
+  }
 
   const igreenId = (input.partner_igreen_id ?? "").trim();
   const cliInformado = (input.cli ?? "").trim();
+
 
   // Define partner_igreen_id e cli conforme o tipo, garantindo cli NOT NULL.
   let partnerIgreenId: string | null;
