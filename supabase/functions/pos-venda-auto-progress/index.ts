@@ -233,14 +233,16 @@ Deno.serve(async (req) => {
     const defaults: Record<string, any> = {};
     for (const d of defaultRows || []) defaults[d.stage] = d;
 
-    // 1. Clientes já marcados como APROVADOS (pelo popup ou drag manual) que
-    //    ainda não receberam mensagem do estágio pv_aprovado → enviar.
-    //    Antigos backfilled ficam em pos_venda_stage='espera' e não disparam.
+    // 1. Clientes já marcados como APROVADOS PELO CONSULTOR (pos_venda_manual=true).
+    //    Auto-classificação nunca dispara mensagem — ela vai para
+    //    pos_venda_pending_stage e o consultor confirma pelo popup
+    //    "Validar novos clientes".
     const { data: approvedCustomers } = await supabase
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
-      .eq("pos_venda_stage", "aprovado");
+      .eq("pos_venda_stage", "aprovado")
+      .eq("pos_venda_manual", true);
 
     for (const c of approvedCustomers || []) {
       const r = await processCustomer(supabase, env, c, "aprovado", defaults);
@@ -248,12 +250,13 @@ Deno.serve(async (req) => {
       if (r.sent) sent++;
     }
 
-    // 2. Clientes REPROVADOS
+    // 2. Clientes REPROVADOS PELO CONSULTOR (pos_venda_manual=true).
     const { data: rejectedCustomers } = await supabase
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
-      .eq("pos_venda_stage", "reprovado");
+      .eq("pos_venda_stage", "reprovado")
+      .eq("pos_venda_manual", true);
 
     for (const c of rejectedCustomers || []) {
       const r = await processCustomer(supabase, env, c, "reprovado", defaults);
@@ -268,6 +271,7 @@ Deno.serve(async (req) => {
       .from("customers")
       .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
+      .eq("pos_venda_manual", true)
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90"])
       .not("pos_venda_approved_at", "is", null);
 

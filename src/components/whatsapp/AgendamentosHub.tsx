@@ -343,6 +343,26 @@ export function AgendamentosHub({
           </p>
         </div>
 
+        {stats.pendingValidation > 0 && (
+          <button
+            type="button"
+            onClick={() => dispatchAgendamentosNav({ tab: "crm-clientes" })}
+            className="w-full text-left mb-5 rounded-xl border border-warning/40 bg-warning/10 p-3 flex items-start gap-3 hover:bg-warning/15 transition-colors"
+          >
+            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-foreground">
+                {stats.pendingValidation} {stats.pendingValidation === 1 ? "cliente aguardando" : "clientes aguardando"} sua validação
+              </p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Nenhuma mensagem sai para esses clientes até você abrir “Validar novos clientes” e confirmar aprovado ou reprovado.
+              </p>
+            </div>
+            <ExternalLink className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+          </button>
+        )}
+
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
           <div className="rounded-xl border border-border/50 bg-muted/20 p-2.5 text-center">
             <p className="text-lg font-bold text-foreground">{stats.timelineUpcoming}</p>
@@ -581,7 +601,7 @@ export function AgendamentosHub({
             ) : posVenda.length === 0 ? (
               <EmptyState text="Nenhum envio previsto — aprove clientes em Clientes ativos para começar a esteira" />
             ) : (
-              <PosVendaList items={posVenda} />
+              <PosVendaList items={posVenda} consultantId={consultantId} onSaved={refresh} />
             )}
           </TabsContent>
 
@@ -851,8 +871,73 @@ function LoadingRow() {
   );
 }
 
-function PosVendaList({ items }: { items: import("@/lib/posVendaSchedule").UpcomingPosVendaItem[] }) {
+function PosVendaList({
+  items,
+  consultantId,
+  onSaved,
+}: {
+  items: import("@/lib/posVendaSchedule").UpcomingPosVendaItem[];
+  consultantId: string;
+  onSaved: () => void;
+}) {
   const [selected, setSelected] = useState<import("@/lib/posVendaSchedule").UpcomingPosVendaItem | null>(null);
+  const [stageRow, setStageRow] = useState<{ id: string; auto_message_text: string | null; auto_message_enabled: boolean } | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [draftEnabled, setDraftEnabled] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
+
+  // Extrai a stage_key (pv_reprovado, pv_aprovado, pv_d30, ...) do id do item.
+  const stageKey = selected ? selected.id.split("-").slice(-1)[0] : null;
+
+  useEffect(() => {
+    if (!selected || !stageKey) return;
+    setLoading(true);
+    setStageRow(null);
+    supabase
+      .from("kanban_stages")
+      .select("id, auto_message_text, auto_message_enabled")
+      .eq("consultant_id", consultantId)
+      .eq("stage_scope", "pos_venda")
+      .eq("stage_key", stageKey)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) {
+          setStageRow(data as any);
+          setDraftText((data as any).auto_message_text || selected.messagePreview || "");
+          setDraftEnabled((data as any).auto_message_enabled ?? true);
+        } else {
+          setDraftText(selected.messagePreview || "");
+          setDraftEnabled(true);
+        }
+        setLoading(false);
+      });
+  }, [selected, stageKey, consultantId]);
+
+  async function handleSave() {
+    if (!stageRow) {
+      toast({ title: "Coluna não encontrada", description: "Abra Autoprogressão para editar todas as colunas.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("kanban_stages")
+      .update({
+        auto_message_text: draftText || null,
+        auto_message_enabled: draftEnabled,
+      })
+      .eq("id", stageRow.id);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Erro ao salvar", description: error.message, variant: "destructive" });
+      return;
+    }
+    toast({ title: "Mensagem atualizada" });
+    setSelected(null);
+    onSaved();
+  }
+
   return (
     <>
       <ScrollArea className="max-h-[400px]">
@@ -867,7 +952,7 @@ function PosVendaList({ items }: { items: import("@/lib/posVendaSchedule").Upcom
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-sm font-bold">{item.customerName}</span>
                 <Badge className="text-[9px] bg-accent/15 text-accent border-accent/30">{item.stageLabel}</Badge>
-                <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para configurar</span>
+                <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para editar</span>
               </div>
               {item.messagePreview && <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.messagePreview}</p>}
               <p className="text-[11px] text-muted-foreground">{formatScheduleDate(item.scheduledAt)}</p>
@@ -895,28 +980,54 @@ function PosVendaList({ items }: { items: import("@/lib/posVendaSchedule").Upcom
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Onde está configurado</p>
                   <p className="text-sm font-semibold">Pós-venda automático → coluna “{selected.stageLabel}”</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    O texto e a mídia desta mensagem vêm da configuração desta coluna. Ao clicar em editar, você abre a tela com todas as colunas ({selected.stageLabel} incluída) para alterar.
+                    Edite abaixo o texto que sai para todos os clientes nesta coluna. Para mídia (áudio, imagem, vídeo) ou várias mensagens em sequência, use Autoprogressão.
                   </p>
                 </div>
 
-                {selected.messagePreview && (
-                  <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
-                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia do que vai sair</p>
-                    <p className="text-sm whitespace-pre-wrap">{selected.messagePreview}</p>
+                {loading ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando configuração da coluna…
                   </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Texto da mensagem</Label>
+                      <Textarea
+                        value={draftText}
+                        onChange={(e) => setDraftText(e.target.value)}
+                        rows={5}
+                        className="text-sm"
+                        placeholder="Digite o texto que sai automaticamente…"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={draftEnabled}
+                        onChange={(e) => setDraftEnabled(e.target.checked)}
+                        className="rounded"
+                      />
+                      Envio automático desta coluna ligado
+                    </label>
+                  </>
                 )}
               </div>
 
-              <DialogFooter>
+              <DialogFooter className="gap-2 flex-wrap">
                 <Button
+                  variant="ghost"
                   onClick={() => {
                     dispatchAgendamentosNav({ tab: "crm-clientes" });
                     setSelected(null);
                   }}
                   className="gap-1.5"
                 >
-                  <Settings2 className="w-3.5 h-3.5" />
-                  Editar mensagens desta coluna
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Abrir Autoprogressão (mídias)
+                </Button>
+                <Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  Salvar
                 </Button>
               </DialogFooter>
             </>

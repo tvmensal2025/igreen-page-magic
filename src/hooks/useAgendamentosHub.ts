@@ -28,6 +28,7 @@ export function useAgendamentosHub(consultantId: string) {
     DEFAULT_REACTIVATION_SETTINGS,
   );
   const [autoReactivateTemplates, setAutoReactivateTemplates] = useState(0);
+  const [pendingValidation, setPendingValidation] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!consultantId) return;
@@ -42,6 +43,7 @@ export function useAgendamentosHub(consultantId: string) {
         bulkRes,
         settingsRes,
         templatesRes,
+        pendingValidationRes,
       ] = await Promise.all([
         supabase
           .from("scheduled_messages")
@@ -88,6 +90,13 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("consultant_id", consultantId)
           .eq("is_active", true)
           .eq("auto_reactivate", true),
+        supabase
+          .from("customers")
+          .select("id", { count: "exact", head: true })
+          .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
+          .eq("customer_origin", "igreen_sync")
+          .not("pos_venda_pending_stage", "is", null)
+          .eq("pos_venda_invalid", false),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
@@ -132,6 +141,7 @@ export function useAgendamentosHub(consultantId: string) {
       }
 
       setAutoReactivateTemplates(templatesRes.count ?? 0);
+      setPendingValidation((pendingValidationRes as any).count ?? 0);
     } finally {
       setLoading(false);
     }
@@ -161,6 +171,7 @@ export function useAgendamentosHub(consultantId: string) {
     bulkCampaigns,
     reactivationSettings,
     autoReactivateTemplates,
+    pendingValidation,
     timeline,
     stats: {
       timelineUpcoming: timeline.length,
@@ -171,6 +182,7 @@ export function useAgendamentosHub(consultantId: string) {
       sentManual,
       failedManual,
       posVendaOverdue: posVenda.filter((p) => p.isOverdue).length,
+      pendingValidation,
     },
   };
 }
