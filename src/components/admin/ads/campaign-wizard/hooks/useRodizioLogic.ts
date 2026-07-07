@@ -204,12 +204,58 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     const erros = validateInlineForm(form);
     if (erros.length > 0) {
       toast({
-        title: "Confira os campos",
-        description: erros.join(" "),
+        title: "⚠️ Confira os campos abaixo",
+        description: "Corrija os itens destacados em vermelho.",
         variant: "destructive",
       });
       return;
     }
+
+    // Duplicados dentro do rodízio deste anúncio + entre participantes existentes
+    const normalizedPhone = normalizeBrPhone(form.notification_phone);
+    const igreenId = form.partner_igreen_id.trim();
+    const cli = form.cli.trim();
+    const pool: RodizioPartnerDraft[] = [
+      ...state.rodizioPartners,
+      ...availablePartners,
+    ];
+
+    const dupPhone = pool.find(
+      (p) => normalizeBrPhone(p.notification_phone) === normalizedPhone,
+    );
+    if (dupPhone) {
+      toast({
+        title: "♻️ Este telefone já está cadastrado",
+        description: `${dupPhone.nome} já usa este WhatsApp. Cada participante precisa de um número diferente.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (form.tipo === "consultor" && igreenId) {
+      const dupIgreen = pool.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId,
+      );
+      if (dupIgreen) {
+        toast({
+          title: "🆔 Código iGreen já cadastrado",
+          description: `${dupIgreen.nome} já usa este código. Um consultor não pode entrar duas vezes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    if (form.tipo === "parceiro" && cli) {
+      const dupCli = pool.find((p) => (p.cli ?? "").trim() === cli);
+      if (dupCli) {
+        toast({
+          title: "🔢 Código de indicação já cadastrado",
+          description: `${dupCli.nome} já usa este código. Peça outro ao parceiro.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setCreating(true);
     try {
       const novo = await createReferralPartner({
@@ -228,28 +274,30 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
         rodizioInlineForm: null,
       }));
       toast({
-        title: "Participante criado",
-        description: `${novo.nome} entrou no rodízio.`,
+        title: "✅ Participante adicionado",
+        description: `${novo.nome} entrou no rodízio. Vai receber os avisos no WhatsApp ${novo.notification_phone ?? ""}.`,
       });
     } catch (e: any) {
       toast({
-        title: "Não consegui criar o participante",
-        description: e?.message || "Tente novamente.",
+        title: "❌ Não consegui salvar",
+        description: e?.message || "Tente de novo em alguns segundos.",
         variant: "destructive",
       });
     } finally {
       setCreating(false);
     }
-  }, [state.rodizioInlineForm, patchFn, toast]);
+  }, [state.rodizioInlineForm, state.rodizioPartners, availablePartners, patchFn, toast]);
 
   // Mensagem de erro do mínimo de 2 participantes (Requisito 5.2).
   const minParticipantsError = useMemo<string | null>(() => {
     if (!state.rodizioEnabled) return null;
-    if (state.rodizioPartners.length < 2) {
-      return "O rodízio exige pelo menos 2 participantes.";
+    const faltam = 2 - state.rodizioPartners.length;
+    if (faltam > 0) {
+      return `⚠️ Faltam participantes — o rodízio precisa de pelo menos 2 pessoas. Adicione mais ${faltam} ou desligue o rodízio.`;
     }
     return null;
   }, [state.rodizioEnabled, state.rodizioPartners.length]);
+
 
   return {
     availablePartners,
