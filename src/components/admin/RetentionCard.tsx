@@ -366,9 +366,10 @@ export function RetentionCard({ customers }: { customers: Customer[] | undefined
         ) : (
           <ol className="divide-y divide-border/40 max-h-[320px] overflow-y-auto">
             {parados.map((c) => (
-              <li key={c.id} className="grid grid-cols-[1fr_auto] items-center gap-3 px-5 py-2.5 hover:bg-muted/30">
+              <li key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-5 py-2.5 hover:bg-muted/30">
                 <p className="text-sm font-semibold text-foreground truncate">{c.name || "Sem nome"}</p>
                 <span className="text-xs tabular-nums text-destructive font-bold">{daysSince(c.created_at)}d</span>
+                <ReactivationMessageButton customer={c} />
               </li>
             ))}
           </ol>
