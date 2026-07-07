@@ -389,7 +389,23 @@ export function AgendamentosHub({
                 <ScrollArea className="max-h-[360px]">
                   <div className="space-y-2">
                     {timeline.slice(0, 30).map((item) => (
-                      <div key={item.id} className="rounded-xl border border-border/40 bg-secondary/10 px-4 py-3">
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setSelected(item);
+                          if (item.kind === "manual_scheduled") {
+                            setEditText(item.preview || "");
+                            // datetime-local precisa de yyyy-MM-ddTHH:mm no fuso local
+                            const d = item.at;
+                            const pad = (n: number) => String(n).padStart(2, "0");
+                            setEditAt(
+                              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                            );
+                          }
+                        }}
+                        className="w-full text-left rounded-xl border border-border/40 bg-secondary/10 px-4 py-3 hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                      >
                         <div className="flex items-start gap-2">
                           <div className="w-7 h-7 rounded-md bg-muted/50 flex items-center justify-center shrink-0 mt-0.5">
                             {kindIcon(item.kind)}
@@ -399,6 +415,7 @@ export function AgendamentosHub({
                               <span className="text-sm font-bold truncate">{item.title}</span>
                               <Badge variant="secondary" className="text-[9px]">{item.badge}</Badge>
                               {timelineStatusBadge(item.status)}
+                              <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para configurar</span>
                             </div>
                             {item.preview && (
                               <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.preview}</p>
@@ -409,7 +426,7 @@ export function AgendamentosHub({
                             </p>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </ScrollArea>
