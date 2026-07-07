@@ -317,7 +317,7 @@ function toGreenInput(c: RawCustomer, settings: GreenSettings, extra?: Partial<G
     faturaValor: fatura > 0 ? fatura : null,
     faturaEstimada: !hasRealBill && fatura > 0,
     validatedAt: c.pos_venda_approved_at ?? null,
-    validadoIgreen: c.andamento_igreen === "Validado",
+    validadoIgreen: isValidadoIgreen(c.andamento_igreen),
     ...extra,
   };
 }
@@ -357,7 +357,7 @@ function buildPortfolioStats(rows: RawCustomer[], settings: GreenSettings): Gree
     if (isReproved(c)) continue;
 
     if (isDirectCustomer(c.registered_by_igreen_id, c.registered_by_name, settings)) diretosCp++;
-    if (c.andamento_igreen === "Validado") validadosIgreen++;
+    if (isValidadoIgreen(c.andamento_igreen)) validadosIgreen++;
     if (c.pos_venda_approved_at) validadosCrm++;
     if (/falta assinatura/i.test(c.andamento_igreen || "") || c.status === "awaiting_signature") {
       faltaAssinatura++;
@@ -407,7 +407,7 @@ export async function fetchValidatedCustomers(consultantId: string): Promise<Val
     if (hasRealBill) kind = "real";
     else if (est > 0) kind = "estimada";
 
-    if (c.pos_venda_approved_at || c.andamento_igreen === "Validado") {
+    if (c.pos_venda_approved_at || isValidadoIgreen(c.andamento_igreen)) {
       faturaClients.push({
         id: c.id,
         name: c.name ?? null,
@@ -423,7 +423,7 @@ export async function fetchValidatedCustomers(consultantId: string): Promise<Val
         thisMonth.push(input);
         if (input.isDirect && (input.faturaValor == null || input.faturaValor <= 0)) semFaturaCount++;
       }
-    } else if (c.andamento_igreen === "Validado") {
+    } else if (isValidadoIgreen(c.andamento_igreen)) {
       potencialIgreen.push(input);
     }
   }

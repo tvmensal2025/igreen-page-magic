@@ -176,7 +176,7 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
         .select("name, name_source, phone_whatsapp")
         .in("name_source", Array.from(TRUSTED_NAME_SOURCES))
         .not("name", "is", null)
-        .limit(2000);
+        .limit(5000);
       const map = new Map<string, string>();
       (data || []).forEach((c: any) => {
         const d = digitsOnly(c.phone_whatsapp);
