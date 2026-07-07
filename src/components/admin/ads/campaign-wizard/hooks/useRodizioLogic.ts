@@ -14,12 +14,14 @@ import { useToast } from "@/hooks/use-toast";
 import {
   listActiveReferralPartners,
   createReferralPartner,
+  normalizeBrPhone,
 } from "@/services/referralPartners";
 import type {
   WizardState,
   RodizioPartnerDraft,
   RodizioInlineForm,
 } from "./useWizardState";
+
 
 interface Deps {
   open: boolean;
@@ -39,24 +41,50 @@ function emptyInlineForm(tipo: RodizioInlineForm["tipo"]): RodizioInlineForm {
   };
 }
 
+/** Campo do form inline que pode conter erro de validação. */
+export type RodizioFieldKey =
+  | "nome"
+  | "notification_phone"
+  | "partner_igreen_id"
+  | "cli";
+
+/** Erro de validação com o campo alvo — permite destacar o input certo. */
+export interface RodizioFieldError {
+  field: RodizioFieldKey;
+  message: string;
+}
+
 /**
- * Valida os campos do form inline. Devolve a lista de mensagens de erro
- * (vazia quando o form está válido), conforme o tipo do participante.
+ * Valida os campos do form inline. Devolve erros com o `field` alvo, para que
+ * o componente destaque o input correto (sem depender de substring matching).
  */
-export function validateInlineForm(form: RodizioInlineForm): string[] {
-  const erros: string[] = [];
-  if (!form.nome.trim()) erros.push("Informe o nome do participante.");
-  if (!form.notification_phone.trim()) {
-    erros.push("Informe o telefone de aviso.");
+export function validateInlineForm(form: RodizioInlineForm): RodizioFieldError[] {
+  const erros: RodizioFieldError[] = [];
+  if (!form.nome.trim()) {
+    erros.push({ field: "nome", message: "Digite o nome do participante." });
+  }
+  const phone = normalizeBrPhone(form.notification_phone);
+  if (!phone) {
+    erros.push({
+      field: "notification_phone",
+      message: "📱 Ex.: 11 99999-8888 (com DDD).",
+    });
   }
   if (form.tipo === "consultor" && !form.partner_igreen_id.trim()) {
-    erros.push("O código iGreen é obrigatório para o tipo CONSULTOR.");
+    erros.push({
+      field: "partner_igreen_id",
+      message: "🆔 O código iGreen aparece no painel do consultor.",
+    });
   }
   if (form.tipo === "parceiro" && !form.cli.trim()) {
-    erros.push("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    erros.push({
+      field: "cli",
+      message: "🔢 Código de indicação (o iGreen chama de `cli`). Peça pro parceiro.",
+    });
   }
   return erros;
 }
+
 
 export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
   const { toast } = useToast();
@@ -125,13 +153,14 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
       });
       if (!added) {
         toast({
-          title: "Participante já adicionado",
-          description: `${partner.nome} já está na lista do rodízio.`,
+          title: "♻️ Já está no rodízio",
+          description: `${partner.nome} já está na lista.`,
         });
       }
     },
     [patchFn, toast],
   );
+
 
   /** Remove um participante da lista ordenada pelo id. */
   const removePartner = useCallback(
@@ -175,12 +204,58 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     const erros = validateInlineForm(form);
     if (erros.length > 0) {
       toast({
-        title: "Confira os campos",
-        description: erros.join(" "),
+        title: "⚠️ Confira os campos abaixo",
+        description: "Corrija os itens destacados em vermelho.",
         variant: "destructive",
       });
       return;
     }
+
+    // Duplicados dentro do rodízio deste anúncio + entre participantes existentes
+    const normalizedPhone = normalizeBrPhone(form.notification_phone);
+    const igreenId = form.partner_igreen_id.trim();
+    const cli = form.cli.trim();
+    const pool: RodizioPartnerDraft[] = [
+      ...state.rodizioPartners,
+      ...availablePartners,
+    ];
+
+    const dupPhone = pool.find(
+      (p) => normalizeBrPhone(p.notification_phone) === normalizedPhone,
+    );
+    if (dupPhone) {
+      toast({
+        title: "♻️ Este telefone já está cadastrado",
+        description: `${dupPhone.nome} já usa este WhatsApp. Cada participante precisa de um número diferente.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (form.tipo === "consultor" && igreenId) {
+      const dupIgreen = pool.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId,
+      );
+      if (dupIgreen) {
+        toast({
+          title: "🆔 Código iGreen já cadastrado",
+          description: `${dupIgreen.nome} já usa este código. Um consultor não pode entrar duas vezes.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+    if (form.tipo === "parceiro" && cli) {
+      const dupCli = pool.find((p) => (p.cli ?? "").trim() === cli);
+      if (dupCli) {
+        toast({
+          title: "🔢 Código de indicação já cadastrado",
+          description: `${dupCli.nome} já usa este código. Peça outro ao parceiro.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setCreating(true);
     try {
       const novo = await createReferralPartner({
@@ -199,28 +274,30 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
         rodizioInlineForm: null,
       }));
       toast({
-        title: "Participante criado",
-        description: `${novo.nome} entrou no rodízio.`,
+        title: "✅ Participante adicionado",
+        description: `${novo.nome} entrou no rodízio. Vai receber os avisos no WhatsApp ${novo.notification_phone ?? ""}.`,
       });
     } catch (e: any) {
       toast({
-        title: "Não consegui criar o participante",
-        description: e?.message || "Tente novamente.",
+        title: "❌ Não consegui salvar",
+        description: e?.message || "Tente de novo em alguns segundos.",
         variant: "destructive",
       });
     } finally {
       setCreating(false);
     }
-  }, [state.rodizioInlineForm, patchFn, toast]);
+  }, [state.rodizioInlineForm, state.rodizioPartners, availablePartners, patchFn, toast]);
 
   // Mensagem de erro do mínimo de 2 participantes (Requisito 5.2).
   const minParticipantsError = useMemo<string | null>(() => {
     if (!state.rodizioEnabled) return null;
-    if (state.rodizioPartners.length < 2) {
-      return "O rodízio exige pelo menos 2 participantes.";
+    const faltam = 2 - state.rodizioPartners.length;
+    if (faltam > 0) {
+      return `⚠️ Faltam participantes — o rodízio precisa de pelo menos 2 pessoas. Adicione mais ${faltam} ou desligue o rodízio.`;
     }
     return null;
   }, [state.rodizioEnabled, state.rodizioPartners.length]);
+
 
   return {
     availablePartners,

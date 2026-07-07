@@ -30,20 +30,17 @@ interface Props {
 }
 
 /**
- * Mapeia as mensagens de `validateInlineForm` para os campos do form, para que
- * o `RodizioInlineForm` mostre o erro embaixo do input certo. Mantém uma única
- * fonte de verdade da validação (o hook), sem duplicar a regra aqui.
+ * Converte a lista de erros com `field` no shape esperado pelo form.
+ * Fonte única de verdade da validação continua no hook — sem substring match.
  */
 function mapInlineErrors(form: RodizioInlineFormValue): RodizioInlineFormErrors {
   const errors: RodizioInlineFormErrors = {};
-  for (const msg of validateInlineForm(form)) {
-    if (msg.includes("nome")) errors.nome = msg;
-    else if (msg.includes("telefone")) errors.notification_phone = msg;
-    else if (msg.includes("iGreen")) errors.partner_igreen_id = msg;
-    else if (msg.includes("cli")) errors.cli = msg;
+  for (const err of validateInlineForm(form)) {
+    errors[err.field] = err.message;
   }
   return errors;
 }
+
 
 export function RodizioBlock({ open, state, patch, patchFn }: Props) {
   const {

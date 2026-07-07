@@ -129,16 +129,19 @@ export function RodizioInlineForm({
 
       {/* Telefone de aviso (ambos) */}
       <div>
-        <Label htmlFor="rodizio-telefone">Telefone de aviso</Label>
+        <Label htmlFor="rodizio-telefone">📱 WhatsApp de aviso</Label>
         <Input
           id="rodizio-telefone"
           value={value.notification_phone}
           onChange={(e) => onChange({ notification_phone: e.target.value })}
-          placeholder="Ex.: 11999998888"
+          placeholder="Ex.: 11 99999-8888"
           inputMode="tel"
           disabled={submitting}
           aria-invalid={!!errors.notification_phone}
         />
+        <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1">
+          Este WhatsApp recebe uma mensagem cada vez que chegar um lead deste anúncio.
+        </p>
         <FieldError message={errors.notification_phone} />
       </div>
 
@@ -146,7 +149,7 @@ export function RodizioInlineForm({
       {isConsultor ? (
         <>
           <div>
-            <Label htmlFor="rodizio-igreen">Código iGreen</Label>
+            <Label htmlFor="rodizio-igreen">🆔 Código iGreen</Label>
             <Input
               id="rodizio-igreen"
               value={value.partner_igreen_id}
@@ -160,13 +163,14 @@ export function RodizioInlineForm({
           </div>
           <div>
             <Label htmlFor="rodizio-cli-opt">
-              cli <span className="text-[hsl(var(--ads-muted))]">(opcional)</span>
+              Código de indicação{" "}
+              <span className="text-[hsl(var(--ads-muted))]">(opcional — cli)</span>
             </Label>
             <Input
               id="rodizio-cli-opt"
               value={value.cli}
               onChange={(e) => onChange({ cli: e.target.value })}
-              placeholder="Indicador na frente (deixe vazio para 0)"
+              placeholder="Deixe vazio se não tiver"
               inputMode="numeric"
               disabled={submitting}
               aria-invalid={!!errors.cli}
@@ -176,12 +180,12 @@ export function RodizioInlineForm({
         </>
       ) : (
         <div>
-          <Label htmlFor="rodizio-cli">cli</Label>
+          <Label htmlFor="rodizio-cli">🔢 Código de indicação</Label>
           <Input
             id="rodizio-cli"
             value={value.cli}
             onChange={(e) => onChange({ cli: e.target.value })}
-            placeholder="Código do indicador (obrigatório)"
+            placeholder="Código do parceiro (no iGreen aparece como cli)"
             inputMode="numeric"
             disabled={submitting}
             aria-invalid={!!errors.cli}
@@ -189,6 +193,7 @@ export function RodizioInlineForm({
           <FieldError message={errors.cli} />
         </div>
       )}
+
 
       {/* Ações */}
       <div className="flex items-center justify-end gap-2 pt-1">
@@ -203,8 +208,9 @@ export function RodizioInlineForm({
         </Button>
         <Button type="submit" size="sm" disabled={submitting}>
           {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Salvar participante
+          ✅ Adicionar ao rodízio
         </Button>
+
       </div>
     </form>
   );
