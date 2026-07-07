@@ -129,6 +129,30 @@ export function estimateBillValue(
   return Math.round(kwh * tarifaKwh * factor * 100) / 100;
 }
 
+/**
+ * Normaliza o texto do campo `andamento_igreen` (que o portal devolve com
+ * capitalização e rótulos variados: "Validado" | "validado" | "adimplente" |
+ * "menos_30d" | "ativo") e retorna true quando o cliente está "validado" —
+ * ou seja, entrou em cobrança/adimplente. Sem essa normalização, comparar
+ * exatamente contra "Validado" com V maiúsculo ignorava dezenas de clientes
+ * legitimamente aprovados no portal.
+ */
+export function isValidadoIgreen(andamento?: string | null): boolean {
+  if (!andamento) return false;
+  const s = andamento
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  return (
+    s === "validado" ||
+    s === "adimplente" ||
+    s === "menos_30d" ||
+    s === "menos 30d" ||
+    s === "ativo"
+  );
+}
+
 function normalizePersonName(name?: string | null): string {
   return (name || "")
     .normalize("NFD")
