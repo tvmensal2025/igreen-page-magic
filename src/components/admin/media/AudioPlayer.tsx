@@ -134,12 +134,20 @@ export default function AudioPlayer({
           preload="metadata"
           className="w-full h-8"
           onClick={(e) => e.stopPropagation()}
-          onError={() => setError(true)}
+          onError={handleAudioError}
         >
           <source src={url} type={mime} />
           <source src={url} />
           Seu navegador não suporta reprodução de áudio.
         </audio>
+      ) : notFound ? (
+        <div className="flex items-center gap-2 rounded border border-destructive/60 bg-destructive/10 p-2 text-xs">
+          <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
+          <span className="flex-1">
+            <strong>Arquivo não encontrado no Storage.</strong> Este áudio foi apagado do bucket
+            — o bot não consegue enviar. Reenvie o arquivo pelo botão de upload acima.
+          </span>
+        </div>
       ) : (
         <div className="flex items-center gap-2 rounded border border-destructive/40 bg-destructive/5 p-2 text-xs">
           <AlertCircle className="h-3.5 w-3.5 text-destructive flex-shrink-0" />
