@@ -36,13 +36,13 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
       onPublished?.();
     } catch (e: any) {
       const msg = String(e?.message || "");
-      const isWaba = msg.includes("WHATSAPP_BUSINESS_REQUIRED") || msg.includes("conta pessoal") || msg.includes("2446885");
+      const isWaba = msg.includes("WHATSAPP_BUSINESS_REQUIRED") || msg.includes("conta pessoal") || msg.includes("2446885") || msg.includes("1487246") || /not linked to your account/i.test(msg);
       if (isWaba) {
-        toast.error("WhatsApp Business (WABA) obrigatório", {
+        toast.error("WhatsApp não vinculado à Página do Meta", {
           id: toastId,
-          duration: 12000,
+          duration: 14000,
           description:
-            "O número precisa estar oficialmente conectado à sua Página no Meta Business Suite → WhatsApp Manager. Sem WABA, o anúncio CTWA oficial não publica. Acesse business.facebook.com/wa/manage/phone-numbers/ para conectar.",
+            "Testamos o número com e sem o 9 e o Meta rejeitou os dois. Cadastre o número em business.facebook.com/wa/manage/phone-numbers/ e vincule à mesma Página usada no anúncio, depois publique de novo.",
         });
       } else {
         toast.error("Não consegui publicar automaticamente", {

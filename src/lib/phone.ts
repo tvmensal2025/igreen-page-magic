@@ -41,6 +41,21 @@ export function normalizeBrazilPhone(raw: string | null | undefined): string {
   return digits;
 }
 
+/**
+ * Remove o 9º dígito de um celular BR (55 + DDD + 9 + 8 dígitos → 55 + DDD + 8 dígitos).
+ * Útil pra fallback em APIs (ex: Meta CTWA) que aceitam só o formato antigo.
+ * Se já vier sem o 9 (12 dígitos), devolve como está. Retorna string vazia se inválido.
+ */
+export function stripBrazilNinthDigit(raw: string | null | undefined): string {
+  const normalized = normalizeBrazilPhone(raw);
+  if (!normalized || !normalized.startsWith("55")) return normalized;
+  if (normalized.length === 12) return normalized; // já sem 9
+  if (normalized.length === 13 && normalized[4] === "9") {
+    return `55${normalized.slice(2, 4)}${normalized.slice(5)}`;
+  }
+  return normalized;
+}
+
 export type PhoneValidation = {
   valid: boolean;
   normalized: string;
