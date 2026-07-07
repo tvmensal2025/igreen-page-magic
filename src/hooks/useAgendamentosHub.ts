@@ -171,6 +171,7 @@ export function useAgendamentosHub(consultantId: string) {
     bulkCampaigns,
     reactivationSettings,
     autoReactivateTemplates,
+    pendingValidation,
     timeline,
     stats: {
       timelineUpcoming: timeline.length,
@@ -181,6 +182,7 @@ export function useAgendamentosHub(consultantId: string) {
       sentManual,
       failedManual,
       posVendaOverdue: posVenda.filter((p) => p.isOverdue).length,
+      pendingValidation,
     },
   };
 }
