@@ -961,7 +961,9 @@ function SessionWorkbench({
                   )}
                 </div>
               )}
+              </div>
             </div>
+
 
             {/* Painel lateral */}
             {sidePanel && !isFullscreen && (
