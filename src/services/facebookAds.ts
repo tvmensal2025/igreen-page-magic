@@ -28,7 +28,7 @@ async function throwFunctionError(error: any): Promise<never> {
         const have = ((payload.balance_cents ?? 0) / 100).toFixed(2);
         throw new Error(`Saldo insuficiente: precisa R$ ${need} e você tem R$ ${have}. Abri a recarga para você.`);
       }
-      if (payload?.error) throw new Error(payload.error);
+      if (payload?.error) throw new Error(payload.message || payload.error);
     } catch (parsed) {
       if (parsed instanceof Error && parsed.message) throw parsed;
     }
