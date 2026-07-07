@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, lazy, Suspense, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,6 +9,7 @@ import {
   type AgendamentosHubTab,
   type AgendamentoTimelineItem,
 } from "@/lib/agendamentosHub";
+import { labelForStageKey } from "@/lib/posVendaSchedule";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +17,9 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
@@ -26,6 +30,48 @@ const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ defa
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
+
+/** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
+function describeSource(item: AgendamentoTimelineItem): {
+  where: string;
+  hint: string;
+  targetTab: AgendamentosHubTab;
+  ctaLabel: string;
+} {
+  switch (item.kind) {
+    case "manual_scheduled":
+      return {
+        where: "Agenda manual",
+        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou apagar aqui mesmo.",
+        targetTab: "manual",
+        ctaLabel: "Abrir Agenda manual",
+      };
+    case "pos_venda_auto": {
+      const stageKey = item.id.split("-").slice(-1)[0];
+      const stageLabel = labelForStageKey(stageKey);
+      return {
+        where: `Pós-venda automático → ${stageLabel}`,
+        hint: "O texto e a mídia desta mensagem estão em Pós-venda automático, no botão “Autoprogressão”. Ao abrir, edite a coluna correspondente.",
+        targetTab: "pos-venda",
+        ctaLabel: "Abrir Pós-venda automático",
+      };
+    }
+    case "bot_followup":
+      return {
+        where: "Reaquecimento de leads",
+        hint: "O bot marcou uma continuação para este lead. Ajuste janelas, intervalos e templates em Reaquecimento.",
+        targetTab: "reaquecimento",
+        ctaLabel: "Abrir Reaquecimento",
+      };
+    case "bulk_campaign":
+      return {
+        where: "Campanhas em massa",
+        hint: "Este item faz parte de uma campanha em massa. Abra Campanhas para pausar, editar ou ver o progresso.",
+        targetTab: "campanhas",
+        ctaLabel: "Abrir Campanhas",
+      };
+  }
+}
 
 function formatScheduleDate(dateStr: string | Date) {
   try {
@@ -94,6 +140,12 @@ export function AgendamentosHub({
   const [scheduledAt, setScheduledAt] = useState("");
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
+
+  // Item da timeline clicado — abre o diálogo "onde configurar / editar aqui".
+  const [selected, setSelected] = useState<AgendamentoTimelineItem | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editAt, setEditAt] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const {
     loading,
@@ -337,7 +389,23 @@ export function AgendamentosHub({
                 <ScrollArea className="max-h-[360px]">
                   <div className="space-y-2">
                     {timeline.slice(0, 30).map((item) => (
-                      <div key={item.id} className="rounded-xl border border-border/40 bg-secondary/10 px-4 py-3">
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setSelected(item);
+                          if (item.kind === "manual_scheduled") {
+                            setEditText(item.preview || "");
+                            // datetime-local precisa de yyyy-MM-ddTHH:mm no fuso local
+                            const d = item.at;
+                            const pad = (n: number) => String(n).padStart(2, "0");
+                            setEditAt(
+                              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                            );
+                          }
+                        }}
+                        className="w-full text-left rounded-xl border border-border/40 bg-secondary/10 px-4 py-3 hover:border-primary/40 hover:bg-secondary/20 transition-colors"
+                      >
                         <div className="flex items-start gap-2">
                           <div className="w-7 h-7 rounded-md bg-muted/50 flex items-center justify-center shrink-0 mt-0.5">
                             {kindIcon(item.kind)}
@@ -347,6 +415,7 @@ export function AgendamentosHub({
                               <span className="text-sm font-bold truncate">{item.title}</span>
                               <Badge variant="secondary" className="text-[9px]">{item.badge}</Badge>
                               {timelineStatusBadge(item.status)}
+                              <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para configurar</span>
                             </div>
                             {item.preview && (
                               <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.preview}</p>
@@ -357,7 +426,7 @@ export function AgendamentosHub({
                             </p>
                           </div>
                         </div>
-                      </div>
+                      </button>
                     ))}
                   </div>
                 </ScrollArea>
@@ -625,7 +694,135 @@ export function AgendamentosHub({
           </TabsContent>
         </Tabs>
       </div>
+
+      <TimelineItemDialog
+        item={selected}
+        onClose={() => setSelected(null)}
+        onGoToConfig={(tab) => { setActiveTab(tab); setSelected(null); }}
+        editText={editText}
+        setEditText={setEditText}
+        editAt={editAt}
+        setEditAt={setEditAt}
+        savingEdit={savingEdit}
+        onSaveManual={async () => {
+          if (!selected || selected.kind !== "manual_scheduled") return;
+          setSavingEdit(true);
+          try {
+            const id = selected.id.replace(/^manual-/, "");
+            const { error } = await supabase
+              .from("scheduled_messages")
+              .update({
+                message_text: editText,
+                scheduled_at: new Date(editAt).toISOString(),
+              })
+              .eq("id", id);
+            if (error) throw error;
+            toast({ title: "Agendamento atualizado" });
+            setSelected(null);
+            refresh();
+          } catch {
+            toast({ title: "Erro ao atualizar", variant: "destructive" });
+          } finally {
+            setSavingEdit(false);
+          }
+        }}
+        onDeleteManual={async () => {
+          if (!selected || selected.kind !== "manual_scheduled") return;
+          const id = selected.id.replace(/^manual-/, "");
+          await handleDeleteManual(id);
+          setSelected(null);
+        }}
+      />
     </div>
+  );
+}
+
+function TimelineItemDialog({
+  item, onClose, onGoToConfig,
+  editText, setEditText, editAt, setEditAt, savingEdit, onSaveManual, onDeleteManual,
+}: {
+  item: AgendamentoTimelineItem | null;
+  onClose: () => void;
+  onGoToConfig: (tab: AgendamentosHubTab) => void;
+  editText: string;
+  setEditText: (v: string) => void;
+  editAt: string;
+  setEditAt: (v: string) => void;
+  savingEdit: boolean;
+  onSaveManual: () => void;
+  onDeleteManual: () => void;
+}) {
+  if (!item) return null;
+  const src = describeSource(item);
+  const isManual = item.kind === "manual_scheduled";
+  return (
+    <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings2 className="w-4 h-4 text-primary" />
+            {item.title}
+          </DialogTitle>
+          <DialogDescription>
+            {formatScheduleDate(item.at)} · {item.badge}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Onde está configurado</p>
+            <p className="text-sm font-semibold">{src.where}</p>
+            <p className="text-xs text-muted-foreground mt-1">{src.hint}</p>
+          </div>
+
+          {isManual ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Mensagem</Label>
+                <Textarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  rows={4}
+                  className="text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Enviar em</Label>
+                <Input
+                  type="datetime-local"
+                  value={editAt}
+                  onChange={(e) => setEditAt(e.target.value)}
+                />
+              </div>
+            </div>
+          ) : item.preview ? (
+            <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia</p>
+              <p className="text-sm whitespace-pre-wrap">{item.preview}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <DialogFooter className="gap-2 flex-wrap">
+          {isManual && (
+            <>
+              <Button variant="ghost" className="text-destructive gap-1.5" onClick={onDeleteManual}>
+                <Trash2 className="w-3.5 h-3.5" />
+                Apagar
+              </Button>
+              <Button onClick={onSaveManual} disabled={savingEdit || !editText.trim() || !editAt} className="gap-1.5">
+                {savingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Salvar mudanças
+              </Button>
+            </>
+          )}
+          <Button variant="outline" onClick={() => onGoToConfig(src.targetTab)} className="gap-1.5">
+            <Settings2 className="w-3.5 h-3.5" />
+            {src.ctaLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
