@@ -480,6 +480,7 @@ async function runSyncAllBackgroundPhase(
   consultantId: string | null,
   toggles: Record<string, boolean>,
   baseCustomers: any[],
+  igreenAccountId: string | null = null,
 ): Promise<void> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
@@ -510,7 +511,7 @@ async function runSyncAllBackgroundPhase(
     const fullCustomers: any[] = r.data?.customers || [];
     if (fullCustomers.length > 0) {
       try {
-        out.customers_full = await persistCustomers(supabase, consultantId, fullCustomers);
+        out.customers_full = await persistCustomers(supabase, consultantId, fullCustomers, igreenAccountId);
         out.portfolio_full = await markOutOfPortfolio(supabase, consultantId, fullCustomers);
       } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
     }
@@ -566,7 +567,7 @@ async function runSyncAllBackgroundPhase(
       }
       const details = er.data?.details || [];
       detailsReceived += details.length;
-      const applied = await applyCustomerDetails(supabase, consultantId, details);
+      const applied = await applyCustomerDetails(supabase, consultantId, details, igreenAccountId);
       detailsApplied += Number(applied.details_applied || 0);
     }
     out.details = { details_received: detailsReceived, details_applied: detailsApplied, total_codes: codes.length };
@@ -620,9 +621,58 @@ async function runSyncAllBackgroundPhase(
   }
 }
 
+// =====================================================
+// MULTI-CONTA: percorre todas as contas iGreen do consultor em ordem de
+// `position` (1 = principal) e sincroniza uma por uma. Cada conta grava seus
+// clientes marcados com `igreen_account_id`, evitando misturar carteiras de
+// contas diferentes. Se o consultor só tem 1 conta (a principal), o
+// comportamento é idêntico ao de antes.
+// deno-lint-ignore no-explicit-any
+async function syncAllAccountsForConsultant(
+  supabase: any,
+  worker: { url: string; secret: string },
+  consultantId: string,
+  mode: string,
+  fallbackEmail?: string | null,
+  fallbackPassword?: string | null,
+): Promise<Record<string, unknown>> {
+  const { data: accounts } = await supabase
+    .from("igreen_portal_accounts")
+    .select("id, position, label, portal_email, portal_password")
+    .eq("consultant_id", consultantId)
+    .order("position", { ascending: true });
+
+  const list = (accounts || []) as Array<{ id: string; position: number; label: string | null; portal_email: string; portal_password: string }>;
+
+  // Compatibilidade: consultor sem nenhuma linha em igreen_portal_accounts
+  // ainda (ex.: credencial antiga não migrada) — usa o fallback direto, sem
+  // account_id (comportamento legado).
+  if (list.length === 0) {
+    if (!fallbackEmail || !fallbackPassword) {
+      return { success: false, error: "Nenhuma conta iGreen configurada para este consultor." };
+    }
+    return await syncOneConsultant(supabase, worker, fallbackEmail, fallbackPassword, consultantId, mode, null);
+  }
+
+  const results: Record<string, unknown>[] = [];
+  for (const acc of list) {
+    console.log(`[multi-account] sync conta position=${acc.position} (${acc.label || acc.portal_email}) consultant=${consultantId}`);
+    try {
+      const r = await syncOneConsultant(supabase, worker, acc.portal_email, acc.portal_password, consultantId, mode, acc.id);
+      results.push({ account_id: acc.id, position: acc.position, label: acc.label, ...r });
+    } catch (err) {
+      results.push({ account_id: acc.id, position: acc.position, label: acc.label, success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+    // Pausa entre contas para não sobrecarregar o proxy/portal com logins em sequência.
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+  const anySuccess = results.some((r) => r.success);
+  return { success: anySuccess, mode, accounts_synced: results.length, results };
+}
+
 // deno-lint-ignore no-explicit-any
 function scheduleSyncAllBackgroundPhase(...args: any[]): void {
-  const task = runSyncAllBackgroundPhase(args[0], args[1], args[2], args[3], args[4], args[5], args[6]);
+  const task = runSyncAllBackgroundPhase(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
   // @ts-ignore EdgeRuntime existe no Supabase edge runtime
   try { EdgeRuntime.waitUntil(task); } catch { /* se não houver EdgeRuntime, task já iniciou */ }
 }
@@ -1183,7 +1233,7 @@ async function prioritizeUnenrichedCodes(supabase: any, consultantId: string | n
 
 // Aplica a ficha detalhada (/clientes-green/boletos/{id}) nos customers:
 // deno-lint-ignore no-explicit-any
-async function applyCustomerDetails(supabase: any, consultantId: string | null, details: any[]): Promise<Record<string, unknown>> {
+async function applyCustomerDetails(supabase: any, consultantId: string | null, details: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(details) || details.length === 0) return { details_applied: 0 };
   let applied = 0;
   for (const d of details) {
@@ -1251,11 +1301,13 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     patch.last_enriched_at = new Date().toISOString();
     if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
 
-    let { error } = await supabase
+    let updQuery = supabase
       .from("customers")
       .update(patch)
       .eq("consultant_id", consultantId)
       .eq("igreen_code", code);
+    if (igreenAccountId) updQuery = updQuery.eq("igreen_account_id", igreenAccountId);
+    let { error } = await updQuery;
     // Alguns clientes têm registros DUPLICADOS com o mesmo igreen_code (dado
     // legado/importação). O update acima afeta as duas linhas de uma vez; se
     // o telefone real colidir com o índice único (phone_whatsapp,
@@ -1266,11 +1318,13 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     // como enriquecido mesmo assim.
     if (error && patch.phone_whatsapp) {
       const { phone_whatsapp: _drop, ...patchNoPhone } = patch;
-      const retry = await supabase
+      let retryQuery = supabase
         .from("customers")
         .update(patchNoPhone)
         .eq("consultant_id", consultantId)
         .eq("igreen_code", code);
+      if (igreenAccountId) retryQuery = retryQuery.eq("igreen_account_id", igreenAccountId);
+      const retry = await retryQuery;
       error = retry.error;
     }
     if (!error) applied++;
@@ -1347,6 +1401,7 @@ async function syncOneConsultant(
   portalPassword: string,
   consultantId: string | null,
   mode: string,
+  igreenAccountId: string | null = null,
 ): Promise<Record<string, unknown>> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
@@ -1386,10 +1441,17 @@ async function syncOneConsultant(
 
     const baseConsultorId = base.data?.consultor_id ? String(base.data.consultor_id) : null;
     if (consultantId && baseConsultorId) {
-      await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
+      // Com múltiplas contas iGreen, o igreen_consultor_id por conta fica em
+      // igreen_portal_accounts; a coluna legada em `consultants` só é
+      // atualizada para a conta principal (compatibilidade com telas antigas).
+      if (igreenAccountId) {
+        await supabase.from("igreen_portal_accounts").update({ igreen_consultor_id: baseConsultorId, last_sync_at: new Date().toISOString() }).eq("id", igreenAccountId);
+      } else {
+        await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
+      }
     }
     out.portal_identity = { igreen_consultor_id: baseConsultorId };
-    try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || []); }
+    try { out.customers = await persistCustomers(supabase, consultantId, base.data?.customers || [], igreenAccountId); }
     catch (e) {
       return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
     }
@@ -1410,6 +1472,7 @@ async function syncOneConsultant(
       consultantId,
       toggles,
       base.data?.customers || [],
+      igreenAccountId,
     );
     return out;
   }
@@ -1423,7 +1486,7 @@ async function syncOneConsultant(
   if (mode === "enrich_only") {
     console.log(`[worker] enrich-only for ${emailNorm}`);
     const enrichCap = 120; // 4 lotes de 30 por chamada
-    const { data: pend } = await supabase
+    let pendQuery = supabase
       .from("customers")
       .select("igreen_code")
       .eq("consultant_id", consultantId)
@@ -1431,6 +1494,10 @@ async function syncOneConsultant(
       .is("last_enriched_at", null)
       .not("igreen_code", "is", null)
       .limit(enrichCap);
+    // Multi-conta: se veio de uma conta específica, enriquece só os clientes
+    // dela (evita usar a credencial errada em clientes de outra conta).
+    if (igreenAccountId) pendQuery = pendQuery.eq("igreen_account_id", igreenAccountId);
+    const { data: pend } = await pendQuery;
     const codes = ((pend || []) as Array<{ igreen_code: string }>)
       .map((c) => String(c.igreen_code)).filter(Boolean);
     if (codes.length === 0) {
@@ -1451,15 +1518,17 @@ async function syncOneConsultant(
       }
       const details = er.data?.details || [];
       received += details.length;
-      const res = await applyCustomerDetails(supabase, consultantId, details);
+      const res = await applyCustomerDetails(supabase, consultantId, details, igreenAccountId);
       applied += Number(res.details_applied || 0);
     }
-    const { count: remaining } = await supabase
+    let remainingQuery = supabase
       .from("customers")
       .select("id", { count: "exact", head: true })
       .eq("consultant_id", consultantId)
       .in("customer_origin", ["igreen_sync", "igreen_extension"])
       .is("last_enriched_at", null);
+    if (igreenAccountId) remainingQuery = remainingQuery.eq("igreen_account_id", igreenAccountId);
+    const { count: remaining } = await remainingQuery;
     return { success: true, mode: "enrich_only", details_received: received, details_applied: applied, pending_remaining: remaining ?? null };
   }
 
@@ -1631,7 +1700,7 @@ async function persistNetwork(supabase: any, consultantId: string | null, member
 }
 
 // deno-lint-ignore no-explicit-any
-async function persistCustomers(supabase: any, consultantId: string | null, allCustomers: Record<string, unknown>[]): Promise<Record<string, unknown>> {
+async function persistCustomers(supabase: any, consultantId: string | null, allCustomers: Record<string, unknown>[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   console.log(`Worker returned ${allCustomers.length} customers`);
 
   const seenPhones = new Map<string, string>();
@@ -1655,6 +1724,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     }
 
     if (consultantId) record.consultant_id = consultantId;
+    if (igreenAccountId) record.igreen_account_id = igreenAccountId;
     records.push(record);
   }
 
@@ -1885,7 +1955,7 @@ Deno.serve(async (req) => {
           const runId = await logSyncStart(supabase, c.id, cronMode);
           let r: Record<string, unknown> = { success: false, error: "unknown" };
           try {
-            r = await syncOneConsultant(supabase, worker, c.igreen_portal_email, c.igreen_portal_password, c.id, cronMode);
+            r = await syncAllAccountsForConsultant(supabase, worker, c.id, cronMode, c.igreen_portal_email, c.igreen_portal_password);
           } catch (err) {
             r = { success: false, error: err instanceof Error ? err.message : String(err) };
             console.error(`[bg] Error syncing ${c.name}:`, err);
@@ -1980,9 +2050,13 @@ Deno.serve(async (req) => {
       const runId = await logSyncStart(supabase, consultantId, mode);
       let r: Record<string, unknown> = { success: false, error: "unknown" };
       try {
-        r = await syncOneConsultant(
-          supabase, worker, portalEmail!, portalPassword!, consultantId, mode,
-        );
+        // MULTI-CONTA: quando há consultant_id e não veio credencial explícita
+        // no body (fluxo normal do botão/cron), percorre TODAS as contas
+        // iGreen do consultor em ordem (1, 2, 3...). Se só houver a conta
+        // principal, o resultado é o mesmo de antes.
+        r = (consultantId && !credsFromBody)
+          ? await syncAllAccountsForConsultant(supabase, worker, consultantId, mode, portalEmail, portalPassword)
+          : await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
       } catch (err) {
         r = { success: false, error: err instanceof Error ? err.message : String(err) };
