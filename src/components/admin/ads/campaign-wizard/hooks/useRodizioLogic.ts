@@ -212,49 +212,43 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
       return;
     }
 
-    // Duplicados dentro do rodízio deste anúncio + entre participantes existentes
+    // Duplicidade só bloqueia dentro do rodízio DESTA campanha.
+    // Se o participante já existe entre os `availablePartners` (foi cadastrado
+    // antes, em outra campanha), reusamos em vez de bloquear — o mesmo parceiro
+    // pode participar de várias campanhas.
     const normalizedPhone = normalizeBrPhone(form.notification_phone);
     const igreenId = form.partner_igreen_id.trim();
     const cli = form.cli.trim();
-    const pool: RodizioPartnerDraft[] = [
-      ...state.rodizioPartners,
-      ...availablePartners,
-    ];
 
-    const dupPhone = pool.find(
-      (p) => normalizeBrPhone(p.notification_phone) === normalizedPhone,
-    );
-    if (dupPhone) {
+    const matchesIdentity = (p: RodizioPartnerDraft) => {
+      if (normalizedPhone && normalizeBrPhone(p.notification_phone) === normalizedPhone) return true;
+      if (form.tipo === "consultor" && igreenId && (p.partner_igreen_id ?? "").trim() === igreenId) return true;
+      if (form.tipo === "parceiro" && cli && (p.cli ?? "").trim() === cli) return true;
+      return false;
+    };
+
+    const dupInCurrent = state.rodizioPartners.find(matchesIdentity);
+    if (dupInCurrent) {
       toast({
-        title: "♻️ Este telefone já está cadastrado",
-        description: `${dupPhone.nome} já usa este WhatsApp. Cada participante precisa de um número diferente.`,
-        variant: "destructive",
+        title: "♻️ Já está no rodízio",
+        description: `${dupInCurrent.nome} já está na lista desta campanha.`,
       });
       return;
     }
-    if (form.tipo === "consultor" && igreenId) {
-      const dupIgreen = pool.find(
-        (p) => (p.partner_igreen_id ?? "").trim() === igreenId,
-      );
-      if (dupIgreen) {
-        toast({
-          title: "🆔 Código iGreen já cadastrado",
-          description: `${dupIgreen.nome} já usa este código. Um consultor não pode entrar duas vezes.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-    if (form.tipo === "parceiro" && cli) {
-      const dupCli = pool.find((p) => (p.cli ?? "").trim() === cli);
-      if (dupCli) {
-        toast({
-          title: "🔢 Código de indicação já cadastrado",
-          description: `${dupCli.nome} já usa este código. Peça outro ao parceiro.`,
-          variant: "destructive",
-        });
-        return;
-      }
+
+    const dupInAvailable = availablePartners.find(matchesIdentity);
+    if (dupInAvailable) {
+      patchFn((prev) => ({
+        rodizioPartners: prev.rodizioPartners.some((p) => p.id === dupInAvailable.id)
+          ? prev.rodizioPartners
+          : [...prev.rodizioPartners, dupInAvailable],
+        rodizioInlineForm: null,
+      }));
+      toast({
+        title: "♻️ Participante reaproveitado",
+        description: `${dupInAvailable.nome} já estava cadastrado — adicionado ao rodízio desta campanha.`,
+      });
+      return;
     }
 
     setCreating(true);
