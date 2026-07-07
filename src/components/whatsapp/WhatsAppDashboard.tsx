@@ -260,6 +260,9 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
 
   return (
     <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
+      <div className="flex justify-end">
+        <AutomacoesAtivasBadge consultantId={consultantId} variant="chip" />
+      </div>
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <KpiCard icon={<MessageSquare className="w-4 h-4" />} label="Conversas Ativas" value={kpis?.activeChats ?? 0} subtitle="Últimos 7 dias" />
