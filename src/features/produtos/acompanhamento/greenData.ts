@@ -7,6 +7,7 @@ import {
   estimateBillValue,
   graduacaoRank,
   isDirectCustomer,
+  isValidadoIgreen,
   resolveGraduacao,
   type CountMode,
   type EntradaRule,
