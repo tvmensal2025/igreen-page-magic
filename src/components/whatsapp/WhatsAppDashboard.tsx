@@ -12,6 +12,7 @@ import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { buildUpcomingPosVendaMessages, groupSentStageKeys } from "@/lib/posVendaSchedule";
 import { dispatchAgendamentosNav } from "@/lib/agendamentosHub";
 import type { PosVendaStage } from "@/lib/posVenda/format";
+import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 interface WhatsAppDashboardProps {
   consultantId: string;
@@ -259,6 +260,9 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
 
   return (
     <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
+      <div className="flex justify-end">
+        <AutomacoesAtivasBadge consultantId={consultantId} variant="chip" />
+      </div>
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <KpiCard icon={<MessageSquare className="w-4 h-4" />} label="Conversas Ativas" value={kpis?.activeChats ?? 0} subtitle="Últimos 7 dias" />
