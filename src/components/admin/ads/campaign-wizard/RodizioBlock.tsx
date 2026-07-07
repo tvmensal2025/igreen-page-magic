@@ -12,7 +12,7 @@
  * Limite do projeto: ≤ 250 linhas. Por isso a regra de negócio fica no hook.
  */
 import { useState } from "react";
-import { Users, UserPlus, X, AlertTriangle, Loader2 } from "lucide-react";
+import { Users, UserPlus, UserCheck, X, AlertTriangle, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,7 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
     minParticipantsError,
     setRodizioEnabled,
     addPartner,
+    addMyself,
     removePartner,
     openInlineForm,
     closeInlineForm,
@@ -187,7 +188,22 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
               errors={triedSubmit ? mapInlineErrors(rodizioInlineForm) : {}}
             />
           ) : (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => void addMyself()}
+                disabled={rodizioPartnersLoading || creating}
+                title="Adicionar você mesmo (dono da conta) ao rodízio"
+              >
+                {creating ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <UserCheck className="w-3.5 h-3.5" />
+                )}
+                Sou eu (dono da conta)
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -200,7 +216,7 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
                 ) : (
                   <UserPlus className="w-3.5 h-3.5" />
                 )}
-                Criar participante
+                Adicionar outra pessoa
               </Button>
             </div>
           )}

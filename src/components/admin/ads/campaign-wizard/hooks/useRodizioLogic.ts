@@ -11,6 +11,7 @@
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import {
   listActiveReferralPartners,
   createReferralPartner,
@@ -211,49 +212,43 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
       return;
     }
 
-    // Duplicados dentro do rodízio deste anúncio + entre participantes existentes
+    // Duplicidade só bloqueia dentro do rodízio DESTA campanha.
+    // Se o participante já existe entre os `availablePartners` (foi cadastrado
+    // antes, em outra campanha), reusamos em vez de bloquear — o mesmo parceiro
+    // pode participar de várias campanhas.
     const normalizedPhone = normalizeBrPhone(form.notification_phone);
     const igreenId = form.partner_igreen_id.trim();
     const cli = form.cli.trim();
-    const pool: RodizioPartnerDraft[] = [
-      ...state.rodizioPartners,
-      ...availablePartners,
-    ];
 
-    const dupPhone = pool.find(
-      (p) => normalizeBrPhone(p.notification_phone) === normalizedPhone,
-    );
-    if (dupPhone) {
+    const matchesIdentity = (p: RodizioPartnerDraft) => {
+      if (normalizedPhone && normalizeBrPhone(p.notification_phone) === normalizedPhone) return true;
+      if (form.tipo === "consultor" && igreenId && (p.partner_igreen_id ?? "").trim() === igreenId) return true;
+      if (form.tipo === "parceiro" && cli && (p.cli ?? "").trim() === cli) return true;
+      return false;
+    };
+
+    const dupInCurrent = state.rodizioPartners.find(matchesIdentity);
+    if (dupInCurrent) {
       toast({
-        title: "♻️ Este telefone já está cadastrado",
-        description: `${dupPhone.nome} já usa este WhatsApp. Cada participante precisa de um número diferente.`,
-        variant: "destructive",
+        title: "♻️ Já está no rodízio",
+        description: `${dupInCurrent.nome} já está na lista desta campanha.`,
       });
       return;
     }
-    if (form.tipo === "consultor" && igreenId) {
-      const dupIgreen = pool.find(
-        (p) => (p.partner_igreen_id ?? "").trim() === igreenId,
-      );
-      if (dupIgreen) {
-        toast({
-          title: "🆔 Código iGreen já cadastrado",
-          description: `${dupIgreen.nome} já usa este código. Um consultor não pode entrar duas vezes.`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-    if (form.tipo === "parceiro" && cli) {
-      const dupCli = pool.find((p) => (p.cli ?? "").trim() === cli);
-      if (dupCli) {
-        toast({
-          title: "🔢 Código de indicação já cadastrado",
-          description: `${dupCli.nome} já usa este código. Peça outro ao parceiro.`,
-          variant: "destructive",
-        });
-        return;
-      }
+
+    const dupInAvailable = availablePartners.find(matchesIdentity);
+    if (dupInAvailable) {
+      patchFn((prev) => ({
+        rodizioPartners: prev.rodizioPartners.some((p) => p.id === dupInAvailable.id)
+          ? prev.rodizioPartners
+          : [...prev.rodizioPartners, dupInAvailable],
+        rodizioInlineForm: null,
+      }));
+      toast({
+        title: "♻️ Participante reaproveitado",
+        description: `${dupInAvailable.nome} já estava cadastrado — adicionado ao rodízio desta campanha.`,
+      });
+      return;
     }
 
     setCreating(true);
@@ -288,6 +283,82 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     }
   }, [state.rodizioInlineForm, state.rodizioPartners, availablePartners, patchFn, toast]);
 
+  /**
+   * Adiciona o próprio dono da conta (consultor logado) ao rodízio, sem
+   * precisar redigitar nome/telefone/código. Se ele já foi cadastrado antes
+   * (existe em `availablePartners`), reusa; caso contrário cria um
+   * `referral_partners` tipo CONSULTOR com os dados do perfil.
+   */
+  const addMyself = useCallback(async () => {
+    setCreating(true);
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes?.user?.id) {
+        throw new Error("Sessão inválida. Faça login novamente.");
+      }
+      const uid = userRes.user.id;
+      const { data: me, error: meErr } = await supabase
+        .from("consultants")
+        .select("id, name, phone, igreen_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (meErr) throw meErr;
+      if (!me) throw new Error("Perfil do consultor não encontrado.");
+      const nome = (me.name || "").trim();
+      const phone = normalizeBrPhone(me.phone);
+      const igreenId = (me.igreen_id || "").trim();
+      if (!nome || !phone || !igreenId) {
+        toast({
+          title: "Complete seu perfil",
+          description: "Cadastre nome, WhatsApp e código iGreen em Meus Dados antes de se adicionar ao rodízio.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const alreadyInCurrent = state.rodizioPartners.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId
+          || normalizeBrPhone(p.notification_phone) === phone,
+      );
+      if (alreadyInCurrent) {
+        toast({ title: "♻️ Você já está no rodízio", description: `${alreadyInCurrent.nome} já está na lista.` });
+        return;
+      }
+
+      const existing = availablePartners.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId
+          || normalizeBrPhone(p.notification_phone) === phone,
+      );
+      if (existing) {
+        patchFn((prev) => ({
+          rodizioPartners: [...prev.rodizioPartners, existing],
+        }));
+        toast({ title: "✅ Você entrou no rodízio", description: `${existing.nome} adicionado.` });
+        return;
+      }
+
+      const novo = await createReferralPartner({
+        tipo: "consultor",
+        nome,
+        notification_phone: phone,
+        partner_igreen_id: igreenId,
+      });
+      setAvailablePartners((prev) => [novo, ...prev]);
+      patchFn((prev) => ({
+        rodizioPartners: [...prev.rodizioPartners, novo],
+      }));
+      toast({ title: "✅ Você entrou no rodízio", description: `${novo.nome} adicionado.` });
+    } catch (e: any) {
+      toast({
+        title: "❌ Não consegui te adicionar",
+        description: e?.message || "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  }, [availablePartners, state.rodizioPartners, patchFn, toast]);
+
   // Mensagem de erro do mínimo de 2 participantes (Requisito 5.2).
   const minParticipantsError = useMemo<string | null>(() => {
     if (!state.rodizioEnabled) return null;
@@ -306,6 +377,7 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     reloadPartners: loadPartners,
     setRodizioEnabled,
     addPartner,
+    addMyself,
     removePartner,
     openInlineForm,
     closeInlineForm,
