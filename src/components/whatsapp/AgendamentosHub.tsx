@@ -141,6 +141,12 @@ export function AgendamentosHub({
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
+  // Item da timeline clicado — abre o diálogo "onde configurar / editar aqui".
+  const [selected, setSelected] = useState<AgendamentoTimelineItem | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editAt, setEditAt] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const {
     loading,
     refresh,
