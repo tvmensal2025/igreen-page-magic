@@ -10,36 +10,24 @@ import {
 
 type Key = keyof Omit<AutomationSettings, "consultant_id">;
 
-const GROUPS: { title: string; hint: string; locked?: boolean; items: { key: Key; label: string; desc: string }[] }[] = [
-  {
-    title: "Captura de dados (sempre ativo)",
-    hint: "O sync do iGreen busca e salva estes dados a cada sincronização — não dá pra desligar.",
-    locked: true,
-    items: [
-      { key: "capture_boletos", label: "Boletos dos clientes", desc: "Valores, vencimento, status e PDF." },
-      { key: "capture_devolutivas", label: "Devolutivas detalhadas", desc: "Categoria, motivo, se é impeditiva." },
-      { key: "capture_telecom", label: "Carteira Telecom", desc: "Clientes de telefonia." },
-      { key: "capture_seguros", label: "Carteira Seguros", desc: "Clientes de seguro veicular." },
-      { key: "capture_cashback", label: "Cashback", desc: "Saldo e ranking de indicações." },
-    ],
-  },
+const GROUPS: { title: string; hint: string; items: { key: Key; label: string; desc: string }[] }[] = [
   {
     title: "Alertas e tarefas",
-    hint: "Gera itens acionáveis no seu painel (não envia nada ao cliente).",
+    hint: "Aparecem no seu painel para você agir. Não envia nada pro cliente.",
     items: [
-      { key: "alert_boletos_vencendo", label: "Alerta de boleto vencendo", desc: "Requer captura de boletos." },
-      { key: "alert_devolutivas", label: "Alerta de devolutivas", desc: "Requer captura de devolutivas." },
-      { key: "alert_licencas_expirando", label: "Alerta de licenças expirando", desc: "Retenção da sua rede." },
-      { key: "rotinas_tarefas", label: "Rotinas viram tarefas", desc: "Aniversariantes, esfriando, reengajamento." },
+      { key: "alert_boletos_vencendo", label: "Avisar quando um boleto do cliente estiver perto de vencer", desc: "Aparece um aviso no seu painel para você agir." },
+      { key: "alert_devolutivas", label: "Avisar quando um cliente for reprovado ou tiver pendência no cadastro", desc: "Aparece no painel para você resolver." },
+      { key: "alert_licencas_expirando", label: "Avisar quando um consultor da sua rede estiver perto de perder a licença", desc: "Ajuda você a reter sua rede." },
+      { key: "rotinas_tarefas", label: "Criar tarefas automáticas todo dia (aniversariantes, clientes esfriando, quem sumiu)", desc: "Aparecem na sua lista de tarefas." },
     ],
   },
   {
-    title: "Automação no WhatsApp (proativo)",
-    hint: "⚠️ Envia mensagens automáticas aos clientes. Ative com cuidado.",
+    title: "Automação no WhatsApp",
+    hint: "⚠️ Estas opções mandam mensagem sozinhas para o cliente. Ligue só se quiser que aconteça sem você precisar aprovar cada uma.",
     items: [
-      { key: "auto_wa_boleto_vencendo", label: "Lembrete de boleto por WhatsApp", desc: "Envia o boleto ao cliente antes de vencer." },
-      { key: "auto_wa_aniversariante", label: "Mensagem de aniversário", desc: "Parabeniza o cliente no dia." },
-      { key: "cross_sell_bot", label: "Cross-sell no bot", desc: "Oferece Telecom/Seguros a quem só tem energia." },
+      { key: "auto_wa_boleto_vencendo", label: "Enviar o boleto pro cliente antes de vencer, pelo WhatsApp", desc: "O sistema manda a mensagem sozinho, sem você precisar fazer nada." },
+      { key: "auto_wa_aniversariante", label: "Parabenizar o cliente no dia do aniversário, pelo WhatsApp", desc: "O sistema envia sozinho no dia." },
+      { key: "cross_sell_bot", label: "Oferecer Telefonia e Seguro Auto para clientes que só têm Energia", desc: "Quando o cliente conversar com o bot, ele mesmo sugere os outros produtos." },
     ],
   },
 ];
@@ -64,7 +52,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       <div>
         <h3 className="font-semibold text-sm">Automações iGreen</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          <strong>Captura de dados é obrigatória e sempre salva</strong> (boletos, devolutivas, telecom, seguros, cashback). Alertas já vêm ligados. Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
+          Alertas já vêm ligados. As opções que enviam mensagem direto pro cliente ficam desligadas — ligue só as que você quer que rodem no automático.
         </p>
       </div>
 
@@ -89,10 +77,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                     </div>
                     <Switch
                       id={it.key}
-                      checked={g.locked ? true : !!settings?.[it.key]}
-                      disabled={g.locked || update.isPending}
-                      onCheckedChange={(v) => { if (!g.locked) onToggle(it.key, v); }}
-                      title={g.locked ? "Captura obrigatória — sempre salvando" : undefined}
+                      checked={!!settings?.[it.key]}
+                      disabled={update.isPending}
+                      onCheckedChange={(v) => onToggle(it.key, v)}
                     />
                   </div>
                 ))}
