@@ -12,7 +12,7 @@
  * Limite do projeto: ≤ 250 linhas. Por isso a regra de negócio fica no hook.
  */
 import { useState } from "react";
-import { Users, UserPlus, X, AlertTriangle, Loader2 } from "lucide-react";
+import { Users, UserPlus, UserCheck, X, AlertTriangle, Loader2 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
