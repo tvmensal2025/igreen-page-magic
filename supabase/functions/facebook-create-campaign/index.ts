@@ -457,6 +457,10 @@ Deno.serve(async (req) => {
       // Advantage+ Audience (padrão Meta 2026) — algoritmo expande além das âncoras.
       // Meta EXIGE age_min<=25 e age_max>=65 explícitos (subcodes 1870188/1870189).
       targeting_automation: { advantage_audience: 1 },
+      // Relaxamento oficial: permite Meta expandir além do LAL / Custom Audience
+      // quando encontrar padrão de conversa iniciada fora deles. +5-10% alcance,
+      // mesma qualidade — padrão dos grandes anunciantes CTWA solar BR (Órigo/Solfácil).
+      targeting_relaxation: { lookalike: 1, custom_audience: 1 },
     };
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
     // (recomendação oficial p/ CTWA, distribui em TODOS os elegíveis e otimiza CPL).
