@@ -5,9 +5,10 @@
 // v4: adiciona indicador de reconexão automática em andamento.
 // =============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScreenShare, X, Lock, ShieldAlert, Pause, Play, Clock, RefreshCw } from "lucide-react";
+
 import { Card } from "@/components/ui/card";
 import type { SupportSession } from "./types";
 
@@ -79,11 +80,81 @@ export function ActiveSessionBanner({
     return () => clearInterval(t);
   }, [session.started_at]);
 
+  // Enquanto está compartilhando ativamente, colapsa para uma faixa fina
+  // — reduz a "zona morta" no topo da tela do consultor que o operador vê.
+  const collapsed = session.status === "active" && sharing && !reconnecting;
+
+  // Publica a altura real do banner numa CSS var + aplica padding-top no
+  // <body>, para que nenhum conteúdo real da página fique escondido embaixo
+  // do banner (o operador deixa de perder a parte inferior da tela).
+  const bannerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = bannerRef.current;
+    if (!el) return;
+    const body = document.body;
+    const prevPad = body.style.paddingTop;
+    const apply = () => {
+      const h = el.offsetHeight;
+      document.documentElement.style.setProperty("--remote-support-banner-h", `${h}px`);
+      body.style.paddingTop = `${h}px`;
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.removeProperty("--remote-support-banner-h");
+      body.style.paddingTop = prevPad;
+    };
+  }, [collapsed]);
+
+  if (collapsed) {
+    return (
+      <div
+        ref={bannerRef}
+        data-remote-support-banner
+        className="fixed top-0 inset-x-0 z-[9999] bg-destructive text-destructive-foreground shadow-md border-b border-destructive-foreground/30"
+      >
+        <div className="mx-auto px-3 h-6 flex items-center gap-2 text-[11px] leading-none">
+          <ShieldAlert className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="font-semibold">Suporte ATIVO</span>
+          <span className="opacity-80">•</span>
+          <span className="font-mono opacity-90">{fmtDuration(elapsed)}</span>
+          {paused && (
+            <span className="ml-1 px-1.5 py-0.5 rounded bg-warning text-black text-[10px] font-semibold">
+              PAUSADO
+            </span>
+          )}
+          <div className="ml-auto flex items-center gap-1">
+            <button
+              type="button"
+              onClick={onTogglePause}
+              title={paused ? "Retomar controle" : "Pausar controle"}
+              className="inline-flex items-center justify-center size-5 rounded hover:bg-black/20"
+            >
+              {paused ? <Play className="size-3" /> : <Pause className="size-3" />}
+            </button>
+            <button
+              type="button"
+              onClick={onEnd}
+              title="Encerrar suporte"
+              className="inline-flex items-center justify-center size-5 rounded hover:bg-black/20"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
+      ref={bannerRef}
       data-remote-support-banner
       className="fixed top-0 inset-x-0 z-[9999] bg-destructive text-destructive-foreground shadow-lg border-b-2 border-destructive-foreground/30"
     >
+
       <div className="max-w-7xl mx-auto px-3 py-2 flex items-center gap-3 flex-wrap">
         <ShieldAlert className="size-5 shrink-0" aria-hidden="true" />
 
