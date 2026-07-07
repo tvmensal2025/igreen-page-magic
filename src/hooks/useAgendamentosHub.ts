@@ -141,6 +141,7 @@ export function useAgendamentosHub(consultantId: string) {
       }
 
       setAutoReactivateTemplates(templatesRes.count ?? 0);
+      setPendingValidation((pendingValidationRes as any).count ?? 0);
     } finally {
       setLoading(false);
     }
