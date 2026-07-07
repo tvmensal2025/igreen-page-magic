@@ -332,8 +332,10 @@ Deno.serve(async (req) => {
       pixel_id: REQUIRED_PIXEL_ID,
       ig_account_id: platform.ig_account_id,
       whatsapp_phone_number_id: null as string | null,
-      whatsapp_destination_number: waNumberSetting,
+      whatsapp_destination_number: waWith9, // 1ª tentativa: formato moderno (com 9). Retry sem 9 se Meta rejeitar.
     };
+    // mudável: será atualizado pro formato que o Meta aceitou (usado no link WhatsApp do creative)
+    let waNumberWinner = waWith9;
 
     const accId = conn.ad_account_id; // já vem com prefixo act_
     // Idade ampliada por padrão (25-65) — mais inventário = CPM/CPL mais baixo.
