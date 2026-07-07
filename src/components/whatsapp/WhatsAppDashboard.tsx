@@ -12,6 +12,7 @@ import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { buildUpcomingPosVendaMessages, groupSentStageKeys } from "@/lib/posVendaSchedule";
 import { dispatchAgendamentosNav } from "@/lib/agendamentosHub";
 import type { PosVendaStage } from "@/lib/posVenda/format";
+import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 interface WhatsAppDashboardProps {
   consultantId: string;
