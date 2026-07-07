@@ -5,9 +5,10 @@
 // v4: adiciona indicador de reconexão automática em andamento.
 // =============================================================================
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScreenShare, X, Lock, ShieldAlert, Pause, Play, Clock, RefreshCw } from "lucide-react";
+
 import { Card } from "@/components/ui/card";
 import type { SupportSession } from "./types";
 
