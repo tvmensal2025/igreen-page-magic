@@ -1,0 +1,1 @@
+UPDATE public.ai_media_library SET active = false WHERE storage_path = '0c2711ad-4836-41e6-afba-edd94f698ae3/passo_mp8yc0bp/ec2e4859-5b78-4e87-8373-14639ef9338a.mp3' AND active = true;
