@@ -601,7 +601,7 @@ export function AgendamentosHub({
             ) : posVenda.length === 0 ? (
               <EmptyState text="Nenhum envio previsto — aprove clientes em Clientes ativos para começar a esteira" />
             ) : (
-              <PosVendaList items={posVenda} />
+              <PosVendaList items={posVenda} consultantId={consultantId} onSaved={refresh} />
             )}
           </TabsContent>
 
