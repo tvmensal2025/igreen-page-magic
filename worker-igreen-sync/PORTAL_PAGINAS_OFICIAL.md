@@ -198,3 +198,42 @@ rota específica por nível.
 - `/financeiro-licenciado/resumo` → **500** (erro interno da API). Reintentar.
 - `/network-map/head` → exige `month=YYYY-MM` (sem ele, 400).
 - Páginas de carreira → sem endpoint (404 em todos os caminhos testados).
+
+---
+
+## Rotas que NÃO existem (confirmado 404/400 ao vivo — NÃO tentar de novo)
+
+Testadas ao vivo em 2026-07-06 (login real). Retornaram **404** (rota não
+existe) ou **400**. Foram REMOVIDAS do `collectFullExtras` do worker (v28)
+porque só geravam erro e gastavam banda do proxy sem trazer nada:
+
+- `/clientes-green` (lista paginada), `/clientes-green/faturas`,
+  `/clientes-green/injecao`, `/clientes-green/devolutivas-resolvidas`,
+  `/clientes-green/summary`
+- `/telecom/clientes`, `/telecom/linhas`, `/telecom/portabilidade`,
+  `/telecom/comissoes`, `/telecom/recargas`, `/telecom/bonus`,
+  `/telecom/client-map`
+- `/seguros/apolices`, `/seguros/clientes`, `/seguros/comissoes`,
+  `/seguros/sinistros`, `/seguros/renovacoes`, `/seguros/cashback/resumo`
+- `/estatisticas-pro` (400)
+
+### Rotas de "cobertura total" que REALMENTE existem (mantidas no worker v28)
+
+| Rota | Observação |
+|------|-----------|
+| `/telecom/faturas?status=todos` | traz faturas (paginado) — persistido em `igreen_telecom_faturas` |
+| `/telecom/licenciados?status=todos` | existe (pode vir vazio) |
+| `/seguros/licenciados?status=todos` | existe (pode vir vazio) |
+| `/clientes-green/resumo-geral` | resumo agregado green |
+| `/telecom/resumo-geral` | resumo agregado telecom |
+| `/seguros/resumo-geral` | resumo agregado seguros |
+| `/network-map/data?month=` (12 meses) | histórico de rede → `igreen_network_snapshots` |
+
+> **Importante:** o worker coletava esses blocos mortos e a edge function tinha
+> código para persistir alguns deles (ex.: `telecom.linhas`, `telecom.comissoes`,
+> `seguros.comissoes`, `seguros.sinistros`, `seguros.renovacoes`). Como os
+> endpoints não existem, esse código nunca recebia dados. Ele foi mantido na
+> edge function (inofensivo: `blocks["x"]?.items || []` vira vazio), mas as
+> tabelas correspondentes (`igreen_telecom_linhas`, `igreen_telecom_faturas`,
+> `igreen_telecom_comissoes`, `igreen_seguros_comissoes`) só recebem dado da
+> rota que existe (`telecom.faturas`). As demais ficam vazias por design.

@@ -1453,27 +1453,15 @@ async function fetchMetrics(session, month) {
 // =============================================================================
 async function collectFullExtras(session, month) {
   const mes = month || new Date().toISOString().slice(0, 7);
+  // Rotas paginadas REAIS. Validado ao vivo em 2026-07-06 (ver
+  // PORTAL_PAGINAS_OFICIAL.md): removidas as rotas que davam 404 e nunca
+  // traziam dado (clientes-green/{lista,faturas,injecao,devolutivas-resolvidas},
+  // telecom/{clientes,linhas,portabilidade,comissoes,recargas,bonus},
+  // seguros/{apolices,clientes,comissoes,sinistros,renovacoes}). Isso deixa o
+  // sync mais rápido e economiza banda do proxy. Só sobram as que respondem 200.
   const routes = [
-    // Clientes Green
-    { key: 'clientes_green.lista', path: '/clientes-green?status=todos&injecao=todos&tipo=todos' },
-    { key: 'clientes_green.faturas', path: '/clientes-green/faturas?status=todos' },
-    { key: 'clientes_green.injecao', path: '/clientes-green/injecao?status=todos' },
-    { key: 'clientes_green.devolutivas_resolvidas', path: '/clientes-green/devolutivas-resolvidas' },
-    // Telecom
-    { key: 'telecom.clientes', path: '/telecom/clientes?status=todos' },
-    { key: 'telecom.linhas', path: '/telecom/linhas?status=todos' },
-    { key: 'telecom.portabilidade', path: '/telecom/portabilidade?status=todos' },
     { key: 'telecom.faturas', path: '/telecom/faturas?status=todos' },
-    { key: 'telecom.comissoes', path: '/telecom/comissoes?status=todos' },
-    { key: 'telecom.recargas', path: '/telecom/recargas?status=todos' },
-    { key: 'telecom.bonus', path: '/telecom/bonus?status=todos' },
     { key: 'telecom.licenciados', path: '/telecom/licenciados?status=todos' },
-    // Seguros
-    { key: 'seguros.apolices', path: '/seguros/apolices?status=todos' },
-    { key: 'seguros.clientes', path: '/seguros/clientes?status=todos' },
-    { key: 'seguros.comissoes', path: '/seguros/comissoes?status=todos' },
-    { key: 'seguros.sinistros', path: '/seguros/sinistros?status=todos' },
-    { key: 'seguros.renovacoes', path: '/seguros/renovacoes?status=todos' },
     { key: 'seguros.licenciados', path: '/seguros/licenciados?status=todos' },
   ];
 
@@ -1503,15 +1491,13 @@ async function collectFullExtras(session, month) {
     await new Promise((r2) => setTimeout(r2, 200));
   }
 
-  // Resumos gerais (não paginados) — objetos únicos
+  // Resumos gerais (não paginados) — objetos únicos. Só os que respondem 200
+  // (validado ao vivo). Removidos: clientes-green/summary, telecom/client-map,
+  // seguros/cashback/resumo, estatisticas-pro → davam 404/400.
   const singles = [
-    { key: 'clientes_green.summary', path: '/clientes-green/summary' },
     { key: 'clientes_green.resumo_geral', path: '/clientes-green/resumo-geral' },
     { key: 'telecom.resumo_geral', path: '/telecom/resumo-geral' },
-    { key: 'telecom.client_map', path: '/telecom/client-map' },
     { key: 'seguros.resumo_geral', path: '/seguros/resumo-geral' },
-    { key: 'seguros.cashback_resumo', path: '/seguros/cashback/resumo' },
-    { key: 'estatisticas_pro', path: '/estatisticas-pro' },
   ];
   for (const r of singles) {
     try {
@@ -2829,7 +2815,7 @@ server.listen(PORT, () => {
   const bootProxy = buildProxyConfig();
   const netState = bootProxy.kind === 'external' ? `proxy-externo(${bootProxy.label}${bootProxy.sticky ? ',sticky' : ''})`
     : bootProxy.kind === 'tor' ? `tor(${bootProxy.label})` : 'direto(sem-proxy)';
-  console.log(`[boot] igreen-sync-worker v27 (${netState}+playwright+api-vo, login-api-first + cadastros-by-day + recon-one-route) porta ${PORT}`);
+  console.log(`[boot] igreen-sync-worker v28 (${netState}+playwright+api-vo, login-api-first + rotas-limpas + cadastros-by-day + recon-one-route) porta ${PORT}`);
 });
 
 
