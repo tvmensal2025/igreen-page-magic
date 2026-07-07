@@ -107,6 +107,9 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   const record: Record<string, unknown> = { phone_whatsapp: phone };
   record.customer_origin = "igreen_sync";
   record.phone_contact_confirmed = false;
+  // Nome vindo do portal iGreen é confiável — marca como 'igreen_portal' para
+  // que o chat interno mostre o nome do cliente em vez do número de telefone.
+  record.name_source = "igreen_portal";
 
   const name = safeStr(get(c, "nomeCliente", "nome", "Nome", "name", "Nome do Cliente"));
   if (name) record.name = name;
@@ -941,6 +944,35 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     if (error) console.error("boletos upsert:", error.message);
     else saved += data?.length || 0;
   }
+
+  // Preenche customer_id via igreen_code = idcliente. Sem isso o botão
+  // "Conversar" não aparece na tela de boletos (view faz LEFT JOIN por customer_id).
+  // Roda em lotes de 200 idclientes para não gerar query gigante.
+  try {
+    const idclienteList = rows.map((r) => r.idcliente).filter(Boolean);
+    for (let i = 0; i < idclienteList.length; i += 200) {
+      const chunk = idclienteList.slice(i, i + 200).map(String);
+      // Busca os customer_id correspondentes
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("id, igreen_code")
+        .eq("consultant_id", consultantId)
+        .in("igreen_code", chunk);
+      if (!cust || cust.length === 0) continue;
+      // Atualiza cada boleto com o customer_id correto
+      for (const c of cust as Array<{ id: string; igreen_code: string }>) {
+        await supabase
+          .from("igreen_customer_boletos")
+          .update({ customer_id: c.id })
+          .eq("consultant_id", consultantId)
+          .eq("idcliente", Number(c.igreen_code))
+          .is("customer_id", null); // só atualiza quem ainda não tem
+      }
+    }
+  } catch (e) {
+    console.warn("[boletos] customer_id match falhou (nao critico):", e instanceof Error ? e.message : e);
+  }
+
   return { boletos_saved: saved, boletos_received: boletos.length };
 }
 

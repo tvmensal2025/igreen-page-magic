@@ -146,6 +146,7 @@ const GLOBAL_PIC_PAUSE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const TRUSTED_NAME_SOURCES = new Set([
   "self_introduced", "user_confirmed", "ocr_conta", "ocr_doc", "ocr_cnh", "ocr_rg", "manual", "freeform_multi",
+  "igreen_portal", // nome vindo do portal iGreen (ficha oficial do cliente)
 ]);
 
 function digitsOnly(v: string | null | undefined): string {
