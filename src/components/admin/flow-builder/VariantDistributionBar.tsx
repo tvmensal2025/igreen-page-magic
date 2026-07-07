@@ -72,7 +72,7 @@ export default function VariantDistributionBar({
     if (on) current.add(v);
     else {
       if (activeVariants.length <= 1 && activeVariants.includes(v)) {
-        toast.error("Pelo menos 1 fluxo precisa estar ativo.");
+        toast.error("Pelo menos 1 fluxo precisa estar ativo.", { id: `flow-${v}` });
         return;
       }
       current.delete(v);
@@ -84,9 +84,14 @@ export default function VariantDistributionBar({
       .update({ active_variants: next })
       .eq("id", consultantId);
     setBusy(null);
-    if (error) { toast.error(error.message); return; }
+    if (error) { toast.error(error.message, { id: `flow-${v}` }); return; }
     setActiveVariants(next);
-    toast.success(on ? `Fluxo ${v} recebendo leads` : `Fluxo ${v} pausado (continua editável)`);
+    toast.success(
+      on ? `✅ Fluxo ${v} recebendo leads` : `⏸️ Fluxo ${v} pausado (continua editável)`,
+      { id: `flow-${v}`, duration: 2500 },
+    );
+    // Recarrega do banco garantindo que outras abas não sobrescreveram.
+    await loadActive();
   }
 
   async function createVariant(target: Variant) {
