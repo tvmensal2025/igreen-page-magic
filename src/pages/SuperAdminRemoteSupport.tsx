@@ -1499,42 +1499,27 @@ function RemoteControlOverlay({
   // dá a fração correta em relação ao viewport CSS.
   // -------------------------------------------------------------------------
   const toNorm = useCallback((e: { clientX: number; clientY: number }) => {
-    const video = videoRef.current;
     const host  = overlayRef.current;
-    if (!video || !host) return null;
+    if (!host) return null;
 
     const rect = host.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
 
-    // Dimensões do conteúdo do vídeo (resolução nativa capturada)
-    const vw = video.videoWidth  || rect.width;
-    const vh = video.videoHeight || rect.height;
+    // Container do vídeo agora tem a MESMA proporção do viewport do consultor
+    // (aspect-ratio setado + object-fill), então o overlay = área útil do vídeo
+    // sem letterbox. Basta normalizar direto contra rect.width/height e clampar
+    // em [0,1] para garantir que as 4 bordas extremas sejam clicáveis.
+    const clamp01 = (n: number) => (n < 0 ? 0 : n > 1 ? 1 : n);
 
-    // Cálculo do letterbox (object-contain)
-    const scale  = Math.min(rect.width / vw, rect.height / vh);
-    const dispW  = vw * scale;
-    const dispH  = vh * scale;
-    const offsetX = (rect.width  - dispW) / 2;
-    const offsetY = (rect.height - dispH) / 2;
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
 
-    // Pixel dentro da área de exibição do vídeo
-    const px = e.clientX - rect.left - offsetX;
-    const py = e.clientY - rect.top  - offsetY;
-
-    // Fora dos limites → nulo
-    if (px < 0 || py < 0 || px > dispW || py > dispH) return null;
-
-    // Coordenada normalizada 0..1 relativa ao viewport CSS do consultor.
-    // Dividir por dispW/dispH equivale a dividir por vw/vh × scale,
-    // o que nos dá a fração correta independente do DPR.
-    const normX = px / dispW;
-    const normY = py / dispH;
-
-    // Posição local para cursor virtual (relativa ao container)
-    const localX = px + offsetX;
-    const localY = py + offsetY;
+    const normX = clamp01(localX / rect.width);
+    const normY = clamp01(localY / rect.height);
 
     return { x: normX, y: normY, localX, localY };
-  }, [videoRef]);
+  }, []);
+
 
   // -------------------------------------------------------------------------
   // Cursor virtual
