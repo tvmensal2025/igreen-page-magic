@@ -283,6 +283,82 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     }
   }, [state.rodizioInlineForm, state.rodizioPartners, availablePartners, patchFn, toast]);
 
+  /**
+   * Adiciona o próprio dono da conta (consultor logado) ao rodízio, sem
+   * precisar redigitar nome/telefone/código. Se ele já foi cadastrado antes
+   * (existe em `availablePartners`), reusa; caso contrário cria um
+   * `referral_partners` tipo CONSULTOR com os dados do perfil.
+   */
+  const addMyself = useCallback(async () => {
+    setCreating(true);
+    try {
+      const { data: userRes, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userRes?.user?.id) {
+        throw new Error("Sessão inválida. Faça login novamente.");
+      }
+      const uid = userRes.user.id;
+      const { data: me, error: meErr } = await supabase
+        .from("consultants")
+        .select("id, name, phone, igreen_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (meErr) throw meErr;
+      if (!me) throw new Error("Perfil do consultor não encontrado.");
+      const nome = (me.name || "").trim();
+      const phone = normalizeBrPhone(me.phone);
+      const igreenId = (me.igreen_id || "").trim();
+      if (!nome || !phone || !igreenId) {
+        toast({
+          title: "Complete seu perfil",
+          description: "Cadastre nome, WhatsApp e código iGreen em Meus Dados antes de se adicionar ao rodízio.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const alreadyInCurrent = state.rodizioPartners.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId
+          || normalizeBrPhone(p.notification_phone) === phone,
+      );
+      if (alreadyInCurrent) {
+        toast({ title: "♻️ Você já está no rodízio", description: `${alreadyInCurrent.nome} já está na lista.` });
+        return;
+      }
+
+      const existing = availablePartners.find(
+        (p) => (p.partner_igreen_id ?? "").trim() === igreenId
+          || normalizeBrPhone(p.notification_phone) === phone,
+      );
+      if (existing) {
+        patchFn((prev) => ({
+          rodizioPartners: [...prev.rodizioPartners, existing],
+        }));
+        toast({ title: "✅ Você entrou no rodízio", description: `${existing.nome} adicionado.` });
+        return;
+      }
+
+      const novo = await createReferralPartner({
+        tipo: "consultor",
+        nome,
+        notification_phone: phone,
+        partner_igreen_id: igreenId,
+      });
+      setAvailablePartners((prev) => [novo, ...prev]);
+      patchFn((prev) => ({
+        rodizioPartners: [...prev.rodizioPartners, novo],
+      }));
+      toast({ title: "✅ Você entrou no rodízio", description: `${novo.nome} adicionado.` });
+    } catch (e: any) {
+      toast({
+        title: "❌ Não consegui te adicionar",
+        description: e?.message || "Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setCreating(false);
+    }
+  }, [availablePartners, state.rodizioPartners, patchFn, toast]);
+
   // Mensagem de erro do mínimo de 2 participantes (Requisito 5.2).
   const minParticipantsError = useMemo<string | null>(() => {
     if (!state.rodizioEnabled) return null;
@@ -301,6 +377,7 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     reloadPartners: loadPartners,
     setRodizioEnabled,
     addPartner,
+    addMyself,
     removePartner,
     openInlineForm,
     closeInlineForm,
