@@ -28,6 +28,7 @@ export function useAgendamentosHub(consultantId: string) {
     DEFAULT_REACTIVATION_SETTINGS,
   );
   const [autoReactivateTemplates, setAutoReactivateTemplates] = useState(0);
+  const [pendingValidation, setPendingValidation] = useState(0);
 
   const refresh = useCallback(async () => {
     if (!consultantId) return;
