@@ -41,24 +41,50 @@ function emptyInlineForm(tipo: RodizioInlineForm["tipo"]): RodizioInlineForm {
   };
 }
 
+/** Campo do form inline que pode conter erro de validação. */
+export type RodizioFieldKey =
+  | "nome"
+  | "notification_phone"
+  | "partner_igreen_id"
+  | "cli";
+
+/** Erro de validação com o campo alvo — permite destacar o input certo. */
+export interface RodizioFieldError {
+  field: RodizioFieldKey;
+  message: string;
+}
+
 /**
- * Valida os campos do form inline. Devolve a lista de mensagens de erro
- * (vazia quando o form está válido), conforme o tipo do participante.
+ * Valida os campos do form inline. Devolve erros com o `field` alvo, para que
+ * o componente destaque o input correto (sem depender de substring matching).
  */
-export function validateInlineForm(form: RodizioInlineForm): string[] {
-  const erros: string[] = [];
-  if (!form.nome.trim()) erros.push("Informe o nome do participante.");
-  if (!form.notification_phone.trim()) {
-    erros.push("Informe o telefone de aviso.");
+export function validateInlineForm(form: RodizioInlineForm): RodizioFieldError[] {
+  const erros: RodizioFieldError[] = [];
+  if (!form.nome.trim()) {
+    erros.push({ field: "nome", message: "Digite o nome do participante." });
+  }
+  const phone = normalizeBrPhone(form.notification_phone);
+  if (!phone) {
+    erros.push({
+      field: "notification_phone",
+      message: "📱 Ex.: 11 99999-8888 (com DDD).",
+    });
   }
   if (form.tipo === "consultor" && !form.partner_igreen_id.trim()) {
-    erros.push("O código iGreen é obrigatório para o tipo CONSULTOR.");
+    erros.push({
+      field: "partner_igreen_id",
+      message: "🆔 O código iGreen aparece no painel do consultor.",
+    });
   }
   if (form.tipo === "parceiro" && !form.cli.trim()) {
-    erros.push("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    erros.push({
+      field: "cli",
+      message: "🔢 Código de indicação (o iGreen chama de `cli`). Peça pro parceiro.",
+    });
   }
   return erros;
 }
+
 
 export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
   const { toast } = useToast();
