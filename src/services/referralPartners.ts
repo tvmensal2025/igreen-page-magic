@@ -39,10 +39,33 @@ export interface CreateReferralPartnerInput {
   cli?: string;
 }
 
+/**
+ * Normaliza um telefone brasileiro para o formato `55DDDNNNNNNNNN` que o
+ * webhook / notify usam. Aceita máscara ("(11) 99999-8888"), com ou sem 9,
+ * com ou sem DDI 55. Retorna `null` se claramente inválido (menos de 10
+ * dígitos úteis, DDD fora de 11–99, ou todos os dígitos iguais).
+ */
+export function normalizeBrPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let digits = String(raw).replace(/\D/g, "");
+  if (!digits) return null;
+  // Todos iguais (11111111111) — quase sempre lixo
+  if (/^(\d)\1+$/.test(digits)) return null;
+  // Remove DDI 55 se presente
+  if (digits.length > 11 && digits.startsWith("55")) digits = digits.slice(2);
+  if (digits.length < 10 || digits.length > 11) return null;
+  const ddd = parseInt(digits.slice(0, 2), 10);
+  if (!Number.isFinite(ddd) || ddd < 11 || ddd > 99) return null;
+  // Se tem 10 dígitos (celular sem 9), adiciona 9
+  if (digits.length === 10) digits = digits.slice(0, 2) + "9" + digits.slice(2);
+  return "55" + digits;
+}
+
 /** Deriva o tipo do participante a partir das colunas do banco. */
 function resolveTipo(partnerIgreenId: string | null): RodizioPartnerType {
   return partnerIgreenId && partnerIgreenId.trim() ? "consultor" : "parceiro";
 }
+
 
 /** Converte uma linha de `referral_partners` em `RodizioPartnerDraft`. */
 function toDraft(row: {
