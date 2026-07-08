@@ -224,6 +224,11 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const gestorValor = carreiraPct > 0 ? (diretoBase + indiretoBase) * (carreiraPct / 100) : 0;
     const recorrenciaGarantida = diretoValor + indiretoValor;
     // Mantido para gráficos (CustomerCharts pode usar avgBill/economia)
+    const billOf = (c: any) => {
+      const real = Number(c.electricity_bill_value) || 0;
+      if (real > 0) return real;
+      return (Number(c.media_consumo) || 0) * TARIFA_MEDIA;
+    };
     const withBill = filtered.filter((c: any) => billOf(c) > 0);
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
     const avgBill = withBill.length > 0 ? totalBill / withBill.length : 0;
