@@ -637,8 +637,23 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const treeInnerRef = useRef<HTMLDivElement>(null);
   const didInitialCenterRef = useRef(false);
   const [selectedMember, setSelectedMember] = useState<NetworkMember | null>(null);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [accountCount, setAccountCount] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { count } = await supabase
+        .from("igreen_portal_accounts")
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId);
+      if (!cancelled) setAccountCount(count ?? 0);
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId, showAccounts]);
+
 
   useEffect(() => {
     const stored = localStorage.getItem("sync_cooldown_until");
