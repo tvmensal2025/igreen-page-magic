@@ -158,6 +158,26 @@ export function CampaignRodizioLeadsDialog({
 
   const totalAssigned = rows.reduce((s, r) => s + r.leads.length, 0);
 
+  async function handleIntervalChange(v: string) {
+    if (!poolId) return;
+    const n = Number(v);
+    setIntervalMin(n);
+    setSavingInterval(true);
+    try {
+      const { error: uerr } = await supabase
+        .from("rodizio_pools")
+        .update({ metrics_broadcast_interval_minutes: n } as any)
+        .eq("id", poolId);
+      if (uerr) throw uerr;
+      toast.success(n === 0 ? "Atualizações desligadas" : `Atualizações a cada ${n < 60 ? `${n} min` : `${n / 60}h`}`);
+    } catch (e) {
+      toast.error("Falha ao salvar: " + (e as Error).message);
+    } finally {
+      setSavingInterval(false);
+    }
+  }
+
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
