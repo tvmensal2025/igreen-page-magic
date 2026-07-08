@@ -3780,6 +3780,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.conversation_step = "processando_ocr_conta";
       await sendText(remoteJid, "✅ Conta recebida! ⏳ Analisando seus dados...\n\nAguarde alguns instantes...");
 
+      // 📣 Avisa parceiro (se houver referral_partner_id): conta de luz recebida
+      try {
+        const { notifyPartnerStep } = await import("../../_shared/notify-consultant.ts");
+        notifyPartnerStep(consultorId, customer.id, "bill_received")
+          .catch((e) => console.warn("[whapi bot-flow] notify bill_received:", e?.message));
+      } catch (_) { /* noop */ }
+
       console.log("📥 Arquivo recebido:");
       console.log("  - isFile:", isFile);
       console.log("  - hasImage:", hasImage);
