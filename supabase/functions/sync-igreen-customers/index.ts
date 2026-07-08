@@ -641,11 +641,11 @@ async function syncAllAccountsForConsultant(
 ): Promise<Record<string, unknown>> {
   const { data: accounts } = await supabase
     .from("igreen_portal_accounts")
-    .select("id, position, label, portal_email, portal_password")
+    .select("id, position, label, portal_email, portal_password, last_sync_at")
     .eq("consultant_id", consultantId)
     .order("position", { ascending: true });
 
-  const list = (accounts || []) as Array<{ id: string; position: number; label: string | null; portal_email: string; portal_password: string }>;
+  const list = (accounts || []) as Array<{ id: string; position: number; label: string | null; portal_email: string; portal_password: string; last_sync_at: string | null }>;
 
   // Compatibilidade: consultor sem nenhuma linha em igreen_portal_accounts
   // ainda (ex.: credencial antiga não migrada) — usa o fallback direto, sem
@@ -658,13 +658,29 @@ async function syncAllAccountsForConsultant(
   }
 
   const results: Record<string, unknown>[] = [];
+  const STALE_MS = 6 * 60 * 60 * 1000; // 6 h
   for (const acc of list) {
-    console.log(`[multi-account] sync conta position=${acc.position} (${acc.label || acc.portal_email}) consultant=${consultantId}`);
+    // FORÇA sync_all na PRIMEIRA vez que uma subconta é encontrada (last_sync_at NULL)
+    // ou quando a última sync completa é > 6 h. Assim, contas recém-adicionadas
+    // (ex.: Nilma) puxam TODOS os clientes + rede na primeira execução, mesmo
+    // que o cron esteja rodando em modo enrich_only.
+    const lastSync = acc.last_sync_at ? new Date(acc.last_sync_at).getTime() : 0;
+    const isStale = !lastSync || Date.now() - lastSync > STALE_MS;
+    const accMode = isStale && mode === "enrich_only" ? "sync_all" : mode;
+    console.log(`[multi-account] sync conta position=${acc.position} (${acc.label || acc.portal_email}) consultant=${consultantId} mode=${accMode}${accMode !== mode ? " (forced full)" : ""}`);
     try {
-      const r = await syncOneConsultant(supabase, worker, acc.portal_email, acc.portal_password, consultantId, mode, acc.id);
-      results.push({ account_id: acc.id, position: acc.position, label: acc.label, ...r });
+      const r = await syncOneConsultant(supabase, worker, acc.portal_email, acc.portal_password, consultantId, accMode, acc.id);
+      results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, ...r });
+      // Marca last_sync_at após qualquer sync completa (não só quando o worker
+      // atualiza igreen_consultor_id). Sem isso, a subconta ficaria eternamente
+      // sendo forçada a sync_all a cada 6 h mesmo com sync bem-sucedida.
+      if (r?.success && (accMode === "sync_all" || accMode === "sync")) {
+        await supabase.from("igreen_portal_accounts")
+          .update({ last_sync_at: new Date().toISOString() })
+          .eq("id", acc.id);
+      }
     } catch (err) {
-      results.push({ account_id: acc.id, position: acc.position, label: acc.label, success: false, error: err instanceof Error ? err.message : String(err) });
+      results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, success: false, error: err instanceof Error ? err.message : String(err) });
     }
     // Pausa entre contas para não sobrecarregar o proxy/portal com logins em sequência.
     await new Promise((res) => setTimeout(res, 2000));
