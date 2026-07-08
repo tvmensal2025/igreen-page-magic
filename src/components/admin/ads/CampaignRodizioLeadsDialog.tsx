@@ -54,13 +54,17 @@ export function CampaignRodizioLeadsDialog({
         // 1) Pool ativa (mais recente ativa da campanha)
         const { data: pool, error: e1 } = await supabase
           .from("rodizio_pools")
-          .select("id")
+          .select("id, metrics_broadcast_interval_minutes")
           .eq("campaign_id", campaignId)
           .eq("is_active", true)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
         if (e1) throw e1;
+        if (!cancelled) {
+          setPoolId(pool?.id ?? null);
+          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 10));
+        }
 
         // 2) Membros + parceiros
         let members: any[] = [];
