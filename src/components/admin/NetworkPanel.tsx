@@ -41,6 +41,11 @@ interface NetworkMember {
   inicio_rapido: string | null;
   diretos_inicio_rapido: number;
   diretos_mes: number;
+  sponsor_override_id?: number | null;
+}
+
+function effectiveSponsor(m: { sponsor_id: number | null; sponsor_override_id?: number | null }) {
+  return (m.sponsor_override_id ?? m.sponsor_id) || null;
 }
 
 interface TreeNode {
