@@ -1,64 +1,42 @@
 
-# Diagnóstico do erro "Failed to fetch" ao publicar
+# Manter modo desktop no celular (fim do "Mais" cortando)
 
-## O que aconteceu de verdade
+## O problema
 
-A campanha **FOI criada com sucesso** na Meta e no banco. Os logs da edge function confirmam:
+Hoje o `AppSidebar` tem 2 layouts:
+- **Desktop** (`lg:`): mostra os 3 grupos completos (Visão Geral, Gestão Comercial, Recursos) com todos os itens.
+- **Mobile** (< 1024px): mostra só 5 itens fixos + botão "Mais" que agrupa o resto (Conversão, Base de clientes, Financeiro, Captação, Parceiros, Rede, Agendamentos, Central de anúncios, Links, Materiais, Estúdio de áudio, Academy).
 
-```
-[fb-create] rodízio: pool 677bbfd7-ce58-4218-b823-149197c40bad criada com 3 membros para campanha 9b2324ee-f2c9-47de-b16b-e4efd26c43fb
-[fb-create] initial WA message: Olá! Quero saber mais...
-```
+Você quer o desktop **sempre**, mesmo no celular, sem esconder nada atrás de "Mais".
 
-Ou seja: seus dados foram salvos — nome, 5 endereços com raio, 3 fotos (square/vertical/story), headline, texto, mensagem inicial e os 3 parceiros do rodízio (`f47c58f6…`, `7632bba1…`, `52df8e31…`). Tudo persistido.
+## O que vou mudar
 
-O que o navegador viu foi **timeout de rede** (`Failed to fetch`), não erro de negócio.
+### 1. `src/components/layout/AppSidebar.tsx`
+- Remover o bloco mobile condensado (linhas 249–297).
+- Remover o `hidden lg:block` do wrapper dos grupos (linha 300) → grupos completos aparecem em qualquer tamanho de tela.
+- Apagar as constantes `MOBILE_PRIMARY_IDS`, `MOBILE_PRIMARY_ITEMS`, `MOBILE_MORE_ITEMS`, o estado `mobileMoreOpen` e o `useEffect` relacionado.
+- Manter o backdrop mobile + botão de fechar (drawer continua deslizando de fora quando aberto por hambúrguer no topbar) — isso não muda, só a **estrutura interna** vira igual ao desktop.
+- Manter comportamento colapsado (72px só ícones) inalterado.
 
-## Por que o navegador viu "Failed to fetch"
+Resultado: no celular, ao abrir o menu, o usuário vê exatamente os mesmos 3 grupos + Conta que vê no desktop, com scroll natural (o `nav` já tem `overflow-y-auto`).
 
-Depois de criar a campanha nova, a função entra num loop `realign spend_cap` sobre 5 campanhas antigas (`facebook-create-campaign/index.ts` linhas 1264–1287). Cada uma:
+### 2. O que fazer com o mobile em si
 
-1. Faz `fbFetch POST /{fb_campaign_id}` (com **3 retries internos** em caso de erro Meta).
-2. Em várias, a Meta responde erro permanente:
-   - `subcode 1885058` — "Limite de gastos da campanha não pode ser inferior a R$X porque há cobranças pendentes" (4 campanhas).
-   - `subcode 2446474` — "Spend cap não pode ser adicionado quando a campanha tem lifetime budget" (1 campanha).
-3. Como o helper `fbFetch` faz 3 tentativas para cada uma, o loop leva ~15–20s **depois** que a nova campanha já está pronta. O browser desiste antes da resposta chegar.
+Como você pediu para o app rodar sempre "modo computador" no celular, algumas telas ficam apertadas (tabelas de CRM, wizard de anúncios, kanban). Sugestões que **não** cabem neste ajuste (posso fazer em pedido separado se quiser):
 
-Confirmação nos logs: 20+ chamadas `[fbFetch] .../120243179955610645`, `.../120245841877940645`, etc., todas depois da linha `pool criada`.
+1. **Zoom horizontal permitido**: hoje o viewport trava em `width=device-width, initial-scale=1`. Se quiser sensação de "desktop no celular" total, podemos setar `initial-scale=0.6, minimum-scale=0.3, maximum-scale=3` — o Chrome renderiza como se fosse tela grande e o usuário faz pinch pra aproximar. É o que apps tipo painel administrativo antigo fazem.
+2. **Deixar o container do conteúdo com largura mínima** (ex.: `min-w-[1024px]`) e rolar horizontalmente — o app fica navegável com scroll lateral, sem quebrar layout.
+3. **Manter só a sidebar como drawer** (do jeito que está), mas ampliar o conteúdo pra 1024px+ com scroll.
 
-## O que corrigir
-
-### 1. Rodar o realign em background (`EdgeRuntime.waitUntil`)
-
-Envolver o bloco `for (const ec of realignTargets)` (linhas 1267–1287) em `EdgeRuntime.waitUntil(...)` e **retornar imediatamente** após a criação/ativação da nova campanha. Assim:
-
-- O browser recebe `{ ok: true, campaign_id, ad_ids, ... }` em <5s.
-- O realign continua no worker sem bloquear a UI.
-- Erros de realign continuam sendo logados como `warning` (não afetam o usuário).
-
-### 2. Não retentar `fbFetch` em erros permanentes de spend_cap
-
-No handler de `realign`, tratar os subcodes `1885058` e `2446474` como **falha silenciosa não-retentável** (não têm solução automática — dependem de o Meta liberar as pending charges ou de a campanha antiga sair do ar). Registrar como `info`, não `warning`. Isso reduz ruído nos logs e evita 3 chamadas por campanha problemática.
-
-### 3. Confirmar no frontend que o "Failed to fetch" não perde o trabalho
-
-Em `CampaignWizard` (ou equivalente que faz `supabase.functions.invoke("facebook-create-campaign")`), quando o erro for de rede/timeout (`TypeError: Failed to fetch` ou `AbortError`), em vez de mostrar erro genérico, consultar `facebook_campaigns` pelo nome+consultant_id nos últimos 60s. Se encontrar, mostrar "Campanha publicada com sucesso — o servidor demorou para responder mas o Meta confirmou". Evita o usuário tentar republicar e criar duplicata.
+Recomendo combinar (2) + manter o viewport atual: sidebar completa quando aberta, conteúdo com `min-w-[1024px]` no `<main>`, `overflow-x-auto` no wrapper. Assim o celular vira um "computador em miniatura" sem esconder recurso nenhum.
 
 ## Arquivos afetados
 
-- `supabase/functions/facebook-create-campaign/index.ts` (linhas 1264–1287 → mover para `EdgeRuntime.waitUntil`; adicionar guarda por subcode).
-- `src/components/admin/ads/CampaignWizard.tsx` (ou o arquivo que dispara o invoke) — tratar timeout consultando o banco antes de mostrar erro.
+- `src/components/layout/AppSidebar.tsx` (remover bloco mobile condensado).
+- Opcional, se você aprovar a parte (2): `src/pages/Index.tsx` (ou o layout raiz do admin) — adicionar `min-w-[1024px]` no container do conteúdo + `overflow-x-auto` no wrapper externo.
 
-## O que NÃO precisa mudar
+## O que NÃO muda
 
-- Sua campanha `9b2324ee-f2c9-47de-b16b-e4efd26c43fb` já está no ar com tudo salvo. Não precisa republicar.
-- Raio de 80 km foi aceito pela Meta (é dentro do limite permitido para `custom_locations`).
-- Rodízio com os 3 parceiros já foi criado corretamente na `rodizio_pools`.
-- Fallback de criativo (1 ad por imagem) rodou porque o `asset_feed_spec` de imagens múltiplas foi rejeitado — comportamento esperado e já coberto pelo código.
-
-## Ordem de execução
-
-1. Editar `facebook-create-campaign/index.ts` (mover realign para background + guarda de subcode).
-2. Editar `CampaignWizard.tsx` (tratamento de timeout + verificação no banco).
-3. Deploy da edge function.
-4. Testar publicando uma campanha nova pequena — resposta deve chegar em <5s.
+- Nenhuma lógica de negócio, rotas, permissões ou tabs.
+- O drawer mobile continua abrindo/fechando pelo mesmo botão no topbar.
+- O modo colapsado (72px) do desktop continua funcionando igual.

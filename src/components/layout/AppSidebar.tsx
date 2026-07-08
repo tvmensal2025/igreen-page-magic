@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   BarChart3,
   LayoutGrid,
@@ -19,11 +19,10 @@ import {
   GraduationCap,
   Package,
   Settings,
-  ChevronDown,
-  MoreHorizontal,
   CalendarClock,
   Receipt,
 } from "lucide-react";
+
 
 export type AdminTabId =
   | "dashboard"
