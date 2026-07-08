@@ -8013,6 +8013,7 @@ export type Database = {
           notification_phone: string | null
           partner_igreen_id: string | null
           qr_phrase: string | null
+          rodizio_metrics_enabled: boolean
           short_code: string | null
           updated_at: string
         }
@@ -8027,6 +8028,7 @@ export type Database = {
           notification_phone?: string | null
           partner_igreen_id?: string | null
           qr_phrase?: string | null
+          rodizio_metrics_enabled?: boolean
           short_code?: string | null
           updated_at?: string
         }
@@ -8041,6 +8043,7 @@ export type Database = {
           notification_phone?: string | null
           partner_igreen_id?: string | null
           qr_phrase?: string | null
+          rodizio_metrics_enabled?: boolean
           short_code?: string | null
           updated_at?: string
         }

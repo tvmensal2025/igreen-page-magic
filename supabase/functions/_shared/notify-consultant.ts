@@ -91,7 +91,7 @@ async function sendRawToAlertNumber(consultantId: string, text: string): Promise
 // ─── Envia texto bruto para um número arbitrário usando a instância do consultor ──
 // Mesma estratégia do sendRawToAlertNumber (Whapi primeiro, Evolution fallback),
 // mas o destino é um telefone explícito (ex.: número de aviso de um parceiro).
-async function sendRawToNumber(
+export async function sendRawToNumber(
   consultantId: string,
   targetPhone: string,
   text: string,
