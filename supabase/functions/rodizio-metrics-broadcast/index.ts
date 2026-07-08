@@ -304,6 +304,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         ok: true,
         sent,
+        approvedSent,
         fallbackSent,
         skippedInterval,
         skippedDedup,
