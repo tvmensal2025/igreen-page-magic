@@ -3,6 +3,8 @@
 // (botão "Sincronizar agora" na aba Performance).
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
