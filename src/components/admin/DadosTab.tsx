@@ -53,6 +53,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
   const [graduacao, setGraduacao] = useState<string>("licenciado");
   const [cadastroIdsText, setCadastroIdsText] = useState<string>("");
   const [cadastroIdsSaving, setCadastroIdsSaving] = useState<boolean>(false);
+  const [ctwaNumber, setCtwaNumber] = useState<string>("");
+  const [ctwaPhoneId, setCtwaPhoneId] = useState<string>("");
+  const [ctwaSaving, setCtwaSaving] = useState<boolean>(false);
 
   useEffect(() => {
     if (greenSettings?.graduacao) setGraduacao(greenSettings.graduacao);
@@ -60,6 +63,22 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       setCadastroIdsText(greenSettings.cadastroIgreenIds.join(", "));
     }
   }, [greenSettings?.graduacao, greenSettings?.cadastroIgreenIds]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!userId) return;
+      const { data } = await supabase
+        .from("consultant_ad_settings")
+        .select("whatsapp_destination_number, whatsapp_phone_number_id")
+        .eq("consultant_id", userId)
+        .maybeSingle();
+      if (cancelled) return;
+      setCtwaNumber(String((data as any)?.whatsapp_destination_number || form.phone || ""));
+      setCtwaPhoneId(String((data as any)?.whatsapp_phone_number_id || ""));
+    })();
+    return () => { cancelled = true; };
+  }, [userId, form.phone]);
 
   const gradInfo = graduacaoDisplay(graduacao);
   const bonusPct = careerBonusPercent(graduacao);
@@ -105,6 +124,41 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       toast({ title: "Erro ao salvar códigos", description: msg, variant: "destructive" });
     } finally {
       setCadastroIdsSaving(false);
+    }
+  };
+
+  const saveCtwaSettings = async () => {
+    if (!userId) return;
+    const number = ctwaNumber.replace(/\D/g, "");
+    const phoneId = ctwaPhoneId.replace(/\D/g, "");
+    if (number.length < 12 || number.length > 13) {
+      toast({ title: "WhatsApp CTWA inválido", description: "Use 55 + DDD + número, só dígitos.", variant: "destructive" });
+      return;
+    }
+    if (!phoneId) {
+      toast({ title: "phone_number_id obrigatório", description: "Cole o ID numérico real do WhatsApp Manager. Não usamos mais fallback saved:*.", variant: "destructive" });
+      return;
+    }
+    setCtwaSaving(true);
+    try {
+      const { error } = await supabase.from("consultant_ad_settings").upsert(
+        {
+          consultant_id: userId,
+          whatsapp_destination_number: number,
+          whatsapp_phone_number_id: phoneId,
+          whatsapp_last_verified_at: null,
+          updated_at: new Date().toISOString(),
+        } as any,
+        { onConflict: "consultant_id" },
+      );
+      if (error) throw error;
+      setCtwaNumber(number);
+      setCtwaPhoneId(phoneId);
+      toast({ title: "WhatsApp dos anúncios salvo", description: "Clique em Reverificar na Central de Anúncios antes de publicar.", duration: 2200 });
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar WhatsApp CTWA", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setCtwaSaving(false);
     }
   };
 
@@ -327,6 +381,46 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <Label htmlFor="licenciada_cadastro_url" className="text-sm text-muted-foreground">Link de cadastro Licença</Label>
           <Input id="licenciada_cadastro_url" value={form.licenciada_cadastro_url} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
         </div>
+      </div>
+
+      <div className="bg-card rounded-2xl border border-border p-6">
+        <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
+          <Globe className="w-5 h-5 text-primary" /> WhatsApp dos anúncios Meta
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Número Business e phone_number_id real usados em campanhas Click-to-WhatsApp.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="ctwa_number" className="text-sm text-muted-foreground">Número WhatsApp Business</Label>
+            <Input
+              id="ctwa_number"
+              value={ctwaNumber}
+              onChange={(e) => setCtwaNumber(e.target.value.replace(/\D/g, "").slice(0, 13))}
+              placeholder="5534984314317"
+              inputMode="numeric"
+              className="bg-secondary border-border"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ctwa_phone_id" className="text-sm text-muted-foreground">phone_number_id da Meta</Label>
+            <Input
+              id="ctwa_phone_id"
+              value={ctwaPhoneId}
+              onChange={(e) => setCtwaPhoneId(e.target.value.replace(/\D/g, ""))}
+              placeholder="ID numérico do WhatsApp Manager"
+              inputMode="numeric"
+              className="bg-secondary border-border"
+            />
+          </div>
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-3">
+          Copie em WhatsApp Manager → Phone numbers → selecione o número → ID. Sem esse ID real a Meta recusa com “phone number is not linked”.
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={saveCtwaSettings} disabled={ctwaSaving} className="mt-4 gap-2">
+          {ctwaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Salvar WhatsApp dos anúncios
+        </Button>
       </div>
 
       {/* Sua IA — nome da persona usada em todo o sistema */}
