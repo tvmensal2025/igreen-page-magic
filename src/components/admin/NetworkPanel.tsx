@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, lazy, Suspense } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound } from "lucide-react";
+import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,6 +9,9 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { runIgreenSync } from "@/lib/igreenSync";
+
+const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
+
 
 interface NetworkMember {
   id: string;
