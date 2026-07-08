@@ -14,7 +14,12 @@ import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
 interface Body {
   name: string;
+  // Prefixo livre digitado pelo usuário. Vai NA FRENTE do nome padrão
+  // gerado pelo sistema no Gerenciador da Meta, para diferenciar campanhas
+  // no mesmo mercado (ex.: "Teste A", "Lote 2"). Máx 40 chars, sanitizado.
+  name_prefix?: string;
   cities: { key: string; name: string }[];
+
   // Segmentação por endereço/raio (sobrepõe cities quando preenchido).
   // Cada ponto: lat/lng + raio em km (1 a 50) + endereço.
   custom_locations?: {
