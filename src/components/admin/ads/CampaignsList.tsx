@@ -226,7 +226,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       }
       setLoading(false);
     })();
-  }, [consultantId, refreshKey]);
+  }, [consultantId, refreshKey, refreshTick]);
 
   async function tryReactivate(c: Campaign) {
     if (!c.fb_campaign_id) return;
