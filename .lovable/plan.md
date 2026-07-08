@@ -1,100 +1,137 @@
+# Diagnóstico profundo dos logs e do código
 
-# Publicar anúncio no painel nunca mais deve falhar por telefone
+O anúncio foi recusado novamente por **dois problemas diferentes no mesmo ponto da criação do AdSet**.
 
-## Objetivo
+## O que os logs mostram
 
-Eliminar o erro `WHATSAPP_BUSINESS_REQUIRED` (subcode Meta 1487246 / 2446885) para qualquer telefone que o consultor use agora ou futuramente. Meta a atingir: **taxa de sucesso de publish = 100 % desde que o número esteja vinculado à WABA**, exatamente como acontece quando você cria o anúncio direto no Ads Manager.
+1. Primeiro erro real:
 
-## Diagnóstico (por que só o painel falha)
+```text
+subcode=1487079
+The field targeting_relaxation is not a valid target spec field
+```
 
-Ads Manager funciona porque **você escolhe o número num dropdown** que já foi buscado no WABA. O painel hoje faz o oposto: pega o texto salvo em `consultant_ad_settings.whatsapp_destination_number`, gera duas variantes (com/sem 9) e chuta na API. Se o WABA guarda `553484314317` (fixo, sem 9), mas o consultor salvou `5534984314317`, as duas tentativas falham e o Meta devolve rejeição.
+Isso acontece em `facebook-create-campaign/index.ts`, dentro do objeto `targeting` do AdSet:
 
-Pontos frágeis identificados no código:
+```ts
+targeting_relaxation: { lookalike: 1, custom_audience: 1 }
+```
 
-- `facebook-create-campaign/index.ts` L285-316 — normaliza só formato genérico BR, sem consultar o WABA.
-- L494-576 — tenta `waWithout9` → `waWith9`; se ambos falharem, morre.
-- `facebook-preflight-check/index.ts` L54-93 — só checa que o campo existe; não valida match com nenhum `display_phone_number` real.
-- `facebook-detect-waba/index.ts` já busca `phone_numbers` e faz auto-fill, mas só quando o consultor abre a tela, e não guarda o `phone_number_id` (só o texto).
+Esse campo **não é aceito pela Marketing API v21.0** no `targeting_spec` desse tipo de campanha CTWA. Então a Meta rejeita o conjunto de anúncios antes mesmo do anúncio ir ao ar.
 
-## O que vai mudar
+2. Depois aparece erro de WhatsApp:
 
-### 1. Fonte da verdade: WABA `phone_number_id`, não string digitada
+```text
+subcode=1487246
+This WhatsApp phone number is not linked to your account
+```
 
-- Adicionar coluna `whatsapp_phone_number_id text` em `consultant_ad_settings` (identificador estável do Meta, ex.: `109876543210987`).
-- Adicionar coluna `whatsapp_phone_number_display text` (o `display_phone_number` **exatamente** como o Meta retorna, ex.: `+55 34 8431-4317`).
-- Migration com GRANT + policies existentes preservadas.
+Esse erro apareceu no retry seguinte. Pelos logs, a função tentou:
 
-### 2. `facebook-detect-waba` passa a persistir o ID e o display
+```text
+phone=553484314317
+phone=5534984314317
+```
 
-- Ao listar `phone_numbers`, gravar em `consultant_ad_settings`:
-  - `whatsapp_phone_number_id` = `n.id` (novo)
-  - `whatsapp_phone_number_display` = `n.display_phone_number`
-  - `whatsapp_destination_number` = dígitos do display (mantém compat).
-- Quando o consultor tem 2 + números na WABA, devolve a lista e a UI mostra dropdown "Qual desses é o seu?" (novo componente pequeno em `WhatsAppNumberPicker.tsx`, injetado no card de conexão de anúncios).
-- Se o número salvo não bate com nenhum `phone_numbers` atual, marca `matches:false` e a UI força o dropdown.
+Ou seja: ela ainda estava tentando variantes com/sem nono dígito. No código atual já existe uma tentativa de corrigir isso com `resolveWabaPhone`, mas há risco de versão implantada/stale ou caminho legado ainda ativo.
 
-### 3. `facebook-create-campaign` deixa de adivinhar
+3. O `facebook-preflight-check` também está quebrando em um campo Meta:
 
-Substituir o bloco "tenta sem 9 → tenta com 9" (L494-576) por:
+```text
+(#100) Tried accessing nonexisting field (connected_whatsapp_business_account)
+```
 
-1. Carregar `settings.whatsapp_phone_number_id` **e** `whatsapp_phone_number_display`.
-2. Se faltar qualquer um, chamar internamente `facebook-detect-waba` (function-to-function) para resolver antes de tentar publicar.
-3. Refetch em tempo real: `GET /{waba_id}/phone_numbers` para pegar a lista fresca; validar que o `phone_number_id` salvo ainda existe.
-4. Montar `promoted_object` usando **os dígitos exatos** do `display_phone_number` retornado agora, não a versão salva antiga.
-5. Uma única tentativa. Se falhar, o retorno inclui: número tentado, `phone_number_id`, lista de números disponíveis na WABA, mensagem literal do Meta.
+O arquivo `resolve-waba-phone.ts` ainda tenta esse campo como segunda tentativa. Mesmo que ele ignore quando falha, os logs ficam poluídos e, dependendo do fluxo, a validação pode virar warning em vez de bloqueio claro.
 
-Resultado: nenhuma "adivinhação" de 9º dígito; formato usado é sempre o que o Meta acabou de devolver como válido.
+## Causa raiz
 
-### 4. `facebook-preflight-check` passa a validar de verdade
+O problema não é só “telefone errado”. Existem 3 causas combinadas:
 
-Adicionar bloco novo (após validar token/página):
+1. `targeting_relaxation` está sendo enviado no targeting e a Meta rejeita.
+2. A criação ainda tem lógica/compatibilidade antiga de tentativa de telefone com/sem 9, que pode mascarar o erro verdadeiro e gerar `WHATSAPP_BUSINESS_REQUIRED` depois.
+3. O preflight não simula exatamente o mesmo `targeting` que a criação usa; por isso ele pode deixar passar uma campanha que depois falha no publish.
 
-- Buscar `phone_numbers` do WABA vinculado à Página.
-- Confirmar que `settings.whatsapp_phone_number_id` está na lista.
-- Se não estiver → **blocker** (não warning) com mensagem: "Seu número WhatsApp mudou/foi removido do WABA. Escolha um novo em Ads → Configurações."
-- Se `phone_numbers` vier vazio → blocker "Nenhum número vinculado ao WhatsApp Business da Página".
+# Plano de correção
 
-Isso quebra a mentira do "tudo verde" atual.
+## 1. Remover o campo inválido do AdSet
 
-### 5. UI — 3 mudanças cirúrgicas
+No `facebook-create-campaign/index.ts`, remover do `targeting`:
 
-- `ConnectFacebookCard.tsx` (ou similar do card de anúncios): quando `detect-waba` devolver `numbers.length > 1`, mostra dropdown com todos e persiste a escolha.
-- `SmartPublishButton.tsx` / `CtwaPreflightCard.tsx`: quando o preflight retornar o novo blocker de mismatch, oferece botão "Atualizar meu número" que abre o dropdown acima.
-- `HealthSummaryCard.tsx`: linha "WhatsApp vinculado" muda de ✅ genérico para mostrar o `display_phone_number` real ao lado ("✅ +55 34 8431-4317").
+```ts
+targeting_relaxation: { lookalike: 1, custom_audience: 1 }
+```
 
-### 6. Auto-heal periódico (sem quebrar o alívio de cron)
+Manter apenas:
 
-- **Não** criar cron novo. O refresh do número acontece:
-  - Ao entrar em `/admin/meta-ads` (já chama `detect-waba`).
-  - No começo de cada `facebook-create-campaign` (silencioso, cacheado 10 min via `Deno.env` in-memory por invocação — não vale a pena persistir).
-  - Quando o consultor clica "Sincronizar agora" no `SyncAllPanel` (adicionar item novo "Refresh WhatsApp Business").
+```ts
+targeting_automation: { advantage_audience: 1 }
+```
 
-## Testes que provam o fix
+Isso resolve diretamente o `subcode=1487079`.
 
-1. **Consultor com número novo (nunca publicou):** `detect-waba` roda uma vez → publish funciona no primeiro clique.
-2. **Consultor com número salvo diferente do WABA (o caso da sua screenshot):** preflight bloqueia com mensagem clara, dropdown aparece, escolhe o certo, publish funciona.
-3. **Número removido do WABA depois:** próximo publish trava no preflight ao invés de estourar no meio do adset.
-4. **WABA com 2 números:** dropdown obriga escolha, salva `phone_number_id`, publish usa o correto.
-5. **Número fixo (sem 9, 8 dígitos locais):** funciona (hoje quebra em metade dos casos).
+## 2. Remover de vez o retry com/sem nono dígito
 
-## Arquivos tocados
+A criação deve usar somente o número autoritativo retornado por `resolveWabaPhone`:
 
-- `supabase/migrations/<novo>.sql` — 2 colunas + grants preservados.
-- `supabase/functions/facebook-detect-waba/index.ts` — salvar id + display.
-- `supabase/functions/facebook-preflight-check/index.ts` — validar match real.
-- `supabase/functions/facebook-create-campaign/index.ts` — remover adivinhação, usar display retornado.
-- `src/components/admin/ads/ConnectFacebookCard.tsx` (ou equivalente) — dropdown quando > 1.
-- `src/components/admin/ads/HealthSummaryCard.tsx` — mostrar display real.
-- `src/components/admin/ads/CtwaPreflightCard.tsx` — botão "Atualizar número" no blocker novo.
-- `src/components/admin/SyncAllPanel.tsx` — item "Refresh WhatsApp Business".
-- Nenhuma alteração em cron, RLS existente, ou fluxo do bot.
+```ts
+const authoritativeDigits = waba.chosen.digits;
+```
 
-## O que NÃO vou fazer
+E criar o AdSet uma única vez com:
 
-- Não vou tocar em fluxo do WhatsApp, no bot, no CRM, ou em qualquer rota fora de Meta Ads.
-- Não vou apagar o campo `whatsapp_destination_number` antigo (compat).
-- Não vou criar cron novo.
+```ts
+promoted_object: {
+  page_id,
+  whatsapp_phone_number: authoritativeDigits
+}
+```
 
-## Resultado esperado
+Sem `waWith9`, sem `waWithout9`, sem fallback de telefone.
 
-Publicar pelo painel passa a se comportar igual ao Ads Manager: você escolhe (ou o sistema detecta) o número que existe no WABA e o publish sai sem erro de telefone, para qualquer consultor, agora e no futuro.
+Se a Meta rejeitar esse número, o retorno deve dizer claramente:
+
+- número usado;
+- `phone_number_id` usado;
+- lista de números WABA disponíveis;
+- mensagem Meta original.
+
+## 3. Fazer o preflight usar o mesmo targeting da criação
+
+Hoje o preflight cria um targeting parecido, mas não idêntico. Vou alinhar o `facebook-preflight-check` para validar o mesmo formato usado no publish:
+
+- `geo_locations`;
+- `age_min`/`age_max` normalizados para Advantage+;
+- `targeting_automation`;
+- `promoted_object` com número resolvido pela WABA.
+
+Assim, se a Meta vai recusar no publish, ela já bloqueia antes.
+
+## 4. Corrigir descoberta WABA sem depender de campo problemático
+
+No `resolve-waba-phone.ts` e `facebook-detect-waba/index.ts`:
+
+- Manter `whatsapp_business_account` como tentativa principal.
+- Tratar `connected_whatsapp_business_account` como fallback silencioso, sem gerar erro de log repetido.
+- Se não achar WABA pela página, usar fallback por Business.
+- Retornar bloqueio amigável quando não encontrar número.
+
+## 5. Melhorar erro visível na UI
+
+Quando a função retornar erro Meta, a UI deve mostrar a causa real:
+
+- Se `1487079`: “Configuração de público inválida. A plataforma precisa atualizar a segmentação.”
+- Se `1487246`/`2446885`: “Número WhatsApp não está vinculado à conta/página Meta.”
+- Se ambos aparecerem em sequência, priorizar o primeiro erro real de AdSet em vez de sempre mostrar WhatsApp.
+
+## 6. Validar com teste focado
+
+Após a alteração, validar:
+
+- que `targeting_relaxation` não existe mais em nenhum request;
+- que o AdSet tenta só um telefone;
+- que o preflight retorna bloqueio antes do publish quando WABA/número estiver inválido;
+- que a mensagem de erro exibida não mascara o erro real.
+
+# Resultado esperado
+
+Depois dessa correção, a publicação não deve mais falhar por `targeting_relaxation`, e o erro de WhatsApp só aparecerá quando o número autoritativo da WABA realmente estiver incorreto ou não vinculado. A plataforma deixa de tentar “adivinhar” telefone e passa a trabalhar igual ao Gerenciador da Meta: só usa número reconhecido oficialmente pela WABA.
