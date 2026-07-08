@@ -8246,6 +8246,7 @@ export type Database = {
       }
       rodizio_pools: {
         Row: {
+          approval_notified_at: string | null
           campaign_id: string | null
           consultant_id: string | null
           counter: number
@@ -8260,6 +8261,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approval_notified_at?: string | null
           campaign_id?: string | null
           consultant_id?: string | null
           counter?: number
@@ -8274,6 +8276,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approval_notified_at?: string | null
           campaign_id?: string | null
           consultant_id?: string | null
           counter?: number
