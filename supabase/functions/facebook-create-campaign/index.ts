@@ -8,6 +8,7 @@ import {
   loadConsultantAdSettings,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
+import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
