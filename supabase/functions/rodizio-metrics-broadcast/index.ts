@@ -8,16 +8,19 @@
 //
 // Guardrails principais:
 //  - Só envia entre 08h e 22h America/Sao_Paulo
-//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 10/30/60/120/240)
+//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 30/60/120/240; padrão 60)
 //  - NUNCA envia com métricas fake: se a Meta API falhar → mensagem de fallback
 //  - Se campanha < 30 min e tudo zero → skip (evita "vazio")
 //  - Dedup por (partner_id, campaign_id, slot_da_pool) via outbound_message_log
+//  - 1× por pool: quando a campanha entra em ACTIVE (aprovada pela Meta), avisa
+//    todos os parceiros elegíveis e marca `rodizio_pools.approval_notified_at`.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 import {
   formatRodizioMetricsMessage,
   formatRodizioFallbackMessage,
+  formatCampaignApprovedMessage,
 } from "../_shared/rodizio-metrics-format.ts";
 import { fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 
