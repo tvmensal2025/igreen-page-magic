@@ -101,6 +101,21 @@ Deno.serve(async (req) => {
       }
     }
 
+    // 4.b. Saldo interno da carteira do consultor (evita criar campanha e falhar em wallet.reserve).
+    try {
+      const wallet = await getOrCreateWallet(auth.id);
+      const dailyCents = Number(body.daily_budget_cents ?? 0);
+      const minReserveCents = Math.max(dailyCents, 1000); // pelo menos R$10 pra cobrir 1 dia
+      if (wallet.balance_cents <= 0) {
+        blockers.push("Sua carteira está zerada — faça um depósito antes de publicar.");
+      } else if (dailyCents > 0 && wallet.balance_cents < minReserveCents) {
+        blockers.push(`Saldo insuficiente para reservar R$${(dailyCents / 100).toFixed(2)}/dia. Saldo atual R$${(wallet.balance_cents / 100).toFixed(2)}.`);
+      } else if (wallet.balance_cents < wallet.auto_pause_at_cents + Math.max(dailyCents, 0)) {
+        warnings.push(`Saldo perto do limite de auto-pausa (R$${(wallet.auto_pause_at_cents / 100).toFixed(2)}). Reforce a carteira pra não pausar no meio.`);
+      }
+    } catch (e) {
+      warnings.push(`Não consegui checar sua carteira: ${(e as Error).message}`);
+    }
 
     // 5. Pixel vivo (recebeu evento nos últimos 7 dias)?
     if (conn.pixel_id) {
