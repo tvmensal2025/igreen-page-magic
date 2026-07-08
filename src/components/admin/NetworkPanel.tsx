@@ -41,6 +41,11 @@ interface NetworkMember {
   inicio_rapido: string | null;
   diretos_inicio_rapido: number;
   diretos_mes: number;
+  sponsor_override_id?: number | null;
+}
+
+function effectiveSponsor(m: { sponsor_id: number | null; sponsor_override_id?: number | null }) {
+  return (m.sponsor_override_id ?? m.sponsor_id) || null;
 }
 
 interface TreeNode {
@@ -100,16 +105,16 @@ function buildTree(members: NetworkMember[]): TreeNode[] {
 
   membersSorted.forEach((m) => {
     const node = byId.get(m.igreen_id)!;
-    if (m.sponsor_id && byId.has(m.sponsor_id)) {
-      byId.get(m.sponsor_id)!.children.push(node);
-    } else if (m.nivel === 0 || !m.sponsor_id) {
+    const sponsor = effectiveSponsor(m);
+    if (sponsor && byId.has(sponsor)) {
+      byId.get(sponsor)!.children.push(node);
+    } else if (m.nivel === 0 || !sponsor) {
       roots.push(node);
     } else {
       node.isOrphan = true;
-      const sponsorKey = m.sponsor_id || 0;
-      const grouped = orphanGroups.get(sponsorKey) || [];
+      const grouped = orphanGroups.get(sponsor) || [];
       grouped.push(node);
-      orphanGroups.set(sponsorKey, grouped);
+      orphanGroups.set(sponsor, grouped);
     }
   });
 
@@ -322,7 +327,40 @@ function NodeCard({ member, hasChildren, childCount, isExpanded, onToggle, onOpe
 }
 
 /* ── Detail Modal ── */
-function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () => void }) {
+function DetailModal({ member, onClose, allMembers, onSaved }: { member: NetworkMember; onClose: () => void; allMembers: NetworkMember[]; onSaved: () => void | Promise<void> }) {
+  const { toast } = useToast();
+  const [editingUpline, setEditingUpline] = useState(false);
+  const [uplineSearch, setUplineSearch] = useState("");
+  const [savingUpline, setSavingUpline] = useState(false);
+  const currentSponsorId = member.sponsor_override_id ?? member.sponsor_id;
+  const currentSponsor = allMembers.find(m => m.igreen_id === currentSponsorId);
+  const uplineOptions = useMemo(() => {
+    const q = uplineSearch.trim().toLowerCase();
+    return allMembers
+      .filter(m => m.igreen_id !== member.igreen_id && !m.id.startsWith("virtual-"))
+      .filter(m => !q || m.name.toLowerCase().includes(q) || String(m.igreen_id).includes(q))
+      .slice(0, 40);
+  }, [allMembers, uplineSearch, member.igreen_id]);
+
+  const setUpline = async (newSponsorId: number | null) => {
+    setSavingUpline(true);
+    try {
+      const { error } = await supabase
+        .from("network_members" as any)
+        .update({ sponsor_override_id: newSponsorId })
+        .eq("id", member.id);
+      if (error) throw error;
+      toast({ title: "✅ Upline atualizado", description: newSponsorId ? `Agora abaixo de #${newSponsorId}` : "Voltou para o patrocinador original." });
+      setEditingUpline(false);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      toast({ title: "Erro ao salvar", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    } finally {
+      setSavingUpline(false);
+    }
+  };
+
   const p = getPalette(member.nivel);
   const phone = formatPhone(member.phone);
   const initials = member.name.split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
@@ -388,10 +426,71 @@ function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () =
             <MetricCard label="Dir. Mês" value={String(member.diretos_mes)} color="text-warning" />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mb-5">
+          <div className="grid grid-cols-2 gap-2 mb-3">
             <MetricCard label="Início Rápido" value={member.inicio_rapido || "—"} color="text-info" />
-            <MetricCard label="Patrocinador" value={member.sponsor_id ? String(member.sponsor_id) : "—"} color="text-muted-foreground" />
+            <MetricCard
+              label={member.sponsor_override_id ? "Upline (manual)" : "Patrocinador"}
+              value={currentSponsor ? currentSponsor.name.split(" ")[0] : (currentSponsorId ? String(currentSponsorId) : "—")}
+              color={member.sponsor_override_id ? "text-warning" : "text-muted-foreground"}
+            />
           </div>
+
+          {/* Editor de upline manual */}
+          <div className="mb-5 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+            {!editingUpline ? (
+              <button
+                onClick={() => setEditingUpline(true)}
+                className="w-full text-left text-xs text-muted-foreground hover:text-foreground flex items-center justify-between"
+              >
+                <span>🔧 Arrumar hierarquia — selecionar quem está acima</span>
+                <span className="text-primary">Editar</span>
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-[11px] text-muted-foreground">Escolha o novo upline (quem fica acima deste licenciado):</p>
+                <Input
+                  autoFocus
+                  placeholder="Buscar por nome ou ID..."
+                  value={uplineSearch}
+                  onChange={e => setUplineSearch(e.target.value)}
+                  className="h-8 text-xs rounded-lg bg-white/[0.04] border-white/[0.08]"
+                />
+                <div className="max-h-52 overflow-y-auto rounded-lg border border-white/[0.06] divide-y divide-white/[0.04]">
+                  {uplineOptions.map(opt => {
+                    const isCurrent = opt.igreen_id === currentSponsorId;
+                    return (
+                      <button
+                        key={opt.id}
+                        disabled={savingUpline}
+                        onClick={() => setUpline(opt.igreen_id)}
+                        className={`w-full text-left px-2.5 py-1.5 text-[11px] flex items-center justify-between gap-2 hover:bg-white/[0.06] ${isCurrent ? "bg-primary/10" : ""}`}
+                      >
+                        <span className="truncate">
+                          <strong className="text-foreground">{opt.name}</strong>
+                          <span className="text-muted-foreground"> · #{opt.igreen_id} · N{opt.nivel}</span>
+                        </span>
+                        {isCurrent && <span className="text-[9px] text-primary">atual</span>}
+                      </button>
+                    );
+                  })}
+                  {uplineOptions.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground text-center py-3">Nenhum licenciado encontrado.</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 pt-1">
+                  {member.sponsor_override_id != null && (
+                    <Button size="sm" variant="outline" disabled={savingUpline} onClick={() => setUpline(null)} className="text-[11px] h-7 rounded-lg">
+                      Voltar ao original
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" onClick={() => setEditingUpline(false)} className="text-[11px] h-7 rounded-lg ml-auto">
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+
 
           {/* Info rows */}
           <div className="space-y-2 mb-5">
@@ -703,7 +802,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   return (
     <div className="space-y-5">
       {/* Detail Modal */}
-      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />}
+      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} allMembers={members} onSaved={fetchMembers} />}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
