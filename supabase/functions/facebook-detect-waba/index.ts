@@ -113,37 +113,44 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
 
-    // 1) Descobre o WABA. O campo `connected_whatsapp_business_account` só
-    //    existe em algumas Páginas; pedi-lo junto faz a Graph rejeitar tudo
-    //    com erro (#100). Por isso tentamos cada caminho separadamente, e por
-    //    último caímos no fallback de Businesses do usuário.
+    // 1) Descobre o WABA. Testa 4 caminhos em cascata porque nem toda Página
+    //    expõe o mesmo campo (Cloud API, legado, PBWA — WhatsApp Business App
+    //    conectado à Página sem Cloud API — ou via Business Manager).
     let wabaId: string | null = null;
+    let discoveredVia: string | null = null;
+    const detected_paths_tried: string[] = [];
 
-    try {
-      const r = await fetch(`${FB_GRAPH}/${pageId}?fields=whatsapp_business_account&access_token=${token}`);
-      const j = await r.json();
-      if (r.ok && j?.whatsapp_business_account?.id) wabaId = j.whatsapp_business_account.id;
-    } catch (_) { /* ignore */ }
-
-    if (!wabaId) {
+    const pageFieldTries: Array<{ label: string; field: string; pick: (j: any) => string | null }> = [
+      { label: "page.whatsapp_business_account", field: "whatsapp_business_account", pick: (j) => j?.whatsapp_business_account?.id || null },
+      { label: "page.connected_whatsapp_business_account", field: "connected_whatsapp_business_account", pick: (j) => j?.connected_whatsapp_business_account?.id || null },
+      { label: "page.page_backed_whatsapp_business_account", field: "page_backed_whatsapp_business_account", pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
+    ];
+    for (const t of pageFieldTries) {
+      if (wabaId) break;
+      detected_paths_tried.push(t.label);
       try {
-        const r = await fetch(`${FB_GRAPH}/${pageId}?fields=connected_whatsapp_business_account&access_token=${token}`);
+        const r = await fetch(`${FB_GRAPH}/${pageId}?fields=${t.field}&access_token=${token}`);
         const j = await r.json();
-        if (r.ok && j?.connected_whatsapp_business_account?.id) wabaId = j.connected_whatsapp_business_account.id;
+        if (r.ok) {
+          const id = t.pick(j);
+          if (id) { wabaId = String(id); discoveredVia = t.label; }
+        }
       } catch (_) { /* ignore */ }
     }
 
     if (!wabaId) {
       try {
+        detected_paths_tried.push("me/businesses");
         const bizRes = await fetch(`${FB_GRAPH}/me/businesses?fields=id,name&access_token=${token}`);
         const bizJson = await bizRes.json();
         const businesses: Array<{ id: string; name?: string }> = bizJson?.data || [];
         for (const biz of businesses) {
           for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+            detected_paths_tried.push(`business.${biz.id}.${kind}`);
             const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?access_token=${token}`);
             const wj = await wr.json();
             const first = (wj?.data || [])[0];
-            if (first?.id) { wabaId = first.id; break; }
+            if (first?.id) { wabaId = first.id; discoveredVia = `business.${kind}`; break; }
           }
           if (wabaId) break;
         }
@@ -170,13 +177,21 @@ Deno.serve(async (req) => {
           },
           matches: true,
           hint: "A Graph não expôs a WABA da Página, mas existe número WhatsApp configurado. A Meta validará esse número na criação do anúncio.",
+          detected_paths_tried,
+          discovered_via: null,
         });
       }
       return jsonRes({
         ok: true,
         connected: false,
-        hint: "A Página da plataforma ainda não tem um WhatsApp Business API (WABA) vinculado. Abra o Meta Business Suite → Configurações do Negócio → Contas do WhatsApp e vincule à Página.",
+        hint: `A Página ${pageId} não expõe WABA via Graph (testados: ${detected_paths_tried.join(", ")}). Vincule em Meta Business Suite → Configurações → Contas do WhatsApp, ou salve o número manualmente em Anúncios → Configurações.`,
         page_id: pageId,
+        detected_paths_tried,
+        next_steps: [
+          `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
+          "OU salvar número + phone_number_id manualmente em Anúncios → Configurações",
+          "Depois clique em Reverificar",
+        ],
       });
     }
 
