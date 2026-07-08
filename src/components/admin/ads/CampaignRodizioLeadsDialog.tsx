@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, Users, Phone, MessageCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Users, Phone, MessageCircle, ChevronDown, ChevronRight, Bell } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
 interface Props {
   open: boolean;
@@ -38,6 +40,9 @@ export function CampaignRodizioLeadsDialog({
   const [unassigned, setUnassigned] = useState<LeadRow[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [poolId, setPoolId] = useState<string | null>(null);
+  const [interval, setIntervalMin] = useState<number>(10);
+  const [savingInterval, setSavingInterval] = useState(false);
 
   useEffect(() => {
     if (!open || !campaignId) return;
@@ -49,13 +54,17 @@ export function CampaignRodizioLeadsDialog({
         // 1) Pool ativa (mais recente ativa da campanha)
         const { data: pool, error: e1 } = await supabase
           .from("rodizio_pools")
-          .select("id")
+          .select("id, metrics_broadcast_interval_minutes")
           .eq("campaign_id", campaignId)
           .eq("is_active", true)
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
         if (e1) throw e1;
+        if (!cancelled) {
+          setPoolId(pool?.id ?? null);
+          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 10));
+        }
 
         // 2) Membros + parceiros
         let members: any[] = [];
@@ -149,6 +158,26 @@ export function CampaignRodizioLeadsDialog({
 
   const totalAssigned = rows.reduce((s, r) => s + r.leads.length, 0);
 
+  async function handleIntervalChange(v: string) {
+    if (!poolId) return;
+    const n = Number(v);
+    setIntervalMin(n);
+    setSavingInterval(true);
+    try {
+      const { error: uerr } = await supabase
+        .from("rodizio_pools")
+        .update({ metrics_broadcast_interval_minutes: n } as any)
+        .eq("id", poolId);
+      if (uerr) throw uerr;
+      toast.success(n === 0 ? "Atualizações desligadas" : `Atualizações a cada ${n < 60 ? `${n} min` : `${n / 60}h`}`);
+    } catch (e) {
+      toast.error("Falha ao salvar: " + (e as Error).message);
+    } finally {
+      setSavingInterval(false);
+    }
+  }
+
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
@@ -173,10 +202,36 @@ export function CampaignRodizioLeadsDialog({
 
         {!loading && !error && (
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {poolId && (
+              <div className="rounded-lg border bg-muted/30 p-3 flex items-center gap-3">
+                <Bell className="w-4 h-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Métricas ao vivo da Meta (gasto, alcance, conversas, leads)
+                  </div>
+                </div>
+                <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Desligado</SelectItem>
+                    <SelectItem value="10">A cada 10 min</SelectItem>
+                    <SelectItem value="30">A cada 30 min</SelectItem>
+                    <SelectItem value="60">A cada 1 hora</SelectItem>
+                    <SelectItem value="120">A cada 2 horas</SelectItem>
+                    <SelectItem value="240">A cada 4 horas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground px-1">
               {rows.length} parceiro(s) no rodízio · {totalAssigned} lead(s) distribuído(s)
               {unassigned.length > 0 && ` · ${unassigned.length} sem parceiro`}
             </div>
+
 
             {rows.length === 0 && unassigned.length === 0 && (
               <div className="text-center py-10 text-sm text-muted-foreground">

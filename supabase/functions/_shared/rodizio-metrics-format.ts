@@ -1,20 +1,26 @@
-// Monta a mensagem WhatsApp de "atualização do rodízio" enviada a cada 10 min
-// para cada parceiro de um pool. Puro / testável isolado.
+// Monta a mensagem WhatsApp de "atualização do rodízio" enviada de tempos em
+// tempos para cada parceiro de um pool. Puro / testável isolado.
 
 export interface RodizioMetricsInput {
   campaignName: string;
   campaignStatus: string; // active | paused | ...
+  // Métricas AO VIVO da Meta (sempre passar os números reais da Graph API)
   spendTodayCents: number;
   reachToday: number;
-  leadsToday: number;
+  impressionsToday: number;
+  conversationsStartedToday: number; // messaging_conversation_started_7d (Meta)
   spend7dCents: number;
-  leads7d: number;
+  conversations7d: number;
+  // Leads reais do CRM (customers.source_campaign_id)
+  leadsCrmToday: number;
+  leadsCrm7d: number;
+  // Parceiro
   partnerPosition: number; // 1-based
   partnerPoolSize: number;
   partnerLeadsTotal: number;
-  partnerNewLeadsSinceLast: number; // leads que ele recebeu desde o último envio
-  minutesSinceLastLeadInCampaign: number | null; // null = sem leads ainda
-  nowLabel: string; // "12/07 14:30"
+  partnerNewLeadsSinceLast: number;
+  nowLabel: string; // "08/07 15:20"
+  intervalMinutes: number; // para o rodapé
 }
 
 function brl(cents: number): string {
@@ -26,10 +32,15 @@ function ordinal(n: number): string {
   return `${n}º`;
 }
 
+function intervalLabel(min: number): string {
+  if (min < 60) return `${min} min`;
+  const h = min / 60;
+  return h === 1 ? "1 hora" : `${h} horas`;
+}
+
 export function formatRodizioMetricsMessage(m: RodizioMetricsInput): string {
   const lines: string[] = [];
 
-  // Cabeçalho — muda por situação
   if (m.partnerNewLeadsSinceLast > 0) {
     lines.push(`🔥 *VOCÊ RECEBEU ${m.partnerNewLeadsSinceLast} LEAD${m.partnerNewLeadsSinceLast > 1 ? "S" : ""} NOVO${m.partnerNewLeadsSinceLast > 1 ? "S" : ""}!*`);
     lines.push(``);
@@ -37,7 +48,7 @@ export function formatRodizioMetricsMessage(m: RodizioMetricsInput): string {
 
   lines.push(`📊 *RODÍZIO — Atualização*`);
   lines.push(`━━━━━━━━━━━━━━━━━━`);
-  lines.push(`🎯 *Campanha:* ${m.campaignName}`);
+  lines.push(`🎯 ${m.campaignName}`);
   lines.push(`🕐 ${m.nowLabel}`);
 
   if (m.campaignStatus !== "active") {
@@ -45,38 +56,50 @@ export function formatRodizioMetricsMessage(m: RodizioMetricsInput): string {
     lines.push(`⚠️ *Status:* ${m.campaignStatus.toUpperCase()}`);
   }
 
-  // Hoje
   lines.push(``);
-  lines.push(`💰 *Hoje*`);
-  lines.push(`├ Gasto: R$ ${brl(m.spendTodayCents)}`);
+  lines.push(`💰 *Hoje (ao vivo da Meta)*`);
+  lines.push(`├ Investido: R$ ${brl(m.spendTodayCents)}`);
   lines.push(`├ Alcance: ${m.reachToday.toLocaleString("pt-BR")} pessoas`);
-  lines.push(`├ Leads recebidos: ${m.leadsToday}`);
-  const cpl = m.leadsToday > 0 ? `R$ ${brl(Math.round(m.spendTodayCents / m.leadsToday))}` : "—";
-  lines.push(`└ Custo/lead: ${cpl}`);
+  lines.push(`├ Impressões: ${m.impressionsToday.toLocaleString("pt-BR")}`);
+  lines.push(`├ Conversas iniciadas: ${m.conversationsStartedToday}`);
+  lines.push(`└ Leads no CRM: ${m.leadsCrmToday}`);
 
-  // 7 dias
   lines.push(``);
   lines.push(`📆 *Últimos 7 dias*`);
   lines.push(`├ Investido: R$ ${brl(m.spend7dCents)}`);
-  lines.push(`└ Leads: ${m.leads7d}`);
+  lines.push(`├ Conversas: ${m.conversations7d}`);
+  lines.push(`└ Leads no CRM: ${m.leadsCrm7d}`);
 
-  // Você no rodízio
   lines.push(``);
   lines.push(`👥 *Você no rodízio*`);
-  lines.push(`├ Posição na fila: ${ordinal(m.partnerPosition)} de ${m.partnerPoolSize}`);
-  lines.push(`└ Seus leads (total): ${m.partnerLeadsTotal}`);
+  lines.push(`├ Posição: ${ordinal(m.partnerPosition)} de ${m.partnerPoolSize}`);
+  lines.push(`└ Seus leads totais: ${m.partnerLeadsTotal}`);
 
-  // Rodapé com humor
   lines.push(``);
-  if (m.leadsToday === 0 && m.campaignStatus === "active") {
-    lines.push(`😴 Ainda sem leads hoje, mas a campanha está rodando.`);
-  } else if (m.minutesSinceLastLeadInCampaign !== null && m.minutesSinceLastLeadInCampaign < 15) {
-    lines.push(`🚀 Bora! Campanha aquecida.`);
-  } else if (m.leadsToday > 0) {
-    lines.push(`✅ Campanha entregando leads.`);
+  if (m.spendTodayCents === 0 && m.impressionsToday === 0 && m.campaignStatus === "active") {
+    lines.push(`🌱 Campanha acabou de sair. Meta começa a entregar em até 24h.`);
+  } else if (m.conversationsStartedToday === 0 && m.impressionsToday > 0) {
+    lines.push(`😴 Já teve entrega, mas ninguém clicou pra conversar ainda. Aguardando.`);
+  } else if (m.leadsCrmToday > 0) {
+    lines.push(`✅ Campanha entregando leads hoje.`);
+  } else if (m.conversationsStartedToday > 0) {
+    lines.push(`💬 Conversas iniciadas na Meta — leads devem cair no CRM em minutos.`);
   }
   lines.push(``);
-  lines.push(`_Próxima atualização em ~10 min_`);
+  lines.push(`_Próxima atualização em ~${intervalLabel(m.intervalMinutes)}_`);
+  lines.push(`_Dados ao vivo da Meta Ads_`);
 
   return lines.join("\n");
+}
+
+export function formatRodizioFallbackMessage(campaignName: string, nowLabel: string, intervalMinutes: number): string {
+  return [
+    `📊 *RODÍZIO — Atualização*`,
+    `━━━━━━━━━━━━━━━━━━`,
+    `🎯 ${campaignName}`,
+    `🕐 ${nowLabel}`,
+    ``,
+    `⚠️ Não consegui puxar as métricas ao vivo da Meta agora.`,
+    `Vou tentar de novo em ~${intervalLabel(intervalMinutes)}.`,
+  ].join("\n");
 }

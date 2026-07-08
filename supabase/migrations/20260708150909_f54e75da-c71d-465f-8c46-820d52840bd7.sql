@@ -1,0 +1,1 @@
+ALTER TABLE public.outbound_message_log ALTER COLUMN customer_id DROP NOT NULL;

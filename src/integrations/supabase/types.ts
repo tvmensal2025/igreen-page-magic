@@ -7128,7 +7128,7 @@ export type Database = {
         Row: {
           consultant_id: string
           created_at: string
-          customer_id: string
+          customer_id: string | null
           evolution_message_id: string | null
           idempotency_key: string
           payload_hash: string
@@ -7137,7 +7137,7 @@ export type Database = {
         Insert: {
           consultant_id: string
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
           evolution_message_id?: string | null
           idempotency_key: string
           payload_hash: string
@@ -7146,7 +7146,7 @@ export type Database = {
         Update: {
           consultant_id?: string
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
           evolution_message_id?: string | null
           idempotency_key?: string
           payload_hash?: string
@@ -8254,6 +8254,7 @@ export type Database = {
           is_active: boolean
           label: string
           message: string | null
+          metrics_broadcast_interval_minutes: number
           phones: string[] | null
           slug: string | null
           updated_at: string
@@ -8267,6 +8268,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           message?: string | null
+          metrics_broadcast_interval_minutes?: number
           phones?: string[] | null
           slug?: string | null
           updated_at?: string
@@ -8280,6 +8282,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           message?: string | null
+          metrics_broadcast_interval_minutes?: number
           phones?: string[] | null
           slug?: string | null
           updated_at?: string
