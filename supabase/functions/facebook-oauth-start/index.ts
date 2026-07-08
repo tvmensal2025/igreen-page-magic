@@ -38,10 +38,15 @@ function allowedReturnOrigin(req: Request, requested?: string | null): string {
   for (const value of candidates) {
     try {
       const origin = new URL(value).origin;
-      if (origin.endsWith(".lovable.app") || origin === "https://igreen.institutodossonhos.com.br") return origin;
+      if (
+        origin.endsWith(".lovable.app") ||
+        origin === "https://igreen.institutodossonhos.com.br" ||
+        origin === "https://igreen.cloud" ||
+        origin === "https://www.igreen.cloud"
+      ) return origin;
     } catch { /* ignore */ }
   }
-  return "https://igreen.institutodossonhos.com.br";
+  return "https://igreen.cloud";
 }
 
 function decodeJwtSub(token: string): string | null {
