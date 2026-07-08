@@ -239,11 +239,47 @@ export interface CreateCampaignBody {
   rodizio_partner_ids?: string[];
 }
 export async function createCampaign(body: CreateCampaignBody) {
-  const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });
-  if (error) await throwFunctionError(error);
-  if ((data as any)?.error) throw new Error((data as any).error);
-  return data as { ok: true; campaign_id: string; adset_id: string; ad_ids: string[]; ads_count: number };
+  try {
+    const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });
+    if (error) await throwFunctionError(error);
+    if ((data as any)?.error) throw new Error((data as any).error);
+    return data as { ok: true; campaign_id: string; adset_id: string; ad_ids: string[]; ads_count: number };
+  } catch (err) {
+    // Timeout de rede / "Failed to fetch": a função pode ter concluído mesmo assim
+    // (o realign de spend_cap roda em background e pode passar do timeout do fetch
+    // do browser). Consulta o banco pelas últimas campanhas do consultor com este
+    // nome — se aparecer nos últimos 90s, considera sucesso.
+    const msg = (err as Error)?.message || String(err);
+    const isNetwork = /failed to fetch|network|aborted|timeout/i.test(msg);
+    if (!isNetwork) throw err;
+    try {
+      const { data: sess } = await supabase.auth.getUser();
+      const uid = sess?.user?.id;
+      if (!uid) throw err;
+      const since = new Date(Date.now() - 90_000).toISOString();
+      const { data: rows } = await supabase
+        .from("facebook_campaigns")
+        .select("id, fb_campaign_id, fb_adset_ids, fb_ad_ids, created_at")
+        .eq("consultant_id", uid)
+        .eq("name", body.name)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const row = rows?.[0] as any;
+      if (row?.fb_campaign_id) {
+        return {
+          ok: true as const,
+          campaign_id: row.fb_campaign_id,
+          adset_id: (row.fb_adset_ids || [])[0] || "",
+          ad_ids: row.fb_ad_ids || [],
+          ads_count: (row.fb_ad_ids || []).length,
+        };
+      }
+    } catch { /* segue lançando erro original */ }
+    throw new Error("A resposta do servidor demorou. Verifique em 'Anúncios' se a campanha aparece antes de tentar novamente — pode ter sido publicada.");
+  }
 }
+
 
 // Upload de vídeo do anúncio (modo Reels/Stories). Aceita mp4/mov até ~100 MB.
 // Vai pro mesmo bucket das fotos sob `{consultantId}/ads/video-...`.
