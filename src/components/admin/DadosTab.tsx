@@ -174,7 +174,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       setCtwaAutoFixResult(result);
       if (result.chosen) {
         setCtwaNumber(result.chosen.digits || "");
-        setCtwaPhoneId(result.chosen.id || "");
+        if (/^\d+$/.test(result.chosen.id || "")) setCtwaPhoneId(result.chosen.id || "");
       }
       toast({
         title: result.ok ? "WhatsApp validado automaticamente" : "Meta ainda bloqueou o WhatsApp",
@@ -455,7 +455,8 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               </p>
               {ctwaAutoFixResult.chosen && (
                 <p className="text-xs text-muted-foreground mt-2">
-                  Número salvo: {ctwaAutoFixResult.chosen.display} · ID {ctwaAutoFixResult.chosen.id}
+                  Número usado: {ctwaAutoFixResult.chosen.display}
+                  {/^[0-9]+$/.test(ctwaAutoFixResult.chosen.id || "") ? ` · ID ${ctwaAutoFixResult.chosen.id}` : " · ID não exposto pela permissão atual"}
                 </p>
               )}
               {ctwaAutoFixResult.page_id && (
