@@ -7128,7 +7128,7 @@ export type Database = {
         Row: {
           consultant_id: string
           created_at: string
-          customer_id: string
+          customer_id: string | null
           evolution_message_id: string | null
           idempotency_key: string
           payload_hash: string
@@ -7137,7 +7137,7 @@ export type Database = {
         Insert: {
           consultant_id: string
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
           evolution_message_id?: string | null
           idempotency_key: string
           payload_hash: string
@@ -7146,7 +7146,7 @@ export type Database = {
         Update: {
           consultant_id?: string
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
           evolution_message_id?: string | null
           idempotency_key?: string
           payload_hash?: string
