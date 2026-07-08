@@ -83,7 +83,7 @@ export function CampaignRodizioLeadsDialog({
           const row: LeadRow = {
             id: c.id,
             name: c.name,
-            phone: c.phone,
+            phone: c.phone_whatsapp,
             created_at: c.created_at,
           };
           if (c.referral_partner_id) {
