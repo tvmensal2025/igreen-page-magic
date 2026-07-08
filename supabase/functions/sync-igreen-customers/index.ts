@@ -519,7 +519,7 @@ async function runSyncAllBackgroundPhase(
       } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
     }
 
-    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
+    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || [], igreenAccountId); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
     // Persiste SEMPRE tudo (não depende de toggle). A página nunca fica vazia.
