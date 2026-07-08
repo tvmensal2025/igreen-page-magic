@@ -189,10 +189,21 @@ async function probePhoneNumberId(phoneNumberId: string, token: string): Promise
  * Se persist=true, grava id/display em consultant_ad_settings quando conseguir
  * casar 1-1 (ou quando existe só 1 número na WABA).
  */
+// Cache in-memory por consultor: evita 3 requests à Graph a cada preflight/publish.
+// TTL curto (5 min) — WABA raramente muda, mas invalidação manual acontece via re-run.
+const RESOLVE_CACHE = new Map<string, { at: number; value: WabaResolution }>();
+const RESOLVE_TTL_MS = 5 * 60 * 1000;
+
 export async function resolveWabaPhone(
   consultantId: string,
-  opts: { persist?: boolean } = {},
+  opts: { persist?: boolean; noCache?: boolean } = {},
 ): Promise<WabaResolution> {
+  if (!opts.noCache) {
+    const cached = RESOLVE_CACHE.get(consultantId);
+    if (cached && Date.now() - cached.at < RESOLVE_TTL_MS && cached.value.ok) {
+      return cached.value;
+    }
+  }
   const admin = adminClient();
   const { data: platformRow } = await admin
     .from("platform_facebook_account")
