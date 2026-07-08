@@ -5,6 +5,8 @@
 // Diferença pro facebook-sync-metrics: aqui NÃO busca insights completos, leads, breakdown.
 // Só lê 1 campo (amount_spent) por campanha → 10x mais barato em rate-limit.
 import { adminClient, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
