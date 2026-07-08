@@ -17,6 +17,8 @@ const SCOPES = [
   "pages_read_engagement",
   "pages_manage_metadata",
   "pages_manage_ads",
+  "whatsapp_business_management",
+  "whatsapp_business_messaging",
   "instagram_basic",
   "instagram_manage_insights",
   "read_insights",
@@ -90,7 +92,7 @@ Deno.serve(async (req) => {
         .from("user_roles")
         .select("role")
         .eq("user_id", consultantId)
-        .eq("role", "admin")
+        .in("role", ["admin", "super_admin"])
         .maybeSingle();
       if (!roleRow) {
         return new Response(JSON.stringify({ error: "Apenas Super Admin pode conectar a conta da plataforma." }), {

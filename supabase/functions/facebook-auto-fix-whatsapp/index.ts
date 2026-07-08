@@ -46,6 +46,7 @@ Deno.serve(async (req) => {
       discovered_via: waba.discovered_via || null,
       hint: waba.hint || null,
       next_steps: waba.next_steps || [],
+      missing_permissions: waba.missing_permissions || [],
       links,
     };
 

@@ -105,6 +105,7 @@ export interface AutoFixWhatsAppResult {
   hint?: string | null;
   meta_message?: string | null;
   next_steps?: string[];
+  missing_permissions?: string[];
   links?: Record<string, string>;
 }
 
