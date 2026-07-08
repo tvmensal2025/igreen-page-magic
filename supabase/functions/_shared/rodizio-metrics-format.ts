@@ -120,3 +120,74 @@ export function formatCampaignApprovedMessage(campaignName: string, intervalMinu
     `Bons leads! 🚀`,
   ].join("\n");
 }
+
+export type CampaignPausedReason =
+  | "manual"
+  | "low_balance"
+  | "ended"
+  | "rejected"
+  | "auto_performance";
+
+/**
+ * Mensagem única de "campanha pausada". Sempre com tom positivo/tranquilizador.
+ * Disparada 1x por evento de pausa (usa `rodizio_pools.paused_notified_at`
+ * para dedup; o campo é resetado ao reativar a campanha).
+ */
+export function formatCampaignPausedMessage(campaignName: string, reason: CampaignPausedReason | string): string {
+  const name = campaignName || "Sua campanha";
+  switch (reason) {
+    case "manual":
+      return [
+        `⏸️ *Campanha em ajuste*`,
+        `🎯 ${name}`,
+        ``,
+        `Pausamos temporariamente para *otimizar o desempenho*`,
+        `e trazer leads de mais qualidade.`,
+        ``,
+        `Fique tranquilo(a) — voltamos em breve! 💪`,
+      ].join("\n");
+    case "low_balance":
+      return [
+        `⏸️ *Pausa rápida para recarga*`,
+        `🎯 ${name}`,
+        ``,
+        `Estamos *recarregando o saldo* da campanha.`,
+        `Assim que entrar, os leads voltam automaticamente. 🚀`,
+      ].join("\n");
+    case "ended":
+      return [
+        `🏁 *Campanha concluída*`,
+        `🎯 ${name}`,
+        ``,
+        `Essa fase acabou! Obrigado pela parceria —`,
+        `em breve começamos uma nova rodada. 🙌`,
+      ].join("\n");
+    case "rejected":
+      return [
+        `⏸️ *Ajuste de criativo*`,
+        `🎯 ${name}`,
+        ``,
+        `A Meta pediu um pequeno ajuste no anúncio.`,
+        `Já estamos *revisando e reenviando* — em algumas horas`,
+        `voltamos ao ar. ✅`,
+      ].join("\n");
+    case "auto_performance":
+      return [
+        `🧪 *Fase de aquecimento/teste*`,
+        `🎯 ${name}`,
+        ``,
+        `O sistema pausou para *testar novas variações*`,
+        `e melhorar o custo por lead. É rotina de otimização —`,
+        `os leads voltam em breve! 🔥`,
+      ].join("\n");
+    default:
+      return [
+        `⏸️ *Pausa temporária*`,
+        `🎯 ${name}`,
+        ``,
+        `Estamos *otimizando a campanha* para melhorar os resultados.`,
+        `Voltamos logo com mais leads! 💚`,
+      ].join("\n");
+  }
+}
+

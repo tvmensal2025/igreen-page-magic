@@ -103,7 +103,9 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
 
       const payload: CreateCampaignBody = {
         name: campaignName,
+        name_prefix: (state.namePrefix || "").trim() || undefined,
         cities: state.geoMode === "cities" ? state.cities.map((c) => ({ key: c.key, name: c.name })) : [],
+
         custom_locations: state.geoMode === "radius"
           ? state.radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
           : undefined,

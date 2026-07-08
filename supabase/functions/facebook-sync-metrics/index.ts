@@ -3,6 +3,8 @@
 // (botão "Sincronizar agora" na aba Performance).
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -128,8 +130,10 @@ Deno.serve(async (req) => {
               await admin.from("facebook_campaigns").update({ status: "completed", rejection_reason: "Prazo da campanha encerrado" }).eq("id", c.id);
               autoPaused++;
               try { await notifyConsultant(c.consultant_id, "info", "Campanha finalizada 🏁", "O prazo definido terminou e a campanha foi pausada automaticamente."); } catch (_) {}
+              try { await notifyRodizioOnCampaignPaused(admin, c.id, "ended"); } catch (_) {}
               continue;
             } catch (pe) { console.error("[fb-sync] end-time pause failed", c.fb_campaign_id, (pe as Error).message); }
+
           }
         }
 
@@ -145,8 +149,10 @@ Deno.serve(async (req) => {
               await admin.from("facebook_campaigns").update({ status: "paused", rejection_reason: reason }).eq("id", c.id);
               autoPaused++;
               try { await notifyConsultant(c.consultant_id, "warning", "Campanha pausada — saldo zerado 💳", reason); } catch (_) {}
+              try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); } catch (_) {}
               continue;
             } catch (pe) { console.error("[fb-sync] pre-pause failed", c.fb_campaign_id, (pe as Error).message); }
+
           }
         }
 
@@ -452,7 +458,11 @@ Deno.serve(async (req) => {
                 lowBalance ? "Campanha pausada — saldo baixo 💳" : "Campanha pausada automaticamente",
                 reason);
             } catch (_) {}
+            try {
+              await notifyRodizioOnCampaignPaused(admin, c.id, lowBalance ? "low_balance" : "auto_performance");
+            } catch (_) {}
           } catch (pe) { console.error("[fb-sync] auto-pause failed", c.fb_campaign_id, (pe as Error).message); }
+
         }
       } catch (e) {
         const msg = (e as Error).message;

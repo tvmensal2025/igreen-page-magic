@@ -8265,8 +8265,10 @@ export type Database = {
           id: string
           is_active: boolean
           label: string
+          last_pause_reason: string | null
           message: string | null
           metrics_broadcast_interval_minutes: number
+          paused_notified_at: string | null
           phones: string[] | null
           slug: string | null
           updated_at: string
@@ -8280,8 +8282,10 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string
+          last_pause_reason?: string | null
           message?: string | null
           metrics_broadcast_interval_minutes?: number
+          paused_notified_at?: string | null
           phones?: string[] | null
           slug?: string | null
           updated_at?: string
@@ -8295,8 +8299,10 @@ export type Database = {
           id?: string
           is_active?: boolean
           label?: string
+          last_pause_reason?: string | null
           message?: string | null
           metrics_broadcast_interval_minutes?: number
+          paused_notified_at?: string | null
           phones?: string[] | null
           slug?: string | null
           updated_at?: string

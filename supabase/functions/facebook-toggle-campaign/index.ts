@@ -1,6 +1,8 @@
 // Pausa ou reativa uma campanha no Meta (campanha + adsets + ads) e atualiza o DB.
 // Body: { campaign_id: uuid, action: "pause" | "activate" }
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -62,7 +64,27 @@ Deno.serve(async (req) => {
     const { error: updErr } = await admin.from("facebook_campaigns").update(updatePayload).eq("id", c.id);
     if (updErr) return j({ error: updErr.message, meta_error: metaError }, 500);
 
+    // Rodízio: aviso 1× ao pausar; reset dos flags ao reativar.
+    if (action === "pause" && !metaError) {
+      try {
+        await notifyRodizioOnCampaignPaused(admin, c.id, "manual");
+      } catch (e) {
+        console.error("[fb-toggle] rodizio notify falhou:", (e as Error).message);
+      }
+    }
+    if (action === "activate") {
+      try {
+        await admin
+          .from("rodizio_pools")
+          .update({ paused_notified_at: null, last_pause_reason: null })
+          .eq("campaign_id", c.id);
+      } catch (e) {
+        console.error("[fb-toggle] reset paused_notified_at falhou:", (e as Error).message);
+      }
+    }
+
     return j({ ok: !metaError, status: dbStatus, meta_error: metaError });
+
   } catch (e) {
     console.error("[fb-toggle]", e);
     return j({ error: (e as Error).message }, 500);

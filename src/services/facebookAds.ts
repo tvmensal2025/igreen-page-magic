@@ -206,9 +206,14 @@ export async function preflightCampaign(input: {
 
 export interface CreateCampaignBody {
   name: string;
+  // Prefixo livre digitado pelo usuário — vai NA FRENTE do nome padrão
+  // gerado pelo sistema no Meta Ads. Serve para diferenciar campanhas
+  // similares no mesmo mercado (ex.: "Teste A", "Lote 2").
+  name_prefix?: string;
   // Use cities OU custom_locations. Quando custom_locations vem preenchido,
   // ele substitui as cidades no targeting (segmentação por raio/endereço).
   cities: { key: string; name: string }[];
+
   custom_locations?: CustomLocation[];
   daily_budget_cents: number;
   duration_days?: number | null;

@@ -5,6 +5,8 @@
 // Diferença pro facebook-sync-metrics: aqui NÃO busca insights completos, leads, breakdown.
 // Só lê 1 campo (amount_spent) por campanha → 10x mais barato em rate-limit.
 import { adminClient, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -47,10 +49,13 @@ Deno.serve(async (req) => {
           rejection_reason: "Auto-pausada: saldo da carteira zerou — recarregue para reativar",
         }).eq("id", c.id);
         paused.push(c.fb_campaign_id || c.id);
+        try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); }
+        catch (e) { console.error("[fb-balance-check] rodizio notify:", (e as Error).message); }
       } catch (e) {
         errors.push({ id: c.id, error: (e as Error).message });
       }
     }
+
 
     // 2) Checa lifetime_cap de cada campanha ativa que tem teto definido. Se o
     //    gasto bruto da Meta já bateu no teto, pausa antes do sync pesado rodar.
@@ -79,11 +84,14 @@ Deno.serve(async (req) => {
             rejection_reason: `Auto-pausada: gastou R$ ${(spendCents/100).toFixed(2)} do teto reservado de R$ ${(cap/100).toFixed(2)} — recarregue para reativar`,
           }).eq("id", c.id);
           paused.push(c.fb_campaign_id);
+          try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); }
+          catch (e) { console.error("[fb-balance-check] rodizio notify:", (e as Error).message); }
         }
       } catch (e) {
         errors.push({ id: c.id, error: (e as Error).message });
       }
     }
+
 
     return json({ ok: true, paused, errors, checked: (pending?.length || 0) + (capped?.length || 0) });
   } catch (err) {
