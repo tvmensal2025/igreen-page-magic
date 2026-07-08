@@ -415,6 +415,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     <CalendarClock className="w-4 h-4 text-primary" />
                   </Button>
                 )}
+                {c.fb_campaign_id && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setEditing(c)}
+                    aria-label="Editar rodízio e segmentação"
+                    title="Editar rodízio / cidades / raio"
+                  >
+                    <Settings2 className="w-4 h-4 text-primary" />
+                  </Button>
+                )}
                 {isSuperAdmin && (
                   <Button
                     size="icon"
