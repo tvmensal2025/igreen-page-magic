@@ -33,6 +33,9 @@ export interface WabaResolution {
   numbers: WabaPhone[];
   chosen?: WabaPhone | null;     // o número atualmente usado por este consultor
   hint?: string;
+  detected_paths_tried?: string[]; // debug: quais caminhos Graph testamos
+  discovered_via?: string | null;  // qual caminho retornou a WABA
+  next_steps?: string[];
 }
 
 function digitsOf(s: string | null | undefined): string {
