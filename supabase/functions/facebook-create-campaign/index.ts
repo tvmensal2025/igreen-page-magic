@@ -379,11 +379,13 @@ Deno.serve(async (req) => {
       whatsapp_destination_number: authoritativeDigits,
     };
     const accId = conn.ad_account_id; // já vem com prefixo act_
-    // Idade ampliada por padrão (25-65) — mais inventário = CPM/CPL mais baixo.
-    // Advantage+ audience exige age_min <= 25 (subcode 1870188). Cap defensivo.
-    const ageMin = Math.min(body.age_min ?? 25, 25);
-    // Advantage+ exige age_max >= 65 (subcode 1870189). Cap defensivo.
-    const ageMax = Math.max(body.age_max ?? 65, 65);
+    // Idade mínima padrão 28+ (regra de negócio iGreen — público que converte).
+    // Advantage+ audience RESPEITA age_min como restrição inegociável — docs Meta:
+    // https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-expansion/advantage-audience/
+    // ("minimum age" listado explicitamente como non-negotiable constraint).
+    // Portanto age_min=28 + advantage_audience=1 é combinação válida e recomendada.
+    const ageMin = body.age_min ?? 28;
+    const ageMax = body.age_max ?? 65;
     const today = new Date().toISOString().slice(0, 10);
     const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
     const locLabel = hasCustomLocations
@@ -451,8 +453,8 @@ Deno.serve(async (req) => {
         : { cities: body.cities.map((c) => ({ key: c.key })), location_types: ["home", "recent"] };
       const precheckTargeting = {
         geo_locations: precheckGeo,
-        age_min: Math.min(body.age_min ?? 25, 25),
-        age_max: Math.max(body.age_max ?? 65, 65),
+        age_min: ageMin,
+        age_max: ageMax,
         targeting_automation: { advantage_audience: 1 },
       };
       const precheckPromoted = { page_id: conn.page_id, whatsapp_phone_number: authoritativeDigits };
@@ -549,8 +551,8 @@ Deno.serve(async (req) => {
       geo_locations: geoLocations,
       age_min: ageMin,
       age_max: ageMax,
-      // Advantage+ Audience (padrão Meta 2026) — algoritmo expande além das âncoras.
-      // Meta EXIGE age_min<=25 e age_max>=65 explícitos (subcodes 1870188/1870189).
+      // Advantage+ Audience (padrão Meta v23+, opt-in explícito).
+      // Compatível com age_min customizado — Meta trata idade como non-negotiable constraint.
       targeting_automation: { advantage_audience: 1 },
     };
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
@@ -805,23 +807,36 @@ Deno.serve(async (req) => {
       }
 
 
-      // Força placements verticais (Reels + Stories + Feed)
+      // Placements 9:16 exclusivamente — vídeos são gravados em modo retrato (Reels/Stories).
+      // Feed quadrado e in-stream horizontal cortariam o vídeo. Explore será
+      // descontinuado pela Meta em jan/2026 (docs: business/help/682655495435254).
       (targeting as any).publisher_platforms = ["facebook", "instagram"];
-      (targeting as any).facebook_positions = ["feed", "facebook_reels", "story"];
-      (targeting as any).instagram_positions = ["stream", "reels", "story", "explore"];
+      (targeting as any).facebook_positions = ["facebook_reels", "story"];
+      (targeting as any).instagram_positions = ["reels", "story"];
 
       const initialMessageV = buildInitialMessage(body.initial_message, body.distribuidora);
       const waNumberCleanV = String(conn.whatsapp_destination_number).replace(/\D/g, "");
       const waLinkV = `https://api.whatsapp.com/send?phone=${waNumberCleanV}&text=${encodeURIComponent(initialMessageV)}`;
       const urlTagsV = `utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content=consultor_${consultantLicense}&utm_term={{adset.id}}`;
 
+      // Headline curta pra não ser truncada em Reels (~40 chars visíveis) e Stories.
+      const videoTitle = String(body.headline || "").slice(0, 27);
+
+      // NÃO enviar image_url: força a Meta a usar a thumbnail nativa do vídeo,
+      // que respeita o aspect ratio 9:16. Enviar imagem custom em outro aspect
+      // causa crop no card do feed/ads manager (docs: ad-creative-video-data).
       const videoData: Record<string, unknown> = {
         video_id: fbVideoId,
-        title: body.headline,
+        title: videoTitle,
         message: body.primary_text,
         call_to_action: { type: "WHATSAPP_MESSAGE", value: { link: waLinkV } },
       };
-      if (thumbUrl) (videoData as any).image_url = thumbUrl;
+
+      console.log("[fb-create] video ad: age_min=", ageMin, "age_max=", ageMax,
+        "advantage=1 positions_fb=", (targeting as any).facebook_positions,
+        "positions_ig=", (targeting as any).instagram_positions);
+
+
 
 
       const cr = await fbFetch(`/${accId}/adcreatives`, {
