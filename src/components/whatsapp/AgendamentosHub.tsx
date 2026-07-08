@@ -707,6 +707,13 @@ export function AgendamentosHub({
             )}
           </TabsContent>
 
+          {/* ── Rodízios: métricas para parceiros ── */}
+          <TabsContent value="rodizios" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <RodiziosBroadcastPanel consultantId={consultantId} />
+            </Suspense>
+          </TabsContent>
+
           {/* ── Automações iGreen ── */}
           <TabsContent value="igreen" className="mt-0">
             <p className="text-[11px] text-muted-foreground mb-3">
