@@ -63,7 +63,7 @@ export function CampaignRodizioLeadsDialog({
         if (e1) throw e1;
         if (!cancelled) {
           setPoolId(pool?.id ?? null);
-          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 10));
+          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 60));
         }
 
         // 2) Membros + parceiros
