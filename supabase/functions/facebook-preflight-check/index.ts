@@ -130,10 +130,12 @@ Deno.serve(async (req) => {
         } else {
           geo.cities = body.cities!.map((c) => ({ key: c.key })).slice(0, 200);
         }
+        const ageMin = Math.min(body.age_min ?? 25, 25);
+        const ageMax = Math.max(body.age_max ?? 65, 65);
         const targeting: Record<string, unknown> = {
           geo_locations: geo,
-          age_min: body.age_min || 25,
-          age_max: body.age_max || 65,
+          age_min: ageMin,
+          age_max: ageMax,
           targeting_automation: { advantage_audience: 1 },
         };
         // Usa o número autoritativo resolvido no passo 4 (sem adivinhar formatos).
