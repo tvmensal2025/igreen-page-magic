@@ -149,8 +149,10 @@ Deno.serve(async (req) => {
               await admin.from("facebook_campaigns").update({ status: "paused", rejection_reason: reason }).eq("id", c.id);
               autoPaused++;
               try { await notifyConsultant(c.consultant_id, "warning", "Campanha pausada — saldo zerado 💳", reason); } catch (_) {}
+              try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); } catch (_) {}
               continue;
             } catch (pe) { console.error("[fb-sync] pre-pause failed", c.fb_campaign_id, (pe as Error).message); }
+
           }
         }
 
