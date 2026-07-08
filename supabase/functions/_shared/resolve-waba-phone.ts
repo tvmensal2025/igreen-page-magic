@@ -208,7 +208,7 @@ export async function resolveWabaPhone(
   // Se o admin/consultor salvou um phone_number_id real (numérico), valida direto
   // na Graph. Isso cobre casos em que a Página não expõe a WABA, mas o token tem
   // acesso ao número real. Se for inválido, não publicamos com fallback fake.
-  if (savedPhoneIdIsReal) {
+  if (!wabaId && savedPhoneIdIsReal) {
     try {
       const probed = await probePhoneNumberId(savedPhoneId, token);
       if (probed) {
