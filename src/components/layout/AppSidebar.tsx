@@ -126,14 +126,6 @@ export function AppSidebar({
   badges,
 }: AppSidebarProps) {
 
-  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-
-  useEffect(() => {
-    if (MOBILE_MORE_ITEMS.some((i) => i.id === activeTab)) {
-      setMobileMoreOpen(true);
-    }
-  }, [activeTab]);
-
   const handleItemClick = (item: NavItem) => {
     if (item.href && onNavigate) {
       onNavigate(item.href);
@@ -141,7 +133,6 @@ export function AppSidebar({
       onTabChange(item.id);
     }
     onOpenChange?.(false);
-    setMobileMoreOpen(false);
     // Auto-collapse on desktop after navigation
     if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
       onCollapse?.();
@@ -170,9 +161,6 @@ export function AppSidebar({
       </button>
     );
   };
-
-
-  const mobileMoreActive = MOBILE_MORE_ITEMS.some((i) => i.id === activeTab);
 
   return (
     <>
@@ -228,60 +216,9 @@ export function AppSidebar({
           )}
         </div>
 
-        {/* Nav — desktop: grupos completos; mobile: 5 principais + Mais */}
+        {/* Nav — grupos completos em qualquer tela (mobile e desktop) */}
         <nav className={`flex-1 ${collapsed ? "px-1" : "px-3"} pb-4 overflow-y-auto overflow-x-hidden`}>
-          {/* Mobile condensado */}
-          {!collapsed && (
-            <div className="lg:hidden space-y-0.5">
-              <div className="pe-sidebar-section">Principal</div>
-              {MOBILE_PRIMARY_ITEMS.map(renderNavButton)}
-              <button
-                type="button"
-                onClick={() => setMobileMoreOpen((v) => !v)}
-                className={`pe-nav-item w-full text-left ${mobileMoreActive ? "is-active" : ""}`}
-                aria-expanded={mobileMoreOpen}
-                aria-label="Mais seções do painel"
-              >
-                <MoreHorizontal className="w-[18px] h-[18px] shrink-0" />
-                <span className="truncate flex-1">Mais</span>
-                <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${mobileMoreOpen ? "rotate-180" : ""}`} />
-              </button>
-              {mobileMoreOpen && (
-                <div className="space-y-0.5 pl-2 border-l border-white/10 ml-3">
-                  {MOBILE_MORE_ITEMS.map(renderNavButton)}
-                  {onOpenSettings && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onOpenSettings();
-                        onOpenChange?.(false);
-                      }}
-                      className="pe-nav-item w-full text-left"
-                      aria-label="Configurações"
-                    >
-                      <Settings className="w-[18px] h-[18px] shrink-0" />
-                      <span className="truncate">Configurações</span>
-                    </button>
-                  )}
-                  {onLogout && (
-                    <button
-                      type="button"
-                      onClick={onLogout}
-                      className="pe-nav-item w-full text-left"
-                      aria-label="Sair"
-                    >
-                      <LogOut className="w-[18px] h-[18px] shrink-0" />
-                      <span className="truncate">Sair</span>
-                    </button>
-                  )}
-                </div>
-              )}
-
-            </div>
-          )}
-
-          {/* Desktop (e sidebar colapsada no mobile usa ícones via grupos) */}
-          <div className={collapsed ? "block" : "hidden lg:block"}>
+          <div className="block">
           {NAV_GROUPS.map((group) => (
             <div key={group.label}>
               {!collapsed && <div className="pe-sidebar-section">{group.label}</div>}
@@ -292,6 +229,7 @@ export function AppSidebar({
             </div>
           ))}
           </div>
+
 
           {/* Conta — Configurações e Sair no mesmo padrão dos demais itens */}
           {(onOpenSettings || onLogout) && (
