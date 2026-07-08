@@ -91,21 +91,6 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-/** Destinos principais no menu mobile — o restante fica em "Mais". */
-const MOBILE_PRIMARY_IDS: AdminTabId[] = [
-  "dashboard",
-  "crm",
-  "crm-clientes",
-  "whatsapp",
-  "produtos",
-];
-
-const ALL_NAV_ITEMS: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
-const NAV_BY_ID = new Map(ALL_NAV_ITEMS.map((i) => [i.id, i]));
-const MOBILE_PRIMARY_ITEMS: NavItem[] = MOBILE_PRIMARY_IDS.map((id) => NAV_BY_ID.get(id)).filter(
-  (i): i is NavItem => !!i,
-);
-const MOBILE_MORE_ITEMS: NavItem[] = ALL_NAV_ITEMS.filter((i) => !MOBILE_PRIMARY_IDS.includes(i.id));
 
 interface AppSidebarProps {
   activeTab: AdminTabId;
