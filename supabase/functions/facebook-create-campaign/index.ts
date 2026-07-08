@@ -8,6 +8,7 @@ import {
   loadConsultantAdSettings,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
+import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
@@ -282,43 +283,43 @@ Deno.serve(async (req) => {
     const platformCustomAudId = pfAud?.custom_audience_id || null;
     // Configurações específicas do consultor: telefone WhatsApp + cidades.
     const settings = await loadConsultantAdSettings(auth.id);
-    const waDigitsRaw = String(settings?.whatsapp_destination_number || "").replace(/\D/g, "");
-    if (!waDigitsRaw) {
+
+    // ===== FONTE DA VERDADE: resolvedor autoritativo da WABA =====
+    // Consulta a lista viva de phone_numbers da WhatsApp Business Account vinculada
+    // à Página da plataforma, escolhe o número deste consultor (por phone_number_id
+    // salvo, por match de variantes ou único disponível) e persiste id + display.
+    // Nunca adivinha 9º dígito — usa exatamente os dígitos que o Meta acabou de retornar.
+    const waba = await resolveWabaPhone(auth.id, { persist: true });
+    if (!waba.ok || !waba.chosen) {
+      const opts = waba.numbers.map((n) => n.display).join(", ") || "nenhum";
+      const msg =
+        waba.reason === "no_waba"
+          ? "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas."
+          : waba.reason === "no_numbers"
+            ? "Nenhum telefone está registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager."
+            : waba.reason === "no_match"
+              ? `Seu número não bate com nenhum registrado na WABA. Números disponíveis: ${opts}. Escolha um em Anúncios → Configurações.`
+              : (waba.hint || "Não foi possível resolver o número WhatsApp Business.");
       return new Response(JSON.stringify({
-        error: "Não encontramos seu número de WhatsApp. Adicione na aba Dados antes de publicar.",
-        code: "WHATSAPP_NOT_CONFIGURED",
+        error: msg,
+        code: "WHATSAPP_BUSINESS_REQUIRED",
+        waba_numbers: waba.numbers,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Aceita formato BR: 55 + DDD (2) + número (8 ou 9). Se vier sem 55, prefixa.
-    const waNumberSetting = waDigitsRaw.startsWith("55") ? waDigitsRaw : `55${waDigitsRaw}`;
-    if (waNumberSetting.length < 12 || waNumberSetting.length > 13) {
-      return new Response(JSON.stringify({
-        error: `Número de WhatsApp inválido (${waNumberSetting}). Use 55 + DDD + número (ex: 5511990092401). Corrija na aba Dados.`,
-        code: "WHATSAPP_INVALID_FORMAT",
-      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-    // Gera duas variantes (com 9 e sem 9) pra tentar ambas no Meta caso o número
-    // esteja cadastrado no WABA num formato diferente do que o consultor salvou.
-    // Meta CTWA (subcode 1487246) exige match EXATO com o registro em WhatsApp Manager.
-    const _ddd = waNumberSetting.slice(2, 4);
-    const _local = waNumberSetting.slice(4);
-    let waWith9: string;
-    let waWithout9: string;
-    if (_local.length === 9 && _local[0] === "9") {
-      waWith9 = waNumberSetting;
-      waWithout9 = `55${_ddd}${_local.slice(1)}`;
-    } else if (_local.length === 8) {
-      waWith9 = `55${_ddd}9${_local}`;
-      waWithout9 = waNumberSetting;
-    } else {
-      waWith9 = waNumberSetting;
-      waWithout9 = waNumberSetting;
-    }
+    // Number oficial: dígitos vindos direto do display_phone_number do Meta.
+    const authoritativeDigits = waba.chosen.digits;
+    const authoritativePhoneId = waba.chosen.id;
+    const authoritativeDisplay = waba.chosen.display;
+    console.log(
+      "[fb-create] waba resolved id=", authoritativePhoneId,
+      "display=", authoritativeDisplay,
+      "digits=", authoritativeDigits,
+    );
+
     // Trava de saldo já validada acima (linha ~165) com fee e safety. Aqui só
     // garantimos a wallet existe; remoção do bypass admin pra zero prejuízo.
     const wallet = await getOrCreateWallet(auth.id);
     void wallet;
-    // Adapter: mantém o resto do código falando com "conn".
     // PIXEL TRAVADO: todo novo anúncio sai com o pixel oficial da plataforma,
     // independente do que estiver salvo em platform_facebook_account.pixel_id.
     const REQUIRED_PIXEL_ID = "1521037349653769";
@@ -331,11 +332,16 @@ Deno.serve(async (req) => {
       page_id: platform.page_id,
       pixel_id: REQUIRED_PIXEL_ID,
       ig_account_id: platform.ig_account_id,
-      whatsapp_phone_number_id: null as string | null,
-      whatsapp_destination_number: waWith9, // 1ª tentativa: formato moderno (com 9). Retry sem 9 se Meta rejeitar.
+      whatsapp_phone_number_id: authoritativePhoneId,
+      whatsapp_destination_number: authoritativeDigits,
     };
-    // mudável: será atualizado pro formato que o Meta aceitou (usado no link WhatsApp do creative)
-    let waNumberWinner = waWith9;
+    // Compat com o resto do código que ainda referencia waWith9/waWithout9/waNumberWinner:
+    // usamos SEMPRE o autoritativo — as duas variantes viram o mesmo valor e o loop
+    // roda uma única iteração (efetivamente sem retry de formato).
+    const waWith9 = authoritativeDigits;
+    const waWithout9 = authoritativeDigits;
+    let waNumberWinner = authoritativeDigits;
+
 
     const accId = conn.ad_account_id; // já vem com prefixo act_
     // Idade ampliada por padrão (25-65) — mais inventário = CPM/CPL mais baixo.

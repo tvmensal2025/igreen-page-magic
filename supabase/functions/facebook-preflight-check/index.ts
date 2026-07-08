@@ -1,6 +1,7 @@
 // Pré-voo da campanha: valida token, conta, número WA, e pede reach estimate à Meta.
 // Retorna issues bloqueantes + estimativa de alcance — chamado antes de publicar.
 import { authConsultant, corsHeaders, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 interface PreflightBody {
   cities?: { key: string; name: string }[];
@@ -73,24 +74,29 @@ Deno.serve(async (req) => {
       warnings.push("Não foi possível validar status da conta de anúncios");
     }
 
-    // 4. WABA conectada à Página — exigida pelo CTWA NATIVO (destination_type=WHATSAPP).
-    // Não bloqueia (Meta às vezes negocia na entrega), mas avisa pra evitar rejeição.
-    if (conn.page_id && conn.whatsapp_destination_number) {
+    // 4. WABA + número. Fonte da verdade = phone_numbers vivos da WABA.
+    // Bloqueia se: sem WABA na Página, ou sem número vinculado, ou número salvo não bate.
+    let resolvedPhone: { id: string; display: string; digits: string } | null = null;
+    let wabaNumbers: Array<{ id: string; display: string; digits: string }> = [];
+    if (conn.page_id) {
       try {
-        const pageWaba = await fbFetch(
-          `/${conn.page_id}?fields=connected_whatsapp_business_account&access_token=${conn.token}`,
-        );
-        if (!pageWaba?.connected_whatsapp_business_account?.id) {
-          warnings.push(
-            "A Página do Facebook não tem WhatsApp Business vinculado. " +
-            "Conecte o número no Meta Business Suite → WhatsApp → Contas, " +
-            "ou o Meta pode rejeitar o anúncio.",
-          );
+        const waba = await resolveWabaPhone(auth.id, { persist: true });
+        wabaNumbers = waba.numbers.map((n) => ({ id: n.id, display: n.display, digits: n.digits }));
+        if (waba.ok && waba.chosen) {
+          resolvedPhone = { id: waba.chosen.id, display: waba.chosen.display, digits: waba.chosen.digits };
+        } else if (waba.reason === "no_waba") {
+          blockers.push("A Página do Facebook não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.");
+        } else if (waba.reason === "no_numbers") {
+          blockers.push("Nenhum número está registrado na WhatsApp Business da Página. Registre em Meta Business Suite → WhatsApp Manager.");
+        } else if (waba.reason === "no_match") {
+          const opts = waba.numbers.map((n) => n.display).join(", ");
+          blockers.push(`Seu número não bate com nenhum registrado na WABA. Disponíveis: ${opts}. Escolha um em Anúncios → Configurações.`);
         }
-      } catch (_e) {
-        // Token sem permissão pra ler campo — segue sem warning falso.
+      } catch (e) {
+        warnings.push(`Não foi possível verificar o número WhatsApp Business: ${(e as Error).message}`);
       }
     }
+
 
     // 5. Pixel vivo (recebeu evento nos últimos 7 dias)?
     if (conn.pixel_id) {
@@ -130,8 +136,9 @@ Deno.serve(async (req) => {
           age_max: body.age_max || 65,
           targeting_automation: { advantage_audience: 1 },
         };
-        const promotedObject = conn.page_id && conn.whatsapp_destination_number
-          ? { page_id: conn.page_id, whatsapp_phone_number: conn.whatsapp_destination_number }
+        // Usa o número autoritativo resolvido no passo 4 (sem adivinhar formatos).
+        const promotedObject = conn.page_id && resolvedPhone
+          ? { page_id: conn.page_id, whatsapp_phone_number: resolvedPhone.digits }
           : null;
         const params = new URLSearchParams({
           targeting_spec: JSON.stringify(targeting),
@@ -160,7 +167,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: blockers.length === 0, blockers, warnings, reach });
+    return json({
+      ok: blockers.length === 0,
+      blockers,
+      warnings,
+      reach,
+      whatsapp: resolvedPhone
+        ? { id: resolvedPhone.id, display: resolvedPhone.display, digits: resolvedPhone.digits }
+        : null,
+      waba_numbers: wabaNumbers,
+    });
   } catch (err) {
     return json({ error: (err as Error).message }, 500);
   }
