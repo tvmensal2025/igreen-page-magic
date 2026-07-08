@@ -1,105 +1,87 @@
-# Broadcast de métricas do rodízio a cada 10 min via WhatsApp
+# Corrigir métricas do rodízio + intervalo configurável por pool
 
-Envio automático de um resumo formatado com emojis para cada parceiro que está participando de um rodízio ativo, para eles pararem de perguntar como está a campanha.
+Dois problemas para resolver:
 
-## O que vai ser enviado
+1. **Mensagem foi enviada com métricas zeradas** — a função lia `facebook_metrics_daily`, que só é populada 1x/dia pelo cron `facebook-metrics-sync`. Para a campanha nova do Jaraguá essa tabela tinha 0 linhas, então tudo saiu R$ 0,00 / 0 alcance. Isso passa impressão errada e não pode acontecer.
 
-Uma mensagem WhatsApp por parceiro, a cada 10 min, no formato:
+2. **Intervalo fixo em 10 min** — você quer poder escolher 10min, 30min, 1h, 2h ou qualquer período por rodízio.
+
+## O que muda
+
+### A) Métricas em tempo real (via Meta Graph Insights)
+- A função `rodizio-metrics-broadcast` passa a buscar métricas **ao vivo na Meta API**, não da tabela local
+- Usa `loadCampaignConnection` + `fbFetch` (helpers já existentes em `_shared/fb-graph.ts`, mesmos usados por `facebook-campaign-status`)
+- Endpoints:
+  - `/{fb_campaign_id}/insights?fields=spend,impressions,reach,actions&date_preset=today`
+  - Mesmo endpoint com `date_preset=last_7d` para o histórico
+  - `actions` traz `onsite_conversion.messaging_conversation_started_7d` → número REAL de conversas iniciadas pelo CTWA (mesmo antes de virar lead no CRM)
+- Leads reais: `count(customers.id where source_campaign_id=X)` — mantém, mas soma junto com `messaging_conversations_started` da Meta (mostra os 2: "Conversas iniciadas: N (Meta) · Leads no CRM: M")
+- Cache: guarda o resultado em memória por 5 min para não bater na Meta a cada parceiro do mesmo pool
+
+### B) Guard "nunca enviar vazio"
+Se **todos** os indicadores da Meta vierem zerados E o gasto for 0 E a campanha tem menos de 30 min de vida → **não envia** (marca `skipped: cold_start` no retorno). Isso evita o "quase-roubando" que aconteceu.
+
+Se a Meta API falhar (erro/timeout), envia mensagem alternativa:
+> ⚠️ Não consegui puxar as métricas ao vivo agora. Vou tentar de novo na próxima janela.
+
+Nunca envia número zero como se fosse verdade sem checar antes.
+
+### C) Intervalo configurável por rodízio
+- Nova coluna: `rodizio_pools.metrics_broadcast_interval_minutes int default 10` (valores permitidos: 0, 10, 30, 60, 120, 240 — 0 = desligado)
+- Cron continua rodando a cada 10 min, mas dentro da função:
+  ```
+  const slotMin = Math.floor(nowMinutes / interval) * interval
+  if (last_sent_slot === slotMin) skip
+  ```
+  Ou seja, pool com intervalo de 60 min só envia quando o minuto atual é múltiplo de 60.
+- Dedup existente (`outbound_message_log.idempotency_key`) passa a usar o `slotMin` do próprio pool no lugar do slot fixo de 10 min
+
+### D) UI: seletor de frequência
+No card do rodízio da campanha (dialog `CampaignRodizioLeadsDialog`), adicionar um `Select`:
 
 ```
-📊 *RODÍZIO — Últimas atualizações*
+🔔 Frequência das atualizações no WhatsApp:
+[ Desligado | 10 min | 30 min | 1 hora | 2 horas | 4 horas ]  (padrão: 10 min)
+```
+
+Salva direto em `rodizio_pools.metrics_broadcast_interval_minutes`.
+
+## Arquivos
+
+**Editar**
+- `supabase/functions/rodizio-metrics-broadcast/index.ts` — Meta Insights ao vivo, guard de vazio, respeita `metrics_broadcast_interval_minutes`
+- `supabase/functions/_shared/rodizio-metrics-format.ts` — nova linha "Conversas iniciadas (Meta)"; texto de fallback para erro
+- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx` (ou onde exibimos o card do rodízio) — `<Select>` de frequência
+
+**Migration**
+- `ALTER TABLE rodizio_pools ADD COLUMN metrics_broadcast_interval_minutes int NOT NULL DEFAULT 10 CHECK (metrics_broadcast_interval_minutes IN (0,10,30,60,120,240));`
+
+## Formato novo da mensagem
+
+```
+📊 *RODÍZIO — Atualização*
 ━━━━━━━━━━━━━━━━━━
-🎯 Campanha: Jaraguá · iGreen
-🕐 12/07 14:30
+🎯 Jaraguá · iGreen
+🕐 08/07 15:20
 
-💰 *Hoje*
-├ Gasto: R$ 42,80
-├ Alcance: 2.145 pessoas
-├ Leads recebidos: 3
-└ Custo/lead: R$ 14,26
+💰 *Hoje (ao vivo)*
+├ Investido: R$ 7,10
+├ Alcance: 479 pessoas
+├ Impressões: 512
+├ Conversas iniciadas: 0
+└ Leads no CRM: 0
 
-📆 *Total (7 dias)*
-├ Investido: R$ 187,40
-└ Leads: 12
+📆 *Últimos 7 dias*
+├ Investido: R$ 7,10
+└ Leads: 0
 
 👥 *Você no rodízio*
-├ Posição na fila: 2º de 5
-├ Leads seus (total): 3
-└ Próximo lead: em breve 🚀
+├ Posição: 2º de 5
+└ Seus leads: 0
+
+😴 Campanha rodando, ainda sem conversas. Meta leva 24–48h para calibrar.
 
 _Próxima atualização em ~10 min_
 ```
 
-Emojis específicos por situação:
-- 🔥 quando entrou lead nos últimos 10 min
-- 😴 quando 0 leads nas últimas 2h ("Campanha rodando, mas ainda sem leads")
-- ⚠️ quando campanha pausada/rejeitada
-- ✅ quando parceiro recebeu lead novo desde o último envio
-
-## Como vai funcionar
-
-### 1. Nova edge function `rodizio-metrics-broadcast`
-- Roda a cada 10 min via `pg_cron` + `pg_net`
-- Fluxo:
-  1. Busca todas as `rodizio_pools` ativas ligadas a campanhas `status='active'`
-  2. Para cada pool, calcula métricas da campanha (hoje + 7 dias) usando `facebook_metrics_daily` + `customers` (com `source_campaign_id`)
-  3. Para cada `rodizio_pool_members` → busca `referral_partners.notification_phone` + `lead_count` + `position`
-  4. Monta mensagem personalizada e envia via `sendRawToNumber` (Whapi primeiro, Evolution fallback — helper já existe em `_shared/notify-consultant.ts`)
-- Só envia entre 08h e 22h BRT (não spammar de madrugada)
-- Dedup por `partner_id + campaign_id + slot_10min` via `outbound_message_log.idempotency_key` — se pg_cron dobrar, não envia 2x
-
-### 2. Opt-out por parceiro
-- Nova coluna: `referral_partners.rodizio_metrics_enabled boolean default true`
-- Botão "Receber atualizações a cada 10 min" no card do parceiro (aba Rodízio da campanha) — liga/desliga
-- Parceiro sem `notification_phone` é ignorado (silencioso)
-
-### 3. Agendamento
-- SQL manual via tool insert (não migration, por conter URL+anon key):
-```sql
-select cron.schedule(
-  'rodizio-metrics-10min',
-  '*/10 8-21 * * *',  -- a cada 10 min, das 08h às 21h BRT (11-00 UTC)
-  $$ select net.http_post(
-    url:='https://…/functions/v1/rodizio-metrics-broadcast', …
-  ); $$
-);
-```
-
-### 4. Aviso especial "novo lead entrou"
-Quando o parceiro recebe um lead entre um envio e outro, na próxima mensagem sobe pro topo:
-```
-🔥 *VOCÊ RECEBEU 1 LEAD NOVO!*
-👤 João Silva — recebido às 14:22
-```
-
-## Arquivos
-
-**Novos**
-- `supabase/functions/rodizio-metrics-broadcast/index.ts` — a função em si
-- `supabase/functions/_shared/rodizio-metrics-format.ts` — montagem da mensagem (testável isolado)
-
-**Editar**
-- `_shared/notify-consultant.ts` — exportar `sendRawToNumber` (hoje é interno)
-- `src/components/admin/ads/campaign-wizard/RodizioBlock.tsx` — toggle "Receber métricas a cada 10 min" por parceiro
-- `src/components/admin/ads/CampaignsList.tsx` (ou onde exibe parceiros do rodízio) — mesmo toggle
-
-**Migration**
-- Adicionar `referral_partners.rodizio_metrics_enabled boolean default true`
-
-**SQL via insert tool (não migration)**
-- Schedule pg_cron
-- Backfill: `UPDATE referral_partners SET rodizio_metrics_enabled = true`
-
-## Detalhes técnicos
-
-- Uso de `facebook_metrics_daily` (já populado pelo cron `facebook-metrics-sync`) para spend/alcance — evita bater no Meta a cada 10 min
-- Leads do dia via `count()` em `customers WHERE source_campaign_id = X AND created_at >= today_brt`
-- Custo/lead calculado só se `leads_hoje > 0`; caso contrário mostra "—"
-- Rate limit: máximo 1 mensagem por parceiro a cada 10 min (garantido pelo idempotency_key = `rodizio_metrics:{partner_id}:{campaign_id}:{floor(unix/600)}`)
-- Se todas as campanhas estão pausadas ou não há mudança desde o último envio, a função envia mesmo assim (o parceiro precisa saber que "nada mudou"), mas pula se `status='paused'` explícito e passou mais de 1h sem retomar
-
-## Perguntas antes de implementar
-
-1. **Horário de envio**: 08h–22h BRT ou o rodízio funciona 24/7 e você quer mandar sempre?
-2. **Só campanha ou consolidado?** Se o mesmo parceiro está em 3 rodízios diferentes, envio 3 mensagens separadas ou 1 consolidada?
-3. **Toggle default ligado ou desligado?** Ligar automático para todos ou parceiro precisa opt-in?
+Dados 100% vindos da Meta em tempo real, mais os leads reais do CRM — sem depender de sync diário.
