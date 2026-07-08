@@ -143,7 +143,49 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const filtered = selectedLicenciado === "all" ? walletMine : walletMine.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = walletForTotal.length;
     const directCustomers = filtered.length;
-...
+    const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
+    const withConsumption = filtered.filter((c: any) => Number(c.media_consumo) > 0);
+    const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
+
+    // Estimativa: clientes iGreen não trazem electricity_bill_value, usamos media_consumo (kWh) × tarifa média (R$ 0,95)
+    const TARIFA_MEDIA = 0.95;
+    const billOf = (c: any) => {
+      const real = Number(c.electricity_bill_value) || 0;
+      if (real > 0) return real;
+      const kwh = Number(c.media_consumo) || 0;
+      return kwh * TARIFA_MEDIA;
+    };
+    const withBill = filtered.filter((c: any) => billOf(c) > 0);
+    const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
+    const avgBill = withBill.length > 0 ? totalBill / withBill.length : 0;
+    const economiaGerada = totalBill * 0.20;
+
+    const statusMap = new Map<string, number>();
+    for (const c of filtered) { const s = (c as any).status || "pending"; statusMap.set(s, (statusMap.get(s) || 0) + 1); }
+    const statusLabels: Record<string, string> = { approved: "Aprovados", pending: "Pendentes", rejected: "Reprovados", lead: "Clientes interessados", devolutiva: "Devolutiva", awaiting_signature: "Falta Assinatura", data_complete: "Dados Completos", registered_igreen: "Cadastrado iGreen", contract_sent: "Contrato Enviado" };
+    const chartOnlyStatuses = ["approved", "devolutiva", "rejected"];
+    for (const s of chartOnlyStatuses) { if (!statusMap.has(s)) statusMap.set(s, 0); }
+    const customersByStatus = Array.from(statusMap.entries()).filter(([status]) => chartOnlyStatuses.includes(status)).map(([status, count]) => ({ status, count, label: statusLabels[status] || status.charAt(0).toUpperCase() + status.slice(1) })).sort((a, b) => b.count - a.count);
+
+    const daysAgoDate = new Date(); daysAgoDate.setDate(daysAgoDate.getDate() - periodDays);
+    const weeks = Math.ceil(periodDays / 7);
+    const weekMap = new Map<string, number>();
+    for (let i = weeks - 1; i >= 0; i--) {
+      const start = new Date(); start.setDate(start.getDate() - (i + 1) * 7);
+      const end = new Date(); end.setDate(end.getDate() - i * 7);
+      weekMap.set(`${start.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} - ${end.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`, 0);
+    }
+    for (const c of filtered) {
+      const created = new Date((c as any).created_at);
+      if (created >= daysAgoDate) {
+        const daysAgo = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+        const weekIdx = Math.min(weeks - 1, Math.floor(daysAgo / 7));
+        const keys = Array.from(weekMap.keys());
+        const key = keys[keys.length - 1 - weekIdx];
+        if (key) weekMap.set(key, (weekMap.get(key) || 0) + 1);
+      }
+    }
+    const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
     return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
   }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
 
