@@ -1,109 +1,204 @@
-# Auditoria CTWA vs documentação oficial Meta (Marketing API v21.0)
+# Auditoria: por que Elias Fausto funcionou e agora falha
 
-Objetivo: mapear cada requisito da doc Meta para CTWA (Click-to-WhatsApp) e destravar o `WHATSAPP_BUSINESS_REQUIRED / waba_numbers:[]` que voltou agora — sem "chutar" mais nada.
+> Observação: `.lovable/` está no `.gitignore`, então este plano pode se perder no próximo snapshot se essa entrada não for removida.
 
-> Antes de qualquer código: `.lovable/` está no seu `.gitignore`, então este plano não é comitado. Quer que eu remova a linha do gitignore pra ele persistir?
+## 1. O que encontrei nos dados reais
 
----
+### Campanha que funcionou com Elias Fausto
 
-## 1. Diagnóstico do erro atual
+No banco existe a campanha antiga:
 
-Log: `"error":"A Página ... não tem WhatsApp Business (WABA) vinculado", "code":"WHATSAPP_BUSINESS_REQUIRED", "waba_numbers":[]`.
+- `name`: `iGreen — CPFL Paulista`
+- `consultant_id`: `0c2711ad-4836-41e6-afba-edd94f698ae3`
+- `created_at`: `2026-05-12`
+- `status`: `active`
+- `fb_campaign_id`: `120243070299140645`
+- `fb_adset_ids`: `[120243070300020645]`
+- `fb_ad_ids`: `[120243070309680645, 120243070310640645, 120243070311710645]`
+- `cities`: inclui `Elias Fausto`
+- `rejection_reason`: vazio
 
-Isso vem de `resolve-waba-phone.ts` no branch `no_waba` + **sem número salvo** em `consultant_ad_settings.whatsapp_destination_number` para o consultor. Ou seja, aconteceram **duas falhas simultâneas**:
+### Configuração atual do mesmo consultor
 
-1. A Graph API não devolveu WABA para a Página da plataforma via nenhum dos 3 caminhos (`whatsapp_business_account`, `connected_whatsapp_business_account`, `me/businesses → owned/client_whatsapp_business_accounts`).
-2. O consultor **não tem** `whatsapp_destination_number` salvo, então o fallback "usa o número salvo e deixa a Meta validar" também não dispara.
+A configuração atual em `consultant_ad_settings` está assim:
 
-## 2. Mapeamento oficial Meta CTWA v21 → nosso código
+- `consultant_id`: `0c2711ad-4836-41e6-afba-edd94f698ae3`
+- `consultant_name`: `Rafael Ferreira`
+- telefone do consultor em `consultants.phone`: `553484314317`
+- `whatsapp_destination_number`: `5534984314317`
+- `whatsapp_phone_number_id`: `null`
+- `whatsapp_phone_number_display`: `null`
+- `whatsapp_last_verified_at`: `2026-07-08 02:55:57`
 
-| Requisito Meta (doc oficial) | Onde na doc | Estado atual no código | Ação |
-|---|---|---|---|
-| Objective `OUTCOME_ENGAGEMENT` + `destination_type=WHATSAPP` | Marketing API › Ads › Click to WhatsApp | OK (linhas 399, 513 create-campaign) | manter |
-| `optimization_goal=CONVERSATIONS`, `billing_event=IMPRESSIONS` | idem | OK | manter |
-| `promoted_object = { page_id, whatsapp_phone_number }` — dígitos E.164 sem `+` | idem | OK | manter |
-| Número precisa ser **phone da WABA vinculada à Página** OU **número clássico do WhatsApp Business App conectado à Página** (fluxo legado) | WhatsApp Business Platform › Cloud API › Phone numbers **e** Pages API › `page_backed_whatsapp_business_account` | Só cobrimos WABA Cloud API (`whatsapp_business_account`, `connected_whatsapp_business_account`) | **Adicionar** `page_backed_whatsapp_business_account` (PBWA) — é o campo que aparece quando a Página usa o WhatsApp Business App comum, não Cloud API. É a causa mais provável do `no_waba`. |
-| Descoberta de WABA por Business Manager | Business Management API › `owned/client_whatsapp_business_accounts` | OK (cascata) | manter |
-| Age min ≤ 25 e age max ≥ 65 quando `advantage_audience=1` | subcodes 1870188/1870189 | OK (clamp) | manter |
-| Sem `targeting_relaxation` (removido v20+) | subcode 1487079 | OK (já removido) | manter |
-| `tracking_specs` com `onsite_conversion.messaging_first_reply` + `offsite_conversion` c/ pixel | Marketing API › Tracking specs | OK | manter |
-| AdSet janela ≥ 24 h | subcode 1487793 | OK (start+1min, end+days+1h) | manter |
-| Sem `spend_cap` com `lifetime_budget` | subcode 2446474 | OK | manter |
-| Placements: omitir → Advantage+ Placements | Doc CTWA recomendada | OK | manter |
-| `messenger` incompatível com `destination_type=WHATSAPP` | Doc placements | OK (não incluído) | manter |
-| `whatsapp_phone_number` deve ser dígitos puros (sem `+`, sem espaço) | Referência Marketing API | OK (`replace(/\D/g,"")`) | manter |
-| Retry `waWith9/waWithout9` (chute BR) | não existe na doc — proibido | OK (removido) | manter |
+### Conta Facebook atual usada para publicar
 
-## 3. Correções propostas (sem chute)
+A conta principal da plataforma está assim:
 
-### 3.1 Ampliar descoberta de WABA — cobrir PBWA (causa raiz do `no_waba` atual)
+- `page_id`: `106742552184431`
+- `page_name`: `Instituto dos Sonhos`
+- `ad_account_id`: `act_317035519061535`
+- `ig_account_id`: `17841444624826862`
+- `pixel_id`: `708759256921383` no banco, mas o código força `1521037349653769`
+- `business_id`: `null`
+- `token_expires_at`: `2026-07-19`
 
-Em `supabase/functions/_shared/resolve-waba-phone.ts::discoverWabaId` e `facebook-detect-waba/index.ts`, tentar em cascata TODOS os campos oficiais que a Meta expõe hoje:
+### Conexão pessoal antiga do consultor
 
-1. `GET /{page_id}?fields=whatsapp_business_account` (Cloud API)
-2. `GET /{page_id}?fields=connected_whatsapp_business_account` (legado)
-3. `GET /{page_id}?fields=page_backed_whatsapp_business_account` (**novo — WhatsApp Business App conectado à Página, sem Cloud API**)
-4. `GET /me/businesses` → para cada business: `owned_whatsapp_business_accounts` + `client_whatsapp_business_accounts`
-5. Novo: `GET /{business_id}/owned_pages` cruzar com `pageId` para confirmar posse antes de assumir a WABA daquele business.
+Também existe `facebook_connections` do consultor:
 
-Se qualquer um retornar id, usa e para.
+- `page_id`: `106742552184431`
+- `page_name`: `Instituto dos Sonhos`
+- `status`: `expired`
+- `whatsapp_destination_number`: `5511971254913`
+- `whatsapp_phone_number_id`: `null`
+- sem `ad_account_id`, sem `pixel_id`, sem `business_id`
 
-### 3.2 Tornar erro `no_waba` acionável (não só bloquear)
+## 2. Diferença real entre antes e agora
 
-Quando nenhum caminho encontrar WABA **e** o consultor não tiver número salvo, devolver:
+A campanha de Elias Fausto foi criada em **12/05**, antes das mudanças recentes de publicação CTWA/WABA. Ela está ativa porque o Meta aceitou aquele fluxo na época.
 
+Agora o fluxo atual faz CTWA oficial e exige que o número enviado no `promoted_object.whatsapp_phone_number` seja um número que a Meta reconhece como ligado à WABA/Página usada.
+
+O erro atual diz:
+
+```text
+phone_number_id saved:5534984314317
+This WhatsApp phone number is not linked to your account
+subcode=1487246
+page_id=106742552184431
 ```
-code: "WHATSAPP_BUSINESS_REQUIRED"
-error: "Página <page_id> não expõe WABA via Graph. Verifique em Meta Business Suite → Configurações → Contas do WhatsApp se a Página está vinculada, OU configure manualmente o número em Anúncios → Configurações."
-next_steps: [
-  "1) Meta Business Suite → Configurações → Contas do WhatsApp → vincular Página",
-  "2) OU salvar número + phone_number_id em Anúncios → Configurações do consultor",
-  "3) Rodar /functions/v1/facebook-detect-waba para re-verificar"
-]
-detected_paths_tried: [...]  // debug
+
+Isso prova que estamos publicando com um `phone_number_id` **fake**: `saved:5534984314317`.
+
+Esse id não veio da Meta. Ele foi inventado pelo nosso fallback quando a Graph não encontrou WABA, mas encontrou número salvo:
+
+```ts
+id: settings?.whatsapp_phone_number_id || `saved:${savedDigits}`
 ```
 
-Isso substitui a mensagem genérica atual.
+Como `whatsapp_phone_number_id` está `null`, o código cria `saved:5534984314317` e tenta publicar mesmo assim. A Meta rejeita, corretamente, porque `5534984314317` não está vinculado à Página/conta usada.
 
-### 3.3 Aceitar override manual quando Graph não expõe
+## 3. Causa raiz
 
-Hoje o resolver EXIGE Graph OU número salvo. Se o consultor salvar manualmente `whatsapp_phone_number_id` + `whatsapp_destination_number` em `consultant_ad_settings` (via UI de Configurações de Anúncios), o resolver já usa como `saved_fallback` — isso já existe, mas o `no_waba` atual bate antes disso pois `savedDigits` está vazio. Confirmar na UI (`ConsultantAdSettings`) que o campo permite salvar o número manualmente e que o botão "Salvar" está gravando `whatsapp_destination_number` + `whatsapp_phone_number_id`.
+A causa raiz não é cidade, orçamento, criativo nem targeting.
 
-### 3.4 Preflight espelhando 1:1 o create
+A causa raiz é:
 
-Em `facebook-preflight-check/index.ts`, chamar `resolveWabaPhone` (mesma função) e devolver ao front `waba_status: ok|no_waba|no_numbers|no_match|saved_fallback` com a mesma `hint` — hoje o preflight só olha `whatsapp_destination_number`, o que mascara `no_waba` até o publish.
+1. A Página atual `106742552184431` não está retornando WABA pela Graph API para o token da plataforma.
+2. O consultor tem número salvo (`5534984314317`), mas não tem `phone_number_id` real da Meta.
+3. Nosso código permite fallback `saved_fallback` e tenta publicar mesmo sem prova de vínculo WABA.
+4. Meta recusa com `1487246` porque esse número não está vinculado à conta/Página usada no anúncio.
 
-### 3.5 Validar `promoted_object` antes de submeter
+## 4. Por que Elias Fausto deu certo
 
-Após montar `promotedObject`, fazer um `POST /{ad_account_id}/reachestimate?destination_type=WHATSAPP&promoted_object=...&targeting_spec=...` (já existe em `facebook-validate-account`) como pré-check. Se retornar erro 1487246/2446885, aborta antes de criar campanha e devolve mensagem clara — evita campanha órfã PAUSED no Ads Manager.
+A campanha de Elias Fausto deu certo porque foi criada antes desta validação WABA atual e/ou antes da troca para o fluxo centralizado da conta da plataforma.
 
-## 4. Detalhes técnicos (para dev)
+Hoje a publicação usa sempre:
 
-Arquivos a editar:
+- conta da plataforma: `platform_facebook_account`
+- Página: `106742552184431`
+- conta de anúncios: `act_317035519061535`
+- número atual salvo do consultor: `5534984314317`
+
+Mas esse número não tem `phone_number_id` real nem aparece em WABA vinculada à Página via Graph. Então o mesmo Meta que aceitou a campanha antiga agora bloqueia a nova criação.
+
+## 5. Correção necessária no código
+
+### 5.1 Proibir publish com `saved:`
+
+Em `resolve-waba-phone.ts`:
+
+- remover o fallback que gera `id: saved:<digits>` para publicar;
+- `saved_fallback` só pode existir para diagnóstico/preflight, nunca para publish;
+- se não houver WABA e não houver `phone_number_id` real numérico, retornar `ok:false`.
+
+Regra:
+
+```ts
+const hasRealPhoneId = /^\d+$/.test(settings?.whatsapp_phone_number_id || "");
+```
+
+Se falso, bloquear.
+
+### 5.2 Validar `phone_number_id` real na Graph
+
+Adicionar no resolver uma validação direta:
+
+```text
+GET /{phone_number_id}?fields=id,display_phone_number,verified_name,quality_rating
+```
+
+Se a Meta responde 200:
+
+- o id é real;
+- o token tem acesso;
+- o display/digits vêm da Meta;
+- podemos usar como autoritativo.
+
+Se responde erro:
+
+- bloquear antes de criar campanha;
+- mostrar que o `phone_number_id` salvo não é válido/acessível.
+
+### 5.3 Diagnosticar a Página e escopos do token
+
+Criar uma função admin `facebook-diagnose-page` para retornar:
+
+- dados da Página `106742552184431`;
+- campos WABA testados:
+  - `whatsapp_business_account`
+  - `connected_whatsapp_business_account`
+  - `page_backed_whatsapp_business_account`
+- businesses acessíveis pelo token;
+- WABAs `owned_whatsapp_business_accounts` e `client_whatsapp_business_accounts`;
+- `debug_token` com escopos do token.
+
+Isso vai responder com certeza se falta:
+
+- vínculo da WABA com a Página;
+- acesso do token à Business;
+- escopo `whatsapp_business_management` / `business_management`;
+- ou se o número `5534984314317` simplesmente está em outra WABA.
+
+### 5.4 Preflight deve bloquear antes do botão publicar
+
+Em `facebook-preflight-check`:
+
+- se `resolveWabaPhone` retornar `saved_fallback` ou `phone_number_id` não numérico, marcar `fail`;
+- mostrar instrução: salvar `phone_number_id` real ou vincular WABA à Página.
+
+### 5.5 Mensagem final ao usuário
+
+Trocar a mensagem genérica por:
+
+```text
+O número 5534984314317 está salvo, mas não tem phone_number_id real da Meta e não aparece em uma WABA vinculada à Página 106742552184431. Copie o phone_number_id no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.
+```
+
+## 6. Ação humana obrigatória no Meta
+
+O código pode impedir erro e diagnosticar, mas a correção final pode exigir ajuste no Meta Business Suite:
+
+1. Abrir Meta Business Suite.
+2. Ir em Configurações → Contas do WhatsApp.
+3. Confirmar se a Página `106742552184431 / Instituto dos Sonhos` está vinculada à WABA certa.
+4. Confirmar se o número `+55 34 98431-4317` está dentro dessa WABA.
+5. Copiar o `phone_number_id` numérico real do WhatsApp Manager.
+6. Salvar esse id nas configurações de anúncio do consultor.
+
+## 7. Arquivos a alterar após aprovação
 
 - `supabase/functions/_shared/resolve-waba-phone.ts`
-  - `discoverWabaId`: adicionar `page_backed_whatsapp_business_account`; retornar `{ id, source }` para logar de onde veio.
-  - Novo retorno `detected_paths_tried: string[]`.
 - `supabase/functions/facebook-detect-waba/index.ts`
-  - Mesma cascata ampliada; retornar `detected_paths_tried`.
-- `supabase/functions/facebook-create-campaign/index.ts`
-  - Antes do `POST /campaigns`, chamar `reachestimate` com `promoted_object` real e abortar se Meta rejeitar; propagar `detected_paths_tried` no erro `WHATSAPP_BUSINESS_REQUIRED`.
 - `supabase/functions/facebook-preflight-check/index.ts`
-  - Usar `resolveWabaPhone`; expor `waba_status`, `waba_numbers`, `chosen_phone`.
-- `src/hooks/useCtwaPreflight.ts` + `src/components/admin/ads/SmartPublishButton.tsx`
-  - Renderizar `next_steps` e `detected_paths_tried` no toast/painel de erro.
+- `supabase/functions/facebook-create-campaign/index.ts`
+- novo: `supabase/functions/facebook-diagnose-page/index.ts`
+- componente de configuração de anúncios onde salva WhatsApp/phone_number_id, se já existir campo de WhatsApp
 
-Nada em `facebook-validate-account`, `facebook-cbo-to-abo`, `ad-initial-message`, `whapi-webhook`, `evolution-webhook` precisa mexer — já usam a mesma fonte da verdade.
+## 8. Validação depois da correção
 
-## 5. Validação
-
-1. Rodar `facebook-detect-waba` para o consultor atual; ver qual dos 4 caminhos devolveu WABA (ou nenhum).
-2. Se nenhum: front mostra os `next_steps` e o consultor pode salvar número manualmente OU vincular a Página.
-3. Publicar campanha: `reachestimate` valida antes; se OK, cria campaign → adset → ad sem tocar em `targeting_relaxation` nem retries de `waWith9`.
-4. Confirmar em `edge_function_logs` que só existe UMA tentativa de POST `/adsets` por publish e que o `phone_number_id` logado bate com o resolvido.
-
-## 6. Fora de escopo
-
-- Não altero UI de tutorial nem outros edge functions.
-- Não mexo em `evolution-webhook` / `whapi-webhook` (attribuição CTWA já funciona por `promoted_object.whatsapp_phone_number`).
-- Não altero secrets nem token de plataforma.
+1. Rodar `facebook-diagnose-page` para `page_id=106742552184431`.
+2. Confirmar se Graph encontra WABA ou não.
+3. Rodar `facebook-detect-waba`.
+4. Confirmar que nunca mais aparece `phone_number_id: saved:*` em publish.
+5. Publicar nova campanha: se o Meta bloquear, o erro aparece antes do `POST /campaigns`, sem criar campanha órfã.
