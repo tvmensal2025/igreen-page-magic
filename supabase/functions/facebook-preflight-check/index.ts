@@ -83,9 +83,13 @@ Deno.serve(async (req) => {
         const waba = await resolveWabaPhone(auth.id, { persist: true });
         wabaNumbers = waba.numbers.map((n) => ({ id: n.id, display: n.display, digits: n.digits }));
         if (waba.ok && waba.chosen) {
-          resolvedPhone = { id: waba.chosen.id, display: waba.chosen.display, digits: waba.chosen.digits };
+          if (!/^\d+$/.test(waba.chosen.id)) {
+            blockers.push(`O número ${waba.chosen.digits} está salvo, mas não tem phone_number_id real da Meta. Copie o ID numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`);
+          } else {
+            resolvedPhone = { id: waba.chosen.id, display: waba.chosen.display, digits: waba.chosen.digits };
+          }
         } else if (waba.reason === "no_waba") {
-          blockers.push("A Página do Facebook não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.");
+          blockers.push(waba.hint || "A Página do Facebook não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.");
         } else if (waba.reason === "no_numbers") {
           blockers.push("Nenhum número está registrado na WhatsApp Business da Página. Registre em Meta Business Suite → WhatsApp Manager.");
         } else if (waba.reason === "no_match") {
