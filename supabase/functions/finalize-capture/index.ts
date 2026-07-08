@@ -6,6 +6,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker } from "../_shared/portal-worker.ts";
 import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts";
+import { notifyPartnerStep } from "../_shared/notify-consultant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
