@@ -140,9 +140,27 @@ Deno.serve(async (req) => {
     let discoveredVia: string | null = null;
     const detected_paths_tried: string[] = [];
 
-    // phone_number_id numérico salvo é fonte forte. Valida direto na Graph antes
-    // de qualquer fallback: se não for acessível/real, não publicamos com saved:*.
-    if (isRealPhoneId(savedPhoneId)) {
+    const pageFieldTries: Array<{ label: string; field: string; pick: (j: any) => string | null }> = [
+      { label: "page.whatsapp_business_account", field: "whatsapp_business_account", pick: (j) => j?.whatsapp_business_account?.id || null },
+      { label: "page.connected_whatsapp_business_account", field: "connected_whatsapp_business_account", pick: (j) => j?.connected_whatsapp_business_account?.id || null },
+      { label: "page.page_backed_whatsapp_business_account", field: "page_backed_whatsapp_business_account", pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
+    ];
+    for (const t of pageFieldTries) {
+      if (wabaId) break;
+      detected_paths_tried.push(t.label);
+      try {
+        const r = await fetch(`${FB_GRAPH}/${pageId}?fields=${t.field}&access_token=${token}`);
+        const j = await r.json();
+        if (r.ok) {
+          const id = t.pick(j);
+          if (id) { wabaId = String(id); discoveredVia = t.label; }
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // phone_number_id numérico salvo é fonte forte apenas se a Página não expôs
+    // WABA. Valida direto na Graph; se não for acessível/real, bloqueia abaixo.
+    if (!wabaId && isRealPhoneId(savedPhoneId)) {
       try {
         const probed = await probePhoneNumberId(savedPhoneId, token);
         if (probed) {
@@ -177,25 +195,7 @@ Deno.serve(async (req) => {
             discovered_via: "phone_number_id_probe",
           });
         }
-      } catch (_) { /* segue para descoberta por Página/WABA */ }
-    }
-
-    const pageFieldTries: Array<{ label: string; field: string; pick: (j: any) => string | null }> = [
-      { label: "page.whatsapp_business_account", field: "whatsapp_business_account", pick: (j) => j?.whatsapp_business_account?.id || null },
-      { label: "page.connected_whatsapp_business_account", field: "connected_whatsapp_business_account", pick: (j) => j?.connected_whatsapp_business_account?.id || null },
-      { label: "page.page_backed_whatsapp_business_account", field: "page_backed_whatsapp_business_account", pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
-    ];
-    for (const t of pageFieldTries) {
-      if (wabaId) break;
-      detected_paths_tried.push(t.label);
-      try {
-        const r = await fetch(`${FB_GRAPH}/${pageId}?fields=${t.field}&access_token=${token}`);
-        const j = await r.json();
-        if (r.ok) {
-          const id = t.pick(j);
-          if (id) { wabaId = String(id); discoveredVia = t.label; }
-        }
-      } catch (_) { /* ignore */ }
+      } catch (_) { /* bloqueia no no_waba abaixo */ }
     }
 
     if (!wabaId) {
