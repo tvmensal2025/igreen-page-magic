@@ -327,7 +327,40 @@ function NodeCard({ member, hasChildren, childCount, isExpanded, onToggle, onOpe
 }
 
 /* ── Detail Modal ── */
-function DetailModal({ member, onClose }: { member: NetworkMember; onClose: () => void }) {
+function DetailModal({ member, onClose, allMembers, onSaved }: { member: NetworkMember; onClose: () => void; allMembers: NetworkMember[]; onSaved: () => void | Promise<void> }) {
+  const { toast } = useToast();
+  const [editingUpline, setEditingUpline] = useState(false);
+  const [uplineSearch, setUplineSearch] = useState("");
+  const [savingUpline, setSavingUpline] = useState(false);
+  const currentSponsorId = member.sponsor_override_id ?? member.sponsor_id;
+  const currentSponsor = allMembers.find(m => m.igreen_id === currentSponsorId);
+  const uplineOptions = useMemo(() => {
+    const q = uplineSearch.trim().toLowerCase();
+    return allMembers
+      .filter(m => m.igreen_id !== member.igreen_id && !m.id.startsWith("virtual-"))
+      .filter(m => !q || m.name.toLowerCase().includes(q) || String(m.igreen_id).includes(q))
+      .slice(0, 40);
+  }, [allMembers, uplineSearch, member.igreen_id]);
+
+  const setUpline = async (newSponsorId: number | null) => {
+    setSavingUpline(true);
+    try {
+      const { error } = await supabase
+        .from("network_members" as any)
+        .update({ sponsor_override_id: newSponsorId })
+        .eq("id", member.id);
+      if (error) throw error;
+      toast({ title: "✅ Upline atualizado", description: newSponsorId ? `Agora abaixo de #${newSponsorId}` : "Voltou para o patrocinador original." });
+      setEditingUpline(false);
+      await onSaved();
+      onClose();
+    } catch (err) {
+      toast({ title: "Erro ao salvar", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    } finally {
+      setSavingUpline(false);
+    }
+  };
+
   const p = getPalette(member.nivel);
   const phone = formatPhone(member.phone);
   const initials = member.name.split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
