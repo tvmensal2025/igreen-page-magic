@@ -284,7 +284,13 @@ export async function notifyHandoff(
     `💬 *Última mensagem:*\n"${lastQuestion.slice(0, 300)}"\n\n` +
     `⚠️ A IA pausou porque ${reasonLabel}.\n` +
     `Assuma a conversa no CRM.`;
-  return sendRawToAlertNumber(consultantId, text);
+  const ok = await sendRawToAlertNumber(consultantId, text);
+  // 📣 Espelha para o parceiro dono do lead (dedup próprio por lead × step).
+  if (lead?.id) {
+    notifyPartnerStep(consultantId, lead.id, "handoff", { note: reasonLabel })
+      .catch((e) => console.warn("[notify-handoff] partner mirror:", (e as Error).message));
+  }
+  return ok;
 }
 
 // ─── Aviso: cliente respondeu enquanto o HUMANO está no atendimento ────────
