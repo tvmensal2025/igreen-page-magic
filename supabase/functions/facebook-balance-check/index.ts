@@ -49,10 +49,13 @@ Deno.serve(async (req) => {
           rejection_reason: "Auto-pausada: saldo da carteira zerou — recarregue para reativar",
         }).eq("id", c.id);
         paused.push(c.fb_campaign_id || c.id);
+        try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); }
+        catch (e) { console.error("[fb-balance-check] rodizio notify:", (e as Error).message); }
       } catch (e) {
         errors.push({ id: c.id, error: (e as Error).message });
       }
     }
+
 
     // 2) Checa lifetime_cap de cada campanha ativa que tem teto definido. Se o
     //    gasto bruto da Meta já bateu no teto, pausa antes do sync pesado rodar.
