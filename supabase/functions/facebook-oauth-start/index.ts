@@ -88,13 +88,30 @@ Deno.serve(async (req) => {
         Deno.env.get("SUPABASE_URL")!,
         Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       );
+      // Aceita: role admin/super_admin em user_roles OU is_super_admin RPC (rafael.ids@icloud.com etc).
+      let allowed = false;
       const { data: roleRow } = await admin
         .from("user_roles")
         .select("role")
         .eq("user_id", consultantId)
         .in("role", ["admin", "super_admin"])
         .maybeSingle();
-      if (!roleRow) {
+      if (roleRow) allowed = true;
+      if (!allowed) {
+        try {
+          const { data: isSuper } = await admin.rpc("is_super_admin", { _user_id: consultantId });
+          if (isSuper === true) allowed = true;
+        } catch (_) { /* ignore */ }
+      }
+      if (!allowed) {
+        // Fallback final: checa email do usuário para whitelist do super admin fundador.
+        try {
+          const { data: userRes } = await admin.auth.admin.getUserById(consultantId);
+          const email = (userRes?.user?.email || "").toLowerCase();
+          if (email === "rafael.ids@icloud.com") allowed = true;
+        } catch (_) { /* ignore */ }
+      }
+      if (!allowed) {
         return new Response(JSON.stringify({ error: "Apenas Super Admin pode conectar a conta da plataforma." }), {
           status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
