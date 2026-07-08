@@ -98,8 +98,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
   const [extending, setExtending] = useState<Campaign | null>(null);
   const [editing, setEditing] = useState<Campaign | null>(null);
+  const [rodizioCampaign, setRodizioCampaign] = useState<Campaign | null>(null);
+  const [rodizioSet, setRodizioSet] = useState<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = useState(0);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
+
   const { isSuperAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
 
