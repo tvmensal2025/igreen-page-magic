@@ -1,6 +1,6 @@
 // Pré-voo da campanha: valida token, conta, número WA, e pede reach estimate à Meta.
 // Retorna issues bloqueantes + estimativa de alcance — chamado antes de publicar.
-import { authConsultant, corsHeaders, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { authConsultant, corsHeaders, FB_GRAPH, fbFetch, getOrCreateWallet, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 interface PreflightBody {
