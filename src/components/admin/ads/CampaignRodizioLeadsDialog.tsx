@@ -41,7 +41,7 @@ export function CampaignRodizioLeadsDialog({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [poolId, setPoolId] = useState<string | null>(null);
-  const [interval, setIntervalMin] = useState<number>(10);
+  const [interval, setIntervalMin] = useState<number>(60);
   const [savingInterval, setSavingInterval] = useState(false);
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export function CampaignRodizioLeadsDialog({
         if (e1) throw e1;
         if (!cancelled) {
           setPoolId(pool?.id ?? null);
-          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 10));
+          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 60));
         }
 
         // 2) Membros + parceiros
@@ -217,7 +217,6 @@ export function CampaignRodizioLeadsDialog({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">Desligado</SelectItem>
-                    <SelectItem value="10">A cada 10 min</SelectItem>
                     <SelectItem value="30">A cada 30 min</SelectItem>
                     <SelectItem value="60">A cada 1 hora</SelectItem>
                     <SelectItem value="120">A cada 2 horas</SelectItem>

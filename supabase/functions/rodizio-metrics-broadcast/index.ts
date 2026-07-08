@@ -8,16 +8,19 @@
 //
 // Guardrails principais:
 //  - Só envia entre 08h e 22h America/Sao_Paulo
-//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 10/30/60/120/240)
+//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 30/60/120/240; padrão 60)
 //  - NUNCA envia com métricas fake: se a Meta API falhar → mensagem de fallback
 //  - Se campanha < 30 min e tudo zero → skip (evita "vazio")
 //  - Dedup por (partner_id, campaign_id, slot_da_pool) via outbound_message_log
+//  - 1× por pool: quando a campanha entra em ACTIVE (aprovada pela Meta), avisa
+//    todos os parceiros elegíveis e marca `rodizio_pools.approval_notified_at`.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 import {
   formatRodizioMetricsMessage,
   formatRodizioFallbackMessage,
+  formatCampaignApprovedMessage,
 } from "../_shared/rodizio-metrics-format.ts";
 import { fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 
@@ -128,27 +131,28 @@ Deno.serve(async (req) => {
   let skippedDedup = 0;
   let skippedColdStart = 0;
   let fallbackSent = 0;
+  let approvedSent = 0;
   let errors = 0;
 
   try {
     const { data: pools } = await supabase
       .from("rodizio_pools")
       .select(`
-        id, campaign_id, consultant_id, metrics_broadcast_interval_minutes,
+        id, campaign_id, consultant_id, metrics_broadcast_interval_minutes, approval_notified_at,
         facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at)
       `)
       .eq("facebook_campaigns.status", "active");
 
     for (const pool of (pools || []) as any[]) {
       const camp = pool.facebook_campaigns;
-      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 10);
+      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 60);
       if (!camp?.id || !camp.fb_campaign_id) continue;
       if (intervalMin <= 0) { skippedInterval++; continue; }
 
       // Slot da pool: sempre múltiplo do intervalo escolhido
       const slot = Math.floor(minutesSinceMidnightUTC / intervalMin);
       // Só envia quando o minuto atual "entra num slot novo" — como o cron roda
-      // a cada 10 min, isso naturalmente respeita intervalos de 10/30/60/120/240
+      // a cada 10 min, isso naturalmente respeita intervalos de 30/60/120/240
       // (assumindo cron *:00,10,20,...). Um envio por slot é garantido pelo dedup.
 
       // 1) Métricas ao vivo (cache 5 min por campanha)
@@ -191,6 +195,44 @@ Deno.serve(async (req) => {
         return p?.is_active !== false && p?.rodizio_metrics_enabled !== false && p?.notification_phone;
       });
       const poolSize = eligible.length;
+
+      // 4.1) Aviso ÚNICO de "campanha aprovada pela Meta". Se ainda não
+      // enviamos para esta pool E a campanha está active (aprovada), dispara
+      // 1× para cada parceiro elegível, marca timestamp e pula o card de
+      // métricas neste tick (evita 2 mensagens seguidas).
+      if (!pool.approval_notified_at && poolSize > 0) {
+        const approvedText = formatCampaignApprovedMessage(camp.name, intervalMin);
+        let anySent = false;
+        for (const m of eligible as any[]) {
+          const partner = m.referral_partners;
+          const approvedIdem = `rodizio_approved:${m.partner_id}:${camp.id}`;
+          const { error: insErr } = await supabase
+            .from("outbound_message_log")
+            .insert({
+              idempotency_key: approvedIdem,
+              consultant_id: pool.consultant_id,
+              payload_hash: approvedIdem,
+              result_status: "queued_rodizio_approved",
+            });
+          if (insErr && (insErr as any)?.code === "23505") continue; // já avisado
+          try {
+            const ok = await sendRawToNumber(pool.consultant_id, partner.notification_phone, approvedText);
+            if (ok) { approvedSent++; anySent = true; } else { errors++; }
+          } catch (e) {
+            errors++;
+            console.error("[rodizio-metrics] approved send erro:", (e as Error).message);
+          }
+        }
+        if (anySent) {
+          await supabase
+            .from("rodizio_pools")
+            .update({ approval_notified_at: new Date().toISOString() })
+            .eq("id", pool.id);
+        }
+        // Não manda o card de métricas neste tick — próxima janela cuida.
+        continue;
+      }
+
 
       for (const m of eligible as any[]) {
         const partner = m.referral_partners;
@@ -262,6 +304,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         ok: true,
         sent,
+        approvedSent,
         fallbackSent,
         skippedInterval,
         skippedDedup,

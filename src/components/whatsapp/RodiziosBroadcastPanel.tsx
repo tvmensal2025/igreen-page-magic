@@ -67,7 +67,7 @@ export function RodiziosBroadcastPanel({ consultantId }: Props) {
           label: r.label || "Rodízio",
           campaign_id: r.campaign_id,
           campaign_name: r.campaign_id ? campaignNames[r.campaign_id] ?? null : null,
-          metrics_broadcast_interval_minutes: Number(r.metrics_broadcast_interval_minutes ?? 10),
+          metrics_broadcast_interval_minutes: Number(r.metrics_broadcast_interval_minutes ?? 60),
           members: counts[r.id] || 0,
         })),
       );
@@ -159,7 +159,6 @@ export function RodiziosBroadcastPanel({ consultantId }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="0">Desligado</SelectItem>
-                    <SelectItem value="10">A cada 10 min</SelectItem>
                     <SelectItem value="30">A cada 30 min</SelectItem>
                     <SelectItem value="60">A cada 1 hora</SelectItem>
                     <SelectItem value="120">A cada 2 horas</SelectItem>

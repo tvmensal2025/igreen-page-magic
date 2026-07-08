@@ -1,123 +1,72 @@
-## Plano revisado — validado contra a documentação oficial da Meta
+## Objetivo
 
-Fiz a checagem cruzada com os docs da Meta antes de mexer em qualquer coisa. **Um dos pontos do plano anterior estava errado** e teria causado exatamente o problema que a gente quer evitar (perda de performance por desligar Advantage+). Segue o plano correto, com citação da fonte para cada decisão.
+Quando o anúncio for aprovado pela Meta (campanha entra em `ACTIVE`), avisar TODOS os parceiros do rodízio, uma única vez, com uma mensagem no WhatsApp dizendo que a campanha foi aprovada e que a partir de agora eles vão receber uma atualização de métricas **a cada 1 hora** (novo padrão). Também remover a opção de "10 min" da UI e usar 1 hora como padrão em toda a plataforma.
 
----
+## Mudanças
 
-### Correção 1: idade 28+ NÃO exige desligar Advantage+
+### 1. Novo padrão de intervalo: 1 hora (tira "10 min")
 
-**Documentação Meta** — [Advantage+ audience](https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-expansion/advantage-audience/):
+**Migração SQL** (`rodizio_pools.metrics_broadcast_interval_minutes`):
 
-> "Non-negotiable business constraints are NOT expanded, these include location constraints, **minimum age**, language, and custom audience exclusions."
+- `ALTER COLUMN ... SET DEFAULT 60`
+- `UPDATE rodizio_pools SET metrics_broadcast_interval_minutes = 60 WHERE metrics_broadcast_interval_minutes = 10` (migra pools existentes que estavam em 10 min para 1 h).
 
-Ou seja: **a idade mínima é uma restrição inegociável que o Advantage+ respeita por definição.** Você pode ter `age_min: 28` E `advantage_audience: 1` simultaneamente — a Meta não expande abaixo dos 28.
+**UI — remover item "A cada 10 min" e trocar default de leitura para 60:**
 
-O código atual (`Math.min(body.age_min ?? 25, 25)`) e o comentário `"Advantage+ audience exige age_min <= 25"` estão **desatualizados** — provavelmente referem-se a Advantage+ Shopping Campaign (feature diferente) ou a um comportamento antigo pré-v23. Na v23+ (que é a versão do código, `graph.facebook.com/v23.0`), o docs diz explicitamente o contrário.
+- `src/components/whatsapp/RodiziosBroadcastPanel.tsx`: remove `<SelectItem value="10">`; troca `?? 10` por `?? 60`.
+- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`: remove `<SelectItem value="10">`; troca os dois `?? 10` por `?? 60`; troca `useState<number>(10)` por `useState<number>(60)`.
 
-**Ação:** manter Advantage+ ligado e simplesmente subir a idade. Sem lógica condicional. É o cenário ideal — melhor entrega + público controlado.
+**Edge function** `supabase/functions/rodizio-metrics-broadcast/index.ts`:
 
----
+- Troca `Number(pool.metrics_broadcast_interval_minutes ?? 10)` por `?? 60`.
+- Atualiza os comentários do topo (`Roda a cada 10 min…`, `0=off, 10/30/60/120/240`) para refletir que o novo mínimo válido é 30 min e o padrão é 60.
+- Mantém o cron rodando na cadência atual (o dedup por slot já garante 1× por hora quando `intervalMin = 60`).
 
-### Correção 2: v23.0 mudou o default do Advantage+
+### 2. Mensagem "Campanha aprovada" — envio único por pool
 
-**Documentação Meta** — [Changes to Advantage+ audience behaviours, jun/2025](https://developers.facebook.com/blog/post/2025/06/13/marketing-api-changes-to-advantage-plus-audience-behaviors/):
+Adicionar coluna de controle em `rodizio_pools`:
 
-> "Prior to API version V23.0, the `advantage_audience` parameter within `targeting_automation` was optional […] As of v23.0, [it] defaults to 1 (opt-in) unless you explicitly set to 0."
+```sql
+ALTER TABLE public.rodizio_pools
+  ADD COLUMN IF NOT EXISTS approval_notified_at timestamptz;
+```
 
-O código já força `= 1` explicitamente, então isso já está certo. Só precisamos garantir que continue sendo enviado — não remover.
+(sem novas policies — a tabela já é acessada via `service_role` pela edge function).
 
----
+Em `rodizio-metrics-broadcast/index.ts`, antes do envio normal de métricas de cada pool:
 
-### Correção 3: crop de vídeo — a solução certa é Placement Asset Customization
+1. Buscar `approval_notified_at` no `select` da pool.
+2. Se `approval_notified_at IS NULL` e a campanha estiver `ACTIVE` na Meta (usa o `effective_status` já disponível via `fetchLiveMetrics`, ou faz uma chamada leve a `/{fb_campaign_id}?fields=effective_status`), enviar para cada parceiro elegível a mensagem de aprovação (novo helper `formatCampaignApprovedMessage` em `_shared/rodizio-metrics-format.ts`):
+  ```
+   ✅ *Campanha aprovada pela Meta!*
+   🎯 {nome da campanha}
 
-**Documentação Meta** — [Aspect ratios supported by placements](https://www.facebook.com/business/help/682655495435254) e [Crop media for a video ad](https://www.facebook.com/business/help/268849943715692):
+   A partir de agora você vai receber uma atualização
+   com as métricas ao vivo *a cada 1 hora*.
 
-Cada placement tem seu aspect ratio ideal:
-- Feed FB/IG: **1:1** (quadrado) ou 4:5
-- Reels FB/IG, Stories FB/IG: **9:16** (vertical full-screen)
-- In-stream FB: 16:9 (horizontal)
-- **Instagram Explore será removido em jan/2026** — remover do código já.
+   Bons Leads ! 🚀
+  ```
+3. Marcar `approval_notified_at = now()` na pool (idempotente — nunca reenvia).
+4. Nesse mesmo tick, pular o disparo normal de métricas (evita 2 mensagens seguidas). O próximo slot já manda o card de métricas.
 
-Um único vídeo 9:16 em placement de feed quadrado = crop no topo/rodapé. Um vídeo quadrado em Reels = tarjas pretas ou zoom-crop.
+Dedup adicional por parceiro via `outbound_message_log` com chave `rodizio_approved:{partner_id}:{camp.id}` para blindar contra corrida entre invocações do cron.
 
-Duas alternativas válidas segundo os docs:
+### 3. Fora de escopo
 
-**Opção A (simples, é o que vou fazer):** limitar placements ao aspect ratio do vídeo que você sobe. Como seus vídeos são 9:16 (viu-se no print: gravado em modo retrato), restringir para Reels + Stories em ambas as plataformas. Corta ~30% do alcance potencial mas **elimina crop 100%**.
+- Não muda a lógica do `facebook-create-campaign` (aprovação/publicação inicial) nem o `facebook-campaign-status`.
+- Não altera texto do card de métricas em si (`formatRodizioMetricsMessage`) — apenas a nota de rodapé "Próxima atualização em ~1 hora" já aparece automaticamente porque usa `intervalMinutes`.
 
-**Opção B (ideal, fica para segunda fase):** [Placement Asset Customization](https://developers.facebook.com/docs/marketing-api/dynamic-creative/placement-asset-customization/) — subir 2 versões do vídeo (1 quadrado + 1 vertical) e mapear cada uma pro seu placement. Exige mudança no wizard (upload de duas versões) e um `asset_feed_spec` mais complexo. Não vou tocar nisso agora, mas deixo o link para quando você quiser expandir alcance sem crop.
+## Detalhes técnicos
 
----
+- Cron do `rodizio-metrics-broadcast` (a cada 10 min) permanece; apenas a cadência efetiva por pool muda (slot = `floor(minutes/60)`).
+- `approval_notified_at` só é setado após o envio bem-sucedido a pelo menos 1 parceiro elegível — evita "queimar" a notificação em pools sem parceiros conectados.
+- Se o usuário tinha manualmente escolhido `10` no seletor, a migração o promove a `60`. Caso ele queira ficar em 30 min, continua podendo escolher pelo seletor.
+- Nenhum novo secret, nenhuma mudança em RLS ou GRANTs.
 
-### Correção 4: thumbnail do vídeo (`image_url`)
+## Arquivos alterados
 
-**Documentação Meta** — [Ad Creative Video Data](https://developers.facebook.com/docs/marketing-api/reference/ad-creative-video-data/):
-
-O campo `image_url` no `video_data` **precisa ser uma imagem no mesmo aspect ratio do vídeo**. Se você manda uma thumb quadrada num vídeo 9:16, o Facebook croca a thumb (não o vídeo) — e é isso que aparece no feed antes do play e no card do Ads Manager (bate com seu print, onde a foto da mulher aparece cortada).
-
-**Ação:** quando o vídeo é 9:16 (Reels/Stories only), **omitir `image_url`**. A Meta gera automaticamente a thumb do frame do vídeo no aspect certo. Só enviar `image_url` se um dia usarmos placements mistos e a thumb já vier cortada corretamente.
-
----
-
-### Correção 5: "falando da página"
-
-Isso é o **nome da Página do Facebook conectada** (`page_id` na `object_story_spec`). No seu caso mostra "Instituto dos Sonhos". O anúncio NÃO permite override do nome via API — quem define é a Página.
-
-Duas ações possíveis:
-1. **Fora do escopo desta correção:** trocar a Página conectada por uma com nome que combine com iGreen (você faz isso no `/admin` → conexões → Facebook).
-2. **No escopo:** cortar `headline` para 27 caracteres no modo vídeo. Os docs de Reels Ads mostram que Reels corta headline em ~40 chars e o "primary_text" também some depois de 125. Vou aplicar limites conservadores para não aparecer texto truncado feio.
-
----
-
-## Plano de implementação (mínimo, cirúrgico)
-
-**Arquivo único:** `supabase/functions/facebook-create-campaign/index.ts`
-
-1. **Idade default 28+**, mantendo Advantage+ ligado (docs confirmam compatibilidade):
-   - Remover os 3 `Math.min(body.age_min ?? 25, 25)` (linhas 384, 454, 550).
-   - Trocar por `body.age_min ?? 28`.
-   - Manter `targeting_automation: { advantage_audience: 1 }` em ambos os lugares — sem condicional.
-   - Remover o comentário desatualizado "Advantage+ audience exige age_min <= 25" e substituir por link do docs oficial.
-
-2. **Placements do vídeo** (assumindo vídeos 9:16, que é o padrão do wizard):
-   - Trocar `facebook_positions` de `["feed", "facebook_reels", "story"]` para `["facebook_reels", "story"]`.
-   - Trocar `instagram_positions` de `["stream", "reels", "story", "explore"]` para `["reels", "story"]` (remove `stream` que é horizontal e `explore` que a Meta descontinua em jan/2026).
-   - Manter `publisher_platforms: ["facebook", "instagram"]`.
-
-3. **Thumbnail do vídeo:**
-   - Remover a linha `if (thumbUrl) (videoData as any).image_url = thumbUrl;` (linha 824).
-   - Deixar a Meta usar `thumbnail_url` gerado do próprio vídeo — respeita aspect ratio nativamente.
-
-4. **Headline no modo vídeo:**
-   - `title: body.headline.slice(0, 27)` no `videoData` (linha 820).
-
-5. **Log de auditoria** antes do POST do adcreative de vídeo:
-   ```ts
-   console.log("[fb-create] video ad: age_min=", ageMin, "advantage=1, positions=", targeting.facebook_positions, targeting.instagram_positions);
-   ```
-
-**O que NÃO muda:**
-- Modo foto (`asset_feed_spec`) — segue como está, ele já usa 3 formatos (square/vertical/story) e Meta escolhe por placement.
-- Wizard/frontend — a regra "28+" vira default silencioso da plataforma. Se um dia quiser expor no wizard, é outra tarefa.
-- Estrutura do `object_story_spec`, upload do vídeo, cache `ad_video_library`, captions SRT — nada disso é tocado.
-
-**Riscos e mitigação:**
-- Alcance do vídeo cai ~25-35% (Reels+Stories only vs feed+stream+explore). **Aceitável**: o que somem é feed quadrado com vídeo 9:16 cortado (impressão inútil) e placements horizontais (in-stream) que também cortavam. Está trocando lixo por qualidade.
-- CPM pode subir 5-15% em Reels/Stories (placements premium). Compensa com melhor qualidade do lead 28+.
-- Se algum dia subir vídeo 1:1, este código vai colocá-lo com tarjas nos Reels. Mitigação para segunda fase: detectar aspect ratio no upload (`ffprobe` no compress-worker) e escolher placements dinamicamente.
-
-**Como validar depois do deploy:**
-1. Publicar 1 campanha teste em modo vídeo.
-2. No Ads Manager conferir:
-   - Idade: 28-65 ✅
-   - Vantagem+ público: ligado ✅
-   - Prévias: só Facebook Reels, FB Stories, IG Reels, IG Stories, todas full-screen sem crop ✅
-   - Thumbnail no card mostra o frame do vídeo, não uma foto cortada ✅
-3. Se aparecer erro subcode 1870188/1870189 ou "targeting_relaxation": deixamos rollback pronto revertendo os 3 pontos do item 1.
-
-**Referências consultadas:**
-- [Advantage+ audience — non-negotiable constraints](https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-expansion/advantage-audience/)
-- [Marketing API v23.0 Advantage+ audience default change](https://developers.facebook.com/blog/post/2025/06/13/marketing-api-changes-to-advantage-plus-audience-behaviors/)
-- [Aspect ratios by placement + descontinuação do Explore em jan/2026](https://www.facebook.com/business/help/682655495435254)
-- [Ad Creative Video Data (image_url + thumbnail_url)](https://developers.facebook.com/docs/marketing-api/reference/ad-creative-video-data/)
-- [Reels Ads spec](https://developers.facebook.com/docs/marketing-api/creative/reels-ads)
-- [Placement Asset Customization (opção B, futura)](https://developers.facebook.com/docs/marketing-api/dynamic-creative/placement-asset-customization/)
+- `supabase/migrations/<novo>.sql` (default 60 + update linhas 10→60 + coluna `approval_notified_at`)
+- `supabase/functions/rodizio-metrics-broadcast/index.ts`
+- `supabase/functions/_shared/rodizio-metrics-format.ts`
+- `src/components/whatsapp/RodiziosBroadcastPanel.tsx`
+- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`
