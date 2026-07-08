@@ -46,13 +46,21 @@ const OPENAI_VISION_MODEL = process.env.OPENAI_VISION_MODEL || 'gpt-4o-mini';
 // IPs de saída do Tor (403 "Sorry, you have been blocked"), então o padrão
 // agora é acessar direto pelo IP do servidor.
 //
-// IMPORTANTE: o Tor só é usado se IGREEN_USE_TOR estiver explicitamente ligado
-// (=1/true/on). Fazemos assim de propósito: mesmo que a variável antiga
-// TOR_SOCKS_PROXY continue definida no EasyPanel, ela sozinha NÃO reativa o Tor.
-// Para voltar a usar Tor no futuro: setar IGREEN_USE_TOR=1.
-const USE_TOR_FLAG = ['1', 'true', 'on', 'yes'].includes(
-  String(process.env.IGREEN_USE_TOR || '').trim().toLowerCase(),
-);
+// IGREEN_USE_TOR controla o Tor:
+//   - '1'/'true'/'on'/'yes'  → liga Tor
+//   - '0'/'false'/'off'/'no' → desliga (acesso direto)
+//   - não setado (default)   → liga Tor SE não houver proxy externo configurado
+// Assim, quando você tira PROXY_URL/PROXY_SERVER do EasyPanel, o worker cai
+// automaticamente no Tor sem precisar mexer em mais nenhuma variável. Quando
+// reativar Evomi (colando PROXY_URL de volta), o proxy externo tem prioridade
+// em pickProxyConfig() e o Tor é ignorado sem precisar desligar essa flag.
+const _torRaw = String(process.env.IGREEN_USE_TOR ?? '').trim().toLowerCase();
+const _hasExternalProxy = !!(String(process.env.PROXY_URL || '').trim() || String(process.env.PROXY_SERVER || '').trim());
+const USE_TOR_FLAG = ['0', 'false', 'off', 'no'].includes(_torRaw)
+  ? false
+  : ['1', 'true', 'on', 'yes'].includes(_torRaw)
+    ? true
+    : !_hasExternalProxy; // default: liga Tor quando não há proxy externo
 const TOR_PROXY = USE_TOR_FLAG
   ? (process.env.TOR_SOCKS_PROXY || 'socks5://127.0.0.1:9050')
   : 'none';
