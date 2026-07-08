@@ -1,0 +1,1 @@
+ALTER TABLE public.referral_partners ADD COLUMN IF NOT EXISTS rodizio_metrics_enabled boolean NOT NULL DEFAULT true;
