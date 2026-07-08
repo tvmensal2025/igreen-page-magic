@@ -264,6 +264,111 @@ Deno.test("matchTransition: returns null for empty / nullish transitions", () =>
   );
 });
 
+// ─── Regressão: botões diferenciados por sufixo com PONTOS ─────────────
+// Cenário real (fluxo M): três botões com o mesmo rótulo base "beneficio"
+// distinguidos por 1, 2 ou 3 pontos no final. Cliente ou clica no botão
+// (Evolution devolve o title/id como texto inbound) ou digita "1"/"2"/"3".
+// _norm preserva a pontuação e o fallback (d) ranqueia pela phrase mais
+// longa — os três casos precisam ir para transições distintas SEM colisão.
+const btnBeneficio1 = {
+  trigger_phrases: ["beneficio ."],
+  goto_step_id: "step-beneficio-1",
+};
+const btnBeneficio2 = {
+  trigger_phrases: ["beneficio .."],
+  goto_step_id: "step-beneficio-2",
+};
+const btnBeneficio3 = {
+  trigger_phrases: ["beneficio ..."],
+  goto_step_id: "step-beneficio-3",
+};
+const beneficioTransitions = [btnBeneficio1, btnBeneficio2, btnBeneficio3];
+const beneficioButtons = [
+  { id: "beneficio .", title: "Benefício ." },
+  { id: "beneficio ..", title: "Benefício .." },
+  { id: "beneficio ...", title: "Benefício ..." },
+];
+
+Deno.test("matchTransition: dot-suffix buttons — click #1 (buttonId path)", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "beneficio .",
+    messageText: "Benefício .",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-1");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — click #2 (buttonId path)", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "beneficio ..",
+    messageText: "Benefício ..",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-2");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — click #3 (buttonId path)", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "beneficio ...",
+    messageText: "Benefício ...",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-3");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — text '1' resolves button #1", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "",
+    messageText: "1",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-1");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — text '2' resolves button #2", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "",
+    messageText: "2",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-2");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — text '3' resolves button #3", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "",
+    messageText: "3",
+    buttons: beneficioButtons,
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-3");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — free text longest-match wins ('beneficio ...' beats '..'/'.' )", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "",
+    messageText: "beneficio ...",
+    buttons: [],
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-3");
+});
+
+Deno.test("matchTransition: dot-suffix buttons — free text '..' picks 2 (not 1 nor 3)", () => {
+  const t = matchTransition({
+    transitions: beneficioTransitions,
+    buttonId: "",
+    messageText: "beneficio ..",
+    buttons: [],
+  });
+  assertEquals(t?.goto_step_id, "step-beneficio-2");
+});
+
 Deno.test("matchTransition: buttonId 'menu' / 'cadastro' / 'humano' / 'repeat' route via goto_special", () => {
   for (const sp of SPECIAL_GOTO_VALUES) {
     const t = matchTransition({
