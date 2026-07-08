@@ -328,11 +328,15 @@ Deno.serve(async (req) => {
         links: WHATSAPP_FIX_LINKS,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Number oficial: dígitos vindos direto do display_phone_number do Meta.
+    // Number oficial: preferencialmente vindo direto do display_phone_number do Meta.
+    // Em modo permission_limited, só temos os dígitos salvos; o reachestimate/adset
+    // abaixo é a validação oficial da Meta antes de seguir.
     const authoritativeDigits = waba.chosen.digits;
     const authoritativePhoneId = waba.chosen.id;
     const authoritativeDisplay = waba.chosen.display;
-    if (!/^\d+$/.test(authoritativePhoneId)) {
+    const hasRealPhoneNumberId = /^\d+$/.test(authoritativePhoneId);
+    const isPermissionLimitedSavedNumber = authoritativePhoneId.startsWith("permission_limited:");
+    if (!hasRealPhoneNumberId && !isPermissionLimitedSavedNumber) {
       return new Response(JSON.stringify({
         error: `O número ${authoritativeDigits} está salvo, mas o phone_number_id (${authoritativePhoneId}) não é um ID real da Meta. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página ${waba.page_id || "da plataforma"}.`,
         code: "WHATSAPP_BUSINESS_REQUIRED",
