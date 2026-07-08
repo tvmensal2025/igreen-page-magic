@@ -3,8 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2 } from "lucide-react";
+import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2 } from "lucide-react";
 import { EditCampaignDialog } from "./EditCampaignDialog";
+import { CampaignRodizioLeadsDialog } from "./CampaignRodizioLeadsDialog";
+
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
