@@ -802,7 +802,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   return (
     <div className="space-y-5">
       {/* Detail Modal */}
-      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} />}
+      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} allMembers={members} onSaved={fetchMembers} />}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
