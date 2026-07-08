@@ -526,10 +526,10 @@ Deno.serve(async (req) => {
     adsetParams.start_time = new Date(startAt).toISOString();
     const days = Math.max(1, body.duration_days ?? 7);
     adsetParams.end_time = new Date(startAt + days * 86400_000 + 3_600_000).toISOString();
-    console.log("[fb-create] step=adset_create campaign=", campaignId, "phone_try=with9", waWith9);
-    // 1ª tentativa: número COM o 9 (formato moderno BR).
-    // Fallback automático: se Meta responder 1487246 "not linked to your account",
-    // refaz a chamada com o número SEM o 9 — cobre WABAs registrados no formato antigo.
+    console.log("[fb-create] step=adset_create campaign=", campaignId, "phone_try=without9_first", waWithout9);
+    // Estratégia: tenta SEM o 9 primeiro (formato mais comum no WABA), e se
+    // falhar por qualquer motivo, retenta COM o 9. Só devolve erro final se
+    // as duas variantes falharem. Cobre WABAs cadastrados em qualquer formato.
     async function tryAdset(phone: string) {
       const promoted = { page_id: conn.page_id, whatsapp_phone_number: phone };
       const params = { ...adsetParams, promoted_object: JSON.stringify(promoted) };
@@ -539,41 +539,39 @@ Deno.serve(async (req) => {
         body: new URLSearchParams(params),
       });
     }
-    let adset: any;
-    try {
-      adset = await tryAdset(waWith9);
-      waNumberWinner = waWith9;
-    } catch (e) {
-      const msg = String((e as Error)?.message || "");
-      const isWabaMismatch = msg.includes("1487246") || /not linked to your account/i.test(msg);
-      if (isWabaMismatch && waWithout9 !== waWith9) {
-        console.warn("[fb-create] adset falhou com waWith9, tentando waWithout9:", waWithout9);
-        try {
-          adset = await tryAdset(waWithout9);
-          waNumberWinner = waWithout9;
-        } catch (e2) {
-          const msg2 = String((e2 as Error)?.message || "");
-          const stillWaba = msg2.includes("1487246") || /not linked to your account/i.test(msg2);
-          if (stillWaba) {
-            return new Response(JSON.stringify({
-              error: "WHATSAPP_BUSINESS_REQUIRED",
-              code: "WHATSAPP_BUSINESS_REQUIRED",
-              message: `O número informado (testamos com e sem o 9: ${waWith9} e ${waWithout9}) não está vinculado ao WhatsApp Business Manager desta Página. Cadastre e vincule em business.facebook.com/wa/manage e publique novamente.`,
-              meta_message: msg2,
-            }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          throw e2;
-        }
-      } else if (isWabaMismatch) {
+    // Ordem preferida: SEM 9 primeiro (Meta costuma armazenar formato antigo).
+    const phoneAttempts = waWith9 === waWithout9 ? [waWith9] : [waWithout9, waWith9];
+    let adset: any = null;
+    let lastErr: Error | null = null;
+    for (const phone of phoneAttempts) {
+      try {
+        console.log("[fb-create] adset attempt phone=", phone);
+        adset = await tryAdset(phone);
+        waNumberWinner = phone;
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e as Error;
+        const msg = String(lastErr?.message || "");
+        console.warn(`[fb-create] adset falhou phone=${phone} err=${msg.slice(0, 200)}`);
+      }
+    }
+    if (!adset) {
+      const msg = String(lastErr?.message || "");
+      const isWabaMismatch =
+        msg.includes("1487246") ||
+        msg.includes("2446885") ||
+        /not linked to your account/i.test(msg) ||
+        /whatsapp/i.test(msg);
+      if (isWabaMismatch) {
         return new Response(JSON.stringify({
           error: "WHATSAPP_BUSINESS_REQUIRED",
           code: "WHATSAPP_BUSINESS_REQUIRED",
-          message: `O número ${waWith9} não está vinculado ao WhatsApp Business Manager desta Página. Cadastre e vincule em business.facebook.com/wa/manage e publique novamente.`,
+          message: `Testamos o número com e sem o 9 (${waWith9} e ${waWithout9}) e o Meta rejeitou os dois. Confirme em business.facebook.com/wa/manage que o número está vinculado à Página e publique novamente.`,
           meta_message: msg,
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      } else {
-        throw e;
       }
+      throw lastErr || new Error("adset_create_failed");
     }
     console.log("[fb-create] adset OK phone_used=", waNumberWinner);
     // Atualiza tudo pra usar o formato que o Meta aceitou (link WhatsApp do creative).
