@@ -481,7 +481,7 @@ export async function resolveWabaPhone(
     }
   }
 
-  return {
+  const result: WabaResolution = {
     ok: !!chosen,
     reason: chosen ? undefined : "no_match",
     waba_id: wabaId,
@@ -493,6 +493,7 @@ export async function resolveWabaPhone(
       : `Seu número não bate com nenhum registrado na WABA. Escolha um dos ${numbers.length} disponíveis.`,
     detected_paths_tried: tried,
     discovered_via: discoveredVia,
-
   };
+  if (result.ok) RESOLVE_CACHE.set(consultantId, { at: Date.now(), value: result });
+  return result;
 }
