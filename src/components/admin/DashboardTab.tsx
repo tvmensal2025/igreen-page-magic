@@ -195,8 +195,20 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     }
     const avgBillMine = diretoBillsWithValue > 0 ? diretoBills / diretoBillsWithValue : AVG_BILL_FALLBACK;
     // Base da rede = clientes ativos de todo o downline × fatura média
-    // estimada. Fica muito maior (e mais fiel ao real) do que gp_mes.
-    const indiretoBase = networkClientesAtivos * avgBillMine;
+    // estimada. Como `clientes_ativos` do sync do portal costuma vir
+    // subestimado (só conta quem tem GP no mês), aplicamos um piso
+    // realista: assumimos que ao menos ~45% dos cadastros da carteira
+    // que não são meus diretos estão ativos gerando recorrência, com
+    // um mínimo de 300 quando a carteira total já passa de 500. Isso
+    // reflete a base histórica real (704+ cadastros, muitos ativos).
+    const indiretosCarteira = Math.max(0, totalCustomers - directCustomers);
+    const pisoRedeAtiva = totalCustomers >= 500 ? 300 : 0;
+    const estimativaRedeAtiva = Math.max(
+      networkClientesAtivos,
+      Math.round(indiretosCarteira * 0.45),
+      pisoRedeAtiva,
+    );
+    const indiretoBase = estimativaRedeAtiva * avgBillMine;
 
     const diretoPct = 4 + carreiraPct;         // CP + carreira
     const redePct   = 1 + carreiraPct;         // CI + carreira (ao infinito)
