@@ -21,6 +21,7 @@ import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
 import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
+import { useNetworkGpMes } from "@/hooks/useNetworkGpMes";
 
 
 import { TeamRankingTab } from "./TeamRankingTab";
@@ -55,6 +56,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     cadastroIgreenIds: [],
   });
   const { data: networkIgreenIds = [] } = useNetworkIgreenIds(userId);
+  const { data: networkGpMes = 0 } = useNetworkGpMes(userId);
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
@@ -148,10 +150,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const withConsumption = walletForTotal.filter((c: any) => Number(c.media_consumo) > 0);
     const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
 
-    // Recorrência garantida = comissão mensal sobre clientes APROVADOS.
-    //   4% se cliente foi cadastrado por mim (registered_by_igreen_id === meuIgreenId)
-    //   1% se foi cadastrado pela rede
-    //   +0,5% se sou gestor (proxy: isLeader = tenho equipe)
+    // Recorrência garantida (mês) = 4% dos meus diretos + 1% da rede (todos
+    // os níveis abaixo) + 0,5% de gestor sobre o total, se isLeader.
+    //   Direto:   soma da conta mensal dos clientes aprovados cadastrados por mim
+    //   Indireto: soma de gp_mes de todos os network_members do meu downline
+    //             (proxy do faturamento mensal, já que não temos as contas
+    //             individuais de cada cliente da rede)
     const TARIFA_MEDIA = 0.95;
     const billOf = (c: any) => {
       const real = Number(c.electricity_bill_value) || 0;
@@ -160,17 +164,17 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       return kwh * TARIFA_MEDIA;
     };
     const meuIgreenId = myClientsSettings?.myIgreenId ? String(myClientsSettings.myIgreenId) : "";
-    const gestorBonus = isLeader ? 0.005 : 0;
     const approvedWallet = walletForTotal.filter((c: any) => (c.status || "").toLowerCase() === "approved");
-    let recorrenciaGarantida = 0;
+    let diretoBase = 0;
     for (const c of approvedWallet) {
-      const bill = billOf(c);
-      if (!bill) continue;
       const regId = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : "";
-      const isDireto = meuIgreenId && regId === meuIgreenId;
-      const pct = (isDireto ? 0.04 : 0.01) + gestorBonus;
-      recorrenciaGarantida += bill * pct;
+      if (meuIgreenId && regId === meuIgreenId) diretoBase += billOf(c);
     }
+    const indiretoBase = Number(networkGpMes) || 0;
+    const diretoValor = diretoBase * 0.04;
+    const indiretoValor = indiretoBase * 0.01;
+    const gestorValor = isLeader ? (diretoBase + indiretoBase) * 0.005 : 0;
+    const recorrenciaGarantida = diretoValor + indiretoValor + gestorValor;
     // Mantido para gráficos (CustomerCharts pode usar avgBill/economia)
     const withBill = filtered.filter((c: any) => billOf(c) > 0);
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
@@ -203,8 +207,8 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       }
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
-    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, recorrenciaGarantida, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, isLeader]);
+    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, recorrenciaGarantida, diretoValor, indiretoValor, gestorValor, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, networkGpMes, isLeader]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
@@ -394,7 +398,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
           label="Recorrência garantida"
           value={formatCompactBRL(filteredMetrics?.recorrenciaGarantida ?? 0)}
           color="primary"
-          subtitle={`${filteredMetrics?.approvedCount ?? 0} aprovados · 4% diretos + 1% rede${isLeader ? " + 0,5% gestor" : ""}`}
+          subtitle={`4% diretos ${formatCompactBRL(filteredMetrics?.diretoValor ?? 0)} + 1% rede ${formatCompactBRL(filteredMetrics?.indiretoValor ?? 0)}${isLeader ? ` + 0,5% gestor ${formatCompactBRL(filteredMetrics?.gestorValor ?? 0)}` : ""}`}
         />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
