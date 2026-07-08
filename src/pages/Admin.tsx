@@ -408,8 +408,8 @@ const AdminContent = () => {
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
         : activeTab === "academy" || activeTab === "produtos"
-          ? "flex-1 min-h-0 overflow-y-auto w-full p-0 overflow-x-hidden"
-          : "flex-1 min-h-0 overflow-y-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6 overflow-x-hidden"}>
+          ? "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full p-0"
+          : "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6"}>
 
         {/* OCR Review Banner */}
         <OcrReviewBanner consultantId={userId} />
