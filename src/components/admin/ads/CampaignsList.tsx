@@ -550,9 +550,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         campaign={editing}
         onSaved={() => setRefreshTick((t) => t + 1)}
       />
+
+      <CampaignRodizioLeadsDialog
+        open={!!rodizioCampaign}
+        onOpenChange={(o) => { if (!o) setRodizioCampaign(null); }}
+        campaignId={rodizioCampaign?.id ?? null}
+        campaignName={rodizioCampaign?.name ?? ""}
+      />
     </div>
   );
 }
+
 
 function Stat({ icon, label, value, highlight, tooltip }: { icon: React.ReactNode; label: string; value: string; highlight?: boolean; tooltip?: string }) {
   return (
