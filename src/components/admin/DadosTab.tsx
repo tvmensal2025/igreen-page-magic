@@ -12,6 +12,7 @@ import {
   careerBonusPercent,
 } from "@/features/produtos/acompanhamento/greenCommission";
 import { useGreenSettings, useSaveGreenProfile } from "@/features/produtos/acompanhamento/greenHooks";
+import { SyncAllPanel } from "@/components/admin/SyncAllPanel";
 
 interface DadosTabProps {
   form: {
@@ -458,6 +459,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           </div>
         </div>
       </div>
+
+      {/* Sincronização sob demanda — substitui vários crons que foram desligados */}
+      <SyncAllPanel />
 
       <Button type="submit" disabled={saving} className="w-full h-12 text-base font-bold rounded-xl gap-2" style={{ background: "var(--gradient-green)" }}>
         <Save className="w-5 h-5" />
