@@ -1,48 +1,65 @@
+# Habilitar scroll horizontal onde faltar
 
-# Botão "Ver leads do rodízio" na lista de campanhas
+## Problema
+No mobile (e às vezes no PC em telas estreitas), várias áreas cortam o conteúdo à direita sem permitir arrastar — ex.: cards da Central de Anúncios (métricas "Impressões, Cliques, Conversas, Clientes interessados Meta/WhatsApp, Gasto"), tabelas do Admin, modais grandes e o Kanban.
 
-## O que você vai ver
+A causa raiz é uma combinação de:
+- `body { overflow-x: hidden !important }` em `src/index.css` (linha 201) — bloqueia qualquer scroll horizontal da página.
+- Containers de conteúdo do Admin sem `min-w-0` / `overflow-x-auto` — o conteúdo largo é apenas cortado.
+- Regra `.kanban-safe-scroll` que força `overflow-x: hidden` no viewport do Radix ScrollArea.
 
-Nas campanhas que **têm rodízio ligado**, aparece um novo botão de ícone (👥) ao lado dos outros (pausar / estender / editar). Ao clicar, abre um diálogo que mostra:
+## O que muda (apenas front-end / apresentação)
 
-- **Por parceiro**: nome + telefone do parceiro, quantos leads recebeu, e a **lista dos leads** (nome, telefone, quando entrou).
-- **Total geral** da campanha.
-- Botão em cada lead que leva para a conversa no WhatsApp (mesma navegação já usada).
-
-Campanhas sem rodízio **não mostram o botão** — evita ruído visual.
-
-## Onde os dados vêm
-
-- `rodizio_pools` (pool ativa da campanha) → `rodizio_pool_members` → `referral_partners` (nome/phone).
-- `customers` filtrados por `source_campaign_id = <campanha>` e `referral_partner_id IS NOT NULL`, agrupados por `referral_partner_id`.
-- Ordenado do parceiro com mais leads pro com menos; leads dentro de cada bloco por `created_at DESC`.
-
-## Arquivos
-
-### Novo: `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`
-- Props: `campaignId`, `campaignName`, `open`, `onOpenChange`.
-- Ao abrir: 3 queries paralelas (pool ativa, membros+partners via join, customers do rodízio).
-- Estado de loading, empty ("Nenhum lead atribuído ao rodízio ainda"), erro.
-- Layout: header com nome da campanha e contador total; lista colapsável por parceiro (expandido por padrão); dentro, cards leves com nome/telefone/data e botão "Abrir conversa".
-
-### Editar: `src/components/admin/ads/CampaignsList.tsx`
-- No `load()` (linha ~110): após carregar `list`, fazer 1 query extra `rodizio_pools.select("campaign_id").in("campaign_id", ids).eq("is_active", true)` → guardar `Set<string>` de campaign_ids com rodízio.
-- Estado `rodizioSet: Set<string>` e `rodizioCampaign: {id, name} | null`.
-- No bloco de botões (linhas 390–443), adicionar antes do botão Editar:
-  ```tsx
-  {rodizioSet.has(c.id) && (
-    <Button size="icon" variant="ghost" className="h-8 w-8"
-      onClick={() => setRodizioCampaign({ id: c.id, name: c.name })}
-      title="Ver leads distribuídos pelo rodízio">
-      <Users className="w-4 h-4 text-primary" />
-    </Button>
-  )}
+### 1) `src/index.css`
+- Remover `overflow-x: hidden !important` do `body` e substituir por `overflow-x: clip` apenas em landing pages públicas (via classe utilitária `.page-clip-x`) — assim o app admin volta a poder rolar lateralmente quando um filho estourar.
+- Adicionar utilitário global:
+  ```css
+  .scroll-x-fallback { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .scroll-x-fallback > * { min-width: max-content; }
   ```
-- Renderizar `<CampaignRodizioLeadsDialog>` no final, controlado por `rodizioCampaign`.
+- Ajustar `.kanban-safe-scroll` para NÃO forçar `overflow-x: hidden` — trocar por `overflow-x: auto`, mantendo `min-width: 0` para não travar o flex pai.
 
-## O que NÃO muda
+### 2) Wrapper de conteúdo do Admin
+- Localizar o container principal do `/admin` (dentro de `Admin.tsx` / `ResizableShell`) e envolver a área de conteúdo com:
+  ```tsx
+  <div className="flex-1 min-w-0 overflow-x-auto">
+    {children}
+  </div>
+  ```
+- Isso libera o gesto de arrastar horizontalmente sempre que uma tela (Central de Anúncios, tabelas, etc.) exceder a largura visível — sem quebrar o layout das que já cabem.
 
-- Não altera lógica de atribuição do rodízio (helper `rodizio-assignment.ts` intacto).
-- Não altera nenhuma edge function.
-- Não cria tabela nem migração — dados já existem.
-- Campanhas sem rodízio permanecem exatamente como estão.
+### 3) Cards de campanha (Central de Anúncios)
+- Na fileira de métricas ("Impressões / Cliques / Conversas / Clientes Meta / Clientes WhatsApp / Gasto"): trocar o grid fixo por um flex com scroll horizontal em telas pequenas:
+  ```tsx
+  <div className="flex gap-3 overflow-x-auto snap-x scroll-x-fallback md:grid md:grid-cols-6 md:overflow-visible">
+    {/* cada métrica com className="min-w-[140px] snap-start" */}
+  </div>
+  ```
+- Mesmo padrão para a barra "Impressões hoje / Cliques hoje / Gasto hoje …" que hoje é cortada por um menu flutuante.
+
+### 4) Tabelas do Admin (clientes, financeiro, rede, etc.)
+- Padronizar todas as tabelas com o wrapper já usado em `TeamRankingTab` / `NetworkPanel`:
+  ```tsx
+  <div className="overflow-x-auto -mx-4 sm:mx-0">
+    <table className="min-w-[720px] w-full">…</table>
+  </div>
+  ```
+- Aplicar em qualquer `<table>` no `src/components/admin/**` que ainda não tenha esse wrapper.
+
+### 5) Diálogos / Modais grandes
+- Em `DialogContent`, adicionar `max-h-[90dvh] overflow-y-auto` e trocar conteúdos internos largos por wrappers `overflow-x-auto`. Sem mexer na lógica dos modais.
+
+### 6) Kanban
+- Confirmar que os boards (`KanbanBoard`, `PosVendaKanban`, `SalesPipelineBoard`) usam `flex gap-… overflow-x-auto` no container das colunas, com cada coluna `w-72 shrink-0`. Ajustar onde estiver faltando e remover a trava `overflow-x: hidden` mencionada no item 1.
+
+## Não muda
+- Nenhuma lógica de negócio, queries, edge functions, migrations.
+- Comportamento em desktop largo continua idêntico (o `md:` mantém grids atuais).
+- Sidebar e comportamento de "sempre modo computador" já resolvidos antes.
+
+## Validação
+- Abrir no viewport atual (~514px) `/admin` → Central de Anúncios: deslizar cards de métrica lateralmente sem cortar "Gasto".
+- Tabelas de Clientes/Financeiro/Rede: arrastar horizontalmente até a última coluna.
+- Modais de criar campanha e detalhe de lead: rolar tanto vertical quanto horizontal quando necessário.
+- Kanban: arrastar colunas laterais no mobile.
+- Desktop 1440px: nada deve regredir (grids intactos).
