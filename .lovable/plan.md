@@ -1,42 +1,48 @@
 
-# Manter modo desktop no celular (fim do "Mais" cortando)
+# Botão "Ver leads do rodízio" na lista de campanhas
 
-## O problema
+## O que você vai ver
 
-Hoje o `AppSidebar` tem 2 layouts:
-- **Desktop** (`lg:`): mostra os 3 grupos completos (Visão Geral, Gestão Comercial, Recursos) com todos os itens.
-- **Mobile** (< 1024px): mostra só 5 itens fixos + botão "Mais" que agrupa o resto (Conversão, Base de clientes, Financeiro, Captação, Parceiros, Rede, Agendamentos, Central de anúncios, Links, Materiais, Estúdio de áudio, Academy).
+Nas campanhas que **têm rodízio ligado**, aparece um novo botão de ícone (👥) ao lado dos outros (pausar / estender / editar). Ao clicar, abre um diálogo que mostra:
 
-Você quer o desktop **sempre**, mesmo no celular, sem esconder nada atrás de "Mais".
+- **Por parceiro**: nome + telefone do parceiro, quantos leads recebeu, e a **lista dos leads** (nome, telefone, quando entrou).
+- **Total geral** da campanha.
+- Botão em cada lead que leva para a conversa no WhatsApp (mesma navegação já usada).
 
-## O que vou mudar
+Campanhas sem rodízio **não mostram o botão** — evita ruído visual.
 
-### 1. `src/components/layout/AppSidebar.tsx`
-- Remover o bloco mobile condensado (linhas 249–297).
-- Remover o `hidden lg:block` do wrapper dos grupos (linha 300) → grupos completos aparecem em qualquer tamanho de tela.
-- Apagar as constantes `MOBILE_PRIMARY_IDS`, `MOBILE_PRIMARY_ITEMS`, `MOBILE_MORE_ITEMS`, o estado `mobileMoreOpen` e o `useEffect` relacionado.
-- Manter o backdrop mobile + botão de fechar (drawer continua deslizando de fora quando aberto por hambúrguer no topbar) — isso não muda, só a **estrutura interna** vira igual ao desktop.
-- Manter comportamento colapsado (72px só ícones) inalterado.
+## Onde os dados vêm
 
-Resultado: no celular, ao abrir o menu, o usuário vê exatamente os mesmos 3 grupos + Conta que vê no desktop, com scroll natural (o `nav` já tem `overflow-y-auto`).
+- `rodizio_pools` (pool ativa da campanha) → `rodizio_pool_members` → `referral_partners` (nome/phone).
+- `customers` filtrados por `source_campaign_id = <campanha>` e `referral_partner_id IS NOT NULL`, agrupados por `referral_partner_id`.
+- Ordenado do parceiro com mais leads pro com menos; leads dentro de cada bloco por `created_at DESC`.
 
-### 2. O que fazer com o mobile em si
+## Arquivos
 
-Como você pediu para o app rodar sempre "modo computador" no celular, algumas telas ficam apertadas (tabelas de CRM, wizard de anúncios, kanban). Sugestões que **não** cabem neste ajuste (posso fazer em pedido separado se quiser):
+### Novo: `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`
+- Props: `campaignId`, `campaignName`, `open`, `onOpenChange`.
+- Ao abrir: 3 queries paralelas (pool ativa, membros+partners via join, customers do rodízio).
+- Estado de loading, empty ("Nenhum lead atribuído ao rodízio ainda"), erro.
+- Layout: header com nome da campanha e contador total; lista colapsável por parceiro (expandido por padrão); dentro, cards leves com nome/telefone/data e botão "Abrir conversa".
 
-1. **Zoom horizontal permitido**: hoje o viewport trava em `width=device-width, initial-scale=1`. Se quiser sensação de "desktop no celular" total, podemos setar `initial-scale=0.6, minimum-scale=0.3, maximum-scale=3` — o Chrome renderiza como se fosse tela grande e o usuário faz pinch pra aproximar. É o que apps tipo painel administrativo antigo fazem.
-2. **Deixar o container do conteúdo com largura mínima** (ex.: `min-w-[1024px]`) e rolar horizontalmente — o app fica navegável com scroll lateral, sem quebrar layout.
-3. **Manter só a sidebar como drawer** (do jeito que está), mas ampliar o conteúdo pra 1024px+ com scroll.
-
-Recomendo combinar (2) + manter o viewport atual: sidebar completa quando aberta, conteúdo com `min-w-[1024px]` no `<main>`, `overflow-x-auto` no wrapper. Assim o celular vira um "computador em miniatura" sem esconder recurso nenhum.
-
-## Arquivos afetados
-
-- `src/components/layout/AppSidebar.tsx` (remover bloco mobile condensado).
-- Opcional, se você aprovar a parte (2): `src/pages/Index.tsx` (ou o layout raiz do admin) — adicionar `min-w-[1024px]` no container do conteúdo + `overflow-x-auto` no wrapper externo.
+### Editar: `src/components/admin/ads/CampaignsList.tsx`
+- No `load()` (linha ~110): após carregar `list`, fazer 1 query extra `rodizio_pools.select("campaign_id").in("campaign_id", ids).eq("is_active", true)` → guardar `Set<string>` de campaign_ids com rodízio.
+- Estado `rodizioSet: Set<string>` e `rodizioCampaign: {id, name} | null`.
+- No bloco de botões (linhas 390–443), adicionar antes do botão Editar:
+  ```tsx
+  {rodizioSet.has(c.id) && (
+    <Button size="icon" variant="ghost" className="h-8 w-8"
+      onClick={() => setRodizioCampaign({ id: c.id, name: c.name })}
+      title="Ver leads distribuídos pelo rodízio">
+      <Users className="w-4 h-4 text-primary" />
+    </Button>
+  )}
+  ```
+- Renderizar `<CampaignRodizioLeadsDialog>` no final, controlado por `rodizioCampaign`.
 
 ## O que NÃO muda
 
-- Nenhuma lógica de negócio, rotas, permissões ou tabs.
-- O drawer mobile continua abrindo/fechando pelo mesmo botão no topbar.
-- O modo colapsado (72px) do desktop continua funcionando igual.
+- Não altera lógica de atribuição do rodízio (helper `rodizio-assignment.ts` intacto).
+- Não altera nenhuma edge function.
+- Não cria tabela nem migração — dados já existem.
+- Campanhas sem rodízio permanecem exatamente como estão.

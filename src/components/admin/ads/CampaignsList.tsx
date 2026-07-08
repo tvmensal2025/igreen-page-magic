@@ -3,8 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2 } from "lucide-react";
+import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2 } from "lucide-react";
 import { EditCampaignDialog } from "./EditCampaignDialog";
+import { CampaignRodizioLeadsDialog } from "./CampaignRodizioLeadsDialog";
+
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -96,8 +98,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
   const [extending, setExtending] = useState<Campaign | null>(null);
   const [editing, setEditing] = useState<Campaign | null>(null);
+  const [rodizioCampaign, setRodizioCampaign] = useState<Campaign | null>(null);
+  const [rodizioSet, setRodizioSet] = useState<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = useState(0);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
+
   const { isSuperAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
 
@@ -164,6 +169,19 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           if (r.source_campaign_id) waCounts[r.source_campaign_id] = (waCounts[r.source_campaign_id] || 0) + 1;
         });
         setWaLeads(waCounts);
+
+        // ─── Campanhas com rodízio ativo (para exibir botão de leads distribuídos) ───
+        try {
+          const { data: pools } = await (supabase as any)
+            .from("rodizio_pools")
+            .select("campaign_id")
+            .in("campaign_id", list.map(c => c.id))
+            .eq("is_active", true);
+          const rSet = new Set<string>();
+          (pools || []).forEach((p: any) => { if (p.campaign_id) rSet.add(p.campaign_id); });
+          setRodizioSet(rSet);
+        } catch { /* best-effort */ }
+
 
         // ─── Criativos por campanha (preview de mídia) ───
         // Prioridade: (1) capa real da Meta em facebook_campaigns.thumbnail_url,
@@ -415,6 +433,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     <CalendarClock className="w-4 h-4 text-primary" />
                   </Button>
                 )}
+                {rodizioSet.has(c.id) && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setRodizioCampaign(c)}
+                    aria-label="Ver leads do rodízio"
+                    title="Ver leads distribuídos pelo rodízio"
+                  >
+                    <Users2 className="w-4 h-4 text-primary" />
+                  </Button>
+                )}
                 {c.fb_campaign_id && (
                   <Button
                     size="icon"
@@ -427,6 +457,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     <Settings2 className="w-4 h-4 text-primary" />
                   </Button>
                 )}
+
                 {isSuperAdmin && (
                   <Button
                     size="icon"
@@ -519,9 +550,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         campaign={editing}
         onSaved={() => setRefreshTick((t) => t + 1)}
       />
+
+      <CampaignRodizioLeadsDialog
+        open={!!rodizioCampaign}
+        onOpenChange={(o) => { if (!o) setRodizioCampaign(null); }}
+        campaignId={rodizioCampaign?.id ?? null}
+        campaignName={rodizioCampaign?.name ?? ""}
+      />
     </div>
   );
 }
+
 
 function Stat({ icon, label, value, highlight, tooltip }: { icon: React.ReactNode; label: string; value: string; highlight?: boolean; tooltip?: string }) {
   return (
