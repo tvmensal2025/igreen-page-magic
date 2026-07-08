@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
       const opts = waba.numbers.map((n) => n.display).join(", ") || "nenhum";
       const msg =
         waba.reason === "no_waba"
-          ? "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas."
+          ? (waba.hint || "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.")
           : waba.reason === "no_numbers"
             ? "Nenhum telefone está registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager."
             : waba.reason === "no_match"
@@ -311,6 +311,9 @@ Deno.serve(async (req) => {
         error: msg,
         code: "WHATSAPP_BUSINESS_REQUIRED",
         waba_numbers: waba.numbers,
+        detected_paths_tried: waba.detected_paths_tried || [],
+        discovered_via: waba.discovered_via || null,
+        next_steps: waba.next_steps || [],
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     // Number oficial: dígitos vindos direto do display_phone_number do Meta.
