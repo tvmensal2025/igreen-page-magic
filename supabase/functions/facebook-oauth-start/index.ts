@@ -42,6 +42,16 @@ function allowedReturnOrigin(req: Request, requested?: string | null): string {
   return "https://igreen.institutodossonhos.com.br";
 }
 
+function decodeJwtSub(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(payload.length / 4) * 4, "=");
+    const json = JSON.parse(atob(b64));
+    return json?.sub || null;
+  } catch { return null; }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -50,25 +60,9 @@ Deno.serve(async (req) => {
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
     const token = authHeader.replace("Bearer ", "");
-    let consultantId: string | null = null;
-    try {
-      // @ts-ignore
-      if (typeof supabase.auth.getClaims === "function") {
-        // @ts-ignore
-        const { data: claimsData } = await supabase.auth.getClaims(token);
-        consultantId = (claimsData as any)?.claims?.sub || null;
-      }
-    } catch (_) { /* fallback */ }
-    if (!consultantId) {
-      const { data: userData } = await supabase.auth.getUser();
-      consultantId = userData?.user?.id || null;
-    }
+    // Decodifica JWT localmente pra evitar round-trip de rede (que estava travando em 150s).
+    const consultantId = decodeJwtSub(token);
     if (!consultantId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -85,9 +79,14 @@ Deno.serve(async (req) => {
       if (body?.scope === "platform") scope = "platform";
     } catch (_) { /* sem body */ }
 
-    // Gate: somente admin pode iniciar OAuth de plataforma.
+    // Gate: somente admin pode iniciar OAuth de plataforma. Usa service role
+    // pra evitar RLS/anon lento (a checagem em si é do próprio user id do JWT).
     if (scope === "platform") {
-      const { data: roleRow } = await supabase
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data: roleRow } = await admin
         .from("user_roles")
         .select("role")
         .eq("user_id", consultantId)
