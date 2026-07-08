@@ -84,11 +84,14 @@ Deno.serve(async (req) => {
             rejection_reason: `Auto-pausada: gastou R$ ${(spendCents/100).toFixed(2)} do teto reservado de R$ ${(cap/100).toFixed(2)} — recarregue para reativar`,
           }).eq("id", c.id);
           paused.push(c.fb_campaign_id);
+          try { await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance"); }
+          catch (e) { console.error("[fb-balance-check] rodizio notify:", (e as Error).message); }
         }
       } catch (e) {
         errors.push({ id: c.id, error: (e as Error).message });
       }
     }
+
 
     return json({ ok: true, paused, errors, checked: (pending?.length || 0) + (capped?.length || 0) });
   } catch (err) {
