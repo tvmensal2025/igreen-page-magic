@@ -1,8 +1,7 @@
 // Resolve o número WhatsApp para publicar CTWA.
 // Preferência: lista viva de phone_numbers da WABA vinculada à Página.
-// Fallback: quando a Graph não expõe WABA mas há número salvo/conectado, usa o
-// número salvo e deixa a própria Marketing API validar no AdSet (mesmo caminho
-// que o Ads Manager usa visualmente). Nunca adivinha 9º dígito no publish.
+// Nunca publica com phone_number_id sintético (`saved:*`). CTWA oficial precisa
+// de phone_number_id real da Meta ou de número vindo da lista viva da WABA.
 
 import { adminClient, loadPlatformAccount } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
@@ -126,6 +125,29 @@ async function fetchWabaNumbers(wabaId: string, token: string): Promise<WabaPhon
   })).filter((n: WabaPhone) => n.id && n.digits);
 }
 
+function isRealPhoneId(id: string | null | undefined): boolean {
+  return /^\d+$/.test(String(id || ""));
+}
+
+async function probePhoneNumberId(phoneNumberId: string, token: string): Promise<WabaPhone | null> {
+  if (!isRealPhoneId(phoneNumberId)) return null;
+  const r = await fetch(
+    `${FB_GRAPH}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating&access_token=${token}`,
+  );
+  const j = await r.json();
+  if (!r.ok || !j?.id || !j?.display_phone_number) return null;
+  const digits = digitsOf(j.display_phone_number);
+  if (!digits) return null;
+  return {
+    id: String(j.id),
+    display: String(j.display_phone_number),
+    digits,
+    verified_name: j.verified_name,
+    quality: j.quality_rating,
+    source: "waba",
+  };
+}
+
 /**
  * Resolve o número WhatsApp autoritativo para publicar anúncio deste consultor.
  * Se persist=true, grava id/display em consultant_ad_settings quando conseguir
@@ -169,6 +191,8 @@ export async function resolveWabaPhone(
 
   const savedDigits = digitsOf(settings?.whatsapp_destination_number);
   const savedDisplay = settings?.whatsapp_phone_number_display || (savedDigits ? `+${savedDigits}` : "");
+  const savedPhoneId = String(settings?.whatsapp_phone_number_id || "");
+  const savedPhoneIdIsReal = isRealPhoneId(savedPhoneId);
 
   const tried: string[] = [];
   const wabaDiscovery = await discoverWabaId(pageId, token, tried);
@@ -177,40 +201,51 @@ export async function resolveWabaPhone(
 
   const nextStepsNoWaba = [
     `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
-    "OU salvar número + phone_number_id manualmente em Anúncios → Configurações do consultor",
+    "OU salvar o phone_number_id numérico real do WhatsApp Manager em Anúncios → Configurações do consultor",
     "Depois clique em Reverificar para rodar facebook-detect-waba novamente",
   ];
 
-  if (!wabaId) {
-    if (savedDigits) {
-      const fallback: WabaPhone = {
-        id: settings?.whatsapp_phone_number_id || `saved:${savedDigits}`,
-        display: savedDisplay,
-        digits: savedDigits,
-        source: "saved_fallback",
-      };
-      if (opts.persist) {
-        await admin.from("consultant_ad_settings")
-          .update({ whatsapp_last_verified_at: new Date().toISOString() })
-          .eq("consultant_id", consultantId);
+  // Se o admin/consultor salvou um phone_number_id real (numérico), valida direto
+  // na Graph. Isso cobre casos em que a Página não expõe a WABA, mas o token tem
+  // acesso ao número real. Se for inválido, não publicamos com fallback fake.
+  if (savedPhoneIdIsReal) {
+    try {
+      const probed = await probePhoneNumberId(savedPhoneId, token);
+      if (probed) {
+        if (opts.persist) {
+          await admin.from("consultant_ad_settings").upsert(
+            {
+              consultant_id: consultantId,
+              whatsapp_phone_number_id: probed.id,
+              whatsapp_phone_number_display: probed.display,
+              whatsapp_destination_number: probed.digits,
+              whatsapp_last_verified_at: new Date().toISOString(),
+            },
+            { onConflict: "consultant_id" },
+          );
+        }
+        return {
+          ok: true,
+          page_id: pageId,
+          numbers: [],
+          chosen: probed,
+          hint: "phone_number_id real validado diretamente na Graph.",
+          detected_paths_tried: tried,
+          discovered_via: "phone_number_id_probe",
+        };
       }
-      return {
-        ok: true,
-        reason: undefined,
-        page_id: pageId,
-        numbers: [],
-        chosen: fallback,
-        hint: "A Graph não expôs a WABA da Página; usando o número salvo e deixando a Meta validar no AdSet.",
-        detected_paths_tried: tried,
-        discovered_via: null,
-      };
-    }
+    } catch { /* cai para descoberta WABA */ }
+  }
+
+  if (!wabaId) {
     return {
       ok: false,
       reason: "no_waba",
       page_id: pageId,
       numbers: [],
-      hint: `Página ${pageId} não expõe WABA via Graph (testados: ${tried.join(", ")}). Vincule em Meta Business Suite → WhatsApp → Contas, ou salve o número manualmente em Anúncios → Configurações.`,
+      hint: savedDigits
+        ? `O número ${savedDigits} está salvo, mas não tem phone_number_id real da Meta e não aparece em uma WABA vinculada à Página ${pageId}. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`
+        : `Página ${pageId} não expõe WABA via Graph (testados: ${tried.join(", ")}). Vincule em Meta Business Suite → WhatsApp → Contas, ou salve o phone_number_id real em Anúncios → Configurações.`,
       detected_paths_tried: tried,
       discovered_via: null,
       next_steps: nextStepsNoWaba,
@@ -219,36 +254,15 @@ export async function resolveWabaPhone(
 
   const numbers = await fetchWabaNumbers(wabaId, token);
   if (numbers.length === 0) {
-    if (savedDigits) {
-      const fallback: WabaPhone = {
-        id: settings?.whatsapp_phone_number_id || `saved:${savedDigits}`,
-        display: savedDisplay,
-        digits: savedDigits,
-        source: "saved_fallback",
-      };
-      if (opts.persist) {
-        await admin.from("consultant_ad_settings")
-          .update({ whatsapp_last_verified_at: new Date().toISOString() })
-          .eq("consultant_id", consultantId);
-      }
-      return {
-        ok: true,
-        waba_id: wabaId,
-        page_id: pageId,
-        numbers: [],
-        chosen: fallback,
-        hint: "A WABA foi encontrada, mas a Graph não retornou telefones; usando o número salvo e deixando a Meta validar no AdSet.",
-        detected_paths_tried: tried,
-        discovered_via: discoveredVia,
-      };
-    }
     return {
       ok: false,
       reason: "no_numbers",
       waba_id: wabaId,
       page_id: pageId,
       numbers: [],
-      hint: "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
+      hint: savedDigits
+        ? `A WABA ${wabaId} foi encontrada, mas não retornou telefones. O número salvo ${savedDigits} não será usado sem phone_number_id real validado pela Meta.`
+        : "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
       detected_paths_tried: tried,
       discovered_via: discoveredVia,
     };
