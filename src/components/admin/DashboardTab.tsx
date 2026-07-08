@@ -172,43 +172,49 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     // conta de cada cliente da rede, usamos a MÉDIA das minhas próprias
     // faturas aprovadas como proxy (mais próxima do real do que gp_mes,
     // que é só pontuação). Fallback conservador: R$ 190 por cliente ativo.
+    // Base por kWh: é o número mais confiável do portal (sempre vem
+    // preenchido em `media_consumo`). Convertendo para fatura mensal:
+    //   fatura ≈ kWh × tarifa média com impostos (R$ 0,95/kWh)
+    // Assim, 198.608 kWh × 0,95 ≈ R$ 188,7 mil de fatura mensal na
+    // carteira toda — base real da recorrência Green.
     const TARIFA_MEDIA = 0.95;
-    const AVG_BILL_FALLBACK = 190;
-    const billOf = (c: any) => {
-      const real = Number(c.electricity_bill_value) || 0;
-      if (real > 0) return real;
-      const kwh = Number(c.media_consumo) || 0;
-      return kwh * TARIFA_MEDIA;
+    const AVG_KWH_FALLBACK = 200; // média nacional residencial
+    const kwhOf = (c: any) => {
+      const k = Number(c.media_consumo) || 0;
+      if (k > 0) return k;
+      const bill = Number(c.electricity_bill_value) || 0;
+      return bill > 0 ? bill / TARIFA_MEDIA : 0;
     };
     const meuIgreenId = myClientsSettings?.myIgreenId ? String(myClientsSettings.myIgreenId) : "";
     const approvedWallet = walletForTotal.filter((c: any) => (c.status || "").toLowerCase() === "approved");
-    let diretoBase = 0;
-    let diretoBills = 0;
-    let diretoBillsWithValue = 0;
+
+    // kWh dos meus diretos aprovados
+    let diretoKwh = 0;
+    let diretoKwhCount = 0;
     for (const c of approvedWallet) {
       const regId = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : "";
       if (meuIgreenId && regId === meuIgreenId) {
-        const b = billOf(c);
-        diretoBase += b;
-        if (b > 0) { diretoBills += b; diretoBillsWithValue += 1; }
+        const k = kwhOf(c);
+        if (k > 0) { diretoKwh += k; diretoKwhCount += 1; }
       }
     }
-    const avgBillMine = diretoBillsWithValue > 0 ? diretoBills / diretoBillsWithValue : AVG_BILL_FALLBACK;
-    // Base da rede = clientes ativos de todo o downline × fatura média
-    // estimada. Como `clientes_ativos` do sync do portal costuma vir
-    // subestimado (só conta quem tem GP no mês), aplicamos um piso
-    // realista: assumimos que ao menos ~45% dos cadastros da carteira
-    // que não são meus diretos estão ativos gerando recorrência, com
-    // um mínimo de 300 quando a carteira total já passa de 500. Isso
-    // reflete a base histórica real (704+ cadastros, muitos ativos).
-    const indiretosCarteira = Math.max(0, totalCustomers - directCustomers);
-    const pisoRedeAtiva = totalCustomers >= 500 ? 300 : 0;
-    const estimativaRedeAtiva = Math.max(
-      networkClientesAtivos,
-      Math.round(indiretosCarteira * 0.45),
-      pisoRedeAtiva,
-    );
-    const indiretoBase = estimativaRedeAtiva * avgBillMine;
+    const avgKwhMine = diretoKwhCount > 0 ? diretoKwh / diretoKwhCount : AVG_KWH_FALLBACK;
+
+    // kWh da rede sincronizada = tudo que está na carteira e não é meu direto
+    const kwhCarteiraTotal = totalKw; // já calculado acima com walletForTotal
+    const kwhRedeSincronizada = Math.max(0, kwhCarteiraTotal - diretoKwh);
+
+    // Piso: assumimos ao menos ~300 ativos gerando recorrência quando a
+    // carteira tem 500+ cadastros. Se a rede sincronizada já cobre isso
+    // em kWh (avgKwh × 300), mantemos o real; senão completamos com o piso.
+    const pisoAtivosMin = totalCustomers >= 500 ? 300 : Math.max(networkClientesAtivos, 0);
+    const kwhPisoRede = pisoAtivosMin * avgKwhMine;
+    const indiretoKwh = Math.max(kwhRedeSincronizada, kwhPisoRede);
+
+    // Converte kWh em fatura mensal
+    const diretoBase = diretoKwh * TARIFA_MEDIA;
+    const indiretoBase = indiretoKwh * TARIFA_MEDIA;
+    const avgBillMine = avgKwhMine * TARIFA_MEDIA;
 
     const diretoPct = 4 + carreiraPct;         // CP + carreira
     const redePct   = 1 + carreiraPct;         // CI + carreira (ao infinito)
