@@ -158,13 +158,22 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const withConsumption = walletForTotal.filter((c: any) => Number(c.media_consumo) > 0);
     const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
 
-    // Recorrência garantida (mês) = 4% dos meus diretos + 1% da rede (todos
-    // os níveis abaixo) + 0,5% de gestor sobre o total, se isLeader.
-    //   Direto:   soma da conta mensal dos clientes aprovados cadastrados por mim
-    //   Indireto: soma de gp_mes de todos os network_members do meu downline
-    //             (proxy do faturamento mensal, já que não temos as contas
-    //             individuais de cada cliente da rede)
+    // Recorrência garantida (mês) — motor Green oficial:
+    //   Direto (CP): 4% da fatura mensal dos meus diretos aprovados
+    //   Rede  (CI): 1% da fatura estimada de TODA a rede/downline (todos os
+    //               níveis abaixo, somando cada consultor adicionado em
+    //               "Configuração de contas iGreen" sem duplicar)
+    //   Carreira (graduação): bônus fixo de pontos percentuais que INCIDE
+    //     sobre AMBOS (direto + rede), ao infinito na profundidade — é
+    //     assim que o Gestor (+0,5%), G-Expansão (+0,3%), Executivo (+0,8%)
+    //     etc. ganham override em cima de todos os cadastros.
+    //
+    // Estimativa da fatura da rede: como o sync do portal não devolve a
+    // conta de cada cliente da rede, usamos a MÉDIA das minhas próprias
+    // faturas aprovadas como proxy (mais próxima do real do que gp_mes,
+    // que é só pontuação). Fallback conservador: R$ 190 por cliente ativo.
     const TARIFA_MEDIA = 0.95;
+    const AVG_BILL_FALLBACK = 190;
     const billOf = (c: any) => {
       const real = Number(c.electricity_bill_value) || 0;
       if (real > 0) return real;
@@ -174,15 +183,28 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const meuIgreenId = myClientsSettings?.myIgreenId ? String(myClientsSettings.myIgreenId) : "";
     const approvedWallet = walletForTotal.filter((c: any) => (c.status || "").toLowerCase() === "approved");
     let diretoBase = 0;
+    let diretoBills = 0;
+    let diretoBillsWithValue = 0;
     for (const c of approvedWallet) {
       const regId = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : "";
-      if (meuIgreenId && regId === meuIgreenId) diretoBase += billOf(c);
+      if (meuIgreenId && regId === meuIgreenId) {
+        const b = billOf(c);
+        diretoBase += b;
+        if (b > 0) { diretoBills += b; diretoBillsWithValue += 1; }
+      }
     }
-    const indiretoBase = Number(networkGpMes) || 0;
-    const diretoValor = diretoBase * 0.04;
-    const indiretoValor = indiretoBase * 0.01;
-    const gestorValor = isLeader ? (diretoBase + indiretoBase) * 0.005 : 0;
-    const recorrenciaGarantida = diretoValor + indiretoValor + gestorValor;
+    const avgBillMine = diretoBillsWithValue > 0 ? diretoBills / diretoBillsWithValue : AVG_BILL_FALLBACK;
+    // Base da rede = clientes ativos de todo o downline × fatura média
+    // estimada. Fica muito maior (e mais fiel ao real) do que gp_mes.
+    const indiretoBase = networkClientesAtivos * avgBillMine;
+
+    const diretoPct = 4 + carreiraPct;         // CP + carreira
+    const redePct   = 1 + carreiraPct;         // CI + carreira (ao infinito)
+    const diretoValor = diretoBase * (diretoPct / 100);
+    const indiretoValor = indiretoBase * (redePct / 100);
+    // gestorValor: pedaço do carreira, exibido separado no subtítulo.
+    const gestorValor = carreiraPct > 0 ? (diretoBase + indiretoBase) * (carreiraPct / 100) : 0;
+    const recorrenciaGarantida = diretoValor + indiretoValor;
     // Mantido para gráficos (CustomerCharts pode usar avgBill/economia)
     const withBill = filtered.filter((c: any) => billOf(c) > 0);
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
