@@ -151,43 +151,72 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 2) WABA → telefones registrados
+    // 2) WABA → telefones registrados (agora inclui `id` = phone_number_id, imutável)
     const phRes = await fetch(
       `${FB_GRAPH}/${wabaId}/phone_numbers?fields=display_phone_number,verified_name,quality_rating&access_token=${token}`
     );
     const phJson = await phRes.json();
-    const numbers: Array<{ display: string; digits: string; verified_name?: string; quality?: string }> =
-      (phJson.data || []).map((n: any) => ({
-        display: n.display_phone_number,
-        digits: normalizeDigits(n.display_phone_number),
-        verified_name: n.verified_name,
-        quality: n.quality_rating,
-      }));
+    const numbers: Array<{ id: string; display: string; digits: string; verified_name?: string; quality?: string }> =
+      (phJson.data || [])
+        .map((n: any) => ({
+          id: String(n.id || ""),
+          display: n.display_phone_number,
+          digits: normalizeDigits(n.display_phone_number),
+          verified_name: n.verified_name,
+          quality: n.quality_rating,
+        }))
+        .filter((n: any) => n.id && n.digits);
 
     // 3) Comparar com o que já está em consultant_ad_settings
     const { data: settings } = await supabase
       .from("consultant_ad_settings")
-      .select("whatsapp_destination_number")
+      .select("whatsapp_destination_number, whatsapp_phone_number_id")
       .eq("consultant_id", userId)
       .maybeSingle();
     const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
     const currentVariants = brPhoneVariants(currentDigits);
-    const matches = numbers.some((n) => {
-      const numberVariants = brPhoneVariants(n.digits);
-      return Array.from(numberVariants).some((v) => currentVariants.has(v));
-    });
 
-    // 4) Auto-preencher se vazio
+    // Match preferencial: phone_number_id salvo (fonte imutável).
+    // Fallback: variantes do número digitado.
+    let matched = settings?.whatsapp_phone_number_id
+      ? numbers.find((n) => n.id === settings.whatsapp_phone_number_id) || null
+      : null;
+    if (!matched) {
+      matched = numbers.find((n) => {
+        const numberVariants = brPhoneVariants(n.digits);
+        return Array.from(numberVariants).some((v) => currentVariants.has(v));
+      }) || null;
+    }
+    // Se WABA tem exatamente 1 número, adota ele automaticamente.
+    if (!matched && numbers.length === 1) matched = numbers[0];
+
+    // 4) Persistir id + display + digits quando temos uma escolha 1-1
     let autoFilled = false;
-    if (!currentDigits && numbers[0]?.digits) {
-      const { error: upErr } = await supabase
-        .from("consultant_ad_settings")
-        .upsert(
-          { consultant_id: userId, whatsapp_destination_number: numbers[0].digits },
-          { onConflict: "consultant_id" }
-        );
-      if (!upErr) autoFilled = true;
-      else console.warn("[detect-waba] upsert failed", upErr);
+    if (matched) {
+      const needs =
+        settings?.whatsapp_phone_number_id !== matched.id ||
+        normalizeDigits(settings?.whatsapp_destination_number) !== matched.digits;
+      if (needs) {
+        const { error: upErr } = await supabase
+          .from("consultant_ad_settings")
+          .upsert(
+            {
+              consultant_id: userId,
+              whatsapp_phone_number_id: matched.id,
+              whatsapp_phone_number_display: matched.display,
+              whatsapp_destination_number: matched.digits,
+              whatsapp_last_verified_at: new Date().toISOString(),
+            },
+            { onConflict: "consultant_id" }
+          );
+        if (!upErr) autoFilled = true;
+        else console.warn("[detect-waba] upsert failed", upErr);
+      } else {
+        await supabase
+          .from("consultant_ad_settings")
+          .update({ whatsapp_last_verified_at: new Date().toISOString() })
+          .eq("consultant_id", userId);
+      }
     }
 
     return jsonRes({
@@ -197,11 +226,15 @@ Deno.serve(async (req) => {
       page_id: pageId,
       numbers,
       current_number: currentDigits || null,
-      matches: matches || autoFilled,
+      current_phone_number_id: settings?.whatsapp_phone_number_id || null,
+      chosen: matched,
+      matches: !!matched,
       auto_filled: autoFilled,
+      needs_pick: !matched && numbers.length > 1,
     });
   } catch (e) {
     console.error("[detect-waba] exception", e);
     return jsonRes({ ok: false, error: (e as Error).message || "unexpected" });
   }
 });
+
