@@ -398,7 +398,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
           label="Recorrência garantida"
           value={formatCompactBRL(filteredMetrics?.recorrenciaGarantida ?? 0)}
           color="primary"
-          subtitle={`${filteredMetrics?.approvedCount ?? 0} aprovados · 4% diretos + 1% rede${isLeader ? " + 0,5% gestor" : ""}`}
+          subtitle={`4% diretos ${formatCompactBRL(filteredMetrics?.diretoValor ?? 0)} + 1% rede ${formatCompactBRL(filteredMetrics?.indiretoValor ?? 0)}${isLeader ? ` + 0,5% gestor ${formatCompactBRL(filteredMetrics?.gestorValor ?? 0)}` : ""}`}
         />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
