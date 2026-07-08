@@ -58,7 +58,13 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     cadastroIgreenIds: [],
   });
   const { data: networkIgreenIds = [] } = useNetworkIgreenIds(userId);
-  const { data: networkGpMes = 0 } = useNetworkGpMes(userId);
+  const { data: networkAgg } = useNetworkAggregates(userId);
+  const networkGpMes = networkAgg?.gpMes ?? 0;
+  const networkClientesAtivos = networkAgg?.clientesAtivos ?? 0;
+  const { data: greenSettings } = useGreenSettings(userId);
+  const graduacao = greenSettings?.graduacao ?? "licenciado";
+  const carreiraPct = careerBonusPercent(graduacao);
+  const isGestorOrHigher = graduacaoRank(graduacao) >= graduacaoRank("gestor");
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
