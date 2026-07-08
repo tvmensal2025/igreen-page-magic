@@ -3,7 +3,7 @@
 // Nunca publica com phone_number_id sintético (`saved:*`). CTWA oficial precisa
 // de phone_number_id real da Meta ou de número vindo da lista viva da WABA.
 
-import { adminClient, loadPlatformAccount } from "./fb-graph.ts";
+import { adminClient } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
 
 const FB_VERSION = "v21.0";

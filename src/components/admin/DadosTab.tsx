@@ -433,9 +433,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           </div>
 
           {ctwaAutoFixResult && (
-            <div className={`rounded-lg border p-3 text-sm ${ctwaAutoFixResult.ok ? "border-green-500/30 bg-green-500/10" : "border-destructive/30 bg-destructive/10"}`}>
+            <div className={`rounded-lg border p-3 text-sm ${ctwaAutoFixResult.ok ? "border-success/30 bg-success/10" : "border-destructive/30 bg-destructive/10"}`}>
               <p className="font-semibold text-foreground flex items-center gap-2">
-                {ctwaAutoFixResult.ok ? <CheckCircle2 className="w-4 h-4 text-green-600" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
+                {ctwaAutoFixResult.ok ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
                 {ctwaAutoFixResult.ok ? "Pronto para publicar" : "Ação pendente na Meta"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
