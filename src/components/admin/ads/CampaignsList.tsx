@@ -3,7 +3,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle } from "lucide-react";
+import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2 } from "lucide-react";
+import { EditCampaignDialog } from "./EditCampaignDialog";
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -94,6 +95,8 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
   const [extending, setExtending] = useState<Campaign | null>(null);
+  const [editing, setEditing] = useState<Campaign | null>(null);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const { isSuperAdmin } = useUserRole(authUserId);
   const { toast } = useToast();
@@ -223,7 +226,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       }
       setLoading(false);
     })();
-  }, [consultantId, refreshKey]);
+  }, [consultantId, refreshKey, refreshTick]);
 
   async function tryReactivate(c: Campaign) {
     if (!c.fb_campaign_id) return;
@@ -412,6 +415,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     <CalendarClock className="w-4 h-4 text-primary" />
                   </Button>
                 )}
+                {c.fb_campaign_id && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setEditing(c)}
+                    aria-label="Editar rodízio e segmentação"
+                    title="Editar rodízio / cidades / raio"
+                  >
+                    <Settings2 className="w-4 h-4 text-primary" />
+                  </Button>
+                )}
                 {isSuperAdmin && (
                   <Button
                     size="icon"
@@ -496,6 +511,13 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
             ended_at: patch.ended_at ?? x.ended_at,
           } : x));
         }}
+      />
+
+      <EditCampaignDialog
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        campaign={editing}
+        onSaved={() => setRefreshTick((t) => t + 1)}
       />
     </div>
   );
