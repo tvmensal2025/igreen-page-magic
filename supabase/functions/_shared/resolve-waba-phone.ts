@@ -170,7 +170,17 @@ export async function resolveWabaPhone(
   const savedDigits = digitsOf(settings?.whatsapp_destination_number);
   const savedDisplay = settings?.whatsapp_phone_number_display || (savedDigits ? `+${savedDigits}` : "");
 
-  const wabaId = await discoverWabaId(pageId, token);
+  const tried: string[] = [];
+  const wabaDiscovery = await discoverWabaId(pageId, token, tried);
+  const wabaId = wabaDiscovery?.id ?? null;
+  const discoveredVia = wabaDiscovery?.via ?? null;
+
+  const nextStepsNoWaba = [
+    `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
+    "OU salvar número + phone_number_id manualmente em Anúncios → Configurações do consultor",
+    "Depois clique em Reverificar para rodar facebook-detect-waba novamente",
+  ];
+
   if (!wabaId) {
     if (savedDigits) {
       const fallback: WabaPhone = {
@@ -191,6 +201,8 @@ export async function resolveWabaPhone(
         numbers: [],
         chosen: fallback,
         hint: "A Graph não expôs a WABA da Página; usando o número salvo e deixando a Meta validar no AdSet.",
+        detected_paths_tried: tried,
+        discovered_via: null,
       };
     }
     return {
@@ -198,7 +210,10 @@ export async function resolveWabaPhone(
       reason: "no_waba",
       page_id: pageId,
       numbers: [],
-      hint: "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.",
+      hint: `Página ${pageId} não expõe WABA via Graph (testados: ${tried.join(", ")}). Vincule em Meta Business Suite → WhatsApp → Contas, ou salve o número manualmente em Anúncios → Configurações.`,
+      detected_paths_tried: tried,
+      discovered_via: null,
+      next_steps: nextStepsNoWaba,
     };
   }
 
@@ -223,6 +238,8 @@ export async function resolveWabaPhone(
         numbers: [],
         chosen: fallback,
         hint: "A WABA foi encontrada, mas a Graph não retornou telefones; usando o número salvo e deixando a Meta validar no AdSet.",
+        detected_paths_tried: tried,
+        discovered_via: discoveredVia,
       };
     }
     return {
@@ -232,6 +249,8 @@ export async function resolveWabaPhone(
       page_id: pageId,
       numbers: [],
       hint: "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
+      detected_paths_tried: tried,
+      discovered_via: discoveredVia,
     };
   }
 
@@ -271,7 +290,6 @@ export async function resolveWabaPhone(
         { onConflict: "consultant_id" },
       );
     } else {
-      // marca só o timestamp de verificação
       await admin.from("consultant_ad_settings")
         .update({ whatsapp_last_verified_at: new Date().toISOString() })
         .eq("consultant_id", consultantId);
@@ -288,5 +306,8 @@ export async function resolveWabaPhone(
     hint: chosen
       ? undefined
       : `Seu número não bate com nenhum registrado na WABA. Escolha um dos ${numbers.length} disponíveis.`,
+    detected_paths_tried: tried,
+    discovered_via: discoveredVia,
+
   };
 }
