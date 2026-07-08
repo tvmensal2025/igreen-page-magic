@@ -1,6 +1,8 @@
 // Pausa ou reativa uma campanha no Meta (campanha + adsets + ads) e atualiza o DB.
 // Body: { campaign_id: uuid, action: "pause" | "activate" }
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
