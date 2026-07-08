@@ -65,36 +65,46 @@ function brVariants(s: string | null | undefined): Set<string> {
   return out;
 }
 
-// Descobre a WABA vinculada à Página. Testa 3 campos em cascata porque
-// nem todas as Páginas expõem o mesmo (Graph tem histórico bagunçado).
-async function discoverWabaId(pageId: string, token: string): Promise<string | null> {
-  const tries = [
-    `${FB_GRAPH}/${pageId}?fields=whatsapp_business_account&access_token=${token}`,
-    `${FB_GRAPH}/${pageId}?fields=connected_whatsapp_business_account&access_token=${token}`,
+// Descobre a WABA vinculada à Página. Testa 4 campos em cascata porque
+// nem todas as Páginas expõem o mesmo (Graph tem histórico bagunçado):
+//  - whatsapp_business_account: WABA Cloud API vinculada à Página
+//  - connected_whatsapp_business_account: legado
+//  - page_backed_whatsapp_business_account: WhatsApp Business App conectado
+//    à Página SEM Cloud API (fluxo comum em Páginas legado/PME BR)
+//  - me/businesses → owned/client_whatsapp_business_accounts: fallback global
+async function discoverWabaId(
+  pageId: string,
+  token: string,
+  tried: string[],
+): Promise<{ id: string; via: string } | null> {
+  const tries: Array<{ label: string; url: string; pick: (j: any) => string | null }> = [
+    { label: "page.whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=whatsapp_business_account&access_token=${token}`, pick: (j) => j?.whatsapp_business_account?.id || null },
+    { label: "page.connected_whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=connected_whatsapp_business_account&access_token=${token}`, pick: (j) => j?.connected_whatsapp_business_account?.id || null },
+    { label: "page.page_backed_whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=page_backed_whatsapp_business_account&access_token=${token}`, pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
   ];
-  for (const url of tries) {
+  for (const t of tries) {
+    tried.push(t.label);
     try {
-      const r = await fetch(url);
+      const r = await fetch(t.url);
       const j = await r.json();
       if (r.ok) {
-        const id =
-          j?.whatsapp_business_account?.id ||
-          j?.connected_whatsapp_business_account?.id ||
-          null;
-        if (id) return String(id);
+        const id = t.pick(j);
+        if (id) return { id: String(id), via: t.label };
       }
     } catch { /* try next */ }
   }
   // Fallback: percorre Businesses do usuário do token.
   try {
+    tried.push("me/businesses");
     const r = await fetch(`${FB_GRAPH}/me/businesses?fields=id&access_token=${token}`);
     const j = await r.json();
     for (const biz of (j?.data || [])) {
       for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+        tried.push(`business.${biz.id}.${kind}`);
         const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?access_token=${token}`);
         const wj = await wr.json();
         const first = (wj?.data || [])[0];
-        if (first?.id) return String(first.id);
+        if (first?.id) return { id: String(first.id), via: `business.${kind}` };
       }
     }
   } catch { /* ignore */ }
