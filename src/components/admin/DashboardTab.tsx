@@ -143,11 +143,15 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const filtered = selectedLicenciado === "all" ? walletMine : walletMine.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = walletForTotal.length;
     const directCustomers = filtered.length;
-    const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
-    const withConsumption = filtered.filter((c: any) => Number(c.media_consumo) > 0);
+    // kWh: base = carteira toda (walletForTotal), não só "meus diretos"
+    const totalKw = walletForTotal.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
+    const withConsumption = walletForTotal.filter((c: any) => Number(c.media_consumo) > 0);
     const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
 
-    // Estimativa: clientes iGreen não trazem electricity_bill_value, usamos media_consumo (kWh) × tarifa média (R$ 0,95)
+    // Recorrência garantida = comissão mensal sobre clientes APROVADOS.
+    //   4% se cliente foi cadastrado por mim (registered_by_igreen_id === meuIgreenId)
+    //   1% se foi cadastrado pela rede
+    //   +0,5% se sou gestor (proxy: isLeader = tenho equipe)
     const TARIFA_MEDIA = 0.95;
     const billOf = (c: any) => {
       const real = Number(c.electricity_bill_value) || 0;
@@ -155,6 +159,19 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       const kwh = Number(c.media_consumo) || 0;
       return kwh * TARIFA_MEDIA;
     };
+    const meuIgreenId = myClientsSettings?.myIgreenId ? String(myClientsSettings.myIgreenId) : "";
+    const gestorBonus = isLeader ? 0.005 : 0;
+    const approvedWallet = walletForTotal.filter((c: any) => (c.status || "").toLowerCase() === "approved");
+    let recorrenciaGarantida = 0;
+    for (const c of approvedWallet) {
+      const bill = billOf(c);
+      if (!bill) continue;
+      const regId = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : "";
+      const isDireto = meuIgreenId && regId === meuIgreenId;
+      const pct = (isDireto ? 0.04 : 0.01) + gestorBonus;
+      recorrenciaGarantida += bill * pct;
+    }
+    // Mantido para gráficos (CustomerCharts pode usar avgBill/economia)
     const withBill = filtered.filter((c: any) => billOf(c) > 0);
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
     const avgBill = withBill.length > 0 ? totalBill / withBill.length : 0;
@@ -186,8 +203,8 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       }
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
-    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
+    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, recorrenciaGarantida, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, isLeader]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
@@ -372,7 +389,13 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
         <StatCard icon={<Users className="w-5 h-5" />} label="Total de cadastros" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
-        <StatCard icon={<DollarSign className="w-5 h-5" />} label="Ticket médio (conta)" value={formatCompactBRL(filteredMetrics?.avgBill ?? 0)} color="primary" subtitle="estimado pela tarifa média" />
+        <StatCard
+          icon={<DollarSign className="w-5 h-5" />}
+          label="Recorrência garantida"
+          value={formatCompactBRL(filteredMetrics?.recorrenciaGarantida ?? 0)}
+          color="primary"
+          subtitle={`${filteredMetrics?.approvedCount ?? 0} aprovados · 4% diretos + 1% rede${isLeader ? " + 0,5% gestor" : ""}`}
+        />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
 
