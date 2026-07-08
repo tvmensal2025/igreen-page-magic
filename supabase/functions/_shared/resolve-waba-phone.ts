@@ -1,6 +1,8 @@
-// Resolve o número WhatsApp Business "de verdade" para o consultor.
-// Fonte da verdade: a lista viva de phone_numbers da WABA vinculada à Página da plataforma.
-// Nunca adivinha 9º dígito — usa o display_phone_number exatamente como o Meta retorna.
+// Resolve o número WhatsApp para publicar CTWA.
+// Preferência: lista viva de phone_numbers da WABA vinculada à Página.
+// Fallback: quando a Graph não expõe WABA mas há número salvo/conectado, usa o
+// número salvo e deixa a própria Marketing API validar no AdSet (mesmo caminho
+// que o Ads Manager usa visualmente). Nunca adivinha 9º dígito no publish.
 
 import { adminClient, loadPlatformAccount } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
@@ -14,6 +16,7 @@ export interface WabaPhone {
   digits: string;                // ex.: "553484314317"
   verified_name?: string;
   quality?: string;
+  source?: "waba" | "saved_fallback";
 }
 
 export interface WabaResolution {
@@ -141,8 +144,42 @@ export async function resolveWabaPhone(
   }
 
   const pageId = platformRow.page_id as string;
+
+  // Carrega o que está salvo pro consultor antes da descoberta WABA. Assim,
+  // se a Graph não expõe a WABA, ainda conseguimos seguir com o mesmo número
+  // usado no Ads Manager e deixar a criação do AdSet validar oficialmente.
+  const { data: settings } = await admin
+    .from("consultant_ad_settings")
+    .select("whatsapp_phone_number_id, whatsapp_destination_number, whatsapp_phone_number_display")
+    .eq("consultant_id", consultantId)
+    .maybeSingle();
+
+  const savedDigits = digitsOf(settings?.whatsapp_destination_number);
+  const savedDisplay = settings?.whatsapp_phone_number_display || (savedDigits ? `+${savedDigits}` : "");
+
   const wabaId = await discoverWabaId(pageId, token);
   if (!wabaId) {
+    if (savedDigits) {
+      const fallback: WabaPhone = {
+        id: settings?.whatsapp_phone_number_id || `saved:${savedDigits}`,
+        display: savedDisplay,
+        digits: savedDigits,
+        source: "saved_fallback",
+      };
+      if (opts.persist) {
+        await admin.from("consultant_ad_settings")
+          .update({ whatsapp_last_verified_at: new Date().toISOString() })
+          .eq("consultant_id", consultantId);
+      }
+      return {
+        ok: true,
+        reason: undefined,
+        page_id: pageId,
+        numbers: [],
+        chosen: fallback,
+        hint: "A Graph não expôs a WABA da Página; usando o número salvo e deixando a Meta validar no AdSet.",
+      };
+    }
     return {
       ok: false,
       reason: "no_waba",
@@ -154,6 +191,27 @@ export async function resolveWabaPhone(
 
   const numbers = await fetchWabaNumbers(wabaId, token);
   if (numbers.length === 0) {
+    if (savedDigits) {
+      const fallback: WabaPhone = {
+        id: settings?.whatsapp_phone_number_id || `saved:${savedDigits}`,
+        display: savedDisplay,
+        digits: savedDigits,
+        source: "saved_fallback",
+      };
+      if (opts.persist) {
+        await admin.from("consultant_ad_settings")
+          .update({ whatsapp_last_verified_at: new Date().toISOString() })
+          .eq("consultant_id", consultantId);
+      }
+      return {
+        ok: true,
+        waba_id: wabaId,
+        page_id: pageId,
+        numbers: [],
+        chosen: fallback,
+        hint: "A WABA foi encontrada, mas a Graph não retornou telefones; usando o número salvo e deixando a Meta validar no AdSet.",
+      };
+    }
     return {
       ok: false,
       reason: "no_numbers",
@@ -163,13 +221,6 @@ export async function resolveWabaPhone(
       hint: "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
     };
   }
-
-  // Carrega o que está salvo pro consultor
-  const { data: settings } = await admin
-    .from("consultant_ad_settings")
-    .select("whatsapp_phone_number_id, whatsapp_destination_number, whatsapp_phone_number_display")
-    .eq("consultant_id", consultantId)
-    .maybeSingle();
 
   // 1) match por phone_number_id salvo (fonte imutável)
   let chosen: WabaPhone | null = null;
