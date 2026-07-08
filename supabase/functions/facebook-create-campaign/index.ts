@@ -320,6 +320,23 @@ Deno.serve(async (req) => {
     const authoritativeDigits = waba.chosen.digits;
     const authoritativePhoneId = waba.chosen.id;
     const authoritativeDisplay = waba.chosen.display;
+    if (!/^\d+$/.test(authoritativePhoneId)) {
+      return new Response(JSON.stringify({
+        error: `O número ${authoritativeDigits} está salvo, mas o phone_number_id (${authoritativePhoneId}) não é um ID real da Meta. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página ${waba.page_id || "da plataforma"}.`,
+        code: "WHATSAPP_BUSINESS_REQUIRED",
+        phone_used: authoritativeDigits,
+        phone_number_id: authoritativePhoneId,
+        phone_display: authoritativeDisplay,
+        waba_numbers: waba.numbers,
+        detected_paths_tried: waba.detected_paths_tried || [],
+        discovered_via: waba.discovered_via || null,
+        next_steps: waba.next_steps || [
+          "Copie o phone_number_id numérico no WhatsApp Manager",
+          "Vincule a WABA correta à Página no Meta Business Suite",
+          "Clique em Reverificar antes de publicar",
+        ],
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     console.log(
       "[fb-create] waba resolved id=", authoritativePhoneId,
       "display=", authoritativeDisplay,
