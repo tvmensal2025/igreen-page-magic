@@ -38,6 +38,27 @@ export function StepReview({ state, derived, patch, publish, consultantId, consu
     <div className="space-y-4">
       <CtwaPreflightCard consultantId={consultantId} onReadyChange={(r) => patch({ ctwaReady: r })} />
 
+      {/* Prefixo opcional no nome da campanha */}
+      <Card className="p-3 space-y-1.5 border-[hsl(var(--ads-border))]">
+        <label htmlFor="name-prefix" className="text-xs font-semibold text-foreground">
+          Apelido da campanha <span className="text-[hsl(var(--ads-muted))] font-normal">(opcional)</span>
+        </label>
+        <input
+          id="name-prefix"
+          type="text"
+          maxLength={40}
+          value={state.namePrefix}
+          onChange={(e) => patch({ namePrefix: e.target.value })}
+          placeholder="Ex.: Teste A, Lote 2, Aquecimento…"
+          className="w-full px-3 py-1.5 text-sm rounded-md bg-background border border-[hsl(var(--ads-border))] focus:outline-none focus:ring-1 focus:ring-[hsl(var(--ads-emerald-2))]"
+        />
+        <div className="text-[11px] text-[hsl(var(--ads-muted))]">
+          Aparece <strong>na frente</strong> do nome padrão no Meta Ads — ajuda a diferenciar campanhas parecidas.
+        </div>
+      </Card>
+
+
+
       {/* Carrossel de preview do anúncio */}
       <div className="overflow-hidden rounded-xl border border-[hsl(var(--ads-border))]" ref={emblaRef}>
         <div className="flex">
