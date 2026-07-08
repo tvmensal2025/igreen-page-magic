@@ -269,6 +269,8 @@ Deno.serve(async (req) => {
       matches: !!matched,
       auto_filled: autoFilled,
       needs_pick: !matched && numbers.length > 1,
+      detected_paths_tried,
+      discovered_via: discoveredVia,
     });
   } catch (e) {
     console.error("[detect-waba] exception", e);
