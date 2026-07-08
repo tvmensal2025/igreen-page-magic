@@ -409,9 +409,16 @@ Deno.serve(async (req) => {
     const consultantTag = `CONS-${consultantLicense}`;
     const distribTag = body.distribuidora || (hasCustomLocations ? locLabel : (cityNames || "iGreen"));
     const cityPrincipal = body.cities[0]?.name || (hasCustomLocations ? locLabel : cityNames);
-    const campaignName = body.name
+    // Prefixo livre do usuário — sanitiza e limita 40 chars, sempre NA FRENTE.
+    const rawPrefix = String(body.name_prefix || "").trim();
+    const namePrefix = rawPrefix
+      ? rawPrefix.replace(/[\[\]·|\r\n\t]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40)
+      : "";
+    const baseName = body.name
       ? `[${consultantTag}] ${distribTag} · ${body.name} · ${today}`
       : `[${consultantTag}] ${distribTag} · ${cityPrincipal} · ${today}`;
+    const campaignName = namePrefix ? `${namePrefix} · ${baseName}` : baseName;
+
 
     // Adlabel nativo do Meta — uma label por consultor, cacheada em
     // consultants.facebook_label_id. Permite filtrar campanhas no Gerenciador
