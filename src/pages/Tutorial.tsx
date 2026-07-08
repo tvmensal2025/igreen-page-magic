@@ -8,7 +8,7 @@ import {
   Link as LinkIcon, Image as ImageIcon, Rocket, Lock, Wallet, Activity,
   Cog, Play, Star, MousePointerClick,
 } from "lucide-react";
-import { SEOHead } from "@/components/SEOHead";
+import SEOHead from "@/components/SEOHead";
 import heroImg from "@/assets/tutorial/hero.jpg";
 import adminImg from "@/assets/tutorial/admin.jpg";
 import whatsappImg from "@/assets/tutorial/whatsapp.jpg";

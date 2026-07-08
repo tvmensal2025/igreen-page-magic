@@ -39,6 +39,7 @@ const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 const PartnerRedirectPage = lazy(() => import("./pages/PartnerRedirectPage"));
+const Tutorial = lazy(() => import("./pages/Tutorial"));
 import { CookieBanner } from "@/components/CookieBanner";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
@@ -82,6 +83,7 @@ const App = () => (
           }>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              <Route path="/tutorial" element={<Tutorial />} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/admin/whatsapp-clients" element={<ProtectedRoute><WhatsAppClientsPage /></ProtectedRoute>} />
               <Route path="/admin/clientes-igreen" element={<Navigate to="/admin/whatsapp-clients?tab=igreen" replace />} />
