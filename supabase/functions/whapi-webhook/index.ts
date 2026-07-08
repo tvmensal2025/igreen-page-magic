@@ -85,7 +85,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    const body = await req.json();
+    let body: any;
+    try {
+      const raw = await req.text();
+      if (!raw || raw.trim() === "") {
+        return new Response(JSON.stringify({ ok: true, msg: "ignored_empty_body" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      body = JSON.parse(raw);
+    } catch (parseErr) {
+      console.warn("[whapi-webhook] body parse falhou:", (parseErr as Error).message);
+      return new Response(JSON.stringify({ ok: true, msg: "ignored_bad_body" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     // LGPD: nunca logar o corpo cru (contém telefone e texto do cliente).
     // `summarizeWebhookBody` retorna apenas metadados estruturais.
     console.log("Whapi webhook received:", JSON.stringify(summarizeWebhookBody(body)));
