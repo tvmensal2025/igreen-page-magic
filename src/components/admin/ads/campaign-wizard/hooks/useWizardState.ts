@@ -109,7 +109,10 @@ export interface WizardState {
   preflightLoading: boolean;
   saveTplOpen: boolean;
   savingTemplate: boolean;
+  // Prefixo livre no nome da campanha (aparece no Meta Ads na frente do padrão).
+  namePrefix: string;
 }
+
 
 const INITIAL_STATE: WizardState = {
   step: 1,
