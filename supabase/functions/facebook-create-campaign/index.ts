@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
       const opts = waba.numbers.map((n) => n.display).join(", ") || "nenhum";
       const msg =
         waba.reason === "no_waba"
-          ? "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas."
+          ? (waba.hint || "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.")
           : waba.reason === "no_numbers"
             ? "Nenhum telefone está registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager."
             : waba.reason === "no_match"
@@ -311,6 +311,9 @@ Deno.serve(async (req) => {
         error: msg,
         code: "WHATSAPP_BUSINESS_REQUIRED",
         waba_numbers: waba.numbers,
+        detected_paths_tried: waba.detected_paths_tried || [],
+        discovered_via: waba.discovered_via || null,
+        next_steps: waba.next_steps || [],
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     // Number oficial: dígitos vindos direto do display_phone_number do Meta.
@@ -402,6 +405,54 @@ Deno.serve(async (req) => {
     if (!conn.whatsapp_destination_number) {
       throw new Error("WHATSAPP_BUSINESS_REQUIRED: número WhatsApp Business (WABA) não configurado para esta Página.");
     }
+
+    // ─── Pré-check reachestimate: valida promoted_object antes de gastar POSTs ───
+    // Se Meta rejeitar aqui, aborta sem criar campanha órfã PAUSED no Ads Manager.
+    try {
+      const precheckGeo: Record<string, unknown> = hasCustomLocations
+        ? { custom_locations: body.custom_locations!.slice(0, 5).map((p) => ({
+              latitude: p.latitude, longitude: p.longitude,
+              radius: Math.max(1, Math.min(50, Math.round(p.radius))),
+              distance_unit: "kilometer",
+            })), location_types: ["home", "recent"] }
+        : { cities: body.cities.map((c) => ({ key: c.key })), location_types: ["home", "recent"] };
+      const precheckTargeting = {
+        geo_locations: precheckGeo,
+        age_min: Math.min(body.age_min ?? 25, 25),
+        age_max: Math.max(body.age_max ?? 65, 65),
+        targeting_automation: { advantage_audience: 1 },
+      };
+      const precheckPromoted = { page_id: conn.page_id, whatsapp_phone_number: authoritativeDigits };
+      const params = new URLSearchParams({
+        targeting_spec: JSON.stringify(precheckTargeting),
+        optimization_goal: "CONVERSATIONS",
+        destination_type: "WHATSAPP",
+        promoted_object: JSON.stringify(precheckPromoted),
+        access_token: conn.token,
+      });
+      await fbFetch(`/${accId}/reachestimate?${params.toString()}`);
+      console.log("[fb-create] precheck reachestimate OK");
+    } catch (e) {
+      const msg = String((e as Error)?.message || "");
+      console.warn("[fb-create] precheck reachestimate falhou:", msg.slice(0, 300));
+      const isWabaMismatch = msg.includes("1487246") || msg.includes("2446885") || /not linked to your account/i.test(msg);
+      if (isWabaMismatch) {
+        return new Response(JSON.stringify({
+          error: `A Meta rejeitou o número ${authoritativeDisplay} (${authoritativeDigits}, id ${authoritativePhoneId}) no reachestimate. Confirme se este phone_number_id pertence à WABA vinculada à Página ${conn.page_id}.`,
+          code: "WHATSAPP_BUSINESS_REQUIRED",
+          phone_used: authoritativeDigits,
+          phone_number_id: authoritativePhoneId,
+          phone_display: authoritativeDisplay,
+          waba_numbers: waba.numbers,
+          detected_paths_tried: waba.detected_paths_tried || [],
+          discovered_via: waba.discovered_via || null,
+          meta_message: msg,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      // outros erros (targeting inválido, etc.) — segue e deixa POST /campaigns
+      // reportar o erro real; NÃO abortamos aqui pra não bloquear falsos-positivos.
+    }
+
 
     // 1) Campaign
     // Se o usuário definiu duration_days, usa LIFETIME_BUDGET (teto absoluto

@@ -33,6 +33,9 @@ export interface WabaResolution {
   numbers: WabaPhone[];
   chosen?: WabaPhone | null;     // o número atualmente usado por este consultor
   hint?: string;
+  detected_paths_tried?: string[]; // debug: quais caminhos Graph testamos
+  discovered_via?: string | null;  // qual caminho retornou a WABA
+  next_steps?: string[];
 }
 
 function digitsOf(s: string | null | undefined): string {
@@ -62,36 +65,46 @@ function brVariants(s: string | null | undefined): Set<string> {
   return out;
 }
 
-// Descobre a WABA vinculada à Página. Testa 3 campos em cascata porque
-// nem todas as Páginas expõem o mesmo (Graph tem histórico bagunçado).
-async function discoverWabaId(pageId: string, token: string): Promise<string | null> {
-  const tries = [
-    `${FB_GRAPH}/${pageId}?fields=whatsapp_business_account&access_token=${token}`,
-    `${FB_GRAPH}/${pageId}?fields=connected_whatsapp_business_account&access_token=${token}`,
+// Descobre a WABA vinculada à Página. Testa 4 campos em cascata porque
+// nem todas as Páginas expõem o mesmo (Graph tem histórico bagunçado):
+//  - whatsapp_business_account: WABA Cloud API vinculada à Página
+//  - connected_whatsapp_business_account: legado
+//  - page_backed_whatsapp_business_account: WhatsApp Business App conectado
+//    à Página SEM Cloud API (fluxo comum em Páginas legado/PME BR)
+//  - me/businesses → owned/client_whatsapp_business_accounts: fallback global
+async function discoverWabaId(
+  pageId: string,
+  token: string,
+  tried: string[],
+): Promise<{ id: string; via: string } | null> {
+  const tries: Array<{ label: string; url: string; pick: (j: any) => string | null }> = [
+    { label: "page.whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=whatsapp_business_account&access_token=${token}`, pick: (j) => j?.whatsapp_business_account?.id || null },
+    { label: "page.connected_whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=connected_whatsapp_business_account&access_token=${token}`, pick: (j) => j?.connected_whatsapp_business_account?.id || null },
+    { label: "page.page_backed_whatsapp_business_account", url: `${FB_GRAPH}/${pageId}?fields=page_backed_whatsapp_business_account&access_token=${token}`, pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
   ];
-  for (const url of tries) {
+  for (const t of tries) {
+    tried.push(t.label);
     try {
-      const r = await fetch(url);
+      const r = await fetch(t.url);
       const j = await r.json();
       if (r.ok) {
-        const id =
-          j?.whatsapp_business_account?.id ||
-          j?.connected_whatsapp_business_account?.id ||
-          null;
-        if (id) return String(id);
+        const id = t.pick(j);
+        if (id) return { id: String(id), via: t.label };
       }
     } catch { /* try next */ }
   }
   // Fallback: percorre Businesses do usuário do token.
   try {
+    tried.push("me/businesses");
     const r = await fetch(`${FB_GRAPH}/me/businesses?fields=id&access_token=${token}`);
     const j = await r.json();
     for (const biz of (j?.data || [])) {
       for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+        tried.push(`business.${biz.id}.${kind}`);
         const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?access_token=${token}`);
         const wj = await wr.json();
         const first = (wj?.data || [])[0];
-        if (first?.id) return String(first.id);
+        if (first?.id) return { id: String(first.id), via: `business.${kind}` };
       }
     }
   } catch { /* ignore */ }
@@ -157,7 +170,17 @@ export async function resolveWabaPhone(
   const savedDigits = digitsOf(settings?.whatsapp_destination_number);
   const savedDisplay = settings?.whatsapp_phone_number_display || (savedDigits ? `+${savedDigits}` : "");
 
-  const wabaId = await discoverWabaId(pageId, token);
+  const tried: string[] = [];
+  const wabaDiscovery = await discoverWabaId(pageId, token, tried);
+  const wabaId = wabaDiscovery?.id ?? null;
+  const discoveredVia = wabaDiscovery?.via ?? null;
+
+  const nextStepsNoWaba = [
+    `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
+    "OU salvar número + phone_number_id manualmente em Anúncios → Configurações do consultor",
+    "Depois clique em Reverificar para rodar facebook-detect-waba novamente",
+  ];
+
   if (!wabaId) {
     if (savedDigits) {
       const fallback: WabaPhone = {
@@ -178,6 +201,8 @@ export async function resolveWabaPhone(
         numbers: [],
         chosen: fallback,
         hint: "A Graph não expôs a WABA da Página; usando o número salvo e deixando a Meta validar no AdSet.",
+        detected_paths_tried: tried,
+        discovered_via: null,
       };
     }
     return {
@@ -185,7 +210,10 @@ export async function resolveWabaPhone(
       reason: "no_waba",
       page_id: pageId,
       numbers: [],
-      hint: "A Página da plataforma não tem WhatsApp Business (WABA) vinculado. Vincule em Meta Business Suite → WhatsApp → Contas.",
+      hint: `Página ${pageId} não expõe WABA via Graph (testados: ${tried.join(", ")}). Vincule em Meta Business Suite → WhatsApp → Contas, ou salve o número manualmente em Anúncios → Configurações.`,
+      detected_paths_tried: tried,
+      discovered_via: null,
+      next_steps: nextStepsNoWaba,
     };
   }
 
@@ -210,6 +238,8 @@ export async function resolveWabaPhone(
         numbers: [],
         chosen: fallback,
         hint: "A WABA foi encontrada, mas a Graph não retornou telefones; usando o número salvo e deixando a Meta validar no AdSet.",
+        detected_paths_tried: tried,
+        discovered_via: discoveredVia,
       };
     }
     return {
@@ -219,6 +249,8 @@ export async function resolveWabaPhone(
       page_id: pageId,
       numbers: [],
       hint: "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
+      detected_paths_tried: tried,
+      discovered_via: discoveredVia,
     };
   }
 
@@ -258,7 +290,6 @@ export async function resolveWabaPhone(
         { onConflict: "consultant_id" },
       );
     } else {
-      // marca só o timestamp de verificação
       await admin.from("consultant_ad_settings")
         .update({ whatsapp_last_verified_at: new Date().toISOString() })
         .eq("consultant_id", consultantId);
@@ -275,5 +306,8 @@ export async function resolveWabaPhone(
     hint: chosen
       ? undefined
       : `Seu número não bate com nenhum registrado na WABA. Escolha um dos ${numbers.length} disponíveis.`,
+    detected_paths_tried: tried,
+    discovered_via: discoveredVia,
+
   };
 }

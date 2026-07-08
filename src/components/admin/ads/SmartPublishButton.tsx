@@ -36,6 +36,8 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
       onPublished?.();
     } catch (e: any) {
       const msg = String(e?.message || "");
+      const nextSteps: string[] = Array.isArray(e?.next_steps) ? e.next_steps : [];
+      const tried: string[] = Array.isArray(e?.detected_paths_tried) ? e.detected_paths_tried : [];
       const isTargeting = msg.includes("META_TARGETING_INVALID") || msg.includes("1487079") || /targeting_relaxation/i.test(msg);
       const isWaba = msg.includes("WHATSAPP_BUSINESS_REQUIRED") || msg.includes("conta pessoal") || msg.includes("2446885") || msg.includes("1487246") || /not linked to your account/i.test(msg);
       if (isTargeting) {
@@ -45,11 +47,13 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
           description: "A plataforma removeu o campo de segmentação que a Meta recusou. Recarregue a página e publique novamente.",
         });
       } else if (isWaba) {
-        toast.error("WhatsApp não vinculado à Página do Meta", {
+        const stepsTxt = nextSteps.length ? "\n\nPróximos passos:\n• " + nextSteps.join("\n• ") : "";
+        const triedTxt = tried.length ? `\n\nCaminhos testados na Graph: ${tried.join(", ")}` : "";
+        const baseMsg = msg.replace(/^\[[^\]]+\]\s*/, "") || "A Meta rejeitou o número WABA.";
+        toast.error("WhatsApp Business não encontrado para esta Página", {
           id: toastId,
-          duration: 14000,
-          description:
-            "A Meta rejeitou o número oficial da WABA para esta Página. Abra o WhatsApp Manager, confirme o phone_number_id vinculado à Página e clique em Reverificar antes de publicar.",
+          duration: 20000,
+          description: baseMsg + stepsTxt + triedTxt,
         });
       } else {
         toast.error("Não consegui publicar automaticamente", {

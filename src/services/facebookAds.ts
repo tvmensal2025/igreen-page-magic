@@ -31,7 +31,13 @@ async function throwFunctionError(error: any): Promise<never> {
       if (payload?.error) {
         const code = payload.code ? `[${payload.code}] ` : "";
         const details = payload.meta_message || payload.meta_error ? ` Detalhe Meta: ${payload.meta_message || payload.meta_error}` : "";
-        throw new Error(`${code}${payload.message || payload.error}${details}`);
+        const err = new Error(`${code}${payload.message || payload.error}${details}`);
+        (err as any).payload = payload;
+        (err as any).code = payload.code;
+        (err as any).next_steps = payload.next_steps;
+        (err as any).detected_paths_tried = payload.detected_paths_tried;
+        (err as any).waba_numbers = payload.waba_numbers;
+        throw err;
       }
     } catch (parsed) {
       if (parsed instanceof Error && parsed.message) throw parsed;
