@@ -37,7 +37,6 @@ Deno.serve(async (req) => {
   }
   if (!allowed) return json({ error: "Forbidden — admin only" }, 403);
 
-  const admin = adminClient();
   const { data: rows } = await admin
     .from("consultant_ad_settings")
     .select("consultant_id, whatsapp_destination_number, whatsapp_phone_number_id")
