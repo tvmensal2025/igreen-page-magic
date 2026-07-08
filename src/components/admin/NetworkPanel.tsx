@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, lazy, Suspense } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound } from "lucide-react";
+import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -9,6 +9,9 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { runIgreenSync } from "@/lib/igreenSync";
+
+const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
+
 
 interface NetworkMember {
   id: string;
@@ -634,8 +637,23 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const treeInnerRef = useRef<HTMLDivElement>(null);
   const didInitialCenterRef = useRef(false);
   const [selectedMember, setSelectedMember] = useState<NetworkMember | null>(null);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [accountCount, setAccountCount] = useState<number | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { count } = await supabase
+        .from("igreen_portal_accounts")
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId);
+      if (!cancelled) setAccountCount(count ?? 0);
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId, showAccounts]);
+
 
   useEffect(() => {
     const stored = localStorage.getItem("sync_cooldown_until");
@@ -803,6 +821,49 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     <div className="space-y-5">
       {/* Detail Modal */}
       {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} allMembers={members} onSaved={fetchMembers} />}
+
+      {/* Contas iGreen conectadas — permite adicionar/remover múltiplas contas
+          (Rafael, Nilma, Censuralivre, etc.) direto da tela de Rede. */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowAccounts(v => !v)}
+          className="w-full p-4 flex items-center justify-between gap-3 hover:bg-white/[0.03] transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/80 to-primary/40 flex items-center justify-center shadow-lg shadow-primary/20">
+              <KeyRound className="w-5 h-5 text-white" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-bold text-foreground text-base tracking-tight">Contas iGreen conectadas</h3>
+              <p className="text-xs text-muted-foreground">
+                {accountCount === null
+                  ? "Carregando…"
+                  : accountCount === 0
+                  ? "Nenhuma conta ainda — adicione para puxar a rede"
+                  : `${accountCount} conta${accountCount > 1 ? "s" : ""} sincronizando (Censuralivre, Rafael, Nilma, …) — clique para gerenciar / adicionar`}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!showAccounts && (
+              <span className="hidden sm:inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20">
+                <Plus className="w-3.5 h-3.5" /> Adicionar conta
+              </span>
+            )}
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${showAccounts ? "rotate-180" : ""}`} />
+          </div>
+        </button>
+        {showAccounts && (
+          <div className="p-4 border-t border-white/[0.06]">
+            <Suspense fallback={<div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</div>}>
+              <IGreenConnectionCard userId={consultantId} />
+            </Suspense>
+          </div>
+        )}
+      </div>
+
+
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
