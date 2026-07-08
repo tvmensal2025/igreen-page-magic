@@ -130,8 +130,10 @@ Deno.serve(async (req) => {
               await admin.from("facebook_campaigns").update({ status: "completed", rejection_reason: "Prazo da campanha encerrado" }).eq("id", c.id);
               autoPaused++;
               try { await notifyConsultant(c.consultant_id, "info", "Campanha finalizada 🏁", "O prazo definido terminou e a campanha foi pausada automaticamente."); } catch (_) {}
+              try { await notifyRodizioOnCampaignPaused(admin, c.id, "ended"); } catch (_) {}
               continue;
             } catch (pe) { console.error("[fb-sync] end-time pause failed", c.fb_campaign_id, (pe as Error).message); }
+
           }
         }
 
