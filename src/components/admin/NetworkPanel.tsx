@@ -105,16 +105,16 @@ function buildTree(members: NetworkMember[]): TreeNode[] {
 
   membersSorted.forEach((m) => {
     const node = byId.get(m.igreen_id)!;
-    if (m.sponsor_id && byId.has(m.sponsor_id)) {
-      byId.get(m.sponsor_id)!.children.push(node);
-    } else if (m.nivel === 0 || !m.sponsor_id) {
+    const sponsor = effectiveSponsor(m);
+    if (sponsor && byId.has(sponsor)) {
+      byId.get(sponsor)!.children.push(node);
+    } else if (m.nivel === 0 || !sponsor) {
       roots.push(node);
     } else {
       node.isOrphan = true;
-      const sponsorKey = m.sponsor_id || 0;
-      const grouped = orphanGroups.get(sponsorKey) || [];
+      const grouped = orphanGroups.get(sponsor) || [];
       grouped.push(node);
-      orphanGroups.set(sponsorKey, grouped);
+      orphanGroups.set(sponsor, grouped);
     }
   });
 
