@@ -170,6 +170,19 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         });
         setWaLeads(waCounts);
 
+        // ─── Campanhas com rodízio ativo (para exibir botão de leads distribuídos) ───
+        try {
+          const { data: pools } = await (supabase as any)
+            .from("rodizio_pools")
+            .select("campaign_id")
+            .in("campaign_id", list.map(c => c.id))
+            .eq("is_active", true);
+          const rSet = new Set<string>();
+          (pools || []).forEach((p: any) => { if (p.campaign_id) rSet.add(p.campaign_id); });
+          setRodizioSet(rSet);
+        } catch { /* best-effort */ }
+
+
         // ─── Criativos por campanha (preview de mídia) ───
         // Prioridade: (1) capa real da Meta em facebook_campaigns.thumbnail_url,
         //             (2) ad_template_usages → ad_templates (wizard),
