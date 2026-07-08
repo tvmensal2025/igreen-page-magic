@@ -136,8 +136,9 @@ Deno.serve(async (req) => {
           age_max: body.age_max || 65,
           targeting_automation: { advantage_audience: 1 },
         };
-        const promotedObject = conn.page_id && conn.whatsapp_destination_number
-          ? { page_id: conn.page_id, whatsapp_phone_number: conn.whatsapp_destination_number }
+        // Usa o número autoritativo resolvido no passo 4 (sem adivinhar formatos).
+        const promotedObject = conn.page_id && resolvedPhone
+          ? { page_id: conn.page_id, whatsapp_phone_number: resolvedPhone.digits }
           : null;
         const params = new URLSearchParams({
           targeting_spec: JSON.stringify(targeting),
@@ -166,7 +167,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: blockers.length === 0, blockers, warnings, reach });
+    return json({
+      ok: blockers.length === 0,
+      blockers,
+      warnings,
+      reach,
+      whatsapp: resolvedPhone
+        ? { id: resolvedPhone.id, display: resolvedPhone.display, digits: resolvedPhone.digits }
+        : null,
+      waba_numbers: wabaNumbers,
+    });
   } catch (err) {
     return json({ error: (err as Error).message }, 500);
   }
