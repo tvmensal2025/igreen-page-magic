@@ -103,6 +103,16 @@ Deno.serve(async (req) => {
 
     const pageId = platform.page_id as string;
 
+    // Carrega o número salvo antes da descoberta WABA. Quando a Graph não expõe
+    // a WABA, mas há um número configurado, marcamos como fallback validável pela
+    // própria criação do AdSet (mesmo comportamento prático do Ads Manager).
+    const { data: settings } = await supabase
+      .from("consultant_ad_settings")
+      .select("whatsapp_destination_number, whatsapp_phone_number_id, whatsapp_phone_number_display")
+      .eq("consultant_id", userId)
+      .maybeSingle();
+    const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
+
     // 1) Descobre o WABA. O campo `connected_whatsapp_business_account` só
     //    existe em algumas Páginas; pedi-lo junto faz a Graph rejeitar tudo
     //    com erro (#100). Por isso tentamos cada caminho separadamente, e por
@@ -143,6 +153,25 @@ Deno.serve(async (req) => {
     }
 
     if (!wabaId) {
+      if (currentDigits) {
+        return jsonRes({
+          ok: true,
+          connected: true,
+          fallback: true,
+          page_id: pageId,
+          numbers: [],
+          current_number: currentDigits,
+          current_phone_number_id: settings?.whatsapp_phone_number_id || null,
+          chosen: {
+            id: settings?.whatsapp_phone_number_id || `saved:${currentDigits}`,
+            display: settings?.whatsapp_phone_number_display || `+${currentDigits}`,
+            digits: currentDigits,
+            source: "saved_fallback",
+          },
+          matches: true,
+          hint: "A Graph não expôs a WABA da Página, mas existe número WhatsApp configurado. A Meta validará esse número na criação do anúncio.",
+        });
+      }
       return jsonRes({
         ok: true,
         connected: false,
@@ -168,12 +197,6 @@ Deno.serve(async (req) => {
         .filter((n: any) => n.id && n.digits);
 
     // 3) Comparar com o que já está em consultant_ad_settings
-    const { data: settings } = await supabase
-      .from("consultant_ad_settings")
-      .select("whatsapp_destination_number, whatsapp_phone_number_id")
-      .eq("consultant_id", userId)
-      .maybeSingle();
-    const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
     const currentVariants = brPhoneVariants(currentDigits);
 
     // Match preferencial: phone_number_id salvo (fonte imutável).
