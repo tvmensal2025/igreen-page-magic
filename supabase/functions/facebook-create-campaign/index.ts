@@ -75,6 +75,11 @@ function buildInitialMessage(raw: string | undefined, distribuidora?: string): s
 const WA_BUSINESS_REQUIRED_SUBCODE = "2446885";
 const WA_BUSINESS_REQUIRED_MESSAGE =
   "A Página selecionada está vinculada a um WhatsApp pessoal. Para publicar anúncio de WhatsApp, conecte uma conta WhatsApp Business à Página no Meta Business Suite e depois selecione os assets novamente.";
+const WHATSAPP_FIX_LINKS = {
+  whatsapp_manager: "https://business.facebook.com/wa/manage/phone-numbers/",
+  whatsapp_accounts: "https://business.facebook.com/settings/whatsapp-business-accounts",
+  pages: "https://business.facebook.com/settings/pages",
+};
 
 function campaignErrorResponse(err: unknown) {
   const message = (err as Error)?.message || "Erro inesperado ao criar campanha.";
@@ -90,6 +95,12 @@ function campaignErrorResponse(err: unknown) {
       error: WA_BUSINESS_REQUIRED_MESSAGE,
       code: "WHATSAPP_BUSINESS_REQUIRED",
       meta_error: message,
+      links: WHATSAPP_FIX_LINKS,
+      next_steps: [
+        "Abra Contas WhatsApp Business e vincule a WABA à Página usada nos anúncios",
+        "Abra WhatsApp Manager e confirme o phone_number_id real do número",
+        "Volte no Admin e clique em Validar e corrigir WhatsApp automaticamente",
+      ],
     }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
   return new Response(JSON.stringify({ error: message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -314,6 +325,7 @@ Deno.serve(async (req) => {
         detected_paths_tried: waba.detected_paths_tried || [],
         discovered_via: waba.discovered_via || null,
         next_steps: waba.next_steps || [],
+        links: WHATSAPP_FIX_LINKS,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     // Number oficial: dígitos vindos direto do display_phone_number do Meta.
@@ -335,6 +347,7 @@ Deno.serve(async (req) => {
           "Vincule a WABA correta à Página no Meta Business Suite",
           "Clique em Reverificar antes de publicar",
         ],
+        links: WHATSAPP_FIX_LINKS,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     console.log(
@@ -464,6 +477,12 @@ Deno.serve(async (req) => {
           detected_paths_tried: waba.detected_paths_tried || [],
           discovered_via: waba.discovered_via || null,
           meta_message: msg,
+          next_steps: [
+            `Vincule a WABA ${waba.waba_id || "do número"} à Página ${conn.page_id}`,
+            "Confirme no WhatsApp Manager se o phone_number_id é o real do número",
+            "Volte no Admin e clique em Validar e corrigir WhatsApp automaticamente",
+          ],
+          links: WHATSAPP_FIX_LINKS,
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       // outros erros (targeting inválido, etc.) — segue e deixa POST /campaigns
@@ -621,6 +640,12 @@ Deno.serve(async (req) => {
           phone_display: authoritativeDisplay,
           waba_numbers: waba.numbers,
           meta_message: msg,
+          next_steps: [
+            `Vincule a WABA ${waba.waba_id || "do número"} à Página ${conn.page_id}`,
+            "Confirme no WhatsApp Manager se o phone_number_id é o real do número",
+            "Volte no Admin e clique em Validar e corrigir WhatsApp automaticamente",
+          ],
+          links: WHATSAPP_FIX_LINKS,
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       throw e;
