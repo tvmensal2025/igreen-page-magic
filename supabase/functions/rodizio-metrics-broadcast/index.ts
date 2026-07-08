@@ -131,27 +131,28 @@ Deno.serve(async (req) => {
   let skippedDedup = 0;
   let skippedColdStart = 0;
   let fallbackSent = 0;
+  let approvedSent = 0;
   let errors = 0;
 
   try {
     const { data: pools } = await supabase
       .from("rodizio_pools")
       .select(`
-        id, campaign_id, consultant_id, metrics_broadcast_interval_minutes,
+        id, campaign_id, consultant_id, metrics_broadcast_interval_minutes, approval_notified_at,
         facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at)
       `)
       .eq("facebook_campaigns.status", "active");
 
     for (const pool of (pools || []) as any[]) {
       const camp = pool.facebook_campaigns;
-      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 10);
+      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 60);
       if (!camp?.id || !camp.fb_campaign_id) continue;
       if (intervalMin <= 0) { skippedInterval++; continue; }
 
       // Slot da pool: sempre múltiplo do intervalo escolhido
       const slot = Math.floor(minutesSinceMidnightUTC / intervalMin);
       // Só envia quando o minuto atual "entra num slot novo" — como o cron roda
-      // a cada 10 min, isso naturalmente respeita intervalos de 10/30/60/120/240
+      // a cada 10 min, isso naturalmente respeita intervalos de 30/60/120/240
       // (assumindo cron *:00,10,20,...). Um envio por slot é garantido pelo dedup.
 
       // 1) Métricas ao vivo (cache 5 min por campanha)
