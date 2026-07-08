@@ -196,6 +196,44 @@ Deno.serve(async (req) => {
       });
       const poolSize = eligible.length;
 
+      // 4.1) Aviso ÚNICO de "campanha aprovada pela Meta". Se ainda não
+      // enviamos para esta pool E a campanha está active (aprovada), dispara
+      // 1× para cada parceiro elegível, marca timestamp e pula o card de
+      // métricas neste tick (evita 2 mensagens seguidas).
+      if (!pool.approval_notified_at && poolSize > 0) {
+        const approvedText = formatCampaignApprovedMessage(camp.name, intervalMin);
+        let anySent = false;
+        for (const m of eligible as any[]) {
+          const partner = m.referral_partners;
+          const approvedIdem = `rodizio_approved:${m.partner_id}:${camp.id}`;
+          const { error: insErr } = await supabase
+            .from("outbound_message_log")
+            .insert({
+              idempotency_key: approvedIdem,
+              consultant_id: pool.consultant_id,
+              payload_hash: approvedIdem,
+              result_status: "queued_rodizio_approved",
+            });
+          if (insErr && (insErr as any)?.code === "23505") continue; // já avisado
+          try {
+            const ok = await sendRawToNumber(pool.consultant_id, partner.notification_phone, approvedText);
+            if (ok) { approvedSent++; anySent = true; } else { errors++; }
+          } catch (e) {
+            errors++;
+            console.error("[rodizio-metrics] approved send erro:", (e as Error).message);
+          }
+        }
+        if (anySent) {
+          await supabase
+            .from("rodizio_pools")
+            .update({ approval_notified_at: new Date().toISOString() })
+            .eq("id", pool.id);
+        }
+        // Não manda o card de métricas neste tick — próxima janela cuida.
+        continue;
+      }
+
+
       for (const m of eligible as any[]) {
         const partner = m.referral_partners;
         const idemKey = `rodizio_metrics:${m.partner_id}:${camp.id}:${intervalMin}:${slot}`;
