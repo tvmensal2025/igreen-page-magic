@@ -6,6 +6,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker } from "../_shared/portal-worker.ts";
 import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts";
+import { notifyPartnerStep } from "../_shared/notify-consultant.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -211,8 +212,20 @@ Deno.serve(async (req) => {
     // Avisa o cliente no WhatsApp (não bloqueia) — só se o consultor pediu
     if (sendNotice) await sendWhatsAppNotice(supabase, customer);
 
+    // 📣 Avisa o parceiro: cadastro completo (validação OK, indo pro portal)
+    if (customer.consultant_id) {
+      notifyPartnerStep(customer.consultant_id, customerId, "cadastro_complete")
+        .catch((e) => console.warn("[finalize-capture] notify cadastro_complete:", e?.message));
+    }
+
     // Dispara o worker
     const dispatch = await dispatchPortalWorker(supabase, customerId);
+
+    // 📣 Avisa o parceiro: enviado ao portal (só quando dispatch OK)
+    if (dispatch.ok && customer.consultant_id) {
+      notifyPartnerStep(customer.consultant_id, customerId, "portal_sent")
+        .catch((e) => console.warn("[finalize-capture] notify portal_sent:", e?.message));
+    }
 
     return jres({
       ok: dispatch.ok,
