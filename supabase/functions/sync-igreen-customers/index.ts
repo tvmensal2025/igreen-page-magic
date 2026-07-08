@@ -519,7 +519,7 @@ async function runSyncAllBackgroundPhase(
       } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
     }
 
-    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || []); }
+    try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || [], igreenAccountId); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
     // Persiste SEMPRE tudo (não depende de toggle). A página nunca fica vazia.
@@ -1658,8 +1658,8 @@ async function syncOneConsultant(
 }
 
 // deno-lint-ignore no-explicit-any
-async function persistNetwork(supabase: any, consultantId: string | null, members: Record<string, unknown>[]): Promise<Record<string, unknown>> {
-  // Dedup
+async function persistNetwork(supabase: any, consultantId: string | null, members: Record<string, unknown>[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
+  // Dedup por igreen_id dentro DESTA conta.
   const deduped = new Map<number, Record<string, unknown>>();
   for (const m of members) {
     const id = Number(m.idconsultor || m.id);
@@ -1669,6 +1669,7 @@ async function persistNetwork(supabase: any, consultantId: string | null, member
 
   const netRecords = netData.map((m) => ({
     consultant_id: consultantId,
+    igreen_account_id: igreenAccountId,
     igreen_id: Number(m.idconsultor || m.id),
     name: String(m.nome || "Sem nome"),
     phone: normalizePhone(String(m.celular || "")),
@@ -1708,28 +1709,44 @@ async function persistNetwork(supabase: any, consultantId: string | null, member
     else netUpdated += (data?.length || 0);
   }
 
-  // Remove stale members
-  if (consultantId) {
+  // Remove stale members ESCOPADO POR CONTA iGreen (igreen_account_id).
+  // Sem esse escopo, sincronizar uma conta apagaria os membros das outras
+  // contas do mesmo consultor dono. Se o mesmo idconsultor aparecer em 2
+  // contas, o upsert acima reatribui a linha à conta atual — comportamento
+  // esperado (dedup no owner) e sem risco de apagar.
+  let staleDeleted = 0;
+  if (consultantId && igreenAccountId) {
     const apiIds = netRecords.map((r) => Number(r.igreen_id));
     const { data: existingMembers } = await supabase
       .from("network_members")
       .select("igreen_id")
-      .eq("consultant_id", consultantId);
+      .eq("consultant_id", consultantId)
+      .eq("igreen_account_id", igreenAccountId);
     if (existingMembers) {
       const staleIds = (existingMembers as Array<{ igreen_id: number }>)
         .map((m) => m.igreen_id)
         .filter((id) => !apiIds.includes(id));
       if (staleIds.length > 0) {
-        await supabase
+        const { error: delErr, count } = await supabase
           .from("network_members")
-          .delete()
+          .delete({ count: "exact" })
           .eq("consultant_id", consultantId)
+          .eq("igreen_account_id", igreenAccountId)
           .in("igreen_id", staleIds);
+        if (delErr) console.error(`Network stale delete error:`, delErr);
+        else staleDeleted = count || 0;
       }
     }
+  } else if (consultantId && !igreenAccountId) {
+    // Legado: chamadas sem igreenAccountId (ex.: modo sync_network standalone).
+    // Não apaga NADA para não zerar a rede das subcontas.
+    console.log(`[persistNetwork] sem igreen_account_id → pulando delete-stale (rede acumulada preservada)`);
   }
-  return { total_members: netData.length, updated: netUpdated };
+
+  console.log(`[persistNetwork] owner=${consultantId} account=${igreenAccountId} members=${netData.length} upserts=${netUpdated} stale_removed=${staleDeleted}`);
+  return { total_members: netData.length, updated: netUpdated, stale_removed: staleDeleted };
 }
+
 
 // deno-lint-ignore no-explicit-any
 async function persistCustomers(supabase: any, consultantId: string | null, allCustomers: Record<string, unknown>[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {

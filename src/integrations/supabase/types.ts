@@ -6992,6 +6992,7 @@ export type Database = {
           green_telecom_mes: number | null
           gt_qualificavel: number | null
           id: string
+          igreen_account_id: string | null
           igreen_id: number
           inicio_rapido: string | null
           licenciados_diretos: number | null
@@ -7035,6 +7036,7 @@ export type Database = {
           green_telecom_mes?: number | null
           gt_qualificavel?: number | null
           id?: string
+          igreen_account_id?: string | null
           igreen_id: number
           inicio_rapido?: string | null
           licenciados_diretos?: number | null
@@ -7078,6 +7080,7 @@ export type Database = {
           green_telecom_mes?: number | null
           gt_qualificavel?: number | null
           id?: string
+          igreen_account_id?: string | null
           igreen_id?: number
           inicio_rapido?: string | null
           licenciados_diretos?: number | null
@@ -7095,7 +7098,15 @@ export type Database = {
           uf?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "network_members_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       outbound_blocked_log: {
         Row: {

@@ -1,72 +1,70 @@
-## Objetivo
+## Diagnóstico: por que a rede da Nilma "sumiu" (e o mesmo bug atinge qualquer subconta futura)
 
-Quando o anúncio for aprovado pela Meta (campanha entra em `ACTIVE`), avisar TODOS os parceiros do rodízio, uma única vez, com uma mensagem no WhatsApp dizendo que a campanha foi aprovada e que a partir de agora eles vão receber uma atualização de métricas **a cada 1 hora** (novo padrão). Também remover a opção de "10 min" da UI e usar 1 hora como padrão em toda a plataforma.
+O worker JÁ sincroniza as 3 contas do Rafael (Conta principal, sirlene, Nilma santana) — os logs mostram isso rodando bem (`[multi-account] sync conta position=1/2/3 consultant=0c2711ad…`). O problema não é login nem Cloudflare, é **como a rede é persistida**.
 
-## Mudanças
+### O bug (confirmado no banco agora mesmo)
 
-### 1. Novo padrão de intervalo: 1 hora (tira "10 min")
+Em `supabase/functions/sync-igreen-customers/index.ts` → `persistNetwork` (linhas 1711-1730):
 
-**Migração SQL** (`rodizio_pools.metrics_broadcast_interval_minutes`):
-
-- `ALTER COLUMN ... SET DEFAULT 60`
-- `UPDATE rodizio_pools SET metrics_broadcast_interval_minutes = 60 WHERE metrics_broadcast_interval_minutes = 10` (migra pools existentes que estavam em 10 min para 1 h).
-
-**UI — remover item "A cada 10 min" e trocar default de leitura para 60:**
-
-- `src/components/whatsapp/RodiziosBroadcastPanel.tsx`: remove `<SelectItem value="10">`; troca `?? 10` por `?? 60`.
-- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`: remove `<SelectItem value="10">`; troca os dois `?? 10` por `?? 60`; troca `useState<number>(10)` por `useState<number>(60)`.
-
-**Edge function** `supabase/functions/rodizio-metrics-broadcast/index.ts`:
-
-- Troca `Number(pool.metrics_broadcast_interval_minutes ?? 10)` por `?? 60`.
-- Atualiza os comentários do topo (`Roda a cada 10 min…`, `0=off, 10/30/60/120/240`) para refletir que o novo mínimo válido é 30 min e o padrão é 60.
-- Mantém o cron rodando na cadência atual (o dedup por slot já garante 1× por hora quando `intervalMin = 60`).
-
-### 2. Mensagem "Campanha aprovada" — envio único por pool
-
-Adicionar coluna de controle em `rodizio_pools`:
-
-```sql
-ALTER TABLE public.rodizio_pools
-  ADD COLUMN IF NOT EXISTS approval_notified_at timestamptz;
+```ts
+// Remove stale members
+const apiIds = netRecords.map((r) => Number(r.igreen_id));   // <-- só os IDs desta CONTA
+const existingMembers = ... where consultant_id = <Rafael>;
+const staleIds = existingMembers.filter(id NOT IN apiIds);
+await supabase.from("network_members").delete()
+  .eq("consultant_id", <Rafael>)                             // <-- apaga do OWNER inteiro
+  .in("igreen_id", staleIds);
 ```
 
-(sem novas policies — a tabela já é acessada via `service_role` pela edge function).
+O que acontece na prática, na ordem em que o cron roda hoje (position=1 → 2 → 3):
+1. Sincroniza `Conta principal` (rafael) → grava 33 membros, remove nada.
+2. Sincroniza `sirlene` → grava 7 membros e **apaga os 33 do Rafael** (não estão na lista de 7).
+3. Sincroniza `Nilma santana` → grava 31 membros e **apaga os 7 da sirlene**.
 
-Em `rodizio-metrics-broadcast/index.ts`, antes do envio normal de métricas de cada pool:
+Resultado no banco agora: `SELECT COUNT(*) FROM network_members WHERE consultant_id='<Rafael>'` → **7 linhas** (uma corrida "azarada" — deveria ser união ~55-70). Confirma o que você viu: "a rede da Nilma não apareceu somada".
 
-1. Buscar `approval_notified_at` no `select` da pool.
-2. Se `approval_notified_at IS NULL` e a campanha estiver `ACTIVE` na Meta (usa o `effective_status` já disponível via `fetchLiveMetrics`, ou faz uma chamada leve a `/{fb_campaign_id}?fields=effective_status`), enviar para cada parceiro elegível a mensagem de aprovação (novo helper `formatCampaignApprovedMessage` em `_shared/rodizio-metrics-format.ts`):
-  ```
-   ✅ *Campanha aprovada pela Meta!*
-   🎯 {nome da campanha}
+Toda subconta nova que você adicionar em `igreen_portal_accounts` vai continuar zerando a rede das outras. É determinístico.
 
-   A partir de agora você vai receber uma atualização
-   com as métricas ao vivo *a cada 1 hora*.
+### Correções (uma migração + uma edge function)
 
-   Bons Leads ! 🚀
-  ```
-3. Marcar `approval_notified_at = now()` na pool (idempotente — nunca reenvia).
-4. Nesse mesmo tick, pular o disparo normal de métricas (evita 2 mensagens seguidas). O próximo slot já manda o card de métricas.
+**1. Migração — adicionar `igreen_account_id` em `network_members`**
+```
+ALTER TABLE public.network_members
+  ADD COLUMN igreen_account_id uuid REFERENCES public.igreen_portal_accounts(id) ON DELETE SET NULL;
 
-Dedup adicional por parceiro via `outbound_message_log` com chave `rodizio_approved:{partner_id}:{camp.id}` para blindar contra corrida entre invocações do cron.
+-- unique compat: (consultant_id, igreen_id) permanece (dedup de mesmo membro entre contas — se
+-- o mesmo idconsultor aparecer em 2 contas, upsert atualiza a mesma linha, enriquecendo).
+CREATE INDEX IF NOT EXISTS network_members_owner_account_idx
+  ON public.network_members(consultant_id, igreen_account_id);
+```
 
-### 3. Fora de escopo
+**2. Edge function `sync-igreen-customers` → `persistNetwork`**
+- Aceitar `igreenAccountId` como parâmetro (já é passado para `persistCustomers`; replicar).
+- Gravar `igreen_account_id` em cada row do upsert.
+- **Delete-stale escopado por conta**: `.eq("consultant_id", ownerId).eq("igreen_account_id", accountId).in("igreen_id", staleIds)`.
+- Fallback para linhas legadas sem `igreen_account_id`: só apagar staleIds nulos quando estamos rodando a `position=1` (Conta principal).
 
-- Não muda a lógica do `facebook-create-campaign` (aprovação/publicação inicial) nem o `facebook-campaign-status`.
-- Não altera texto do card de métricas em si (`formatRodizioMetricsMessage`) — apenas a nota de rodapé "Próxima atualização em ~1 hora" já aparece automaticamente porque usa `intervalMinutes`.
+Passar `igreenAccountId` na chamada (linha ~522):
+```ts
+out.network = await persistNetwork(supabase, consultantId, r.data?.members || [], igreenAccountId);
+```
 
-## Detalhes técnicos
+**3. Enriquecimento (o que você pediu: "somando e enriquecendo")**
+Já funciona parcialmente para `customers` (upsert por `phone_whatsapp,consultant_id` faz merge). Para rede, o mesmo upsert por `(consultant_id, igreen_id)` já enriquece quando o mesmo `idconsultor` aparece em 2 contas — a última corrida escreve por cima os campos numéricos (gp/gi/qtde_diretos/bonificavel etc). Isso é o comportamento desejado ("dono acumula tudo, com dados enriquecidos da conta mais recente").
 
-- Cron do `rodizio-metrics-broadcast` (a cada 10 min) permanece; apenas a cadência efetiva por pool muda (slot = `floor(minutes/60)`).
-- `approval_notified_at` só é setado após o envio bem-sucedido a pelo menos 1 parceiro elegível — evita "queimar" a notificação em pools sem parceiros conectados.
-- Se o usuário tinha manualmente escolhido `10` no seletor, a migração o promove a `60`. Caso ele queira ficar em 30 min, continua podendo escolher pelo seletor.
-- Nenhum novo secret, nenhuma mudança em RLS ou GRANTs.
+Para deixar 100% previsível, também vou incluir no upsert um `MERGE`-style para campos "somáveis" quando fizer sentido — mas o padrão do iGreen já é: cada membro tem métricas próprias e não somamos entre contas (seria dobrar). O correto é **exibir a união distinta**, que é exatamente o que o upsert por `(consultant_id, igreen_id)` faz.
 
-## Arquivos alterados
+### Verificação depois da fix
+- Rodar sync full para o Rafael e conferir `SELECT COUNT(*) FROM network_members WHERE consultant_id='<Rafael>'` — deve ficar ≈ união(33 + 7 + 31) menos interseções.
+- Adicionar/remover uma 4ª conta e conferir que a remoção de conta só apaga os membros com aquele `igreen_account_id`.
 
-- `supabase/migrations/<novo>.sql` (default 60 + update linhas 10→60 + coluna `approval_notified_at`)
-- `supabase/functions/rodizio-metrics-broadcast/index.ts`
-- `supabase/functions/_shared/rodizio-metrics-format.ts`
-- `src/components/whatsapp/RodiziosBroadcastPanel.tsx`
-- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx`
+### Fora de escopo (não muda)
+- `persistCustomers` — o dedup atual por telefone e `(consultant_id, igreen_code)` já agrega corretamente múltiplas contas no mesmo owner; só vou adicionar log para confirmar quantos vieram de cada `igreen_account_id`.
+- Boletos, telecom, seguros — usam `consultant_id + idcliente/idcnxtelecom + mes_referencia` como conflict key, então já mesclam sem duplicar. Sem mudança.
+- Login / Cloudflare / Tor — sem mudança, funcionando.
+
+### Arquivos alterados
+- `supabase/migrations/<nova>.sql` — adiciona coluna + índice em `network_members`.
+- `supabase/functions/sync-igreen-customers/index.ts` — atualiza `persistNetwork` (assinatura, upsert com `igreen_account_id`, delete-stale escopado por conta) e o call site.
+
+Quer que eu implemente exatamente isso? Se sim, vou também rodar um sync manual do Rafael depois da migração para reconstruir a rede completa.
