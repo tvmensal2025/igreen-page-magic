@@ -143,11 +143,15 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const filtered = selectedLicenciado === "all" ? walletMine : walletMine.filter((c: any) => c.registered_by_name === selectedLicenciado);
     const totalCustomers = walletForTotal.length;
     const directCustomers = filtered.length;
-    const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
-    const withConsumption = filtered.filter((c: any) => Number(c.media_consumo) > 0);
+    // kWh: base = carteira toda (walletForTotal), não só "meus diretos"
+    const totalKw = walletForTotal.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
+    const withConsumption = walletForTotal.filter((c: any) => Number(c.media_consumo) > 0);
     const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
 
-    // Estimativa: clientes iGreen não trazem electricity_bill_value, usamos media_consumo (kWh) × tarifa média (R$ 0,95)
+    // Recorrência garantida = comissão mensal sobre clientes APROVADOS.
+    //   4% se cliente foi cadastrado por mim (registered_by_igreen_id === meuIgreenId)
+    //   1% se foi cadastrado pela rede
+    //   +0,5% se sou gestor (proxy: isLeader = tenho equipe)
     const TARIFA_MEDIA = 0.95;
     const billOf = (c: any) => {
       const real = Number(c.electricity_bill_value) || 0;
@@ -155,6 +159,19 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       const kwh = Number(c.media_consumo) || 0;
       return kwh * TARIFA_MEDIA;
     };
+    const meuIgreenId = myClientsSettings?.myIgreenId ? String(myClientsSettings.myIgreenId) : "";
+    const gestorBonus = isLeader ? 0.005 : 0;
+    const approvedWallet = walletForTotal.filter((c: any) => (c.status || "").toLowerCase() === "approved");
+    let recorrenciaGarantida = 0;
+    for (const c of approvedWallet) {
+      const bill = billOf(c);
+      if (!bill) continue;
+      const regId = c.registered_by_igreen_id != null ? String(c.registered_by_igreen_id) : "";
+      const isDireto = meuIgreenId && regId === meuIgreenId;
+      const pct = (isDireto ? 0.04 : 0.01) + gestorBonus;
+      recorrenciaGarantida += bill * pct;
+    }
+    // Mantido para gráficos (CustomerCharts pode usar avgBill/economia)
     const withBill = filtered.filter((c: any) => billOf(c) > 0);
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
     const avgBill = withBill.length > 0 ? totalBill / withBill.length : 0;
