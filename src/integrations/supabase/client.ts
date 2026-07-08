@@ -7,14 +7,15 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 const SUPABASE_FETCH_TIMEOUT_MS = 15000;
 
-const fetchWithTimeout: typeof fetch = async (input, init = {}) => {
+const fetchWithTimeout: typeof fetch = async (input, init?: RequestInit) => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+  const requestInit = init ?? {};
 
   try {
     return await fetch(input, {
-      ...init,
-      signal: init.signal ?? controller.signal,
+      ...requestInit,
+      signal: requestInit.signal ?? controller.signal,
     });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
