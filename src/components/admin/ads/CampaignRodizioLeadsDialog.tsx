@@ -72,7 +72,7 @@ export function CampaignRodizioLeadsDialog({
         // 3) Leads (customers) da campanha com referral_partner_id
         const { data: leads, error: e3 } = await supabase
           .from("customers")
-          .select("id, name, phone, created_at, referral_partner_id")
+          .select("id, name, phone_whatsapp, created_at, referral_partner_id")
           .eq("source_campaign_id", campaignId)
           .order("created_at", { ascending: false });
         if (e3) throw e3;
@@ -83,7 +83,7 @@ export function CampaignRodizioLeadsDialog({
           const row: LeadRow = {
             id: c.id,
             name: c.name,
-            phone: c.phone,
+            phone: c.phone_whatsapp,
             created_at: c.created_at,
           };
           if (c.referral_partner_id) {
