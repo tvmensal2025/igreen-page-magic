@@ -40,6 +40,25 @@ function normalizeDigits(s: string | null | undefined): string {
   return String(s || "").replace(/\D/g, "");
 }
 
+function isRealPhoneId(id: string | null | undefined): boolean {
+  return /^\d+$/.test(String(id || ""));
+}
+
+async function probePhoneNumberId(phoneNumberId: string, token: string) {
+  if (!isRealPhoneId(phoneNumberId)) return null;
+  const r = await fetch(`${FB_GRAPH}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating&access_token=${token}`);
+  const j = await r.json();
+  if (!r.ok || !j?.id || !j?.display_phone_number) return null;
+  return {
+    id: String(j.id),
+    display: String(j.display_phone_number),
+    digits: normalizeDigits(j.display_phone_number),
+    verified_name: j.verified_name,
+    quality: j.quality_rating,
+    source: "waba",
+  };
+}
+
 function brPhoneVariants(raw: string | null | undefined): Set<string> {
   const digits = normalizeDigits(raw);
   const variants = new Set<string>();
@@ -112,6 +131,7 @@ Deno.serve(async (req) => {
       .eq("consultant_id", userId)
       .maybeSingle();
     const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
+    const savedPhoneId = String(settings?.whatsapp_phone_number_id || "");
 
     // 1) Descobre o WABA. Testa 4 caminhos em cascata porque nem toda Página
     //    expõe o mesmo campo (Cloud API, legado, PBWA — WhatsApp Business App
@@ -119,6 +139,46 @@ Deno.serve(async (req) => {
     let wabaId: string | null = null;
     let discoveredVia: string | null = null;
     const detected_paths_tried: string[] = [];
+
+    // phone_number_id numérico salvo é fonte forte. Valida direto na Graph antes
+    // de qualquer fallback: se não for acessível/real, não publicamos com saved:*.
+    if (isRealPhoneId(savedPhoneId)) {
+      try {
+        const probed = await probePhoneNumberId(savedPhoneId, token);
+        if (probed) {
+          const needs =
+            settings?.whatsapp_phone_number_id !== probed.id ||
+            settings?.whatsapp_phone_number_display !== probed.display ||
+            normalizeDigits(settings?.whatsapp_destination_number) !== probed.digits;
+          if (needs) {
+            await supabase.from("consultant_ad_settings").upsert(
+              {
+                consultant_id: userId,
+                whatsapp_phone_number_id: probed.id,
+                whatsapp_phone_number_display: probed.display,
+                whatsapp_destination_number: probed.digits,
+                whatsapp_last_verified_at: new Date().toISOString(),
+              },
+              { onConflict: "consultant_id" },
+            );
+          }
+          return jsonRes({
+            ok: true,
+            connected: true,
+            fallback: false,
+            page_id: pageId,
+            numbers: [],
+            current_number: probed.digits,
+            current_phone_number_id: probed.id,
+            chosen: probed,
+            matches: true,
+            hint: "phone_number_id real validado diretamente na Graph.",
+            detected_paths_tried,
+            discovered_via: "phone_number_id_probe",
+          });
+        }
+      } catch (_) { /* segue para descoberta por Página/WABA */ }
+    }
 
     const pageFieldTries: Array<{ label: string; field: string; pick: (j: any) => string | null }> = [
       { label: "page.whatsapp_business_account", field: "whatsapp_business_account", pick: (j) => j?.whatsapp_business_account?.id || null },
@@ -160,36 +220,19 @@ Deno.serve(async (req) => {
     }
 
     if (!wabaId) {
-      if (currentDigits) {
-        return jsonRes({
-          ok: true,
-          connected: true,
-          fallback: true,
-          page_id: pageId,
-          numbers: [],
-          current_number: currentDigits,
-          current_phone_number_id: settings?.whatsapp_phone_number_id || null,
-          chosen: {
-            id: settings?.whatsapp_phone_number_id || `saved:${currentDigits}`,
-            display: settings?.whatsapp_phone_number_display || `+${currentDigits}`,
-            digits: currentDigits,
-            source: "saved_fallback",
-          },
-          matches: true,
-          hint: "A Graph não expôs a WABA da Página, mas existe número WhatsApp configurado. A Meta validará esse número na criação do anúncio.",
-          detected_paths_tried,
-          discovered_via: null,
-        });
-      }
       return jsonRes({
         ok: true,
         connected: false,
-        hint: `A Página ${pageId} não expõe WABA via Graph (testados: ${detected_paths_tried.join(", ")}). Vincule em Meta Business Suite → Configurações → Contas do WhatsApp, ou salve o número manualmente em Anúncios → Configurações.`,
+        current_number: currentDigits || null,
+        current_phone_number_id: settings?.whatsapp_phone_number_id || null,
+        hint: currentDigits
+          ? `O número ${currentDigits} está salvo, mas não tem phone_number_id real da Meta e não aparece em uma WABA vinculada à Página ${pageId}. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`
+          : `A Página ${pageId} não expõe WABA via Graph (testados: ${detected_paths_tried.join(", ")}). Vincule em Meta Business Suite → Configurações → Contas do WhatsApp, ou salve o phone_number_id real em Anúncios → Configurações.`,
         page_id: pageId,
         detected_paths_tried,
         next_steps: [
           `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
-          "OU salvar número + phone_number_id manualmente em Anúncios → Configurações",
+          "OU salvar o phone_number_id numérico real do WhatsApp Manager em Anúncios → Configurações",
           "Depois clique em Reverificar",
         ],
       });
