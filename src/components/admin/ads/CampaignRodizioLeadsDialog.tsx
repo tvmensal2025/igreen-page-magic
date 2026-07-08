@@ -40,6 +40,9 @@ export function CampaignRodizioLeadsDialog({
   const [unassigned, setUnassigned] = useState<LeadRow[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
+  const [poolId, setPoolId] = useState<string | null>(null);
+  const [interval, setIntervalMin] = useState<number>(10);
+  const [savingInterval, setSavingInterval] = useState(false);
 
   useEffect(() => {
     if (!open || !campaignId) return;
