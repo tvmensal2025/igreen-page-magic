@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
         const waba = await resolveWabaPhone(auth.id, { persist: true });
         wabaNumbers = waba.numbers.map((n) => ({ id: n.id, display: n.display, digits: n.digits }));
         if (waba.ok && waba.chosen) {
-          if (!/^\d+$/.test(waba.chosen.id)) {
+          const isPermissionLimitedSavedNumber = String(waba.chosen.id || "").startsWith("permission_limited:");
+          if (!/^\d+$/.test(waba.chosen.id) && !isPermissionLimitedSavedNumber) {
             blockers.push(`O número ${waba.chosen.digits} está salvo, mas não tem phone_number_id real da Meta. Copie o ID numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`);
           } else {
             resolvedPhone = { id: waba.chosen.id, display: waba.chosen.display, digits: waba.chosen.digits };

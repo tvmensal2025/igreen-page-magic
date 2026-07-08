@@ -1,7 +1,8 @@
 // Resolve o número WhatsApp para publicar CTWA.
 // Preferência: lista viva de phone_numbers da WABA vinculada à Página.
-// Nunca publica com phone_number_id sintético (`saved:*`). CTWA oficial precisa
-// de phone_number_id real da Meta ou de número vindo da lista viva da WABA.
+// Quando a Meta não entrega a permissão whatsapp_business_management no token,
+// usamos o número salvo apenas como fallback de dígitos e deixamos a própria
+// Marketing API validar no reachestimate/adset antes de criar anúncio ativo.
 
 import { adminClient } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
@@ -319,6 +320,33 @@ export async function resolveWabaPhone(
       };
     }
 
+    // App/token sem whatsapp_business_management: a Graph não deixa listar WABA
+    // nem phone_numbers, mas a Marketing API ainda aceita CTWA quando a Página já
+    // está ligada ao número. Não bloqueia cedo: usa o número salvo e deixa
+    // reachestimate/adset validar oficialmente com page_id + whatsapp_phone_number.
+    if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
+      return {
+        ok: true,
+        reason: undefined,
+        page_id: pageId,
+        numbers: businessNumbers,
+        chosen: {
+          id: `permission_limited:${savedDigits}`,
+          display: savedDisplay || `+${savedDigits}`,
+          digits: savedDigits,
+          source: "saved_fallback",
+        },
+        hint: "Token sem whatsapp_business_management; usando o número salvo e deixando a Meta validar a ligação Página↔WhatsApp na criação.",
+        detected_paths_tried: tried,
+        discovered_via: "permission_limited_saved_number",
+        next_steps: [
+          "Se a Meta recusar na publicação, reconecte a conta da plataforma aceitando WhatsApp Business Management.",
+          `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
+        ],
+        missing_permissions: missingPermissions,
+      };
+    }
+
     return {
       ok: false,
       reason: "no_waba",
@@ -371,6 +399,29 @@ export async function resolveWabaPhone(
           };
         }
       } catch { /* bloqueia no no_numbers */ }
+    }
+    if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
+      return {
+        ok: true,
+        waba_id: wabaId,
+        page_id: pageId,
+        numbers: [],
+        chosen: {
+          id: `permission_limited:${savedDigits}`,
+          display: savedDisplay || `+${savedDigits}`,
+          digits: savedDigits,
+          waba_id: wabaId,
+          source: "saved_fallback",
+        },
+        hint: "A WABA foi detectada, mas o token não tem permissão para listar telefones; usando o número salvo e deixando a Meta validar na criação.",
+        detected_paths_tried: tried,
+        discovered_via: discoveredVia || "permission_limited_saved_number",
+        next_steps: [
+          "Se a Meta recusar na publicação, reconecte a conta da plataforma aceitando WhatsApp Business Management.",
+          `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
+        ],
+        missing_permissions: missingPermissions,
+      };
     }
     return {
       ok: false,
