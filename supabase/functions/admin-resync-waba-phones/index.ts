@@ -2,7 +2,7 @@
 // tenta resolver/persistir o phone_number_id real via resolveWabaPhone.
 // Chamado manualmente pelo super admin (via header x-admin-secret) para
 // destravar consultores que ainda estão sem ID numérico salvo.
-import { adminClient, corsHeaders } from "../_shared/fb-graph.ts";
+import { adminClient, authConsultant, corsHeaders } from "../_shared/fb-graph.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 function json(body: unknown, status = 200) {
@@ -16,11 +16,26 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  // Gate: exige service_role no header (só quem tem SUPABASE_SERVICE_ROLE_KEY chama)
-  const secret = req.headers.get("x-admin-secret") || "";
-  if (secret !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
-    return json({ error: "Forbidden" }, 403);
+  const auth = await authConsultant(req);
+  if (!auth) return json({ error: "Unauthorized" }, 401);
+
+  const admin = adminClient();
+  // Só admin/super_admin OU o super-admin fundador podem rodar.
+  let allowed = false;
+  const { data: roleRow } = await admin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", auth.id)
+    .in("role", ["admin", "super_admin"])
+    .maybeSingle();
+  if (roleRow) allowed = true;
+  if (!allowed) {
+    try {
+      const { data: isSuper } = await admin.rpc("is_super_admin", { _user_id: auth.id });
+      if (isSuper === true) allowed = true;
+    } catch (_) { /* ignore */ }
   }
+  if (!allowed) return json({ error: "Forbidden — admin only" }, 403);
 
   const admin = adminClient();
   const { data: rows } = await admin
