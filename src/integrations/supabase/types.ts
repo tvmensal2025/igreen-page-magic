@@ -7006,6 +7006,7 @@ export type Database = {
           produtos: Json | null
           qtde_diretos: number | null
           sponsor_id: number | null
+          sponsor_override_id: number | null
           total_pontos: number | null
           uf: string | null
           updated_at: string
@@ -7050,6 +7051,7 @@ export type Database = {
           produtos?: Json | null
           qtde_diretos?: number | null
           sponsor_id?: number | null
+          sponsor_override_id?: number | null
           total_pontos?: number | null
           uf?: string | null
           updated_at?: string
@@ -7094,6 +7096,7 @@ export type Database = {
           produtos?: Json | null
           qtde_diretos?: number | null
           sponsor_id?: number | null
+          sponsor_override_id?: number | null
           total_pontos?: number | null
           uf?: string | null
           updated_at?: string

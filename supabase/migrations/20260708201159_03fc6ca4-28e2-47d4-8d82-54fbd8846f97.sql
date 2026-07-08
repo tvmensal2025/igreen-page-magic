@@ -1,0 +1,2 @@
+ALTER TABLE public.network_members ADD COLUMN IF NOT EXISTS sponsor_override_id integer NULL;
+CREATE INDEX IF NOT EXISTS idx_network_members_sponsor_override ON public.network_members(consultant_id, sponsor_override_id);
