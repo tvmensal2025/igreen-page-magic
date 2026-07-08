@@ -202,10 +202,36 @@ export function CampaignRodizioLeadsDialog({
 
         {!loading && !error && (
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+            {poolId && (
+              <div className="rounded-lg border bg-muted/30 p-3 flex items-center gap-3">
+                <Bell className="w-4 h-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    Métricas ao vivo da Meta (gasto, alcance, conversas, leads)
+                  </div>
+                </div>
+                <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Desligado</SelectItem>
+                    <SelectItem value="10">A cada 10 min</SelectItem>
+                    <SelectItem value="30">A cada 30 min</SelectItem>
+                    <SelectItem value="60">A cada 1 hora</SelectItem>
+                    <SelectItem value="120">A cada 2 horas</SelectItem>
+                    <SelectItem value="240">A cada 4 horas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="text-xs text-muted-foreground px-1">
               {rows.length} parceiro(s) no rodízio · {totalAssigned} lead(s) distribuído(s)
               {unassigned.length > 0 && ` · ${unassigned.length} sem parceiro`}
             </div>
+
 
             {rows.length === 0 && unassigned.length === 0 && (
               <div className="text-center py-10 text-sm text-muted-foreground">
