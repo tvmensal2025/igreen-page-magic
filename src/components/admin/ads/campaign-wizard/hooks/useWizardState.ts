@@ -172,7 +172,9 @@ const INITIAL_STATE: WizardState = {
   preflightLoading: false,
   saveTplOpen: false,
   savingTemplate: false,
+  namePrefix: "",
 };
+
 
 export interface WizardDerived {
   totalFiles: number;
