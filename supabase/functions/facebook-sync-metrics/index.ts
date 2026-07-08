@@ -458,7 +458,11 @@ Deno.serve(async (req) => {
                 lowBalance ? "Campanha pausada — saldo baixo 💳" : "Campanha pausada automaticamente",
                 reason);
             } catch (_) {}
+            try {
+              await notifyRodizioOnCampaignPaused(admin, c.id, lowBalance ? "low_balance" : "auto_performance");
+            } catch (_) {}
           } catch (pe) { console.error("[fb-sync] auto-pause failed", c.fb_campaign_id, (pe as Error).message); }
+
         }
       } catch (e) {
         const msg = (e as Error).message;
