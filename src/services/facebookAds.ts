@@ -93,6 +93,27 @@ export async function validateAccount(): Promise<ValidateResult> {
   return data as ValidateResult;
 }
 
+export interface AutoFixWhatsAppResult {
+  ok: boolean;
+  status: "ready" | "blocked" | "meta_rejected" | "error";
+  page_id?: string | null;
+  waba_id?: string | null;
+  chosen?: { id: string; display: string; digits: string; waba_id?: string | null } | null;
+  numbers?: Array<{ id: string; display: string; digits: string; waba_id?: string | null; waba_name?: string | null }>;
+  message?: string | null;
+  error?: string | null;
+  hint?: string | null;
+  meta_message?: string | null;
+  next_steps?: string[];
+  links?: Record<string, string>;
+}
+
+export async function autoFixWhatsApp(): Promise<AutoFixWhatsAppResult> {
+  const { data, error } = await supabase.functions.invoke("facebook-auto-fix-whatsapp", { body: {} });
+  if (error) await throwFunctionError(error);
+  return data as AutoFixWhatsAppResult;
+}
+
 export interface SyncAudiencesResult {
   ok: boolean;
   custom_audience_id: string | null;
