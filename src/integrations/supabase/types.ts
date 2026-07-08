@@ -2658,6 +2658,9 @@ export type Database = {
           distribuidora_default: string | null
           updated_at: string
           whatsapp_destination_number: string | null
+          whatsapp_last_verified_at: string | null
+          whatsapp_phone_number_display: string | null
+          whatsapp_phone_number_id: string | null
         }
         Insert: {
           age_max?: number
@@ -2669,6 +2672,9 @@ export type Database = {
           distribuidora_default?: string | null
           updated_at?: string
           whatsapp_destination_number?: string | null
+          whatsapp_last_verified_at?: string | null
+          whatsapp_phone_number_display?: string | null
+          whatsapp_phone_number_id?: string | null
         }
         Update: {
           age_max?: number
@@ -2680,6 +2686,9 @@ export type Database = {
           distribuidora_default?: string | null
           updated_at?: string
           whatsapp_destination_number?: string | null
+          whatsapp_last_verified_at?: string | null
+          whatsapp_phone_number_display?: string | null
+          whatsapp_phone_number_id?: string | null
         }
         Relationships: []
       }
