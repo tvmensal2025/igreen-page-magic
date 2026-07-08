@@ -21,7 +21,9 @@ import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
 import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
-import { useNetworkGpMes } from "@/hooks/useNetworkGpMes";
+import { useNetworkAggregates } from "@/hooks/useNetworkGpMes";
+import { useGreenSettings } from "@/features/produtos/acompanhamento/greenHooks";
+import { careerBonusPercent, graduacaoDisplay, graduacaoRank } from "@/features/produtos/acompanhamento/greenCommission";
 
 
 import { TeamRankingTab } from "./TeamRankingTab";
