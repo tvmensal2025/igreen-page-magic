@@ -6,6 +6,21 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
+const AUTH_OPERATION_TIMEOUT_MS = 18000;
+
+async function withAuthTimeout<T>(promise: PromiseLike<T>, message = "A autenticação demorou demais. Tente novamente.") {
+  let timeoutId: number | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), AUTH_OPERATION_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Card para o usuário trocar a própria senha dentro das Configurações.
  *
@@ -53,21 +68,30 @@ export function ChangePasswordCard() {
     setSaving(true);
     try {
       // Descobre o e-mail do usuário logado para revalidar a senha atual.
-      const { data: userData } = await supabase.auth.getUser();
+      const { data: userData } = await withAuthTimeout(
+        supabase.auth.getUser(),
+        "Não foi possível validar seu usuário agora. Tente novamente."
+      );
       const email = userData.user?.email;
       if (!email) throw new Error("Não foi possível identificar seu usuário. Entre novamente.");
 
       // 1) Revalida a senha atual.
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password: currentPassword,
-      });
+      const { error: signInError } = await withAuthTimeout(
+        supabase.auth.signInWithPassword({
+          email,
+          password: currentPassword,
+        }),
+        "A validação da senha atual demorou demais. Tente novamente."
+      );
       if (signInError) {
         throw new Error("Senha atual incorreta.");
       }
 
       // 2) Aplica a nova senha.
-      const { error: updateError } = await supabase.auth.updateUser({ password: newPassword });
+      const { error: updateError } = await withAuthTimeout(
+        supabase.auth.updateUser({ password: newPassword }),
+        "A alteração de senha demorou demais. Tente novamente."
+      );
       if (updateError) throw updateError;
 
       toast({ title: "Senha alterada!", description: "Use a nova senha no próximo acesso." });

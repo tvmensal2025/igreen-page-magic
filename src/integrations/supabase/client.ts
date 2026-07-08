@@ -5,13 +5,40 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
+const SUPABASE_FETCH_TIMEOUT_MS = 15000;
+
+const fetchWithTimeout: typeof fetch = async (input, init?: RequestInit) => {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
+  const requestInit = init ?? {};
+
+  try {
+    return await fetch(input, {
+      ...requestInit,
+      signal: requestInit.signal ?? controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("A conexão com o servidor demorou demais. Tente novamente.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+};
+
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  global: {
+    fetch: fetchWithTimeout,
+  },
   auth: {
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: "pkce",
   }
 });

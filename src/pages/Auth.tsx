@@ -20,6 +20,21 @@ function slugify(s: string) {
     .slice(0, 40);
 }
 
+const AUTH_OPERATION_TIMEOUT_MS = 18000;
+
+async function withAuthTimeout<T>(promise: PromiseLike<T>, message = "A autenticação demorou demais. Tente novamente.") {
+  let timeoutId: number | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), AUTH_OPERATION_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId);
+  }
+}
+
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
@@ -74,9 +89,12 @@ const Auth = () => {
     setLoading(true);
     try {
       if (!email.trim()) throw new Error("Informe seu e-mail.");
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/auth`,
-      });
+      const { error } = await withAuthTimeout(
+        supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: `${window.location.origin}/auth`,
+        }),
+        "O envio do link demorou demais. Tente novamente."
+      );
       if (error) throw error;
       toast({
         title: "Link enviado!",
@@ -100,7 +118,10 @@ const Auth = () => {
     try {
       if (password.length < 6) throw new Error("A senha deve ter pelo menos 6 caracteres.");
       if (password !== confirmPassword) throw new Error("As senhas não coincidem.");
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await withAuthTimeout(
+        supabase.auth.updateUser({ password }),
+        "A alteração de senha demorou demais. Tente novamente."
+      );
       if (error) throw error;
       toast({ title: "Senha alterada!", description: "Você já pode acessar com a nova senha." });
       recoveryRef.current = false;
@@ -130,19 +151,25 @@ const Auth = () => {
       }
 
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await withAuthTimeout(
+          supabase.auth.signInWithPassword({ email, password }),
+          "O login demorou demais. Verifique sua conexão e tente novamente."
+        );
         if (error) throw error;
         toast({ title: "Login realizado com sucesso!" });
       } else {
         if (!name.trim()) throw new Error("Informe seu nome completo.");
         if (!phone.trim()) throw new Error("Informe seu WhatsApp.");
 
-        await supabase.auth.signOut();
-        const { data: signUpData, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: { emailRedirectTo: window.location.origin },
-        });
+        await withAuthTimeout(supabase.auth.signOut(), "A preparação do cadastro demorou demais. Tente novamente.");
+        const { data: signUpData, error } = await withAuthTimeout(
+          supabase.auth.signUp({
+            email,
+            password,
+            options: { emailRedirectTo: window.location.origin },
+          }),
+          "O cadastro demorou demais. Tente novamente."
+        );
         if (error) throw error;
 
         const userId = signUpData.user?.id;
