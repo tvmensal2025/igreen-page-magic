@@ -37,6 +37,7 @@ export interface WabaResolution {
   detected_paths_tried?: string[]; // debug: quais caminhos Graph testamos
   discovered_via?: string | null;  // qual caminho retornou a WABA
   next_steps?: string[];
+  missing_permissions?: string[];
 }
 
 function digitsOf(s: string | null | undefined): string {
@@ -138,6 +139,28 @@ async function scanBusinessWabaNumbers(token: string, tried: string[]): Promise<
   return out;
 }
 
+async function tokenScopes(token: string, tried: string[]): Promise<Set<string>> {
+  const scopes = new Set<string>();
+  const appId = Deno.env.get("FACEBOOK_APP_ID");
+  const appSecret = Deno.env.get("FACEBOOK_APP_SECRET");
+  if (!appId || !appSecret) return scopes;
+  try {
+    tried.push("debug_token.scopes");
+    const r = await fetch(`${FB_GRAPH}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${appId}|${appSecret}`)}`);
+    const j = await r.json().catch(() => ({}));
+    const rawScopes = Array.isArray(j?.data?.scopes) ? j.data.scopes : [];
+    for (const s of rawScopes) scopes.add(String(s));
+    const granular = Array.isArray(j?.data?.granular_scopes) ? j.data.granular_scopes : [];
+    for (const g of granular) if (g?.scope) scopes.add(String(g.scope));
+  } catch { /* best effort */ }
+  return scopes;
+}
+
+function missingWhatsAppScopes(scopes: Set<string>): string[] {
+  const required = ["whatsapp_business_management"];
+  return required.filter((scope) => !scopes.has(scope));
+}
+
 function isRealPhoneId(id: string | null | undefined): boolean {
   return /^\d+$/.test(String(id || ""));
 }
@@ -208,6 +231,8 @@ export async function resolveWabaPhone(
   const savedPhoneIdIsReal = isRealPhoneId(savedPhoneId);
 
   const tried: string[] = [];
+  const scopes = await tokenScopes(token, tried);
+  const missingPermissions = missingWhatsAppScopes(scopes);
   const wabaDiscovery = await discoverWabaId(pageId, token, tried);
   const wabaId = wabaDiscovery?.id ?? null;
   const discoveredVia = wabaDiscovery?.via ?? null;
@@ -300,11 +325,19 @@ export async function resolveWabaPhone(
       page_id: pageId,
       numbers: businessNumbers,
       hint: savedDigits
-        ? `O número ${savedDigits} está salvo, mas não foi encontrado em nenhuma WABA acessível e a Página ${pageId} não expõe WABA vinculada.`
+        ? missingPermissions.length
+          ? `A conta Facebook da plataforma está conectada, mas sem a permissão ${missingPermissions.join(", ")}. Por isso a Meta não deixa o sistema enxergar a WABA/número ${savedDigits}.`
+          : `O número ${savedDigits} está salvo, mas não foi encontrado em nenhuma WABA acessível e a Página ${pageId} não expõe WABA vinculada.`
         : `Página ${pageId} não expõe WABA via Graph e nenhuma WABA acessível trouxe um telefone selecionável.`,
       detected_paths_tried: tried,
       discovered_via: null,
-      next_steps: nextStepsNoWaba,
+      next_steps: missingPermissions.length
+        ? [
+          "Reconecte a conta Facebook da plataforma e aceite a permissão WhatsApp Business Management.",
+          "Depois volte em Dados → WhatsApp dos anúncios Meta e clique em Validar e corrigir automático.",
+        ]
+        : nextStepsNoWaba,
+      missing_permissions: missingPermissions,
     };
   }
 

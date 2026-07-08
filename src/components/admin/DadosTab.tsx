@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { autoFixWhatsApp, type AutoFixWhatsAppResult } from "@/services/facebookAds";
+import { autoFixWhatsApp, startFacebookOAuth, type AutoFixWhatsAppResult } from "@/services/facebookAds";
 import {
   GRADUACAO_OPTIONS,
   graduacaoDisplay,
@@ -58,6 +58,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
   const [ctwaPhoneId, setCtwaPhoneId] = useState<string>("");
   const [ctwaSaving, setCtwaSaving] = useState<boolean>(false);
   const [ctwaAutoFixing, setCtwaAutoFixing] = useState<boolean>(false);
+  const [ctwaReconnecting, setCtwaReconnecting] = useState<boolean>(false);
   const [ctwaAutoFixResult, setCtwaAutoFixResult] = useState<AutoFixWhatsAppResult | null>(null);
 
   useEffect(() => {
@@ -185,6 +186,17 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       toast({ title: "Erro na validação automática", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setCtwaAutoFixing(false);
+    }
+  };
+
+  const reconnectPlatformFacebook = async () => {
+    setCtwaReconnecting(true);
+    try {
+      const result = await startFacebookOAuth({ mode: "rerequest", scope: "platform" });
+      window.location.href = result.url;
+    } catch (e: any) {
+      toast({ title: "Erro ao reconectar Meta", description: e?.message || String(e), variant: "destructive" });
+      setCtwaReconnecting(false);
     }
   };
 
@@ -461,6 +473,12 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 <ul className="list-disc pl-5 mt-2 space-y-1 text-xs text-muted-foreground">
                   {ctwaAutoFixResult.next_steps.map((step) => <li key={step}>{step}</li>)}
                 </ul>
+              )}
+              {!!ctwaAutoFixResult.missing_permissions?.length && (
+                <Button type="button" size="sm" onClick={reconnectPlatformFacebook} disabled={ctwaReconnecting} className="mt-3 gap-2">
+                  {ctwaReconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+                  Reconectar Meta com permissão WhatsApp
+                </Button>
               )}
             </div>
           )}

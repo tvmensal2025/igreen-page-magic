@@ -20,6 +20,18 @@ function redirect(origin: string, params: Record<string, string>): Response {
   return new Response(null, { status: 302, headers: { Location: u.toString() } });
 }
 
+async function firstBusiness(accessToken: string): Promise<{ id: string; name: string | null } | null> {
+  try {
+    const res = await fetch(`${FB_GRAPH}/me/businesses?fields=id,name&limit=10&access_token=${accessToken}`);
+    const json = await res.json().catch(() => ({}));
+    const businesses = Array.isArray(json?.data) ? json.data : [];
+    if (businesses.length === 1) return { id: String(businesses[0].id), name: businesses[0].name ?? null };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   const url = new URL(req.url);
   const origin = appOrigin(req);
@@ -106,6 +118,8 @@ Deno.serve(async (req) => {
       if (px) { pixelId = px.id; pixelName = px.name; }
     }
 
+    const business = await firstBusiness(accessToken);
+
     // 5) Persiste com service role (RLS bypass)
     const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
     const encrypted = await encryptToken(accessToken);
@@ -118,6 +132,8 @@ Deno.serve(async (req) => {
         fb_user_name: me.name,
         access_token_encrypted: encrypted,
         token_expires_at: expiresAt,
+        business_id: business?.id ?? null,
+        business_name: business?.name ?? null,
         ad_account_id: acc?.id ?? null,
         ad_account_name: acc?.name ?? null,
         ad_account_currency: acc?.currency ?? null,
@@ -133,7 +149,7 @@ Deno.serve(async (req) => {
         console.error("[fb-cb] platform upsert error", upErr);
         return redirect(redirectOrigin, { fb: "err", msg: `Falha ao salvar conta da plataforma: ${upErr.message}` });
       }
-      console.log("[fb-cb] platform connection saved", { fb_user_id: me.id, ad_account: acc?.id, page: page?.id });
+      console.log("[fb-cb] platform connection saved", { fb_user_id: me.id, business: business?.id, ad_account: acc?.id, page: page?.id });
       // Limpa SESSION_INVALIDATED de TODAS as campanhas — agora o token da plataforma está novo.
       try {
         await admin.from("facebook_campaigns")
@@ -149,8 +165,8 @@ Deno.serve(async (req) => {
       fb_user_name: me.name,
       access_token_encrypted: encrypted,
       token_expires_at: expiresAt,
-      business_id: null,
-      business_name: null,
+      business_id: business?.id ?? null,
+      business_name: business?.name ?? null,
       ad_account_id: acc?.id ?? null,
       ad_account_name: acc?.name ?? null,
       ad_account_currency: acc?.currency ?? null,

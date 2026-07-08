@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
               "Confirme o phone_number_id no WhatsApp Manager",
               "Volte em Dados e clique em Validar e corrigir automático",
             ],
+            missing_permissions: waba.missing_permissions || [],
             detected_paths_tried: waba.detected_paths_tried || [],
             discovered_via: waba.discovered_via || null,
           });
@@ -81,6 +82,7 @@ Deno.serve(async (req) => {
       needs_pick: !waba.chosen && waba.numbers.length > 1,
       hint: waba.hint,
       next_steps: waba.next_steps || [],
+      missing_permissions: waba.missing_permissions || [],
       detected_paths_tried: waba.detected_paths_tried || [],
       discovered_via: waba.discovered_via || null,
     });
