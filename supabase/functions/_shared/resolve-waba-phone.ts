@@ -254,6 +254,35 @@ export async function resolveWabaPhone(
 
   const numbers = await fetchWabaNumbers(wabaId, token);
   if (numbers.length === 0) {
+    if (savedPhoneIdIsReal) {
+      try {
+        const probed = await probePhoneNumberId(savedPhoneId, token);
+        if (probed) {
+          if (opts.persist) {
+            await admin.from("consultant_ad_settings").upsert(
+              {
+                consultant_id: consultantId,
+                whatsapp_phone_number_id: probed.id,
+                whatsapp_phone_number_display: probed.display,
+                whatsapp_destination_number: probed.digits,
+                whatsapp_last_verified_at: new Date().toISOString(),
+              },
+              { onConflict: "consultant_id" },
+            );
+          }
+          return {
+            ok: true,
+            waba_id: wabaId,
+            page_id: pageId,
+            numbers: [],
+            chosen: probed,
+            hint: "A WABA foi encontrada mas não listou telefones; phone_number_id real validado diretamente na Graph.",
+            detected_paths_tried: tried,
+            discovered_via: discoveredVia || "phone_number_id_probe",
+          };
+        }
+      } catch { /* bloqueia no no_numbers */ }
+    }
     return {
       ok: false,
       reason: "no_numbers",
