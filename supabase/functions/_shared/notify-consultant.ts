@@ -334,6 +334,71 @@ export async function notifyClientReplyWhilePaused(
 // Dedup persistente reaproveitado: 24h por lead (mesma janela do novo lead),
 // porém com chave própria (last_partner_notified_at) para não colidir com o
 // aviso do dono.
+// ─── Resolve telefone do parceiro (notification_phone → phone) ─────────────
+// Preferimos notification_phone (canal dedicado a alertas), mas caímos no
+// telefone principal do parceiro pra garantir que TODO lead atribuído
+// dispara aviso — mesmo que o parceiro não tenha configurado nada.
+async function resolvePartnerContact(
+  partnerId: string,
+): Promise<{ phone: string | null; name: string | null }> {
+  try {
+    const admin = adminClient();
+    const { data } = await admin
+      .from("referral_partners")
+      .select("nome, notification_phone, phone, is_active")
+      .eq("id", partnerId)
+      .maybeSingle();
+    if (!data || (data as any).is_active === false) return { phone: null, name: null };
+    const phone =
+      (data as any).notification_phone ||
+      (data as any).phone ||
+      null;
+    return { phone, name: (data as any).nome || null };
+  } catch {
+    return { phone: null, name: null };
+  }
+}
+
+// Dedup persistente (1× por parceiro × lead × etapa) via outbound_message_log.
+async function dedupPartnerStep(
+  customerId: string,
+  partnerId: string,
+  step: string,
+): Promise<boolean> {
+  try {
+    const admin = adminClient();
+    const idemKey = `partner_step:${partnerId}:${customerId}:${step}`;
+    const { error } = await admin.from("outbound_message_log").insert({
+      idempotency_key: idemKey,
+      customer_id: customerId,
+      result_status: `queued_partner_${step}`,
+    });
+    if (error) {
+      if ((error as any)?.code === "23505") return false; // já avisado
+      console.warn("[notify-partner-step] dedup log falhou:", error.message);
+    }
+    return true;
+  } catch (e) {
+    console.warn("[notify-partner-step] dedup erro:", (e as Error).message);
+    return true;
+  }
+}
+
+function partnerFooter(step: string): string {
+  const steps = [
+    { key: "arrived", label: "Sofia iniciou" },
+    { key: "bill_received", label: "Conta recebida" },
+    { key: "cadastro_complete", label: "Cadastro completo" },
+    { key: "portal_sent", label: "Enviado ao portal" },
+  ];
+  const idx = steps.findIndex((s) => s.key === step);
+  if (idx < 0) return "_Atualização automática iGreen 🌱_";
+  const bar = steps
+    .map((s, i) => (i < idx ? "🟢" : i === idx ? "🔵" : "⚪"))
+    .join(" ");
+  return `${bar}\n_Etapa ${idx + 1}/${steps.length} — atualização automática iGreen_ 🌱`;
+}
+
 export async function notifyPartnerNewLead(
   ownerConsultantId: string,
   partnerId: string,
@@ -343,18 +408,8 @@ export async function notifyPartnerNewLead(
     if (lead?.is_sandbox) return false;
     if (!partnerId) return false;
 
-    const admin = adminClient();
-    const { data: partner } = await admin
-      .from("referral_partners")
-      .select("nome, notification_phone, is_active")
-      .eq("id", partnerId)
-      .maybeSingle();
-
-    const phone = (partner as any)?.notification_phone;
-    if (!phone || (partner as any)?.is_active === false) {
-      // Parceiro sem número de aviso configurado → silencioso (comportamento padrão).
-      return false;
-    }
+    const { phone, name: partnerName } = await resolvePartnerContact(partnerId);
+    if (!phone) return false;
 
     // Cache rápido em memória (evita dupla chamada no mesmo isolate).
     const memKey = `partnerlead:${partnerId}:${lead.id || lead.phone_whatsapp || ""}`;
@@ -365,17 +420,118 @@ export async function notifyPartnerNewLead(
       return false;
     }
 
+    const hi = partnerName ? `Olá, ${partnerName.split(" ")[0]}! 👋\n\n` : "";
     const text =
-      `🤝 *NOVO CLIENTE PELA SUA INDICAÇÃO!*\n` +
+      `${hi}🎉 *NOVO LEAD CHEGOU PRA VOCÊ!*\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
-      `👤 *Nome:* ${lead.name?.trim() || "(sem nome ainda)"}\n` +
+      `👤 *Nome:* ${lead.name?.trim() || "(coletando…)"}\n` +
       `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
-      `🕐 *Entrou em:* ${nowBRT()}\n\n` +
-      `O atendimento já começou. 🚀`;
+      `🕐 *Entrou em:* ${nowBRT()}\n` +
+      `🤖 *Atendendo:* Sofia (IA iGreen)\n\n` +
+      `A Sofia já começou o atendimento e vai coletar todos os dados.\n` +
+      `Você vai receber avisos aqui a cada etapa concluída. 🚀\n\n` +
+      partnerFooter("arrived");
 
     return sendRawToNumber(ownerConsultantId, phone, text);
   } catch (e) {
     console.warn("[notify-partner-lead] erro:", (e as Error).message);
+    return false;
+  }
+}
+
+// ─── Passo a passo do lead para o parceiro ─────────────────────────────────
+// Dispara UMA mensagem por etapa (dedup por parceiro × lead × step). Se o
+// customer tem `referral_partner_id`, o parceiro recebe atualização sempre
+// que o lead avança: conta recebida → cadastro completo → enviado ao portal
+// → (opcional) handoff.
+export type PartnerStepKind =
+  | "bill_received"
+  | "cadastro_complete"
+  | "portal_sent"
+  | "handoff";
+
+export async function notifyPartnerStep(
+  ownerConsultantId: string,
+  customerId: string,
+  step: PartnerStepKind,
+  extra?: { note?: string },
+): Promise<boolean> {
+  try {
+    if (!ownerConsultantId || !customerId) return false;
+
+    const admin = adminClient();
+    const { data: customer } = await admin
+      .from("customers")
+      .select("id, name, phone_whatsapp, is_sandbox, referral_partner_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (!customer) return false;
+    if ((customer as any).is_sandbox) return false;
+
+    const partnerId = (customer as any).referral_partner_id as string | null;
+    if (!partnerId) return false;
+
+    const { phone, name: partnerName } = await resolvePartnerContact(partnerId);
+    if (!phone) return false;
+
+    // Cache rápido em memória.
+    const memKey = `partnerstep:${partnerId}:${customerId}:${step}`;
+    if (!shouldSend(memKey, 60_000)) return false;
+    // Dedup persistente.
+    if (!(await dedupPartnerStep(customerId, partnerId, step))) {
+      console.log(`[notify-partner-step] skip dedup step=${step} lead=${customerId}`);
+      return false;
+    }
+
+    const lead = ((customer as any).name || "").trim() || "(sem nome)";
+    const leadPhone = formatPhoneBR((customer as any).phone_whatsapp);
+    const hi = partnerName ? `Olá, ${partnerName.split(" ")[0]}! 👋\n\n` : "";
+
+    let title = "";
+    let body = "";
+    switch (step) {
+      case "bill_received":
+        title = "📄 *CONTA DE LUZ RECEBIDA*";
+        body =
+          `A Sofia acabou de receber a conta de luz do seu lead ` +
+          `*${lead}* e já começou a análise (OCR).\n\n` +
+          `_Próximo passo: coletar CPF, endereço e finalizar o cadastro._`;
+        break;
+      case "cadastro_complete":
+        title = "🎯 *CADASTRO COMPLETO*";
+        body =
+          `Todos os dados de *${lead}* foram coletados com sucesso! ✅\n\n` +
+          `_Próximo passo: enviar o cadastro ao portal da iGreen._`;
+        break;
+      case "portal_sent":
+        title = "🚀 *ENVIADO AO PORTAL iGREEN*";
+        body =
+          `O cadastro de *${lead}* foi enviado ao portal iGreen. ✅\n\n` +
+          `📲 O cliente vai receber um *código de verificação* no WhatsApp — ` +
+          `a Sofia cuida disso automaticamente.\n\n` +
+          `Quando aprovado, o cliente entra na sua carteira! 🎉`;
+        break;
+      case "handoff":
+        title = "🆘 *SEU LEAD PRECISA DE VOCÊ*";
+        body =
+          `A Sofia pausou o atendimento de *${lead}* porque ` +
+          `${extra?.note || "surgiu uma dúvida fora do fluxo automático"}.\n\n` +
+          `_Assuma a conversa no CRM antes que o lead esfrie._`;
+        break;
+    }
+
+    const text =
+      `${hi}${title}\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 ${lead}\n` +
+      `📱 ${leadPhone}\n` +
+      `🕐 ${nowBRT()}\n\n` +
+      `${body}\n\n` +
+      partnerFooter(step);
+
+    return sendRawToNumber(ownerConsultantId, phone, text);
+  } catch (e) {
+    console.warn("[notify-partner-step] erro:", (e as Error).message);
     return false;
   }
 }
