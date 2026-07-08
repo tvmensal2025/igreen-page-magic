@@ -1262,34 +1262,47 @@ Deno.serve(async (req) => {
     }
 
     // RATEIO ANTI-PREJUÍZO (parte 2): realinha o spend_cap das campanhas existentes
-    // pra cada uma respeitar a nova fatia. Sem isso, as antigas ainda teriam o cap
-    // anterior (calculado quando havia menos campanhas) e poderiam estourar o saldo.
-    for (const ec of realignTargets) {
-      try {
-        // gasto já realizado dessa campanha específica
-        const { data: spentRow } = await admin
-          .from("facebook_metrics_daily")
-          .select("gross_spend_cents")
-          .eq("campaign_id", ec.id);
-        const ecSpent = (spentRow || []).reduce((s: number, r: any) => s + Number(r.gross_spend_cents || 0), 0);
-        const newEcCap = Math.max(30000, ecSpent + perCampaignExtra);
-        await fbFetch(`/${ec.fb_campaign_id}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ spend_cap: String(newEcCap), access_token: conn.token }),
-        });
-        await admin.from("facebook_campaigns")
-          .update({ lifetime_cap_cents: newEcCap, updated_at: new Date().toISOString() })
-          .eq("id", ec.id);
-      } catch (re) {
-        console.warn("[fb-create] realign existing cap failed", ec.fb_campaign_id, (re as Error).message);
+    // pra cada uma respeitar a nova fatia. Roda em BACKGROUND (waitUntil) pra não
+    // bloquear a resposta pro browser — o loop pode levar 15-20s quando Meta
+    // rejeita com subcodes permanentes (1885058 pending charges / 2446474 lifetime
+    // budget), o que causava "Failed to fetch" no cliente mesmo com campanha OK.
+    const realignJob = (async () => {
+      for (const ec of realignTargets) {
+        try {
+          const { data: spentRow } = await admin
+            .from("facebook_metrics_daily")
+            .select("gross_spend_cents")
+            .eq("campaign_id", ec.id);
+          const ecSpent = (spentRow || []).reduce((s: number, r: any) => s + Number(r.gross_spend_cents || 0), 0);
+          const newEcCap = Math.max(30000, ecSpent + perCampaignExtra);
+          await fbFetch(`/${ec.fb_campaign_id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({ spend_cap: String(newEcCap), access_token: conn.token }),
+          });
+          await admin.from("facebook_campaigns")
+            .update({ lifetime_cap_cents: newEcCap, updated_at: new Date().toISOString() })
+            .eq("id", ec.id);
+        } catch (re) {
+          const msg = (re as Error).message || "";
+          // subcodes permanentes: nada a fazer automaticamente — loga como info
+          if (/subcode=(1885058|2446474)/.test(msg)) {
+            console.info("[fb-create] realign skip (permanente)", ec.fb_campaign_id, msg.slice(0, 120));
+          } else {
+            console.warn("[fb-create] realign existing cap failed", ec.fb_campaign_id, msg);
+          }
+        }
       }
-    }
-
+    })();
+    try {
+      // @ts-ignore EdgeRuntime.waitUntil só existe no runtime Deno da Supabase
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(realignJob);
+    } catch { /* ambiente sem waitUntil — deixa promise soltar */ }
 
     return new Response(JSON.stringify({ ok: true, campaign_id: campaignId, adset_id: adsetId, ad_ids: adIds, ads_count: adIds.length, activated, activation_error: activationError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+
   } catch (err) {
     console.error("[fb-create] step=fatal", err);
     // notifyConsultant removido daqui — chamada externa em catch pode estourar CPU
