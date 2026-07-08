@@ -116,7 +116,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
   const filteredMetrics = useMemo(() => {
     if (!analytics) return null;
-    let walletOnly = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+    // Carteira crua: todos os clientes iGreen do consultor (para bater com o
+    // portal). O filtro "meus diretos" (filterMyClients) exclui cadastros
+    // feitos por licenciados da rede que não estão em cadastroIgreenIds —
+    // esse número vira o sub-KPI 'diretos'.
+    const walletAll = analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin));
+    let walletMine = walletAll;
     if (scope === "me" && myClientsSettings) {
       const expandedSettings = {
         ...myClientsSettings,
@@ -127,10 +132,17 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
           ]),
         ),
       };
-      walletOnly = filterMyClients(walletOnly, expandedSettings);
+      walletMine = filterMyClients(walletAll, expandedSettings);
     }
-    const filtered = selectedLicenciado === "all" ? walletOnly : walletOnly.filter((c: any) => c.registered_by_name === selectedLicenciado);
-    const totalCustomers = filtered.length;
+    // Total de cadastros = carteira sincronizada (bate com o portal).
+    // Aplica somente o filtro de licenciado quando o usuário seleciona um.
+    const walletForTotal = selectedLicenciado === "all"
+      ? walletAll
+      : walletAll.filter((c: any) => c.registered_by_name === selectedLicenciado);
+    // Filtered = usado nos gráficos/cards secundários (respeita "meus diretos")
+    const filtered = selectedLicenciado === "all" ? walletMine : walletMine.filter((c: any) => c.registered_by_name === selectedLicenciado);
+    const totalCustomers = walletForTotal.length;
+    const directCustomers = filtered.length;
     const totalKw = filtered.reduce((sum: number, c: any) => sum + (Number(c.media_consumo) || 0), 0);
     const withConsumption = filtered.filter((c: any) => Number(c.media_consumo) > 0);
     const avgKw = withConsumption.length > 0 ? totalKw / withConsumption.length : 0;
@@ -174,7 +186,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       }
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
-    return { totalCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
+    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
   }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
 
   const handleDashboardSync = async () => {
@@ -358,7 +370,19 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
       {/* CLIENTES iGREEN — 4 cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4">
-        <StatCard icon={<Users className="w-5 h-5" />} label="Total de cadastros" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
+        <StatCard
+          icon={<Users className="w-5 h-5" />}
+          label="Total de cadastros"
+          value={filteredMetrics?.totalCustomers ?? 0}
+          color="primary"
+          subtitle={
+            scope === "me" &&
+            filteredMetrics &&
+            filteredMetrics.directCustomers !== filteredMetrics.totalCustomers
+              ? `diretos: ${filteredMetrics.directCustomers.toLocaleString("pt-BR")}`
+              : undefined
+          }
+        />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
         <StatCard icon={<DollarSign className="w-5 h-5" />} label="Ticket médio (conta)" value={formatCompactBRL(filteredMetrics?.avgBill ?? 0)} color="primary" subtitle="estimado pela tarifa média" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />

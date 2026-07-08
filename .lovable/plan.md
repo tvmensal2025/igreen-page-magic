@@ -1,87 +1,46 @@
-# Corrigir métricas do rodízio + intervalo configurável por pool
+## Diagnóstico
 
-Dois problemas para resolver:
+O portal iGreen mostra **572 clientes** para `rafael.ids@icloud.com`. O worker sincroniza e o banco tem **576 clientes com `customer_origin = igreen_sync`** para esse consultor — ou seja, a sincronização está correta.
 
-1. **Mensagem foi enviada com métricas zeradas** — a função lia `facebook_metrics_daily`, que só é populada 1x/dia pelo cron `facebook-metrics-sync`. Para a campanha nova do Jaraguá essa tabela tinha 0 linhas, então tudo saiu R$ 0,00 / 0 alcance. Isso passa impressão errada e não pode acontecer.
+O que quebra na tela `Admin → Dashboard`:
 
-2. **Intervalo fixo em 10 min** — você quer poder escolher 10min, 30min, 1h, 2h ou qualquer período por rodízio.
+- O card "Total de cadastros" usa `filterMyClients()` quando o escopo é **"Meu"**.
+- Esse filtro só aceita clientes cujo `registered_by_igreen_id` bate com o meu `igreen_id` **ou** com um `igreen_id` que está na minha rede sincronizada.
+- Dos 576 clientes da carteira, **539 têm `registered_by_igreen_id`** de **29 licenciados diferentes**. Muitos desses licenciados **não estão** em `cadastroIgreenIds` (rede só tem 33 membros no mês corrente, mas a carteira histórica traz cadastros de licenciados que já não estão ativos).
+- Resultado: o filtro esconde ~260 clientes → mostra **312** em vez de 572.
 
-## O que muda
+Ou seja, não é bug de sync: é o KPI "Total de cadastros" usando um filtro "meus diretos" e chamando isso de "total". Para o consultor dono da conta iGreen, todo cliente que está na carteira dele **é dele**, mesmo que tenha sido cadastrado por um licenciado da rede.
 
-### A) Métricas em tempo real (via Meta Graph Insights)
-- A função `rodizio-metrics-broadcast` passa a buscar métricas **ao vivo na Meta API**, não da tabela local
-- Usa `loadCampaignConnection` + `fbFetch` (helpers já existentes em `_shared/fb-graph.ts`, mesmos usados por `facebook-campaign-status`)
-- Endpoints:
-  - `/{fb_campaign_id}/insights?fields=spend,impressions,reach,actions&date_preset=today`
-  - Mesmo endpoint com `date_preset=last_7d` para o histórico
-  - `actions` traz `onsite_conversion.messaging_conversation_started_7d` → número REAL de conversas iniciadas pelo CTWA (mesmo antes de virar lead no CRM)
-- Leads reais: `count(customers.id where source_campaign_id=X)` — mantém, mas soma junto com `messaging_conversations_started` da Meta (mostra os 2: "Conversas iniciadas: N (Meta) · Leads no CRM: M")
-- Cache: guarda o resultado em memória por 5 min para não bater na Meta a cada parceiro do mesmo pool
+## Correção
 
-### B) Guard "nunca enviar vazio"
-Se **todos** os indicadores da Meta vierem zerados E o gasto for 0 E a campanha tem menos de 30 min de vida → **não envia** (marca `skipped: cold_start` no retorno). Isso evita o "quase-roubando" que aconteceu.
+Uma única mudança de UI/lógica no card, sem mexer em sync nem em banco:
 
-Se a Meta API falhar (erro/timeout), envia mensagem alternativa:
-> ⚠️ Não consegui puxar as métricas ao vivo agora. Vou tentar de novo na próxima janela.
+### 1. `src/components/admin/DashboardTab.tsx` — separar "carteira" de "meus diretos"
 
-Nunca envia número zero como se fosse verdade sem checar antes.
+- No `useMemo filteredMetrics`, calcular **dois totais**:
+  - `walletTotal` = `analytics.allCustomers.filter(isIgreenWalletOrigin)` **sem** `filterMyClients` (com o filtro de licenciado ainda aplicando quando `selectedLicenciado !== "all"`). Esse é o número que precisa bater com o portal (572).
+  - `myDirectTotal` = resultado atual, com `filterMyClients` aplicado (312 — cadastros diretos meus + rede ativa).
+- Renderizar o `StatCard` "Total de cadastros" usando `walletTotal` como valor principal. Abaixo do número, adicionar um sub‑rótulo discreto: `· diretos: {myDirectTotal}` quando `scope === "me"` e `walletTotal !== myDirectTotal`.
+- Um pequeno tooltip / `title` explicando: "Total sincronizado do portal iGreen. 'Diretos' = cadastros feitos pelo seu igreen_id ou pela sua rede ativa."
+- Os demais gráficos e agregações do dashboard continuam usando `filtered` (com filtro "meus") — só o KPI de total muda.
 
-### C) Intervalo configurável por rodízio
-- Nova coluna: `rodizio_pools.metrics_broadcast_interval_minutes int default 10` (valores permitidos: 0, 10, 30, 60, 120, 240 — 0 = desligado)
-- Cron continua rodando a cada 10 min, mas dentro da função:
-  ```
-  const slotMin = Math.floor(nowMinutes / interval) * interval
-  if (last_sent_slot === slotMin) skip
-  ```
-  Ou seja, pool com intervalo de 60 min só envia quando o minuto atual é múltiplo de 60.
-- Dedup existente (`outbound_message_log.idempotency_key`) passa a usar o `slotMin` do próprio pool no lugar do slot fixo de 10 min
+### 2. Fallback defensivo em `src/hooks/useAnalytics.ts` (só se necessário)
 
-### D) UI: seletor de frequência
-No card do rodízio da campanha (dialog `CampaignRodizioLeadsDialog`), adicionar um `Select`:
+Se depois da correção o número ainda estiver abaixo de 572, é porque a query paginada em `customers` está trazendo menos linhas do que existe. A paginação atual usa `range(page * 1000, (page+1)*1000 - 1)` e para quando `data.length < 1000` — está certo para 576 rows. Não precisa mexer, mas incluo verificação rápida no console para garantir.
 
-```
-🔔 Frequência das atualizações no WhatsApp:
-[ Desligado | 10 min | 30 min | 1 hora | 2 horas | 4 horas ]  (padrão: 10 min)
-```
+### 3. Sem migração e sem mudança no worker
 
-Salva direto em `rodizio_pools.metrics_broadcast_interval_minutes`.
+- Worker está correto (v18, retorna 572).
+- Edge function `sync-igreen-customers` está correta (persiste 576).
+- Nenhum schema muda.
 
-## Arquivos
+## Arquivos afetados
 
-**Editar**
-- `supabase/functions/rodizio-metrics-broadcast/index.ts` — Meta Insights ao vivo, guard de vazio, respeita `metrics_broadcast_interval_minutes`
-- `supabase/functions/_shared/rodizio-metrics-format.ts` — nova linha "Conversas iniciadas (Meta)"; texto de fallback para erro
-- `src/components/admin/ads/CampaignRodizioLeadsDialog.tsx` (ou onde exibimos o card do rodízio) — `<Select>` de frequência
+- `src/components/admin/DashboardTab.tsx` (edit, ~15 linhas no bloco `filteredMetrics` + JSX do `StatCard`)
 
-**Migration**
-- `ALTER TABLE rodizio_pools ADD COLUMN metrics_broadcast_interval_minutes int NOT NULL DEFAULT 10 CHECK (metrics_broadcast_interval_minutes IN (0,10,30,60,120,240));`
+## Validação
 
-## Formato novo da mensagem
-
-```
-📊 *RODÍZIO — Atualização*
-━━━━━━━━━━━━━━━━━━
-🎯 Jaraguá · iGreen
-🕐 08/07 15:20
-
-💰 *Hoje (ao vivo)*
-├ Investido: R$ 7,10
-├ Alcance: 479 pessoas
-├ Impressões: 512
-├ Conversas iniciadas: 0
-└ Leads no CRM: 0
-
-📆 *Últimos 7 dias*
-├ Investido: R$ 7,10
-└ Leads: 0
-
-👥 *Você no rodízio*
-├ Posição: 2º de 5
-└ Seus leads: 0
-
-😴 Campanha rodando, ainda sem conversas. Meta leva 24–48h para calibrar.
-
-_Próxima atualização em ~10 min_
-```
-
-Dados 100% vindos da Meta em tempo real, mais os leads reais do CRM — sem depender de sync diário.
+- Recarregar `/admin` como rafael, escopo "Meu" → "Total de cadastros" deve mostrar **572** (com sub‑rótulo `· diretos: 312`).
+- Trocar filtro de Licenciado → total passa a refletir a seleção.
+- Escopo "Equipe" (para líderes) segue somando a equipe inteira.
+- Como censuralivrealiaad tem só 141 clientes e todos direto dele, o número deve continuar 141 sem sub‑rótulo.
