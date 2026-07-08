@@ -202,6 +202,7 @@ Deno.serve(async (req) => {
           .insert({
             idempotency_key: idemKey,
             consultant_id: pool.consultant_id,
+            payload_hash: idemKey,
             result_status: "queued_rodizio_metrics",
           });
         if (insErr) {
