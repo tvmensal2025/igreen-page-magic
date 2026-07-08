@@ -8254,6 +8254,7 @@ export type Database = {
           is_active: boolean
           label: string
           message: string | null
+          metrics_broadcast_interval_minutes: number
           phones: string[] | null
           slug: string | null
           updated_at: string
@@ -8267,6 +8268,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           message?: string | null
+          metrics_broadcast_interval_minutes?: number
           phones?: string[] | null
           slug?: string | null
           updated_at?: string
@@ -8280,6 +8282,7 @@ export type Database = {
           is_active?: boolean
           label?: string
           message?: string | null
+          metrics_broadcast_interval_minutes?: number
           phones?: string[] | null
           slug?: string | null
           updated_at?: string
