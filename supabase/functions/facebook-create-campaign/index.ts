@@ -328,17 +328,16 @@ Deno.serve(async (req) => {
         links: WHATSAPP_FIX_LINKS,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Number oficial: preferencialmente vindo direto do display_phone_number do Meta.
-    // Em modo permission_limited, só temos os dígitos salvos; o reachestimate/adset
-    // abaixo é a validação oficial da Meta antes de seguir.
+    // Número oficial: precisa vir da WABA/Graph ou de phone_number_id real salvo.
+    // Não publicamos mais com fallback permission_limited porque a Meta recusa
+    // no AdSet e deixa campanha órfã quando Página↔WABA não está vinculado.
     const authoritativeDigits = waba.chosen.digits;
     const authoritativePhoneId = waba.chosen.id;
     const authoritativeDisplay = waba.chosen.display;
     const hasRealPhoneNumberId = /^\d+$/.test(authoritativePhoneId);
-    const isPermissionLimitedSavedNumber = authoritativePhoneId.startsWith("permission_limited:");
-    if (!hasRealPhoneNumberId && !isPermissionLimitedSavedNumber) {
+    if (!hasRealPhoneNumberId) {
       return new Response(JSON.stringify({
-        error: `O número ${authoritativeDigits} está salvo, mas o phone_number_id (${authoritativePhoneId}) não é um ID real da Meta. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página ${waba.page_id || "da plataforma"}.`,
+        error: `O número ${authoritativeDigits} está salvo, mas o phone_number_id (${authoritativePhoneId}) não é um ID numérico real da Meta. Copie o phone_number_id no WhatsApp Manager ou vincule a WABA correta à Página ${waba.page_id || "da plataforma"}.`,
         code: "WHATSAPP_BUSINESS_REQUIRED",
         phone_used: authoritativeDigits,
         phone_number_id: authoritativePhoneId,
@@ -349,7 +348,7 @@ Deno.serve(async (req) => {
         next_steps: waba.next_steps || [
           "Copie o phone_number_id numérico no WhatsApp Manager",
           "Vincule a WABA correta à Página no Meta Business Suite",
-          "Clique em Reverificar antes de publicar",
+          "Clique em Validar e corrigir WhatsApp automaticamente antes de publicar",
         ],
         links: WHATSAPP_FIX_LINKS,
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });

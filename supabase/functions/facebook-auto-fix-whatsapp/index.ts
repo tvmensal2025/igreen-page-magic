@@ -62,6 +62,23 @@ Deno.serve(async (req) => {
       return json(result);
     }
 
+    if (!/^\d+$/.test(waba.chosen.id || "")) {
+      result.error = `O número ${waba.chosen.digits} está salvo, mas ainda não temos o phone_number_id numérico real da Meta.`;
+      result.next_steps = [
+        "Copie o phone_number_id numérico no WhatsApp Manager e salve em Dados.",
+        `Vincule a WABA do número ${waba.chosen.digits} à Página ${platform.page_id}.`,
+        "Reconecte a conta da plataforma aceitando WhatsApp Business Management se a permissão estiver ausente.",
+      ];
+      await admin.from("admin_audit_log").insert({
+        admin_user_id: auth.id,
+        action: "facebook_auto_fix_whatsapp_missing_real_phone_id",
+        target_type: "consultant_ad_settings",
+        target_id: auth.id,
+        metadata: result,
+      });
+      return json(result);
+    }
+
     const promotedObject = {
       page_id: platform.page_id,
       whatsapp_phone_number: waba.chosen.digits,
