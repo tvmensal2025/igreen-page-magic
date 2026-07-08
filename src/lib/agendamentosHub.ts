@@ -72,6 +72,7 @@ export type AgendamentosHubTab =
   | "pos-venda"
   | "reaquecimento"
   | "campanhas"
+  | "rodizios"
   | "igreen"
   | "historico";
 

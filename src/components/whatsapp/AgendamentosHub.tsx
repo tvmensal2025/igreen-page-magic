@@ -23,13 +23,16 @@ import {
 import {
   Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
-  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap,
+  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell,
 } from "lucide-react";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
+);
+const RodiziosBroadcastPanel = lazy(() =>
+  import("./RodiziosBroadcastPanel").then((m) => ({ default: m.RodiziosBroadcastPanel })),
 );
 
 /** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
@@ -258,6 +261,15 @@ export function AgendamentosHub({
       action: () => setActiveTab("campanhas"),
     },
     {
+      id: "rodizios" as const,
+      title: "Métricas para parceiros de rodízio",
+      desc: "Enviamos automaticamente no WhatsApp de cada parceiro do rodízio: gasto, alcance, conversas e leads da campanha. Escolha o intervalo (10min, 30min, 1h, 2h ou 4h) por campanha.",
+      icon: Bell,
+      badge: "Configurável",
+      badgeOn: true,
+      action: () => setActiveTab("rodizios"),
+    },
+    {
       id: "igreen" as const,
       title: "Automações iGreen",
       desc: "Captura de boletos, devolutivas, telecom, seguros e cashback (sempre salvando). Alertas e envios proativos por WhatsApp.",
@@ -391,6 +403,7 @@ export function AgendamentosHub({
             <TabsTrigger value="pos-venda" className="text-xs">Pós-venda</TabsTrigger>
             <TabsTrigger value="reaquecimento" className="text-xs">Reaquecimento</TabsTrigger>
             <TabsTrigger value="campanhas" className="text-xs">Campanhas</TabsTrigger>
+            <TabsTrigger value="rodizios" className="text-xs">Rodízios</TabsTrigger>
             <TabsTrigger value="igreen" className="text-xs">Automações iGreen</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
           </TabsList>
@@ -692,6 +705,13 @@ export function AgendamentosHub({
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Rodízios: métricas para parceiros ── */}
+          <TabsContent value="rodizios" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <RodiziosBroadcastPanel consultantId={consultantId} />
+            </Suspense>
           </TabsContent>
 
           {/* ── Automações iGreen ── */}
