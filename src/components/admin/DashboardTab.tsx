@@ -203,8 +203,8 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       }
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
-    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds]);
+    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, recorrenciaGarantida, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, isLeader]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
