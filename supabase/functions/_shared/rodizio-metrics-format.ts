@@ -103,3 +103,20 @@ export function formatRodizioFallbackMessage(campaignName: string, nowLabel: str
     `Vou tentar de novo em ~${intervalLabel(intervalMinutes)}.`,
   ].join("\n");
 }
+
+/**
+ * Mensagem única de "campanha aprovada pela Meta". Enviada 1x por pool para
+ * cada parceiro elegível assim que a campanha entra em ACTIVE. Depois disso
+ * o parceiro recebe apenas o card de métricas na cadência configurada.
+ */
+export function formatCampaignApprovedMessage(campaignName: string, intervalMinutes: number): string {
+  return [
+    `✅ *Campanha aprovada pela Meta!*`,
+    `🎯 ${campaignName}`,
+    ``,
+    `A partir de agora você vai receber uma atualização`,
+    `com as métricas ao vivo *a cada ${intervalLabel(intervalMinutes)}*.`,
+    ``,
+    `Bons leads! 🚀`,
+  ].join("\n");
+}
