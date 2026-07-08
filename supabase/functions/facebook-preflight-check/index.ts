@@ -169,7 +169,13 @@ Deno.serve(async (req) => {
           warnings.push(`Audiência muito pequena (${lower.toLocaleString("pt-BR")}) — adicione mais cidades pra baratear o lead`);
         }
       } catch (e) {
-        warnings.push("Não foi possível estimar alcance — campanha será criada mesmo assim");
+        const msg = String((e as Error)?.message || "");
+        const isWabaMismatch = msg.includes("1487246") || msg.includes("2446885") || /not linked to your account/i.test(msg);
+        if (isWabaMismatch && resolvedPhone) {
+          blockers.push(`A Meta recusou o WhatsApp ${resolvedPhone.display} (${resolvedPhone.digits}, id ${resolvedPhone.id}) para a Página ${conn.page_id}. Vincule a WABA correta à Página ou rode “Validar e corrigir WhatsApp automaticamente”. Detalhe Meta: ${msg}`);
+        } else {
+          warnings.push("Não foi possível estimar alcance — campanha será criada mesmo assim");
+        }
       }
     }
 
