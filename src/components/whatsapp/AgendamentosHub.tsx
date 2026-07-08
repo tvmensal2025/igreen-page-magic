@@ -23,7 +23,7 @@ import {
 import {
   Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
-  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap,
+  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell,
 } from "lucide-react";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 
