@@ -172,15 +172,16 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
     try {
       const result = await autoFixWhatsApp();
       setCtwaAutoFixResult(result);
+      const realPhoneId = result.chosen && /^\d+$/.test(result.chosen.id || "");
       if (result.chosen) {
         setCtwaNumber(result.chosen.digits || "");
-        if (/^\d+$/.test(result.chosen.id || "")) setCtwaPhoneId(result.chosen.id || "");
+        if (realPhoneId) setCtwaPhoneId(result.chosen.id || "");
       }
       toast({
-        title: result.ok ? "WhatsApp validado automaticamente" : "Meta ainda bloqueou o WhatsApp",
+        title: result.ok && realPhoneId ? "WhatsApp validado automaticamente" : "Meta ainda bloqueou o WhatsApp",
         description: result.message || result.error || result.hint || "Validação concluída.",
-        variant: result.ok ? "default" : "destructive",
-        duration: result.ok ? 2600 : 7000,
+        variant: result.ok && realPhoneId ? "default" : "destructive",
+        duration: result.ok && realPhoneId ? 2600 : 7000,
       });
     } catch (e: any) {
       toast({ title: "Erro na validação automática", description: e?.message || String(e), variant: "destructive" });
@@ -447,8 +448,8 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           {ctwaAutoFixResult && (
             <div className={`rounded-lg border p-3 text-sm ${ctwaAutoFixResult.ok ? "border-success/30 bg-success/10" : "border-destructive/30 bg-destructive/10"}`}>
               <p className="font-semibold text-foreground flex items-center gap-2">
-                {ctwaAutoFixResult.ok ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
-                {ctwaAutoFixResult.ok ? "Pronto para publicar" : "Ação pendente na Meta"}
+                {ctwaAutoFixResult.ok && /^[0-9]+$/.test(ctwaAutoFixResult.chosen?.id || "") ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
+                {ctwaAutoFixResult.ok && /^[0-9]+$/.test(ctwaAutoFixResult.chosen?.id || "") ? "Pronto para publicar" : "Ação pendente na Meta"}
               </p>
               <p className="text-xs text-muted-foreground mt-1">
                 {ctwaAutoFixResult.message || ctwaAutoFixResult.error || ctwaAutoFixResult.hint || "Resultado recebido."}

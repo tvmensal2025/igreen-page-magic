@@ -11,7 +11,7 @@ function appOrigin(req: Request): string {
   if (ref) {
     try { return new URL(ref).origin; } catch { /* ignore */ }
   }
-  return "https://igreen.institutodossonhos.com.br";
+  return "https://igreen.cloud";
 }
 
 function redirect(origin: string, params: Record<string, string>): Response {

@@ -1,8 +1,7 @@
 // Resolve o número WhatsApp para publicar CTWA.
 // Preferência: lista viva de phone_numbers da WABA vinculada à Página.
 // Quando a Meta não entrega a permissão whatsapp_business_management no token,
-// usamos o número salvo apenas como fallback de dígitos e deixamos a própria
-// Marketing API validar no reachestimate/adset antes de criar anúncio ativo.
+// não publicamos com fallback: exigimos phone_number_id real ou WABA vinculada.
 
 import { adminClient } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
@@ -321,27 +320,23 @@ export async function resolveWabaPhone(
     }
 
     // App/token sem whatsapp_business_management: a Graph não deixa listar WABA
-    // nem phone_numbers, mas a Marketing API ainda aceita CTWA quando a Página já
-    // está ligada ao número. Não bloqueia cedo: usa o número salvo e deixa
-    // reachestimate/adset validar oficialmente com page_id + whatsapp_phone_number.
+    // nem phone_numbers. Antes tentávamos publicar com fallback de dígitos, mas
+    // isso cria campanhas/adsets órfãos quando a Meta recusa o vínculo Página↔WABA.
+    // Agora bloqueamos cedo até existir phone_number_id real ou WABA acessível.
     if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
       return {
-        ok: true,
-        reason: undefined,
+        ok: false,
+        reason: "no_waba",
         page_id: pageId,
         numbers: businessNumbers,
-        chosen: {
-          id: `permission_limited:${savedDigits}`,
-          display: savedDisplay || `+${savedDigits}`,
-          digits: savedDigits,
-          source: "saved_fallback",
-        },
-        hint: "Token sem whatsapp_business_management; usando o número salvo e deixando a Meta validar a ligação Página↔WhatsApp na criação.",
+        chosen: null,
+        hint: `A conta Facebook da plataforma está conectada, mas sem a permissão whatsapp_business_management. Salve o phone_number_id numérico real do número ${savedDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
         detected_paths_tried: tried,
-        discovered_via: "permission_limited_saved_number",
+        discovered_via: null,
         next_steps: [
-          "Se a Meta recusar na publicação, reconecte a conta da plataforma aceitando WhatsApp Business Management.",
+          "Reconecte a conta Facebook da plataforma aceitando WhatsApp Business Management.",
           `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
+          "Ou copie o phone_number_id numérico real no WhatsApp Manager e salve em Dados.",
         ],
         missing_permissions: missingPermissions,
       };
@@ -402,23 +397,19 @@ export async function resolveWabaPhone(
     }
     if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
       return {
-        ok: true,
+        ok: false,
+        reason: "no_numbers",
         waba_id: wabaId,
         page_id: pageId,
         numbers: [],
-        chosen: {
-          id: `permission_limited:${savedDigits}`,
-          display: savedDisplay || `+${savedDigits}`,
-          digits: savedDigits,
-          waba_id: wabaId,
-          source: "saved_fallback",
-        },
-        hint: "A WABA foi detectada, mas o token não tem permissão para listar telefones; usando o número salvo e deixando a Meta validar na criação.",
+        chosen: null,
+        hint: `A WABA foi detectada, mas o token não tem permissão para listar telefones. Salve o phone_number_id numérico real do número ${savedDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
         detected_paths_tried: tried,
-        discovered_via: discoveredVia || "permission_limited_saved_number",
+        discovered_via: discoveredVia,
         next_steps: [
-          "Se a Meta recusar na publicação, reconecte a conta da plataforma aceitando WhatsApp Business Management.",
+          "Reconecte a conta Facebook da plataforma aceitando WhatsApp Business Management.",
           `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
+          "Ou copie o phone_number_id numérico real no WhatsApp Manager e salve em Dados.",
         ],
         missing_permissions: missingPermissions,
       };
