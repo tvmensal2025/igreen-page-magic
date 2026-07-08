@@ -31,6 +31,9 @@ const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ defa
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
+const RodiziosBroadcastPanel = lazy(() =>
+  import("./RodiziosBroadcastPanel").then((m) => ({ default: m.RodiziosBroadcastPanel })),
+);
 
 /** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
 function describeSource(item: AgendamentoTimelineItem): {
