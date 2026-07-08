@@ -155,22 +155,39 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
 
   const handleSaveAsTemplate = useCallback(async (meta: { title: string; description: string }) => {
     if (!state.headline.trim() || !state.primaryText.trim()) return toast({ title: "Preencha headline e texto antes", variant: "destructive" });
-    if (derived.totalFiles === 0 && state.pickedLibrary.length === 0) return toast({ title: "Adicione ao menos 1 imagem", variant: "destructive" });
+    const isVideo = state.creativeMode === "video";
+    if (isVideo) {
+      if (!state.videoFile && !state.videoUrl) return toast({ title: "Adicione o vídeo antes de salvar como template", variant: "destructive" });
+    } else {
+      if (derived.totalFiles === 0 && state.pickedLibrary.length === 0) return toast({ title: "Adicione ao menos 1 imagem", variant: "destructive" });
+    }
     if (!meta.title.trim()) return toast({ title: "Informe um nome para o template", variant: "destructive" });
     patch({ savingTemplate: true });
     try {
-      const tagged = taggedFiles();
-      const photoUrls = tagged.length
-        ? await uploadAdPhotos(consultantId, tagged.map((t) => t.file.file), { formats: tagged.map((t) => t.format) })
-        : [];
-      const photos = [
-        ...photoUrls.map((url, i) => ({ url, format: tagged[i].format })),
-        ...state.pickedLibrary.map((it) => ({ url: it.url, format: it.format as AdFormat })),
-      ];
+      let photos: { url: string; format: AdFormat }[] = [];
+      let videoUrl: string | null = null;
+      if (isVideo) {
+        videoUrl = state.videoFile
+          ? (await uploadAdVideo(consultantId, state.videoFile)).url
+          : state.videoUrl;
+      } else {
+        const tagged = taggedFiles();
+        const photoUrls = tagged.length
+          ? await uploadAdPhotos(consultantId, tagged.map((t) => t.file.file), { formats: tagged.map((t) => t.format) })
+          : [];
+        photos = [
+          ...photoUrls.map((url, i) => ({ url, format: tagged[i].format })),
+          ...state.pickedLibrary.map((it) => ({ url: it.url, format: it.format as AdFormat })),
+        ];
+      }
       await upsertAdTemplate({
         title: meta.title.trim(),
         description: meta.description.trim() || null,
-        photos, headline: state.headline, primary_text: state.primaryText, description_text: state.description,
+        photos,
+        video_url: videoUrl,
+        video_thumb_url: null,
+        creative_mode: isVideo ? "video" : "photo",
+        headline: state.headline, primary_text: state.primaryText, description_text: state.description,
         age_min: 28, age_max: 60,
         suggested_daily_budget_cents: Math.round(state.budget * 100),
         status: isSuperAdmin ? "published" : "draft",
