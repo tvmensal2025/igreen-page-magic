@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Camera, Settings, Globe, Save, Bot, Loader2, GraduationCap } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, ExternalLink, Settings, Globe, Save, Bot, Loader2, GraduationCap, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { autoFixWhatsApp, type AutoFixWhatsAppResult } from "@/services/facebookAds";
 import {
   GRADUACAO_OPTIONS,
   graduacaoDisplay,
@@ -56,6 +57,8 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
   const [ctwaNumber, setCtwaNumber] = useState<string>("");
   const [ctwaPhoneId, setCtwaPhoneId] = useState<string>("");
   const [ctwaSaving, setCtwaSaving] = useState<boolean>(false);
+  const [ctwaAutoFixing, setCtwaAutoFixing] = useState<boolean>(false);
+  const [ctwaAutoFixResult, setCtwaAutoFixResult] = useState<AutoFixWhatsAppResult | null>(null);
 
   useEffect(() => {
     if (greenSettings?.graduacao) setGraduacao(greenSettings.graduacao);
@@ -159,6 +162,29 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       toast({ title: "Erro ao salvar WhatsApp CTWA", description: e?.message || String(e), variant: "destructive" });
     } finally {
       setCtwaSaving(false);
+    }
+  };
+
+  const runCtwaAutoFix = async () => {
+    setCtwaAutoFixing(true);
+    setCtwaAutoFixResult(null);
+    try {
+      const result = await autoFixWhatsApp();
+      setCtwaAutoFixResult(result);
+      if (result.chosen) {
+        setCtwaNumber(result.chosen.digits || "");
+        setCtwaPhoneId(result.chosen.id || "");
+      }
+      toast({
+        title: result.ok ? "WhatsApp validado automaticamente" : "Meta ainda bloqueou o WhatsApp",
+        description: result.message || result.error || result.hint || "Validação concluída.",
+        variant: result.ok ? "default" : "destructive",
+        duration: result.ok ? 2600 : 7000,
+      });
+    } catch (e: any) {
+      toast({ title: "Erro na validação automática", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setCtwaAutoFixing(false);
     }
   };
 
@@ -390,6 +416,73 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         <p className="text-xs text-muted-foreground mb-4">
           Número Business e phone_number_id real usados em campanhas Click-to-WhatsApp.
         </p>
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-4 space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <Wand2 className="w-4 h-4 text-primary" /> Correção automática Meta
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Busca WABAs e telefones na Meta, salva o phone_number_id correto e testa se a Página aceita o número.
+              </p>
+            </div>
+            <Button type="button" size="sm" onClick={runCtwaAutoFix} disabled={ctwaAutoFixing} className="shrink-0 gap-2">
+              {ctwaAutoFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
+              Validar e corrigir automático
+            </Button>
+          </div>
+
+          {ctwaAutoFixResult && (
+            <div className={`rounded-lg border p-3 text-sm ${ctwaAutoFixResult.ok ? "border-success/30 bg-success/10" : "border-destructive/30 bg-destructive/10"}`}>
+              <p className="font-semibold text-foreground flex items-center gap-2">
+                {ctwaAutoFixResult.ok ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
+                {ctwaAutoFixResult.ok ? "Pronto para publicar" : "Ação pendente na Meta"}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {ctwaAutoFixResult.message || ctwaAutoFixResult.error || ctwaAutoFixResult.hint || "Resultado recebido."}
+              </p>
+              {ctwaAutoFixResult.chosen && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  Número salvo: {ctwaAutoFixResult.chosen.display} · ID {ctwaAutoFixResult.chosen.id}
+                </p>
+              )}
+              {ctwaAutoFixResult.page_id && (
+                <p className="text-xs text-muted-foreground mt-1">Página: {ctwaAutoFixResult.page_id}{ctwaAutoFixResult.waba_id ? ` · WABA: ${ctwaAutoFixResult.waba_id}` : ""}</p>
+              )}
+              {!!ctwaAutoFixResult.numbers?.length && (
+                <div className="mt-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">Telefones encontrados:</span> {ctwaAutoFixResult.numbers.map((n) => `${n.display} (${n.id})`).join(", ")}
+                </div>
+              )}
+              {ctwaAutoFixResult.meta_message && (
+                <p className="text-xs text-muted-foreground mt-2">Detalhe Meta: {ctwaAutoFixResult.meta_message}</p>
+              )}
+              {!!ctwaAutoFixResult.next_steps?.length && (
+                <ul className="list-disc pl-5 mt-2 space-y-1 text-xs text-muted-foreground">
+                  {ctwaAutoFixResult.next_steps.map((step) => <li key={step}>{step}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
+              <a href="https://business.facebook.com/wa/manage/phone-numbers/" target="_blank" rel="noreferrer">
+                WhatsApp Manager <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
+              <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer">
+                Contas WhatsApp Business <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
+              <a href="https://business.facebook.com/settings/pages" target="_blank" rel="noreferrer">
+                Configurações da Página <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            </Button>
+          </div>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="ctwa_number" className="text-sm text-muted-foreground">Número WhatsApp Business</Label>

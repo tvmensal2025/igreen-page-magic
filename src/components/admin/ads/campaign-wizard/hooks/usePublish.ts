@@ -140,7 +140,16 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
       onCreated?.();
       onClose();
     } catch (e: any) {
-      toast({ title: "Falha ao criar campanha", description: e.message, variant: "destructive" });
+      const msg = String(e?.message || "Falha desconhecida");
+      const nextSteps: string[] = Array.isArray(e?.next_steps) ? e.next_steps : [];
+      const isWaba = msg.includes("WHATSAPP_BUSINESS_REQUIRED") || msg.includes("1487246") || /not linked to your account/i.test(msg);
+      toast({
+        title: isWaba ? "WhatsApp Business não validado na Meta" : "Falha ao criar campanha",
+        description: isWaba
+          ? `${msg}\n\nVá em Admin → Dados → WhatsApp dos anúncios Meta e clique em “Validar e corrigir automático”.${nextSteps.length ? `\n\n${nextSteps.join("\n")}` : ""}`
+          : msg,
+        variant: "destructive",
+      });
     } finally { patch({ submitting: false }); }
   }, [consultantPhone, consultantId, state, derived, patch, LS_KEY, onCreated, onClose, toast]); // eslint-disable-line react-hooks/exhaustive-deps
 

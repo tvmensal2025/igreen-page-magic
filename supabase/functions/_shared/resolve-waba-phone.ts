@@ -3,7 +3,7 @@
 // Nunca publica com phone_number_id sintético (`saved:*`). CTWA oficial precisa
 // de phone_number_id real da Meta ou de número vindo da lista viva da WABA.
 
-import { adminClient, loadPlatformAccount } from "./fb-graph.ts";
+import { adminClient } from "./fb-graph.ts";
 import { decryptToken } from "./fb-crypto.ts";
 
 const FB_VERSION = "v21.0";
@@ -13,6 +13,8 @@ export interface WabaPhone {
   id: string;                    // phone_number_id (imutável)
   display: string;               // ex.: "+55 34 8431-4317"
   digits: string;                // ex.: "553484314317"
+  waba_id?: string;
+  waba_name?: string;
   verified_name?: string;
   quality?: string;
   source?: "waba" | "saved_fallback";
@@ -64,13 +66,12 @@ function brVariants(s: string | null | undefined): Set<string> {
   return out;
 }
 
-// Descobre a WABA vinculada à Página. Testa 4 campos em cascata porque
+// Descobre a WABA explicitamente vinculada à Página. Testa campos em cascata porque
 // nem todas as Páginas expõem o mesmo (Graph tem histórico bagunçado):
 //  - whatsapp_business_account: WABA Cloud API vinculada à Página
 //  - connected_whatsapp_business_account: legado
 //  - page_backed_whatsapp_business_account: WhatsApp Business App conectado
 //    à Página SEM Cloud API (fluxo comum em Páginas legado/PME BR)
-//  - me/businesses → owned/client_whatsapp_business_accounts: fallback global
 async function discoverWabaId(
   pageId: string,
   token: string,
@@ -92,21 +93,6 @@ async function discoverWabaId(
       }
     } catch { /* try next */ }
   }
-  // Fallback: percorre Businesses do usuário do token.
-  try {
-    tried.push("me/businesses");
-    const r = await fetch(`${FB_GRAPH}/me/businesses?fields=id&access_token=${token}`);
-    const j = await r.json();
-    for (const biz of (j?.data || [])) {
-      for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
-        tried.push(`business.${biz.id}.${kind}`);
-        const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?access_token=${token}`);
-        const wj = await wr.json();
-        const first = (wj?.data || [])[0];
-        if (first?.id) return { id: String(first.id), via: `business.${kind}` };
-      }
-    }
-  } catch { /* ignore */ }
   return null;
 }
 
@@ -120,9 +106,36 @@ async function fetchWabaNumbers(wabaId: string, token: string): Promise<WabaPhon
     id: String(n.id),
     display: String(n.display_phone_number || ""),
     digits: digitsOf(n.display_phone_number),
+    waba_id: wabaId,
     verified_name: n.verified_name,
     quality: n.quality_rating,
   })).filter((n: WabaPhone) => n.id && n.digits);
+}
+
+async function scanBusinessWabaNumbers(token: string, tried: string[]): Promise<WabaPhone[]> {
+  const out: WabaPhone[] = [];
+  const seenWabas = new Set<string>();
+  try {
+    tried.push("me/businesses");
+    const r = await fetch(`${FB_GRAPH}/me/businesses?fields=id,name&access_token=${token}`);
+    const j = await r.json();
+    for (const biz of (j?.data || [])) {
+      for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+        tried.push(`business.${biz.id}.${kind}`);
+        const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?fields=id,name&limit=100&access_token=${token}`);
+        const wj = await wr.json();
+        if (!wr.ok) continue;
+        for (const waba of (wj?.data || [])) {
+          const wabaId = String(waba?.id || "");
+          if (!wabaId || seenWabas.has(wabaId)) continue;
+          seenWabas.add(wabaId);
+          const nums = await fetchWabaNumbers(wabaId, token);
+          out.push(...nums.map((n) => ({ ...n, waba_id: wabaId, waba_name: waba?.name })));
+        }
+      }
+    }
+  } catch { /* best effort */ }
+  return out;
 }
 
 function isRealPhoneId(id: string | null | undefined): boolean {
@@ -238,14 +251,57 @@ export async function resolveWabaPhone(
   }
 
   if (!wabaId) {
+    const businessNumbers = await scanBusinessWabaNumbers(token, tried);
+    let businessMatch: WabaPhone | null = null;
+    if (savedPhoneIdIsReal) {
+      businessMatch = businessNumbers.find((n) => n.id === savedPhoneId) || null;
+    }
+    if (!businessMatch && savedDigits) {
+      const savedVariants = brVariants(savedDigits);
+      businessMatch = businessNumbers.find((n) => {
+        const numberVariants = brVariants(n.digits);
+        return [...numberVariants].some((v) => savedVariants.has(v));
+      }) || null;
+    }
+    if (!businessMatch && businessNumbers.length === 1) businessMatch = businessNumbers[0];
+
+    if (businessMatch) {
+      if (opts.persist) {
+        await admin.from("consultant_ad_settings").upsert(
+          {
+            consultant_id: consultantId,
+            whatsapp_phone_number_id: businessMatch.id,
+            whatsapp_phone_number_display: businessMatch.display,
+            whatsapp_destination_number: businessMatch.digits,
+            whatsapp_last_verified_at: new Date().toISOString(),
+          },
+          { onConflict: "consultant_id" },
+        );
+      }
+      return {
+        ok: true,
+        waba_id: businessMatch.waba_id || null,
+        page_id: pageId,
+        numbers: businessNumbers,
+        chosen: businessMatch,
+        hint: "Número encontrado automaticamente nas WABAs acessíveis ao Business. A criação da campanha ainda valida se essa WABA está vinculada à Página.",
+        detected_paths_tried: tried,
+        discovered_via: "business_waba_phone_scan",
+        next_steps: [
+          `Se a Meta ainda recusar, vincule a WABA ${businessMatch.waba_id || "encontrada"} à Página ${pageId}`,
+          "Depois clique em Validar e corrigir WhatsApp automaticamente",
+        ],
+      };
+    }
+
     return {
       ok: false,
       reason: "no_waba",
       page_id: pageId,
-      numbers: [],
+      numbers: businessNumbers,
       hint: savedDigits
-        ? `O número ${savedDigits} está salvo, mas não tem phone_number_id real da Meta e não aparece em uma WABA vinculada à Página ${pageId}. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`
-        : `Página ${pageId} não expõe WABA via Graph (testados: ${tried.join(", ")}). Vincule em Meta Business Suite → WhatsApp → Contas, ou salve o phone_number_id real em Anúncios → Configurações.`,
+        ? `O número ${savedDigits} está salvo, mas não foi encontrado em nenhuma WABA acessível e a Página ${pageId} não expõe WABA vinculada.`
+        : `Página ${pageId} não expõe WABA via Graph e nenhuma WABA acessível trouxe um telefone selecionável.`,
       detected_paths_tried: tried,
       discovered_via: null,
       next_steps: nextStepsNoWaba,

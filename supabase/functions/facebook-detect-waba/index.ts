@@ -1,33 +1,10 @@
 // facebook-detect-waba
 // ─────────────────────
-// Detecta o número WhatsApp Business (WABA) que está conectado à Página do
-// Facebook do consultor. Usa o token de longa duração já salvo em
-// facebook_connections + o page_id selecionado.
-//
-// Fluxo:
-//   1. Carrega facebook_connections do consultor logado (anon JWT → consultor)
-//   2. Descriptografa o token
-//   3. Pergunta à Graph qual WABA está vinculado à Página
-//      GET /{page_id}?fields=connected_whatsapp_business_account
-//      GET /{waba_id}/phone_numbers?fields=display_phone_number,verified_name
-//   4. Se vazio em consultant_ad_settings.whatsapp_destination_number,
-//      auto-preenche com o primeiro número WABA encontrado.
-//   5. Devolve { ok, waba_id, numbers, current_number, matches }
-//      pra UI exibir os checks ✅/❌ no HealthSummaryCard.
-//
-// Erros são sempre retornados com status 200 + ok:false para a UI tratar
-// sem precisar de try/catch agressivo.
+// Wrapper fino do resolvedor autoritativo compartilhado. Mantém o contrato antigo
+// da UI, mas evita lógica divergente entre painel, preflight e criação de campanha.
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { decryptToken } from "../_shared/fb-crypto.ts";
-
-const FB_VERSION = "v21.0";
-const FB_GRAPH = `https://graph.facebook.com/${FB_VERSION}`;
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { authConsultant, corsHeaders, fbFetch, loadPlatformAccount } from "../_shared/fb-graph.ts";
+import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 function jsonRes(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -36,284 +13,76 @@ function jsonRes(body: unknown, status = 200): Response {
   });
 }
 
-function normalizeDigits(s: string | null | undefined): string {
-  return String(s || "").replace(/\D/g, "");
-}
-
-function isRealPhoneId(id: string | null | undefined): boolean {
-  return /^\d+$/.test(String(id || ""));
-}
-
-async function probePhoneNumberId(phoneNumberId: string, token: string) {
-  if (!isRealPhoneId(phoneNumberId)) return null;
-  const r = await fetch(`${FB_GRAPH}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating&access_token=${token}`);
-  const j = await r.json();
-  if (!r.ok || !j?.id || !j?.display_phone_number) return null;
-  return {
-    id: String(j.id),
-    display: String(j.display_phone_number),
-    digits: normalizeDigits(j.display_phone_number),
-    verified_name: j.verified_name,
-    quality: j.quality_rating,
-    source: "waba",
-  };
-}
-
-function brPhoneVariants(raw: string | null | undefined): Set<string> {
-  const digits = normalizeDigits(raw);
-  const variants = new Set<string>();
-  if (!digits) return variants;
-  variants.add(digits);
-  const national = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (national.length < 10) return variants;
-  variants.add(national);
-  variants.add(`55${national}`);
-  const ddd = national.slice(0, 2);
-  const local = national.slice(2);
-  if (local.length === 9 && local.startsWith("9")) {
-    variants.add(`${ddd}${local.slice(1)}`);
-    variants.add(`55${ddd}${local.slice(1)}`);
-  } else if (local.length === 8) {
-    variants.add(`${ddd}9${local}`);
-    variants.add(`55${ddd}9${local}`);
-  }
-  return variants;
-}
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    const auth = req.headers.get("Authorization") || "";
-    if (!auth.startsWith("Bearer ")) return jsonRes({ ok: false, error: "missing_auth" });
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { global: { headers: { Authorization: auth } } }
-    );
-
-    const { data: claims } = await supabase.auth.getUser(auth.replace("Bearer ", ""));
-    const userId = claims.user?.id;
-    if (!userId) return jsonRes({ ok: false, error: "invalid_token" });
-
-    // Usa SEMPRE a conta Facebook da plataforma (compartilhada). O token do
-    // consultor pode estar inválido/inexistente — não é mais usado aqui.
-    const { data: platform } = await supabase
-      .from("platform_facebook_account")
-      .select("page_id, access_token_encrypted")
-      .eq("id", true)
-      .maybeSingle();
-
-    if (!platform?.page_id) {
-      return jsonRes({ ok: false, error: "no_platform_page", hint: "Conta Facebook da plataforma não configurada." });
-    }
-    if (!platform.access_token_encrypted) {
-      return jsonRes({ ok: false, error: "no_platform_token", hint: "Token da conta plataforma ausente — peça ao admin para reconectar." });
-    }
-
-    let token: string;
-    try {
-      token = await decryptToken(platform.access_token_encrypted);
-    } catch (e) {
-      console.error("[detect-waba] decrypt failed", e);
-      return jsonRes({ ok: false, error: "token_decrypt_failed" });
-    }
-
-    const pageId = platform.page_id as string;
-
-    // Carrega o número salvo antes da descoberta WABA. Quando a Graph não expõe
-    // a WABA, mas há um número configurado, marcamos como fallback validável pela
-    // própria criação do AdSet (mesmo comportamento prático do Ads Manager).
-    const { data: settings } = await supabase
-      .from("consultant_ad_settings")
-      .select("whatsapp_destination_number, whatsapp_phone_number_id, whatsapp_phone_number_display")
-      .eq("consultant_id", userId)
-      .maybeSingle();
-    const currentDigits = normalizeDigits(settings?.whatsapp_destination_number);
-    const savedPhoneId = String(settings?.whatsapp_phone_number_id || "");
-
-    // 1) Descobre o WABA. Testa 4 caminhos em cascata porque nem toda Página
-    //    expõe o mesmo campo (Cloud API, legado, PBWA — WhatsApp Business App
-    //    conectado à Página sem Cloud API — ou via Business Manager).
-    let wabaId: string | null = null;
-    let discoveredVia: string | null = null;
-    const detected_paths_tried: string[] = [];
-
-    const pageFieldTries: Array<{ label: string; field: string; pick: (j: any) => string | null }> = [
-      { label: "page.whatsapp_business_account", field: "whatsapp_business_account", pick: (j) => j?.whatsapp_business_account?.id || null },
-      { label: "page.connected_whatsapp_business_account", field: "connected_whatsapp_business_account", pick: (j) => j?.connected_whatsapp_business_account?.id || null },
-      { label: "page.page_backed_whatsapp_business_account", field: "page_backed_whatsapp_business_account", pick: (j) => j?.page_backed_whatsapp_business_account?.id || null },
-    ];
-    for (const t of pageFieldTries) {
-      if (wabaId) break;
-      detected_paths_tried.push(t.label);
+    const auth = await authConsultant(req);
+    if (!auth) return jsonRes({ ok: false, error: "missing_auth" });
+    const waba = await resolveWabaPhone(auth.id, { persist: true });
+    if (waba.ok && waba.chosen) {
       try {
-        const r = await fetch(`${FB_GRAPH}/${pageId}?fields=${t.field}&access_token=${token}`);
-        const j = await r.json();
-        if (r.ok) {
-          const id = t.pick(j);
-          if (id) { wabaId = String(id); discoveredVia = t.label; }
+        const platform = await loadPlatformAccount();
+        if (platform?.ad_account_id && platform.page_id) {
+          const params = new URLSearchParams({
+            targeting_spec: JSON.stringify({
+              geo_locations: { countries: ["BR"] },
+              age_min: 25,
+              age_max: 65,
+              targeting_automation: { advantage_audience: 1 },
+            }),
+            optimization_goal: "CONVERSATIONS",
+            destination_type: "WHATSAPP",
+            promoted_object: JSON.stringify({ page_id: platform.page_id, whatsapp_phone_number: waba.chosen.digits }),
+            access_token: platform.token,
+          });
+          await fbFetch(`/${platform.ad_account_id}/reachestimate?${params.toString()}`, undefined, 1);
         }
-      } catch (_) { /* ignore */ }
-    }
-
-    // phone_number_id numérico salvo é fonte forte apenas se a Página não expôs
-    // WABA. Valida direto na Graph; se não for acessível/real, bloqueia abaixo.
-    if (!wabaId && isRealPhoneId(savedPhoneId)) {
-      try {
-        const probed = await probePhoneNumberId(savedPhoneId, token);
-        if (probed) {
-          const needs =
-            settings?.whatsapp_phone_number_id !== probed.id ||
-            settings?.whatsapp_phone_number_display !== probed.display ||
-            normalizeDigits(settings?.whatsapp_destination_number) !== probed.digits;
-          if (needs) {
-            await supabase.from("consultant_ad_settings").upsert(
-              {
-                consultant_id: userId,
-                whatsapp_phone_number_id: probed.id,
-                whatsapp_phone_number_display: probed.display,
-                whatsapp_destination_number: probed.digits,
-                whatsapp_last_verified_at: new Date().toISOString(),
-              },
-              { onConflict: "consultant_id" },
-            );
-          }
+      } catch (e) {
+        const msg = String((e as Error)?.message || "");
+        const isWabaMismatch = msg.includes("1487246") || msg.includes("2446885") || /not linked to your account/i.test(msg);
+        if (isWabaMismatch) {
           return jsonRes({
             ok: true,
             connected: true,
-            fallback: false,
-            page_id: pageId,
-            numbers: [],
-            current_number: probed.digits,
-            current_phone_number_id: probed.id,
-            chosen: probed,
-            matches: true,
-            hint: "phone_number_id real validado diretamente na Graph.",
-            detected_paths_tried,
-            discovered_via: "phone_number_id_probe",
+            waba_id: waba.waba_id || null,
+            page_id: waba.page_id || null,
+            numbers: waba.numbers,
+            current_number: waba.chosen.digits,
+            current_phone_number_id: waba.chosen.id,
+            chosen: waba.chosen,
+            matches: false,
+            auto_filled: true,
+            needs_pick: false,
+            hint: `A Meta encontrou o número ${waba.chosen.display}, mas ele ainda não está vinculado à Página usada nos anúncios. Rode “Validar e corrigir WhatsApp automaticamente” e vincule a WABA à Página se continuar recusando.`,
+            meta_message: msg,
+            next_steps: [
+              `Vincule a WABA ${waba.waba_id || "do número"} à Página ${waba.page_id || "da plataforma"}`,
+              "Confirme o phone_number_id no WhatsApp Manager",
+              "Volte em Dados e clique em Validar e corrigir automático",
+            ],
+            detected_paths_tried: waba.detected_paths_tried || [],
+            discovered_via: waba.discovered_via || null,
           });
         }
-      } catch (_) { /* bloqueia no no_waba abaixo */ }
-    }
-
-    if (!wabaId) {
-      try {
-        detected_paths_tried.push("me/businesses");
-        const bizRes = await fetch(`${FB_GRAPH}/me/businesses?fields=id,name&access_token=${token}`);
-        const bizJson = await bizRes.json();
-        const businesses: Array<{ id: string; name?: string }> = bizJson?.data || [];
-        for (const biz of businesses) {
-          for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
-            detected_paths_tried.push(`business.${biz.id}.${kind}`);
-            const wr = await fetch(`${FB_GRAPH}/${biz.id}/${kind}?access_token=${token}`);
-            const wj = await wr.json();
-            const first = (wj?.data || [])[0];
-            if (first?.id) { wabaId = first.id; discoveredVia = `business.${kind}`; break; }
-          }
-          if (wabaId) break;
-        }
-      } catch (e) {
-        console.warn("[detect-waba] business fallback failed", e);
       }
     }
-
-    if (!wabaId) {
-      return jsonRes({
-        ok: true,
-        connected: false,
-        current_number: currentDigits || null,
-        current_phone_number_id: settings?.whatsapp_phone_number_id || null,
-        hint: currentDigits
-          ? `O número ${currentDigits} está salvo, mas não tem phone_number_id real da Meta e não aparece em uma WABA vinculada à Página ${pageId}. Copie o phone_number_id numérico no WhatsApp Manager ou vincule a WABA correta à Página antes de publicar.`
-          : `A Página ${pageId} não expõe WABA via Graph (testados: ${detected_paths_tried.join(", ")}). Vincule em Meta Business Suite → Configurações → Contas do WhatsApp, ou salve o phone_number_id real em Anúncios → Configurações.`,
-        page_id: pageId,
-        detected_paths_tried,
-        next_steps: [
-          `Meta Business Suite → Configurações → Contas do WhatsApp → vincular à Página ${pageId}`,
-          "OU salvar o phone_number_id numérico real do WhatsApp Manager em Anúncios → Configurações",
-          "Depois clique em Reverificar",
-        ],
-      });
-    }
-
-    // 2) WABA → telefones registrados (agora inclui `id` = phone_number_id, imutável)
-    const phRes = await fetch(
-      `${FB_GRAPH}/${wabaId}/phone_numbers?fields=display_phone_number,verified_name,quality_rating&access_token=${token}`
-    );
-    const phJson = await phRes.json();
-    const numbers: Array<{ id: string; display: string; digits: string; verified_name?: string; quality?: string }> =
-      (phJson.data || [])
-        .map((n: any) => ({
-          id: String(n.id || ""),
-          display: n.display_phone_number,
-          digits: normalizeDigits(n.display_phone_number),
-          verified_name: n.verified_name,
-          quality: n.quality_rating,
-        }))
-        .filter((n: any) => n.id && n.digits);
-
-    // 3) Comparar com o que já está em consultant_ad_settings
-    const currentVariants = brPhoneVariants(currentDigits);
-
-    // Match preferencial: phone_number_id salvo (fonte imutável).
-    // Fallback: variantes do número digitado.
-    let matched = settings?.whatsapp_phone_number_id
-      ? numbers.find((n) => n.id === settings.whatsapp_phone_number_id) || null
-      : null;
-    if (!matched) {
-      matched = numbers.find((n) => {
-        const numberVariants = brPhoneVariants(n.digits);
-        return Array.from(numberVariants).some((v) => currentVariants.has(v));
-      }) || null;
-    }
-    // Se WABA tem exatamente 1 número, adota ele automaticamente.
-    if (!matched && numbers.length === 1) matched = numbers[0];
-
-    // 4) Persistir id + display + digits quando temos uma escolha 1-1
-    let autoFilled = false;
-    if (matched) {
-      const needs =
-        settings?.whatsapp_phone_number_id !== matched.id ||
-        normalizeDigits(settings?.whatsapp_destination_number) !== matched.digits;
-      if (needs) {
-        const { error: upErr } = await supabase
-          .from("consultant_ad_settings")
-          .upsert(
-            {
-              consultant_id: userId,
-              whatsapp_phone_number_id: matched.id,
-              whatsapp_phone_number_display: matched.display,
-              whatsapp_destination_number: matched.digits,
-              whatsapp_last_verified_at: new Date().toISOString(),
-            },
-            { onConflict: "consultant_id" }
-          );
-        if (!upErr) autoFilled = true;
-        else console.warn("[detect-waba] upsert failed", upErr);
-      } else {
-        await supabase
-          .from("consultant_ad_settings")
-          .update({ whatsapp_last_verified_at: new Date().toISOString() })
-          .eq("consultant_id", userId);
-      }
-    }
-
     return jsonRes({
       ok: true,
-      connected: true,
-      waba_id: wabaId,
-      page_id: pageId,
-      numbers,
-      current_number: currentDigits || null,
-      current_phone_number_id: settings?.whatsapp_phone_number_id || null,
-      chosen: matched,
-      matches: !!matched,
-      auto_filled: autoFilled,
-      needs_pick: !matched && numbers.length > 1,
-      detected_paths_tried,
-      discovered_via: discoveredVia,
+      connected: waba.ok,
+      waba_id: waba.waba_id || null,
+      page_id: waba.page_id || null,
+      numbers: waba.numbers,
+      current_number: waba.chosen?.digits || null,
+      current_phone_number_id: waba.chosen?.id || null,
+      chosen: waba.chosen || null,
+      matches: !!waba.chosen,
+      auto_filled: !!waba.chosen,
+      needs_pick: !waba.chosen && waba.numbers.length > 1,
+      hint: waba.hint,
+      next_steps: waba.next_steps || [],
+      detected_paths_tried: waba.detected_paths_tried || [],
+      discovered_via: waba.discovered_via || null,
     });
   } catch (e) {
     console.error("[detect-waba] exception", e);
