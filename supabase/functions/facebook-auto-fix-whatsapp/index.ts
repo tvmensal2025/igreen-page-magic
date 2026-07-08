@@ -85,7 +85,9 @@ Deno.serve(async (req) => {
       result.ok = true;
       result.status = "ready";
       result.error = null;
-      result.message = `WhatsApp validado e salvo automaticamente: ${waba.chosen.display} (phone_number_id ${waba.chosen.id}).`;
+      result.message = /^\d+$/.test(waba.chosen.id)
+        ? `WhatsApp validado e salvo automaticamente: ${waba.chosen.display} (phone_number_id ${waba.chosen.id}).`
+        : `WhatsApp validado pela Meta com o número salvo: ${waba.chosen.display}.`;
       await admin.from("admin_audit_log").insert({
         admin_user_id: auth.id,
         action: "facebook_auto_fix_whatsapp_ready",
