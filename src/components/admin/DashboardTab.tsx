@@ -56,6 +56,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     cadastroIgreenIds: [],
   });
   const { data: networkIgreenIds = [] } = useNetworkIgreenIds(userId);
+  const { data: networkGpMes = 0 } = useNetworkGpMes(userId);
   const { data: analytics } = useAnalytics(
     userId,
     periodDays,
