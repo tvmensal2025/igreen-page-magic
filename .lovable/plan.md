@@ -1,52 +1,44 @@
-## Ajuste dos 4 cards de topo do Dashboard
+## Problema
 
-Arquivo único: `src/components/admin/DashboardTab.tsx` (bloco `useMemo filteredMetrics` + 1 StatCard).
+Hoje a "Recorrência garantida" só usa a carteira sincronizada localmente (os 572 clientes iGreen). Isso subestima o valor: a maior parte da sua receita de 1% vem de clientes da **rede abaixo** que não estão nessa carteira local — eles estão registrados apenas em `network_members` (agregados por licenciado).
 
-### 1. Base dos cards de kWh vira a carteira toda (572)
-
-`totalKw`, `avgKw` e o novo card de recorrência passam a operar sobre `walletForTotal` (que respeita filtro de licenciado, mas ignora "meus diretos"). Os gráficos secundários continuam sobre `filtered`.
-
-### 2. Substituir "Ticket médio (conta)" por **"Recorrência garantida (mês)"**
-
-Fórmula por cliente **aprovado** (`status === 'approved'`) na carteira sincronizada:
-
-```
-bill(c)     = c.electricity_bill_value > 0
-                ? c.electricity_bill_value
-                : (c.media_consumo || 0) * 0.95   // tarifa média BR
-
-pct(c)      = (c.registered_by_igreen_id === meuIgreenId ? 0.04 : 0.01)
-              + (isGestor ? 0.005 : 0)
-
-recorrencia = Σ bill(c) * pct(c) sobre todos os aprovados
-```
-
-Regras:
-- **Direto** = `registered_by_igreen_id === myClientsSettings.myIgreenId` → 4%
-- **Indireto (rede)** = qualquer outro `registered_by_igreen_id` → 1%
-- **Gestor +0,5%** = lê flag do consultor no banco. Vou verificar em `consultants` quais colunas existem (`is_gestor`, `is_leader`, `role`, `cargo`, `nivel_gestao`...). Se nenhuma existir, uso o fato de o consultor ter >1 licenciado direto na rede como proxy (`teamIds.length > 1` já é calculado como `isLeader`). Fica documentado no card via `title` do tooltip.
-- **Só approved** — nome do card é "Recorrência garantida" porque é o que já está gerando comissão de fato.
-
-Card:
-```text
-Recorrência garantida
-R$ 4,2 mil
-aprovados · 4% diretos + 1% rede (+0,5% gestor)
-```
-
-### 3. Layout final dos 4 cards
+## Nova fórmula
 
 ```text
-Total de cadastros | Média kWh/cliente | Recorrência garantida | Total de kWh
-       572         |      210 kW       |     R$ 4,2 mil        |  120.120 kW
-                   |  Total: 120k kW   | aprovados · 4%+1%+0,5%|  soma da média
+Recorrência garantida (mês) =
+    4%  x  Σ conta_mensal(cliente aprovado direto meu)
+  + 1%  x  Σ base_mensal(licenciado da minha rede, qualquer nível)
+  + 0,5% x (soma dos dois) se isGestor
 ```
 
-### Sem impacto
+### Direto (4%) — igual ao que já temos
+Base: carteira sincronizada (`walletForTotal`), apenas `status = approved`, apenas quando `registered_by_igreen_id === meuIgreenId`. `bill = electricity_bill_value` (ou `media_consumo × 0,95` como fallback).
 
-- Sync, banco, edge functions: sem mudança.
-- Gráficos abaixo continuam usando `filtered` (respeita escopo "Meu/Equipe").
+### Indireto (1%) — NOVO, via `network_members`
+Não temos as contas individuais da rede, mas temos o agregado mensal por licenciado. Usar:
 
-### Arquivos
+```text
+base_licenciado = gp_mes  (green points do mês, já é a base bonificável)
+```
 
-- `src/components/admin/DashboardTab.tsx`
+Somar `gp_mes` de **todos os `network_members` do consultant_id logado** (rede inteira, todos os níveis — a tabela já é o downline completo).
+
+### Gestor (+0,5%)
+Aplicar sobre `direto + indireto` quando `isLeader` for `true` (proxy atual).
+
+## Implementação
+
+Arquivo único: `src/components/admin/DashboardTab.tsx`
+
+1. Novo hook `useNetworkGpMes(userId)` (ou inline no `useQuery` já existente): `SELECT sum(gp_mes) FROM network_members WHERE consultant_id = :userId`.
+2. No `useMemo filteredMetrics`:
+   - `diretoBase = Σ bill(c)` para aprovados com `registered_by_igreen_id === meuIgreenId`
+   - `indiretoBase = networkGpMes` (do hook)
+   - `recorrenciaGarantida = diretoBase * 0.04 + indiretoBase * 0.01 + (isLeader ? (diretoBase + indiretoBase) * 0.005 : 0)`
+3. Atualizar `subtitle` do StatCard para mostrar as duas parcelas separadas, ex.: `"4% diretos (Rxxx) + 1% rede (Ryyy) + 0,5% gestor"`.
+
+Nada muda em sync, edge functions ou schema. Só leitura de `network_members.gp_mes`.
+
+## Ressalva
+
+`gp_mes` é a proxy mais próxima do faturamento mensal da rede que temos hoje. Se preferir usar outra coluna como base (`bonificavel`, `gi_mes`, etc.), é só trocar o campo no hook.
