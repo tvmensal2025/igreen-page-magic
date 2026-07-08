@@ -512,6 +512,13 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           } : x));
         }}
       />
+
+      <EditCampaignDialog
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        campaign={editing}
+        onSaved={() => setRefreshTick((t) => t + 1)}
+      />
     </div>
   );
 }
