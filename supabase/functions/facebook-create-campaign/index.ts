@@ -78,6 +78,13 @@ const WA_BUSINESS_REQUIRED_MESSAGE =
 
 function campaignErrorResponse(err: unknown) {
   const message = (err as Error)?.message || "Erro inesperado ao criar campanha.";
+  if (message.includes("1487079") || /targeting_relaxation/i.test(message)) {
+    return new Response(JSON.stringify({
+      error: "Configuração de público inválida. Removemos o campo de segmentação rejeitado pela Meta; tente publicar novamente.",
+      code: "META_TARGETING_INVALID",
+      meta_error: message,
+    }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
   if (message.includes(WA_BUSINESS_REQUIRED_SUBCODE) || message.includes("conta pessoal")) {
     return new Response(JSON.stringify({
       error: WA_BUSINESS_REQUIRED_MESSAGE,
@@ -335,14 +342,6 @@ Deno.serve(async (req) => {
       whatsapp_phone_number_id: authoritativePhoneId,
       whatsapp_destination_number: authoritativeDigits,
     };
-    // Compat com o resto do código que ainda referencia waWith9/waWithout9/waNumberWinner:
-    // usamos SEMPRE o autoritativo — as duas variantes viram o mesmo valor e o loop
-    // roda uma única iteração (efetivamente sem retry de formato).
-    const waWith9 = authoritativeDigits;
-    const waWithout9 = authoritativeDigits;
-    let waNumberWinner = authoritativeDigits;
-
-
     const accId = conn.ad_account_id; // já vem com prefixo act_
     // Idade ampliada por padrão (25-65) — mais inventário = CPM/CPL mais baixo.
     // Advantage+ audience exige age_min <= 25 (subcode 1870188). Cap defensivo.
@@ -463,10 +462,6 @@ Deno.serve(async (req) => {
       // Advantage+ Audience (padrão Meta 2026) — algoritmo expande além das âncoras.
       // Meta EXIGE age_min<=25 e age_max>=65 explícitos (subcodes 1870188/1870189).
       targeting_automation: { advantage_audience: 1 },
-      // Relaxamento oficial: permite Meta expandir além do LAL / Custom Audience
-      // quando encontrar padrão de conversa iniciada fora deles. +5-10% alcance,
-      // mesma qualidade — padrão dos grandes anunciantes CTWA solar BR (Órigo/Solfácil).
-      targeting_relaxation: { lookalike: 1, custom_audience: 1 },
     };
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
     // (recomendação oficial p/ CTWA, distribui em TODOS os elegíveis e otimiza CPL).
@@ -532,38 +527,17 @@ Deno.serve(async (req) => {
     adsetParams.start_time = new Date(startAt).toISOString();
     const days = Math.max(1, body.duration_days ?? 7);
     adsetParams.end_time = new Date(startAt + days * 86400_000 + 3_600_000).toISOString();
-    console.log("[fb-create] step=adset_create campaign=", campaignId, "phone_try=without9_first", waWithout9);
-    // Estratégia: tenta SEM o 9 primeiro (formato mais comum no WABA), e se
-    // falhar por qualquer motivo, retenta COM o 9. Só devolve erro final se
-    // as duas variantes falharem. Cobre WABAs cadastrados em qualquer formato.
-    async function tryAdset(phone: string) {
-      const promoted = { page_id: conn.page_id, whatsapp_phone_number: phone };
-      const params = { ...adsetParams, promoted_object: JSON.stringify(promoted) };
-      return await fbFetch(`/${accId}/adsets`, {
+    console.log("[fb-create] step=adset_create campaign=", campaignId, "phone_authoritative=", waNumberClean, "phone_id=", authoritativePhoneId);
+    let adset: any = null;
+    try {
+      adset = await fbFetch(`/${accId}/adsets`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams(params),
+        body: new URLSearchParams(adsetParams),
       });
-    }
-    // Ordem preferida: SEM 9 primeiro (Meta costuma armazenar formato antigo).
-    const phoneAttempts = waWith9 === waWithout9 ? [waWith9] : [waWithout9, waWith9];
-    let adset: any = null;
-    let lastErr: Error | null = null;
-    for (const phone of phoneAttempts) {
-      try {
-        console.log("[fb-create] adset attempt phone=", phone);
-        adset = await tryAdset(phone);
-        waNumberWinner = phone;
-        lastErr = null;
-        break;
-      } catch (e) {
-        lastErr = e as Error;
-        const msg = String(lastErr?.message || "");
-        console.warn(`[fb-create] adset falhou phone=${phone} err=${msg.slice(0, 200)}`);
-      }
-    }
-    if (!adset) {
-      const msg = String(lastErr?.message || "");
+    } catch (e) {
+      const msg = String((e as Error)?.message || "");
+      console.warn(`[fb-create] adset falhou phone=${waNumberClean} phone_id=${authoritativePhoneId} err=${msg.slice(0, 300)}`);
       const isWabaMismatch =
         msg.includes("1487246") ||
         msg.includes("2446885") ||
@@ -571,18 +545,20 @@ Deno.serve(async (req) => {
         /whatsapp/i.test(msg);
       if (isWabaMismatch) {
         return new Response(JSON.stringify({
-          error: "WHATSAPP_BUSINESS_REQUIRED",
+          error: "Número WhatsApp Business não vinculado à Página/conta Meta usada no anúncio.",
           code: "WHATSAPP_BUSINESS_REQUIRED",
-          message: `Testamos o número com e sem o 9 (${waWith9} e ${waWithout9}) e o Meta rejeitou os dois. Confirme em business.facebook.com/wa/manage que o número está vinculado à Página e publique novamente.`,
+          message: `A Meta rejeitou o número autoritativo ${authoritativeDisplay} (${waNumberClean}, phone_number_id ${authoritativePhoneId}). Confirme se este phone_number_id pertence à WABA vinculada à Página ${conn.page_id}.`,
+          phone_used: waNumberClean,
+          phone_number_id: authoritativePhoneId,
+          phone_display: authoritativeDisplay,
+          waba_numbers: waba.numbers,
           meta_message: msg,
         }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      throw lastErr || new Error("adset_create_failed");
+      throw e;
     }
-    console.log("[fb-create] adset OK phone_used=", waNumberWinner);
-    // Atualiza tudo pra usar o formato que o Meta aceitou (link WhatsApp do creative).
-    waNumberClean = waNumberWinner;
-    conn.whatsapp_destination_number = waNumberWinner;
+    console.log("[fb-create] adset OK phone_used=", waNumberClean, "phone_id=", authoritativePhoneId);
+    conn.whatsapp_destination_number = waNumberClean;
     const adsetId = adset.id as string;
 
     const adIds: string[] = [];
