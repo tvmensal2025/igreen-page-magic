@@ -36,13 +36,20 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
       onPublished?.();
     } catch (e: any) {
       const msg = String(e?.message || "");
+      const isTargeting = msg.includes("META_TARGETING_INVALID") || msg.includes("1487079") || /targeting_relaxation/i.test(msg);
       const isWaba = msg.includes("WHATSAPP_BUSINESS_REQUIRED") || msg.includes("conta pessoal") || msg.includes("2446885") || msg.includes("1487246") || /not linked to your account/i.test(msg);
-      if (isWaba) {
+      if (isTargeting) {
+        toast.error("Configuração de público rejeitada pela Meta", {
+          id: toastId,
+          duration: 14000,
+          description: "A plataforma removeu o campo de segmentação que a Meta recusou. Recarregue a página e publique novamente.",
+        });
+      } else if (isWaba) {
         toast.error("WhatsApp não vinculado à Página do Meta", {
           id: toastId,
           duration: 14000,
           description:
-            "Testamos o número com e sem o 9 e o Meta rejeitou os dois. Cadastre o número em business.facebook.com/wa/manage/phone-numbers/ e vincule à mesma Página usada no anúncio, depois publique de novo.",
+            "A Meta rejeitou o número oficial da WABA para esta Página. Abra o WhatsApp Manager, confirme o phone_number_id vinculado à Página e clique em Reverificar antes de publicar.",
         });
       } else {
         toast.error("Não consegui publicar automaticamente", {

@@ -28,7 +28,11 @@ async function throwFunctionError(error: any): Promise<never> {
         const have = ((payload.balance_cents ?? 0) / 100).toFixed(2);
         throw new Error(`Saldo insuficiente: precisa R$ ${need} e você tem R$ ${have}. Abri a recarga para você.`);
       }
-      if (payload?.error) throw new Error(payload.message || payload.error);
+      if (payload?.error) {
+        const code = payload.code ? `[${payload.code}] ` : "";
+        const details = payload.meta_message || payload.meta_error ? ` Detalhe Meta: ${payload.meta_message || payload.meta_error}` : "";
+        throw new Error(`${code}${payload.message || payload.error}${details}`);
+      }
     } catch (parsed) {
       if (parsed instanceof Error && parsed.message) throw parsed;
     }
@@ -93,7 +97,10 @@ export interface SyncAudiencesResult {
 export async function syncAudiences(): Promise<SyncAudiencesResult> {
   const { data, error } = await supabase.functions.invoke("facebook-sync-audiences", { body: {} });
   if (error) throw error;
-  if ((data as any)?.error) throw new Error((data as any).error);
+  if ((data as any)?.error) {
+    const code = (data as any).code ? `[${(data as any).code}] ` : "";
+    throw new Error(`${code}${(data as any).message || (data as any).error}`);
+  }
   return data as SyncAudiencesResult;
 }
 

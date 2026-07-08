@@ -128,10 +128,10 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
           });
         } else if (!data.matches) {
           setWaba({
-            status: "ok",
-            label: "WABA validado",
+            status: "fail",
+            label: "Número não bate com a WABA",
             detail: `WABA tem ${data.numbers?.map((n: any) => n.display).join(", ")}`,
-            hint: "O publicador testa automaticamente o formato do número com e sem o 9.",
+            hint: "Escolha um dos números oficiais da WABA em Anúncios → Configurações e clique em Reverificar.",
           });
         } else {
           setWaba({
