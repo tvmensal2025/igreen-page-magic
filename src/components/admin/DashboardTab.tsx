@@ -21,6 +21,7 @@ import { filterMyClients } from "@/lib/myClientsFilter";
 import { useMyClientsSettings } from "@/hooks/useMyClientsSettings";
 import { useNetworkIgreenIds } from "@/hooks/useNetworkIgreenIds";
 import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
+import { useNetworkGpMes } from "@/hooks/useNetworkGpMes";
 
 
 import { TeamRankingTab } from "./TeamRankingTab";
