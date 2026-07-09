@@ -494,6 +494,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           staleLoading={bulkStale}
           onReload={fetchRows}
           loading={loading}
+          onPromoteParked={promoteParked}
+          promoting={promoting}
         />
 
         <FilterBar
