@@ -178,7 +178,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
         .from("conversations" as any)
         .select("customer_id")
         .in("customer_id", customerIds);
-      for (const row of (convRows as { customer_id: string }[]) ?? []) {
+      for (const row of (convRows as unknown as { customer_id: string }[]) ?? []) {
         convSet.add(row.customer_id);
       }
     }
