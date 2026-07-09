@@ -553,6 +553,37 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </p>
         </div>
 
+        {/* Iniciar atendimento — botão único visível quando ainda não abrimos os 2 balões */}
+        {isCustomer && customerId && !welcomeSentAt && (
+          <Button
+            size="sm"
+            onClick={handleStartAttendance}
+            disabled={startingAttendance}
+            className="h-8 gap-1.5 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 shrink-0"
+            title="Envia saudação + protocolo e pede o nome"
+          >
+            {startingAttendance
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <PlayCircle className="h-3.5 w-3.5" />}
+            <span className="text-[11px] font-semibold hidden sm:inline">Iniciar atendimento</span>
+            <span className="text-[11px] font-semibold sm:hidden">Iniciar</span>
+          </Button>
+        )}
+        {isCustomer && customerId && welcomeSentAt && (
+          <span
+            className="inline-flex items-center gap-1 h-7 px-2 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 shrink-0"
+            title={trackingProtocol ? `Protocolo ${trackingProtocol}` : "Atendimento iniciado"}
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            <span className="text-[10px] font-semibold hidden md:inline">
+              Atendimento iniciado{trackingProtocol ? ` · ${trackingProtocol}` : ""}
+            </span>
+            <span className="text-[10px] font-semibold md:hidden">Iniciado</span>
+          </span>
+        )}
+
+
+
         {isCompactLayout ? (
           <>
             {isCustomer && customerId && (
