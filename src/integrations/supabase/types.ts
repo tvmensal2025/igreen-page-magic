@@ -3890,6 +3890,7 @@ export type Database = {
           transferir_titularidade: boolean | null
           updated_at: string
           variant_id: string | null
+          welcome_sent_at: string | null
         }
         Insert: {
           address_city?: string | null
@@ -4127,6 +4128,7 @@ export type Database = {
           transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
+          welcome_sent_at?: string | null
         }
         Update: {
           address_city?: string | null
@@ -4364,6 +4366,7 @@ export type Database = {
           transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
+          welcome_sent_at?: string | null
         }
         Relationships: [
           {

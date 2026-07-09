@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, PlayCircle, CheckCircle2 } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
@@ -71,9 +71,55 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [botForceEnabled, setBotForceEnabled] = useState<boolean>(false);
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
+  const [welcomeSentAt, setWelcomeSentAt] = useState<string | null>(null);
+  const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
+  const [startingAttendance, setStartingAttendance] = useState(false);
   const isCompactLayout = useIsLgDown();
   const { width: vw } = useViewportWidth();
   const isXl = vw >= 1280;
+
+  // Carrega estado do "welcome" pra decidir botão vs selo. Usa captureCustomer
+  // como trigger de refresh (muda quando o consultor edita a ficha).
+  useEffect(() => {
+    if (!customerId) { setWelcomeSentAt(null); setTrackingProtocol(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("welcome_sent_at, tracking_protocol")
+        .eq("id", customerId)
+        .maybeSingle();
+      if (cancelled) return;
+      setWelcomeSentAt((data as { welcome_sent_at?: string | null } | null)?.welcome_sent_at ?? null);
+      setTrackingProtocol((data as { tracking_protocol?: string | null } | null)?.tracking_protocol ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [customerId]);
+
+  const handleStartAttendance = useCallback(async () => {
+    if (!customerId || startingAttendance) return;
+    setStartingAttendance(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
+        body: { customerId, consultantId },
+      });
+      if (error) throw error;
+      if (data?.ok === false) {
+        toast({ title: "Não deu pra iniciar", description: data?.error || "Tente de novo.", variant: "destructive" });
+        return;
+      }
+      setWelcomeSentAt(new Date().toISOString());
+      if (data?.protocol) setTrackingProtocol(String(data.protocol));
+      toast({
+        title: data?.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
+        description: data?.protocol ? `Protocolo ${data.protocol}` : undefined,
+      });
+    } catch (e) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setStartingAttendance(false);
+    }
+  }, [customerId, consultantId, startingAttendance, toast]);
 
 
   // Restaura largura do painel lateral de Captação salva pelo consultor.
@@ -506,6 +552,37 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             {phoneNumber}
           </p>
         </div>
+
+        {/* Iniciar atendimento — botão único visível quando ainda não abrimos os 2 balões */}
+        {isCustomer && customerId && !welcomeSentAt && (
+          <Button
+            size="sm"
+            onClick={handleStartAttendance}
+            disabled={startingAttendance}
+            className="h-8 gap-1.5 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 shrink-0"
+            title="Envia saudação + protocolo e pede o nome"
+          >
+            {startingAttendance
+              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : <PlayCircle className="h-3.5 w-3.5" />}
+            <span className="text-[11px] font-semibold hidden sm:inline">Iniciar atendimento</span>
+            <span className="text-[11px] font-semibold sm:hidden">Iniciar</span>
+          </Button>
+        )}
+        {isCustomer && customerId && welcomeSentAt && (
+          <span
+            className="inline-flex items-center gap-1 h-7 px-2 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 shrink-0"
+            title={trackingProtocol ? `Protocolo ${trackingProtocol}` : "Atendimento iniciado"}
+          >
+            <CheckCircle2 className="h-3 w-3" />
+            <span className="text-[10px] font-semibold hidden md:inline">
+              Atendimento iniciado{trackingProtocol ? ` · ${trackingProtocol}` : ""}
+            </span>
+            <span className="text-[10px] font-semibold md:hidden">Iniciado</span>
+          </span>
+        )}
+
+
 
         {isCompactLayout ? (
           <>
