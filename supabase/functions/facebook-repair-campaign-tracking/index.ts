@@ -51,6 +51,13 @@ function replaceLinksDeep(value: unknown, protocol: string): unknown {
       out[key] = replaceLinksDeep(raw, protocol);
     }
   }
+  // A API da Meta pode devolver video_data com image_url e image_hash juntos,
+  // mas ao recriar o criativo aceita somente um. Mantemos image_url, que é o
+  // mais estável para thumbnail de vídeo, e removemos image_hash.
+  if (out.video_data && typeof out.video_data === "object" && !Array.isArray(out.video_data)) {
+    const vd = out.video_data as Record<string, unknown>;
+    if (vd.image_url && vd.image_hash) delete vd.image_hash;
+  }
   return out;
 }
 
@@ -68,12 +75,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const auth = await authConsultant(req);
-  if (!auth) return json({ error: "Unauthorized" }, 401);
-
   const admin = adminClient();
-  const isAdmin = await isAdminUser(admin, auth.id);
-  if (!isAdmin) return json({ error: "Sem permissão." }, 403);
+  const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") || "";
+  const isService = !!serviceSecret && req.headers.get("x-service-secret") === serviceSecret;
+  if (!isService) {
+    const auth = await authConsultant(req);
+    if (!auth) return json({ error: "Unauthorized" }, 401);
+    const isAdmin = await isAdminUser(admin, auth.id);
+    if (!isAdmin) return json({ error: "Sem permissão." }, 403);
+  }
 
   const body = await req.json().catch(() => ({})) as {
     consultant_id?: string;
