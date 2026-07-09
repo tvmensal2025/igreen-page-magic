@@ -116,6 +116,31 @@ function buildOverpassQueryLoose(city: string, category: string, limit: number):
   return fast.replace('["admin_level"="8"]', '["admin_level"]');
 }
 
+// Varre um ESTADO inteiro (admin_level=4). Timeout Overpass elevado (90s)
+// porque a área é enorme — recomenda-se sempre passar uma categoria.
+function buildOverpassQueryState(uf: string, category: string, limit: number): string {
+  const filters = CATEGORY_MAP[category] ?? null;
+  let block: string;
+  if (filters) {
+    block = filters
+      .map((f) => `nwr["name"]["${f}"](area.b);`)
+      .join("\n        ");
+  } else {
+    block = `nwr["name"]["phone"](area.b);
+        nwr["name"]["contact:phone"](area.b);
+        nwr["name"]["contact:mobile"](area.b);`;
+  }
+  const safeUf = uf.replace(/[^A-Z]/g, "");
+  return `
+    [out:json][timeout:90];
+    area["ISO3166-2"="BR-${safeUf}"]["admin_level"="4"]->.b;
+    (
+        ${block}
+    );
+    out center ${limit};
+  `;
+}
+
 interface OsmElement {
   type: string;
   id: number;
