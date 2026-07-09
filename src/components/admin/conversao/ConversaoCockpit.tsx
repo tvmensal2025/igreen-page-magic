@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Download,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -351,23 +351,23 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
-  // ─── Reativar parados (customers com estágio, sem tocar em Captação) ──────
+  // ─── Limpar clientes ativos que estão no funil por engano ─────────────────
   const [promoting, setPromoting] = useState(false);
   const promoteParked = useCallback(async () => {
     setPromoting(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-promote-parked-leads", {
-        body: { days: 120 },
+        body: {},
       });
       if (error) throw error;
-      const reactivated = data?.reactivated ?? 0;
+      const cleaned = data?.cleaned ?? 0;
       const scanned = data?.scanned ?? 0;
-      toast.success("Clientes parados reativados no funil", {
-        description: `${reactivated} de ${scanned} clientes voltaram para o cockpit (120d). Captação não foi tocada.`,
+      toast.success("Clientes ativos removidos do funil", {
+        description: `${cleaned} de ${scanned} eram cliente/licenciada e saíram do Conversão. Captação intocada.`,
       });
       await fetchRows();
     } catch (e: any) {
-      toast.error("Falha ao reativar parados", { description: e.message });
+      toast.error("Falha ao limpar clientes ativos", { description: e.message });
     } finally {
       setPromoting(false);
     }
