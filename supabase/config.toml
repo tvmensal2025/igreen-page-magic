@@ -1,1 +1,4 @@
 project_id = "zlzasfhcxcznaprrragl"
+
+[functions.notify-partner-leads-batch]
+verify_jwt = false
