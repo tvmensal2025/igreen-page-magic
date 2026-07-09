@@ -351,10 +351,10 @@ const Auth = () => {
 
         <div className="flex items-center justify-center gap-4 pt-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
-            <Zap className="w-3 h-3" /><span>Plataforma segura</span>
+            <Zap className="w-3 h-3" /><span>PLATAFORMA PARA O CONSULTOR</span>
           </div>
           <div className="w-1 h-1 rounded-full bg-muted-foreground/20" />
-          <div className="text-xs text-muted-foreground/60">256-bit SSL</div>
+          <div className="text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
         </div>
       </div>
     </div>
