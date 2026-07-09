@@ -1,58 +1,54 @@
-## Diagnóstico das mensagens enviadas
 
-Confirmei no banco por que a mensagem saiu com informação errada:
+## Diagnóstico — por que caiu em revisão manual
 
-1. **"Próximo do giro: Rafael" nas 3 mensagens** — Os 6 leads foram criados via SQL sem `source_campaign_id` (todos NULL). No código, quando não há `source_campaign_id` e o parceiro está em vários pools, o `notify-partner-leads-batch` pega `memberships[0]` (ordem indefinida do Postgres). Nesse caso caiu no pool **Jaraguá** (`counter=0`), então `nextIdx = 0 % 3 = 0` → posição 0 = **Rafael** em todas as 3 mensagens. Deveria ter caído em Uberlândia (`counter=5 → 5%3=2 → Abel`), mas como o lead não tem `source_campaign_id`, a função não tem como saber.
+A lead **Meire Vailant** (customer `3ab5d189…`, consultor Rafael Ferreira) chegou com a frase-âncora do CTWA do Meta, mas **sem nenhum sinal determinístico**:
+- `source_ad_id` = NULL (Meta não enviou o AD ID neste clique)
+- `source_ctwa_clid` = NULL
+- `source_referral` = NULL (nenhum `externalAdReply` no payload)
+- Texto da mensagem não bateu com o `initial_message` de nenhuma campanha ativa (as duas campanhas do Rafael começam com "Olá! Quero saber mais sobre a redução…" e "Oi! Gostaria de entender melhor…"; a Meire mandou "Olá, posso ter mais informações sobre isso?", que é a **frase-âncora genérica** do Meta quando o anúncio não pré-preenche o texto)
 
-2. **"Leads gerados: —"** — as campanhas `Jaraguá` e `Uberlândia` têm `leads_count` NULL em `facebook_campaigns` e não têm nenhuma linha em `facebook_metrics_daily`. A função só olha essas duas fontes → cai no fallback "—".
+O sistema fez o certo pela regra atual ("blindagem do rodízio"): sem sinal seguro, **não chuta** — manda pra revisão manual pra não ir pro parceiro errado. Só que o Rafael tem 2 pools ativas simultâneas (Jaraguá e Uberlândia) com **anúncios em veiculação nos mesmos dias e mesma keyword-âncora**, então quando o Meta engole o `ad_id`/`ctwa_clid`, é impossível saber de qual anúncio veio.
 
-3. **"Total investido: —"** — mesma causa (sem `facebook_metrics_daily`).
+## O que fazer agora (uma ação, dois passos)
 
-## Correções no `notify-partner-leads-batch/index.ts`
+### 1. Atribuir a Meire manualmente (dado correto)
+- `source_campaign_id` = `ce44a165…` (Uberlândia — próxima da vez pelo counter=5, 3 posições → posição 2 = **Abel**)
+- `referral_partner_id` = `52df8e31…` (**Abel Oliveira**)
+- `lead_source` = `meta_ads` (já está)
+- `needs_manual_review` = `false`, `manual_review_reason` = null
+- Avançar o counter da pool Uberlândia (5 → 6) e o `lead_count` do Abel (1 → 2), para o rodízio continuar coerente
 
-**Regra guia:** nunca enviar dado que possa estar errado. Se não há como calcular com certeza, **omitir a linha** em vez de mostrar "—" ou um valor duvidoso.
+### 2. Disparar a mensagem bonita ao Abel
+Invocar `notify-partner-leads-batch` com `customer_ids: ["3ab5d189-b1bc-4179-a071-7187e64b8a74"]` e `force: true` (a lead já tem `last_partner_notified_at` da mensagem de revisão manual — precisa forçar re-envio).
 
-### 1. Resolução do pool (evitar pool errado)
-- Se `source_campaign_id` do lead é NULL **e** o parceiro está em >1 pool: **não incluir** o bloco "SEU RODÍZIO" na mensagem (posição/próximo do giro ficam de fora). Registrar no `results` que o pool ficou ambíguo.
-- Se `source_campaign_id` existe: buscar em `rodizio_pools` pelo `campaign_id`. Se não achar match: também omitir o bloco de rodízio.
-- Só mostrar posição/próximo quando o pool foi resolvido sem ambiguidade.
+O texto do Abel vai conter (dados reais confirmados no banco):
+- Nome, telefone, cidade
+- Campanha: Uberlândia, Uberaba, Belo Horizonte · 2026-07-08 (ativa)
+- Rodízio: Você está na posição 3 · Depois de você: Rafael
+- Leads gerados / total investido: vindos de `facebook_metrics_daily` (ou omitidos se ausentes — regra vigente)
 
-### 2. "Próximo do giro" correto
-- Calcular `nextIdx = poolCounter % totalPositions` como hoje, mas **se `nextMember.partner_id === partnerId`** (o próximo seria ele mesmo, o que confunde), trocar para o **subsequente** (`(poolCounter+1) % totalPositions`) e rotular como "Depois de você:".
-- Isso resolve o caso em que o parceiro que acabou de receber é justamente o "próximo do giro" — a mensagem deixaria de dizer "Próximo do giro: Rafael" para o próprio Rafael.
+## Melhoria estrutural (evita repetir o problema)
 
-### 3. "Leads gerados" com fallback confiável
-Ordem de precedência (usa a primeira que retornar valor real, senão omite a linha):
-1. `SUM(facebook_metrics_daily.leads)` da campanha.
-2. `facebook_campaigns.leads_count`.
-3. `SELECT COUNT(*) FROM customers WHERE source_campaign_id = X` (leads realmente capturados pela plataforma para essa campanha).
+Aplicar em `supabase/functions/evolution-webhook/index.ts` (e mesmo bloco no `whapi-webhook/index.ts`) uma **4ª tentativa antes** de mandar pra revisão manual:
 
-Se todas as 3 retornarem 0/NULL: **omitir** a linha "🎯 Leads gerados" em vez de mostrar "—".
+**Regra:** se a frase-âncora do Meta bateu **E** o consultor tem exatamente uma pool ativa **cujo `initial_message` bate por similaridade Jaccard ≥ 0.4 com o texto recebido**, atribuir a essa campanha (mesmo com match fraco).
 
-### 4. "Total investido" com fallback
-1. `SUM(facebook_metrics_daily.spend_cents)`.
-2. `SUM(ad_spend_daily.spend_cents)` da mesma campanha (se existir).
-3. Se nada: **omitir** a linha em vez de "—".
+Se **mais de uma** pool ativa dá match parcial (caso do Rafael com Jaraguá + Uberlândia), **continua** indo pra revisão manual (regra "não chuta" preservada). A blindagem do rodízio só perdoa quando há candidato ÚNICO — não recria o furo original.
 
-### 5. Bloco "CAMPANHA" — omitir campos sem dado
-- `Ativa desde: —` / `Status: —` / `Orçamento/dia: —` → cada linha só entra se o valor real existir. Se nenhum campo da campanha existe (lead sem `source_campaign_id`), mostrar apenas `📢 Lead orgânico / atribuição manual` no lugar do bloco.
-
-### 6. Contador de "Leads recebidos por você"
-- Hoje usa `rodizio_pool_members.lead_count` (contador do pool). Trocar para: `SELECT COUNT(*) FROM customers WHERE referral_partner_id = partnerId AND consultant_id = ownerConsultantId` (verdade absoluta), com filtro opcional por pool via `source_campaign_id IN (pool.campaign_id)`.
-
-### 7. Log de auditoria
-- Ao enviar, gravar em `campaign_match_log` com `method='partner_notify'`, `payload` contendo o texto final da mensagem, para termos rastreabilidade do que foi enviado a quem.
-
-## Nada muda no fluxo automático
-`notify-consultant.ts` e o webhook `lead-intake` continuam iguais. A correção é isolada em `notify-partner-leads-batch/index.ts`. Não vou reenviar as mensagens já enviadas — como o usuário pediu, ficam como estão; a correção vale para as próximas.
-
-## Verificação após deploy
-1. Chamar a função em modo `dry_run` (adicionar flag no body que retorna o texto sem enviar) com os mesmos 6 `customer_ids` e conferir manualmente que:
-   - Wudysson (Rafael, Jaraguá) → bloco rodízio some (pool ambíguo, sem source_campaign_id) OU aparece com "Depois de você: Francisco".
-   - Francisco → "Depois de você: Abel".
-   - Abel → "Depois de você: Rafael".
-   - Nenhuma linha "—" na mensagem.
-2. Só depois, remover a flag e usar para envios reais.
+Adicional para reduzir ambiguidade futura:
+- Adicionar aviso no admin quando o consultor cria a 2ª campanha com **mesma keyword de abertura** de outra já ativa ("Isso vai forçar leads em revisão manual quando o Meta não mandar o AD ID — considere diferenciar a frase inicial").
 
 ## Arquivos afetados
-- `supabase/functions/notify-partner-leads-batch/index.ts` — reescrever seções de resolução de pool, fallback de campanha e montagem do texto; adicionar flag `dry_run`.
+
+- **Escrita direta no banco** (via ferramenta `supabase--insert`, um `UPDATE` no customer + `UPDATE` no pool + `UPDATE` no member — não é migração de schema):
+  - `public.customers` — Meire → Abel/Uberlândia
+  - `public.rodizio_pools` — counter Uberlândia 5→6
+  - `public.rodizio_pool_members` — lead_count do Abel 1→2
+- **Chamada de edge function** `notify-partner-leads-batch` (via `curl_edge_functions`) com `force: true` para enviar a mensagem ao Abel.
+- **`supabase/functions/evolution-webhook/index.ts`** e **`supabase/functions/whapi-webhook/index.ts`** — adicionar a 4ª tentativa (similaridade Jaccard com pool única) antes do `matchesMetaCtwaPhrase → markManualReview`.
+
+## Verificação após
+
+1. `SELECT source_campaign_id, referral_partner_id, needs_manual_review FROM customers WHERE id = '3ab5d189…'` → todos preenchidos, review=false.
+2. Consultar logs da edge function → 1 mensagem enviada com sucesso para o telefone `5514997927003` (Abel).
+3. Não mexer nas mensagens anteriores.
