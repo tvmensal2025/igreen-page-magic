@@ -209,6 +209,7 @@ export async function searchBusinesses(input: {
   neighbourhood?: string;
   category?: string;
   limit?: number;
+  state_scope?: boolean;
 }): Promise<ResearchSearchResult> {
   const { data, error } = await supabase.functions.invoke("lead-research", {
     body: { action: "search", ...input },
