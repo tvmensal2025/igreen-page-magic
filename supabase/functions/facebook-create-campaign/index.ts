@@ -10,6 +10,11 @@ import {
 } from "../_shared/fb-graph.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import {
+  appendTrackingProtocol,
+  detectTrackingChannel,
+  ensureCampaignTrackingProtocol,
+} from "../_shared/campaign-tracking.ts";
 import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
 interface Body {
@@ -187,18 +192,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // ─── BLOQUEIO: primeira mensagem (CTWA) precisa ser ÚNICA por consultor ───
-    // A initial_message é uma das chaves de atribuição lead → campanha. Duas
-    // campanhas com a MESMA frase deixam o match por texto ambíguo e embaralham
-    // CPL/comissão. Aqui rejeitamos a publicação quando a frase já existe
-    // (normalizada) em outra campanha ativa do mesmo consultor. A UI oferece a
-    // variação por IA (edge function ad-initial-message) antes de chegar aqui.
+    // ─── Protocolo rastreável CTWA ───────────────────────────────────────
+    // Toda campanha nova recebe um protocolo alto e profissional (ex.: FB-87321)
+    // dentro da mensagem inicial. Assim o webhook identifica a campanha correta
+    // mesmo quando existem várias campanhas ativas e o Meta não envia ad_id/ctwa.
+    const trackingChannel = detectTrackingChannel({
+      placement_mode: body.placement_mode,
+      placements: body.placements,
+    });
+    const trackingProtocol = await ensureCampaignTrackingProtocol(adminClient(), trackingChannel);
+    const trackedInitialMessage = appendTrackingProtocol(
+      buildInitialMessage(body.initial_message, body.distribuidora),
+      trackingProtocol,
+    );
+
+    // ─── BLOQUEIO: primeira mensagem CTWA precisa ser ÚNICA por consultor ───
+    // Como o protocolo agora faz parte da mensagem, duas campanhas podem usar a
+    // mesma frase comercial sem ficar ambíguas: o protocolo diferencia a origem.
     {
-      const rawInitial = buildInitialMessage(body.initial_message, body.distribuidora);
       const norm = (s: string) => (s || "")
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
         .toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
-      const normNew = norm(rawInitial);
+      const normNew = norm(trackedInitialMessage);
       if (normNew.length >= 5) {
         const adminCheck = adminClient();
         const { data: dupRows } = await adminCheck
@@ -674,7 +689,7 @@ Deno.serve(async (req) => {
     const adIds: string[] = [];
     const rejectedImages: { url: string; issues: string[]; suggestion?: string }[] = [];
     // Mensagem inicial WhatsApp — hoisted pra que tanto modo foto quanto vídeo usem.
-    const initialMessage = buildInitialMessage(body.initial_message, body.distribuidora);
+    const initialMessage = trackedInitialMessage;
 
 
     // =================== MODO VÍDEO (Reels/Stories) ===================
@@ -826,7 +841,7 @@ Deno.serve(async (req) => {
       (targeting as any).facebook_positions = ["facebook_reels", "story"];
       (targeting as any).instagram_positions = ["reels", "story"];
 
-      const initialMessageV = buildInitialMessage(body.initial_message, body.distribuidora);
+      const initialMessageV = trackedInitialMessage;
       const waNumberCleanV = String(conn.whatsapp_destination_number).replace(/\D/g, "");
       const waLinkV = `https://api.whatsapp.com/send?phone=${waNumberCleanV}&text=${encodeURIComponent(initialMessageV)}`;
       const urlTagsV = `utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.id}}&utm_content=consultor_${consultantLicense}&utm_term={{adset.id}}`;
@@ -1169,6 +1184,8 @@ Deno.serve(async (req) => {
         distribuidora: body.distribuidora ?? null,
         pixel_event_optimized: pixelEvent,
         initial_message: initialMessage,
+        tracking_protocol: trackingProtocol,
+        tracking_protocol_channel: trackingChannel,
       })
       .select("id")
       .maybeSingle();
@@ -1326,7 +1343,7 @@ Deno.serve(async (req) => {
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(realignJob);
     } catch { /* ambiente sem waitUntil — deixa promise soltar */ }
 
-    return new Response(JSON.stringify({ ok: true, campaign_id: campaignId, adset_id: adsetId, ad_ids: adIds, ads_count: adIds.length, activated, activation_error: activationError }), {
+    return new Response(JSON.stringify({ ok: true, campaign_id: campaignId, adset_id: adsetId, ad_ids: adIds, ads_count: adIds.length, tracking_protocol: trackingProtocol, activated, activation_error: activationError }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

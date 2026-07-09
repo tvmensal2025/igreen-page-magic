@@ -1,54 +1,68 @@
+## Diagnóstico
 
-## Diagnóstico — por que caiu em revisão manual
+- Hoje o sistema só identifica a campanha automaticamente quando chega um sinal confiável: `ad_id`, `ctwa_clid` ou a primeira mensagem exata configurada no anúncio.
+- Nos leads problemáticos, o Meta entregou só a frase genérica: `Olá! Posso ter mais informações sobre isso?`, sem `ad_id`, sem `ctwa_clid` e sem `source_referral`.
+- Como existem 2 campanhas ativas do Rafael ao mesmo tempo, essa frase genérica não diferencia Jaraguá de Uberlândia/BH. O código atual manda para revisão manual para não chutar e mandar lead para parceiro errado.
+- Também encontrei uma pool de rodízio ainda ativa ligada a uma campanha pausada. Isso precisa ser sincronizado para não contaminar a contagem de campanhas elegíveis.
 
-A lead **Meire Vailant** (customer `3ab5d189…`, consultor Rafael Ferreira) chegou com a frase-âncora do CTWA do Meta, mas **sem nenhum sinal determinístico**:
-- `source_ad_id` = NULL (Meta não enviou o AD ID neste clique)
-- `source_ctwa_clid` = NULL
-- `source_referral` = NULL (nenhum `externalAdReply` no payload)
-- Texto da mensagem não bateu com o `initial_message` de nenhuma campanha ativa (as duas campanhas do Rafael começam com "Olá! Quero saber mais sobre a redução…" e "Oi! Gostaria de entender melhor…"; a Meire mandou "Olá, posso ter mais informações sobre isso?", que é a **frase-âncora genérica** do Meta quando o anúncio não pré-preenche o texto)
+## Objetivo da correção
 
-O sistema fez o certo pela regra atual ("blindagem do rodízio"): sem sinal seguro, **não chuta** — manda pra revisão manual pra não ir pro parceiro errado. Só que o Rafael tem 2 pools ativas simultâneas (Jaraguá e Uberlândia) com **anúncios em veiculação nos mesmos dias e mesma keyword-âncora**, então quando o Meta engole o `ad_id`/`ctwa_clid`, é impossível saber de qual anúncio veio.
+Fazer o sistema reconhecer automaticamente a campanha correta mesmo com várias campanhas rodando, sem precisar mexer no código a cada nova campanha e sem inventar destino quando não houver sinal real.
 
-## O que fazer agora (uma ação, dois passos)
+## Plano de implementação
 
-### 1. Atribuir a Meire manualmente (dado correto)
-- `source_campaign_id` = `ce44a165…` (Uberlândia — próxima da vez pelo counter=5, 3 posições → posição 2 = **Abel**)
-- `referral_partner_id` = `52df8e31…` (**Abel Oliveira**)
-- `lead_source` = `meta_ads` (já está)
-- `needs_manual_review` = `false`, `manual_review_reason` = null
-- Avançar o counter da pool Uberlândia (5 → 6) e o `lead_count` do Abel (1 → 2), para o rodízio continuar coerente
+1. **Criar um identificador único por campanha**
+  - Cada campanha terá um código curto exclusivo, por exemplo `#IG-A7K2P`.
+  - Esse código será salvo na própria campanha e usado como chave determinística de atribuição.
+2. **Inserir automaticamente o código no WhatsApp do anúncio**
+  - Na criação de toda nova campanha, o sistema vai colocar o código ( protocolo )na mensagem inicial do WhatsApp. PROTOCOLO FICA MAIS PROFISSIONAL
+  - Exemplo: `Oi! Gostaria de entender melhor como posso diminuir minha conta de energia. #IG-A7K2P`
+  - O consultor não precisará fazer nada manualmente. EU QUERO ASSIM   
+  FB-001 – Lead do Facebook.
+    IG-001 – Lead do Instagram.
+    GG-001 – Lead do Google.
+    TT-001 – Lead do TikTok.
+    WA-001 – Lead que chegou pelo WhatsApp.  
+      
+    MAS JA COLOQUE NUMEROS ALTOS PARA NAO PPARECER AMADOR QUE ESTAMOS COMECANDO AGROA  
 
-### 2. Disparar a mensagem bonita ao Abel
-Invocar `notify-partner-leads-batch` com `customer_ids: ["3ab5d189-b1bc-4179-a071-7187e64b8a74"]` e `force: true` (a lead já tem `last_partner_notified_at` da mensagem de revisão manual — precisa forçar re-envio).
+3. **Corrigir as campanhas que já estão rodando agora**
+  - Gerar códigos para as campanhas ativas atuais.
+  - Atualizar/recriar os criativos dos anúncios no Meta com a mensagem rastreável.
+  - Se a Meta não permitir editar o criativo diretamente, criar novo criativo/anúncio dentro da mesma campanha/adset e pausar o anúncio antigo.
+  - Atualizar `fb_ad_ids` no banco para manter o match por `ad_id` correto.
+4. **Substituir a regra atual de “uma única pool ativa”**
+  - Remover a dependência de “só funciona se tiver 1 campanha”.
+  - Criar um resolvedor único usado por `evolution-webhook` e `whapi-webhook` com prioridade:
+  1. código único da campanha na mensagem;
+  2. `ad_id` vindo do Meta;
+  3. `ctwa_clid`;
+  4. mensagem inicial exata;
+  5. sinais auxiliares do referral/creative quando disponíveis.
+    m o código único, pode haver 2, 5 ou 20 campanhas ativas: o sistema identifica a campanha certa.
+5. **Sincronizar rodízio com status real da campanha**
+  - Pool de campanha pausada/completed não deve participar da resolução automática.
+  - Ajustar a lógica para só considerar pool ativa quando a campanha também estiver `active` ou `pending_review` válida.
+  - Desativar a pool que está ativa hoje em campanha pausada, se confirmada como fora de veiculação.
+6. **Evitar revisão manual para os próximos leads rastreáveis**
+  - Quando o código, `ad_id` ou `ctwa_clid` chegar, o lead será atribuído direto ao rodízio correto.
+  - A notificação ao parceiro usará a campanha correta e os cálculos serão feitos com `source_campaign_id` correto.
+  - A revisão manual ficará apenas para casos tecnicamente impossíveis: quando o Meta/remove tudo e o lead também apaga o código antes de enviar. A correção nas campanhas reduz esse caso na origem.
 
-O texto do Abel vai conter (dados reais confirmados no banco):
-- Nome, telefone, cidade
-- Campanha: Uberlândia, Uberaba, Belo Horizonte · 2026-07-08 (ativa)
-- Rodízio: Você está na posição 3 · Depois de você: Rafael
-- Leads gerados / total investido: vindos de `facebook_metrics_daily` (ou omitidos se ausentes — regra vigente)
+## Arquivos/funções a alterar
 
-## Melhoria estrutural (evita repetir o problema)
+- `supabase/functions/facebook-create-campaign/index.ts`
+- `supabase/functions/evolution-webhook/index.ts`
+- `supabase/functions/whapi-webhook/index.ts`
+- `supabase/functions/_shared/single-pool-campaign-resolver.ts` ou substituição por um resolvedor multi-campanha
+- Possível nova edge function de reparo das campanhas ativas atuais
+- Migração para adicionar campos de rastreio em `facebook_campaigns`
 
-Aplicar em `supabase/functions/evolution-webhook/index.ts` (e mesmo bloco no `whapi-webhook/index.ts`) uma **4ª tentativa antes** de mandar pra revisão manual:
+## Validação
 
-**Regra:** se a frase-âncora do Meta bateu **E** o consultor tem exatamente uma pool ativa **cujo `initial_message` bate por similaridade Jaccard ≥ 0.4 com o texto recebido**, atribuir a essa campanha (mesmo com match fraco).
-
-Se **mais de uma** pool ativa dá match parcial (caso do Rafael com Jaraguá + Uberlândia), **continua** indo pra revisão manual (regra "não chuta" preservada). A blindagem do rodízio só perdoa quando há candidato ÚNICO — não recria o furo original.
-
-Adicional para reduzir ambiguidade futura:
-- Adicionar aviso no admin quando o consultor cria a 2ª campanha com **mesma keyword de abertura** de outra já ativa ("Isso vai forçar leads em revisão manual quando o Meta não mandar o AD ID — considere diferenciar a frase inicial").
-
-## Arquivos afetados
-
-- **Escrita direta no banco** (via ferramenta `supabase--insert`, um `UPDATE` no customer + `UPDATE` no pool + `UPDATE` no member — não é migração de schema):
-  - `public.customers` — Meire → Abel/Uberlândia
-  - `public.rodizio_pools` — counter Uberlândia 5→6
-  - `public.rodizio_pool_members` — lead_count do Abel 1→2
-- **Chamada de edge function** `notify-partner-leads-batch` (via `curl_edge_functions`) com `force: true` para enviar a mensagem ao Abel.
-- **`supabase/functions/evolution-webhook/index.ts`** e **`supabase/functions/whapi-webhook/index.ts`** — adicionar a 4ª tentativa (similaridade Jaccard com pool única) antes do `matchesMetaCtwaPhrase → markManualReview`.
-
-## Verificação após
-
-1. `SELECT source_campaign_id, referral_partner_id, needs_manual_review FROM customers WHERE id = '3ab5d189…'` → todos preenchidos, review=false.
-2. Consultar logs da edge function → 1 mensagem enviada com sucesso para o telefone `5514997927003` (Abel).
-3. Não mexer nas mensagens anteriores.
+- Testar lead com 2+ campanhas ativas e mensagem contendo código da campanha.
+- Confirmar que o `source_campaign_id` correto é salvo.
+- Confirmar que `rodizio_next` usa a pool da campanha correta.
+- Confirmar que o parceiro da vez recebe o lead certo.
+- Confirmar que campanha pausada não entra mais no resolver.
+- Conferir logs de `evolution-webhook` e `whapi-webhook` após deploy.

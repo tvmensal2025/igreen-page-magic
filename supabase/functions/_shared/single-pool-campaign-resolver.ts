@@ -1,19 +1,23 @@
 /**
  * single-pool-campaign-resolver.ts
  *
- * "4ª tentativa" — usada SOMENTE quando:
- *   - a frase-âncora do Meta CTWA bateu (matchesMetaCtwaPhrase = true)
- *   - AD ID / ctwa_clid / initial_message exato NÃO resolveram nada
+ * Resolvedor de campanha CTWA quando AD ID / ctwa_clid / initial_message exato
+ * ainda não resolveram nada.
  *
- * Regra (blindagem do rodízio preservada):
- *   - O consultor precisa ter EXATAMENTE UMA pool ativa com campanha vinculada.
- *   - A `initial_message` dessa campanha precisa ter similaridade de Jaccard
- *     (bigrama de palavras, normalizado) ≥ 0.4 com o texto recebido.
- *   - Se houver 2+ pools ativas com match parcial, retorna null — a lead vai
- *     pra revisão manual (não recriamos o furo de "chutar" campanha).
+ * Prioridade:
+ *   1) protocolo profissional dentro da mensagem (FB-87321, IG-87321...)
+ *   2) fallback seguro por similaridade: se exatamente UMA campanha ativa com
+ *      pool ativa passar do threshold, usa essa campanha.
+ *
+ * Se houver empate ou nenhum sinal, retorna null. Não escolhe por acaso.
  *
  * Retorna o `campaign_id` a atribuir, ou null.
  */
+
+import {
+  jaccardSimilarity,
+  resolveCampaignByTrackingProtocol,
+} from "./campaign-tracking.ts";
 
 function normalize(s: string): string {
   return (s || "")
@@ -25,15 +29,6 @@ function normalize(s: string): string {
     .trim();
 }
 
-function jaccard(a: string, b: string): number {
-  const wa = new Set(normalize(a).split(/\s+/).filter((w) => w.length > 2));
-  const wb = new Set(normalize(b).split(/\s+/).filter((w) => w.length > 2));
-  if (!wa.size || !wb.size) return 0;
-  let inter = 0;
-  wa.forEach((w) => { if (wb.has(w)) inter++; });
-  return inter / (wa.size + wb.size - inter);
-}
-
 export async function resolveCampaignBySinglePoolFuzzy(
   supabase: any,
   consultantId: string,
@@ -42,6 +37,9 @@ export async function resolveCampaignBySinglePoolFuzzy(
 ): Promise<string | null> {
   if (!messageText || messageText.trim().length < 5) return null;
   try {
+    const byProtocol = await resolveCampaignByTrackingProtocol(supabase, consultantId, messageText);
+    if (byProtocol) return byProtocol;
+
     const { data: pools } = await supabase
       .from("rodizio_pools")
       .select("campaign_id, facebook_campaigns!inner(id, initial_message, status)")
@@ -51,14 +49,19 @@ export async function resolveCampaignBySinglePoolFuzzy(
 
     const active = ((pools || []) as any[]).filter((p) => {
       const c = p.facebook_campaigns;
-      return c && c.status === "active" && c.initial_message;
+      return c && ["active", "pending_review"].includes(c.status) && c.initial_message;
     });
 
-    if (active.length !== 1) return null; // 0 ou 2+ → não chuta
+    const matches = active
+      .map((p) => {
+        const camp = p.facebook_campaigns;
+        return { id: camp.id as string, score: jaccardSimilarity(messageText, camp.initial_message) };
+      })
+      .filter((m) => m.score >= threshold)
+      .sort((a, b) => b.score - a.score);
 
-    const camp = active[0].facebook_campaigns;
-    const score = jaccard(messageText, camp.initial_message);
-    if (score >= threshold) return camp.id as string;
+    if (matches.length === 1) return matches[0].id;
+    if (matches.length > 1 && matches[0].score > matches[1].score + 0.15) return matches[0].id;
     return null;
   } catch (e) {
     console.warn("[single-pool-resolver] falhou:", (e as Error)?.message);
