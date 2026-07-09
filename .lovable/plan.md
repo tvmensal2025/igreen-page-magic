@@ -1,34 +1,39 @@
 ## Diagnóstico
-Consultor logado (0c2711ad) tem **44 contatos com conversa** em `conversations`. O fetch atual do Conversão exclui pelo SQL:
+Rafael (0c2711ad) tem **754 clientes**. Deles:
+- 699 `customer_origin='igreen_sync'` (importados do portal iGreen).
+- 55 `whatsapp_lead`.
+- **583 têm `origin_channel` em (whapi, evolution)** — vieram pelo WhatsApp; muitos foram sincronizados depois com iGreen.
+- 43 têm mensagem gravada em `conversations`/`last_bot_interaction_at`.
+- 180 dos 583 têm status ativo (`andamento_igreen` ativo/aprovado/validado/…) → clientes fechados.
 
-```
-.is("igreen_code", null)
-.is("data_ativo", null)
-.is("data_validado", null)
-.is("data_cadastro", null)
-```
+O Whapi antigo era outro número mas mesmo canal — muitas conversas nunca foram persistidas em `conversations`, então exigir "ter mensagem gravada" some com esses leads.
 
-Mas dos 44 que conversaram, **6 já têm `igreen_code`** (Gislaine, Lucineia, Ana Claudia, Évelin, Luiz Lyra, +1) — são leads que assinaram mas continuam em negociação/validação. Eles somem do Conversão por causa desse filtro. Só 2 têm status realmente ativo (`andamento_igreen` in `ativo/aprovado/validado/licenciada/licenciado`).
+## Regra
+Só entra no Conversão quem **é lead do WhatsApp** (Evolution ou Whapi):
+- `customer_origin IN ('whatsapp_lead','manual')` **OU** `origin_channel IN ('whapi','evolution')`.
 
-Ou seja: "ter código iGreen" ≠ "cliente ativo". Cliente ativo mesmo é quem tem `andamento_igreen` num status final OU `assinatura_cliente` truthy OU `data_ativo/data_validado` preenchidos (esses últimos são zero na base atual, mas devem seguir cortando).
+E **nunca** `customer_origin='igreen_sync'`, mesmo que também tenha `origin_channel` marcado — sync é cliente do portal, não lead.
+
+Fora do funil: qualquer um com sinal de cliente ativo (`data_ativo`, `data_validado`, `andamento_igreen ∈ ativo/aprovado/validado/licenciada/licenciado`, `assinatura_cliente` truthy).
 
 ## Mudança
-### `src/components/admin/conversao/ConversaoCockpit.tsx` — fetch (linhas 139-147)
-Retirar do `.select`:
-- `.is("igreen_code", null)` — mantém quem já assinou mas ainda está sendo trabalhado.
-- `.is("data_cadastro", null)` — só cadastro no portal também não é sinal de cliente ativo.
+### `src/components/admin/conversao/ConversaoCockpit.tsx` — `fetchRows` (linhas 130-196)
 
-Manter:
-- `.is("data_ativo", null)` e `.is("data_validado", null)` — esses sim indicam ativação/validação real.
-- `.eq("consultant_id", consultantId)` e ordenação por `last_bot_interaction_at`.
+1. **Select** — trazer também `origin_channel`.
+2. **Filtros SQL**:
+   - `.eq("consultant_id", consultantId)`
+   - `.neq("customer_origin", "igreen_sync")` ← exclui sync mesmo com canal WhatsApp
+   - `.or("customer_origin.in.(whatsapp_lead,manual),origin_channel.in.(whapi,evolution)")`
+   - `.is("data_ativo", null)`
+   - `.is("data_validado", null)`
+   - ordenar por `last_bot_interaction_at desc`, `limit(1000)`.
+3. **Filtro JS**: remover a exigência de "started" (`last_bot_interaction_at` ou linha em `conversations`) e remover a segunda query em `conversations`. Manter só a exclusão por `andamento_igreen ∈ CLIENT_STATUSES` e `assinatura_cliente` truthy.
 
-Filtro JS já bloqueia `andamento_igreen ∈ (ativo,aprovado,validado,licenciada,licenciado)` e `assinatura_cliente` truthy — isso continua garantindo que cliente ativo não apareça.
-
-Resultado esperado: ~42 leads (44 que conversaram − 2 com status ativo) aparecem para o consultor 0c2711ad, contra os poucos de agora.
+Resultado esperado para Rafael: leads do canal WhatsApp que não são `igreen_sync` e não estão ativos — inclui os contatos antigos do Whapi sem histórico gravado.
 
 ## Fora de escopo
-- Sem mudar Captação, schema ou RLS.
-- Sem alterar UI, filtros de tela, drawer, ou pipeline de IA.
+- Sem alterar Captação, schema, RLS.
+- Sem mudar UI, drawer, filtros de tela ou IA.
 
 ## Verificação
-Após aplicar: fila Conversão do consultor 0c2711ad passa a mostrar Gislaine, Lucineia, Ana Claudia, Évelin, Luiz Lyra e demais que conversaram e ainda estão em andamento; ninguém com `andamento_igreen` ativo/validado/etc. na lista.
+Recarregar `/admin` → Central de Conversão. Contatos antigos do Whapi (mesmo sem `conversations`) passam a aparecer; nenhum `igreen_sync` na fila; nenhum com `andamento_igreen` ativo/validado.
