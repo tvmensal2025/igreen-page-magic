@@ -71,9 +71,55 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [botForceEnabled, setBotForceEnabled] = useState<boolean>(false);
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
+  const [welcomeSentAt, setWelcomeSentAt] = useState<string | null>(null);
+  const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
+  const [startingAttendance, setStartingAttendance] = useState(false);
   const isCompactLayout = useIsLgDown();
   const { width: vw } = useViewportWidth();
   const isXl = vw >= 1280;
+
+  // Carrega estado do "welcome" pra decidir botão vs selo. Usa captureCustomer
+  // como trigger de refresh (muda quando o consultor edita a ficha).
+  useEffect(() => {
+    if (!customerId) { setWelcomeSentAt(null); setTrackingProtocol(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("welcome_sent_at, tracking_protocol")
+        .eq("id", customerId)
+        .maybeSingle();
+      if (cancelled) return;
+      setWelcomeSentAt((data as { welcome_sent_at?: string | null } | null)?.welcome_sent_at ?? null);
+      setTrackingProtocol((data as { tracking_protocol?: string | null } | null)?.tracking_protocol ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [customerId]);
+
+  const handleStartAttendance = useCallback(async () => {
+    if (!customerId || startingAttendance) return;
+    setStartingAttendance(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
+        body: { customerId, consultantId },
+      });
+      if (error) throw error;
+      if (data?.ok === false) {
+        toast({ title: "Não deu pra iniciar", description: data?.error || "Tente de novo.", variant: "destructive" });
+        return;
+      }
+      setWelcomeSentAt(new Date().toISOString());
+      if (data?.protocol) setTrackingProtocol(String(data.protocol));
+      toast({
+        title: data?.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
+        description: data?.protocol ? `Protocolo ${data.protocol}` : undefined,
+      });
+    } catch (e) {
+      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setStartingAttendance(false);
+    }
+  }, [customerId, consultantId, startingAttendance, toast]);
 
 
   // Restaura largura do painel lateral de Captação salva pelo consultor.
