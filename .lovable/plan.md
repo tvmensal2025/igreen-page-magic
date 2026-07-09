@@ -1,76 +1,79 @@
+## Objetivo
 
-# Protocolo de Atendimento Profissional
+1. Restaurar os 9 clientes do parceiro **Luiz Lyra** (que foi desativado por engano).
+2. Unificar parceiros duplicados (mesmo `nome` + `partner_igreen_id`) sem perder clientes atribuídos.
+3. Cadastrar automaticamente uma **keyword** para cada parceiro ativo que ainda não tem — sem risco de colidir com campanhas do Facebook (que hoje usam apenas `tracking_protocol` no formato `2026-####-X`, não keyword).
 
-Sistema determinístico para rastrear 100% dos leads CTWA sem revisão manual, com identidade visual profissional.
+## Diagnóstico (dados reais)
 
-## 1. Formato do código: `2026-0042-A`
+**Duplicados detectados em `referral_partners`:**
 
-- **`2026`** — ano corrente (reinicia todo 1º de janeiro).
-- **`0042`** — sequencial global da campanha, 4 dígitos com zero à esquerda (suporta até 9999 campanhas/ano).
-- **`-A`, `-B`, `-C`...** — sufixo por instância WhatsApp vinculada à campanha (rodízio).
+| Nome | igreen_id | id (manter) | id (remover) | clientes |
+|---|---|---|---|---|
+| Luiz Lyra | 138518 | `b2003464…96c` (tem 9 clientes) | `11bf5f7f…175` (0 clientes) | 9 |
+| Nilma Santana | 125483 | `6ee1fc81…564` (9 clientes) | `480f6eaf…d6b` (0 clientes) | 9 |
+| CELIO | 5678 | `707aca64…6c9` (1 cliente) | `a536efcd…c84` (0 clientes) | 1 |
+| Welington | 1237u | `011e8faf…7dc` (0 clientes) | `6317cb7b…8fc` + `829cdbfa…6bd` | 0 |
 
-Exemplo real: campanha Jaraguá em 2026, 3ª criada no ano, com 2 instâncias no rodízio → protocolos `2026-0003-A` (instância principal) e `2026-0003-B` (secundária).
+O caso do Luiz Lyra é o mais importante: a linha que **tem os 9 clientes** (`b2003464`) está com `is_active=false` — por isso ele "sumiu" do ranking. A linha ativa (`11bf5f7f`) tem 0 clientes.
 
-### Geração (à prova de colisão)
+**Parceiros ativos sem keyword:**
+Abel Oliveira, Fracisco Melquiades, Luiz Lyra, Nilma Santana, Rafael Ferreira Dias, cezario (tem qr_phrase mas keywords vazio).
 
-Sequência controlada por tabela dedicada `campaign_protocol_sequence (year, last_seq)` com função `next_campaign_protocol(year)` `SECURITY DEFINER` que faz `UPDATE ... RETURNING last_seq+1` atômico. Zero chance de duplicata mesmo com criações simultâneas.
+**Confirmação anti-colisão:** `facebook_campaigns` não usa mais keyword — campanhas são resolvidas exclusivamente pelo protocolo `YYYY-####-X`. Portanto keywords cadastradas aqui NÃO vão interferir em nenhuma campanha.
 
-Sufixo de instância atribuído na ordem em que a instância entra na pool do rodízio (A = primeira, B = segunda...). Registrado em coluna nova `rodizio_pool_members.protocol_suffix CHAR(1)`.
+## Plano — Migração SQL única, idempotente
 
-## 2. Como aparece na mensagem (bloco destacado)
+Vou executar **uma migração** que faz:
 
-Template aplicado automaticamente no momento da criação/reparo do anúncio no Meta:
+### 1. Unificar duplicados (função `merge_referral_partners`)
 
-```text
-{mensagem_original_do_consultor}
+Para cada grupo `(nome, partner_igreen_id)` com mais de 1 linha:
 
-━━━━━━━━━━━━━━━━━━
-📋 Protocolo de atendimento
-*2026-0042-A*
-━━━━━━━━━━━━━━━━━━
-```
+- Escolhe o "sobrevivente" = a linha que tem **mais clientes** atribuídos; empate → a mais antiga (`created_at`).
+- Move clientes: `UPDATE customers SET referral_partner_id = <sobrevivente> WHERE referral_partner_id = <duplicata>`.
+- Consolida `keywords` (união dos arrays, sem duplicar).
+- Preserva `qr_phrase` do sobrevivente; se estiver NULL, herda da duplicata.
+- Marca sobrevivente como `is_active = true`.
+- Deleta as linhas duplicadas.
 
-- Separadores tornam o bloco visualmente inconfundível.
-- Protocolo em negrito para leitura rápida.
-- Fica no rodapé para não competir com a copy de venda.
-- Cliente pode citar o protocolo em qualquer contato futuro → busca instantânea no admin.
+Isso resolve automaticamente:
+- **Luiz Lyra**: sobrevive `b2003464` (com 9 clientes), reativado, e `11bf5f7f` some.
+- **Nilma Santana**: sobrevive `6ee1fc81` (9 clientes), `480f6eaf` some.
+- **CELIO**: sobrevive `707aca64`, reativado.
+- **Welington**: sobrevive `011e8faf` (mantém keyword `eias fausto1`).
 
-## 3. Registro e rastreio (Admin)
+### 2. Gerar keywords faltantes
 
-### 3a. Coluna nova em cada card de campanha (Admin → Campanhas Facebook)
+Para cada parceiro ativo com `keywords = '{}'` OU `keywords IS NULL`:
 
-- Badge com o protocolo (`2026-0042`) + botão copiar.
-- Ao expandir, lista sufixos por instância: `-A telefone …1234`, `-B telefone …5678`.
+- Deriva keyword a partir do **primeiro nome normalizado** (minúsculas, sem acento, sem espaço). Ex.:
+  - Abel Oliveira → `abel`
+  - Fracisco Melquiades → `fracisco`
+  - Luiz Lyra → `luiz` (se colidir com outro, usa `luizlyra`)
+  - Nilma Santana → `nilma`
+  - Rafael Ferreira Dias → `rafael` (se colidir, `rafaelferreira`)
+  - cezario → `cezario`
+- Verifica colisão com keywords já existentes em outros parceiros; se houver, tenta o nome completo concatenado antes de gravar.
+- Gera `qr_phrase` padrão quando estiver NULL, no mesmo formato do resto: `Olá, o(a) <Nome> me indicou vocês porque quero economizar na minha conta de luz, pode me ajudar?`
 
-### 3b. Nova página `/admin/protocolos`
+### 3. Índice para prevenir duplicação futura
 
-Tabela com:
+`CREATE UNIQUE INDEX IF NOT EXISTS referral_partners_nome_igreen_uidx ON referral_partners (consultant_id, lower(nome), partner_igreen_id) WHERE partner_igreen_id IS NOT NULL;`
 
-| Protocolo | Campanha | Instância | Status | Leads recebidos | Último lead | Ações |
-|-----------|----------|-----------|--------|-----------------|-------------|-------|
-
-- Filtro por ano, status (ativa/pausada), consultor.
-- Busca por protocolo (cliente diz "meu protocolo é 2026-0042-A" → operador acha na hora).
-- Métricas: total de leads por protocolo, taxa de conversão, tempo médio de resposta.
-- Export CSV.
-
-## 4. Configuração automática (sem toque humano)
-
-1. **Criar campanha** (`facebook-create-campaign`): chama `next_campaign_protocol(2026)` → recebe `42` → monta `2026-0042` → salva em `facebook_campaigns.tracking_protocol` → para cada instância na pool, gera `2026-0042-A/B/...` → injeta bloco na `initial_message` antes de enviar ao Meta.
-2. **Reparar campanha existente** (`facebook-repair-campaign-tracking`): mesmo fluxo, mas atualiza o creative no Meta preservando `video_data`/`image_url`.
-3. **Adicionar instância nova à pool**: trigger atribui próximo sufixo livre e re-injeta o bloco nas creatives daquela instância.
-4. **Match no webhook** (`evolution-webhook` + `whapi-webhook`): regex `/\b(20\d{2})-(\d{4})-([A-Z])\b/` na primeira mensagem → resolve campanha + instância exatas. Fallback atual (`ad_id`, `ctwa_clid`, fuzzy) permanece como segunda linha de defesa.
-
-## 5. Migração das campanhas ativas hoje
-
-Script único: para cada campanha ativa sem protocolo, gerar `2026-####-X` e chamar `facebook-repair-campaign-tracking`. Executa uma vez, log de sucesso/erro por campanha.
-
----
+Assim o sistema **não permite mais** cadastrar 2 parceiros com o mesmo nome + igreen_id no mesmo consultor.
 
 ## Detalhes técnicos
 
-- **DB**: nova tabela `campaign_protocol_sequence`, função `next_campaign_protocol(int)`, coluna `rodizio_pool_members.protocol_suffix`, coluna `facebook_campaigns.tracking_protocol` já existe (será re-formatada para o novo padrão).
-- **Shared**: `_shared/campaign-tracking.ts` recebe novo helper `formatProtocolBlock(protocol)` e `parseProtocolFromText(text)` com regex acima.
-- **Edge functions afetadas**: `facebook-create-campaign`, `facebook-repair-campaign-tracking`, `evolution-webhook`, `whapi-webhook`.
-- **Frontend**: novo componente `ProtocolBadge`, nova rota `/admin/protocolos` (`ProtocolsPage.tsx`), coluna no card de campanha existente.
-- **Retrocompatibilidade**: protocolos antigos `FB-#####` continuam sendo reconhecidos pelo parser (regex dupla) até serem migrados.
+- Tudo roda dentro de uma transação (migração Supabase é atômica).
+- A merge é implementada como função PL/pgSQL executada uma vez no fim da migração; fica disponível para uso futuro se o admin quiser mesclar manualmente 2 parceiros.
+- Nenhuma alteração em Edge Functions ou frontend — o `AdminReferralPartnersPage` já lê a tabela como está.
+- Sem risco para campanhas: nenhuma coluna de `facebook_campaigns` é tocada; o resolver de webhook prioriza protocolo `YYYY-####-X` e keyword é fallback apenas para leads sem protocolo.
+
+## Resultado esperado
+
+- Luiz Lyra volta ao ranking com 9 clientes atribuídos.
+- Nilma Santana aparece uma única vez com 9 clientes.
+- CELIO e Welington aparecem uma única vez cada.
+- Todos os parceiros ativos passam a ter keyword + frase de QR válidas.
+- Não é mais possível criar duplicata acidental.
