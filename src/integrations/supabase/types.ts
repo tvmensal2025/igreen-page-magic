@@ -3886,6 +3886,7 @@ export type Database = {
           summary_updated_at: string | null
           terms_accepted_at: string | null
           tipo_produto: string
+          tracking_protocol: string | null
           transferir_titularidade: boolean | null
           updated_at: string
           variant_id: string | null
@@ -4122,6 +4123,7 @@ export type Database = {
           summary_updated_at?: string | null
           terms_accepted_at?: string | null
           tipo_produto?: string
+          tracking_protocol?: string | null
           transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
@@ -4358,6 +4360,7 @@ export type Database = {
           summary_updated_at?: string | null
           terms_accepted_at?: string | null
           tipo_produto?: string
+          tracking_protocol?: string | null
           transferir_titularidade?: boolean | null
           updated_at?: string
           variant_id?: string | null
@@ -7321,6 +7324,27 @@ export type Database = {
             referencedColumns: ["consultant_id"]
           },
         ]
+      }
+      partner_protocol_seq: {
+        Row: {
+          date_ymd: string
+          partner_id: string
+          seq: number
+          updated_at: string
+        }
+        Insert: {
+          date_ymd: string
+          partner_id: string
+          seq?: number
+          updated_at?: string
+        }
+        Update: {
+          date_ymd?: string
+          partner_id?: string
+          seq?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       pending_outbound_media: {
         Row: {
@@ -10340,6 +10364,10 @@ export type Database = {
       gen_partner_short_code: { Args: { p_len?: number }; Returns: string }
       generate_campaign_tracking_protocol: {
         Args: { _channel?: string }
+        Returns: string
+      }
+      generate_partner_protocol: {
+        Args: { _initials: string; _partner_id: string }
         Returns: string
       }
       get_coverage_summary: {
