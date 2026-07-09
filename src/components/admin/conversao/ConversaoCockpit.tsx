@@ -130,13 +130,15 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     const { data, error } = await supabase
       .from("customers" as any)
       .select(`
-        id, name, phone_whatsapp, customer_origin, lead_source, bot_paused,
+        id, name, phone_whatsapp, customer_origin, origin_channel, lead_source, bot_paused,
         last_bot_interaction_at, created_at, electricity_bill_value, referral_partner_id, conversation_step,
         igreen_code, data_ativo, data_validado, data_cadastro, andamento_igreen, assinatura_cliente, pos_venda_stage,
         lead_insights ( temperature, conversion_chance, summary, main_doubt, main_objection,
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
+      .neq("customer_origin", "igreen_sync")
+      .or("customer_origin.in.(whatsapp_lead,manual),origin_channel.in.(whapi,evolution)")
       .is("data_ativo", null)
       .is("data_validado", null)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
@@ -168,24 +170,9 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       }
     }
 
-    // Só entra no Conversão quem já iniciou conversa (last_bot_interaction_at
-    // ou pelo menos uma mensagem em `conversations`).
-    const convSet = new Set<string>();
-    if (customerIds.length > 0) {
-      const { data: convRows } = await supabase
-        .from("conversations" as any)
-        .select("customer_id")
-        .in("customer_id", customerIds);
-      for (const row of (convRows as unknown as { customer_id: string }[]) ?? []) {
-        convSet.add(row.customer_id);
-      }
-    }
-
     const CLIENT_STATUSES = new Set(["ativo", "aprovado", "validado", "licenciada", "licenciado"]);
     const SUB_TRUTHY = new Set(["true", "t", "sim", "yes", "1"]);
     const filteredData = (data ?? []).filter((c: any) => {
-      const started = !!c.last_bot_interaction_at || convSet.has(c.id);
-      if (!started) return false;
       const s = (c.andamento_igreen ?? "").toString().trim().toLowerCase();
       if (CLIENT_STATUSES.has(s)) return false;
       const sub = (c.assinatura_cliente ?? "").toString().trim().toLowerCase();
