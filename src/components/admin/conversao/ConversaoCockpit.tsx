@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Download,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -132,11 +132,18 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       .select(`
         id, name, phone_whatsapp, customer_origin, lead_source, bot_paused,
         last_bot_interaction_at, created_at, electricity_bill_value, referral_partner_id, conversation_step,
+        igreen_code, data_ativo, data_validado, data_cadastro, andamento_igreen, assinatura_cliente, pos_venda_stage,
         lead_insights ( temperature, conversion_chance, summary, main_doubt, main_objection,
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
+      .is("pos_venda_stage", null)
+      .is("igreen_code", null)
+      .is("data_ativo", null)
+      .is("data_validado", null)
+      .is("data_cadastro", null)
+      .not("assinatura_cliente", "is", true)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(1000);
 
@@ -166,7 +173,12 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       }
     }
 
-    const mapped: LeadRow[] = (data ?? []).map((c: any) => {
+    const CLIENT_STATUSES = new Set(["ativo", "aprovado", "validado", "licenciada", "licenciado"]);
+    const filteredData = (data ?? []).filter((c: any) => {
+      const s = (c.andamento_igreen ?? "").toString().trim().toLowerCase();
+      return !CLIENT_STATUSES.has(s);
+    });
+    const mapped: LeadRow[] = filteredData.map((c: any) => {
       const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
       const ref = c.last_bot_interaction_at || c.created_at;
       const hours = ref ? (now - new Date(ref).getTime()) / 3_600_000 : null;
@@ -339,23 +351,23 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
-  // ─── Reativar parados (customers com estágio, sem tocar em Captação) ──────
+  // ─── Limpar clientes ativos que estão no funil por engano ─────────────────
   const [promoting, setPromoting] = useState(false);
   const promoteParked = useCallback(async () => {
     setPromoting(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-promote-parked-leads", {
-        body: { days: 120 },
+        body: {},
       });
       if (error) throw error;
-      const reactivated = data?.reactivated ?? 0;
+      const cleaned = data?.cleaned ?? 0;
       const scanned = data?.scanned ?? 0;
-      toast.success("Clientes parados reativados no funil", {
-        description: `${reactivated} de ${scanned} clientes voltaram para o cockpit (120d). Captação não foi tocada.`,
+      toast.success("Clientes ativos removidos do funil", {
+        description: `${cleaned} de ${scanned} eram cliente/licenciada e saíram do Conversão. Captação intocada.`,
       });
       await fetchRows();
     } catch (e: any) {
-      toast.error("Falha ao reativar parados", { description: e.message });
+      toast.error("Falha ao limpar clientes ativos", { description: e.message });
     } finally {
       setPromoting(false);
     }
@@ -608,8 +620,8 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
             <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
           </Button>
           <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
-            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Reativar parados (120d)
+            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Limpar clientes ativos
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
