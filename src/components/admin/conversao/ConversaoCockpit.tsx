@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Trash2,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -143,7 +143,6 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       .is("data_ativo", null)
       .is("data_validado", null)
       .is("data_cadastro", null)
-      .not("assinatura_cliente", "is", true)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(1000);
 
@@ -174,9 +173,13 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
 
     const CLIENT_STATUSES = new Set(["ativo", "aprovado", "validado", "licenciada", "licenciado"]);
+    const SUB_TRUTHY = new Set(["true", "t", "sim", "yes", "1"]);
     const filteredData = (data ?? []).filter((c: any) => {
       const s = (c.andamento_igreen ?? "").toString().trim().toLowerCase();
-      return !CLIENT_STATUSES.has(s);
+      if (CLIENT_STATUSES.has(s)) return false;
+      const sub = (c.assinatura_cliente ?? "").toString().trim().toLowerCase();
+      if (SUB_TRUTHY.has(sub)) return false;
+      return true;
     });
     const mapped: LeadRow[] = filteredData.map((c: any) => {
       const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
@@ -351,27 +354,6 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
-  // ─── Limpar clientes ativos que estão no funil por engano ─────────────────
-  const [promoting, setPromoting] = useState(false);
-  const promoteParked = useCallback(async () => {
-    setPromoting(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("admin-promote-parked-leads", {
-        body: {},
-      });
-      if (error) throw error;
-      const cleaned = data?.cleaned ?? 0;
-      const scanned = data?.scanned ?? 0;
-      toast.success("Clientes ativos removidos do funil", {
-        description: `${cleaned} de ${scanned} eram cliente/licenciada e saíram do Conversão. Captação intocada.`,
-      });
-      await fetchRows();
-    } catch (e: any) {
-      toast.error("Falha ao limpar clientes ativos", { description: e.message });
-    } finally {
-      setPromoting(false);
-    }
-  }, [fetchRows]);
 
   // ─── Classificação sob demanda ao abrir a Central ───────────────────────────
   // Em vez de um cron periódico processar todos os leads o tempo todo (gasto
@@ -505,8 +487,6 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           staleLoading={bulkStale}
           onReload={fetchRows}
           loading={loading}
-          onPromoteParked={promoteParked}
-          promoting={promoting}
         />
 
         <FilterBar
@@ -592,7 +572,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
 //  Sub-componentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading, onPromoteParked, promoting }: {
+function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading }: {
   metrics: { total: number; classified: number; unclassified: number; hotStuck: number; revenueAtStake: number; avgChance: number };
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
@@ -600,8 +580,6 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
   staleLoading: boolean;
   onReload: () => void;
   loading: boolean;
-  onPromoteParked: () => void;
-  promoting: boolean;
 }) {
   return (
     <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-card">
@@ -618,10 +596,6 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onReload} disabled={loading || !!bulk}>
             <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
-          </Button>
-          <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
-            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            Limpar clientes ativos
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
