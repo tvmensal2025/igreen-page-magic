@@ -1,67 +1,95 @@
-## Ideia
+# Protocolo profissional de atendimento
 
-Cada lead que chega no WhatsApp recebe **imediatamente** um Protocolo gerado por nós — no estilo do exemplo iGreen (`489486961`) — que embute as iniciais da **chave do parceiro** que vai atender. A saudação do bot é dinâmica pelo horário (**Bom dia / Boa tarde / Boa noite**). Nada depende mais do Meta preservar `welcome_message`.
+## Como o cliente vai ver (exemplo real)
 
-## Formato do Protocolo
+Quando o lead manda a 1ª mensagem, o bot responde em **2 balões**:
 
-```
-{INICIAIS_CHAVE}-{YYMMDD}-{SEQ4}
-Ex.: RFD-260119-0042
-```
-
-- `INICIAIS_CHAVE`: 3 letras extraídas da **chave iGreen do parceiro do rodízio** (ex.: `RAFAELFERREIRADIAS` → `RFD`). Fallback = 3 primeiras letras do nome sem acento.
-- `YYMMDD`: data local (America/Sao_Paulo) da criação do lead.
-- `SEQ4`: sequencial diário atômico por parceiro (`0001`, `0002`…), gerado por RPC — garante unicidade e rastreabilidade.
-
-Assim, olhando o protocolo, admin sabe **na hora**: quem atendeu, em que dia, e qual foi o número do atendimento do dia.
-
-## Primeira mensagem do bot
-
-Substitui o texto atual pelo padrão inspirado no exemplo:
+**Balão 1 — Saudação institucional**
 
 ```
 Olá, Muito Bom Dia! 👋
 Esse é o canal de atendimento especializado da iGreen Energy.
+```
 
+**Balão 2 — Protocolo + pergunta de abertura ( não tem como posso ajudar )** 
+
+```
 ━━━━━━━━━━━━━━━━━━━━━━
 📋 Protocolo de atendimento
 *RFD-260119-0042*
 ━━━━━━━━━━━━━━━━━━━━━
- 💚💚💚💚💚💚💚💚💚💚💚💚
+💚💚💚💚💚💚💚💚💚💚💚💚
+
+
 ```
 
-Saudação por hora local: `05–11 Bom dia · 12–17 Boa tarde · 18–04 Boa noite`.
+A saudação (`Muito Bom Dia / Muita Boa Tarde / Muita Boa Noite`) é calculada pelo horário de São Paulo no momento da chegada.
 
-Sempre Vai ser Muito Bom Dia, Muita Boa Tarde, Muita Boa Noite. Sempre um olá e nao pode errar, nao vai ter a pergunta, pq sempre vai vir um fluxo apos essa mensagem 
+## Formato do protocolo
 
-## O que muda no código
+`INICIAIS-YYMMDD-####`
 
-1. **Migração**
-  - `customers.tracking_protocol text` + índice único por consultor.
-  - Nova RPC `generate_partner_tracking_protocol(_partner_id uuid)` que devolve `INICIAIS-YYMMDD-SEQ4` com sequencial atômico (tabela `partner_protocol_seq(partner_id, day, last_seq)`).
-2. **Helper `_shared/campaign-tracking.ts**`
-  - `partnerInitials(partner)` — extrai 3 letras da `igreen_key`/nome.
-  - Atualizar `ensureCampaignTrackingProtocol` para aceitar `partnerId` e chamar a nova RPC.
-  - Ajustar `TRACKING_PROTOCOL_RE` para reconhecer o novo formato.
-3. **Helper novo `_shared/greeting.ts**`
-  - `greetingForNow(tz='America/Sao_Paulo')` → `"Bom dia" | "Boa tarde" | "Boa noite"`.
-4. **Webhooks (`whapi-webhook`, `evolution-webhook`)**
-  - Após decidir o parceiro pelo rodízio (ou fallback super-admin), gerar o protocolo com esse `partnerId`, gravar em `customers.tracking_protocol` e em `campaign_match_log.protocol`.
-  - Substituir a primeira resposta do bot pelo template acima (usando `greetingForNow()` + `formatProtocolBlock()`).
-  - Idempotente: só gera se `tracking_protocol IS NULL`.
-5. **Notificação ao parceiro**
-  - `notifyPartnerNewLead` passa a incluir o protocolo do lead no aviso ("Protocolo: RFD-260119-0042"), pra o parceiro citar ao cliente.
+- **INICIAIS (3 letras)**: iniciais do nome do parceiro que recebeu o lead no rodízio (ex.: Rafael Ferreira Dias → `RFD`). Se o lead cair fora do rodízio, usamos as iniciais do consultor, e como último fallback `IGR`.
+- **YYMMDD**: data de chegada em SP (`260119` = 19/jan/2026).
+- **####**: contador sequencial diário do próprio parceiro (`0001`, `0002`, …) — reinicia todo dia às 00:00 SP.
 
-## Detalhes técnicos
+Vantagem: o parceiro consegue "ler" o protocolo (sabe que é dele, sabe o dia, sabe a ordem).
 
-- Sequencial atômico via `INSERT ... ON CONFLICT (partner_id, day) DO UPDATE SET last_seq = last_seq + 1 RETURNING last_seq`.
-- Sem mexer em creatives no Meta — welcome_message continua como está, mas o sistema não confia mais nele.
-- Formato antigo (`2026-0042`, `FB-87321`) continua sendo reconhecido para retrocompat.
-- Fuso horário fixo `America/Sao_Paulo` via `Intl.DateTimeFormat` (Deno suporta).
-- Testes unitários: `greetingForNow` (bordas 04:59/05:00/11:59/12:00/17:59/18:00) e `partnerInitials` (nomes com acento, 1 palavra, 2 palavras, chave alfanumérica).
+## Como não vamos nos perder — onde fica registrado
 
-## Fora de escopo
+1. `**customers.tracking_protocol**` — protocolo gravado direto no cadastro do lead. Aparece no Kanban, no CRM e em qualquer busca.
+2. `**partner_protocol_seq**` — tabela contadora `(partner_id, data)` que garante sequência única por parceiro/dia. É a "fonte da verdade" e evita colisão.
+3. `**conversations**` — o balão 2 (com o protocolo) é salvo como mensagem outbound normal, então fica na timeline do lead.
+4. **Notificação ao parceiro** — a mensagem que já mandamos ao parceiro (`notify-partner-leads-batch`) passa a citar o mesmo protocolo. Parceiro e cliente compartilham o mesmo código.
+5. **Painel `/admin/protocolos**` (já existe) — passa a listar também os protocolos de atendimento, com filtro por parceiro/data e link para o lead.
 
-- Tela admin para listar/buscar protocolos (fica pra depois).
-- Regerar protocolos históricos.
-- Alterar UX do parceiro (`/consultor`).
+## Como fica gerado (fluxo interno)
+
+```text
+Lead manda 1ª msg
+    │
+    ▼
+Webhook cria customer (sem protocolo ainda)
+    │
+    ▼
+Rodízio decide o parceiro
+    │
+    ▼
+RPC generate_partner_protocol(partner_id, iniciais)
+    │  ├─ INSERT/UPDATE em partner_protocol_seq (seq++)
+    │  └─ RETURN "RFD-260119-0042"
+    ▼
+UPDATE customers.tracking_protocol
+    │
+    ▼
+Envia balão 1 (saudação) → salva em conversations
+Envia balão 2 (protocolo + pergunta) → salva em conversations
+    │
+    ▼
+Bot flow normal continua a partir do próximo turno
+```
+
+Se o lead cair em revisão manual (sem parceiro), geramos o protocolo com iniciais do consultor e marcamos `needs_partner_review = true` — o admin pode reatribuir depois; o protocolo continua o mesmo.
+
+## Arquivos a criar/editar
+
+- **Migração**: coluna `customers.tracking_protocol`, tabela `partner_protocol_seq`, RPC `generate_partner_protocol(uuid, text)`.
+- `**_shared/greeting.ts**`: `greetingForNow()` (horário SP) + `partnerInitials(name)`.
+- `**_shared/protocol.ts**` (novo): `assignProtocolToCustomer(customerId, partnerId?)` — chama a RPC e faz `UPDATE customers`.
+- `**_shared/welcome-header.ts**` (novo): monta os 2 balões e chama o adapter do canal (Evolution/Whapi) já resolvido para o customer.
+- `**whapi-webhook/index.ts` + `evolution-webhook/index.ts**`: nos pontos onde hoje chamamos `notifyPartnerNewLead` (após rodízio decidir), adicionar:
+  1. `assignProtocolToCustomer(...)`
+  2. `sendWelcomeHeader(...)` — apenas na **primeira** interação do lead (checa `conversations` count == 1 inbound).
+- `**notify-partner-leads-batch**`: incluir `tracking_protocol` na mensagem enviada ao parceiro.
+- `**AdminProtocolsPage.tsx**`: acrescentar aba "Atendimento" listando `customers.tracking_protocol`.
+
+## Regras de segurança
+
+- RPC roda como `SECURITY DEFINER` com `search_path=public` e só recebe grants para `service_role`.
+- Envio da saudação é **idempotente**: se `customers.tracking_protocol` já existe, não regenera nem reenvia (evita duplicar se o webhook processar 2x).
+- Se o envio do balão falhar, o protocolo fica gravado mesmo assim (não bloqueia a conversa).
+
+## Não faz parte deste plano
+
+- Trocar formato dos protocolos de campanha (`FB-XXXXX`) que já existem em `facebook_campaigns` — esse continua igual, é outro escopo.
+- Migração retroativa dos leads antigos — só os novos a partir do deploy recebem protocolo.

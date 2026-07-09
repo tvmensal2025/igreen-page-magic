@@ -1169,12 +1169,18 @@ Deno.serve(async (req) => {
 
               // Aviso ao participante da vez (Requisito 7.3). Só notifica quem
               // GANHOU o CAS — evita 2 parceiros receberem o mesmo lead.
-              notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
-                id: customer.id,
-                name: (customer as any).name,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
-              }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+              (async () => {
+                const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
+                const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", rodizioPartnerId).maybeSingle();
+                const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: rodizioPartnerId, partnerName: (prow as any)?.nome });
+                return notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
+                  id: customer.id,
+                  name: (customer as any).name,
+                  phone_whatsapp: (customer as any).phone_whatsapp,
+                  is_sandbox: (customer as any).is_sandbox,
+                  tracking_protocol: res?.protocol,
+                });
+              })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
 
               // Se a atribuição veio de sinal fraco (initial_message sem AD ID
               // nem ctwa_clid) → ainda avisa o super admin pra conferir cadastro.
@@ -1329,12 +1335,18 @@ Deno.serve(async (req) => {
               `[partner-match] customer=${customer.id} partner=${matchedPartnerId} source=${matchedSource} marker="${matchedKeyword}" score=${matchedScore}`,
             );
             // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
-            notifyPartnerNewLead(instanceData.consultant_id, matchedPartnerId, {
-              id: customer.id,
-              name: (customer as any).name,
-              phone_whatsapp: (customer as any).phone_whatsapp,
-              is_sandbox: (customer as any).is_sandbox,
-            }).catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+            (async () => {
+              const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
+              const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", matchedPartnerId).maybeSingle();
+              const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: matchedPartnerId, partnerName: (prow as any)?.nome });
+              return notifyPartnerNewLead(instanceData.consultant_id, matchedPartnerId, {
+                id: customer.id,
+                name: (customer as any).name,
+                phone_whatsapp: (customer as any).phone_whatsapp,
+                is_sandbox: (customer as any).is_sandbox,
+                tracking_protocol: res?.protocol,
+              });
+            })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
           }
         }
       } catch (e) {
