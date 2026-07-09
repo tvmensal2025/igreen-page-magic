@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
   const { data: consultant } = await admin
     .from("consultants")
     .select("id")
-    .eq("user_id", userData.user.id)
+    .eq("id", userData.user.id)
     .maybeSingle();
   if (!consultant) {
     return new Response(JSON.stringify({ error: "consultant not found" }), {
