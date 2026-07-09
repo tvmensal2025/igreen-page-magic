@@ -41,8 +41,7 @@ export type AdminTabId =
   | "links"
   | "materiais"
   | "audio-studio"
-  | "academy"
-  | "recuperacao-leads";
+  | "academy";
 
 interface NavItem {
   id: AdminTabId;
@@ -65,7 +64,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "crm", label: "Clientes interessados", icon: LayoutGrid },
       { id: "crm-clientes", label: "Clientes ativos", icon: UserCheck },
       { id: "conversao", label: "Conversão", icon: Flame },
-      { id: "recuperacao-leads", label: "Recuperar leads", icon: Flame, href: "/admin/recuperacao-leads" },
       { id: "clientes", label: "Base de clientes", icon: Database },
       { id: "financeiro", label: "Financeiro", icon: Receipt },
     ],

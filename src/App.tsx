@@ -30,7 +30,7 @@ const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
-const AdminRecoverLeadsPage = lazy(() => import("./pages/AdminRecoverLeadsPage"));
+
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
@@ -102,7 +102,7 @@ const App = () => (
               <Route path="/admin/agendamentos" element={<Navigate to="/admin?tab=agendamentos" replace />} />
               <Route path="/admin/meta-ads" element={<ProtectedRoute><AdminMetaAds /></ProtectedRoute>} />
               <Route path="/admin/protocolos" element={<ProtectedRoute><AdminProtocolsPage /></ProtectedRoute>} />
-              <Route path="/admin/recuperacao-leads" element={<ProtectedRoute><AdminRecoverLeadsPage /></ProtectedRoute>} />
+              
               <Route path="/admin/solar-design" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
               <Route path="/admin/solar-design/:snapshotId" element={<ProtectedRoute><SolarDesignDetailPage /></ProtectedRoute>} />
               <Route path="/experiments/solar-3d" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />

@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -339,6 +339,29 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
+  // ─── Puxar leads parados (captured_leads + customers sem estágio) ──────────
+  const [promoting, setPromoting] = useState(false);
+  const promoteParked = useCallback(async () => {
+    setPromoting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-promote-parked-leads", {
+        body: { days: 120 },
+      });
+      if (error) throw error;
+      const promoted = data?.promoted ?? 0;
+      const reactivated = data?.reactivated ?? 0;
+      const scanned = data?.scanned ?? 0;
+      toast.success("Leads parados puxados para o funil", {
+        description: `${promoted} novos + ${reactivated} reativados (varredura de ${scanned} leads em 120d).`,
+      });
+      await fetchRows();
+    } catch (e: any) {
+      toast.error("Falha ao puxar leads parados", { description: e.message });
+    } finally {
+      setPromoting(false);
+    }
+  }, [fetchRows]);
+
   // ─── Classificação sob demanda ao abrir a Central ───────────────────────────
   // Em vez de um cron periódico processar todos os leads o tempo todo (gasto
   // ocioso quando ninguém está olhando), classifica só quando o consultor abre
@@ -471,6 +494,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           staleLoading={bulkStale}
           onReload={fetchRows}
           loading={loading}
+          onPromoteParked={promoteParked}
+          promoting={promoting}
         />
 
         <FilterBar
@@ -556,7 +581,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
 //  Sub-componentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading }: {
+function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading, onPromoteParked, promoting }: {
   metrics: { total: number; classified: number; unclassified: number; hotStuck: number; revenueAtStake: number; avgChance: number };
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
@@ -564,6 +589,8 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
   staleLoading: boolean;
   onReload: () => void;
   loading: boolean;
+  onPromoteParked: () => void;
+  promoting: boolean;
 }) {
   return (
     <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-card">
@@ -580,6 +607,10 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onReload} disabled={loading || !!bulk}>
             <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
+            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Puxar leads parados (120d)
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
