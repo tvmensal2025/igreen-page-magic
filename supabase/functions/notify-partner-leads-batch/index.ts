@@ -107,14 +107,15 @@ Deno.serve(async (req) => {
       }
 
       // Parceiro
-      const { data: partner } = await admin
+      const { data: partner, error: pErr } = await admin
         .from("referral_partners")
-        .select("id, nome, notification_phone, phone, is_active")
+        .select("id, nome, notification_phone, is_active")
         .eq("id", partnerId).maybeSingle();
+      if (pErr) { results.push({ customer_id, skipped: "partner_query_error", error: pErr.message }); continue; }
       if (!partner || (partner as any).is_active === false) {
         results.push({ customer_id, skipped: "partner_inactive" }); continue;
       }
-      const partnerPhone = (partner as any).notification_phone || (partner as any).phone;
+      const partnerPhone = (partner as any).notification_phone;
       if (!partnerPhone) { results.push({ customer_id, skipped: "partner_no_phone" }); continue; }
 
       // Campanha: usa source_campaign_id ou descobre pelo pool onde o parceiro está
