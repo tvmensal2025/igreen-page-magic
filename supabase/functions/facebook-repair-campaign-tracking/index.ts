@@ -51,6 +51,13 @@ function replaceLinksDeep(value: unknown, protocol: string): unknown {
       out[key] = replaceLinksDeep(raw, protocol);
     }
   }
+  // A API da Meta pode devolver video_data com image_url e image_hash juntos,
+  // mas ao recriar o criativo aceita somente um. Mantemos image_url, que é o
+  // mais estável para thumbnail de vídeo, e removemos image_hash.
+  if (out.video_data && typeof out.video_data === "object" && !Array.isArray(out.video_data)) {
+    const vd = out.video_data as Record<string, unknown>;
+    if (vd.image_url && vd.image_hash) delete vd.image_hash;
+  }
   return out;
 }
 
