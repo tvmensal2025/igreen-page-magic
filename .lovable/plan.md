@@ -1,68 +1,76 @@
-## Diagnóstico
 
-- Hoje o sistema só identifica a campanha automaticamente quando chega um sinal confiável: `ad_id`, `ctwa_clid` ou a primeira mensagem exata configurada no anúncio.
-- Nos leads problemáticos, o Meta entregou só a frase genérica: `Olá! Posso ter mais informações sobre isso?`, sem `ad_id`, sem `ctwa_clid` e sem `source_referral`.
-- Como existem 2 campanhas ativas do Rafael ao mesmo tempo, essa frase genérica não diferencia Jaraguá de Uberlândia/BH. O código atual manda para revisão manual para não chutar e mandar lead para parceiro errado.
-- Também encontrei uma pool de rodízio ainda ativa ligada a uma campanha pausada. Isso precisa ser sincronizado para não contaminar a contagem de campanhas elegíveis.
+# Protocolo de Atendimento Profissional
 
-## Objetivo da correção
+Sistema determinístico para rastrear 100% dos leads CTWA sem revisão manual, com identidade visual profissional.
 
-Fazer o sistema reconhecer automaticamente a campanha correta mesmo com várias campanhas rodando, sem precisar mexer no código a cada nova campanha e sem inventar destino quando não houver sinal real.
+## 1. Formato do código: `2026-0042-A`
 
-## Plano de implementação
+- **`2026`** — ano corrente (reinicia todo 1º de janeiro).
+- **`0042`** — sequencial global da campanha, 4 dígitos com zero à esquerda (suporta até 9999 campanhas/ano).
+- **`-A`, `-B`, `-C`...** — sufixo por instância WhatsApp vinculada à campanha (rodízio).
 
-1. **Criar um identificador único por campanha**
-  - Cada campanha terá um código curto exclusivo, por exemplo `#IG-A7K2P`.
-  - Esse código será salvo na própria campanha e usado como chave determinística de atribuição.
-2. **Inserir automaticamente o código no WhatsApp do anúncio**
-  - Na criação de toda nova campanha, o sistema vai colocar o código ( protocolo )na mensagem inicial do WhatsApp. PROTOCOLO FICA MAIS PROFISSIONAL
-  - Exemplo: `Oi! Gostaria de entender melhor como posso diminuir minha conta de energia. #IG-A7K2P`
-  - O consultor não precisará fazer nada manualmente. EU QUERO ASSIM   
-  FB-001 – Lead do Facebook.
-    IG-001 – Lead do Instagram.
-    GG-001 – Lead do Google.
-    TT-001 – Lead do TikTok.
-    WA-001 – Lead que chegou pelo WhatsApp.  
-      
-    MAS JA COLOQUE NUMEROS ALTOS PARA NAO PPARECER AMADOR QUE ESTAMOS COMECANDO AGROA  
+Exemplo real: campanha Jaraguá em 2026, 3ª criada no ano, com 2 instâncias no rodízio → protocolos `2026-0003-A` (instância principal) e `2026-0003-B` (secundária).
 
-3. **Corrigir as campanhas que já estão rodando agora**
-  - Gerar códigos para as campanhas ativas atuais.
-  - Atualizar/recriar os criativos dos anúncios no Meta com a mensagem rastreável.
-  - Se a Meta não permitir editar o criativo diretamente, criar novo criativo/anúncio dentro da mesma campanha/adset e pausar o anúncio antigo.
-  - Atualizar `fb_ad_ids` no banco para manter o match por `ad_id` correto.
-4. **Substituir a regra atual de “uma única pool ativa”**
-  - Remover a dependência de “só funciona se tiver 1 campanha”.
-  - Criar um resolvedor único usado por `evolution-webhook` e `whapi-webhook` com prioridade:
-  1. código único da campanha na mensagem;
-  2. `ad_id` vindo do Meta;
-  3. `ctwa_clid`;
-  4. mensagem inicial exata;
-  5. sinais auxiliares do referral/creative quando disponíveis.
-    m o código único, pode haver 2, 5 ou 20 campanhas ativas: o sistema identifica a campanha certa.
-5. **Sincronizar rodízio com status real da campanha**
-  - Pool de campanha pausada/completed não deve participar da resolução automática.
-  - Ajustar a lógica para só considerar pool ativa quando a campanha também estiver `active` ou `pending_review` válida.
-  - Desativar a pool que está ativa hoje em campanha pausada, se confirmada como fora de veiculação.
-6. **Evitar revisão manual para os próximos leads rastreáveis**
-  - Quando o código, `ad_id` ou `ctwa_clid` chegar, o lead será atribuído direto ao rodízio correto.
-  - A notificação ao parceiro usará a campanha correta e os cálculos serão feitos com `source_campaign_id` correto.
-  - A revisão manual ficará apenas para casos tecnicamente impossíveis: quando o Meta/remove tudo e o lead também apaga o código antes de enviar. A correção nas campanhas reduz esse caso na origem.
+### Geração (à prova de colisão)
 
-## Arquivos/funções a alterar
+Sequência controlada por tabela dedicada `campaign_protocol_sequence (year, last_seq)` com função `next_campaign_protocol(year)` `SECURITY DEFINER` que faz `UPDATE ... RETURNING last_seq+1` atômico. Zero chance de duplicata mesmo com criações simultâneas.
 
-- `supabase/functions/facebook-create-campaign/index.ts`
-- `supabase/functions/evolution-webhook/index.ts`
-- `supabase/functions/whapi-webhook/index.ts`
-- `supabase/functions/_shared/single-pool-campaign-resolver.ts` ou substituição por um resolvedor multi-campanha
-- Possível nova edge function de reparo das campanhas ativas atuais
-- Migração para adicionar campos de rastreio em `facebook_campaigns`
+Sufixo de instância atribuído na ordem em que a instância entra na pool do rodízio (A = primeira, B = segunda...). Registrado em coluna nova `rodizio_pool_members.protocol_suffix CHAR(1)`.
 
-## Validação
+## 2. Como aparece na mensagem (bloco destacado)
 
-- Testar lead com 2+ campanhas ativas e mensagem contendo código da campanha.
-- Confirmar que o `source_campaign_id` correto é salvo.
-- Confirmar que `rodizio_next` usa a pool da campanha correta.
-- Confirmar que o parceiro da vez recebe o lead certo.
-- Confirmar que campanha pausada não entra mais no resolver.
-- Conferir logs de `evolution-webhook` e `whapi-webhook` após deploy.
+Template aplicado automaticamente no momento da criação/reparo do anúncio no Meta:
+
+```text
+{mensagem_original_do_consultor}
+
+━━━━━━━━━━━━━━━━━━
+📋 Protocolo de atendimento
+*2026-0042-A*
+━━━━━━━━━━━━━━━━━━
+```
+
+- Separadores tornam o bloco visualmente inconfundível.
+- Protocolo em negrito para leitura rápida.
+- Fica no rodapé para não competir com a copy de venda.
+- Cliente pode citar o protocolo em qualquer contato futuro → busca instantânea no admin.
+
+## 3. Registro e rastreio (Admin)
+
+### 3a. Coluna nova em cada card de campanha (Admin → Campanhas Facebook)
+
+- Badge com o protocolo (`2026-0042`) + botão copiar.
+- Ao expandir, lista sufixos por instância: `-A telefone …1234`, `-B telefone …5678`.
+
+### 3b. Nova página `/admin/protocolos`
+
+Tabela com:
+
+| Protocolo | Campanha | Instância | Status | Leads recebidos | Último lead | Ações |
+|-----------|----------|-----------|--------|-----------------|-------------|-------|
+
+- Filtro por ano, status (ativa/pausada), consultor.
+- Busca por protocolo (cliente diz "meu protocolo é 2026-0042-A" → operador acha na hora).
+- Métricas: total de leads por protocolo, taxa de conversão, tempo médio de resposta.
+- Export CSV.
+
+## 4. Configuração automática (sem toque humano)
+
+1. **Criar campanha** (`facebook-create-campaign`): chama `next_campaign_protocol(2026)` → recebe `42` → monta `2026-0042` → salva em `facebook_campaigns.tracking_protocol` → para cada instância na pool, gera `2026-0042-A/B/...` → injeta bloco na `initial_message` antes de enviar ao Meta.
+2. **Reparar campanha existente** (`facebook-repair-campaign-tracking`): mesmo fluxo, mas atualiza o creative no Meta preservando `video_data`/`image_url`.
+3. **Adicionar instância nova à pool**: trigger atribui próximo sufixo livre e re-injeta o bloco nas creatives daquela instância.
+4. **Match no webhook** (`evolution-webhook` + `whapi-webhook`): regex `/\b(20\d{2})-(\d{4})-([A-Z])\b/` na primeira mensagem → resolve campanha + instância exatas. Fallback atual (`ad_id`, `ctwa_clid`, fuzzy) permanece como segunda linha de defesa.
+
+## 5. Migração das campanhas ativas hoje
+
+Script único: para cada campanha ativa sem protocolo, gerar `2026-####-X` e chamar `facebook-repair-campaign-tracking`. Executa uma vez, log de sucesso/erro por campanha.
+
+---
+
+## Detalhes técnicos
+
+- **DB**: nova tabela `campaign_protocol_sequence`, função `next_campaign_protocol(int)`, coluna `rodizio_pool_members.protocol_suffix`, coluna `facebook_campaigns.tracking_protocol` já existe (será re-formatada para o novo padrão).
+- **Shared**: `_shared/campaign-tracking.ts` recebe novo helper `formatProtocolBlock(protocol)` e `parseProtocolFromText(text)` com regex acima.
+- **Edge functions afetadas**: `facebook-create-campaign`, `facebook-repair-campaign-tracking`, `evolution-webhook`, `whapi-webhook`.
+- **Frontend**: novo componente `ProtocolBadge`, nova rota `/admin/protocolos` (`ProtocolsPage.tsx`), coluna no card de campanha existente.
+- **Retrocompatibilidade**: protocolos antigos `FB-#####` continuam sendo reconhecidos pelo parser (regex dupla) até serem migrados.
