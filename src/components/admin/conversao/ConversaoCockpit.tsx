@@ -339,6 +339,29 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
+  // ─── Puxar leads parados (captured_leads + customers sem estágio) ──────────
+  const [promoting, setPromoting] = useState(false);
+  const promoteParked = useCallback(async () => {
+    setPromoting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-promote-parked-leads", {
+        body: { days: 120 },
+      });
+      if (error) throw error;
+      const promoted = data?.promoted ?? 0;
+      const reactivated = data?.reactivated ?? 0;
+      const scanned = data?.scanned ?? 0;
+      toast.success("Leads parados puxados para o funil", {
+        description: `${promoted} novos + ${reactivated} reativados (varredura de ${scanned} leads em 120d).`,
+      });
+      await fetchRows();
+    } catch (e: any) {
+      toast.error("Falha ao puxar leads parados", { description: e.message });
+    } finally {
+      setPromoting(false);
+    }
+  }, [fetchRows]);
+
   // ─── Classificação sob demanda ao abrir a Central ───────────────────────────
   // Em vez de um cron periódico processar todos os leads o tempo todo (gasto
   // ocioso quando ninguém está olhando), classifica só quando o consultor abre
