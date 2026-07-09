@@ -173,7 +173,12 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       }
     }
 
-    const mapped: LeadRow[] = (data ?? []).map((c: any) => {
+    const CLIENT_STATUSES = new Set(["ativo", "aprovado", "validado", "licenciada", "licenciado"]);
+    const filteredData = (data ?? []).filter((c: any) => {
+      const s = (c.andamento_igreen ?? "").toString().trim().toLowerCase();
+      return !CLIENT_STATUSES.has(s);
+    });
+    const mapped: LeadRow[] = filteredData.map((c: any) => {
       const li = Array.isArray(c.lead_insights) ? c.lead_insights[0] : c.lead_insights;
       const ref = c.last_bot_interaction_at || c.created_at;
       const hours = ref ? (now - new Date(ref).getTime()) / 3_600_000 : null;
