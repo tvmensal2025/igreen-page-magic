@@ -4593,6 +4593,8 @@ export type Database = {
           status: string
           thumbnail_synced_at: string | null
           thumbnail_url: string | null
+          tracking_protocol: string | null
+          tracking_protocol_channel: string | null
           updated_at: string
         }
         Insert: {
@@ -4627,6 +4629,8 @@ export type Database = {
           status?: string
           thumbnail_synced_at?: string | null
           thumbnail_url?: string | null
+          tracking_protocol?: string | null
+          tracking_protocol_channel?: string | null
           updated_at?: string
         }
         Update: {
@@ -4661,6 +4665,8 @@ export type Database = {
           status?: string
           thumbnail_synced_at?: string | null
           thumbnail_url?: string | null
+          tracking_protocol?: string | null
+          tracking_protocol_channel?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -10311,6 +10317,10 @@ export type Database = {
       fork_public_ai_media: { Args: { _media_id: string }; Returns: string }
       funnel_step_rank: { Args: { step: string }; Returns: number }
       gen_partner_short_code: { Args: { p_len?: number }; Returns: string }
+      generate_campaign_tracking_protocol: {
+        Args: { _channel?: string }
+        Returns: string
+      }
       get_coverage_summary: {
         Args: never
         Returns: {
