@@ -68,12 +68,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  const auth = await authConsultant(req);
-  if (!auth) return json({ error: "Unauthorized" }, 401);
-
   const admin = adminClient();
-  const isAdmin = await isAdminUser(admin, auth.id);
-  if (!isAdmin) return json({ error: "Sem permissão." }, 403);
+  const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") || "";
+  const isService = !!serviceSecret && req.headers.get("x-service-secret") === serviceSecret;
+  if (!isService) {
+    const auth = await authConsultant(req);
+    if (!auth) return json({ error: "Unauthorized" }, 401);
+    const isAdmin = await isAdminUser(admin, auth.id);
+    if (!isAdmin) return json({ error: "Sem permissão." }, 403);
+  }
 
   const body = await req.json().catch(() => ({})) as {
     consultant_id?: string;
