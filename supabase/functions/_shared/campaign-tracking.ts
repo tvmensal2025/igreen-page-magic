@@ -1,33 +1,75 @@
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export const TRACKING_PROTOCOL_RE = /\b(FB|IG|GG|TT|WA)\s*[-–—]?\s*(\d{4,8})\b/i;
-const MAX_INITIAL_MESSAGE_LEN = 160;
+// Formato NOVO (profissional): YYYY-#### opcionalmente com sufixo de instância -A/-B/-C
+// Ex.: 2026-0042, 2026-0042-A
+export const TRACKING_PROTOCOL_V2_RE = /\b(20\d{2})[-–—](\d{4})(?:[-–—]([A-Z]))?\b/;
+
+// Formato LEGADO mantido para retrocompatibilidade: FB-87321 / IG-87321 ...
+export const TRACKING_PROTOCOL_LEGACY_RE = /\b(FB|IG|GG|TT|WA)\s*[-–—]?\s*(\d{4,8})\b/i;
+
+// Regex composta usada nos webhooks (tenta o novo primeiro)
+export const TRACKING_PROTOCOL_RE = TRACKING_PROTOCOL_V2_RE;
+
+const MAX_INITIAL_MESSAGE_LEN = 280; // aumentado p/ acomodar o bloco visual
 
 export function normalizeTrackingProtocol(value: string | null | undefined): string | null {
   if (!value) return null;
-  const match = String(value).match(TRACKING_PROTOCOL_RE);
-  if (!match) return null;
-  return `${match[1].toUpperCase()}-${match[2]}`;
+  const s = String(value);
+  const m2 = s.match(TRACKING_PROTOCOL_V2_RE);
+  if (m2) {
+    const base = `${m2[1]}-${m2[2]}`;
+    return m2[3] ? `${base}-${m2[3].toUpperCase()}` : base;
+  }
+  const m1 = s.match(TRACKING_PROTOCOL_LEGACY_RE);
+  if (m1) return `${m1[1].toUpperCase()}-${m1[2]}`;
+  return null;
 }
+
+/** Retorna apenas o "protocolo-base" (sem sufixo de instância) para lookup de campanha. */
+export function protocolBase(protocol: string | null | undefined): string | null {
+  const n = normalizeTrackingProtocol(protocol);
+  if (!n) return null;
+  const m2 = n.match(TRACKING_PROTOCOL_V2_RE);
+  if (m2) return `${m2[1]}-${m2[2]}`;
+  return n; // legado não tem sufixo
+}
+
+export function protocolSuffix(protocol: string | null | undefined): string | null {
+  const n = normalizeTrackingProtocol(protocol);
+  if (!n) return null;
+  const m2 = n.match(TRACKING_PROTOCOL_V2_RE);
+  return m2?.[3] ?? null;
+}
+
+const BLOCK_LINE = "━━━━━━━━━━━━━━━━━━";
 
 export function stripTrackingProtocol(value: string | null | undefined): string {
   return String(value || "")
-    .replace(/\s*[-–—]?\s*protocolo\s*:?[ \t]*/gi, " ")
-    .replace(TRACKING_PROTOCOL_RE, "")
+    // remove bloco visual completo
+    .replace(new RegExp(`${BLOCK_LINE}[\\s\\S]*?${BLOCK_LINE}`, "g"), "")
+    .replace(/📋\s*Protocolo[^\n]*/gi, "")
+    .replace(/\s*[-–—]?\s*protocolo(?:\s+de\s+atendimento)?\s*:?[ \t]*/gi, " ")
+    .replace(TRACKING_PROTOCOL_V2_RE, "")
+    .replace(TRACKING_PROTOCOL_LEGACY_RE, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Bloco visual profissional exibido ao cliente na mensagem inicial do wa.me. */
+export function formatProtocolBlock(protocol: string): string {
+  return `\n\n${BLOCK_LINE}\n📋 Protocolo de atendimento\n*${protocol}*\n${BLOCK_LINE}`;
 }
 
 export function appendTrackingProtocol(baseMessage: string, protocol: string | null | undefined): string {
   const normalized = normalizeTrackingProtocol(protocol);
   const cleanBase = stripTrackingProtocol(baseMessage);
   if (!normalized) return cleanBase.slice(0, MAX_INITIAL_MESSAGE_LEN);
-  const suffix = ` Protocolo ${normalized}`;
-  const maxBase = Math.max(0, MAX_INITIAL_MESSAGE_LEN - suffix.length);
+  const block = formatProtocolBlock(normalized);
+  const maxBase = Math.max(0, MAX_INITIAL_MESSAGE_LEN - block.length);
   const trimmedBase = cleanBase.length > maxBase
     ? cleanBase.slice(0, maxBase).replace(/[\s.,;:!?-]+$/g, "")
     : cleanBase;
-  return `${trimmedBase}${suffix}`.trim().slice(0, MAX_INITIAL_MESSAGE_LEN);
+  return `${trimmedBase}${block}`.slice(0, MAX_INITIAL_MESSAGE_LEN);
 }
 
 export function detectTrackingChannel(input: {
@@ -60,8 +102,10 @@ export async function ensureCampaignTrackingProtocol(
   } catch (e) {
     console.warn("[campaign-tracking] protocol RPC falhou:", (e as Error)?.message);
   }
-  // Fallback local alto, mantendo aparência profissional mesmo se a RPC falhar.
-  return `${normalizedChannel}-${Math.floor(70000 + Math.random() * 20000)}`;
+  // Fallback local com formato novo
+  const year = new Date().getFullYear();
+  const seq = Math.floor(1000 + Math.random() * 8999);
+  return `${year}-${seq}`;
 }
 
 export async function resolveCampaignByTrackingProtocol(
@@ -69,14 +113,14 @@ export async function resolveCampaignByTrackingProtocol(
   consultantId: string,
   text: string | null | undefined,
 ): Promise<string | null> {
-  const protocol = normalizeTrackingProtocol(text);
-  if (!protocol) return null;
+  const base = protocolBase(text);
+  if (!base) return null;
   try {
     const { data, error } = await supabase
       .from("facebook_campaigns")
       .select("id, status")
       .eq("consultant_id", consultantId)
-      .eq("tracking_protocol", protocol)
+      .eq("tracking_protocol", base)
       .in("status", ["active", "pending_review"])
       .maybeSingle();
     if (error) {
@@ -99,7 +143,7 @@ function normalizeWords(s: string): string[] {
     .replace(/\s+/g, " ")
     .trim()
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !["protocolo", "facebook", "instagram"].includes(w));
+    .filter((w) => w.length > 2 && !["protocolo", "facebook", "instagram", "atendimento"].includes(w));
 }
 
 export function jaccardSimilarity(a: string, b: string): number {
