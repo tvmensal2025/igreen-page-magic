@@ -408,7 +408,7 @@ function partnerFooter(step: string): string {
 export async function notifyPartnerNewLead(
   ownerConsultantId: string,
   partnerId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null; tracking_protocol?: string | null },
 ): Promise<boolean> {
   try {
     if (lead?.is_sandbox) return false;
@@ -426,15 +426,32 @@ export async function notifyPartnerNewLead(
       return false;
     }
 
+    // Se o protocolo não veio no argumento, tenta buscar em `customers`.
+    let protocol = (lead.tracking_protocol || "").trim();
+    if (!protocol && lead.id) {
+      try {
+        const { data: cRow } = await adminClient()
+          .from("customers")
+          .select("tracking_protocol")
+          .eq("id", lead.id)
+          .maybeSingle();
+        protocol = String((cRow as any)?.tracking_protocol || "").trim();
+      } catch { /* ignore */ }
+    }
+
     const hi = partnerName ? `Olá, ${partnerName.split(" ")[0]}! 👋\n\n` : "";
+    const protoBlock = protocol
+      ? `━━━━━━━━━━━━━━━━━━\n📋 *Protocolo de atendimento*\n*${protocol}*\n━━━━━━━━━━━━━━━━━━\n`
+      : "";
     const text =
       `${hi}🎉 *NOVO LEAD CHEGOU PRA VOCÊ!*\n` +
       `━━━━━━━━━━━━━━━━━━\n` +
       `👤 *Nome:* ${lead.name?.trim() || "(coletando…)"}\n` +
       `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
       `🕐 *Entrou em:* ${nowBRT()}\n` +
-      `🤖 *Atendendo:* Sofia (IA iGreen)\n\n` +
-      `A Sofia já começou o atendimento e vai coletar todos os dados.\n` +
+      `🤖 *Atendendo:* Sofia (IA iGreen)\n` +
+      protoBlock +
+      `\nA Sofia já começou o atendimento e vai coletar todos os dados.\n` +
       `Você vai receber avisos aqui a cada etapa concluída. 🚀\n\n` +
       partnerFooter("arrived");
 
