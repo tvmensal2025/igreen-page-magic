@@ -137,10 +137,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
-      .is("igreen_code", null)
       .is("data_ativo", null)
       .is("data_validado", null)
-      .is("data_cadastro", null)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(1000);
 
