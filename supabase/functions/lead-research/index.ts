@@ -375,7 +375,7 @@ Deno.serve(async (req) => {
   // Filtro de bairro (texto): casa contra bairro OU endereço completo.
   const bairroFilter = (neighbourhood || "").trim().toLowerCase();
   for (const el of elements) {
-    const m = mapElement(el, city, uf);
+    const m = mapElement(el, city || (el.tags?.["addr:city"] ?? ""), uf);
     if (!m) continue;
     if (bairroFilter) {
       const hay = `${m.neighbourhood || ""} ${m.full_address || ""}`.toLowerCase();
