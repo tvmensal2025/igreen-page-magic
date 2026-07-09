@@ -154,14 +154,12 @@ interface OsmElement {
  * Consulta o Overpass tentando vários espelhos. Cada tentativa tem timeout
  * próprio. Retorna os elementos ou lança com o último erro.
  */
-async function queryOverpass(query: string): Promise<OsmElement[]> {
+async function queryOverpass(query: string, timeoutMs = 24_000): Promise<OsmElement[]> {
   let lastErr = "";
   for (const url of OVERPASS_MIRRORS) {
     try {
       const ctrl = new AbortController();
-      // 24s por espelho: no pior caso (3 espelhos) dá ~72s, bem abaixo do
-      // limite do gateway (que matava em 150s com 504).
-      const timer = setTimeout(() => ctrl.abort(), 24_000);
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       const resp = await fetch(url, {
         method: "POST",
         headers: {
