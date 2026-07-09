@@ -1,87 +1,41 @@
-## Auditoria do Supabase — o que está pesando
+## Distribuição dos 6 leads + ativação de acompanhamento
 
-### 1. Cron jobs (verificado em `cron.job`)
+### 1. Atribuição final (owner_id em `customers`)
 
-26 jobs ativos. Situação após os últimos ajustes:
+| # | Telefone | Consultor | Pool/Origem |
+|---|---|---|---|
+| 1 | 553484470496 (Wudysson) | Rafael Ferreira | Uberlândia/BH |
+| 2 | 553197395046 (Royter) | Francisco Melquiades | Uberlândia/BH |
+| 3 | 553897540950 | Abel Oliveira | Uberlândia/BH |
+| 4 | 553496300929 | Rafael Ferreira | Uberlândia/BH |
+| 5 | 553184829431 | Francisco Melquiades | Uberlândia/BH |
+| 6 | 5511971495971 | Rafael Ferreira | Fora de rodízio (SP) |
 
-- **De alta frequência (potencialmente pesado):**
-  - `rodizio-metrics-10min` — a cada 10min, 11h–00h
-  - `instance-health-cron-30min` — a cada 30min
-  - `faq-reengagement-nudge-30min` — a cada 30min
-  - `cleanup-http-response-temporary-relief` — a cada 15min
-  - `bot-stuck-recovery-hourly`, `bot-loop-watchdog-hourly`, `pos-venda-auto-progress-hourly`, `flow-d-health-cron-hourly`, `fb-campaign-healthcheck`, `production-health-snapshot-hourly`, `super-admin-alerts-hourly` — 7 jobs de hora em hora
-- **Diários (ok, sem impacto significativo):** 15 jobs.
+### 2. Passos de execução
 
-Nenhum job por minuto ativo — a limpeza anterior funcionou.
+1. **Reativar pool "Jaraguá"** — limpar `last_pause_reason` e `paused_notified_at` em `rodizio_pools`.
+2. **Criar/atualizar `customers`** para os 4 leads que faltam (3, 4, 5, 6) — inserir `phone`, `owner_id`, `source = 'facebook_ads'`, `campaign_source = 'Uberlândia/BH'` (ou `SP-fora-rodizio` para o #6), `assigned_at = now()`.
+3. **Atualizar `owner_id`** dos 2 já existentes (Wudysson mantém Rafael; Royter passa de Rafael → Francisco).
+4. **Girar counter** do pool `Uberlândia/BH` para `5` (5 leads consumidos do giro).
+5. **Registrar em `campaign_match_log`** cada lead com pool e consultor final, para deixar histórico mesmo com o classificador quebrado.
+6. **Registrar em `sale_status_history`** a atribuição inicial (stage "novo lead") para cada um.
 
-### 2. `pg_net`
+### 3. Acompanhamento — SIM, terão
 
-`net.http_request_queue` = 0 pendentes, apenas 1 resposta na última hora. Nenhum loop de webhook em andamento.
+Depois que `owner_id` fica setado e o customer existe no banco, os leads entram automaticamente em:
 
-### 3. Realtime
+- **Kanban do consultor** (`/admin` → CRM) — cada consultor vê o lead dele.
+- **Fluxo de bot** (`bot_flows` + `customer_flow_state`) — se houver mensagem inbound do lead, o bot responde e o consultor recebe notificação.
+- **Auto-mensagens de estágio** (`stage_auto_messages`) — mensagens automáticas ao mudar de coluna.
+- **Reativação** (`reactivation_sends`) — se ficar sem resposta X dias, entra na régua.
+- **Handoff alerts** (`bot_handoff_alerts`) — alerta quando lead pedir humano.
 
-`realtime.subscription` = 0. Apenas 4 canais no frontend, todos com cleanup. Não é o gargalo.
+**Limitação:** como `campaign_match_log` estava vazia, os 4 leads sem histórico serão marcados como `Uberlândia/BH` por DDD (não 100% garantido). O #6 (SP) fica fora do rodízio, direto com Rafael.
 
-### 4. Conexões / pg_stat_activity
+### 4. O que NÃO será feito agora
+- Não vou consertar o classificador `campaign_match_log` (é outro trabalho separado).
+- Não vou disparar mensagem de boas-vindas aos leads (evitar spam retroativo em leads antigos); consultor decide se envia manual.
 
-- Existe uma sessão do `postgres_exporter` em `idle in transaction (aborted)` — típico de instância sob pressão.
-- Consultas simples de metadata (`pg_stat_user_tables`, `pg_size_pretty`) estão levando **mais de 1 minuto** e caindo por timeout.
-- `pg_stat_statements` **não está habilitado** — por isso não conseguimos rankear queries lentas.
-
-### 5. Bloat
-
-Apenas `production_health_snapshot` com ~4 mil tuples mortos. Nada grave.
-
-### 6. Edge Functions com erro em loop
-
-`whapi-webhook` gera continuamente `BadResource: Bad resource ID` em `req.json()` + `connection closed before message completed`. Está falhando em cada chamada do Whapi Cloud, gerando reboots frequentes da função e ruído em logs.
-
-### 7. Diagnóstico
-
-- O DB está lento **mesmo para queries triviais de catálogo**. Isso indica saturação de CPU/IO da instância Supabase, não um cron ou função específica em loop.
-- Fatores agravantes prováveis:
-  1. Muitas Edge Functions ativas (150+) sendo chamadas por webhooks Whapi/Evolution/Meta o tempo todo → cada uma abre conexão ao Postgres.
-  2. `whapi-webhook` reiniciando toda hora por erro no parse.
-  3. Ausência de `pg_stat_statements` cega qualquer otimização.
-  4. Extensão `pg_cron` + `pg_net` funcionando, mas com jobs redundantes ainda ativos que poderiam ser diários.
-
-## Plano de ajuste (sem apagar nada crítico)
-
-### Etapa A — Reduzir carga imediata (migration)
-
-1. Baixar frequência de jobs que não precisam ser tão rápidos:
-  - `rodizio-metrics-10min` → a cada 2 hora 
-  - `faq-reengagement-nudge-30min` → 1×/hora
-  - `instance-health-cron-30min` → 1×/hora
-  - `cleanup-http-response-temporary-relief` → 1×/hora
-  - Consolidar `bot-stuck-recovery-hourly` + `bot-loop-watchdog-hourly` em 1 job só, 1×/2h.
-2. Manter intocados os jobs diários (não pesam).
-
-### Etapa B — Corrigir `whapi-webhook`
-
-- Ler o body uma única vez com `await req.text()` e só então `JSON.parse`.
-- Se vier vazio ou inválido, retornar `200 { ok: true, msg: "ignored_bad_body" }` sem exceção.
-- Isso elimina o loop de erros `BadResource` e reduz reboots da função.
-
-### Etapa C — Habilitar observabilidade
-
-- Habilitar extensão `pg_stat_statements` para conseguirmos ver as queries que mais consomem tempo. Sem isso, seguimos no escuro.
-- Rodar `VACUUM ANALYZE production_health_snapshot`.
-
-### Etapa D — Não apagar Edge Functions agora
-
-Apagar em massa é arriscado (WhatsApp, campanhas, OCR, painéis dependem). Depois que a carga cair, faço um segundo passo para listar funções sem chamadas nos últimos 30 dias e proponho remoção uma a uma, com sua aprovação.
-
-### Etapa E — Validação
-
-- Rodar `pg_stat_activity` de novo.
-- Testar login `/auth/v1/token`.
-- Confirmar que `whapi-webhook` parou de gerar erros.
-- Confirmar que consultas simples de metadata voltam a responder em <1s.
-
-## Resultado esperado
-
-- Menos conexões simultâneas no Postgres.
-- Auth volta a responder.
-- Fim do loop de erro no `whapi-webhook`.
-- Base pronta para uma segunda rodada de limpeza (funções obsoletas, índices) com dados reais do `pg_stat_statements`.
+### Detalhes técnicos
+- Tool: `supabase--insert` para UPDATE em `customers`, `rodizio_pools`, e INSERT em `campaign_match_log` + `sale_status_history`.
+- Nenhuma alteração de schema, apenas dados.
