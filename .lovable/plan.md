@@ -1,31 +1,42 @@
 ## Objetivo
-Remover o botão "Limpar clientes ativos" e fazer o Conversão trazer **todos** os leads parados (anúncios antigos etc.), sem misturar clientes ativos. O filtro natural do fetch cuida disso — hoje ele quebra silenciosamente e devolve 0.
+1. **Puxar todos** os leads que já iniciaram uma conversa (mensagem trocada ou `last_bot_interaction_at` preenchido) para o Conversão, mesmo que estejam com `pos_venda_stage` marcado ou origem diferente — mantendo apenas a exclusão de cliente ativo.
+2. **Apagar** os cadastros de teste (números `0000...`, `1111...`, `9999...`, nomes "Teste"/"Claro WhatsApp") do banco.
 
-## Causa raiz do "0 clientes"
-No fetch de `customers` (ConversaoCockpit.tsx, linha 146) usamos:
-
-```
-.not("assinatura_cliente", "is", true)
-```
-
-Mas `assinatura_cliente` no schema é **texto**, não boolean. O PostgREST manda `IS NOT TRUE` e o Postgres devolve `argument of IS NOT TRUE must be type boolean, not type text` → a query inteira falha → `rows = []`. Confirmado por SELECT direto.
-
-Sem essa cláusula, existem ~76 leads `whatsapp_lead` elegíveis (dos 83 totais, apenas 6 têm `igreen_code` e 1 status ativo).
+## Diagnóstico
+- 41 customers têm `last_bot_interaction_at`; 64 têm mensagem em `conversations`. Juntando + excluindo clientes ativos dá **~57 leads reais**. O fetch atual, com `.eq(consultant_id) + .or(customer_origin.in.(whatsapp_lead,manual),null) + .is(pos_venda_stage,null)`, corta a maioria.
+- Identificados **10 cadastros de teste** (Lead Simulado, Joao Silva Teste, TESTE E2E DEPLOY, Cliente Teste Bateria, EMPRESA TESTE BATERIA LTDA, TESTE CADASTRO ×2, Teste Portal2, Claro WhatsApp, Teste Fluxo B).
 
 ## Mudanças
 
-### 1. `src/components/admin/conversao/ConversaoCockpit.tsx`
-- **Corrigir fetch (linhas 130-148)**: remover `.not("assinatura_cliente", "is", true)`. Manter `.is("igreen_code", null)`, `.is("data_ativo", null)`, `.is("data_validado", null)`, `.is("data_cadastro", null)`, `.is("pos_venda_stage", null)` e o `.or()` de origem. O bloqueio de `assinatura_cliente` passa para o filtro JS junto de `andamento_igreen`.
-- **Ampliar filtro JS (linhas 176-180)**: `CLIENT_STATUSES` continua; adicionar exclusão por `assinatura_cliente` truthy (`'true' | 't' | 'sim' | 'yes' | '1'`, case-insensitive). Assim o "cliente ativo não entra" fica natural, sem depender de tipo boolean.
-- **Remover botão e handler**: apagar `promoting`, `promoteParked` (linhas 354-374) e o `<Button>` correspondente no JSX (bloco que usa `Trash2` + "Limpar clientes ativos"). Remover `Trash2` do import de `lucide-react` se ficar sem uso.
+### 1. `src/components/admin/conversao/ConversaoCockpit.tsx` — fetch (linhas 127-222)
+Reescrever `fetchRows` para trazer todo mundo que conversou:
 
-### 2. `supabase/functions/admin-promote-parked-leads/index.ts`
-Deletar a função inteira (`rm -rf supabase/functions/admin-promote-parked-leads`). Não é mais chamada em lugar nenhum e a exclusão de cliente ativo agora é natural no fetch.
+- Query A: `select` em `customers` do consultor com filtros de cliente ativo (`igreen_code IS NULL`, `data_ativo IS NULL`, `data_validado IS NULL`, `data_cadastro IS NULL`), **sem** filtro de origem e **sem** `.is('pos_venda_stage', null)`. Ordena por `last_bot_interaction_at desc`, limite 1000.
+- Query B: `select distinct customer_id` em `conversations` restrito aos IDs devolvidos por A → `convSet`.
+- Filtro JS: mantém `keep = last_bot_interaction_at != null || convSet.has(id)`; mantém exclusão de `andamento_igreen ∈ CLIENT_STATUSES` e `assinatura_cliente` truthy (`true/t/sim/yes/1`).
+- Resto do mapeamento (`inboundMap`, score, `LeadRow`) permanece igual.
+
+Sem mudanças em ordenação, filtros de UI, drawer ou ações de IA.
+
+### 2. Apagar cadastros de teste (via `supabase--insert` com DELETE)
+Executar um `DELETE FROM public.customers WHERE id IN (...)` para os 10 UUIDs abaixo. FKs de `conversations`, `lead_insights`, etc. estão em cascade em relação a `customers.id`; se algum bloquear, deletar antes as filhas (`conversations`, `lead_insights`, `customer_memory`, `customer_flow_state`) para os mesmos IDs.
+
+IDs alvo:
+- `00000000-0000-4000-8000-000000000001` — Lead Simulado (0000000000)
+- `f90dd52a-367b-47fb-bfa0-8d04a135f807` — Joao Silva Teste (5500003548452)
+- `33dcea70-d3ae-4f63-b87a-c0372fafb707` — TESTE E2E DEPLOY
+- `e9fcdef4-b984-43f5-9b54-97543d1a767c` — Cliente Teste Bateria
+- `8e5d5723-1d98-4db4-a95b-9734db96e453` — EMPRESA TESTE BATERIA LTDA
+- `8fd8ba88-125e-46ca-aa69-fc2a700e2d22` — TESTE CADASTRO (5511989000650)
+- `ff52e91f-2bd4-4020-a063-431fa5c7c2a1` — Teste Portal2
+- `f937ca31-2e6f-4fcd-9702-b8a7c8ae4778` — TESTE CADASTRO (5511999887766)
+- `1f839f9c-191e-4cb9-b955-260ad3aca80d` — Claro WhatsApp (contato de sistema)
+- `11111111-1111-1111-1111-111111111111` — Teste Fluxo B (5511999999999)
 
 ## Fora de escopo
-- Sem alteração de schema, RLS, migrations.
-- Sem mudança na tela de Captação.
-- Não mexer no cálculo de score, ordenação, ou nas ações de IA.
+- Sem alterar Captação, schema, migrations ou RLS.
+- Sem mexer nos filtros de UI (temperatura, origem, parceiro, busca).
+- Cadastros `igreen_sync` que estão realmente ativos (com `igreen_code`/`data_ativo`) continuam fora do Conversão pelo filtro natural.
 
 ## Verificação
-Após aplicar: abrir `/admin` → Central de Conversão → conferir que a fila carrega os leads `whatsapp_lead` (ads antigos incluídos) e que nenhum com `igreen_code`, `data_ativo/validado/cadastro`, `assinatura_cliente` truthy ou `andamento_igreen` em (ativo/aprovado/validado/licenciada/licenciado) aparece.
+Abrir `/admin` → Central de Conversão. Esperado: fila com ~57 leads, incluindo os que têm `pos_venda_stage` preenchido mas conversaram; nenhum "Teste"/"Simulado"/"Claro WhatsApp" na lista nem no banco.
