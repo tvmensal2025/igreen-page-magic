@@ -132,11 +132,18 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       .select(`
         id, name, phone_whatsapp, customer_origin, lead_source, bot_paused,
         last_bot_interaction_at, created_at, electricity_bill_value, referral_partner_id, conversation_step,
+        igreen_code, data_ativo, data_validado, data_cadastro, andamento_igreen, assinatura_cliente, pos_venda_stage,
         lead_insights ( temperature, conversion_chance, summary, main_doubt, main_objection,
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
+      .is("pos_venda_stage", null)
+      .is("igreen_code", null)
+      .is("data_ativo", null)
+      .is("data_validado", null)
+      .is("data_cadastro", null)
+      .not("assinatura_cliente", "is", true)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(1000);
 
