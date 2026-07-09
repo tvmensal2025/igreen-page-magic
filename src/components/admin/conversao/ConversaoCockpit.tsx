@@ -137,8 +137,6 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
-      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
-      .is("pos_venda_stage", null)
       .is("igreen_code", null)
       .is("data_ativo", null)
       .is("data_validado", null)
@@ -172,9 +170,24 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       }
     }
 
+    // Só entra no Conversão quem já iniciou conversa (last_bot_interaction_at
+    // ou pelo menos uma mensagem em `conversations`).
+    const convSet = new Set<string>();
+    if (customerIds.length > 0) {
+      const { data: convRows } = await supabase
+        .from("conversations" as any)
+        .select("customer_id")
+        .in("customer_id", customerIds);
+      for (const row of (convRows as { customer_id: string }[]) ?? []) {
+        convSet.add(row.customer_id);
+      }
+    }
+
     const CLIENT_STATUSES = new Set(["ativo", "aprovado", "validado", "licenciada", "licenciado"]);
     const SUB_TRUTHY = new Set(["true", "t", "sim", "yes", "1"]);
     const filteredData = (data ?? []).filter((c: any) => {
+      const started = !!c.last_bot_interaction_at || convSet.has(c.id);
+      if (!started) return false;
       const s = (c.andamento_igreen ?? "").toString().trim().toLowerCase();
       if (CLIENT_STATUSES.has(s)) return false;
       const sub = (c.assinatura_cliente ?? "").toString().trim().toLowerCase();
