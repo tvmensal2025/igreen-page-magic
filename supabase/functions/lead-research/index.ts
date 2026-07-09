@@ -53,6 +53,7 @@ interface SearchBody {
   neighbourhood?: string;
   category?: string;
   limit?: number;
+  state_scope?: boolean;
   // para import:
   items?: ResearchItem[];
 }
