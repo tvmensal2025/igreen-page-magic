@@ -339,7 +339,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     }
   }, [consultantId, metrics.unclassified, fetchRows]);
 
-  // ─── Puxar leads parados (captured_leads + customers sem estágio) ──────────
+  // ─── Reativar parados (customers com estágio, sem tocar em Captação) ──────
   const [promoting, setPromoting] = useState(false);
   const promoteParked = useCallback(async () => {
     setPromoting(true);
@@ -348,15 +348,14 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
         body: { days: 120 },
       });
       if (error) throw error;
-      const promoted = data?.promoted ?? 0;
       const reactivated = data?.reactivated ?? 0;
       const scanned = data?.scanned ?? 0;
-      toast.success("Leads parados puxados para o funil", {
-        description: `${promoted} novos + ${reactivated} reativados (varredura de ${scanned} leads em 120d).`,
+      toast.success("Clientes parados reativados no funil", {
+        description: `${reactivated} de ${scanned} clientes voltaram para o cockpit (120d). Captação não foi tocada.`,
       });
       await fetchRows();
     } catch (e: any) {
-      toast.error("Falha ao puxar leads parados", { description: e.message });
+      toast.error("Falha ao reativar parados", { description: e.message });
     } finally {
       setPromoting(false);
     }
@@ -610,7 +609,7 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
           </Button>
           <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
             {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Puxar leads parados (120d)
+            Reativar parados (120d)
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
