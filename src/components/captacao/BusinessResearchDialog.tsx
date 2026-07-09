@@ -60,6 +60,8 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
   const [searched, setSearched] = useState(false);
   const [importing, setImporting] = useState(false);
   const [onlyPhone, setOnlyPhone] = useState(true);
+  // Varre o estado inteiro (todas as cidades) em uma única busca.
+  const [stateScope, setStateScope] = useState(false);
 
   // autocomplete de cidades
   const [cityHits, setCityHits] = useState<CityHit[]>([]);
@@ -68,7 +70,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
 
   // Busca sugestões de cidade enquanto digita (debounce).
   useEffect(() => {
-    if (cityPicked) return; // não sugere logo após escolher
+    if (cityPicked || stateScope) return; // não sugere logo após escolher ou em modo estado
     const q = city.trim();
     if (q.length < 2) { setCityHits([]); return; }
     const t = setTimeout(async () => {
@@ -77,7 +79,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
       setShowHits(hits.length > 0);
     }, 250);
     return () => clearTimeout(t);
-  }, [city, cityPicked]);
+  }, [city, cityPicked, stateScope]);
 
   const pickCity = (h: CityHit) => {
     setCity(h.name);
@@ -90,11 +92,27 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
   const keyOf = (it: ResearchItem) => it.osm_id || `${it.name}|${it.phone}`;
 
   const doSearch = async () => {
-    if (!city.trim()) { sonnerToast.warning("Digite a cidade."); return; }
+    if (stateScope) {
+      if (!uf.trim()) { sonnerToast.warning("Digite a UF (ex: MG)."); return; }
+      if (!category) {
+        sonnerToast.warning("Buscar o estado inteiro sem categoria é muito pesado. Escolha um ramo (ex: Restaurantes).");
+        return;
+      }
+    } else if (!city.trim()) {
+      sonnerToast.warning("Digite a cidade.");
+      return;
+    }
     setSearching(true);
     setSearched(false);
     try {
-      const r = await searchBusinesses({ city: city.trim(), uf: uf.trim() || undefined, neighbourhood: neighbourhood.trim() || undefined, category: category || undefined, limit: 2000 });
+      const r = await searchBusinesses({
+        city: stateScope ? "" : city.trim(),
+        uf: uf.trim() || undefined,
+        neighbourhood: stateScope ? undefined : (neighbourhood.trim() || undefined),
+        category: category || undefined,
+        state_scope: stateScope,
+        limit: stateScope ? 5000 : 2000,
+      });
       if (!r.ok) { sonnerToast.error(r.error || "Falha na busca"); return; }
       const list = r.items || [];
       setItems(list);
@@ -103,11 +121,15 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
       setSearched(true);
       const comTel = list.filter((i) => i.phone).length;
       if (list.length === 0) {
-        sonnerToast.info("Nenhum estabelecimento encontrado. Confira o nome da cidade/bairro.");
+        sonnerToast.info(stateScope
+          ? "Nenhum estabelecimento encontrado nesse estado com essa categoria."
+          : "Nenhum estabelecimento encontrado. Confira o nome da cidade/bairro.");
       } else if (comTel === 0) {
-        sonnerToast.warning("Encontrei locais, mas nenhum tem telefone público cadastrado. Cidades maiores têm mais dados.");
-      } else if (list.length >= 2000) {
-        sonnerToast.info("Muitos resultados! Use o campo Bairro para varrer a cidade por partes e não perder nada.");
+        sonnerToast.warning("Encontrei locais, mas nenhum tem telefone público cadastrado.");
+      } else if (list.length >= (stateScope ? 5000 : 2000)) {
+        sonnerToast.info(stateScope
+          ? "Muitos resultados! Refine por cidade para não perder nenhum."
+          : "Muitos resultados! Use o campo Bairro para varrer a cidade por partes e não perder nada.");
       }
     } finally {
       setSearching(false);
