@@ -246,10 +246,10 @@ Deno.serve(async (req) => {
           updated += count ?? 0;
         }
         await admin.from("admin_audit_log").insert({
-          user_id: userId,
+          admin_user_id: userId,
           action: "recover_leads.mark_lost",
-          entity_type: "captured_leads",
-          entity_id: null,
+          target_type: "captured_leads",
+          target_id: null,
           metadata: { captured_count: capturedIds.length, updated },
         }).then(({ error }) => { if (error) console.warn("audit:", error.message); });
         return new Response(JSON.stringify({ ok: true, updated }), {
