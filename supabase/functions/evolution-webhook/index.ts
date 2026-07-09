@@ -1056,6 +1056,45 @@ Deno.serve(async (req) => {
     // keyword já cuida disso (prioridade do rodízio — Requisito 8).
     // Fail-open: qualquer falha aqui apenas loga e segue (o lead nunca se perde);
     // sem partner_id válido, o lead cai no consultor dono (Requisito 11).
+    // 4ª tentativa (blindagem do rodízio preservada): se a frase-âncora do CTWA
+    // bateu e o consultor tem EXATAMENTE UMA pool ativa cuja initial_message
+    // tem similaridade Jaccard ≥ 0.4 com o texto → atribui essa campanha.
+    // Se houver 2+ pools ativas, continua indo pra revisão manual (não chuta).
+    if (
+      customer &&
+      !(customer as any).source_campaign_id &&
+      !isFile &&
+      messageText &&
+      matchesMetaCtwaPhrase(messageText)
+    ) {
+      try {
+        const { resolveCampaignBySinglePoolFuzzy } = await import(
+          "../_shared/single-pool-campaign-resolver.ts"
+        );
+        const resolved = await resolveCampaignBySinglePoolFuzzy(
+          supabase,
+          instanceData.consultant_id,
+          messageText,
+        );
+        if (resolved) {
+          await supabase
+            .from("customers")
+            .update({ source_campaign_id: resolved, lead_source: "meta_ads" })
+            .eq("id", customer.id)
+            .is("source_campaign_id", null);
+          (customer as any).source_campaign_id = resolved;
+          (customer as any).lead_source = "meta_ads";
+          jsonLog("info", "lead_source_tagged_single_pool_fuzzy", {
+            customer_id: customer.id,
+            consultant_id: instanceData.consultant_id,
+            campaign_id: resolved,
+          });
+        }
+      } catch (e) {
+        console.warn("[single-pool-fuzzy] falhou:", (e as Error).message);
+      }
+    }
+
     const rodizioCampaignId = (customer as any)?.source_campaign_id || null;
     const ctwaSignalNoCampaign =
       !rodizioCampaignId &&
