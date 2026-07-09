@@ -620,8 +620,8 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
             <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
           </Button>
           <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
-            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Reativar parados (120d)
+            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Limpar clientes ativos
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
