@@ -35,6 +35,7 @@ import { resolveWorker } from "../_shared/portal-worker.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
 import { casAssignPartner, markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
+import { resolveCampaignByTrackingProtocol } from "../_shared/campaign-tracking.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
@@ -791,12 +792,26 @@ Deno.serve(async (req) => {
         // Fail-open total: qualquer erro só loga e segue para o keyword.
         let rodizioPoolAtiva = false;
         let resolvedCampaignId: string | null = null;
-        let rodizioMatchMethod: "cached_campaign" | "ad_id_or_ctwa_clid" | "fallback_single_active_pool" = "cached_campaign";
+        let rodizioMatchMethod: "cached_campaign" | "protocol" | "ad_id_or_ctwa_clid" | "fallback_single_active_pool" = "cached_campaign";
         let metaCtwaSignal = false;
         try {
           // 1) campaign_id já resolvido numa mensagem anterior?
           let candidateCampaignId: string | null = (customer as any).source_campaign_id || null;
           const campaignAlreadyPersisted = !!candidateCampaignId;
+
+          // 1.5) protocolo profissional no texto (FB-87321 etc.). Resolve mesmo
+          // com várias campanhas ativas e sem ad_id/ctwa_clid do Meta.
+          if (!candidateCampaignId && messageText) {
+            const byProtocol = await resolveCampaignByTrackingProtocol(
+              supabase,
+              (customer as any).consultant_id,
+              messageText,
+            );
+            if (byProtocol) {
+              candidateCampaignId = byProtocol;
+              rodizioMatchMethod = "protocol";
+            }
+          }
 
           // 2) senão, resolve o mínimo pela mensagem atual (só sinais
           //    determinísticos: AD ID e ctwa_clid; sem heurística cara).
@@ -879,9 +894,10 @@ Deno.serve(async (req) => {
           if (candidateCampaignId) {
             const { data: pool } = await supabase
               .from("rodizio_pools")
-              .select("id")
+              .select("id, facebook_campaigns!inner(status)")
               .eq("campaign_id", candidateCampaignId)
               .eq("is_active", true)
+              .in("facebook_campaigns.status", ["active", "pending_review"])
               .maybeSingle();
             if ((pool as any)?.id) {
               rodizioPoolAtiva = true;
@@ -1543,10 +1559,20 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
-        let matchMethod: "ad_id" | "ctwa_clid" | "exact_message" | "unmatched" = "unmatched";
+        let matchMethod: "protocol" | "ad_id" | "ctwa_clid" | "exact_message" | "unmatched" = "unmatched";
+
+        // 0) Match DETERMINÍSTICO por protocolo profissional no texto (FB-87321 etc.).
+        if (messageText) {
+          sourceCampaignId = await resolveCampaignByTrackingProtocol(
+            supabase,
+            (customer as any).consultant_id,
+            messageText,
+          );
+          if (sourceCampaignId) matchMethod = "protocol";
+        }
 
         // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
-        if (sourceAdId) {
+        if (!sourceCampaignId && sourceAdId) {
           try {
             const { data: campByAd } = await supabase
               .from("facebook_campaigns")
@@ -1591,6 +1617,7 @@ Deno.serve(async (req) => {
               .select("id, initial_message, status, created_at")
               .eq("consultant_id", (customer as any).consultant_id)
               .not("initial_message", "is", null)
+              .in("status", ["active", "pending_review"])
               .order("created_at", { ascending: false })
               .limit(50);
             if (campaigns && campaigns.length > 0) {
