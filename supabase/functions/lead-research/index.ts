@@ -342,21 +342,29 @@ Deno.serve(async (req) => {
 
   // ── SEARCH: prévia rica, sem gravar ──────────────────────────────────────
   const city = (body.city ?? "").trim();
-  if (!city) return json(400, { error: "city_required" });
   const uf = (body.uf ?? "").trim().toUpperCase() || null;
+  const stateScope = Boolean((body as { state_scope?: boolean }).state_scope);
+  if (!stateScope && !city) return json(400, { error: "city_required" });
+  if (stateScope && !uf) return json(400, { error: "uf_required_for_state_scope" });
   const neighbourhood = (body.neighbourhood ?? "").trim() || undefined;
   const category = (body.category ?? "").trim().toLowerCase();
   const limit = Math.min(Math.max(Number(body.limit) || 2000, 1), MAX_LIMIT);
 
   let elements: OsmElement[] = [];
   try {
-    const q = buildOverpassQuery(city, category, limit);
-    elements = await queryOverpass(q);
-    // Caminho rápido (admin_level=8) voltou vazio? A cidade pode estar mapeada
-    // com outro nível. Tenta o fallback (sem fixar o nível) só nesse caso.
-    if (elements.length === 0) {
-      const qLoose = buildOverpassQueryLoose(city, category, limit);
-      elements = await queryOverpass(qLoose);
+    if (stateScope) {
+      const q = buildOverpassQueryState(uf!, category, limit);
+      // Estado inteiro precisa de timeout maior por espelho (query interna 90s).
+      elements = await queryOverpass(q, 100_000);
+    } else {
+      const q = buildOverpassQuery(city, category, limit);
+      elements = await queryOverpass(q);
+      // Caminho rápido (admin_level=8) voltou vazio? A cidade pode estar mapeada
+      // com outro nível. Tenta o fallback (sem fixar o nível) só nesse caso.
+      if (elements.length === 0) {
+        const qLoose = buildOverpassQueryLoose(city, category, limit);
+        elements = await queryOverpass(qLoose);
+      }
     }
   } catch (e) {
     return json(502, { error: "overpass_indisponivel", detail: (e as Error)?.message });
