@@ -1,39 +1,67 @@
-## Diagnóstico
-Rafael (0c2711ad) tem **754 clientes**. Deles:
-- 699 `customer_origin='igreen_sync'` (importados do portal iGreen).
-- 55 `whatsapp_lead`.
-- **583 têm `origin_channel` em (whapi, evolution)** — vieram pelo WhatsApp; muitos foram sincronizados depois com iGreen.
-- 43 têm mensagem gravada em `conversations`/`last_bot_interaction_at`.
-- 180 dos 583 têm status ativo (`andamento_igreen` ativo/aprovado/validado/…) → clientes fechados.
+## Ideia
 
-O Whapi antigo era outro número mas mesmo canal — muitas conversas nunca foram persistidas em `conversations`, então exigir "ter mensagem gravada" some com esses leads.
+Cada lead que chega no WhatsApp recebe **imediatamente** um Protocolo gerado por nós — no estilo do exemplo iGreen (`489486961`) — que embute as iniciais da **chave do parceiro** que vai atender. A saudação do bot é dinâmica pelo horário (**Bom dia / Boa tarde / Boa noite**). Nada depende mais do Meta preservar `welcome_message`.
 
-## Regra
-Só entra no Conversão quem **é lead do WhatsApp** (Evolution ou Whapi):
-- `customer_origin IN ('whatsapp_lead','manual')` **OU** `origin_channel IN ('whapi','evolution')`.
+## Formato do Protocolo
 
-E **nunca** `customer_origin='igreen_sync'`, mesmo que também tenha `origin_channel` marcado — sync é cliente do portal, não lead.
+```
+{INICIAIS_CHAVE}-{YYMMDD}-{SEQ4}
+Ex.: RFD-260119-0042
+```
 
-Fora do funil: qualquer um com sinal de cliente ativo (`data_ativo`, `data_validado`, `andamento_igreen ∈ ativo/aprovado/validado/licenciada/licenciado`, `assinatura_cliente` truthy).
+- `INICIAIS_CHAVE`: 3 letras extraídas da **chave iGreen do parceiro do rodízio** (ex.: `RAFAELFERREIRADIAS` → `RFD`). Fallback = 3 primeiras letras do nome sem acento.
+- `YYMMDD`: data local (America/Sao_Paulo) da criação do lead.
+- `SEQ4`: sequencial diário atômico por parceiro (`0001`, `0002`…), gerado por RPC — garante unicidade e rastreabilidade.
 
-## Mudança
-### `src/components/admin/conversao/ConversaoCockpit.tsx` — `fetchRows` (linhas 130-196)
+Assim, olhando o protocolo, admin sabe **na hora**: quem atendeu, em que dia, e qual foi o número do atendimento do dia.
 
-1. **Select** — trazer também `origin_channel`.
-2. **Filtros SQL**:
-   - `.eq("consultant_id", consultantId)`
-   - `.neq("customer_origin", "igreen_sync")` ← exclui sync mesmo com canal WhatsApp
-   - `.or("customer_origin.in.(whatsapp_lead,manual),origin_channel.in.(whapi,evolution)")`
-   - `.is("data_ativo", null)`
-   - `.is("data_validado", null)`
-   - ordenar por `last_bot_interaction_at desc`, `limit(1000)`.
-3. **Filtro JS**: remover a exigência de "started" (`last_bot_interaction_at` ou linha em `conversations`) e remover a segunda query em `conversations`. Manter só a exclusão por `andamento_igreen ∈ CLIENT_STATUSES` e `assinatura_cliente` truthy.
+## Primeira mensagem do bot
 
-Resultado esperado para Rafael: leads do canal WhatsApp que não são `igreen_sync` e não estão ativos — inclui os contatos antigos do Whapi sem histórico gravado.
+Substitui o texto atual pelo padrão inspirado no exemplo:
+
+```
+Olá, Muito Bom Dia! 👋
+Esse é o canal de atendimento especializado da iGreen Energy.
+
+━━━━━━━━━━━━━━━━━━━━━━
+📋 Protocolo de atendimento
+*RFD-260119-0042*
+━━━━━━━━━━━━━━━━━━━━━
+ 💚💚💚💚💚💚💚💚💚💚💚💚
+```
+
+Saudação por hora local: `05–11 Bom dia · 12–17 Boa tarde · 18–04 Boa noite`.
+
+Sempre Vai ser Muito Bom Dia, Muita Boa Tarde, Muita Boa Noite. Sempre um olá e nao pode errar, nao vai ter a pergunta, pq sempre vai vir um fluxo apos essa mensagem 
+
+## O que muda no código
+
+1. **Migração**
+  - `customers.tracking_protocol text` + índice único por consultor.
+  - Nova RPC `generate_partner_tracking_protocol(_partner_id uuid)` que devolve `INICIAIS-YYMMDD-SEQ4` com sequencial atômico (tabela `partner_protocol_seq(partner_id, day, last_seq)`).
+2. **Helper `_shared/campaign-tracking.ts**`
+  - `partnerInitials(partner)` — extrai 3 letras da `igreen_key`/nome.
+  - Atualizar `ensureCampaignTrackingProtocol` para aceitar `partnerId` e chamar a nova RPC.
+  - Ajustar `TRACKING_PROTOCOL_RE` para reconhecer o novo formato.
+3. **Helper novo `_shared/greeting.ts**`
+  - `greetingForNow(tz='America/Sao_Paulo')` → `"Bom dia" | "Boa tarde" | "Boa noite"`.
+4. **Webhooks (`whapi-webhook`, `evolution-webhook`)**
+  - Após decidir o parceiro pelo rodízio (ou fallback super-admin), gerar o protocolo com esse `partnerId`, gravar em `customers.tracking_protocol` e em `campaign_match_log.protocol`.
+  - Substituir a primeira resposta do bot pelo template acima (usando `greetingForNow()` + `formatProtocolBlock()`).
+  - Idempotente: só gera se `tracking_protocol IS NULL`.
+5. **Notificação ao parceiro**
+  - `notifyPartnerNewLead` passa a incluir o protocolo do lead no aviso ("Protocolo: RFD-260119-0042"), pra o parceiro citar ao cliente.
+
+## Detalhes técnicos
+
+- Sequencial atômico via `INSERT ... ON CONFLICT (partner_id, day) DO UPDATE SET last_seq = last_seq + 1 RETURNING last_seq`.
+- Sem mexer em creatives no Meta — welcome_message continua como está, mas o sistema não confia mais nele.
+- Formato antigo (`2026-0042`, `FB-87321`) continua sendo reconhecido para retrocompat.
+- Fuso horário fixo `America/Sao_Paulo` via `Intl.DateTimeFormat` (Deno suporta).
+- Testes unitários: `greetingForNow` (bordas 04:59/05:00/11:59/12:00/17:59/18:00) e `partnerInitials` (nomes com acento, 1 palavra, 2 palavras, chave alfanumérica).
 
 ## Fora de escopo
-- Sem alterar Captação, schema, RLS.
-- Sem mudar UI, drawer, filtros de tela ou IA.
 
-## Verificação
-Recarregar `/admin` → Central de Conversão. Contatos antigos do Whapi (mesmo sem `conversations`) passam a aparecer; nenhum `igreen_sync` na fila; nenhum com `andamento_igreen` ativo/validado.
+- Tela admin para listar/buscar protocolos (fica pra depois).
+- Regerar protocolos históricos.
+- Alterar UX do parceiro (`/consultor`).
