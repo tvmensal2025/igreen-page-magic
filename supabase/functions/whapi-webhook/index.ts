@@ -832,14 +832,37 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 2.5) Frase-âncora do Meta CTWA — só marca sinal, NÃO tenta chutar
-          //      campanha via "pool única ativa" (blindagem do rodízio).
+          // 2.5) Frase-âncora do Meta CTWA — marca sinal e tenta 4ª tentativa:
+          //      se o consultor tem EXATAMENTE 1 pool ativa cuja initial_message
+          //      tem similaridade Jaccard ≥ 0.4 com o texto, atribui. Se houver
+          //      2+ pools ativas, mantém metaCtwaSignal e vai pra fila manual
+          //      (não chuta — blindagem do rodízio preservada).
           if (!candidateCampaignId && messageText && !isFile && !hasAudio) {
             if (matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
-              console.log(
-                `[lead-attribution] customer=${customer.id} meta_ctwa_phrase detectada — sem campanha identificada, indo para fila manual`,
-              );
+              try {
+                const { resolveCampaignBySinglePoolFuzzy } = await import(
+                  "../_shared/single-pool-campaign-resolver.ts"
+                );
+                const fuzzy = await resolveCampaignBySinglePoolFuzzy(
+                  supabase,
+                  (customer as any).consultant_id,
+                  messageText,
+                );
+                if (fuzzy) {
+                  candidateCampaignId = fuzzy;
+                  rodizioMatchMethod = "fallback_single_active_pool";
+                  console.log(
+                    `[lead-attribution] customer=${customer.id} single_pool_fuzzy resolveu campaign=${fuzzy}`,
+                  );
+                } else {
+                  console.log(
+                    `[lead-attribution] customer=${customer.id} meta_ctwa_phrase — sem campanha única identificada, indo para fila manual`,
+                  );
+                }
+              } catch (e) {
+                console.warn("[single-pool-fuzzy] falhou:", (e as Error).message);
+              }
             }
           }
 
