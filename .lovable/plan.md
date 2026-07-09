@@ -1,41 +1,68 @@
-## Distribuição dos 6 leads + ativação de acompanhamento
+## Notificar os 3 parceiros com o(s) lead(s) + info da campanha
 
-### 1. Atribuição final (owner_id em `customers`)
+### Situação atual
+- Os 6 leads foram atribuídos no banco (`referral_partner_id` setado) — **✅ feito**
+- **Nenhum parceiro foi avisado por WhatsApp** — `last_partner_notified_at` está NULL para os 6
+- Sem `notifyPartnerNewLead()` executar, o parceiro só descobre o lead abrindo o Kanban
 
-| # | Telefone | Consultor | Pool/Origem |
-|---|---|---|---|
-| 1 | 553484470496 (Wudysson) | Rafael Ferreira | Uberlândia/BH |
-| 2 | 553197395046 (Royter) | Francisco Melquiades | Uberlândia/BH |
-| 3 | 553897540950 | Abel Oliveira | Uberlândia/BH |
-| 4 | 553496300929 | Rafael Ferreira | Uberlândia/BH |
-| 5 | 553184829431 | Francisco Melquiades | Uberlândia/BH |
-| 6 | 5511971495971 | Rafael Ferreira | Fora de rodízio (SP) |
+### O que fazer
 
-### 2. Passos de execução
+**1. Criar edge function `notify-partner-leads-batch`**
+- Recebe: lista de `customer_id` (ou "todos os leads sem `last_partner_notified_at` das últimas 24h")
+- Para cada lead:
+  - Resolve `referral_partner_id` → `notification_phone` do parceiro
+  - Busca `source_campaign_id` (ou o pool → campanha)
+  - Busca métricas da campanha (`facebook_campaigns` + `facebook_metrics_daily` se houver)
+  - Calcula posição do parceiro no pool (`rodizio_pool_members.position` + counter atual)
+  - Envia mensagem formatada via Whapi/Evolution (`sendRawToNumber` já existente)
+  - Marca `last_partner_notified_at = now()`
+  - Registra em `campaign_match_log` (method='manual_backfill', outcome contém "notified")
 
-1. **Reativar pool "Jaraguá"** — limpar `last_pause_reason` e `paused_notified_at` em `rodizio_pools`.
-2. **Criar/atualizar `customers`** para os 4 leads que faltam (3, 4, 5, 6) — inserir `phone`, `owner_id`, `source = 'facebook_ads'`, `campaign_source = 'Uberlândia/BH'` (ou `SP-fora-rodizio` para o #6), `assigned_at = now()`.
-3. **Atualizar `owner_id`** dos 2 já existentes (Wudysson mantém Rafael; Royter passa de Rafael → Francisco).
-4. **Girar counter** do pool `Uberlândia/BH` para `5` (5 leads consumidos do giro).
-5. **Registrar em `campaign_match_log`** cada lead com pool e consultor final, para deixar histórico mesmo com o classificador quebrado.
-6. **Registrar em `sale_status_history`** a atribuição inicial (stage "novo lead") para cada um.
+**2. Design da mensagem (bonito, com dados de campanha)**
 
-### 3. Acompanhamento — SIM, terão
+```
+Olá, Rafael! 👋
 
-Depois que `owner_id` fica setado e o customer existe no banco, os leads entram automaticamente em:
+🎉 NOVO LEAD DA CAMPANHA
+━━━━━━━━━━━━━━━━━━
 
-- **Kanban do consultor** (`/admin` → CRM) — cada consultor vê o lead dele.
-- **Fluxo de bot** (`bot_flows` + `customer_flow_state`) — se houver mensagem inbound do lead, o bot responde e o consultor recebe notificação.
-- **Auto-mensagens de estágio** (`stage_auto_messages`) — mensagens automáticas ao mudar de coluna.
-- **Reativação** (`reactivation_sends`) — se ficar sem resposta X dias, entra na régua.
-- **Handoff alerts** (`bot_handoff_alerts`) — alerta quando lead pedir humano.
+👤 Nome: Wudysson Moraes
+📱 WhatsApp: (34) 8447-0496
+🕐 Chegou: 08/07 21:34
+🤖 Sofia (IA) já está atendendo
 
-**Limitação:** como `campaign_match_log` estava vazia, os 4 leads sem histórico serão marcados como `Uberlândia/BH` por DDD (não 100% garantido). O #6 (SP) fica fora do rodízio, direto com Rafael.
+📢 CAMPANHA
+━━━━━━━━━━━━━━━━━━
+🏷️  Uberlândia, Uberaba, BH
+📅 Ativa desde: 08/07
+💰 Orçamento/dia: R$ 10,00
+📊 Total investido: R$ — (sem dados)
+🎯 Leads gerados: 6
 
-### 4. O que NÃO será feito agora
-- Não vou consertar o classificador `campaign_match_log` (é outro trabalho separado).
-- Não vou disparar mensagem de boas-vindas aos leads (evitar spam retroativo em leads antigos); consultor decide se envia manual.
+🔄 SEU RODÍZIO
+━━━━━━━━━━━━━━━━━━
+Posição: 1º de 3
+Próximo giro: você (posição 1)
+Leads recebidos hoje: 2
+
+_Automático · iGreen_
+```
+
+**3. Executar em lote (chamar 1x agora)**
+- Chama a edge function com os 6 customer_ids
+- Cada parceiro recebe 1 mensagem por lead (respeitando dedup de 24h)
+- Rafael recebe 3 mensagens (leads 1, 4, 6), Francisco 2, Abel 1
+
+**4. Deixar ligado para o futuro (opcional, confirmar)**
+- Hoje `notifyPartnerNewLead` já é chamado pelo `lead-intake` quando o lead chega via webhook — o motivo destes 6 não terem sido notificados é que foram inseridos por SQL direto, pulando a função
+- Não precisa mudar nada: leads novos via campanha continuarão notificando automático
 
 ### Detalhes técnicos
-- Tool: `supabase--insert` para UPDATE em `customers`, `rodizio_pools`, e INSERT em `campaign_match_log` + `sale_status_history`.
-- Nenhuma alteração de schema, apenas dados.
+- Reusa `sendRawToNumber()` de `_shared/notify-consultant.ts`
+- Nova função `notify-partner-leads-batch/index.ts`
+- Sem alteração de schema
+- Não altera `notifyPartnerNewLead` original (segue igual para fluxo normal); a nova função tem template estendido com dados de campanha + posição no rodízio
+- Autenticação: exige JWT admin (mesma lógica de `assign-lead-manual`)
+
+### Limitação
+- `facebook_metrics_daily` está vazia para essas campanhas → o "Total investido" vai aparecer como "—" ou "sem dados"; podemos disparar um refresh do Meta Insights antes, mas isso é um segundo trabalho
