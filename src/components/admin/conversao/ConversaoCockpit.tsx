@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X,
+  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
