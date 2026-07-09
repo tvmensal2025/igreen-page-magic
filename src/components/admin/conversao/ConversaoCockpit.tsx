@@ -581,7 +581,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
 //  Sub-componentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading }: {
+function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading, onPromoteParked, promoting }: {
   metrics: { total: number; classified: number; unclassified: number; hotStuck: number; revenueAtStake: number; avgChance: number };
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
@@ -589,6 +589,8 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
   staleLoading: boolean;
   onReload: () => void;
   loading: boolean;
+  onPromoteParked: () => void;
+  promoting: boolean;
 }) {
   return (
     <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-card">
@@ -605,6 +607,10 @@ function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onReload} disabled={loading || !!bulk}>
             <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
+          </Button>
+          <Button size="sm" variant="secondary" onClick={onPromoteParked} disabled={promoting} className="gap-1.5">
+            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Puxar leads parados (120d)
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
