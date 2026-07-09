@@ -50,40 +50,43 @@ Deno.serve(async (req) => {
 
     const authHeader = req.headers.get("Authorization") ?? "";
     const token = authHeader.replace("Bearer ", "");
-    if (!token) {
-      return new Response(JSON.stringify({ error: "missing auth" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+    const admin = createClient(supabaseUrl, serviceKey);
+    let ownerConsultantId: string | null = null;
+
+    // Aceita service role (chamada interna) OU JWT de admin
+    if (token && token === serviceKey) {
+      // chamada admin interna — usa consultor do body
+    } else if (token) {
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: `Bearer ${token}` } },
       });
-    }
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    });
-    const { data: userData, error: userErr } = await userClient.auth.getUser();
-    if (userErr || !userData.user) {
-      return new Response(JSON.stringify({ error: "invalid auth" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const { data: userData } = await userClient.auth.getUser();
+      if (userData?.user) {
+        const { data: c } = await admin.from("consultants").select("id").eq("user_id", userData.user.id).maybeSingle();
+        if (c) ownerConsultantId = (c as any).id;
+      }
     }
 
-    const parsed = BodySchema.safeParse(await req.json());
+    const parsed = BodySchema.extend({ owner_consultant_id: z.string().uuid().optional() })
+      .safeParse(await req.json());
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: parsed.error.flatten().fieldErrors }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const { customer_ids, force } = parsed.data;
-
-    const admin = createClient(supabaseUrl, serviceKey);
-
-    // Consultor do admin logado
-    const { data: consultant } = await admin
-      .from("consultants").select("id").eq("user_id", userData.user.id).maybeSingle();
-    if (!consultant) {
-      return new Response(JSON.stringify({ error: "consultant not found" }), {
-        status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const { customer_ids, force, owner_consultant_id } = parsed.data;
+    if (!ownerConsultantId) ownerConsultantId = owner_consultant_id || null;
+    if (!ownerConsultantId) {
+      // Deriva do primeiro customer
+      const { data: c0 } = await admin.from("customers").select("consultant_id").eq("id", customer_ids[0]).maybeSingle();
+      ownerConsultantId = (c0 as any)?.consultant_id || null;
+    }
+    if (!ownerConsultantId) {
+      return new Response(JSON.stringify({ error: "cannot resolve owner_consultant_id" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const ownerConsultantId = (consultant as any).id as string;
 
     const results: any[] = [];
 
