@@ -54,6 +54,18 @@ Deno.serve(async (req) => {
 
     const result = await sendWelcomeHeader(supabase, { customerId, consultantId, env });
     if (!result.ok) {
+      // Erros de envio (número inválido no WhatsApp, instância recusou payload etc.)
+      // NÃO devem virar 5xx — o frontend trata como crash. Retornamos 200 com
+      // sinal de fallback para o botão exibir toast + manter fluxo manual.
+      if (result.code === "send_failed_greeting" || result.code === "send_failed_name_request") {
+        return json({
+          ok: false,
+          error: result.code,
+          detail: result.detail,
+          fallback: true,
+          message: "Não foi possível enviar automaticamente. Envie a saudação manualmente pelo chat.",
+        }, 200);
+      }
       const status = result.code === "channel_unavailable"
         ? 409
         : result.code === "no_phone"
