@@ -341,10 +341,10 @@ Deno.serve(async (req) => {
       }
 
       await admin.from("admin_audit_log").insert({
-        user_id: userId,
+        admin_user_id: userId,
         action: "recover_leads.promote",
-        entity_type: "customers",
-        entity_id: null,
+        target_type: "customers",
+        target_id: null,
         metadata: {
           captured_count: capturedIds.length,
           customer_count: customerIds.length,
