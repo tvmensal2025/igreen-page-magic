@@ -53,6 +53,7 @@ interface SearchBody {
   neighbourhood?: string;
   category?: string;
   limit?: number;
+  state_scope?: boolean;
   // para import:
   items?: ResearchItem[];
 }
@@ -116,6 +117,31 @@ function buildOverpassQueryLoose(city: string, category: string, limit: number):
   return fast.replace('["admin_level"="8"]', '["admin_level"]');
 }
 
+// Varre um ESTADO inteiro (admin_level=4). Timeout Overpass elevado (90s)
+// porque a área é enorme — recomenda-se sempre passar uma categoria.
+function buildOverpassQueryState(uf: string, category: string, limit: number): string {
+  const filters = CATEGORY_MAP[category] ?? null;
+  let block: string;
+  if (filters) {
+    block = filters
+      .map((f) => `nwr["name"]["${f}"](area.b);`)
+      .join("\n        ");
+  } else {
+    block = `nwr["name"]["phone"](area.b);
+        nwr["name"]["contact:phone"](area.b);
+        nwr["name"]["contact:mobile"](area.b);`;
+  }
+  const safeUf = uf.replace(/[^A-Z]/g, "");
+  return `
+    [out:json][timeout:90];
+    area["ISO3166-2"="BR-${safeUf}"]["admin_level"="4"]->.b;
+    (
+        ${block}
+    );
+    out center ${limit};
+  `;
+}
+
 interface OsmElement {
   type: string;
   id: number;
@@ -129,14 +155,12 @@ interface OsmElement {
  * Consulta o Overpass tentando vários espelhos. Cada tentativa tem timeout
  * próprio. Retorna os elementos ou lança com o último erro.
  */
-async function queryOverpass(query: string): Promise<OsmElement[]> {
+async function queryOverpass(query: string, timeoutMs = 24_000): Promise<OsmElement[]> {
   let lastErr = "";
   for (const url of OVERPASS_MIRRORS) {
     try {
       const ctrl = new AbortController();
-      // 24s por espelho: no pior caso (3 espelhos) dá ~72s, bem abaixo do
-      // limite do gateway (que matava em 150s com 504).
-      const timer = setTimeout(() => ctrl.abort(), 24_000);
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
       const resp = await fetch(url, {
         method: "POST",
         headers: {
@@ -319,21 +343,29 @@ Deno.serve(async (req) => {
 
   // ── SEARCH: prévia rica, sem gravar ──────────────────────────────────────
   const city = (body.city ?? "").trim();
-  if (!city) return json(400, { error: "city_required" });
   const uf = (body.uf ?? "").trim().toUpperCase() || null;
+  const stateScope = Boolean((body as { state_scope?: boolean }).state_scope);
+  if (!stateScope && !city) return json(400, { error: "city_required" });
+  if (stateScope && !uf) return json(400, { error: "uf_required_for_state_scope" });
   const neighbourhood = (body.neighbourhood ?? "").trim() || undefined;
   const category = (body.category ?? "").trim().toLowerCase();
   const limit = Math.min(Math.max(Number(body.limit) || 2000, 1), MAX_LIMIT);
 
   let elements: OsmElement[] = [];
   try {
-    const q = buildOverpassQuery(city, category, limit);
-    elements = await queryOverpass(q);
-    // Caminho rápido (admin_level=8) voltou vazio? A cidade pode estar mapeada
-    // com outro nível. Tenta o fallback (sem fixar o nível) só nesse caso.
-    if (elements.length === 0) {
-      const qLoose = buildOverpassQueryLoose(city, category, limit);
-      elements = await queryOverpass(qLoose);
+    if (stateScope) {
+      const q = buildOverpassQueryState(uf!, category, limit);
+      // Estado inteiro precisa de timeout maior por espelho (query interna 90s).
+      elements = await queryOverpass(q, 100_000);
+    } else {
+      const q = buildOverpassQuery(city, category, limit);
+      elements = await queryOverpass(q);
+      // Caminho rápido (admin_level=8) voltou vazio? A cidade pode estar mapeada
+      // com outro nível. Tenta o fallback (sem fixar o nível) só nesse caso.
+      if (elements.length === 0) {
+        const qLoose = buildOverpassQueryLoose(city, category, limit);
+        elements = await queryOverpass(qLoose);
+      }
     }
   } catch (e) {
     return json(502, { error: "overpass_indisponivel", detail: (e as Error)?.message });
@@ -344,7 +376,7 @@ Deno.serve(async (req) => {
   // Filtro de bairro (texto): casa contra bairro OU endereço completo.
   const bairroFilter = (neighbourhood || "").trim().toLowerCase();
   for (const el of elements) {
-    const m = mapElement(el, city, uf);
+    const m = mapElement(el, city || (el.tags?.["addr:city"] ?? ""), uf);
     if (!m) continue;
     if (bairroFilter) {
       const hay = `${m.neighbourhood || ""} ${m.full_address || ""}`.toLowerCase();
