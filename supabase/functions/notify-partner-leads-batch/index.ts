@@ -1,14 +1,11 @@
 /**
  * notify-partner-leads-batch
  *
- * Envia notificação bonita e detalhada aos parceiros do rodízio para uma
- * lista de customer_ids (leads). Mensagem inclui:
- *   - Dados do lead (nome, WhatsApp, hora)
- *   - Dados da campanha (nome, orçamento diário, status, total investido, leads)
- *   - Posição do parceiro no pool + próximo parceiro do giro
+ * Envia notificação ao parceiro do rodízio para uma lista de customer_ids.
+ * Regra guia: NUNCA enviar dado que pode estar errado — se não dá para calcular
+ * com certeza, a linha é omitida da mensagem.
  *
- * Autenticação: exige JWT admin (usa mesma checagem de assign-lead-manual).
- * Reusa sendRawToNumber do _shared/notify-consultant.
+ * Suporta dry_run=true (retorna o texto sem enviar).
  */
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
@@ -19,6 +16,8 @@ import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 const BodySchema = z.object({
   customer_ids: z.array(z.string().uuid()).min(1).max(50),
   force: z.boolean().optional().default(false),
+  dry_run: z.boolean().optional().default(false),
+  owner_consultant_id: z.string().uuid().optional(),
 });
 
 function formatPhoneBR(raw?: string | null): string {
@@ -31,13 +30,14 @@ function formatPhoneBR(raw?: string | null): string {
 function nowBRT(): string {
   return new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
 }
-function money(cents?: number | null): string {
-  if (cents == null) return "—";
+function money(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace(".", ",")}`;
 }
-function shortDateBR(iso?: string | null): string {
-  if (!iso) return "—";
+function shortDateBR(iso: string): string {
   return new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit" });
+}
+function cleanLabel(s: string): string {
+  return s.replace(/^\[CONS-[^\]]+\]\s*/, "").replace(/·.*$/, "").trim();
 }
 
 Deno.serve(async (req) => {
@@ -54,9 +54,8 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey);
     let ownerConsultantId: string | null = null;
 
-    // Aceita service role (chamada interna) OU JWT de admin
     if (token && token === serviceKey) {
-      // chamada admin interna — usa consultor do body
+      // chamada interna
     } else if (token) {
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: `Bearer ${token}` } },
@@ -68,17 +67,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    const parsed = BodySchema.extend({ owner_consultant_id: z.string().uuid().optional() })
-      .safeParse(await req.json());
+    const parsed = BodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: parsed.error.flatten().fieldErrors }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const { customer_ids, force, owner_consultant_id } = parsed.data;
+    const { customer_ids, force, dry_run, owner_consultant_id } = parsed.data;
     if (!ownerConsultantId) ownerConsultantId = owner_consultant_id || null;
     if (!ownerConsultantId) {
-      // Deriva do primeiro customer
       const { data: c0 } = await admin.from("customers").select("consultant_id").eq("id", customer_ids[0]).maybeSingle();
       ownerConsultantId = (c0 as any)?.consultant_id || null;
     }
@@ -93,7 +90,7 @@ Deno.serve(async (req) => {
     for (const customer_id of customer_ids) {
       const { data: customer } = await admin
         .from("customers")
-        .select("id, name, phone_whatsapp, referral_partner_id, source_campaign_id, consultant_id, created_at, last_partner_notified_at, is_sandbox")
+        .select("id, name, phone_whatsapp, referral_partner_id, source_campaign_id, consultant_id, last_partner_notified_at")
         .eq("id", customer_id).maybeSingle();
 
       if (!customer) { results.push({ customer_id, skipped: "not_found" }); continue; }
@@ -102,145 +99,205 @@ Deno.serve(async (req) => {
       }
       const partnerId = (customer as any).referral_partner_id as string | null;
       if (!partnerId) { results.push({ customer_id, skipped: "no_partner" }); continue; }
-      if (!force && (customer as any).last_partner_notified_at) {
+      if (!force && !dry_run && (customer as any).last_partner_notified_at) {
         results.push({ customer_id, skipped: "already_notified" }); continue;
       }
 
-      // Parceiro
-      const { data: partner, error: pErr } = await admin
+      const { data: partner } = await admin
         .from("referral_partners")
         .select("id, nome, notification_phone, is_active")
         .eq("id", partnerId).maybeSingle();
-      if (pErr) { results.push({ customer_id, skipped: "partner_query_error", error: pErr.message }); continue; }
       if (!partner || (partner as any).is_active === false) {
         results.push({ customer_id, skipped: "partner_inactive" }); continue;
       }
       const partnerPhone = (partner as any).notification_phone;
       if (!partnerPhone) { results.push({ customer_id, skipped: "partner_no_phone" }); continue; }
 
-      // Campanha: usa source_campaign_id ou descobre pelo pool onde o parceiro está
-      let campaignId: string | null = (customer as any).source_campaign_id ?? null;
-      let poolId: string | null = null;
-      let poolLabel = "";
-      let poolCounter = 0;
-      let members: any[] = [];
+      const campaignId: string | null = (customer as any).source_campaign_id ?? null;
 
-      // Pool via parceiro (pega o primeiro pool ativo que contém o parceiro)
+      // -------- Resolução do pool (só se tiver certeza) --------
+      let poolResolved: { id: string; label: string; counter: number; campaign_id: string | null } | null = null;
+      let members: Array<{ partner_id: string; position: number }> = [];
+
       const { data: memberships } = await admin
         .from("rodizio_pool_members")
-        .select("pool_id, position, lead_count")
+        .select("pool_id, position")
         .eq("partner_id", partnerId);
 
       if (memberships && memberships.length > 0) {
-        // se tem campaignId, tenta casar pool com essa campanha
-        let chosen = memberships[0];
+        const poolIds = memberships.map((m: any) => m.pool_id);
+        const { data: pools } = await admin
+          .from("rodizio_pools")
+          .select("id, label, counter, campaign_id, is_active")
+          .in("id", poolIds);
+        const activePools = (pools || []).filter((p: any) => p.is_active !== false);
+
         if (campaignId) {
-          const { data: p } = await admin
-            .from("rodizio_pools")
-            .select("id, label, counter, campaign_id")
-            .in("id", memberships.map((m: any) => m.pool_id));
-          const match = (p || []).find((x: any) => x.campaign_id === campaignId);
-          if (match) chosen = memberships.find((m: any) => m.pool_id === match.id) || chosen;
+          const match = activePools.find((p: any) => p.campaign_id === campaignId);
+          if (match) poolResolved = match as any;
+          // se campaign_id existe mas não bate com nenhum pool: mantém null (omite bloco)
+        } else if (activePools.length === 1) {
+          poolResolved = activePools[0] as any;
         }
-        poolId = chosen.pool_id;
+        // se ambíguo (>1 pool ativo sem campaignId): poolResolved fica null
 
-        const { data: pool } = await admin
-          .from("rodizio_pools").select("id, label, counter, campaign_id")
-          .eq("id", poolId).maybeSingle();
-        poolLabel = (pool as any)?.label || "";
-        poolCounter = (pool as any)?.counter ?? 0;
-        if (!campaignId) campaignId = (pool as any)?.campaign_id || null;
-
-        const { data: allMembers } = await admin
-          .from("rodizio_pool_members")
-          .select("partner_id, position, lead_count")
-          .eq("pool_id", poolId!).order("position");
-        members = allMembers || [];
+        if (poolResolved) {
+          const { data: allMembers } = await admin
+            .from("rodizio_pool_members")
+            .select("partner_id, position")
+            .eq("pool_id", poolResolved.id).order("position");
+          members = (allMembers || []) as any;
+        }
       }
 
-      // Campanha detalhes
-      let campaignName = "—";
+      // -------- Dados da campanha (só com fallback confiável) --------
+      let campaignName: string | null = null;
       let campaignStarted: string | null = null;
-      let campaignStatus = "—";
+      let campaignStatus: string | null = null;
       let dailyBudgetCents: number | null = null;
       let spendCents: number | null = null;
       let campaignLeads: number | null = null;
+
       if (campaignId) {
         const { data: camp } = await admin
           .from("facebook_campaigns")
-          .select("name, started_at, status, daily_budget_cents, leads_count, fb_campaign_id")
+          .select("name, started_at, status, daily_budget_cents, leads_count")
           .eq("id", campaignId).maybeSingle();
         if (camp) {
-          const raw = (camp as any).name as string;
-          campaignName = raw.replace(/^\[CONS-[^\]]+\]\s*/, "").replace(/·.*$/, "").trim();
-          campaignStarted = (camp as any).started_at;
-          campaignStatus = (camp as any).status;
-          dailyBudgetCents = (camp as any).daily_budget_cents;
-          campaignLeads = (camp as any).leads_count;
-          const { data: metrics } = await admin
-            .from("facebook_metrics_daily")
-            .select("spend_cents, leads")
-            .eq("campaign_id", campaignId);
-          if (metrics && metrics.length > 0) {
-            spendCents = metrics.reduce((s: number, m: any) => s + (m.spend_cents || 0), 0);
-            const leadsSum = metrics.reduce((s: number, m: any) => s + (m.leads || 0), 0);
-            if (leadsSum) campaignLeads = leadsSum;
+          campaignName = cleanLabel((camp as any).name || "");
+          campaignStarted = (camp as any).started_at || null;
+          campaignStatus = (camp as any).status || null;
+          dailyBudgetCents = (camp as any).daily_budget_cents ?? null;
+          campaignLeads = (camp as any).leads_count ?? null;
+        }
+
+        // spend: fb_metrics_daily → ad_spend_daily
+        const { data: fbm } = await admin
+          .from("facebook_metrics_daily")
+          .select("spend_cents, leads")
+          .eq("campaign_id", campaignId);
+        if (fbm && fbm.length > 0) {
+          const s = fbm.reduce((a: number, m: any) => a + (m.spend_cents || 0), 0);
+          if (s > 0) spendCents = s;
+          const l = fbm.reduce((a: number, m: any) => a + (m.leads || 0), 0);
+          if (l > 0) campaignLeads = l;
+        }
+        if (spendCents == null) {
+          const { data: asd } = await admin
+            .from("ad_spend_daily").select("spend_cents").eq("campaign_id", campaignId);
+          if (asd && asd.length > 0) {
+            const s = asd.reduce((a: number, m: any) => a + (m.spend_cents || 0), 0);
+            if (s > 0) spendCents = s;
+          }
+        }
+        // leads: fallback via customers reais
+        if (!campaignLeads) {
+          const { count } = await admin
+            .from("customers").select("id", { count: "exact", head: true })
+            .eq("source_campaign_id", campaignId);
+          if (count && count > 0) campaignLeads = count;
+        }
+      }
+
+      // -------- Posição no rodízio --------
+      let myPosition: number | null = null;
+      let totalPositions: number | null = null;
+      let nextPartnerLabel: string | null = null; // "Próximo do giro" ou "Depois de você"
+      let nextPartnerName: string | null = null;
+
+      if (poolResolved && members.length > 0) {
+        const myMember = members.find((m) => m.partner_id === partnerId);
+        totalPositions = members.length;
+        if (myMember) myPosition = myMember.position + 1;
+
+        const nextIdx = poolResolved.counter % totalPositions;
+        let nextMember = members.find((m) => m.position === nextIdx);
+        let label = "Próximo do giro";
+        if (nextMember && nextMember.partner_id === partnerId) {
+          const afterIdx = (poolResolved.counter + 1) % totalPositions;
+          nextMember = members.find((m) => m.position === afterIdx) || null as any;
+          label = "Depois de você";
+        }
+        if (nextMember) {
+          const { data: np } = await admin
+            .from("referral_partners").select("nome").eq("id", nextMember.partner_id).maybeSingle();
+          if (np && (np as any).nome) {
+            nextPartnerName = (np as any).nome;
+            nextPartnerLabel = label;
           }
         }
       }
 
-      // Posição no rodízio
-      const myMember = members.find((m: any) => m.partner_id === partnerId);
-      const myPosition = myMember ? myMember.position + 1 : null;
-      const totalPositions = members.length || null;
-      const nextIdx = totalPositions ? poolCounter % totalPositions : null;
-      const nextMember = nextIdx != null ? members.find((m: any) => m.position === nextIdx) : null;
-      let nextPartnerName = "—";
-      if (nextMember) {
-        const { data: np } = await admin
-          .from("referral_partners").select("nome").eq("id", nextMember.partner_id).maybeSingle();
-        nextPartnerName = (np as any)?.nome || "—";
-      }
-      const myLeads = myMember?.lead_count ?? 0;
+      // -------- Total de leads recebidos por este parceiro (verdade absoluta) --------
+      const { count: myLeadsCount } = await admin
+        .from("customers").select("id", { count: "exact", head: true })
+        .eq("referral_partner_id", partnerId)
+        .eq("consultant_id", ownerConsultantId);
 
+      // -------- Montagem da mensagem --------
       const hi = (partner as any).nome ? `Olá, ${(partner as any).nome.split(" ")[0]}! 👋\n\n` : "";
-      const text =
-        `${hi}🎉 *NOVO LEAD DA CAMPANHA*\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `👤 *Nome:* ${(customer as any).name?.trim() || "(coletando…)"}\n` +
-        `📱 *WhatsApp:* ${formatPhoneBR((customer as any).phone_whatsapp)}\n` +
-        `🕐 *Chegou:* ${nowBRT()}\n` +
-        `🤖 *Sofia (IA) já está atendendo*\n\n` +
-        `📢 *CAMPANHA*\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `🏷️  ${campaignName}\n` +
-        `📅 Ativa desde: ${shortDateBR(campaignStarted)}\n` +
-        `⚡ Status: ${campaignStatus}\n` +
-        `💰 Orçamento/dia: ${money(dailyBudgetCents)}\n` +
-        `📊 Total investido: ${money(spendCents)}\n` +
-        `🎯 Leads gerados: ${campaignLeads ?? "—"}\n\n` +
-        `🔄 *SEU RODÍZIO*\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        (poolLabel ? `📍 Pool: ${poolLabel.replace(/^\[CONS-[^\]]+\]\s*/, "").replace(/·.*$/, "").trim()}\n` : "") +
-        (myPosition ? `🎖️  Sua posição: ${myPosition}º de ${totalPositions}\n` : "") +
-        `📈 Leads recebidos por você: ${myLeads}\n` +
-        `➡️  Próximo do giro: ${nextPartnerName}\n\n` +
-        `_Automático · iGreen 🌱_`;
+      const lines: string[] = [];
+      lines.push(`${hi}🎉 *NOVO LEAD DA CAMPANHA*`);
+      lines.push(`━━━━━━━━━━━━━━━━━━`);
+      lines.push(`👤 *Nome:* ${(customer as any).name?.trim() || "(coletando…)"}`);
+      lines.push(`📱 *WhatsApp:* ${formatPhoneBR((customer as any).phone_whatsapp)}`);
+      lines.push(`🕐 *Chegou:* ${nowBRT()}`);
+      lines.push(`🤖 *Sofia (IA) já está atendendo*`);
+      lines.push(``);
+
+      const hasCampFields = campaignName || campaignStarted || campaignStatus || dailyBudgetCents != null || spendCents != null || campaignLeads != null;
+      if (hasCampFields) {
+        lines.push(`📢 *CAMPANHA*`);
+        lines.push(`━━━━━━━━━━━━━━━━━━`);
+        if (campaignName) lines.push(`🏷️  ${campaignName}`);
+        if (campaignStarted) lines.push(`📅 Ativa desde: ${shortDateBR(campaignStarted)}`);
+        if (campaignStatus) lines.push(`⚡ Status: ${campaignStatus}`);
+        if (dailyBudgetCents != null) lines.push(`💰 Orçamento/dia: ${money(dailyBudgetCents)}`);
+        if (spendCents != null) lines.push(`📊 Total investido: ${money(spendCents)}`);
+        if (campaignLeads != null) lines.push(`🎯 Leads gerados: ${campaignLeads}`);
+        lines.push(``);
+      } else {
+        lines.push(`📢 *Atribuição manual / lead sem campanha vinculada*`);
+        lines.push(``);
+      }
+
+      if (poolResolved) {
+        lines.push(`🔄 *SEU RODÍZIO*`);
+        lines.push(`━━━━━━━━━━━━━━━━━━`);
+        lines.push(`📍 Pool: ${cleanLabel(poolResolved.label)}`);
+        if (myPosition && totalPositions) lines.push(`🎖️  Sua posição: ${myPosition}º de ${totalPositions}`);
+        if (myLeadsCount != null) lines.push(`📈 Leads recebidos por você: ${myLeadsCount}`);
+        if (nextPartnerName && nextPartnerLabel) lines.push(`➡️  ${nextPartnerLabel}: ${nextPartnerName}`);
+        lines.push(``);
+      } else if (myLeadsCount != null) {
+        lines.push(`📈 *Leads recebidos por você:* ${myLeadsCount}`);
+        lines.push(``);
+      }
+
+      lines.push(`_Automático · iGreen 🌱_`);
+      const text = lines.join("\n");
+
+      if (dry_run) {
+        results.push({
+          customer_id, partner: (partner as any).nome, phone: partnerPhone,
+          dry_run: true, text, pool_resolved: !!poolResolved,
+        });
+        continue;
+      }
 
       const ok = await sendRawToNumber(ownerConsultantId, partnerPhone, text);
       if (ok) {
         await admin.from("customers")
           .update({ last_partner_notified_at: new Date().toISOString() } as any)
           .eq("id", customer_id);
+        await admin.from("campaign_match_log").insert({
+          customer_id, campaign_id: campaignId, partner_id: partnerId,
+          method: "partner_notify", payload: { text } as any,
+        } as any);
       }
       results.push({
-        customer_id,
-        partner: (partner as any).nome,
-        phone: partnerPhone,
-        sent: ok,
-        campaign: campaignName,
-        spend: money(spendCents),
-        position: myPosition,
+        customer_id, partner: (partner as any).nome, phone: partnerPhone,
+        sent: ok, pool_resolved: !!poolResolved,
       });
     }
 
