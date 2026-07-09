@@ -36,6 +36,7 @@ import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, notifyOwnerManualReview } from "../_shared/notify-consultant.ts";
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
+import { resolveCampaignByTrackingProtocol } from "../_shared/campaign-tracking.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
@@ -893,11 +894,23 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
-        let matchMethod: "ad_id" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
+        let matchMethod: "protocol" | "ad_id" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
         let matchSimilarity: number | null = null;
 
+        // 0) Match DETERMINÍSTICO por protocolo profissional no texto (FB-87321 etc.).
+        // É o caminho autoritativo para múltiplas campanhas ativas quando o Meta
+        // não entrega ad_id/ctwa_clid no payload.
+        if (messageText) {
+          sourceCampaignId = await resolveCampaignByTrackingProtocol(
+            supabase,
+            instanceData.consultant_id,
+            messageText,
+          );
+          if (sourceCampaignId) matchMethod = "protocol";
+        }
+
         // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
-        if (sourceAdId) {
+        if (!sourceCampaignId && sourceAdId) {
           try {
             const { data: campByAd } = await supabase
               .from("facebook_campaigns")
@@ -943,6 +956,7 @@ Deno.serve(async (req) => {
               .select("id, initial_message, status, created_at")
               .eq("consultant_id", instanceData.consultant_id)
               .not("initial_message", "is", null)
+              .in("status", ["active", "pending_review"])
               .order("created_at", { ascending: false })
               .limit(50);
 
@@ -1056,10 +1070,8 @@ Deno.serve(async (req) => {
     // keyword já cuida disso (prioridade do rodízio — Requisito 8).
     // Fail-open: qualquer falha aqui apenas loga e segue (o lead nunca se perde);
     // sem partner_id válido, o lead cai no consultor dono (Requisito 11).
-    // 4ª tentativa (blindagem do rodízio preservada): se a frase-âncora do CTWA
-    // bateu e o consultor tem EXATAMENTE UMA pool ativa cuja initial_message
-    // tem similaridade Jaccard ≥ 0.4 com o texto → atribui essa campanha.
-    // Se houver 2+ pools ativas, continua indo pra revisão manual (não chuta).
+    // 4ª tentativa: protocolo profissional (FB-87321 etc.) ou similaridade segura
+    // entre múltiplas campanhas ativas. Não escolhe por acaso em empate.
     if (
       customer &&
       !(customer as any).source_campaign_id &&
