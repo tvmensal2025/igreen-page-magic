@@ -1,95 +1,62 @@
-# Protocolo profissional de atendimento
+# Etapa 2 — Balões separados + botão "Iniciar atendimento"
 
-## Como o cliente vai ver (exemplo real)
+## O que o cliente vai ver quando cair da campanha
 
-Quando o lead manda a 1ª mensagem, o bot responde em **2 balões**:
+Nada é enviado automaticamente na chegada. O lead entra silencioso no painel do consultor com o protocolo já gerado (Etapa 1). O primeiro disparo só acontece quando o consultor clica **Iniciar atendimento** — aí saem **2 balões separados** no WhatsApp:
 
 **Balão 1 — Saudação institucional**
-
 ```
 Olá, Muito Bom Dia! 👋
 Esse é o canal de atendimento especializado da iGreen Energy.
 ```
 
-**Balão 2 — Protocolo + pergunta de abertura ( não tem como posso ajudar )** 
-
+**Balão 2 — Protocolo + pedido de nome (sem "como posso ajudar")**
 ```
 ━━━━━━━━━━━━━━━━━━━━━━
 📋 Protocolo de atendimento
 *RFD-260119-0042*
 ━━━━━━━━━━━━━━━━━━━━━
-💚💚💚💚💚💚💚💚💚💚💚💚
 
-
+Para começarmos, me conta seu nome completo? 🙂
 ```
 
-A saudação (`Muito Bom Dia / Muita Boa Tarde / Muita Boa Noite`) é calculada pelo horário de São Paulo no momento da chegada.
+Saudação calculada por horário de SP no momento do clique. Sem "como posso ajudar" — o próximo passo é sempre pedir o nome, que já casa com o fluxo de captação (`askLeadName`).
 
-## Formato do protocolo
+## Botão "Iniciar atendimento"
 
-`INICIAIS-YYMMDD-####`
+Novo botão verde no topo da ficha do lead (ChatView) **e** no card do Kanban de Conversão, visível quando:
+- lead veio de campanha (`source_campaign_id` preenchido) **ou** `origin_channel` = whapi/evolution **e**
+- ainda não recebeu saudação (`welcome_sent_at IS NULL`).
 
-- **INICIAIS (3 letras)**: iniciais do nome do parceiro que recebeu o lead no rodízio (ex.: Rafael Ferreira Dias → `RFD`). Se o lead cair fora do rodízio, usamos as iniciais do consultor, e como último fallback `IGR`.
-- **YYMMDD**: data de chegada em SP (`260119` = 19/jan/2026).
-- **####**: contador sequencial diário do próprio parceiro (`0001`, `0002`, …) — reinicia todo dia às 00:00 SP.
+Depois de clicar, o botão some e vira um selo "Atendimento iniciado às HH:MM · protocolo RFD-260119-0042".
 
-Vantagem: o parceiro consegue "ler" o protocolo (sabe que é dele, sabe o dia, sabe a ordem).
+Clique dispara `start-customer-attendance` (nova edge) que:
+1. Garante protocolo via `assignProtocolToCustomer` (idempotente — Etapa 1).
+2. Monta os 2 balões com `greetingForNow()` + protocolo.
+3. Envia pelo canal certo (Whapi/Evolution) resolvido pelo `consultant_id`.
+4. Grava as duas mensagens em `conversations` como outbound normal (aparecem na timeline).
+5. Marca `customers.welcome_sent_at = now()` e `name_ask_sent_at = now()` (para não repedir nome depois).
+6. Coloca `conversation_step = 'ask_name'` e `capture_mode = 'manual'` (painel de captação já abre sozinho — regra existente).
 
-## Como não vamos nos perder — onde fica registrado
+Idempotente: se `welcome_sent_at` já existe, retorna 200 sem reenviar.
 
-1. `**customers.tracking_protocol**` — protocolo gravado direto no cadastro do lead. Aparece no Kanban, no CRM e em qualquer busca.
-2. `**partner_protocol_seq**` — tabela contadora `(partner_id, data)` que garante sequência única por parceiro/dia. É a "fonte da verdade" e evita colisão.
-3. `**conversations**` — o balão 2 (com o protocolo) é salvo como mensagem outbound normal, então fica na timeline do lead.
-4. **Notificação ao parceiro** — a mensagem que já mandamos ao parceiro (`notify-partner-leads-batch`) passa a citar o mesmo protocolo. Parceiro e cliente compartilham o mesmo código.
-5. **Painel `/admin/protocolos**` (já existe) — passa a listar também os protocolos de atendimento, com filtro por parceiro/data e link para o lead.
+## Regras importantes
 
-## Como fica gerado (fluxo interno)
+- **Nunca dispara sozinho** quando o lead cai da campanha — só depois do clique do consultor. Isso resolve o "não tem como posso ajudar devido…".
+- **Não usa mais** a saudação automática que a Etapa 1 injetava no webhook. O webhook continua gerando o protocolo e o rodízio no fundo, mas o envio dos 2 balões passa a ser 100% pelo botão.
+- Se o lead **responder antes** do consultor clicar (raro, mas acontece com Meta), o webhook faz o mesmo disparo automaticamente (fallback) — assim ninguém fica sem saudação.
+- **Pedido de nome unificado**: o balão 2 já é o próprio "pedir nome". Não dispara `askLeadName` de novo em cima.
 
-```text
-Lead manda 1ª msg
-    │
-    ▼
-Webhook cria customer (sem protocolo ainda)
-    │
-    ▼
-Rodízio decide o parceiro
-    │
-    ▼
-RPC generate_partner_protocol(partner_id, iniciais)
-    │  ├─ INSERT/UPDATE em partner_protocol_seq (seq++)
-    │  └─ RETURN "RFD-260119-0042"
-    ▼
-UPDATE customers.tracking_protocol
-    │
-    ▼
-Envia balão 1 (saudação) → salva em conversations
-Envia balão 2 (protocolo + pergunta) → salva em conversations
-    │
-    ▼
-Bot flow normal continua a partir do próximo turno
-```
+## Onde muda no código
 
-Se o lead cair em revisão manual (sem parceiro), geramos o protocolo com iniciais do consultor e marcamos `needs_partner_review = true` — o admin pode reatribuir depois; o protocolo continua o mesmo.
+- **Novo**: `supabase/functions/_shared/welcome-header.ts` — monta os 2 balões e envia pelo canal (Whapi/Evolution).
+- **Novo**: `supabase/functions/start-customer-attendance/index.ts` — endpoint chamado pelo botão. Valida consultor dono do lead, chama `assignProtocolToCustomer`, chama `welcome-header`, atualiza `customers`.
+- **Migração**: adicionar `customers.welcome_sent_at timestamptz` (idempotência).
+- **Edit** `supabase/functions/whapi-webhook/index.ts` e `evolution-webhook/index.ts`: remover o disparo automático de saudação da Etapa 1; manter só a geração de protocolo + rodízio. Adicionar fallback "se lead responder antes do consultor iniciar, envia saudação agora".
+- **Edit** `src/pages/WhatsAppClientsPage.tsx` (ChatView) e `src/components/admin/conversao/ConversaoCockpit.tsx` (card do lead): botão **Iniciar atendimento** + selo pós-clique. Usa `supabase.functions.invoke("start-customer-attendance", { body: { customerId } })`.
+- **Reuso**: `askLeadName` e o painel de captação continuam iguais — apenas passam a considerar `name_ask_sent_at` para não pedir 2x.
 
-## Arquivos a criar/editar
+## Fora do escopo
 
-- **Migração**: coluna `customers.tracking_protocol`, tabela `partner_protocol_seq`, RPC `generate_partner_protocol(uuid, text)`.
-- `**_shared/greeting.ts**`: `greetingForNow()` (horário SP) + `partnerInitials(name)`.
-- `**_shared/protocol.ts**` (novo): `assignProtocolToCustomer(customerId, partnerId?)` — chama a RPC e faz `UPDATE customers`.
-- `**_shared/welcome-header.ts**` (novo): monta os 2 balões e chama o adapter do canal (Evolution/Whapi) já resolvido para o customer.
-- `**whapi-webhook/index.ts` + `evolution-webhook/index.ts**`: nos pontos onde hoje chamamos `notifyPartnerNewLead` (após rodízio decidir), adicionar:
-  1. `assignProtocolToCustomer(...)`
-  2. `sendWelcomeHeader(...)` — apenas na **primeira** interação do lead (checa `conversations` count == 1 inbound).
-- `**notify-partner-leads-batch**`: incluir `tracking_protocol` na mensagem enviada ao parceiro.
-- `**AdminProtocolsPage.tsx**`: acrescentar aba "Atendimento" listando `customers.tracking_protocol`.
-
-## Regras de segurança
-
-- RPC roda como `SECURITY DEFINER` com `search_path=public` e só recebe grants para `service_role`.
-- Envio da saudação é **idempotente**: se `customers.tracking_protocol` já existe, não regenera nem reenvia (evita duplicar se o webhook processar 2x).
-- Se o envio do balão falhar, o protocolo fica gravado mesmo assim (não bloqueia a conversa).
-
-## Não faz parte deste plano
-
-- Trocar formato dos protocolos de campanha (`FB-XXXXX`) que já existem em `facebook_campaigns` — esse continua igual, é outro escopo.
-- Migração retroativa dos leads antigos — só os novos a partir do deploy recebem protocolo.
+- Fluxos de reativação e mensagem em massa (continuam com o header próprio).
+- Mudar formato do protocolo ou o rodízio (Etapa 1 já resolveu).
