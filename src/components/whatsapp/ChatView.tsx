@@ -105,7 +105,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       });
       if (error) throw error;
       if (data?.ok === false) {
-        toast({ title: "Não deu pra iniciar", description: data?.error || "Tente de novo.", variant: "destructive" });
+        toast({
+          title: data?.fallback ? "Envie manualmente" : "Não deu pra iniciar",
+          description: data?.message || data?.detail || data?.error || "Tente de novo.",
+          variant: "destructive",
+        });
         return;
       }
       setWelcomeSentAt(new Date().toISOString());
