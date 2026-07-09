@@ -185,13 +185,20 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
 
         {/* Formulário de busca */}
         <div className="px-5 py-3 space-y-3 border-b border-border bg-card/40 shrink-0">
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+              <Checkbox checked={stateScope} onCheckedChange={(v) => setStateScope(Boolean(v))} />
+              Buscar em todo o estado <span className="text-muted-foreground">(mais demorado, escolha um ramo)</span>
+            </label>
+          </div>
           <div className="flex gap-2">
             <div className="flex-1 relative">
-              <Label htmlFor="b-city" className="text-xs">Cidade</Label>
+              <Label htmlFor="b-city" className="text-xs">Cidade {stateScope && <span className="text-muted-foreground">(desativada — estado inteiro)</span>}</Label>
               <Input id="b-city" value={city}
+                disabled={stateScope}
                 onChange={(e) => { setCity(e.target.value); setCityPicked(false); }}
                 onFocus={() => { if (cityHits.length) setShowHits(true); }}
-                placeholder="Digite 'cam' → Campinas..." className="h-9" autoComplete="off"
+                placeholder={stateScope ? "Estado inteiro" : "Digite 'cam' → Campinas..."} className="h-9" autoComplete="off"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     if (showHits && cityHits[0]) pickCity(cityHits[0]);
@@ -199,7 +206,7 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
                   }
                   if (e.key === "Escape") setShowHits(false);
                 }} />
-              {showHits && cityHits.length > 0 && (
+              {!stateScope && showHits && cityHits.length > 0 && (
                 <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-lg">
                   {cityHits.map((h) => (
                     <button key={`${h.name}-${h.uf}`} type="button"
@@ -214,9 +221,9 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
               )}
             </div>
             <div className="w-16">
-              <Label htmlFor="b-uf" className="text-xs">UF</Label>
+              <Label htmlFor="b-uf" className="text-xs">UF{stateScope && " *"}</Label>
               <Input id="b-uf" value={uf} onChange={(e) => setUf(e.target.value.toUpperCase())}
-                placeholder="SP" maxLength={2} className="h-9" />
+                placeholder="MG" maxLength={2} className="h-9" />
             </div>
             <div className="flex items-end">
               <Button onClick={doSearch} disabled={searching} className="h-9 gap-1.5">
@@ -225,12 +232,14 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
               </Button>
             </div>
           </div>
-          <div>
-            <Label htmlFor="b-bairro" className="text-xs">Bairro (opcional — para cidade grande, varra por partes)</Label>
-            <Input id="b-bairro" value={neighbourhood} onChange={(e) => setNeighbourhood(e.target.value)}
-              placeholder="Ex: Cambuí, Barão Geraldo..." className="h-9"
-              onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }} />
-          </div>
+          {!stateScope && (
+            <div>
+              <Label htmlFor="b-bairro" className="text-xs">Bairro (opcional — para cidade grande, varra por partes)</Label>
+              <Input id="b-bairro" value={neighbourhood} onChange={(e) => setNeighbourhood(e.target.value)}
+                placeholder="Ex: Cambuí, Barão Geraldo..." className="h-9"
+                onKeyDown={(e) => { if (e.key === "Enter") doSearch(); }} />
+            </div>
+          )}
           <div className="flex flex-wrap gap-1.5">
             {CATEGORIES.map((c) => (
               <button key={c.id} type="button" onClick={() => setCategory(c.id)}
