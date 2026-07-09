@@ -1,51 +1,31 @@
-# Nunca deixar cliente ativo aparecer na Conversão
+## Objetivo
+Remover o botão "Limpar clientes ativos" e fazer o Conversão trazer **todos** os leads parados (anúncios antigos etc.), sem misturar clientes ativos. O filtro natural do fetch cuida disso — hoje ele quebra silenciosamente e devolve 0.
 
-Entendi: analisar por **nome completo + telefone** e todos os sinais de "já é cliente/licenciada", removendo do Conversão. O botão de reativar puxou 0 porque a lógica estava errada — vou reescrever.
+## Causa raiz do "0 clientes"
+No fetch de `customers` (ConversaoCockpit.tsx, linha 146) usamos:
 
-## Regra de "já é cliente" (união — se qualquer sinal existir, fora do funil)
+```
+.not("assinatura_cliente", "is", true)
+```
 
-Um customer é considerado cliente ativo (não pode aparecer no Conversão) se **qualquer uma** for verdadeira:
+Mas `assinatura_cliente` no schema é **texto**, não boolean. O PostgREST manda `IS NOT TRUE` e o Postgres devolve `argument of IS NOT TRUE must be type boolean, not type text` → a query inteira falha → `rows = []`. Confirmado por SELECT direto.
 
-1. `customer_origin = 'igreen_sync'` (já é registro sincronizado do portal)
-2. `igreen_code` preenchido (não nulo, não vazio)
-3. `data_ativo` OU `data_validado` OU `data_cadastro` preenchidos
-4. `andamento_igreen` ∈ (`ativo`, `aprovado`, `validado`, `licenciada`, `licenciado`)
-5. `assinatura_cliente = true`
-6. **Match por nome+telefone**: existe outro customer (qualquer consultor) com o mesmo `phone_whatsapp` normalizado (só dígitos, ignorando +55) E com nome parecido (normalizado sem acentos/case) que satisfaz 1–5.
+Sem essa cláusula, existem ~76 leads `whatsapp_lead` elegíveis (dos 83 totais, apenas 6 têm `igreen_code` e 1 status ativo).
 
 ## Mudanças
 
-### 1. `ConversaoCockpit.tsx` — filtro na query
-Adicionar cláusulas ao `.select()` de `customers`:
-- `.is('igreen_code', null)`
-- `.is('data_ativo', null)`
-- `.is('data_validado', null)`
-- `.is('data_cadastro', null)`
-- `.not('andamento_igreen', 'in', '(ativo,aprovado,validado,licenciada,licenciado)')`
-- `.not('assinatura_cliente', 'eq', true)`
+### 1. `src/components/admin/conversao/ConversaoCockpit.tsx`
+- **Corrigir fetch (linhas 130-148)**: remover `.not("assinatura_cliente", "is", true)`. Manter `.is("igreen_code", null)`, `.is("data_ativo", null)`, `.is("data_validado", null)`, `.is("data_cadastro", null)`, `.is("pos_venda_stage", null)` e o `.or()` de origem. O bloqueio de `assinatura_cliente` passa para o filtro JS junto de `andamento_igreen`.
+- **Ampliar filtro JS (linhas 176-180)**: `CLIENT_STATUSES` continua; adicionar exclusão por `assinatura_cliente` truthy (`'true' | 't' | 'sim' | 'yes' | '1'`, case-insensitive). Assim o "cliente ativo não entra" fica natural, sem depender de tipo boolean.
+- **Remover botão e handler**: apagar `promoting`, `promoteParked` (linhas 354-374) e o `<Button>` correspondente no JSX (bloco que usa `Trash2` + "Limpar clientes ativos"). Remover `Trash2` do import de `lucide-react` se ficar sem uso.
 
-Depois, no cliente, cruzar por telefone normalizado: buscar em `customers` (com service via edge) todos os telefones "de cliente ativo" e remover das linhas exibidas. Fazer isso no próprio fetch usando um segundo query rápido só do conjunto de `phone_whatsapp` da fila filtrada.
+### 2. `supabase/functions/admin-promote-parked-leads/index.ts`
+Deletar a função inteira (`rm -rf supabase/functions/admin-promote-parked-leads`). Não é mais chamada em lugar nenhum e a exclusão de cliente ativo agora é natural no fetch.
 
-### 2. Reescrever a edge function `admin-promote-parked-leads` → `admin-clean-conversao`
-- Deixa de tentar "promover". Passa a fazer **limpeza**:
-  - Percorre `customers` do consultor autenticado.
-  - Marca `pos_venda_stage = 'cliente_ativo'` em todos que baterem qualquer sinal (1–5) OU cujo telefone normalizado coincide com um customer ativo de qualquer consultor.
-  - Retorna `{ scanned, cleaned }`.
-- Grava em `admin_audit_log` como `conversao.clean_active_clients`.
+## Fora de escopo
+- Sem alteração de schema, RLS, migrations.
+- Sem mudança na tela de Captação.
+- Não mexer no cálculo de score, ordenação, ou nas ações de IA.
 
-### 3. Botão do cockpit
-- Renomear para **"Limpar clientes ativos"** (ícone `Broom`).
-- Toast: `"X clientes ativos removidos do funil (varredura de Y). Captação intocada."`
-- Reload após execução.
-
-## Resultado
-
-- Lucineia e qualquer outro que já tenha código iGreen, cadastro, ativo, validado ou nome+telefone batendo com cliente ativo **desaparecem** do Conversão automaticamente e ficam marcados para não voltar.
-- Botão faz uma limpeza retroativa em massa.
-- Captação (`captured_leads`) e `igreen_sync` continuam intocados.
-
-## Detalhes técnicos
-
-- Sem migração de schema.
-- Edita: `supabase/functions/admin-promote-parked-leads/index.ts` (renomear internamente) e `src/components/admin/conversao/ConversaoCockpit.tsx` (fetch + label do botão + handler).
-- Normalização de telefone: `raw.replace(/\D/g,'')` e strip `55` inicial se >= 12 dígitos, para dedup consistente entre `whatsapp_lead` e `igreen_sync`.
+## Verificação
+Após aplicar: abrir `/admin` → Central de Conversão → conferir que a fila carrega os leads `whatsapp_lead` (ads antigos incluídos) e que nenhum com `igreen_code`, `data_ativo/validado/cadastro`, `assinatura_cliente` truthy ou `andamento_igreen` em (ativo/aprovado/validado/licenciada/licenciado) aparece.
