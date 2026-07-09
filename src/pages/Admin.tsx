@@ -330,7 +330,6 @@ const AdminContent = () => {
     "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
     "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
-    "recuperacao-leads": { title: "Recuperar leads", subtitle: "Leads parados dos últimos 120 dias" },
   };
   const currentMeta = TAB_META[activeTab];
 
