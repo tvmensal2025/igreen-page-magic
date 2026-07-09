@@ -2308,6 +2308,24 @@ export type Database = {
         }
         Relationships: []
       }
+      campaign_protocol_sequence: {
+        Row: {
+          last_seq: number
+          updated_at: string
+          year: number
+        }
+        Insert: {
+          last_seq?: number
+          updated_at?: string
+          year: number
+        }
+        Update: {
+          last_seq?: number
+          updated_at?: string
+          year?: number
+        }
+        Relationships: []
+      }
       capture_achievements: {
         Row: {
           badge_key: string
@@ -8230,6 +8248,7 @@ export type Database = {
           partner_id: string
           pool_id: string
           position: number
+          protocol_suffix: string | null
         }
         Insert: {
           created_at?: string
@@ -8238,6 +8257,7 @@ export type Database = {
           partner_id: string
           pool_id: string
           position: number
+          protocol_suffix?: string | null
         }
         Update: {
           created_at?: string
@@ -8246,6 +8266,7 @@ export type Database = {
           partner_id?: string
           pool_id?: string
           position?: number
+          protocol_suffix?: string | null
         }
         Relationships: [
           {
@@ -10485,6 +10506,10 @@ export type Database = {
           similarity: number
           snippet: string
         }[]
+      }
+      next_campaign_protocol_number: {
+        Args: { _year?: number }
+        Returns: number
       }
       pause_sending_now: {
         Args: { p_hours?: number; p_instance: string }
