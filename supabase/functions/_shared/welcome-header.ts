@@ -85,9 +85,25 @@ export async function sendWelcomeHeader(
   });
   const protocol = protoRes?.protocol || customer.tracking_protocol || "";
 
-  const channel = await resolveChannelForCustomer(supabase, customerId, env);
+  let channel = await resolveChannelForCustomer(supabase, customerId, env);
   if (isUnavailable(channel)) {
-    return { ok: false, code: "channel_unavailable", detail: channel.reason };
+    // Fallback: lead sem origem gravada (ex: captação manual). Usa a instância
+    // padrão do consultor e grava origin_* para próximas mensagens.
+    if (channel.reason === "no_origin_recorded" && customer.consultant_id) {
+      const fallback = await (await import("./channel-sender.ts"))
+        .resolveChannel(supabase, customer.consultant_id, env);
+      if (fallback) {
+        await supabase.from("customers").update({
+          origin_channel: fallback.kind,
+          origin_instance_name: fallback.instanceName,
+        }).eq("id", customerId).then(() => {}, () => {});
+        channel = fallback;
+      } else {
+        return { ok: false, code: "channel_unavailable", detail: "no_instance_for_consultant" };
+      }
+    } else {
+      return { ok: false, code: "channel_unavailable", detail: channel.reason };
+    }
   }
 
   // Quota — libera whapi compartilhado.
