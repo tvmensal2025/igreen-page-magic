@@ -30,6 +30,7 @@ const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
+const AdminRecoverLeadsPage = lazy(() => import("./pages/AdminRecoverLeadsPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
