@@ -251,6 +251,8 @@ export function OpenAttendanceBatchDialog({
       setStartAttendance(true);
       setAudioId("__none__");
       setImageId("__none__");
+      setTextId("__none__");
+      setTextBody("");
       setRunning(false);
     }
     wasOpenRef.current = open;
@@ -259,13 +261,14 @@ export function OpenAttendanceBatchDialog({
   const runFor = async (targets: CaptureBatchLead[]) => {
     if (!targets.length) return;
     if (needsChannel && !instanceName) {
-      toast.error("WhatsApp desconectado — reconecte para enviar mídia");
+      toast.error("WhatsApp desconectado — reconecte para enviar mensagem");
       return;
     }
-    if (!startAttendance && !audioUrl && !imageUrl) {
-      toast.error("Escolha iniciar atendimento, áudio ou imagem");
+    if (!startAttendance && !audioUrl && !imageUrl && !customText) {
+      toast.error("Escolha iniciar atendimento, áudio, imagem ou texto");
       return;
     }
+
 
     abortRef.current?.abort();
     const ac = new AbortController();
