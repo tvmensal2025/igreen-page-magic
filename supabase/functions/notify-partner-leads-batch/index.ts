@@ -106,13 +106,14 @@ Deno.serve(async (req) => {
 
       const { data: partner } = await admin
         .from("referral_partners")
-        .select("id, nome, notification_phone, is_active")
+        .select("id, nome, notification_phone, is_active, partner_igreen_id, short_code")
         .eq("id", partnerId).maybeSingle();
       if (!partner || (partner as any).is_active === false) {
         results.push({ customer_id, skipped: "partner_inactive" }); continue;
       }
       const partnerPhone = (partner as any).notification_phone;
       if (!partnerPhone) { results.push({ customer_id, skipped: "partner_no_phone" }); continue; }
+      const partnerCode = (partner as any).partner_igreen_id || (partner as any).short_code || null;
 
       const campaignId: string | null = (customer as any).source_campaign_id ?? null;
 
