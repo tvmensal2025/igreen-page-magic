@@ -1,21 +1,223 @@
 project_id = "zlzasfhcxcznaprrragl"
 
-# Cron/webhook: gateway NÃO pode exigir JWT de usuário.
-# pg_cron manda só `apikey` (anon); Whapi não manda Authorization.
-# Auth fica no código (service role / secret / grace).
+[functions.evolution-webhook]
+verify_jwt = false
+
+[functions.whapi-webhook]
+verify_jwt = false
+
+[functions.facebook-oauth-start]
+verify_jwt = true
+
+[functions.facebook-oauth-callback]
+verify_jwt = false
+
+[functions.wallet-stripe-webhook]
+verify_jwt = false
+
+[functions.facebook-validate-account]
+verify_jwt = true
+
+[functions.facebook-search-cities]
+verify_jwt = true
+
+[functions.facebook-create-campaign]
+verify_jwt = true
+
+[functions.facebook-list-assets]
+verify_jwt = true
+
+[functions.facebook-select-assets]
+verify_jwt = true
+
+[functions.facebook-sync-metrics]
+verify_jwt = false
+
+[functions.facebook-token-refresh]
+verify_jwt = false
+
+[functions.facebook-capi]
+verify_jwt = false
+
+[functions.facebook-balance-reconcile]
+verify_jwt = false
+
+[functions.ad-creative-builder]
+verify_jwt = true
+
+[functions.ad-initial-message]
+verify_jwt = true
+
+[functions.upload-documents-minio]
+verify_jwt = false
+
+[functions.recover-stuck-otp]
+verify_jwt = false
+
+[functions.portal-offline-retry]
+verify_jwt = false
+
+
+[functions.qr-redirect]
+verify_jwt = false
+
+[functions.facebook-campaign-healthcheck]
+verify_jwt = false
+
+[functions.facebook-campaign-status]
+verify_jwt = false
+
+[functions.facebook-auto-pause]
+verify_jwt = false
+
+[functions.facebook-cbo-to-abo]
+verify_jwt = false
+
+[functions.ai-agent-router]
+verify_jwt = false
+
+[functions.ai-transcribe-media]
+verify_jwt = false
+
+
+
+
+[functions.ad-creative-qa]
+verify_jwt = false
+
+[functions.capture-extract]
+verify_jwt = false
+
+
+
+
+
+[functions.inbound-media-retry-cron]
+verify_jwt = false
+
+[functions.faq-reengagement-nudge]
+verify_jwt = false
+
+[functions.outbound-media-flush-cron]
+verify_jwt = false
+
+[functions.ctwa-status]
+verify_jwt = false
+
+[functions.flow-d-stuck-watchdog]
+verify_jwt = false
+
+[functions.reactivation-cron]
+verify_jwt = false
+
+[functions.lead-temperature-classifier]
+verify_jwt = false
+
+[functions.flow-engine-rollout-cron]
+verify_jwt = false
+
+[functions.flow-engine-v3-rollout-cron]
+verify_jwt = false
+
+[functions.migrate-engine-v3]
+verify_jwt = false
+
+[functions.flow-spreadsheet-review]
+verify_jwt = true
+
+[functions.embed-knowledge]
+verify_jwt = false
+
+[functions.marcar-conversa-vencedora]
+verify_jwt = false
+
+[functions.process-followups]
+verify_jwt = false
+
+
+[functions.igreen-ingest-customers]
+verify_jwt = false
+
+# Propostas públicas (/proposta/:token) — sem JWT; autenticação pelo public_token.
+[functions.proposal-public-get]
+verify_jwt = false
+
+[functions.proposal-respond]
+verify_jwt = false
+
+# Módulo Solar 3D
+[functions.solar-geocode]
+verify_jwt = false
+
+[functions.solar-roof-analyze]
+verify_jwt = false
+
+[functions.solar-design-get]
+verify_jwt = false
+
+[functions.solar-design-public]
+verify_jwt = false
+
+[functions.solar-roof-public]
+verify_jwt = false
+
+[functions.solar-roof-context]
+verify_jwt = false
+
+# Imagem de satélite real do telhado (proxy da chave Google — público controlado).
+[functions.solar-roof-image]
+verify_jwt = false
+
+# Imagem profissional do telhado (foto aérea HD + heatmap solar) — gera e cacheia.
+[functions.solar-roof-hd]
+verify_jwt = false
+
+# Diagnóstico dos Data Layers HD (inspeção de georreferência/qualidade).
+[functions.solar-hd-probe]
+verify_jwt = false
+
+# Aviso de novo cadastro pendente ao super admin (chamado por trigger via pg_net,
+# sem JWT de usuário — autenticado pela apikey anon do cron interno).
+[functions.notify-superadmin-signup]
+verify_jwt = false
+
+# Auditoria IA do Portal 2 — chamada pelo worker com Bearer WORKER_SECRET.
+# Sem verify_jwt=false o gateway tenta validar o secret como JWT e devolve
+# 401 UNAUTHORIZED_INVALID_JWT_FORMAT antes da função sequer rodar.
+[functions.portal2-ai-audit]
+verify_jwt = false
+
+# ── Captação de leads multicanal ──────────────────────────────────────────
+# Porta pública de entrada de leads (landing pages). Sem JWT: a landing não
+# tem sessão; a posse é resolvida pela licença do consultor no corpo.
+[functions.lead-intake]
+verify_jwt = false
+
+# Webhook do Meta Lead Ads (Facebook/Instagram). Sem JWT: o Meta assina via
+# X-Hub-Signature-256 (validado dentro da função).
+[functions.meta-leadads-webhook]
+verify_jwt = false
+
+# Webhook do TikTok Lead Generation. Sem JWT: validação por assinatura própria.
+[functions.tiktok-leadgen-webhook]
+verify_jwt = false
+
+# Pesquisa B2B de empresas pelo consultor (Google Places / OSM / Receita).
+# Autenticada: é o consultor logado que pesquisa e vira dono dos resultados.
+[functions.lead-research]
+verify_jwt = true
+
+# Seleção de leads → cria campanha de Disparo PRO (bulk_campaigns).
+# Autenticada: o consultor logado dispara para os próprios leads.
+[functions.leads-to-campaign]
+verify_jwt = true
+
 [functions.notify-partner-leads-batch]
 verify_jwt = false
 
 [functions.rodizio-metrics-broadcast]
 verify_jwt = false
 
-[functions.facebook-sync-metrics]
-verify_jwt = false
-
-[functions.whapi-webhook]
-verify_jwt = false
-
-# Voice Dialer (PSTN): cron + webhook Twilio sem JWT de usuário
 [functions.voice-dialer-cron]
 verify_jwt = false
 
