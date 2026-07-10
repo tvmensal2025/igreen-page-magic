@@ -25,7 +25,7 @@ const empty: Partial<AdTemplate> = {
   description_text: "",
   headline_variants: [],
   primary_text_variants: [],
-  age_min: 28,
+  age_min: 30,
   age_max: 60,
   genders: [],
   suggested_daily_budget_cents: 3000,
@@ -442,7 +442,7 @@ export function AdTemplatesPanel() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground">Idade mín.</label>
-              <Input type="number" value={editing.age_min ?? 28} onChange={(e) => setEditing({ ...editing, age_min: Number(e.target.value) })} />
+              <Input type="number" value={editing.age_min ?? 30} onChange={(e) => setEditing({ ...editing, age_min: Number(e.target.value) })} />
             </div>
             <div>
               <label className="text-xs font-medium text-muted-foreground">Idade máx.</label>
