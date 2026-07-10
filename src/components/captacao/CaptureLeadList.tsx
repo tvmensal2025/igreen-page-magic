@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, UserPlus, RefreshCw, CheckSquare, X } from "lucide-react";
+import { Search, UserPlus, RefreshCw, CheckSquare, X, ChevronDown, ChevronRight, MessageCircle, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
