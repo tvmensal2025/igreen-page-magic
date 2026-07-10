@@ -182,9 +182,9 @@ Deno.serve(async (req) => {
         0,
       );
 
-      // Investimento: soma ad_spend_daily para essa campanha (fallback 0)
+      // Investimento real da campanha (soma facebook_metrics_daily)
       const { data: spendRows } = await supabase
-        .from("ad_spend_daily")
+        .from("facebook_metrics_daily")
         .select("spend_cents")
         .eq("campaign_id", customer.source_campaign_id);
       const investedCents = (spendRows || []).reduce(
