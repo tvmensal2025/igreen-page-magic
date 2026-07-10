@@ -335,14 +335,12 @@ Deno.serve(async (req) => {
         await admin.from("voice_sms_log").insert({
           consultant_id: consultantId,
           campaign_id: target.campaign_id,
-          target_id: target.id,
           phone: dest.replace(/\D/g, ""),
-          message: smsText,
+          message: `[fallback NA] ${smsText}`,
           status: smsRes.ok ? "sent" : "failed",
           velip_sms_id: smsRes.cdls_id ?? null,
           velip_ctid: toCtid(target.id),
           error: smsRes.ok ? null : (smsRes.error ?? "unknown"),
-          reason: "fallback_no_answer",
         });
       } catch (e) {
         console.error("[voice-webhook] SMS fallback falhou:", (e as Error).message);
