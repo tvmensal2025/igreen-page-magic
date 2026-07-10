@@ -279,7 +279,9 @@ Deno.serve(async (req) => {
 
   const step = (body.conversation_step ?? "").trim();
   const coldHours = body.cold_hours != null ? Number(body.cold_hours) : null;
-  if (step || (coldHours != null && coldHours > 0)) {
+  const cf = body.customer_filter ?? {};
+  const hasCustomerFilter = !!(cf.uf || cf.city || cf.status || (cf.min_bill && cf.min_bill > 0));
+  if (step || (coldHours != null && coldHours > 0) || hasCustomerFilter) {
     let q = admin
       .from("customers")
       .select(
@@ -289,6 +291,10 @@ Deno.serve(async (req) => {
       .limit(Math.min(body.max_targets ?? MAX_TARGETS, MAX_TARGETS));
 
     if (step) q = q.eq("conversation_step", step);
+    if (cf.uf) q = q.eq("state", cf.uf.toUpperCase());
+    if (cf.city) q = q.ilike("city", `%${cf.city}%`);
+    if (cf.status) q = q.eq("status", cf.status);
+    if (cf.min_bill && cf.min_bill > 0) q = q.gte("electricity_bill_value", cf.min_bill);
 
     if (coldHours != null && coldHours > 0) {
       const cutoff = new Date(Date.now() - coldHours * 3600_000).toISOString();
