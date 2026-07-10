@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -17,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Loader2, Mic, Image as ImageIcon, Play, Square, RotateCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Mic, Image as ImageIcon, MessageSquare, Play, Square, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
+
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 import {
@@ -71,6 +73,15 @@ function templateMediaUrl(t: MessageTemplate | undefined, kind: "audio" | "image
   const item = (t.items || []).find((i) => i.message_type === "image" && (i.media_url || i.image_url));
   return item?.media_url || item?.image_url || null;
 }
+
+function templateTextContent(t: MessageTemplate | undefined): string {
+  if (!t) return "";
+  if (t.content && t.content.trim()) return t.content;
+  const item = (t.items || []).find((i) => !!i.message_text);
+  return item?.message_text || "";
+}
+
+
 
 function leadPill(lead: CaptureBatchLead, result?: BatchLeadResult) {
   if (result?.status === "running") {
@@ -147,6 +158,8 @@ export function OpenAttendanceBatchDialog({
   const [startAttendance, setStartAttendance] = useState(true);
   const [audioId, setAudioId] = useState<string>("__none__");
   const [imageId, setImageId] = useState<string>("__none__");
+  const [textId, setTextId] = useState<string>("__none__");
+  const [textBody, setTextBody] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BatchLeadResult[]>([]);
   const [workLeads, setWorkLeads] = useState<CaptureBatchLead[]>(leads);
@@ -161,6 +174,10 @@ export function OpenAttendanceBatchDialog({
   );
   const imageTemplates = useMemo(
     () => templates.filter((t) => !!templateMediaUrl(t, "image")),
+    [templates],
+  );
+  const textTemplates = useMemo(
+    () => templates.filter((t) => !!templateTextContent(t).trim()),
     [templates],
   );
 
@@ -180,6 +197,7 @@ export function OpenAttendanceBatchDialog({
   const selectedImage = imageTemplates.find((t) => t.id === imageId);
   const audioUrl = templateMediaUrl(selectedAudio, "audio");
   const imageUrl = templateMediaUrl(selectedImage, "image");
+  const customText = textBody.trim() ? textBody : null;
 
   const resultById = useMemo(() => {
     const m = new Map<string, BatchLeadResult>();
@@ -200,11 +218,12 @@ export function OpenAttendanceBatchDialog({
   const failCount = results.filter((r) => r.status === "failed").length;
   const showConfig = !done || failCount > 0;
 
-  const needsChannel = !!audioUrl || !!imageUrl;
+  const needsChannel = !!audioUrl || !!imageUrl || !!customText;
   const canSend =
-    (startAttendance || !!audioUrl || !!imageUrl) &&
+    (startAttendance || !!audioUrl || !!imageUrl || !!customText) &&
     (!needsChannel || !!instanceName) &&
     workLeads.length > 0;
+
 
   useEffect(() => {
     if (open) {
@@ -233,6 +252,8 @@ export function OpenAttendanceBatchDialog({
       setStartAttendance(true);
       setAudioId("__none__");
       setImageId("__none__");
+      setTextId("__none__");
+      setTextBody("");
       setRunning(false);
     }
     wasOpenRef.current = open;
@@ -241,13 +262,14 @@ export function OpenAttendanceBatchDialog({
   const runFor = async (targets: CaptureBatchLead[]) => {
     if (!targets.length) return;
     if (needsChannel && !instanceName) {
-      toast.error("WhatsApp desconectado — reconecte para enviar mídia");
+      toast.error("WhatsApp desconectado — reconecte para enviar mensagem");
       return;
     }
-    if (!startAttendance && !audioUrl && !imageUrl) {
-      toast.error("Escolha iniciar atendimento, áudio ou imagem");
+    if (!startAttendance && !audioUrl && !imageUrl && !customText) {
+      toast.error("Escolha iniciar atendimento, áudio, imagem ou texto");
       return;
     }
+
 
     abortRef.current?.abort();
     const ac = new AbortController();
@@ -283,7 +305,9 @@ export function OpenAttendanceBatchDialog({
         startAttendance,
         audioUrl,
         imageUrl,
+        customText,
         delayMs: 5000,
+
         signal: ac.signal,
         onProgress: (batchResults) => {
           if (!aliveRef.current || runId !== runIdRef.current) return;
@@ -466,6 +490,64 @@ export function OpenAttendanceBatchDialog({
                   />
                 )}
               </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Mensagem de texto (opcional)</Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <div className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Select
+                      value={textId}
+                      onValueChange={(v) => {
+                        setTextId(v);
+                        if (v === "__none__") setTextBody("");
+                        else if (v === "__blank__") setTextBody("");
+                        else {
+                          const t = textTemplates.find((x) => x.id === v);
+                          setTextBody(templateTextContent(t) || "");
+                        }
+                      }}
+                      disabled={running}
+                    >
+                      <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
+                        <SelectValue placeholder="Nenhum texto" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[130]">
+                        <SelectItem value="__none__">Nenhum texto</SelectItem>
+                        <SelectItem value="__blank__">Escrever novo texto…</SelectItem>
+                        {textTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {(textId !== "__none__" || textBody) && (
+                  <>
+                    <Textarea
+                      value={textBody}
+                      onChange={(e) => setTextBody(e.target.value)}
+                      placeholder="Escreva ou edite a mensagem… use {{nome}} para personalizar."
+                      rows={4}
+                      disabled={running}
+                      className="text-xs rounded-lg resize-none"
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={running}
+                        onClick={() => setTextBody((v) => v + "{{nome}}")}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
+                      >
+                        {"{{nome}}"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
 
               {needsChannel && !instanceName && (
                 <p className="text-[11px] text-destructive">

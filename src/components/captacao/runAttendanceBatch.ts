@@ -25,10 +25,13 @@ export interface RunAttendanceBatchOptions {
   startAttendance: boolean;
   audioUrl: string | null;
   imageUrl: string | null;
+  /** Texto livre (suporta {{nome}}). Enviado após protocolo/áudio/imagem. */
+  customText?: string | null;
   delayMs?: number;
   signal?: AbortSignal;
   onProgress?: (results: BatchLeadResult[]) => void;
 }
+
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
@@ -101,10 +104,12 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
     startAttendance,
     audioUrl,
     imageUrl,
+    customText,
     delayMs = 5000,
     signal,
     onProgress,
   } = opts;
+
 
   // Cópia local — nunca mutar o array/objetos do caller (retry / React state).
   const queue = leads.map((l) => ({ ...l }));
@@ -132,11 +137,13 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
       continue;
     }
 
-    if ((audioUrl || imageUrl) && !instanceName) {
+    const needsChannel = !!(audioUrl || imageUrl || (customText && customText.trim()));
+    if (needsChannel && !instanceName) {
       results[i] = { id: lead.id, status: "failed", detail: "WhatsApp desconectado" };
       emit();
       continue;
     }
+
 
     const phone = String(lead.phone_whatsapp);
     const parts: string[] = [];
@@ -189,9 +196,28 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
         parts.push(r.status === "pending" || r.status === "timeout" ? "imagem (fila)" : "imagem");
       }
 
+      if (customText && customText.trim()) {
+        assertNotAborted();
+        const firstName = (lead.name || "").trim().split(/\s+/)[0] || "";
+        const rendered = customText
+          .split("{{nome}}").join(firstName || "tudo bem")
+          .split("{{name}}").join(firstName || "tudo bem");
+        const r = await sendWhatsAppMessage({
+          instanceName,
+          phone,
+          mediaCategory: "text",
+          text: rendered,
+          isWhapi,
+          customerId: lead.id,
+        });
+        if (r.status === "failed") throw new Error(r.error || "Falha no texto");
+        parts.push(r.status === "pending" || r.status === "timeout" ? "texto (fila)" : "texto");
+      }
+
+
       if (parts.length === 0) {
         results[i] = { id: lead.id, status: "skipped", detail: "Nada a enviar" };
-      } else if (onlySkippedProtocol && parts.length === 1 && !audioUrl && !imageUrl) {
+      } else if (onlySkippedProtocol && parts.length === 1 && !audioUrl && !imageUrl && !(customText && customText.trim())) {
         // Só "já tinha protocolo" e sem mídia → não conta como sucesso novo.
         results[i] = { id: lead.id, status: "skipped", detail: "Já iniciado" };
       } else {
