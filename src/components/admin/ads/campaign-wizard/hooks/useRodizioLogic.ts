@@ -95,20 +95,14 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
   const [creating, setCreating] = useState(false);
 
   // Carrega os referral_partners do dono na primeira vez que o rodízio liga.
-  // Pré-seleciona TODOS os parceiros ativos (o consultor pode desmarcar quem
-  // não quer). Isso evita o cenário "campanha nova cai só em 1 parceiro
-  // porque esqueci de marcar o resto".
+  // NÃO pré-seleciona ninguém — o consultor precisa escolher explicitamente
+  // quem participa, para não distribuir leads para parceiros sem intenção.
   const loadPartners = useCallback(async () => {
     patch({ rodizioPartnersLoading: true });
     try {
       const partners = await listActiveReferralPartners();
       setAvailablePartners(partners);
       setLoaded(true);
-      patchFn((prev) => {
-        // Só pré-seleciona se o usuário ainda não escolheu ninguém manualmente.
-        if (prev.rodizioPartners.length > 0) return {};
-        return { rodizioPartners: partners };
-      });
     } catch (e: any) {
       toast({
         title: "Erro ao carregar participantes",
@@ -118,7 +112,7 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     } finally {
       patch({ rodizioPartnersLoading: false });
     }
-  }, [patch, patchFn, toast]);
+  }, [patch, toast]);
 
   useEffect(() => {
     if (!open || !state.rodizioEnabled || loaded) return;
