@@ -152,6 +152,8 @@ Deno.serve(async (req) => {
         updates.conversation_step = "cadastro_em_analise";
         if (body.igreen_code) updates.igreen_code = body.igreen_code;
         if (body.igreen_link) updates.igreen_link = body.igreen_link;
+        // Se ainda estava em captação manual, encerra automaticamente pra sumir da fila.
+        updates.capture_closed_at = new Date().toISOString();
         await supabase.from("customers").update(updates).eq("id", customer_id);
         await sendWhatsApp(
           "🎉 *Parabéns! Seu cadastro na iGreen Energy foi concluído!*\n\n" +
