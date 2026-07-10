@@ -223,3 +223,7 @@ verify_jwt = false
 
 [functions.voice-dialer-webhook]
 verify_jwt = false
+
+[functions.voice-dialer-health]
+verify_jwt = false
+
