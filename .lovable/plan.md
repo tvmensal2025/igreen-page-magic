@@ -1,108 +1,49 @@
-## Objetivo
+## Diagnóstico
 
-Deixar a **Captação** com a mesma solidez do chat do WhatsApp: novas mensagens sobem o lead na lista, contador de não-lidas, realtime confiável, feed completo com mídia, agendamento inline e agrupamentos mais úteis.
+O botão **Agendar ligação** JÁ está no `CaptureLeadList.tsx` (linha 994) e no `CaptureSheet.tsx` (linha 507), mas na lista ele está com `opacity-0 group-hover:opacity-100` — só aparece ao passar o mouse. Em telas touch, monitor grande ou quando o consultor não passa por cima, ele fica invisível. Por isso "sumiu".
 
-## Diagnóstico (o que está errado hoje)
+Além disso, comparando com o chat do WhatsApp (`ChatView`), a Captação ainda tem lacunas menores que valem consolidar agora.
 
-Comparando `src/components/captacao/CaptureLeadList.tsx` + `CaptureConversationFeed.tsx` com `src/components/whatsapp/ChatSidebar.tsx`:
+## O que fazer
 
-1. **Lista não ordena por última mensagem.** `CaptureLeadList` ordena por `customers.created_at desc`. Quando chega msg nova em um lead antigo, ele **não sobe** — o consultor não vê que "está falando com você agora". No chat WA a ordem é por `lastMsgAt`.
-2. **Sem badge de não lidas.** Não há coluna/estado `unread_count`. Msgs inbound novas só aparecem se o consultor clicar no lead.
-3. **Realtime parcial.** Reassina só `customers`. Novas linhas em `conversations` (inbound) não disparam refresh — `lastMsg`/`lastMsgAt` ficam desatualizados até apertar 🔄.
-4. **Ordem dentro dos grupos** ("Em atendimento" / "Em espera") herda a ordem de fetch (created_at). Deveria ser por `lastMsgAt` desc dentro de cada grupo.
-5. **Feed com teto de 50 msgs** e sem "carregar mais". Chat antigo fica invisível.
-6. **Sem separador visual de "Não lido / novo"** no feed (o chat WA marca a linha "Novas mensagens").
-7. **Filtro por período aplicado ao `capture_started_at**` esconde leads antigos que voltaram a conversar hoje. Deveria considerar a atividade (`lastMsgAt`).
-8. **Sem notificação sonora/toast** quando entra lead novo ou msg nova (chat WA tem).
-9. **"Agendar ligação" só existe dentro do lead selecionado.** Deveria ter atalho no card da lista (menu de contexto ou botão hover), igual ao chat.
-10. **Grupo "Em espera"** é uma bacia única — vira uma lista enorme. Falta subgrupos "Hoje / Ontem / Semana / Antigos" no padrão Intercom.
-11. **Composer** não expõe indicador "cliente digitando…" nem status de entrega (✓/✓✓) por mensagem — o chat expõe.
-12. **Contador do header** (`Conversas · N`) mostra o total do período mas não separa não-lidas.
+### 1. Botão Agendar sempre visível no card (fix principal)
+- Em `src/components/captacao/CaptureLeadList.tsx`: remover `opacity-0 group-hover:opacity-100`. Deixar o ícone de telefone com `opacity-70 hover:opacity-100`, tamanho `icon-xs` (24px) pra caber sem competir com a barra de progresso.
+- Manter `onClick={(e) => e.stopPropagation()}` pra não abrir o cockpit ao clicar.
+- Ocultar apenas no `selectMode` (batch).
 
-## O que a Captação já faz bem (manter)
+### 2. Botão no header do CaptureSheet
+- Hoje `ScheduleCallButton` aparece só no rodapé de ações. Adicionar também no header do sheet (ao lado do CloseCaptureButton) igual ao `ChatView`, pra ficar 1 clique quando o lead já está aberto.
 
-- Agrupamento "Em atendimento / Em espera" (útil e único da captação).
-- Filtros por período com persistência.
-- Modo seleção em lote → "Abrir atendimento" (fluxo bom).
-- Ficha lateral colapsável (padrão Intercom).
-- Sub-header com progresso, variante de fluxo, status WhatsApp.
+### 3. Lacunas remanescentes vs. ChatView
 
-## Escopo da correção (frontend + camada de dados leve)
+a. **"Iniciar atendimento" (start-customer-attendance)** — existe no `ChatView` mas não no cockpit da Captação. Adicionar botão no header do `CaptureSheet` quando o lead ainda não teve saudação enviada (mesma edge function).
 
-### 1. Ordenação real por atividade
+b. **Status de entrega por mensagem (✓/✓✓/lido)** — o feed atual mostra só timestamp. Renderizar os ticks quando `conversations.message_status` existir (`sent`, `delivered`, `read`), reaproveitando o helper que o ChatView usa.
 
-- Em `CaptureLeadList`: após montar `lastByCustomer`, **reordenar `leads` por `lastMsgAt ?? capture_started_at ?? created_at` desc**.
-- Aplicar a mesma ordenação dentro de `GroupedLeads` (não confiar na ordem de entrada).
+c. **Indicador "cliente digitando…"** — o ChatView escuta presence do Evolution. Adicionar o mesmo listener no `CaptureConversationFeed` (subheader do lead selecionado).
 
-### 2. Realtime de mensagens
+d. **Busca dentro da lista** — o ChatView tem input de busca por nome/telefone; a Captação só tem filtros por período/status. Adicionar `<Input>` de busca no topo da lista (client-side sobre `leads`).
 
-- Adicionar segundo canal Supabase escutando `conversations` filtrado por `consultant_id=eq.{consultantId}` (INSERT).
-- Ao receber INSERT: atualizar `lastMsg`/`lastMsgAt` do lead correspondente, incrementar `unread_count` se `message_direction='inbound'` e o lead **não estiver selecionado**, e reordenar.
-- Cleanup com `removeChannel` no unmount (padrão do memory).
+e. **Atalho "Marcar como não lido"** — inverso do "Ler tudo". Menu de contexto no card (botão de 3 pontinhos ou long-press) que força `unread_count = 1` e regrava `cap_last_seen_{id}` no `localStorage` como 0.
 
-### 3. Contador de não-lidas (client-side)
+f. **Contador de "conversas ativas hoje"** no header — hoje só mostra total e não-lidas. Adicionar "X ativas hoje" (leads com `lastMsgAt >= startOfDay`) pra o consultor medir volume do dia.
 
-- Estado local `Map<customerId, number>` em `CaptureLeadList`.
-- Zerar quando `selectedId === l.id` (ao abrir).
-- Persistir "última visita" por lead em `localStorage` (`cap_last_seen_{id}`) para que unread sobreviva a reload.
-- Renderizar badge verde no card + destaque em negrito no nome/último texto (padrão WA).
+### Fora do escopo
+- Mudanças em edge functions, schema ou tabelas.
+- Mexer em fluxos do bot, composer, ou lógica de encerramento.
+- Persistir unread no banco (segue client-side).
 
-### 4. Subgrupos "Hoje / Ontem / Semana / Antigos"
+## Arquivos afetados
 
-- Em `GroupedLeads`, dividir `emEspera` por buckets de tempo baseados em `lastMsgAt ?? capture_started_at`.
-- Sticky header para cada bucket, colapsável.
-- "Em atendimento" mantém-se plano (curto por natureza).
-
-### 5. Filtro por período usar atividade
-
-- Trocar `leadAnchor` para preferir `lastMsgAt`, com fallback para `capture_started_at`/`created_at`.
-- Assim leads antigos que voltaram a falar hoje entram no filtro "48h".
-
-### 6. Feed com histórico completo
-
-- Em `CaptureConversationFeed`: manter carga inicial de 50; adicionar botão "Carregar mais" no topo que busca as próximas 50 anteriores.
-- Separador visual "── Novas mensagens ──" na primeira msg inbound recebida após abrir o lead.
-
-### 7. Notificação de nova conversa
-
-- Ao INSERT inbound em lead **não selecionado**, disparar toast discreto (Sonner) e opcional `new Audio(ping)` (respeitando `document.visibilityState`).
-- Piscar borda esquerda do card por 4s.
-
-### 8. Agendar ligação inline
-
-- No card do lead (na lista), adicionar botão-ícone que aparece no hover/tap-long → abre o `ScheduleCallButton` já existente com o `customerId` daquele lead, sem precisar entrar no cockpit.
-
-### 9. Ajustes de header
-
-- Mostrar "N conversas · X não lidas" no header do painel.
-- Botão de "Marcar todas como lidas" quando houver não-lidas.
-
-## Fora do escopo
-
-- Mudanças em backend/edge/schema.
-- Alterar o fluxo do bot ou do composer.
-- Persistir `unread_count` no banco (fica client-side por consultor/dispositivo).
-
-## Detalhes técnicos
-
-Arquivos a editar:
-
-- `src/components/captacao/CaptureLeadList.tsx` — ordenação por atividade, realtime `conversations`, unread state, subgrupos de tempo, filtro por atividade, header com não-lidas, botão inline de agendar ligação, notificação.
-- `src/components/captacao/CaptureConversationFeed.tsx` — "Carregar mais" e separador "Novas mensagens".
-- (Opcional) `src/components/captacao/CaptureLeadCard.tsx` sem mudanças — a ficha continua igual.
-
-Padrões:
-
-- Realtime: `useEffect` + `supabase.channel(...).on('postgres_changes', ...).subscribe()` com cleanup em `removeChannel` (evita o loop de bill do memory).
-- Persistência de estado local: `localStorage` com chaves prefixadas `cap_` (padrão já usado no arquivo).
-- Sem hardcoded colors: usar tokens `primary`, `emerald-500`, `amber` já presentes.
+- `src/components/captacao/CaptureLeadList.tsx` — botão sempre visível, busca client-side, contador "ativas hoje", menu "marcar não-lido".
+- `src/components/captacao/CaptureSheet.tsx` — botão Agendar + Iniciar atendimento no header.
+- `src/components/captacao/CaptureConversationFeed.tsx` — ticks de status, presence "digitando".
 
 ## Critérios de aceite
 
-- Novo INSERT inbound em conversa antiga → o lead **sobe para o topo** do respectivo grupo em ≤ 2s sem F5.
-- Lead não selecionado com inbound novo → badge de contador aparece + card em negrito + toast.
-- Abrir o lead zera o contador e o negrito.
-- Filtro "48h" inclui leads antigos que responderam nas últimas 48h.
-- Feed permite carregar histórico anterior a 100 msgs.
-- Botão de agendar ligação funciona a partir do card sem abrir o cockpit.
-- Sem regressão no seletor de período, modo seleção em lote e ficha colapsável.
+- Ícone de telefone visível em todos os cards da Captação sem precisar hover, e clicável sem abrir o cockpit.
+- Header do CaptureSheet tem "Agendar ligação" e "Iniciar atendimento" ao lado do botão de encerrar.
+- Feed mostra ✓/✓✓ nas mensagens outbound quando o Evolution reporta status.
+- Barra de busca filtra a lista por nome ou telefone em tempo real.
+- Header da lista exibe "N conversas · X não-lidas · Y ativas hoje".
+- Card tem opção "marcar como não lido" que devolve o badge sem precisar aguardar nova mensagem.
