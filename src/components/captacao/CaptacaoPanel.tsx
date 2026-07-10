@@ -211,7 +211,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const allStepsSent = stepsKnown && (totalSteps === 0 || sentSteps.size >= totalSteps);
   const pendingStepsCount = stepsKnown ? Math.max(0, totalSteps - sentSteps.size) : 0;
   const fichaFooter = selectedId ? (
-    <>
+    <div className="space-y-2">
       <PortalStatusTracker customerId={selectedId} consultantId={consultantId} />
       <FinalizeButton
         consultantId={consultantId}
@@ -224,7 +224,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
         botPaused={!!session.customer?.bot_paused}
         captureMode={session.customer?.capture_mode}
       />
-    </>
+      <div className="px-3 pb-2">
+        <CloseCaptureButton
+          customerId={selectedId}
+          consultantId={consultantId}
+          onClosed={() => setSelectedId(null)}
+        />
+      </div>
+    </div>
   ) : null;
 
   return (
