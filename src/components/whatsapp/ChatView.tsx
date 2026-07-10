@@ -99,6 +99,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
+  const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
+  const [closingCapture, setClosingCapture] = useState(false);
+  const [captureClosedAt, setCaptureClosedAt] = useState<string | null>(null);
   const isCompactLayout = useIsLgDown();
   const { width: vw } = useViewportWidth();
   const isXl = vw >= 1280;
