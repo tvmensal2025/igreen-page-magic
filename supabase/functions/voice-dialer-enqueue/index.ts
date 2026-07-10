@@ -48,6 +48,13 @@ interface Body {
   dtmf_questions?: unknown[];
   /** Se informado, usa itens já persistidos de uma base */
   base_id?: string;
+  /** Filtros extras aplicados ao seletor "meus clientes" */
+  customer_filter?: {
+    uf?: string;
+    city?: string;
+    status?: string;
+    min_bill?: number;
+  };
 }
 
 const MAX_TARGETS = 5000;
