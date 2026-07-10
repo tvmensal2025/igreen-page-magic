@@ -16,6 +16,7 @@ interface ConvRow {
   message_direction: string;
   message_text: string | null;
   message_type: string | null;
+  media_url: string | null;
   created_at: string;
   slot_key: string | null;
 }
