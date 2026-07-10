@@ -734,66 +734,58 @@ function timeBucket(l: CaptureBatchLead): "hoje" | "ontem" | "semana" | "antigos
   return "antigos";
 }
 
-function GroupedLeads(props: GroupedLeadsProps) {
-  const { leads } = props;
-  const groups = useMemo(() => {
-    const emAtendimento: CaptureBatchLead[] = [];
+function GroupedLeads(props: GroupedLeadsProps & { mode: "atendimento" | "espera" }) {
+  const { leads, mode } = props;
+  const buckets = useMemo(() => {
     const espera = { hoje: [] as CaptureBatchLead[], ontem: [] as CaptureBatchLead[], semana: [] as CaptureBatchLead[], antigos: [] as CaptureBatchLead[] };
-    for (const l of leads) {
-      if (l.welcome_sent_at) emAtendimento.push(l);
-      else espera[timeBucket(l)].push(l);
-    }
-    return { emAtendimento: sortByActivity(emAtendimento), espera };
+    for (const l of leads) espera[timeBucket(l)].push(l);
+    return espera;
   }, [leads]);
+
+  if (mode === "atendimento") {
+    if (leads.length === 0) {
+      return (
+        <p className="p-6 text-center text-xs text-muted-foreground">
+          Nenhum lead em atendimento agora.
+        </p>
+      );
+    }
+    return (
+      <ul className="divide-y divide-border/60">
+        {sortByActivity(leads).map((l) => (
+          <LeadCard
+            key={l.id}
+            lead={l}
+            consultantId={props.consultantId}
+            selectedId={props.selectedId}
+            selectMode={props.selectMode}
+            selectedIds={props.selectedIds}
+            onSelect={props.onSelect}
+            toggleId={props.toggleId}
+            fmtTime={props.fmtTime}
+            fmtPhone={props.fmtPhone}
+            unreadCount={props.unread[l.id] || 0}
+            flashAt={props.flash[l.id] || 0}
+          />
+        ))}
+      </ul>
+    );
+  }
+
+  if (leads.length === 0) {
+    return (
+      <p className="p-6 text-center text-xs text-muted-foreground">
+        Nenhum lead em espera.
+      </p>
+    );
+  }
 
   return (
     <div>
-      <LeadSection
-        {...props}
-        groupKey="atendimento"
-        title="Em atendimento"
-        icon={<MessageCircle className="w-3 h-3" />}
-        toneClass="text-emerald-700 dark:text-emerald-400"
-        leads={groups.emAtendimento}
-        showLiveDot
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_hoje"
-        title="Em espera · Hoje"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.hoje)}
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_ontem"
-        title="Em espera · Ontem"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.ontem)}
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_semana"
-        title="Em espera · Últimos 7 dias"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.semana)}
-        defaultOpen={false}
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_antigos"
-        title="Em espera · Mais antigos"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-muted-foreground"
-        leads={sortByActivity(groups.espera.antigos)}
-        defaultOpen={false}
-      />
+      <LeadSection {...props} groupKey="espera_hoje" title="Hoje" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.hoje)} defaultOpen />
+      <LeadSection {...props} groupKey="espera_ontem" title="Ontem" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.ontem)} defaultOpen />
+      <LeadSection {...props} groupKey="espera_semana" title="Últimos 7 dias" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.semana)} defaultOpen={false} />
+      <LeadSection {...props} groupKey="espera_antigos" title="Mais antigos" icon={<Clock className="w-3 h-3" />} toneClass="text-muted-foreground" leads={sortByActivity(buckets.antigos)} defaultOpen={false} />
     </div>
   );
 }
