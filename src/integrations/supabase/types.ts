@@ -3688,6 +3688,8 @@ export type Database = {
           bot_paused_reason: string | null
           bot_paused_until: string | null
           bot_processing_until: string | null
+          capture_closed_at: string | null
+          capture_closed_by: string | null
           capture_mode: string
           capture_started_at: string | null
           cashback: string | null
@@ -3933,6 +3935,8 @@ export type Database = {
           bot_paused_reason?: string | null
           bot_paused_until?: string | null
           bot_processing_until?: string | null
+          capture_closed_at?: string | null
+          capture_closed_by?: string | null
           capture_mode?: string
           capture_started_at?: string | null
           cashback?: string | null
@@ -4178,6 +4182,8 @@ export type Database = {
           bot_paused_reason?: string | null
           bot_paused_until?: string | null
           bot_processing_until?: string | null
+          capture_closed_at?: string | null
+          capture_closed_by?: string | null
           capture_mode?: string
           capture_started_at?: string | null
           cashback?: string | null
