@@ -371,7 +371,7 @@ export async function notifyClientReplyWhilePaused(
       .replace(/_/g, " ") || "atendimento";
     const { title, preview } = describeInboundKind(opts?.kind, lastMessage);
     const protocolLine = lead.tracking_protocol
-      ? `📋 *Protocolo:* ${lead.tracking_protocol}\n`
+      ? `📋 *Chamado:* ${lead.tracking_protocol}\n`
       : "";
     const text =
       `${title}\n` +

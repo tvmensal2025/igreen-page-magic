@@ -7,6 +7,10 @@ export const TRACKING_PROTOCOL_V2_RE = /\b(20\d{2})[-–—](\d{4})(?:[-–—](
 // Formato LEGADO mantido para retrocompatibilidade: FB-87321 / IG-87321 ...
 export const TRACKING_PROTOCOL_LEGACY_RE = /\b(FB|IG|GG|TT|WA)\s*[-–—]?\s*(\d{4,8})\b/i;
 
+// Ticket de atendimento (NÃO usado pra matching de campanha).
+// Formato: IGR-XXX-#### (ex.: IGR-RFF-0042). É gerado do NOSSO lado, o cliente não digita.
+export const SERVICE_TICKET_RE = /\bIGR-[A-Z0-9]{3}-\d{4}\b/;
+
 // Regex composta usada nos webhooks (tenta o novo primeiro)
 export const TRACKING_PROTOCOL_RE = TRACKING_PROTOCOL_V2_RE;
 

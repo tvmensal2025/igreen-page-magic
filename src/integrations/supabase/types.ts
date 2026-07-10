@@ -8104,6 +8104,7 @@ export type Database = {
           nome: string
           notification_phone: string | null
           partner_igreen_id: string | null
+          protocol_seq: number
           qr_phrase: string | null
           rodizio_metrics_enabled: boolean
           short_code: string | null
@@ -8119,6 +8120,7 @@ export type Database = {
           nome: string
           notification_phone?: string | null
           partner_igreen_id?: string | null
+          protocol_seq?: number
           qr_phrase?: string | null
           rodizio_metrics_enabled?: boolean
           short_code?: string | null
@@ -8134,6 +8136,7 @@ export type Database = {
           nome?: string
           notification_phone?: string | null
           partner_igreen_id?: string | null
+          protocol_seq?: number
           qr_phrase?: string | null
           rodizio_metrics_enabled?: boolean
           short_code?: string | null
@@ -10629,6 +10632,10 @@ export type Database = {
         Returns: string
       }
       generate_partner_protocol: {
+        Args: { _initials: string; _partner_id: string }
+        Returns: string
+      }
+      generate_partner_protocol_v2: {
         Args: { _initials: string; _partner_id: string }
         Returns: string
       }

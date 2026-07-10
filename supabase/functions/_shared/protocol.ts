@@ -1,11 +1,17 @@
-// Geração e envio do "welcome header" (saudação + protocolo).
+// Geração e envio do "welcome header" (saudação + protocolo de atendimento).
 //
 // Idempotente: se `customers.tracking_protocol` já estiver preenchido,
 // NÃO regera nem reenvia.
 //
-// Formato do protocolo do parceiro (RPC generate_partner_protocol):
-//   {short_code}-{YYMMDD}-{seq4}  ex.: 481070-260709-0001
-// Fallback sem short_code: 3 iniciais do nome.
+// Formato do PROTOCOLO DE ATENDIMENTO (ticket do cliente):
+//   IGR-{XXX}-{seq4}  ex.: IGR-RFF-0042
+//   - XXX = short_code do parceiro OU 3 iniciais do nome (pad 'X' se curto).
+//   - seq4 = sequência global crescente por parceiro (não zera por dia).
+//
+// IMPORTANTE — não confundir com o PROTOCOLO DA CAMPANHA (2026-####),
+// que vai no anúncio Meta e é usado pra casar o lead com a campanha/rodízio.
+// Esse aqui é o "número do chamado" que fica com o cliente pra suporte.
+
 
 import { greetingForNow, partnerInitials } from "./greeting.ts";
 
@@ -58,17 +64,18 @@ export async function assignProtocolToCustomer(
     // ainda assim passamos short_code/iniciais como hint de fallback.
     const initialsHint = shortCode || partnerInitials(partnerName || opts.consultantName || "");
 
-    const { data: gen, error } = await supabase.rpc("generate_partner_protocol", {
+    const { data: gen, error } = await supabase.rpc("generate_partner_protocol_v2", {
       _partner_id: partnerId,
       _initials: initialsHint,
     });
     if (error || !gen) {
-      console.warn("[protocol] rpc falhou:", error?.message);
-      // Fallback local: short_code ou iniciais + data + 4 chars do customer
-      const stamp = new Date().toISOString().slice(2, 10).replace(/-/g, "");
-      const key = (shortCode || partnerInitials(partnerName || opts.consultantName || "") || "IGR").toUpperCase();
-      const short = String(customerId).replace(/-/g, "").slice(0, 4).toUpperCase();
-      const protocol = `${key}-${stamp}-${short}`;
+      console.warn("[protocol] rpc v2 falhou:", error?.message);
+      // Fallback local no MESMO formato IGR-XXX-####
+      const rawIni = (shortCode || partnerInitials(partnerName || opts.consultantName || "") || "IGR")
+        .toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const ini3 = (rawIni.length >= 3 ? rawIni.slice(0, 3) : rawIni.padEnd(3, "X"));
+      const seq4 = String(Math.floor(1000 + Math.random() * 9000));
+      const protocol = `IGR-${ini3}-${seq4}`;
       await supabase.from("customers").update({ tracking_protocol: protocol }).eq("id", customerId);
       return { protocol, isNew: true };
     }
@@ -81,6 +88,7 @@ export async function assignProtocolToCustomer(
     return null;
   }
 }
+
 
 export function buildWelcomeHeaderGreeting(consultantName?: string | null): string {
   const who = (consultantName || "").trim();
@@ -104,6 +112,6 @@ export function buildWelcomeHeaderProtocol(
     "✅ *Atendimento iniciado*",
     "",
     who ? `👤 Consultor(a): *${who}*` : null,
-    `📋 Protocolo: *${protocol}*`,
+    `📋 Chamado: *${protocol}*`,
   ].filter((l) => l !== null).join("\n");
 }
