@@ -166,6 +166,17 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
         primaryVideo={state.creativeMode === "video" && state.videoMeta ? { w: state.videoMeta.w, h: state.videoMeta.h, duration: state.videoMeta.duration } : null}
         onChange={(q) => patch({ quality: q })}
       />
+
+      <CopyCatalogSheet
+        open={catalogOpen}
+        onOpenChange={setCatalogOpen}
+        distribuidora={derived.distribuidoraPrimary}
+        cidade={state.cities[0]?.name || null}
+        onPickHeadline={(t) => patch({ headline: t })}
+        onPickPrimary={(t) => patch({ primaryText: t })}
+        onPickDescription={(t) => patch({ description: t })}
+      />
     </div>
   );
+
 }
