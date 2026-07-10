@@ -262,7 +262,9 @@ Deno.serve(async (req) => {
     for (const it of items || []) {
       const row = it as { phone: string; name: string | null };
       pushPhone(row.phone, row.name);
-    }
+  }
+
+
 
   const step = (body.conversation_step ?? "").trim();
   const coldHours = body.cold_hours != null ? Number(body.cold_hours) : null;
