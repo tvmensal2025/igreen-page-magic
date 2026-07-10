@@ -272,7 +272,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             }}
           />
         </div>
-        <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={220} minPx={180} maxPx={360} />
+        <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={260} minPx={220} maxPx={560} />
 
         {/* Área principal */}
         <main className={`${!selectedId ? "hidden md:flex" : "flex"} flex-1 flex-col overflow-hidden min-w-0 min-h-0`}>
