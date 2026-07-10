@@ -1,24 +1,32 @@
 /**
  * Banner de saúde da conexão Velip — aparece no topo da aba Ligação.
- * Só mostra alerta quando algo está errado. Estado saudável fica discreto.
+ * Mostra saldo Velip + gasto hoje / semana / mês do consultor logado.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Wallet } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Wallet, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+interface Spend {
+  spend_today: number;
+  spend_week: number;
+  spend_month: number;
+  answered_count: number;
+  avg_cost_per_answered: number;
+}
 interface Health {
   ok: boolean;
   configured: boolean;
   webhook_configured?: boolean;
   saldo?: number | null;
+  spend?: Spend | null;
   error?: string | null;
 }
 
-function fmtSaldo(n: number | null | undefined) {
-  if (n == null || Number.isNaN(n)) return "—";
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
-}
+const fmt = (n: number | null | undefined) =>
+  n == null || Number.isNaN(n)
+    ? "—"
+    : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function VelipHealthBanner() {
   const [state, setState] = useState<Health | null>(null);
@@ -35,7 +43,7 @@ export function VelipHealthBanner() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, []);
 
   if (!state) {
     return (
@@ -71,28 +79,57 @@ export function VelipHealthBanner() {
     );
   }
 
-  const lowBalance = state.saldo != null && state.saldo < 20;
+  const saldo = state.saldo;
+  const spendMonth = state.spend?.spend_month ?? 0;
+  const avgDay = spendMonth / 30;
+  const lowBalance = saldo != null && avgDay > 0 && saldo < avgDay;
+  const critical = saldo != null && avgDay > 0 && saldo < avgDay * 3;
+
+  const toneClass = critical
+    ? "border-destructive/40 bg-destructive/10 text-destructive"
+    : lowBalance
+      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200";
+
   return (
-    <div className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-xs ${
-      lowBalance
-        ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-        : "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
-    }`}>
-      <div className="flex items-center gap-2">
-        <CheckCircle2 className="h-3.5 w-3.5" />
-        <span className="font-medium">Velip conectado</span>
-        {state.webhook_configured === false && (
-          <span className="text-amber-700 dark:text-amber-300">(webhook sem auth)</span>
-        )}
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="flex items-center gap-1">
-          <Wallet className="h-3.5 w-3.5" /> Saldo: <strong>{fmtSaldo(state.saldo)}</strong>
-        </span>
+    <div className={`rounded-md border px-3 py-2.5 text-xs ${toneClass}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          <span className="font-medium">Velip conectado</span>
+          {state.webhook_configured === false && (
+            <span className="text-amber-700 dark:text-amber-300">(webhook sem auth)</span>
+          )}
+        </div>
         <Button size="sm" variant="ghost" onClick={load} disabled={busy} className="h-6 px-2">
           <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
         </Button>
       </div>
+      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <Metric icon={<Wallet className="h-3 w-3" />} label="Saldo" value={fmt(saldo)} strong />
+        <Metric icon={<TrendingUp className="h-3 w-3" />} label="Hoje" value={fmt(state.spend?.spend_today ?? 0)} />
+        <Metric label="7 dias" value={fmt(state.spend?.spend_week ?? 0)} />
+        <Metric label="30 dias" value={fmt(spendMonth)} />
+      </div>
+      {state.spend && state.spend.answered_count > 0 && (
+        <div className="mt-1.5 text-[10.5px] opacity-80">
+          {state.spend.answered_count} atendidas · custo médio {fmt(state.spend.avg_cost_per_answered)}
+        </div>
+      )}
+      {critical && (
+        <div className="mt-1.5 font-semibold">⚠️ Saldo insuficiente para 3 dias no ritmo atual.</div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ icon, label, value, strong }: { icon?: React.ReactNode; label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex flex-col rounded bg-background/40 px-2 py-1">
+      <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-80">
+        {icon} {label}
+      </span>
+      <span className={strong ? "text-sm font-bold" : "text-sm font-semibold"}>{value}</span>
     </div>
   );
 }
