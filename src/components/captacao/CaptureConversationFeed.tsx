@@ -58,9 +58,14 @@ function sortRows(rows: ConvRow[], limit: number) {
 export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false }: Props) {
   const [rows, setRows] = useState<ConvRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  /** ISO do momento em que a conversa foi aberta — separa "novas mensagens" das já vistas */
+  const openedAtRef = useRef<string>(new Date().toISOString());
+
 
   const scheduleScrollToBottom = useCallback((force = false) => {
     if (!force && !stickRef.current) return;
@@ -80,8 +85,52 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
 
   useEffect(() => {
     stickRef.current = true;
+    openedAtRef.current = new Date().toISOString();
+    setHasMore(true);
     scheduleScrollToBottom(true);
   }, [customerId, scheduleScrollToBottom]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || rows.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const oldest = rows[0]?.created_at;
+      if (!oldest) return;
+      const { data } = await supabase
+        .from("conversations")
+        .select("id, message_direction, message_text, message_type, media_id, created_at, slot_key")
+        .eq("customer_id", customerId)
+        .lt("created_at", oldest)
+        .not("message_text", "like", "[__safety_ping__]%")
+        .not("message_text", "like", "[inline-sent]%")
+        .not("message_text", "like", "[failed:%")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const older = ((data as ConvRow[]) || []).reverse();
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      // preserva posição de scroll ao prepender
+      const el = scrollRef.current;
+      const prevHeight = el?.scrollHeight || 0;
+      const prevTop = el?.scrollTop || 0;
+      setRows((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        const merged = [...older.filter((r) => !seen.has(r.id)), ...prev];
+        return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+      requestAnimationFrame(() => {
+        const el2 = scrollRef.current;
+        if (!el2) return;
+        const delta = el2.scrollHeight - prevHeight;
+        el2.scrollTop = prevTop + delta;
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [customerId, rows, hasMore, loadingMore]);
+
 
   useEffect(() => {
     let mounted = true;
@@ -167,6 +216,24 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
 
       <div ref={scrollRef} className="flex-1 min-h-[140px] overflow-y-auto p-2.5 space-y-2 bg-[#0b141a]/40">
 
+        {!loading && rows.length > 0 && hasMore && (
+          <div className="flex items-center justify-center py-1">
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 rounded-full px-2.5 py-1 transition disabled:opacity-50"
+            >
+              {loadingMore ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              {loadingMore ? "Carregando…" : "Carregar mensagens anteriores"}
+            </button>
+          </div>
+        )}
+        {!loading && rows.length > 0 && !hasMore && (
+          <div className="flex items-center justify-center py-1">
+            <span className="text-[9px] uppercase tracking-wider text-white/40">início da conversa</span>
+          </div>
+        )}
         {loading && (
           <div className="flex items-center justify-center py-4 text-muted-foreground text-[10px] gap-1.5">
             <Loader2 className="w-3 h-3 animate-spin" /> carregando…
@@ -183,9 +250,16 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             </p>
           </div>
         )}
+
         {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
           const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
+          // marcador "Novas mensagens" na 1ª msg inbound recebida após abrir o lead
+          const prev = rows[idx - 1];
+          const isNewSince =
+            !out &&
+            r.created_at > openedAtRef.current &&
+            (!prev || !(prev.message_direction !== "outbound" && prev.created_at > openedAtRef.current));
           return (
             <div key={r.id}>
               {showDay && (
@@ -193,6 +267,15 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                   <span className="px-2.5 py-0.5 rounded-full bg-black/30 text-white/70 text-[10px] font-medium">
                     {dayLabel(r.created_at)}
                   </span>
+                </div>
+              )}
+              {isNewSince && (
+                <div className="flex items-center gap-2 my-2" aria-label="Novas mensagens">
+                  <span className="flex-1 h-px bg-emerald-500/40" />
+                  <span className="text-[9px] uppercase tracking-widest font-bold text-emerald-400">
+                    Novas mensagens
+                  </span>
+                  <span className="flex-1 h-px bg-emerald-500/40" />
                 </div>
               )}
               <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
@@ -216,6 +299,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             </div>
           );
         })}
+
         <div ref={bottomRef} aria-hidden className="h-1" />
       </div>
     </div>
