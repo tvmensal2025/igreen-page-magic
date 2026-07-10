@@ -148,7 +148,7 @@ export function CaptureLeadList({
         closedElsewhere = new Set((closedSales || []).map((s: any) => s.customer_id));
       }
       const filtered = (data || []).filter((c: any) => !closedElsewhere.has(c.id));
-      const rows: CaptureBatchLead[] = (data || []).map((c: any) => ({
+      const rows: CaptureBatchLead[] = filtered.map((c: any) => ({
         id: c.id,
         name: c.name,
         phone_whatsapp: c.phone_whatsapp,
