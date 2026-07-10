@@ -936,7 +936,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 3) há pool de rodízio ATIVA para essa campanha?
+          // 3) há pool de rodízio ATIVA para essa campanha? (dupla trava: pool.is_active + campanha viva)
           if (candidateCampaignId) {
             const { data: pool } = await supabase
               .from("rodizio_pools")
@@ -948,8 +948,11 @@ Deno.serve(async (req) => {
             if ((pool as any)?.id) {
               rodizioPoolAtiva = true;
               resolvedCampaignId = candidateCampaignId;
+            } else {
+              console.log(`[rodizio] campanha ${candidateCampaignId} sem pool ativa (provavelmente pausada) — não vai para rodízio`);
             }
           }
+
 
           // 4) Atribuição efetiva por rodízio (paridade com evolution).
           if (rodizioPoolAtiva && resolvedCampaignId) {
