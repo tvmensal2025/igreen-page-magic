@@ -216,6 +216,24 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
 
       <div ref={scrollRef} className="flex-1 min-h-[140px] overflow-y-auto p-2.5 space-y-2 bg-[#0b141a]/40">
 
+        {!loading && rows.length > 0 && hasMore && (
+          <div className="flex items-center justify-center py-1">
+            <button
+              type="button"
+              onClick={() => void loadMore()}
+              disabled={loadingMore}
+              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 rounded-full px-2.5 py-1 transition disabled:opacity-50"
+            >
+              {loadingMore ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+              {loadingMore ? "Carregando…" : "Carregar mensagens anteriores"}
+            </button>
+          </div>
+        )}
+        {!loading && rows.length > 0 && !hasMore && (
+          <div className="flex items-center justify-center py-1">
+            <span className="text-[9px] uppercase tracking-wider text-white/40">início da conversa</span>
+          </div>
+        )}
         {loading && (
           <div className="flex items-center justify-center py-4 text-muted-foreground text-[10px] gap-1.5">
             <Loader2 className="w-3 h-3 animate-spin" /> carregando…
@@ -232,6 +250,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             </p>
           </div>
         )}
+
         {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
           const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
