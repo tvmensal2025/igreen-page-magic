@@ -295,7 +295,7 @@ export function CaptureLeadList({
 
   return (
     <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 min-h-0 overflow-hidden">
-      <div className="p-2.5 border-b border-border space-y-2 shrink-0">
+      <div className="p-2.5 border-b border-border space-y-2 shrink-0 bg-card">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm font-semibold">Conversas</h3>
