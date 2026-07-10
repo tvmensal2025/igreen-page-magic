@@ -206,11 +206,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // -------- Posição no rodízio --------
+      // -------- Posição no rodízio + lista de integrantes --------
       let myPosition: number | null = null;
       let totalPositions: number | null = null;
-      let nextPartnerLabel: string | null = null; // "Próximo do giro" ou "Depois de você"
+      let nextPartnerLabel: string | null = null;
       let nextPartnerName: string | null = null;
+      let rosterLines: string[] = [];
 
       if (poolResolved && members.length > 0) {
         const myMember = members.find((m) => m.partner_id === partnerId);
@@ -225,13 +226,32 @@ Deno.serve(async (req) => {
           nextMember = members.find((m) => m.position === afterIdx) || null as any;
           label = "Depois de você";
         }
+
+        // Buscar dados de todos integrantes de uma vez
+        const allIds = members.map((m) => m.partner_id);
+        const { data: allPartnerRows } = await admin
+          .from("referral_partners")
+          .select("id, nome, partner_igreen_id, short_code")
+          .in("id", allIds);
+        const byId = new Map<string, any>((allPartnerRows || []).map((p: any) => [p.id, p]));
+
         if (nextMember) {
-          const { data: np } = await admin
-            .from("referral_partners").select("nome").eq("id", nextMember.partner_id).maybeSingle();
-          if (np && (np as any).nome) {
-            nextPartnerName = (np as any).nome;
-            nextPartnerLabel = label;
-          }
+          const np = byId.get(nextMember.partner_id);
+          if (np?.nome) { nextPartnerName = np.nome; nextPartnerLabel = label; }
+        }
+
+        // Monta roster (nome + ID) — apenas se tiver >1 participante
+        if (totalPositions > 1) {
+          rosterLines = members
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((m) => {
+              const p = byId.get(m.partner_id);
+              const nome = p?.nome || "(sem nome)";
+              const idLabel = p?.partner_igreen_id || p?.short_code || null;
+              const you = m.partner_id === partnerId ? " ← você" : "";
+              return `  ${m.position + 1}º ${nome}${idLabel ? ` · ID ${idLabel}` : ""}${you}`;
+            });
         }
       }
 
