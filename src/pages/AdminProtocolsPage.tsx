@@ -110,9 +110,9 @@ export default function AdminProtocolsPage() {
             <Link to="/admin"><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Protocolos de Atendimento</h1>
+            <h1 className="text-2xl font-bold">Protocolos</h1>
             <p className="text-sm text-muted-foreground">
-              Rastreio determinístico de todas as campanhas ativas
+              Dois códigos distintos — não confundir
             </p>
           </div>
         </div>
@@ -120,6 +120,37 @@ export default function AdminProtocolsPage() {
           <Download className="h-4 w-4 mr-2" /> Exportar CSV
         </Button>
       </div>
+
+      {/* Cards explicativos: DOIS protocolos diferentes */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <Card className="border-l-4 border-l-blue-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Badge variant="secondary" className="font-mono">2026-0042</Badge>
+              Protocolo da Campanha
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground space-y-1">
+            <p>Vai embutido no anúncio Meta (wa.me). O <b>cliente envia</b> ao iniciar a conversa.</p>
+            <p>Usado pra <b>casar o lead com a campanha</b> e disparar o rodízio de parceiros.</p>
+            <p className="text-[11px] italic">↓ Listados abaixo</p>
+          </CardContent>
+        </Card>
+        <Card className="border-l-4 border-l-emerald-500">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Badge variant="secondary" className="font-mono">IGR-RFF-0042</Badge>
+              Chamado de Atendimento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-xs text-muted-foreground space-y-1">
+            <p><b>Gerado por nós</b> quando o atendimento abre. Contém a sigla do parceiro (ex.: RFF = Rafael Ferreira).</p>
+            <p>É o <b>número do chamado</b> que fica com o cliente pra suporte — não serve pra matching de campanha.</p>
+            <p className="text-[11px] italic">Fica salvo em <code>customers.tracking_protocol</code></p>
+          </CardContent>
+        </Card>
+      </div>
+
 
       <Card>
         <CardHeader className="pb-4">
