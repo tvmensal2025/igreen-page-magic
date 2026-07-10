@@ -40,7 +40,7 @@ export interface ExpressSuggestions {
 const FALLBACK: ExpressDefaults = {
   budget_cents: 5000, // R$ 50/dia
   duration_days: 7,
-  age_min: 28,
+  age_min: 30,
   age_max: 65,
   distribuidora: null,
   initial_message: "Olá! Quero saber como economizar na conta de luz.",

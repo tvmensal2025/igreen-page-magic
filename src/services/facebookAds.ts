@@ -560,7 +560,7 @@ export async function getConsultantAdSettings(consultantId: string): Promise<Con
     cities: ((data?.cities as any) || []) as ConsultantAdSettings["cities"],
     distribuidora_default: data?.distribuidora_default ?? null,
     display_name: data?.display_name ?? null,
-    age_min: data?.age_min ?? 28,
+    age_min: data?.age_min ?? 30,
     age_max: data?.age_max ?? 60,
   };
 }

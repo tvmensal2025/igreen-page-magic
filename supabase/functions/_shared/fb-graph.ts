@@ -151,7 +151,7 @@ export async function loadConsultantAdSettings(consultantId: string): Promise<{
     cities: (data?.cities as any) || [],
     distribuidora_default: data?.distribuidora_default ?? null,
     display_name: data?.display_name ?? null,
-    age_min: data?.age_min ?? 28,
+    age_min: data?.age_min ?? 30,
     age_max: data?.age_max ?? 60,
   };
 }
