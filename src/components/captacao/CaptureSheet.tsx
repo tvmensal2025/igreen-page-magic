@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2 } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
+import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 
 interface Props {
   open: boolean;
@@ -502,17 +503,27 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
             </div>
           )}
           {!isRegistered && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full h-7 text-[10px] rounded-full border-primary/40 text-primary hover:bg-primary/10 gap-1 font-semibold"
-              onClick={() => setCloseConfirm(true)}
-              disabled={closing}
-              title="Encerra a captação, vincula o lead em Vendas/CRM/Comissão e mantém o chat WhatsApp"
-            >
-              {closing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-              Encerrar captação
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <ScheduleCallButton
+                phone={phoneNumber}
+                consultantId={consultantId}
+                contactName={customerName || phoneNumber || null}
+                customerId={customerId}
+                triggerLabel="Agendar ligação"
+                className="w-full h-7 text-[10px] rounded-full border-primary/40 text-primary hover:bg-primary/10 gap-1 font-semibold"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-7 text-[10px] rounded-full border-primary/40 text-primary hover:bg-primary/10 gap-1 font-semibold"
+                onClick={() => setCloseConfirm(true)}
+                disabled={closing}
+                title="Encerra a captação, vincula o lead em Vendas/CRM/Comissão e mantém o chat WhatsApp"
+              >
+                {closing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                Encerrar captação
+              </Button>
+            </div>
           )}
         </footer>
 

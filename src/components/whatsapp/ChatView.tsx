@@ -22,6 +22,7 @@ import { AttendanceStatusBar } from "./AttendanceStatusBar";
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
+import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -639,6 +640,14 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             <span className="text-[11px] font-semibold md:hidden">Encerrar</span>
           </Button>
         )}
+
+        <ScheduleCallButton
+          phone={phoneNumber}
+          consultantId={consultantId}
+          contactName={chat.name}
+          customerId={customerId ?? null}
+          className="h-8 gap-1 px-3 rounded-full border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+        />
 
 
 
