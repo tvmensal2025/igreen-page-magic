@@ -844,27 +844,15 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={closeCaptureOpen} onOpenChange={(v) => !closingCapture && setCloseCaptureOpen(v)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Encerrar captação deste cliente?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O lead sai da lista de <b>Captação</b> e é vinculado automaticamente em <b>Vendas</b>, <b>CRM</b> e <b>Comissão</b>.
-              O <b>chat do WhatsApp continua ativo</b> — nada é apagado.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={closingCapture}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); void runCloseCapture(); }}
-              disabled={closingCapture}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white"
-            >
-              {closingCapture ? "Encerrando…" : "Encerrar captação"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {customerId && consultantId && (
+        <CloseCaptureDialog
+          open={closeCaptureOpen}
+          onOpenChange={setCloseCaptureOpen}
+          customerId={customerId}
+          consultantId={consultantId}
+          onClosed={handleCaptureClosed}
+        />
+      )}
 
 
 
