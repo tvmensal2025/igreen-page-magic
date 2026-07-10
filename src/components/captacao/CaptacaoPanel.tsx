@@ -257,7 +257,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           <CapturedLeadsPanel consultantId={consultantId} instanceName={instanceName} />
         </div>
       ) : (
-      <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "13rem" } as React.CSSProperties}>
+      <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "16.25rem" } as React.CSSProperties}>
         {/* Lista de clientes */}
         <div className={`${selectedId ? "hidden md:flex" : "flex"} md:flex flex-col md:w-[var(--cap-list-w)] md:shrink-0 overflow-hidden`}>
           <CaptureLeadList
@@ -272,7 +272,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             }}
           />
         </div>
-        <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={220} minPx={180} maxPx={360} />
+        <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={260} minPx={220} maxPx={560} />
 
         {/* Área principal */}
         <main className={`${!selectedId ? "hidden md:flex" : "flex"} flex-1 flex-col overflow-hidden min-w-0 min-h-0`}>

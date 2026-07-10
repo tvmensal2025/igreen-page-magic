@@ -295,7 +295,7 @@ export function CaptureLeadList({
 
   return (
     <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 min-h-0 overflow-hidden">
-      <div className="p-2.5 border-b border-border space-y-2 shrink-0">
+      <div className="p-2.5 border-b border-border space-y-2 shrink-0 bg-card">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
             <h3 className="text-sm font-semibold">Conversas</h3>
@@ -602,7 +602,7 @@ function LeadSection({
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/30 hover:bg-muted/50 transition sticky top-0 z-[1]"
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 border-b border-border/50 shadow-[0_1px_0_0_hsl(var(--border)/0.4)] hover:bg-muted/40 transition sticky top-0 z-[2]"
       >
         {open ? (
           <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
@@ -613,10 +613,17 @@ function LeadSection({
         <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
           {title}
         </span>
-        <span className="ml-auto text-[10px] tabular-nums font-semibold text-muted-foreground bg-background/80 px-1.5 py-0.5 rounded-full">
+        {groupKey === "atendimento" && leads.length > 0 && (
+          <span className="relative inline-flex w-1.5 h-1.5 ml-0.5">
+            <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
+            <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
+          </span>
+        )}
+        <span className="ml-auto text-[10px] tabular-nums font-semibold text-foreground/80 bg-background/90 border border-border/60 px-1.5 py-0.5 rounded-full">
           {leads.length}
         </span>
       </button>
+
       {open && (
         <ul className="divide-y divide-border/60">
           {leads.map((l) => {
