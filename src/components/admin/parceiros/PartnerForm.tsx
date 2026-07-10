@@ -47,10 +47,6 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const { toast } = useToast();
 
   const isEdit = !!partner;
-  // ID do parceiro é opcional. O CLI continua sendo o ID iGreen do consultor
-  // dono/abonador e, quando os dois existem, as métricas somam os dois IDs.
-  const isConsultorParceiro = partnerIgreenId.trim().length > 0;
-
   useEffect(() => {
     if (partner) {
       setNome(partner.nome);
@@ -111,8 +107,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       // Joga a frase direto no campo editável e mantém o preview por baixo.
       setQrPhrase(text);
       setAiExample(text);
-      // Auto-save se for edição (parceiro já existe e tem nome/cli válidos).
-      if (partner && nome.trim() && (isConsultorParceiro || cli.trim())) {
+      // Auto-save se for edição (parceiro já existe e tem nome/CLI válidos).
+      if (partner && nome.trim() && cli.trim()) {
         onSave({
           nome: nome.trim(),
           cli: cli.trim() || null,
