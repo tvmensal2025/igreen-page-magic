@@ -295,7 +295,9 @@ Deno.serve(async (req) => {
       .from("facebook_campaigns")
         .select("id, fb_campaign_id, status, duration_days")
       .eq("consultant_id", auth.id)
-      .in("status", ["active", "paused", "pending_review"]);
+        // Pausadas não entram no rateio/realinhamento: não devem consumir vaga
+        // nem receber spend_cap novo enquanto uma campanha ativa é publicada.
+        .in("status", ["active", "pending_review"]);
     // Soma o gasto já realizado pelas existentes (usa nossa tabela diária — barato, sem chamar Meta)
     let alreadySpentMetaCents = 0;
     if (existingCamps && existingCamps.length > 0) {
