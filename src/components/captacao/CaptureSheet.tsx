@@ -31,6 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2 } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
+import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 
 interface Props {
   open: boolean;
