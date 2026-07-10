@@ -20,6 +20,7 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
+import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 
 import {
@@ -127,36 +128,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     setCaptureClosedAt(closed);
   }, [captureCustomer]);
 
-  const runCloseCapture = useCallback(async () => {
-    if (!customerId || closingCapture) return;
-    setClosingCapture(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("close-capture-and-register-sale", {
-        body: { customerId, consultantId },
-      });
-      if (error) throw new Error(error.message || "Falha ao encerrar");
-      const res = (data as any) || {};
-      if (!res.ok) throw new Error(res.error || "Falha ao encerrar");
-      const roi = res.campaignRoi;
-      const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-      let description = "Lead vinculado em Vendas, CRM e Comissão. O chat continua ativo.";
-      if (roi) {
-        const sign = roi.positive ? "🟢" : "🔴";
-        description = `${sign} Campanha: ${brl(roi.investedCents)} investido · ${brl(roi.returnedCents)} retorno · ${roi.leadsCount} leads`;
-      }
-      toast({
-        title: res.alreadyClosed ? "Captação já estava encerrada" : "✅ Captação encerrada",
-        description,
-        duration: 6000,
-      });
-      setCaptureClosedAt(new Date().toISOString());
-      setCloseCaptureOpen(false);
-    } catch (e: any) {
-      toast({ title: "Erro ao encerrar", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setClosingCapture(false);
-    }
-  }, [customerId, consultantId, closingCapture, toast]);
+  const handleCaptureClosed = useCallback(() => {
+    setCaptureClosedAt(new Date().toISOString());
+    setCloseCaptureOpen(false);
+  }, []);
 
   // Ao trocar de conversa, fecha a ficha para não bloquear o composer do novo chat.
   useEffect(() => {
@@ -869,27 +844,15 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={closeCaptureOpen} onOpenChange={(v) => !closingCapture && setCloseCaptureOpen(v)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Encerrar captação deste cliente?</AlertDialogTitle>
-            <AlertDialogDescription>
-              O lead sai da lista de <b>Captação</b> e é vinculado automaticamente em <b>Vendas</b>, <b>CRM</b> e <b>Comissão</b>.
-              O <b>chat do WhatsApp continua ativo</b> — nada é apagado.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={closingCapture}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => { e.preventDefault(); void runCloseCapture(); }}
-              disabled={closingCapture}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white"
-            >
-              {closingCapture ? "Encerrando…" : "Encerrar captação"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {customerId && consultantId && (
+        <CloseCaptureDialog
+          open={closeCaptureOpen}
+          onOpenChange={setCloseCaptureOpen}
+          customerId={customerId}
+          consultantId={consultantId}
+          onClosed={handleCaptureClosed}
+        />
+      )}
 
 
 
