@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2 } from "lucide-react";
+import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2, Play, Download } from "lucide-react";
+import { whapiDownloadMedia } from "@/services/whapiApi";
 
 interface Props {
   customerId: string;
