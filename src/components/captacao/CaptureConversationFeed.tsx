@@ -185,7 +185,6 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         )}
         {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
-          const text = r.message_text || `[${r.message_type || "mídia"}]`;
           const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
           return (
             <div key={r.id}>
@@ -211,7 +210,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                     <span className="tabular-nums">{fmtTime(r.created_at)}</span>
                     {r.slot_key && <span className="ml-1 opacity-60">· {r.slot_key}</span>}
                   </div>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
+                  <MessageBody row={r} />
                 </div>
               </div>
             </div>
