@@ -324,8 +324,10 @@ export interface EvolutionChat {
       conversation?: string;
       extendedTextMessage?: { text: string };
       imageMessage?: { caption?: string };
+      videoMessage?: { caption?: string };
       documentMessage?: { fileName?: string };
       audioMessage?: Record<string, unknown>;
+      stickerMessage?: Record<string, unknown>;
     };
     messageTimestamp?: number;
   };

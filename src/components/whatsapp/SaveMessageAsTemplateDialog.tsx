@@ -190,14 +190,14 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
         mediaUrl = uploaded.url;
       }
 
-      const payload: Record<string, unknown> = {
+      const payload = {
         consultant_id: consultantId,
         name: name.trim(),
         content: caption.trim(),
         media_type: mt,
         media_url: mediaUrl,
+        ...(shortcutNormalized ? { shortcut: shortcutNormalized } : {}),
       };
-      if (shortcutNormalized) payload.shortcut = shortcutNormalized;
 
       const { error } = await supabase.from("message_templates").insert(payload);
       if (error) {

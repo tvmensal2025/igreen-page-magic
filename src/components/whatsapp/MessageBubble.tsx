@@ -301,7 +301,7 @@ function LinkifiedText({ text }: { text: string }) {
 export function MessageBubble({ message, onLoadMedia, consultantId, customerId, onAttachToCapture, onTemplateSaved }: MessageBubbleProps) {
   const { fromMe, text, timestamp, status, mediaType, interactiveHeader, interactiveFooter, interactiveButtons } = message;
   const showText = text && mediaType !== "audio" && mediaType !== "sticker";
-  const hasMedia = !!(mediaType && mediaType !== "text");
+  const hasMedia = !!mediaType;
   const hasInteractive = !!(interactiveButtons && interactiveButtons.length > 0);
   const isEmptyShell = !showText && !hasMedia && !hasInteractive;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
