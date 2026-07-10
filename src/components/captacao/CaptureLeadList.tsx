@@ -362,12 +362,29 @@ export function CaptureLeadList({
     return n;
   }, [unread, filteredIds]);
 
+  const activeToday = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    let n = 0;
+    for (const l of filtered) {
+      const t = l.lastMsgAt ? new Date(l.lastMsgAt).getTime() : 0;
+      if (t >= start) n++;
+    }
+    return n;
+  }, [filtered]);
+
   const markAllRead = () => {
     const now = Date.now();
     for (const id of filteredIds) writeLastSeen(id, now);
     setUnread({});
     toast.success("Marcado como lido");
   };
+
+  const markUnread = useCallback((id: string) => {
+    writeLastSeen(id, 0);
+    setUnread((prev) => ({ ...prev, [id]: Math.max(1, prev[id] || 0) }));
+  }, []);
+
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -463,6 +480,15 @@ export function CaptureLeadList({
                 {unreadTotal} não lidas
               </span>
             )}
+            {activeToday > 0 && (
+              <span
+                className="text-[10px] tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full"
+                title="Leads com mensagem hoje"
+              >
+                {activeToday} hoje
+              </span>
+            )}
+
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {unreadTotal > 0 && (
@@ -985,10 +1011,10 @@ function LeadCard({
             >
               {l.filled}/{CAPTURE_FIELDS.length}
             </span>
-            {/* Agendar ligação inline — aparece no hover, sem entrar no cockpit */}
-            {!selectMode && l.phone_whatsapp && (
+            {/* Agendar ligação inline — sempre visível pra o consultor achar rápido */}
+            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
               <div
-                className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                className="shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <ScheduleCallButton
@@ -996,14 +1022,15 @@ function LeadCard({
                   consultantId={consultantId}
                   contactName={l.name}
                   customerId={l.id}
-                  triggerLabel="Agendar ligação"
-                  size="icon-sm"
+                  triggerLabel="Agendar"
+                  size="icon-xs"
                   variant="ghost"
-                  className="h-6 w-6"
+                  className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
                   iconOnly
                 />
               </div>
             )}
+
           </div>
         </div>
       </div>
