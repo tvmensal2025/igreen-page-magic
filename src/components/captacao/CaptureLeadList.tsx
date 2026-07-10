@@ -362,12 +362,29 @@ export function CaptureLeadList({
     return n;
   }, [unread, filteredIds]);
 
+  const activeToday = useMemo(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    let n = 0;
+    for (const l of filtered) {
+      const t = l.lastMsgAt ? new Date(l.lastMsgAt).getTime() : 0;
+      if (t >= start) n++;
+    }
+    return n;
+  }, [filtered]);
+
   const markAllRead = () => {
     const now = Date.now();
     for (const id of filteredIds) writeLastSeen(id, now);
     setUnread({});
     toast.success("Marcado como lido");
   };
+
+  const markUnread = useCallback((id: string) => {
+    writeLastSeen(id, 0);
+    setUnread((prev) => ({ ...prev, [id]: Math.max(1, prev[id] || 0) }));
+  }, []);
+
 
   useEffect(() => {
     setSelectedIds((prev) => {
