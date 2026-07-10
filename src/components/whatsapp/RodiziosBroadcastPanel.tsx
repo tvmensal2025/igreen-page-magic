@@ -162,7 +162,11 @@ export function RodiziosBroadcastPanel({ consultantId }: Props) {
                     <SelectItem value="30">A cada 30 min</SelectItem>
                     <SelectItem value="60">A cada 1 hora</SelectItem>
                     <SelectItem value="120">A cada 2 horas</SelectItem>
+                    <SelectItem value="180">A cada 3 horas</SelectItem>
                     <SelectItem value="240">A cada 4 horas</SelectItem>
+                    <SelectItem value="360">A cada 6 horas</SelectItem>
+                    <SelectItem value="720">A cada 12 horas</SelectItem>
+                    <SelectItem value="1440">1 vez ao dia</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
