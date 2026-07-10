@@ -44,6 +44,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [mismatch, setMismatch] = useState<{ flag: boolean; bill: string; doc: string; acked: boolean }>({ flag: false, bill: "", doc: "", acked: false });
   const [showAside, setShowAside] = useState(false);
   const [fichaOpen, setFichaOpen] = useState(false); // ficha deslizante (Cockpit)
+  const [fichaCollapsed, setFichaCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("cap_ficha_collapsed") === "1"; } catch { return false; }
+  });
+  const toggleFichaCollapsed = () => setFichaCollapsed((v) => {
+    const n = !v;
+    try { localStorage.setItem("cap_ficha_collapsed", n ? "1" : "0"); } catch {}
+    return n;
+  });
   const [stepsOpen, setStepsOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("cap_steps_open") === "1"; } catch { return false; }
   });
