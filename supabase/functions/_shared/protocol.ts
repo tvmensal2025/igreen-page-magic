@@ -112,6 +112,6 @@ export function buildWelcomeHeaderProtocol(
     "✅ *Atendimento iniciado*",
     "",
     who ? `👤 Consultor(a): *${who}*` : null,
-    `📋 Protocolo: *${protocol}*`,
+    `📋 Chamado: *${protocol}*`,
   ].filter((l) => l !== null).join("\n");
 }
