@@ -480,6 +480,15 @@ export function CaptureLeadList({
                 {unreadTotal} não lidas
               </span>
             )}
+            {activeToday > 0 && (
+              <span
+                className="text-[10px] tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full"
+                title="Leads com mensagem hoje"
+              >
+                {activeToday} hoje
+              </span>
+            )}
+
           </div>
           <div className="flex items-center gap-1 shrink-0">
             {unreadTotal > 0 && (
