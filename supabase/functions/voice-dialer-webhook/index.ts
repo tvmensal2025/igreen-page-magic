@@ -168,6 +168,43 @@ Deno.serve(async (req) => {
   const params = await parsePayload(req);
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+  // ─── Callback SMS (command:"sms") ─────────────────────────────────────
+  if (String(params.command || "").toLowerCase() === "sms") {
+    const cdls_id = String(params.cdls_id ?? params.sms_id ?? "");
+    const ctid = String(params.ctid ?? "");
+    const dest = String(params.dest ?? "");
+    const delivstatus = String(params.delivstatus ?? "");
+
+    let smsRow: { id: string } | null = null;
+    if (cdls_id) {
+      const { data } = await admin
+        .from("voice_sms_log").select("id").eq("velip_sms_id", cdls_id).maybeSingle();
+      smsRow = (data as { id: string } | null) ?? null;
+    }
+    if (!smsRow && ctid) {
+      const { data } = await admin
+        .from("voice_sms_log").select("id").eq("velip_ctid", ctid).maybeSingle();
+      smsRow = (data as { id: string } | null) ?? null;
+    }
+    if (!smsRow && dest) {
+      const { data } = await admin
+        .from("voice_sms_log").select("id")
+        .eq("phone", dest.replace(/\D/g, ""))
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      smsRow = (data as { id: string } | null) ?? null;
+    }
+
+    if (smsRow) {
+      const delivered = /SUCCESS|DELIVERED|ENTREGUE/i.test(delivstatus);
+      await admin.from("voice_sms_log").update({
+        delivery_status: delivstatus || null,
+        delivered_at: delivered ? new Date().toISOString() : null,
+        status: delivered ? "delivered" : (delivstatus ? "failed" : "sent"),
+      }).eq("id", smsRow.id);
+    }
+    return json(200, { ok: true, sms: true, matched: !!smsRow });
+  }
+
   const cd_id = String(params.cd_id ?? params.call_id ?? "");
   const ctid = String(params.ctid ?? "");
   const dest = String(params.dest ?? params.destino ?? params.to ?? "");
@@ -175,6 +212,7 @@ Deno.serve(async (req) => {
   const time_sec = Number(params.cd_time_sec ?? params.time_sec ?? NaN);
   const cost = Number(params.cd_value ?? params.cd_price ?? params.cost ?? NaN);
   const saldo = Number(params.saldo ?? params.balance ?? NaN);
+  const price_per_min = Number(params.cd_price ?? NaN);
   const dtmf: Record<string, string> = {};
   for (let i = 1; i <= 12; i++) {
     const k = `cd_resp${i}`;
@@ -248,6 +286,8 @@ Deno.serve(async (req) => {
     velip_cost: Number.isFinite(cost) ? cost : null,
     velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
     velip_dtmf: Object.keys(dtmf).length ? dtmf : null,
+    dtmf_responses: Object.keys(dtmf).length ? dtmf : {},
+    price_per_min: Number.isFinite(price_per_min) ? price_per_min : null,
     velip_raw: params,
     raw: params,
     to_phone: dest || "",

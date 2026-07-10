@@ -8,7 +8,7 @@ import { resolveCaller } from "../_shared/caller-auth.ts";
 import {
   createDestinationBase,
   createCampaign as velipCreateCampaign,
-  getVelipWebhookAuth,
+  makeTTSCall,
   playAudioFile,
   toCtid,
   toVelipBRDest,
@@ -37,9 +37,17 @@ interface Body {
   conversation_step?: string | null;
   cold_hours?: number | null;
   max_targets?: number;
+  max_attempts?: number;
   test_phone?: string | null;
-  /** 'single' (default, cron dispara 1-a-1) ou 'batch' (usa CreateCampaign Velip). */
   velip_mode?: "single" | "batch";
+  /** 'audio' (default) ou 'tts' */
+  dispatch_kind?: "audio" | "tts";
+  tts_text?: string;
+  tts_voice?: string;
+  caller_id?: string;
+  dtmf_questions?: unknown[];
+  /** Se informado, usa itens já persistidos de uma base */
+  base_id?: string;
 }
 
 const MAX_TARGETS = 5000;
@@ -118,23 +126,37 @@ Deno.serve(async (req) => {
   }
 
   const action = body.action ?? "create_campaign";
+  const dispatchKind: "audio" | "tts" = body.dispatch_kind === "tts" ? "tts" : "audio";
 
   // ─── Teste: 1 ligação imediata ───────────────────────────────────────────
   if (action === "test_call") {
     const dest = toVelipBRDest(body.test_phone);
     if (!dest) return json(400, { error: "invalid_test_phone" });
-    if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
 
-    const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
-    if ("error" in aud) return json(502, { error: aud.error });
+    let audioId: string | undefined;
+    let audioUrl: string | null = null;
+    if (dispatchKind === "audio") {
+      if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
+      const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
+      if ("error" in aud) return json(502, { error: aud.error });
+      audioId = aud.audio_id;
+      audioUrl = aud.audio_url;
+    } else {
+      if (!body.tts_text?.trim()) return json(400, { error: "missing_tts_text" });
+    }
 
     const { data: campaign, error: campErr } = await admin
       .from("voice_campaigns")
       .insert({
         consultant_id: consultantId,
         name: body.campaign_name?.trim() || "Teste de ligação",
-        audio_clip_id: body.audio_clip_id,
-        audio_url: aud.audio_url,
+        audio_clip_id: dispatchKind === "audio" ? body.audio_clip_id : null,
+        audio_url: audioUrl,
+        dispatch_kind: dispatchKind,
+        tts_text: body.tts_text ?? null,
+        tts_voice: body.tts_voice ?? null,
+        caller_id: body.caller_id ?? null,
+        dtmf_questions: Array.isArray(body.dtmf_questions) ? body.dtmf_questions : [],
         config: { ...(body.config ?? {}), test: true, weekdaysOnly: false, windowStart: "00:00", windowEnd: "23:59" },
         status: "running",
         total: 1,
@@ -148,12 +170,7 @@ Deno.serve(async (req) => {
 
     const { data: target, error: tgtErr } = await admin
       .from("voice_campaign_targets")
-      .insert({
-        campaign_id: campaign.id,
-        phone: dest,
-        name: "Teste",
-        status: "queued",
-      })
+      .insert({ campaign_id: campaign.id, phone: dest, name: "Teste", status: "queued" })
       .select("id")
       .single();
 
@@ -162,21 +179,20 @@ Deno.serve(async (req) => {
       return json(500, { error: tgtErr?.message ?? "target_insert_failed" });
     }
 
-    const call = await playAudioFile({
+    const callOpts = {
       to: dest,
-      audioId: aud.audio_id,
       ctid: toCtid(target.id),
-      timeLimitSec: 40,
-    });
+      timeLimitSec: 60,
+      callerId: body.caller_id,
+    };
+    const call = dispatchKind === "tts"
+      ? await makeTTSCall({ ...callOpts, ttsText: body.tts_text! })
+      : await playAudioFile({ ...callOpts, audioId });
 
     if (!call.ok) {
       await admin
         .from("voice_campaign_targets")
-        .update({
-          status: "failed",
-          error: call.error ?? "velip_error",
-          finished_at: new Date().toISOString(),
-        })
+        .update({ status: "failed", error: call.error ?? "velip_error", finished_at: new Date().toISOString() })
         .eq("id", target.id);
       await admin
         .from("voice_campaigns")
@@ -187,11 +203,7 @@ Deno.serve(async (req) => {
 
     await admin
       .from("voice_campaign_targets")
-      .update({
-        status: "dialing",
-        velip_call_id: call.cd_id ?? null,
-        dialed_at: new Date().toISOString(),
-      })
+      .update({ status: "dialing", velip_call_id: call.cd_id ?? null, dialed_at: new Date().toISOString() })
       .eq("id", target.id);
 
     await admin.from("voice_call_logs").insert({
@@ -212,10 +224,15 @@ Deno.serve(async (req) => {
 
   // ─── create_campaign ─────────────────────────────────────────────────────
 
-  if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
-
-  const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
-  if ("error" in aud) return json(502, { error: aud.error });
+  let aud: { audio_id: string; audio_url: string } | null = null;
+  if (dispatchKind === "audio") {
+    if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
+    const r = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
+    if ("error" in r) return json(502, { error: r.error });
+    aud = r;
+  } else {
+    if (!body.tts_text?.trim()) return json(400, { error: "missing_tts_text" });
+  }
 
   const targets: TargetIn[] = [];
   const seen = new Set<string>();
@@ -232,6 +249,26 @@ Deno.serve(async (req) => {
       if (p?.phone) pushPhone(p.phone, p.name, p.customer_id);
     }
   }
+
+  // Puxa alvos de uma base salva
+  if (body.base_id) {
+    const { data: base } = await admin
+      .from("voice_contact_bases").select("consultant_id, phones").eq("id", body.base_id).maybeSingle();
+    if (!base || (base as { consultant_id: string }).consultant_id !== consultantId) {
+      return json(404, { error: "base_not_found" });
+    }
+    const items = Array.isArray((base as { phones?: unknown[] }).phones) ? (base as { phones: unknown[] }).phones : [];
+    for (const it of items) {
+      if (typeof it === "string") pushPhone(it);
+      else if (it && typeof it === "object") {
+        const row = it as { phone?: string; name?: string | null };
+        if (row.phone) pushPhone(row.phone, row.name ?? null);
+      }
+    }
+  }
+
+
+
 
   const step = (body.conversation_step ?? "").trim();
   const coldHours = body.cold_hours != null ? Number(body.cold_hours) : null;
@@ -293,8 +330,13 @@ Deno.serve(async (req) => {
     .insert({
       consultant_id: consultantId,
       name: body.campaign_name?.trim() || "Campanha de ligação",
-      audio_clip_id: body.audio_clip_id,
-      audio_url: aud.audio_url,
+      audio_clip_id: dispatchKind === "audio" ? body.audio_clip_id : null,
+      audio_url: aud?.audio_url ?? null,
+      dispatch_kind: dispatchKind,
+      tts_text: body.tts_text ?? null,
+      tts_voice: body.tts_voice ?? null,
+      caller_id: body.caller_id ?? null,
+      dtmf_questions: Array.isArray(body.dtmf_questions) ? body.dtmf_questions : [],
       config: defaultConfig,
       status: scheduled ? "scheduled" : "running",
       scheduled_at: scheduled,
@@ -307,12 +349,14 @@ Deno.serve(async (req) => {
 
   if (campErr || !campaign?.id) return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
 
+  const maxAttempts = Math.max(1, Math.min(body.max_attempts ?? 2, 5));
   const rows = targets.map((t) => ({
     campaign_id: campaign.id,
     phone: t.phone,
     name: t.name ?? null,
     customer_id: t.customer_id ?? null,
     status: "queued",
+    max_attempts: maxAttempts,
   }));
 
   const CHUNK = 500;
@@ -326,8 +370,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Modo batch: cria base + campanha na Velip agora
-  if (velipMode === "batch" && !scheduled) {
+  // Modo batch (só para áudio + envio agora; TTS/agendamento seguem 'single')
+  if (velipMode === "batch" && !scheduled && dispatchKind === "audio" && aud) {
     const { data: created } = await admin
       .from("voice_campaign_targets")
       .select("id, phone, name")
@@ -362,7 +406,7 @@ Deno.serve(async (req) => {
     }
     await admin
       .from("voice_campaigns")
-      .update({ velip_campaign_id: cp.cp_id })
+      .update({ velip_campaign_id: cp.cp_id, velip_base_id: base.base_id })
       .eq("id", campaign.id);
   }
 

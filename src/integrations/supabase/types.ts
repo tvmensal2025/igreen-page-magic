@@ -9495,11 +9495,13 @@ export type Database = {
           campaign_id: string | null
           consultant_id: string
           created_at: string
+          dtmf_responses: Json
           duration_sec: number | null
           error: string | null
           from_phone: string | null
           id: string
           price: string | null
+          price_per_min: number | null
           raw: Json
           status: string | null
           target_id: string | null
@@ -9518,11 +9520,13 @@ export type Database = {
           campaign_id?: string | null
           consultant_id: string
           created_at?: string
+          dtmf_responses?: Json
           duration_sec?: number | null
           error?: string | null
           from_phone?: string | null
           id?: string
           price?: string | null
+          price_per_min?: number | null
           raw?: Json
           status?: string | null
           target_id?: string | null
@@ -9541,11 +9545,13 @@ export type Database = {
           campaign_id?: string | null
           consultant_id?: string
           created_at?: string
+          dtmf_responses?: Json
           duration_sec?: number | null
           error?: string | null
           from_phone?: string | null
           id?: string
           price?: string | null
+          price_per_min?: number | null
           raw?: Json
           status?: string | null
           target_id?: string | null
@@ -9655,10 +9661,13 @@ export type Database = {
           answered: number
           audio_clip_id: string | null
           audio_url: string
+          caller_id: string | null
           config: Json
           consultant_id: string
           created_at: string
           dialed: number
+          dispatch_kind: string
+          dtmf_questions: Json
           failed: number
           finished_at: string | null
           id: string
@@ -9667,7 +9676,10 @@ export type Database = {
           started_at: string | null
           status: string
           total: number
+          tts_text: string | null
+          tts_voice: string | null
           updated_at: string
+          velip_base_id: string | null
           velip_campaign_id: string | null
           velip_mode: string
         }
@@ -9675,10 +9687,13 @@ export type Database = {
           answered?: number
           audio_clip_id?: string | null
           audio_url: string
+          caller_id?: string | null
           config?: Json
           consultant_id: string
           created_at?: string
           dialed?: number
+          dispatch_kind?: string
+          dtmf_questions?: Json
           failed?: number
           finished_at?: string | null
           id?: string
@@ -9687,7 +9702,10 @@ export type Database = {
           started_at?: string | null
           status?: string
           total?: number
+          tts_text?: string | null
+          tts_voice?: string | null
           updated_at?: string
+          velip_base_id?: string | null
           velip_campaign_id?: string | null
           velip_mode?: string
         }
@@ -9695,10 +9713,13 @@ export type Database = {
           answered?: number
           audio_clip_id?: string | null
           audio_url?: string
+          caller_id?: string | null
           config?: Json
           consultant_id?: string
           created_at?: string
           dialed?: number
+          dispatch_kind?: string
+          dtmf_questions?: Json
           failed?: number
           finished_at?: string | null
           id?: string
@@ -9707,7 +9728,10 @@ export type Database = {
           started_at?: string | null
           status?: string
           total?: number
+          tts_text?: string | null
+          tts_voice?: string | null
           updated_at?: string
+          velip_base_id?: string | null
           velip_campaign_id?: string | null
           velip_mode?: string
         }
@@ -9720,6 +9744,74 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      voice_contact_base_items: {
+        Row: {
+          base_id: string
+          created_at: string
+          id: string
+          name: string | null
+          phone: string
+          vars: Json
+        }
+        Insert: {
+          base_id: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          phone: string
+          vars?: Json
+        }
+        Update: {
+          base_id?: string
+          created_at?: string
+          id?: string
+          name?: string | null
+          phone?: string
+          vars?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_contact_base_items_base_id_fkey"
+            columns: ["base_id"]
+            isOneToOne: false
+            referencedRelation: "voice_contact_bases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_contact_bases: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          total: number
+          updated_at: string
+          velip_base_id: string | null
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          total?: number
+          updated_at?: string
+          velip_base_id?: string | null
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          total?: number
+          updated_at?: string
+          velip_base_id?: string | null
+        }
+        Relationships: []
       }
       voice_name_clips: {
         Row: {
@@ -9748,6 +9840,60 @@ export type Database = {
           name_display?: string
           name_normalized?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      voice_sms_log: {
+        Row: {
+          balance_after: number | null
+          campaign_id: string | null
+          consultant_id: string
+          cost: number | null
+          created_at: string
+          delivered_at: string | null
+          delivery_status: string | null
+          error: string | null
+          id: string
+          message: string
+          phone: string
+          status: string
+          updated_at: string
+          velip_ctid: string | null
+          velip_sms_id: string | null
+        }
+        Insert: {
+          balance_after?: number | null
+          campaign_id?: string | null
+          consultant_id: string
+          cost?: number | null
+          created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string | null
+          error?: string | null
+          id?: string
+          message: string
+          phone: string
+          status?: string
+          updated_at?: string
+          velip_ctid?: string | null
+          velip_sms_id?: string | null
+        }
+        Update: {
+          balance_after?: number | null
+          campaign_id?: string | null
+          consultant_id?: string
+          cost?: number | null
+          created_at?: string
+          delivered_at?: string | null
+          delivery_status?: string | null
+          error?: string | null
+          id?: string
+          message?: string
+          phone?: string
+          status?: string
+          updated_at?: string
+          velip_ctid?: string | null
+          velip_sms_id?: string | null
         }
         Relationships: []
       }

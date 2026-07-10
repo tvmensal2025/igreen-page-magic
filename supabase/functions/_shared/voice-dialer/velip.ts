@@ -311,6 +311,32 @@ export async function getCampaignsList(): Promise<{ ok: boolean; items: unknown[
   return { ok: r.ok, items: Array.isArray(arr) ? arr : [], error: r.error, raw };
 }
 
+// ─── SMS ───────────────────────────────────────────────────────────────────
+
+export interface MakeSMSOpts {
+  to: string;
+  message: string;
+  ctid?: string;
+  scheduledAt?: string;
+}
+
+export interface MakeSMSResult extends RawResp {
+  cdls_id?: string;
+}
+
+export async function makeSMS(opts: MakeSMSOpts): Promise<MakeSMSResult> {
+  const form = new URLSearchParams();
+  form.set("dest", opts.to);
+  form.set("text", opts.message);
+  form.set("mensagem", opts.message);
+  if (opts.ctid) form.set("ctid", toCtid(opts.ctid));
+  if (opts.scheduledAt) form.set("scheduled_at", opts.scheduledAt);
+  const r = await velipPost("/MakeSMS", form, 15_000);
+  const raw = (r.raw ?? {}) as Record<string, unknown>;
+  const cdls_id = String(raw.cdls_id ?? raw.id ?? "") || undefined;
+  return { ...r, cdls_id };
+}
+
 export async function getCallStatus(cd_id: string): Promise<RawResp & { called_status?: string }> {
   const form = new URLSearchParams();
   form.set("cd_id", cd_id);

@@ -8,6 +8,7 @@ import {
   getCallStatus,
   inCallWindow,
   interpretStatus,
+  makeTTSCall,
   outcomeToTargetStatus,
   playAudioFile,
   toCtid,
@@ -89,7 +90,7 @@ Deno.serve(async (req) => {
 
   const { data: camps, error: e1 } = await admin
     .from("voice_campaigns")
-    .select("id, consultant_id, audio_clip_id, audio_url, config, status, total, dialed, answered, failed, velip_mode")
+    .select("id, consultant_id, audio_clip_id, audio_url, config, status, total, dialed, answered, failed, velip_mode, dispatch_kind, tts_text, caller_id")
     .eq("status", "running")
     .order("created_at", { ascending: true })
     .limit(MAX_CAMPAIGNS);
@@ -150,18 +151,27 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // Resolve audio_id Velip
+    const dispatchKind = ((camp as { dispatch_kind?: string }).dispatch_kind || "audio") as "audio" | "tts";
+    const ttsText = String((camp as { tts_text?: string }).tts_text || "").trim();
+    const callerId = ((camp as { caller_id?: string }).caller_id || undefined) as string | undefined;
+
+    // Resolve audio_id Velip (só se dispatchKind === "audio")
     let audioId: string | null = null;
-    if (camp.audio_clip_id) {
-      const { data: clip } = await admin
-        .from("voice_audio_clips")
-        .select("velip_audio_id")
-        .eq("id", camp.audio_clip_id)
-        .maybeSingle();
-      audioId = clip?.velip_audio_id ?? null;
-    }
-    if (!audioId) {
-      report.push({ campaign_id: camp.id, skipped: "no_velip_audio_id" });
+    if (dispatchKind === "audio") {
+      if (camp.audio_clip_id) {
+        const { data: clip } = await admin
+          .from("voice_audio_clips")
+          .select("velip_audio_id")
+          .eq("id", camp.audio_clip_id)
+          .maybeSingle();
+        audioId = clip?.velip_audio_id ?? null;
+      }
+      if (!audioId) {
+        report.push({ campaign_id: camp.id, skipped: "no_velip_audio_id" });
+        continue;
+      }
+    } else if (!ttsText) {
+      report.push({ campaign_id: camp.id, skipped: "no_tts_text" });
       continue;
     }
 
@@ -206,12 +216,9 @@ Deno.serve(async (req) => {
       if (!claimed) continue;
 
       const dest = toVelipBRDest(t.phone) || t.phone;
-      const call = await playAudioFile({
-        to: dest,
-        audioId,
-        ctid: toCtid(t.id),
-        timeLimitSec: 40,
-      });
+      const call = dispatchKind === "tts"
+        ? await makeTTSCall({ to: dest, ttsText, ctid: toCtid(t.id), timeLimitSec: 60, callerId })
+        : await playAudioFile({ to: dest, audioId: audioId!, ctid: toCtid(t.id), timeLimitSec: 40, callerId });
 
       if (!call.ok) {
         failedNow++;
