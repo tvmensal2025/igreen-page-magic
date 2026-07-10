@@ -18,6 +18,19 @@ import {
 } from "../_shared/campaign-tracking.ts";
 import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
+async function safeNotifyConsultant(
+  consultantId: string,
+  level: "info" | "warning" | "error",
+  title: string,
+  message: string,
+) {
+  try {
+    await notifyConsultant(consultantId, level, title, message);
+  } catch (e) {
+    console.warn("[fb-create] notify skipped", title, (e as Error)?.message || e);
+  }
+}
+
 interface Body {
   name: string;
   // Prefixo livre digitado pelo usuário. Vai NA FRENTE do nome padrão
@@ -280,9 +293,11 @@ Deno.serve(async (req) => {
     // Para cada campanha existente, descontamos o que ela JÁ gastou (não conta como reserva).
     const { data: existingCamps } = await admin
       .from("facebook_campaigns")
-      .select("id, fb_campaign_id, status")
+        .select("id, fb_campaign_id, status, duration_days")
       .eq("consultant_id", auth.id)
-      .in("status", ["active", "paused", "pending_review"]);
+        // Pausadas não entram no rateio/realinhamento: não devem consumir vaga
+        // nem receber spend_cap novo enquanto uma campanha ativa é publicada.
+        .in("status", ["active", "pending_review"]);
     // Soma o gasto já realizado pelas existentes (usa nossa tabela diária — barato, sem chamar Meta)
     let alreadySpentMetaCents = 0;
     if (existingCamps && existingCamps.length > 0) {
@@ -307,7 +322,10 @@ Deno.serve(async (req) => {
     // Usa o MENOR entre o que o usuário pediu e a fatia da carteira (proteção dupla).
     const lifetimeCapCents = Math.max(30000, Math.min(exactBudgetCents, perCampaignExtra || exactBudgetCents));
     // realinha o cap das existentes pra elas também respeitarem o rateio
-    const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id);
+    // Só campanhas sem duração fixa usam spend_cap. Campanhas com lifetime_budget
+    // NÃO podem receber spend_cap na Meta (subcode 2446474), então ficam fora do
+    // realinhamento para não gerar erro falso na publicação das próximas.
+    const realignTargets = (existingCamps || []).filter((c: any) => c.fb_campaign_id && !(Number(c.duration_days || 0) > 0));
 
     // Carrega a conta Facebook ÚNICA da plataforma (admin) — todos consultores
     // rodam ads na mesma ad account/página/pixel, mudando só o telefone do CTA.
@@ -1253,7 +1271,7 @@ Deno.serve(async (req) => {
         // Fail-open: campanha permanece válida; só logamos e avisamos o dono.
         const msg = (e as Error).message;
         console.error("[fb-create] falha ao criar pool de rodízio (campanha mantida):", msg);
-        await notifyConsultant(
+        await safeNotifyConsultant(
           auth.id,
           "warning",
           "Rodízio não configurado",
@@ -1295,14 +1313,14 @@ Deno.serve(async (req) => {
       activated = true;
       await admin.from("facebook_campaigns").update({ status: "active" }).eq("fb_campaign_id", campaignId);
       if (rejectedImages.length) {
-        await notifyConsultant(
+        await safeNotifyConsultant(
           auth.id,
           "warning",
           "Campanha publicada com alertas",
           `${rejectedImages.length} foto(s) foram descartadas na validação.\nCampanha: ${campaignName}`,
         );
       } else {
-        await notifyConsultant(
+        await safeNotifyConsultant(
           auth.id,
           "info",
           "Campanha ativada ✅",
@@ -1313,7 +1331,7 @@ Deno.serve(async (req) => {
       activationError = (e as Error).message;
       console.warn("[fb-create] ativação adiada:", activationError);
       await admin.from("facebook_campaigns").update({ status: "pending_review", rejection_reason: activationError }).eq("fb_campaign_id", campaignId);
-      await notifyConsultant(
+      await safeNotifyConsultant(
         auth.id,
         "warning",
         "Campanha em revisão",

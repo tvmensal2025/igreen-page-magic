@@ -80,19 +80,22 @@ export function matchKeyword(
 /**
  * Gera o link de cadastro no portal.
  *
- * Regra (2026-07-09): se o parceiro tem `cli` ativo (>0), o cadastro é
- * PARA esse consultor — o `id` do link vira o próprio cli. Caso contrário,
- * usa o id do dono da instância (sem &cli=).
+ * Regra: `id` é SEMPRE o ID iGreen do consultor dono/abonador.
+ * Se o parceiro também tem ID iGreen ativo, ele vai separado em `cli`.
+ * Nunca trocamos o `id` do dono pelo ID do parceiro.
  */
 export function buildCadastroLink(
   consultantIgreenId: string,
   partnerCli: string | null,
 ): string {
   const cliNum = partnerCli ? Number(String(partnerCli).replace(/\D/g, "")) : 0;
-  const id = Number.isFinite(cliNum) && cliNum > 0
-    ? String(cliNum)
-    : String(consultantIgreenId || "");
-  return `${BASE_URL}?id=${id}`;
+  const ownerId = String(consultantIgreenId || "").replace(/\D/g, "");
+  const url = new URL(BASE_URL);
+  url.searchParams.set("id", ownerId);
+  if (Number.isFinite(cliNum) && cliNum > 0 && String(cliNum) !== ownerId) {
+    url.searchParams.set("cli", String(cliNum));
+  }
+  return url.toString();
 }
 
 /**

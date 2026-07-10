@@ -132,16 +132,23 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
             }
           : {}),
       };
+      let result: any;
       try {
-        await createCampaign(payload);
+        result = await createCampaign(payload);
       } catch (err: any) {
         const msg = String(err?.message || "");
         if (/failed to fetch|network|5\d\d/i.test(msg)) {
           await new Promise((r) => setTimeout(r, 1500));
-          await createCampaign(payload);
+          result = await createCampaign(payload);
         } else throw err;
       }
-      toast({ title: "Campanha criada!", description: "Em revisão pelo Facebook. Em até 30s tentamos ativar." });
+      const activated = result?.activated === true;
+      toast({
+        title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
+        description: activated
+          ? "Rodízio e dados da campanha foram salvos. A Meta pode levar alguns minutos para entregar os primeiros leads."
+          : "A campanha foi salva e enviada para análise da Meta. Se precisar, aparecerá como revisão no painel.",
+      });
       try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
       onCreated?.();
       onClose();

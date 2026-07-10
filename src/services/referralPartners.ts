@@ -5,10 +5,9 @@
 //
 // Regras de negócio importantes da coluna `cli` (NOT NULL no banco):
 //   - NUNCA gravamos `cli` nulo.
-//   - CONSULTOR: `partner_igreen_id` é obrigatório; `cli` recebe o valor
-//     informado OU "0" quando não informado.
-//   - PARCEIRO/INDICADOR: `partner_igreen_id` fica vazio (null); `cli` é
-//     obrigatório (validado pelo formulário do wizard).
+//   - `cli` é sempre o ID iGreen do consultor dono/abonador.
+//   - `partner_igreen_id` é o ID iGreen próprio do parceiro, quando existir.
+//   - Quando existem os dois, métricas/carteira somam os dois IDs sem mudar o dono.
 
 import { supabase } from "@/integrations/supabase/client";
 
@@ -131,9 +130,16 @@ export async function createReferralPartner(
 
   const igreenId = (input.partner_igreen_id ?? "").trim();
   const cliInformado = (input.cli ?? "").trim();
+  const { data: owner } = await supabase
+    .from("consultants")
+    .select("igreen_id")
+    .eq("id", consultantId)
+    .maybeSingle();
+  const ownerIgreenId = String(owner?.igreen_id ?? "").replace(/\D/g, "");
 
 
-  // Define partner_igreen_id e cli conforme o tipo, garantindo cli NOT NULL.
+  // Define partner_igreen_id separado do CLI. O CLI nunca é do parceiro: ele é
+  // sempre o ID iGreen do consultor dono/abonador, com fallback ao informado.
   let partnerIgreenId: string | null;
   let cli: string;
   if (input.tipo === "consultor") {
@@ -141,14 +147,15 @@ export async function createReferralPartner(
       throw new Error("O código iGreen é obrigatório para o tipo CONSULTOR.");
     }
     partnerIgreenId = igreenId;
-    cli = cliInformado || "0"; // nunca null: coluna cli é NOT NULL
+    cli = ownerIgreenId || cliInformado;
   } else {
-    if (!cliInformado) {
-      throw new Error("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    if (!ownerIgreenId && !cliInformado) {
+      throw new Error("Meu ID iGreen/CLI é obrigatório para o parceiro indicador.");
     }
     partnerIgreenId = null;
-    cli = cliInformado;
+    cli = ownerIgreenId || cliInformado;
   }
+  if (!cli) throw new Error("Configure seu ID iGreen em Dados antes de adicionar parceiros.");
 
   const payload = {
     consultant_id: consultantId,

@@ -40,6 +40,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [qrPhrase, setQrPhrase] = useState("");
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
+  const [ownerIgreenId, setOwnerIgreenId] = useState("");
   const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
@@ -47,21 +48,36 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const { toast } = useToast();
 
   const isEdit = !!partner;
-  // Consultor parceiro = tem ID iGreen próprio. Nesse modo o CLI é opcional
-  // (o cadastro vai no nome dele; cli só entra se ele também indicar alguém).
-  const isConsultorParceiro = partnerIgreenId.trim().length > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("consultants")
+        .select("igreen_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (!active) return;
+      setOwnerIgreenId(String(data?.igreen_id ?? "").replace(/\D/g, ""));
+    })();
+    return () => { active = false; };
+  }, [open]);
 
   useEffect(() => {
     if (partner) {
       setNome(partner.nome);
-      setCli(partner.cli || "");
+      setCli(partner.cli || ownerIgreenId || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
       setPartnerIgreenId(partner.partner_igreen_id || "");
       setNotificationPhone(partner.notification_phone || "");
     } else {
       setNome("");
-      setCli("");
+      setCli(ownerIgreenId || "");
       setKeywords([]);
       setQrPhrase("");
       setPartnerIgreenId("");
@@ -69,7 +85,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
     }
     setErrors({});
     setAiExample(null);
-  }, [partner, open]);
+  }, [partner, open, ownerIgreenId]);
 
   const addKeyword = () => {
     const trimmed = keywordInput.trim();
@@ -111,8 +127,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       // Joga a frase direto no campo editável e mantém o preview por baixo.
       setQrPhrase(text);
       setAiExample(text);
-      // Auto-save se for edição (parceiro já existe e tem nome/cli válidos).
-      if (partner && nome.trim() && (isConsultorParceiro || cli.trim())) {
+      // Auto-save se for edição (parceiro já existe e tem nome/CLI válidos).
+      if (partner && nome.trim() && cli.trim()) {
         onSave({
           nome: nome.trim(),
           cli: cli.trim() || null,
@@ -142,9 +158,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const handleSubmit = () => {
     const newErrors: { nome?: string; cli?: string; keywords?: string } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
-    // CLI só é obrigatório para parceiro indicador comum. Consultor parceiro
-    // (com ID iGreen próprio) pode não ter cli.
-    if (!isConsultorParceiro && !cli.trim()) newErrors.cli = "CLI é obrigatório";
+    if (!cli.trim()) newErrors.cli = "Meu ID iGreen é obrigatório";
 
     // Consome o que está digitado no input mesmo se o usuário esqueceu de
     // pressionar Enter — evita criar parceiro "sem keyword" por engano.
@@ -260,7 +274,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
               <div className="space-y-1">
                 <Label htmlFor="partner-cli" className="text-xs">
-                  CLI (ID iGreen) {isConsultorParceiro ? "(opcional)" : "*"}
+                  Meu ID iGreen / CLI *
                 </Label>
                 <Input
                   id="partner-cli"
@@ -269,21 +283,22 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     setCli(e.target.value);
                     if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
                   }}
-                  placeholder="ID iGreen"
-                  className="h-9"
+                  readOnly={!!ownerIgreenId}
+                  placeholder="Seu ID iGreen (abonador)"
+                  className="h-9 read-only:bg-muted/50 read-only:text-muted-foreground"
                 />
                 {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
               </div>
 
               <div className="space-y-1">
                 <Label htmlFor="partner-igreen-id" className="text-xs">
-                  ID consultor parceiro <span className="text-muted-foreground">(opcional)</span>
+                  ID iGreen do parceiro <span className="text-muted-foreground">(opcional)</span>
                 </Label>
                 <Input
                   id="partner-igreen-id"
                   value={partnerIgreenId}
                   onChange={(e) => setPartnerIgreenId(e.target.value)}
-                  placeholder="Ex: 123456"
+                  placeholder="ID do parceiro, se ele também tiver"
                   className="h-9"
                 />
               </div>
