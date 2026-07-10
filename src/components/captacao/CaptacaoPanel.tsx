@@ -7,7 +7,7 @@ import { CaptureConversationFeed } from "@/components/captacao/CaptureConversati
 import { CaptureLeadCard } from "@/components/captacao/CaptureLeadCard";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ClipboardCheck, X } from "lucide-react";
+import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, ClipboardCheck, X } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { MessageComposer } from "@/components/whatsapp/MessageComposer";
 import { AttendanceStatusBar } from "@/components/whatsapp/AttendanceStatusBar";
@@ -16,6 +16,7 @@ import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { FinalizeButton } from "@/components/captacao/FinalizeButton";
+import { CloseCaptureButton } from "@/components/captacao/CloseCaptureButton";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
@@ -43,6 +44,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [mismatch, setMismatch] = useState<{ flag: boolean; bill: string; doc: string; acked: boolean }>({ flag: false, bill: "", doc: "", acked: false });
   const [showAside, setShowAside] = useState(false);
   const [fichaOpen, setFichaOpen] = useState(false); // ficha deslizante (Cockpit)
+  const [fichaCollapsed, setFichaCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("cap_ficha_collapsed") === "1"; } catch { return false; }
+  });
+  const toggleFichaCollapsed = () => setFichaCollapsed((v) => {
+    const n = !v;
+    try { localStorage.setItem("cap_ficha_collapsed", n ? "1" : "0"); } catch {}
+    return n;
+  });
   const [stepsOpen, setStepsOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("cap_steps_open") === "1"; } catch { return false; }
   });
@@ -202,7 +211,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const allStepsSent = stepsKnown && (totalSteps === 0 || sentSteps.size >= totalSteps);
   const pendingStepsCount = stepsKnown ? Math.max(0, totalSteps - sentSteps.size) : 0;
   const fichaFooter = selectedId ? (
-    <>
+    <div className="space-y-2">
       <PortalStatusTracker customerId={selectedId} consultantId={consultantId} />
       <FinalizeButton
         consultantId={consultantId}
@@ -215,7 +224,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
         botPaused={!!session.customer?.bot_paused}
         captureMode={session.customer?.capture_mode}
       />
-    </>
+      <div className="px-3 pb-2">
+        <CloseCaptureButton
+          customerId={selectedId}
+          consultantId={consultantId}
+          onClosed={() => setSelectedId(null)}
+        />
+      </div>
+    </div>
   ) : null;
 
   return (
@@ -384,11 +400,45 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           )}
         </main>
 
-        {/* Ficha fixa à direita no desktop (lg+) — evita o "vazio" da conversa */}
+        {/* Ficha fixa à direita no desktop (lg+) — colapsável (padrão Intercom/HubSpot) */}
         {selectedId && (
-          <div className="hidden lg:flex lg:w-[340px] lg:shrink-0 border-l border-border/60 flex-col overflow-hidden">
-            <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
-          </div>
+          fichaCollapsed ? (
+            <div className="hidden lg:flex lg:w-10 lg:shrink-0 border-l border-border/60 flex-col items-center py-2 gap-2 bg-card/40">
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Expandir ficha"
+                aria-label="Expandir ficha"
+                className="w-8 h-8 rounded-md hover:bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Abrir ficha"
+                className="w-8 h-8 rounded-md hover:bg-secondary/60 flex items-center justify-center text-primary"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+              </button>
+              <span className="text-[10px] font-bold tabular-nums text-muted-foreground writing-mode-vertical" style={{ writingMode: "vertical-rl" }}>
+                {session.filledCount}/{session.totalFields}
+              </span>
+            </div>
+          ) : (
+            <div className="hidden lg:flex lg:w-[340px] lg:shrink-0 border-l border-border/60 flex-col overflow-hidden relative">
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Recolher ficha (mais espaço para a conversa)"
+                aria-label="Recolher ficha"
+                className="absolute top-2 right-2 z-10 w-7 h-7 rounded-md hover:bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+              <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
+            </div>
+          )
         )}
       </div>
       )}

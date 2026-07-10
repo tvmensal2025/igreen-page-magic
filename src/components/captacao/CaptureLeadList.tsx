@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, UserPlus, RefreshCw, CheckSquare, X } from "lucide-react";
+import { Search, UserPlus, RefreshCw, CheckSquare, X, ChevronDown, ChevronRight, MessageCircle, Clock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
@@ -389,8 +389,237 @@ export function CaptureLeadList({
             </p>
           </div>
         )}
+        <GroupedLeads
+          leads={filtered}
+          selectedId={selectedId}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onSelect={onSelect}
+          toggleId={toggleId}
+          fmtTime={fmtTime}
+          fmtPhone={fmtPhone}
+        />
+      </div>
+
+      {selectMode && selectedVisibleCount > 0 ? (
+        <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0 bg-card/80">
+          <span className="text-[11px] font-medium tabular-nums text-muted-foreground shrink-0 px-1">
+            {selectedVisibleCount} sel.
+          </span>
+          <Button
+            size="sm"
+            variant="default"
+            className="flex-1 min-h-[44px] lg:h-8 text-[11px] rounded-lg"
+            disabled={!whatsappConnected}
+            title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
+            onClick={openBatch}
+          >
+            Abrir atendimento
+          </Button>
+        </div>
+      ) : (
+        <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0">
+          <Button
+            size="sm"
+            variant="default"
+            className="flex-1 min-h-[44px] lg:h-8 text-[11px] gap-1.5 rounded-lg"
+            onClick={async () => {
+              const phone = await prompt({
+                title: "Entrar em captação manual",
+                description: "Informe o telefone do cliente interessado (com DDD).",
+                placeholder: "Ex: 11971254913",
+                confirmText: "Entrar",
+              });
+              if (!phone) return;
+              const digits = phone.replace(/\D/g, "");
+              if (digits.length < 10) {
+                toast.error("Telefone inválido");
+                return;
+              }
+              const { data: existing } = await supabase
+                .from("customers")
+                .select("id")
+                .eq("consultant_id", consultantId)
+                .ilike("phone_whatsapp", `%${digits}%`)
+                .maybeSingle();
+              if (existing?.id) {
+                await supabase
+                  .from("customers")
+                  .update({ capture_mode: "manual", capture_started_at: new Date().toISOString() })
+                  .eq("id", existing.id);
+                onSelect(existing.id);
+              } else {
+                const { data: created } = await supabase
+                  .from("customers")
+                  .insert({
+                    consultant_id: consultantId,
+                    phone_whatsapp: digits,
+                    capture_mode: "manual",
+                    capture_started_at: new Date().toISOString(),
+                    customer_origin: "whatsapp_lead",
+                  })
+                  .select("id")
+                  .maybeSingle();
+                if (created?.id) onSelect(created.id);
+              }
+              void load();
+            }}
+          >
+            <UserPlus className="w-3.5 h-3.5" /> Novo cliente
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-11 w-11 lg:h-8 lg:w-8 shrink-0"
+            title="Atualizar lista"
+            onClick={() => void load()}
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agrupamento visual: "Em atendimento" (welcome_sent_at != null) vs
+// "Em espera" (welcome_sent_at == null). Inspirado no Intercom Inbox e
+// HubSpot Conversations — separa quem já teve o primeiro contato profissional
+// de quem ainda está aguardando saudação.
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupedLeadsProps {
+  leads: CaptureBatchLead[];
+  selectedId: string | null;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onSelect: (id: string) => void;
+  toggleId: (id: string) => void;
+  fmtTime: (iso: string | null) => string;
+  fmtPhone: (p: string | null) => string;
+}
+
+function useGroupOpen(key: string, initial: boolean) {
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(`cap_group_${key}`);
+      return v === null ? initial : v === "1";
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(`cap_group_${key}`, open ? "1" : "0");
+    } catch {}
+  }, [key, open]);
+  return [open, setOpen] as const;
+}
+
+function GroupedLeads({
+  leads,
+  selectedId,
+  selectMode,
+  selectedIds,
+  onSelect,
+  toggleId,
+  fmtTime,
+  fmtPhone,
+}: GroupedLeadsProps) {
+  const groups = useMemo(() => {
+    const emAtendimento: CaptureBatchLead[] = [];
+    const emEspera: CaptureBatchLead[] = [];
+    for (const l of leads) {
+      if (l.welcome_sent_at) emAtendimento.push(l);
+      else emEspera.push(l);
+    }
+    return { emAtendimento, emEspera };
+  }, [leads]);
+
+  return (
+    <div>
+      <LeadSection
+        groupKey="atendimento"
+        title="Em atendimento"
+        icon={<MessageCircle className="w-3 h-3" />}
+        toneClass="text-emerald-700 dark:text-emerald-400"
+        leads={groups.emAtendimento}
+        selectedId={selectedId}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        toggleId={toggleId}
+        fmtTime={fmtTime}
+        fmtPhone={fmtPhone}
+        defaultOpen
+      />
+      <LeadSection
+        groupKey="espera"
+        title="Em espera"
+        icon={<Clock className="w-3 h-3" />}
+        toneClass="text-amber-700 dark:text-amber-400"
+        leads={groups.emEspera}
+        selectedId={selectedId}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        toggleId={toggleId}
+        fmtTime={fmtTime}
+        fmtPhone={fmtPhone}
+        defaultOpen
+      />
+    </div>
+  );
+}
+
+interface LeadSectionProps extends GroupedLeadsProps {
+  groupKey: string;
+  title: string;
+  icon: React.ReactNode;
+  toneClass: string;
+  defaultOpen: boolean;
+}
+
+function LeadSection({
+  groupKey,
+  title,
+  icon,
+  toneClass,
+  leads,
+  defaultOpen,
+  selectedId,
+  selectMode,
+  selectedIds,
+  onSelect,
+  toggleId,
+  fmtTime,
+  fmtPhone,
+}: LeadSectionProps) {
+  const [open, setOpen] = useGroupOpen(groupKey, defaultOpen);
+  if (leads.length === 0) return null;
+  return (
+    <section className="border-b border-border/40 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/30 hover:bg-muted/50 transition sticky top-0 z-[1]"
+      >
+        {open ? (
+          <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+        )}
+        <span className={`inline-flex items-center gap-1 ${toneClass}`}>{icon}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </span>
+        <span className="ml-auto text-[10px] tabular-nums font-semibold text-muted-foreground bg-background/80 px-1.5 py-0.5 rounded-full">
+          {leads.length}
+        </span>
+      </button>
+      {open && (
         <ul className="divide-y divide-border/60">
-          {filtered.map((l) => {
+          {leads.map((l) => {
             const active = l.id === selectedId && !selectMode;
             const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
             const ready = l.filled >= CAPTURE_FIELDS.length;
@@ -476,85 +705,7 @@ export function CaptureLeadList({
             );
           })}
         </ul>
-      </div>
-
-      {selectMode && selectedVisibleCount > 0 ? (
-        <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0 bg-card/80">
-          <span className="text-[11px] font-medium tabular-nums text-muted-foreground shrink-0 px-1">
-            {selectedVisibleCount} sel.
-          </span>
-          <Button
-            size="sm"
-            variant="default"
-            className="flex-1 min-h-[44px] lg:h-8 text-[11px] rounded-lg"
-            disabled={!whatsappConnected}
-            title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
-            onClick={openBatch}
-          >
-            Abrir atendimento
-          </Button>
-        </div>
-      ) : (
-        <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0">
-          <Button
-            size="sm"
-            variant="default"
-            className="flex-1 min-h-[44px] lg:h-8 text-[11px] gap-1.5 rounded-lg"
-            onClick={async () => {
-              const phone = await prompt({
-                title: "Entrar em captação manual",
-                description: "Informe o telefone do cliente interessado (com DDD).",
-                placeholder: "Ex: 11971254913",
-                confirmText: "Entrar",
-              });
-              if (!phone) return;
-              const digits = phone.replace(/\D/g, "");
-              if (digits.length < 10) {
-                toast.error("Telefone inválido");
-                return;
-              }
-              const { data: existing } = await supabase
-                .from("customers")
-                .select("id")
-                .eq("consultant_id", consultantId)
-                .ilike("phone_whatsapp", `%${digits}%`)
-                .maybeSingle();
-              if (existing?.id) {
-                await supabase
-                  .from("customers")
-                  .update({ capture_mode: "manual", capture_started_at: new Date().toISOString() })
-                  .eq("id", existing.id);
-                onSelect(existing.id);
-              } else {
-                const { data: created } = await supabase
-                  .from("customers")
-                  .insert({
-                    consultant_id: consultantId,
-                    phone_whatsapp: digits,
-                    capture_mode: "manual",
-                    capture_started_at: new Date().toISOString(),
-                    customer_origin: "whatsapp_lead",
-                  })
-                  .select("id")
-                  .maybeSingle();
-                if (created?.id) onSelect(created.id);
-              }
-              void load();
-            }}
-          >
-            <UserPlus className="w-3.5 h-3.5" /> Novo cliente
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-11 w-11 lg:h-8 lg:w-8 shrink-0"
-            title="Atualizar lista"
-            onClick={() => void load()}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </Button>
-        </div>
       )}
-    </aside>
+    </section>
   );
 }
