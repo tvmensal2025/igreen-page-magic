@@ -407,12 +407,15 @@ Deno.serve(async (req) => {
       whatsapp_destination_number: authoritativeDigits,
     };
     const accId = conn.ad_account_id; // já vem com prefixo act_
-    // Idade mínima padrão 28+ (regra de negócio iGreen — público que converte).
-    // Advantage+ audience RESPEITA age_min como restrição inegociável — docs Meta:
-    // https://developers.facebook.com/docs/marketing-api/audiences/reference/targeting-expansion/advantage-audience/
-    // ("minimum age" listado explicitamente como non-negotiable constraint).
-    // Portanto age_min=28 + advantage_audience=1 é combinação válida e recomendada.
-    const ageMin = body.age_min ?? 28;
+    // Idade mínima: regra de negócio iGreen prefere 28+, mas a partir de 2026 a Meta
+    // passou a REJEITAR age_min > 25 quando o adset usa público Advantage+
+    // (subcode 1870188: "controle de idade mínima do público não pode ser definido
+    // como mais de 25 anos"). Solução oficial da Meta: manter age_min=25 no targeting
+    // e passar a idade preferida (28) como SUGESTÃO via targeting_automation. Assim
+    // continuamos priorizando 28+ sem quebrar a criação do adset.
+    const REQUESTED_AGE_MIN = body.age_min ?? 28;
+    const ageMin = Math.min(REQUESTED_AGE_MIN, 25); // hard cap Meta Advantage+
+    const ageMinSuggested = REQUESTED_AGE_MIN > 25 ? REQUESTED_AGE_MIN : null;
     const ageMax = body.age_max ?? 65;
     const today = new Date().toISOString().slice(0, 10);
     const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
