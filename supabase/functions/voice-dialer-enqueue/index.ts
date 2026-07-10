@@ -378,6 +378,9 @@ Deno.serve(async (req) => {
       started_at: scheduled ? null : new Date().toISOString(),
       total: targets.length,
       velip_mode: velipMode,
+      sms_on_no_answer_text: typeof (body as { sms_on_no_answer_text?: unknown }).sms_on_no_answer_text === "string"
+        ? String((body as { sms_on_no_answer_text?: string }).sms_on_no_answer_text).trim() || null
+        : null,
     })
     .select("id")
     .single();
