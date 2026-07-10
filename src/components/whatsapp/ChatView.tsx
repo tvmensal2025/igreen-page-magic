@@ -641,6 +641,14 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </Button>
         )}
 
+        <ScheduleCallButton
+          phone={phoneNumber}
+          consultantId={consultantId}
+          contactName={chat.name}
+          customerId={customerId ?? null}
+          className="h-8 gap-1 px-3 rounded-full border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+        />
+
 
 
         {isCompactLayout ? (
