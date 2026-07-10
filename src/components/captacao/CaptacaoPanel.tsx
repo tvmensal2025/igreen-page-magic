@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { CaptureLeadList } from "@/components/captacao/CaptureLeadList";
+import { CaptureLeadList, type CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
+import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
 import { CaptureStepsGrid } from "@/components/captacao/CaptureStepsGrid";
 import { CaptureConversationFeed } from "@/components/captacao/CaptureConversationFeed";
 import { CaptureLeadCard } from "@/components/captacao/CaptureLeadCard";
@@ -47,6 +48,9 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   });
   const [totalSteps, setTotalSteps] = useState<number | null>(null);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchLeads, setBatchLeads] = useState<CaptureBatchLead[]>([]);
+  const [batchPeriodLabel, setBatchPeriodLabel] = useState("últimos 60d");
   const toggleSteps = () => setStepsOpen((v) => { const n = !v; try { localStorage.setItem("cap_steps_open", n ? "1" : "0"); } catch {} return n; });
   const { templates } = useTemplates(consultantId);
   const session = useCaptureSession(selectedId);
@@ -240,7 +244,17 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
       <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "13rem" } as React.CSSProperties}>
         {/* Lista de clientes */}
         <div className={`${selectedId ? "hidden md:flex" : "flex"} md:flex flex-col md:w-[var(--cap-list-w)] md:shrink-0 overflow-hidden`}>
-          <CaptureLeadList consultantId={consultantId} selectedId={selectedId} onSelect={setSelectedId} />
+          <CaptureLeadList
+            consultantId={consultantId}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            whatsappConnected={connected}
+            onOpenBatch={(leads, periodLabel) => {
+              setBatchLeads(leads);
+              setBatchPeriodLabel(periodLabel);
+              setBatchOpen(true);
+            }}
+          />
         </div>
         <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={220} minPx={180} maxPx={360} />
 
@@ -429,6 +443,25 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <OpenAttendanceBatchDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        consultantId={consultantId}
+        instanceName={instanceName || ""}
+        isWhapi={isWhapi}
+        leads={batchLeads}
+        periodLabel={batchPeriodLabel}
+        templates={templates}
+        onFinished={() => {
+          // Realtime da lista atualiza welcome_sent_at; força refresh leve via evento.
+          try {
+            window.dispatchEvent(new CustomEvent("captacao:batch-finished"));
+          } catch {
+            /* ignore */
+          }
+        }}
+      />
     </div>
   );
 }

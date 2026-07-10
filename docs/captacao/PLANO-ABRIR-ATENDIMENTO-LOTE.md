@@ -1,8 +1,8 @@
 # Plano — Abrir atendimento em lote (Captação → Conversas)
 
-> Status: **especificação para implementar no Lovable** (ainda não codificado no cockpit).
-> Objetivo: o consultor seleciona vários interessados das últimas 48h e abre
-> atendimento + áudio de abertura de uma vez — sem ir um a um.
+> Status: **implementado** no cockpit (Conversas).
+> Objetivo: o consultor seleciona vários interessados por período (até 60+ dias)
+> e abre atendimento + áudio e/ou imagem de uma vez — sem ir um a um.
 
 Mock visual: [`modal-abrir-atendimento-mock.png`](./modal-abrir-atendimento-mock.png)
 
@@ -13,98 +13,47 @@ Mock visual: [`modal-abrir-atendimento-mock.png`](./modal-abrir-atendimento-mock
 | Bulk Pro (WhatsApp / Lista de leads) | Abrir em lote (Conversas) |
 |---|---|
 | Contatos frios / captados | Já estão em captação e falaram |
-| Mensagem de campanha (wizard 4 passos) | Protocolo + áudio de abertura |
-| Objetivo: disparar marketing | Objetivo: não perder fila quente de 48h |
+| Mensagem de campanha (wizard 4 passos) | Protocolo + áudio e/ou imagem |
+| Objetivo: disparar marketing | Objetivo: não perder fila quente |
 
 A aba **Lista de leads** já tem multi-select + `BulkProPanel`. Em **Conversas**
-o valor é operacional: `start-customer-attendance` + template de áudio.
+o valor é operacional: `start-customer-attendance` + templates de mídia.
 
 ---
 
-## 2. UX aprovada (modal único)
+## 2. UX
 
-Uma tela, uma decisão — sem wizard.
-
-1. **Quem** — lista dos selecionados + status (`Pronto` / `Já iniciado`)
-2. **O quê** — um áudio de abertura já escolhido (play para ouvir)
-3. **Ação** — botão verde `Abrir para N`
-
-Texto de apoio: *“Envia protocolo + áudio, com intervalo de 5s entre cada.”*
-
-### Entrada na UI
-
-- Em `CaptureLeadList` (“Conversas”): botão **Selecionar**
-- Checkbox nos cards só no modo seleção
-- Atalhos: **Últimas 48h**, **Todos sem atendimento**, **Limpar**
-- Com N > 0: barra/CTA abre o modal (não o empty state do cockpit)
+1. **Selecionar** na lista Conversas
+2. Filtro de período: `48h | 7d | 30d | 60d | 90d | Todos` (default **60d**)
+3. Atalhos: Todos do período · Só sem atendimento · Limpar
+4. CTA **Abrir atendimento** → modal único
 
 ### Modal
 
 - Título: `Abrir atendimento`
-- Subtítulo: `N clientes · últimas 48h`
-- Lista scrollável com avatar + nome + pill de status
-- Bloco único de áudio (template salvo do consultor)
-- Footer: `Cancelar` | `Abrir para N`
-- Quem já tem `welcome_sent_at`: pill `Já iniciado` — **não reenviar** protocolo
+- Subtítulo: `N clientes · últimos X`
+- Lista com pills: `Pronto` / `Já iniciado` / `Sem telefone` + progresso
+- Toggle: **Iniciar atendimento** (default ON)
+- Select **Áudio** e/ou **Imagem** (templates salvos)
+- Precisa de pelo menos 1 ação (protocolo OU áudio OU imagem)
+- Intervalo 5s · Parar · Tentar de novo nos falhos
 
 ---
 
-## 3. Comportamento técnico
+## 3. Arquivos
 
-### Por lead elegível (`Pronto`)
+- [`CaptureLeadList.tsx`](../../src/components/captacao/CaptureLeadList.tsx) — multi-select + período
+- [`OpenAttendanceBatchDialog.tsx`](../../src/components/captacao/OpenAttendanceBatchDialog.tsx) — modal
+- [`runAttendanceBatch.ts`](../../src/components/captacao/runAttendanceBatch.ts) — fila front
+- [`CaptacaoPanel.tsx`](../../src/components/captacao/CaptacaoPanel.tsx) — wiring
 
-1. Chamar `start-customer-attendance` (`customerId` + `consultantId`)
-   - Idempotente: se já enviou, pular / marcar `Já iniciado`
-2. Enviar o template de áudio (mesmo caminho do composer da Captação /
-   `sendWhatsAppMessage` com `mediaCategory: "audio"`)
-3. Aguardar intervalo (ex.: 5s) antes do próximo — anti rate-limit
-
-### Backend (preferível)
-
-- Nova edge `start-customer-attendance-batch` **ou** fila controlada no front
-  com delay + progresso por item
-- Resposta por target: `ok` | `skipped_already_sent` | `no_phone` | `send_failed`
-- Nunca 5xx por falha de canal (mesmo padrão da edge atual)
-
-### Arquivos prováveis
-
-- `src/components/captacao/CaptureLeadList.tsx` — multi-select + filtros
-- `src/components/captacao/CaptacaoPanel.tsx` — CTA + modal
-- Novo: `src/components/captacao/OpenAttendanceBatchDialog.tsx`
-- `src/hooks/useCustomerAttendance.ts` / edge batch
-- Reuso: `useTemplates` (áudios salvos), `sendWhatsAppMessage`
-
-### Não misturar
-
-- Não abrir `BulkProPanel` neste fluxo
-- Não alterar a aba **Lista de leads**
+Por lead: `start-customer-attendance` (se toggle e sem `welcome_sent_at`) → áudio → imagem → sleep 5s.
 
 ---
 
-## 4. Critérios de pronto (Lovable)
+## 4. Fora de escopo (v1)
 
-- [ ] Modo seleção na lista Conversas
-- [ ] Filtro “últimas 48h” e “sem atendimento”
-- [ ] Modal igual ao mock (hierarquia clara, CTA com número)
-- [ ] Protocolo + áudio com intervalo entre envios
-- [ ] Progresso ✓ / ✗ por pessoa + retry dos que falharam
-- [ ] Mobile: lista estreita ainda usável
-- [ ] Quem já iniciou não recebe protocolo de novo
-
----
-
-## 5. Riscos
-
-- Rate limit WhatsApp / Whapi / Evolution
-- Reenvio acidental em quem já tem `welcome_sent_at`
-- Áudio template sem URL / canal desconectado
-- Lista mobile com checkbox + progresso
-
----
-
-## 6. Contexto do produto (hoje)
-
-- Cockpit 1 a 1: `CaptacaoPanel` + `AttendanceStatusBar` → `start-customer-attendance`
-- Lista Conversas: `CaptureLeadList` (sem multi-select)
-- Empty state: “Selecione um cliente interessado para começar”
-- Disparo em massa marketing: `CapturedLeadsPanel` → `BulkProPanel`
+- Bulk Pro / Lista de leads
+- Edge batch dedicada
+- Upload ad-hoc no modal (só templates)
+- Texto livre em massa
