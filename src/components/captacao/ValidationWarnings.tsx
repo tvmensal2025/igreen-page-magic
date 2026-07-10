@@ -10,15 +10,16 @@ interface Props {
 
 /**
  * Banner que aparece no rodapé da captação quando algum campo está
- * INVÁLIDO (preenchido, mas errado pro portal). Mostra o motivo em
- * linguagem natural e — quando aplicável — um botão pra usar a
- * sugestão (ex: consumo estimado a partir do valor da conta).
+ * INVÁLIDO (preenchido, mas errado pro portal).
  *
- * Quando vazio, não renderiza nada (consultor vê só o botão CADASTRAR).
+ * Só aparece quando a ficha já está completa em quantidade (nada faltando)
+ * e restam só problemas de formato — evita alertar no meio da captação.
  */
 export function ValidationWarnings({ validation, onApplySuggestion }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   if (!validation || validation.invalid.length === 0) return null;
+  // Ainda captando (tem campo faltando) → não polui o rodapé.
+  if (validation.missing.length > 0) return null;
 
   const count = validation.invalid.length;
 

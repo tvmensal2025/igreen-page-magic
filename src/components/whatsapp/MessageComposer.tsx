@@ -19,7 +19,7 @@ const QUICK_EMOJIS = [
   "☀️", "🌱", "💡", "📸", "📄", "🏠", "⚡", "💰", "📱", "😊",
 ];
 
-type MediaType = "image" | "video" | "document";
+type MediaType = "image" | "video" | "document" | "sticker";
 
 interface MessageComposerProps {
   onSend: (text: string) => Promise<void>;
@@ -248,8 +248,10 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
 
       {file.attachedFile && (
         <div className="flex items-center gap-2 mb-2 px-1 py-1.5 rounded-lg bg-secondary/30 border border-border/30">
-          {file.attachedFile.type === "audio" ? <Mic className="w-4 h-4 text-primary shrink-0" /> : file.attachedFile.type === "image" ? <Image className="w-4 h-4 text-info shrink-0" /> : file.attachedFile.type === "video" ? <Video className="w-4 h-4 text-primary shrink-0" /> : <File className="w-4 h-4 text-destructive shrink-0" />}
-          <span className="text-xs text-foreground truncate flex-1">{file.attachedFile.name}</span>
+          {file.attachedFile.type === "audio" ? <Mic className="w-4 h-4 text-primary shrink-0" /> : file.attachedFile.type === "sticker" ? <Smile className="w-4 h-4 text-amber-600 shrink-0" /> : file.attachedFile.type === "image" ? <Image className="w-4 h-4 text-info shrink-0" /> : file.attachedFile.type === "video" ? <Video className="w-4 h-4 text-primary shrink-0" /> : <File className="w-4 h-4 text-destructive shrink-0" />}
+          <span className="text-xs text-foreground truncate flex-1">
+            {file.attachedFile.type === "sticker" ? `Sticker · ${file.attachedFile.name}` : file.attachedFile.name}
+          </span>
           <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={file.clearAttachment}><X className="w-3 h-3" /></Button>
         </div>
       )}
@@ -279,7 +281,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
           className="flex-1 min-w-0 resize-none bg-secondary rounded-xl lg:rounded-lg px-3.5 py-2.5 lg:py-1.5 text-base lg:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/60 min-h-[44px] lg:min-h-[34px] max-h-[120px] lg:max-h-[88px]"
           style={{
             overflow: "auto",
-            fontFamily: 'inherit, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+            fontFamily: 'Figtree, system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
           }}
         />
         {sendMicButtons}

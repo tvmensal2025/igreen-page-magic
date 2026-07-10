@@ -5,7 +5,7 @@ import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("useFileAttach");
 
-type MediaType = "image" | "video" | "document";
+type MediaType = "image" | "video" | "document" | "sticker";
 
 export interface AttachedFile {
   url: string;
@@ -38,25 +38,35 @@ export function useFileAttach(context?: FileAttachContext) {
         toast.error("WhatsApp/Whapi não aceita áudio .webm. Use .ogg, .mp3 ou .m4a.");
         return;
       }
-      const inferKind = (mime: string) =>
-        mime.startsWith("image/") ? "image" : mime.startsWith("audio/") ? "audio" : mime.startsWith("video/") ? "video" : "document";
+      const inferKind = (mime: string, name: string) => {
+        if (mime === "image/webp" || /\.webp$/i.test(name)) return "sticker";
+        if (mime.startsWith("image/")) return "image";
+        if (mime.startsWith("audio/")) return "audio";
+        if (mime.startsWith("video/")) return "video";
+        return "document";
+      };
       const result = await uploadMedia(file, (pct) => setUploadProgress(pct), {
         scope: "chat",
         consultant_id: context?.consultantId,
         customer_jid: context?.customerJid,
         customer_name: context?.customerName,
-        kind: inferKind(file.type),
+        kind: inferKind(file.type, file.name),
       });
-      if (attachedFile?.type === "audio" && file.type.startsWith("image/")) {
+      if (attachedFile?.type === "audio" && file.type.startsWith("image/") && file.type !== "image/webp") {
         setPendingImageUrl(result.url);
         toast.success("Imagem anexada: será enviada depois do áudio");
       } else {
         let fileType: MediaType | "audio" = "document";
-        if (file.type.startsWith("image/")) fileType = "image";
+        if (file.type === "image/webp" || /\.webp$/i.test(file.name)) fileType = "sticker";
+        else if (file.type.startsWith("image/")) fileType = "image";
         else if (file.type.startsWith("audio/")) fileType = "audio";
         else if (file.type.startsWith("video/")) fileType = "video";
         setAttachedFile({ url: result.url, name: file.name, type: fileType });
-        toast.success(`Arquivo anexado: ${formatFileSize(result.size)}`);
+        toast.success(
+          fileType === "sticker"
+            ? `Sticker anexado: ${formatFileSize(result.size)}`
+            : `Arquivo anexado: ${formatFileSize(result.size)}`,
+        );
       }
     } catch (err: unknown) {
       logger.error("Erro no upload:", err);

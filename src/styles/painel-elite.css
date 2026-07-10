@@ -72,7 +72,7 @@
   --sidebar-border: 0 0% 16%;
   --sidebar-ring: 152 100% 36%;
 
-  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+  font-family: 'Figtree', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   background: var(--pe-bg);
   color: var(--pe-text);
   font-size: 14px;
@@ -92,7 +92,7 @@
 
 .painel-elite .pe-heading,
 .painel-elite h1, .painel-elite h2, .painel-elite h3, .painel-elite h4 {
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: 'Outfit', system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   letter-spacing: -0.01em;
   color: var(--pe-text);
 }

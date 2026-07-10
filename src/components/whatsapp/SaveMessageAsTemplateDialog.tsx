@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,28 +48,52 @@ function inferExt(mime: string | undefined, fallback: string): string {
 export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consultantId, loadedMediaUrl, onLoadMedia, focus = "name", onSaved }: Props) {
   const [name, setName] = useState("");
   const [shortcutRaw, setShortcutRaw] = useState("");
-  const [caption, setCaption] = useState(message.mediaCaption || message.text || "");
+  const [caption, setCaption] = useState("");
   const [saving, setSaving] = useState(false);
   // Mídia carregada localmente pelo dialog quando o pai não trouxe ainda.
-  // Resolve o bug onde o consultor abre o dropdown ANTES do player montar
-  // e fica preso em "aguarde a mídia carregar".
   const [autoLoadedUrl, setAutoLoadedUrl] = useState<string | null>(null);
   const [autoLoading, setAutoLoading] = useState(false);
   const [autoLoadFailed, setAutoLoadFailed] = useState(false);
 
+  // Evita resetar o form a cada re-render do `message` (realtime/status).
+  // Só inicializa quando o dialog TRANSICIONA de fechado → aberto.
+  const wasOpenRef = useRef(false);
+  const loadAttemptRef = useRef<string | null>(null);
+
   const effectiveMediaUrl = loadedMediaUrl || autoLoadedUrl;
 
-  // Se o dialog abriu sem mídia carregada e há mídia esperada, dispara o
-  // carregamento automaticamente via `onLoadMedia`. Sem isso, no mobile o
-  // consultor toca em "Salvar com atalho", o dialog abre, e ele fica olhando
-  // pro aviso "toque no player primeiro" sem entender o que fazer.
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setName("");
+      setShortcutRaw("");
+      setCaption(message.mediaCaption || message.text || "");
+      setAutoLoadedUrl(null);
+      setAutoLoadFailed(false);
+      setAutoLoading(false);
+      setSaving(false);
+      loadAttemptRef.current = null;
+    }
+    if (!open) {
+      loadAttemptRef.current = null;
+    }
+    wasOpenRef.current = open;
+    // Intencional: NÃO depende do objeto `message` — só do id na abertura.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset só na transição open
+  }, [open, message.id]);
+
+  // Auto-carrega mídia uma vez por abertura (sem loop se message/onLoadMedia mudarem).
   useEffect(() => {
     if (!open) return;
-    if (loadedMediaUrl) return; // já veio do pai
-    if (autoLoadedUrl) return;  // já carregamos
+    if (loadedMediaUrl) return;
+    if (autoLoadedUrl) return;
     const mt = message.mediaType;
     if (mt !== "audio" && mt !== "video" && mt !== "image") return;
     if (!onLoadMedia) return;
+
+    const attemptKey = `${message.id}:${mt}`;
+    if (loadAttemptRef.current === attemptKey) return;
+    loadAttemptRef.current = attemptKey;
+
     let cancelled = false;
     setAutoLoading(true);
     setAutoLoadFailed(false);
@@ -77,22 +101,24 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
       .then((url) => {
         if (cancelled) return;
         if (url) setAutoLoadedUrl(url);
-        else setAutoLoadFailed(true);
+        else {
+          setAutoLoadFailed(true);
+          loadAttemptRef.current = null; // permite retry manual reabrindo
+        }
       })
-      .catch(() => { if (!cancelled) setAutoLoadFailed(true); })
-      .finally(() => { if (!cancelled) setAutoLoading(false); });
-    return () => { cancelled = true; };
+      .catch(() => {
+        if (!cancelled) {
+          setAutoLoadFailed(true);
+          loadAttemptRef.current = null;
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAutoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, loadedMediaUrl, autoLoadedUrl, message.id, message.mediaType, onLoadMedia]);
-
-  useEffect(() => {
-    if (open) {
-      setName("");
-      setShortcutRaw("");
-      setCaption(message.mediaCaption || message.text || "");
-      setAutoLoadedUrl(null);
-      setAutoLoadFailed(false);
-    }
-  }, [open, message]);
 
   const shortcutNormalized = useMemo(() => {
     if (!shortcutRaw.trim()) return "";
@@ -132,14 +158,12 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
           setSaving(false);
           return;
         }
-        // Tenta baixar direto; se cair em CORS/Failed to fetch, usa proxy.
         let blob: Blob;
         try {
           if (effectiveMediaUrl.startsWith("data:") || effectiveMediaUrl.startsWith("blob:")) {
             const res = await fetch(effectiveMediaUrl);
             blob = await res.blob();
           } else {
-            // URL externa (Whapi/MinIO) → vai via proxy pra evitar CORS
             const { data, error: dlErr } = await supabase.functions.invoke("whapi-proxy", {
               body: { action: "download_media", payload: { url: effectiveMediaUrl } },
             });
@@ -166,7 +190,7 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
         mediaUrl = uploaded.url;
       }
 
-      const payload: any = {
+      const payload: Record<string, unknown> = {
         consultant_id: consultantId,
         name: name.trim(),
         content: caption.trim(),
@@ -180,7 +204,7 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
         if (String(error.message).includes("message_templates_consultant_shortcut_uniq")) {
           throw new Error(`O atalho "${shortcutNormalized}" já está em uso.`);
         }
-        const detail = [error.message, (error as any).details, (error as any).hint, error.code]
+        const detail = [error.message, (error as { details?: string }).details, (error as { hint?: string }).hint, error.code]
           .filter(Boolean).join(" · ");
         throw new Error(detail || "Falha desconhecida");
       }
@@ -197,34 +221,36 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md bg-card text-foreground border-border shadow-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex items-center gap-2 text-foreground font-semibold">
             <Bookmark className="w-4 h-4 text-primary" />
             Salvar como template
           </DialogTitle>
+          <DialogDescription className="text-muted-foreground text-xs">
+            O template fica disponível nos atalhos e na biblioteca de respostas.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
-          {/* Preview */}
           {effectiveMediaUrl && mt === "image" && (
-            <img src={effectiveMediaUrl} alt="" className="max-h-40 rounded mx-auto" />
+            <img src={effectiveMediaUrl} alt="" className="max-h-40 rounded-md mx-auto border border-border/60 bg-muted/30" />
           )}
           {effectiveMediaUrl && mt === "audio" && (
             <audio controls src={effectiveMediaUrl} className="w-full" />
           )}
           {effectiveMediaUrl && mt === "video" && (
-            <video controls src={effectiveMediaUrl} className="max-h-40 w-full rounded" />
+            <video controls src={effectiveMediaUrl} className="max-h-40 w-full rounded-md border border-border/60 bg-muted/30" />
           )}
           {!effectiveMediaUrl && hasMedia && (
-            <div className="text-xs text-muted-foreground bg-secondary/40 rounded p-2 text-center flex items-center justify-center gap-2">
+            <div className="text-xs text-muted-foreground bg-muted/50 border border-border/50 rounded-md p-2.5 text-center flex items-center justify-center gap-2">
               {autoLoading ? (
                 <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
                   Baixando mídia automaticamente…
                 </>
               ) : autoLoadFailed ? (
-                <span className="text-warning">⚠️ Não consegui baixar a mídia. Toque no player da mensagem na conversa e tente de novo.</span>
+                <span className="text-amber-700">Não consegui baixar a mídia. Toque no player da mensagem na conversa e tente de novo.</span>
               ) : (
                 "Carregando mídia..."
               )}
@@ -232,24 +258,25 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
           )}
 
           <div>
-            <Label className="text-xs">Nome *</Label>
+            <Label className="text-xs text-foreground/80">Nome *</Label>
             <Input
               autoFocus={focus === "name"}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Ex: Boas-vindas, Áudio explicação"
               maxLength={60}
+              className="bg-background"
             />
           </div>
 
           <div>
-            <Label className="text-xs">Atalho rápido (opcional)</Label>
+            <Label className="text-xs text-foreground/80">Atalho rápido (opcional)</Label>
             <Input
               autoFocus={focus === "shortcut"}
               value={shortcutRaw}
               onChange={(e) => setShortcutRaw(e.target.value)}
               placeholder="/oi"
-              className={shortcutInvalid ? "border-destructive" : ""}
+              className={`bg-background ${shortcutInvalid ? "border-destructive" : ""}`}
             />
             <p className={`text-[10px] mt-1 ${shortcutInvalid ? "text-destructive" : "text-muted-foreground"}`}>
               {shortcutInvalid
@@ -260,24 +287,26 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
 
           {(mt === "image" || mt === "video") && (
             <div>
-              <Label className="text-xs">Legenda (opcional)</Label>
+              <Label className="text-xs text-foreground/80">Legenda (opcional)</Label>
               <Textarea
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder="Texto que vai junto da mídia"
                 rows={2}
+                className="bg-background"
               />
             </div>
           )}
 
           {isTextOnly && (
             <div>
-              <Label className="text-xs">Texto *</Label>
+              <Label className="text-xs text-foreground/80">Texto *</Label>
               <Textarea
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder="Conteúdo do template. Use {{nome}} e {{valor_conta}}"
                 rows={3}
+                className="bg-background"
               />
             </div>
           )}
@@ -285,10 +314,12 @@ export function SaveMessageAsTemplateDialog({ open, onOpenChange, message, consu
 
         <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center">
           {disabledReason && (
-            <p className="text-[11px] text-warning flex-1 text-left">⚠️ {disabledReason}</p>
+            <p className="text-[11px] text-amber-700 flex-1 text-left">⚠️ {disabledReason}</p>
           )}
           <div className="flex gap-2 justify-end">
-            <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>Cancelar</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
+              Cancelar
+            </Button>
             <Button onClick={handleSave} disabled={!canSave || saving} title={disabledReason || undefined}>
               {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Bookmark className="w-4 h-4 mr-1" />}
               Salvar template

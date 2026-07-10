@@ -344,7 +344,7 @@ export interface EvolutionMessageContent {
   videoMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
   // Vídeo redondo ("video note") — mesma forma do videoMessage.
   ptvMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
-  stickerMessage?: { url?: string; mimetype?: string; base64?: string };
+  stickerMessage?: { url?: string; mimetype?: string; base64?: string; mediaId?: string };
   // Contêineres que escondem o conteúdo real um nível abaixo (em `.message`).
   // Sem desembrulhar, a mensagem renderiza vazia no painel.
   ephemeralMessage?: { message?: EvolutionMessageContent };
@@ -417,7 +417,16 @@ export async function findMessagesForChat(
       merged.push(msg);
     }
   }
-  return merged;
+  return merged.sort((a, b) => {
+    const ta = Number(a.messageTimestamp) > 10_000_000_000
+      ? Number(a.messageTimestamp) / 1000
+      : Number(a.messageTimestamp) || 0;
+    const tb = Number(b.messageTimestamp) > 10_000_000_000
+      ? Number(b.messageTimestamp) / 1000
+      : Number(b.messageTimestamp) || 0;
+    if (ta !== tb) return ta - tb;
+    return String(a.key?.id || "").localeCompare(String(b.key?.id || ""));
+  });
 }
 
 export interface EvolutionContact { id: string; remoteJid: string; pushName?: string; profilePicUrl?: string }
@@ -444,6 +453,18 @@ export async function sendMedia(
 ) {
   return request<{ key: { id: string } }>(`message/sendMedia/${instanceName}`, "POST", {
     number: phone, mediatype, media: mediaUrl, caption,
+  }, { gracefulTimeout });
+}
+
+export async function sendSticker(
+  instanceName: string,
+  phone: string,
+  stickerUrl: string,
+  gracefulTimeout = false,
+) {
+  return request<{ key: { id: string } }>(`message/sendSticker/${instanceName}`, "POST", {
+    number: phone,
+    sticker: stickerUrl,
   }, { gracefulTimeout });
 }
 

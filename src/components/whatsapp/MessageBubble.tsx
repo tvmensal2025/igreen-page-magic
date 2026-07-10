@@ -299,8 +299,11 @@ function LinkifiedText({ text }: { text: string }) {
 }
 
 export function MessageBubble({ message, onLoadMedia, consultantId, customerId, onAttachToCapture, onTemplateSaved }: MessageBubbleProps) {
-  const { fromMe, text, timestamp, status, mediaType } = message;
+  const { fromMe, text, timestamp, status, mediaType, interactiveHeader, interactiveFooter, interactiveButtons } = message;
   const showText = text && mediaType !== "audio" && mediaType !== "sticker";
+  const hasMedia = !!(mediaType && mediaType !== "text");
+  const hasInteractive = !!(interactiveButtons && interactiveButtons.length > 0);
+  const isEmptyShell = !showText && !hasMedia && !hasInteractive;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogFocus, setDialogFocus] = useState<"name" | "shortcut">("name");
@@ -391,7 +394,37 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
         {mediaType === "document" && <DocumentViewer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "sticker" && <StickerViewer message={message} onLoadMedia={onLoadMedia} />}
 
+        {interactiveHeader && (
+          <div className="text-[11px] font-semibold text-foreground/90 mb-0.5">
+            <LinkifiedText text={interactiveHeader} />
+          </div>
+        )}
         {showText && <LinkifiedText text={text} />}
+        {hasInteractive && (
+          <div className="mt-2 flex flex-col gap-1.5">
+            {interactiveButtons!.map((btn) => (
+              <div
+                key={`${btn.id}-${btn.title}`}
+                className="rounded-lg border border-primary/25 bg-background/80 px-2.5 py-1.5 text-center text-[12px] font-medium text-primary shadow-sm"
+                title={btn.id || undefined}
+                style={{
+                  fontFamily:
+                    'Figtree, system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+                }}
+              >
+                {btn.title}
+              </div>
+            ))}
+          </div>
+        )}
+        {interactiveFooter && (
+          <div className="mt-1.5 text-[10px] text-muted-foreground">
+            <LinkifiedText text={interactiveFooter} />
+          </div>
+        )}
+        {isEmptyShell && (
+          <p className="text-xs italic text-muted-foreground">Mensagem sem texto legível</p>
+        )}
 
         <div className="flex items-center justify-end gap-1 mt-0.5">
           <span className="text-[10px] text-muted-foreground">{formatTime(timestamp)}</span>

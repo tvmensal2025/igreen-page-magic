@@ -129,21 +129,20 @@ describe("badge de extração (auto/manual/indeterminado)", () => {
     expect(screen.queryByText(/Extração não determinada/)).not.toBeInTheDocument();
   });
 
-  it("mode nulo → 'Extração não determinada' (Req 5.3)", async () => {
+  it("mode nulo → 'Extração em andamento' (Req 5.3)", async () => {
     renderTracker(baseRow({ portal2_extraction_mode: null }));
-    expect(await screen.findByText(/Extração não determinada/)).toBeInTheDocument();
-    expect(screen.queryByText(/Extração automática/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Extração em andamento/)).toBeInTheDocument();
     expect(screen.queryByText(/Preenchimento manual/)).not.toBeInTheDocument();
   });
 
-  it("mode inválido → 'Extração não determinada' (Req 5.3)", async () => {
+  it("mode inválido → 'Extração em andamento' (Req 5.3)", async () => {
     renderTracker(baseRow({ portal2_extraction_mode: "xpto" }));
-    expect(await screen.findByText(/Extração não determinada/)).toBeInTheDocument();
+    expect(await screen.findByText(/Extração em andamento/)).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Req 5.4 / 5.5 — Badge IA Gemini: analisou (com/sem confiança) / não analisou
+// Req 5.4 / 5.5 — Badge IA Gemini: analisou (com/sem confiança) / aguardando
 // ---------------------------------------------------------------------------
 describe("badge IA Gemini", () => {
   it("ocr_done=true + confiança numérica → 'IA analisou (confiança N%)' (Req 5.4)", async () => {
@@ -156,9 +155,27 @@ describe("badge IA Gemini", () => {
     expect(await screen.findByText(/IA analisou \(confiança indisponível\)/)).toBeInTheDocument();
   });
 
-  it("ocr_done ausente/falso → 'IA não analisou' (Req 5.5)", async () => {
+  it("ocr_done ausente/falso → 'Aguardando análise da IA' (Req 5.5)", async () => {
     renderTracker(baseRow({ ocr_done: false }));
-    expect(await screen.findByText(/IA não analisou/)).toBeInTheDocument();
+    expect(await screen.findByText(/Aguardando análise da IA/)).toBeInTheDocument();
+  });
+});
+
+describe("não polui a captação cedo", () => {
+  it("step de captação + error_message de debug do bot → não mostra banner de recusa", async () => {
+    renderTracker(
+      baseRow({
+        status: "pending",
+        conversation_step: "aguard_conta",
+        finalized_at: null,
+        error_message: "aguard_conta: isFile=true hasImage=true fileBase64Len=86572 sandbox=false",
+        portal2_status: null,
+      }),
+    );
+    // dá tempo do efeito carregar
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText(/Cadastro recusado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Extração/)).not.toBeInTheDocument();
   });
 });
 

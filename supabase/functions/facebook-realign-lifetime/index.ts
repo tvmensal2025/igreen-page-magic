@@ -4,7 +4,11 @@
 //
 // Fórmula: cap = (gasto_atual_meta) + (saldo_disponivel / (1 + fee%))
 // Assim a Meta sabe exatamente o quanto pode gastar a mais do que já gastou.
+//
+// Reativação após recarga: SÓ campanhas auto-pausadas por saldo/teto.
+// Pausa MANUAL do consultor (MANUAL_PAUSE) NUNCA é reativada aqui.
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { isManualPause, isAutoBalancePause } from "../_shared/campaign-pause.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -52,12 +56,13 @@ Deno.serve(async (req) => {
 
     const { data: camps } = await admin
       .from("facebook_campaigns")
-      .select("id, fb_campaign_id, status, lifetime_cap_cents, daily_budget_cents")
+      .select("id, fb_campaign_id, status, lifetime_cap_cents, daily_budget_cents, rejection_reason")
       .eq("consultant_id", consultantId)
       .in("status", ["active", "paused", "pending_review"]);
 
     const updated: any[] = [];
     const errors: any[] = [];
+    const skippedManual: string[] = [];
 
     // RATEIO ANTI-PREJUÍZO: divide o orçamento extra da Meta entre TODAS as campanhas
     // que vão receber cap (ativas + pausadas que serão reativadas). Sem dividir, cada
@@ -93,13 +98,24 @@ Deno.serve(async (req) => {
           errors.push({ id: c.id, error: `Meta spend_cap update: ${(e as Error).message}` });
         }
 
-        // Reativa se solicitado e tem saldo
+        // Reativa se solicitado e tem saldo — NUNCA se foi pausa MANUAL do consultor.
+        // Só reativa pausas automáticas de saldo/teto (recarga).
         const updates: any = {
           lifetime_cap_cents: newCap,
           pause_pending: false,
           updated_at: new Date().toISOString(),
         };
-        if (reactivate && c.status === "paused" && balance > 0 && debt === 0) {
+        const canReactivate =
+          reactivate &&
+          c.status === "paused" &&
+          balance > 0 &&
+          debt === 0 &&
+          !isManualPause(c.rejection_reason) &&
+          isAutoBalancePause(c.rejection_reason);
+
+        if (reactivate && c.status === "paused" && isManualPause(c.rejection_reason)) {
+          skippedManual.push(c.id);
+        } else if (canReactivate) {
           try {
             await fbFetch(`/${c.fb_campaign_id}?status=ACTIVE&access_token=${conn.token}`, { method: "POST" });
             updates.status = "active";
@@ -115,7 +131,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ ok: true, consultant_id: consultantId, extra_meta_budget_cents: extraMetaBudgetCents, updated, errors });
+    return json({
+      ok: true,
+      consultant_id: consultantId,
+      extra_meta_budget_cents: extraMetaBudgetCents,
+      updated,
+      skipped_manual_pause: skippedManual,
+      errors,
+    });
   } catch (err) {
     console.error("[fb-realign-lifetime]", err);
     return json({ error: (err as Error).message }, 500);

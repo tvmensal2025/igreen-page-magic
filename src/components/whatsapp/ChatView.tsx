@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, Handshake } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
@@ -37,6 +37,18 @@ import type { Tables } from "@/integrations/supabase/types";
 
 const logger = createLogger("ChatView");
 
+type PartnerJoin = { nome?: string | null } | { nome?: string | null }[] | null;
+
+function readPartnerName(row: {
+  referral_partner_id?: string | null;
+  referral_partners?: PartnerJoin;
+} | null | undefined): string | null {
+  if (!row?.referral_partner_id) return null;
+  const rel = row.referral_partners;
+  const nome = Array.isArray(rel) ? rel[0]?.nome : rel?.nome;
+  return (nome && String(nome).trim()) || "Parceiro";
+}
+
 interface ChatViewProps {
   instanceName: string;
   chat: ChatItem | null;
@@ -51,6 +63,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const { toast } = useToast();
   const [isCustomer, setIsCustomer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  /** Nome do parceiro indicador (referral) — null = lead próprio / sem parceiro. */
+  const [partnerName, setPartnerName] = useState<string | null>(null);
   const {
     messages,
     isLoading,
@@ -290,7 +304,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   // criamos/vinculamos cliente quando temos telefone real — via `sendTargetJid`
   // (@s.whatsapp.net) ou remoteJid já não-lid.
   useEffect(() => {
-    if (!chat) { setIsCustomer(false); setCustomerId(null); setCustomerPhone(null); return; }
+    if (!chat) {
+      setIsCustomer(false);
+      setCustomerId(null);
+      setCustomerPhone(null);
+      setPartnerName(null);
+      return;
+    }
 
     const realJid =
       (chat.sendTargetJid && chat.sendTargetJid.endsWith("@s.whatsapp.net"))
@@ -304,6 +324,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       setIsCustomer(false);
       setCustomerId(null);
       setCustomerPhone(null);
+      setPartnerName(null);
       return;
     }
 
@@ -312,6 +333,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       setIsCustomer(false);
       setCustomerId(null);
       setCustomerPhone(null);
+      setPartnerName(null);
       return;
     }
     // BR phone pode estar gravado com ou sem DDI 55 — gera candidatos
@@ -333,13 +355,18 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       // .maybeSingle() falhava ou trazia o shell antigo vazio → ficha 2/18.
       const { data: existingRows } = await supabase
         .from("customers")
-        .select("id, phone_whatsapp, created_at")
+        .select("id, phone_whatsapp, created_at, referral_partner_id, referral_partners(nome)")
         .eq("consultant_id", consultantId)
         .in("phone_whatsapp", candidatesArr)
         .order("created_at", { ascending: false })
         .limit(1);
       if (cancelled) return;
-      const existing = (existingRows as Array<{ id: string; phone_whatsapp?: string | null }> | null)?.[0];
+      const existing = (existingRows as Array<{
+        id: string;
+        phone_whatsapp?: string | null;
+        referral_partner_id?: string | null;
+        referral_partners?: { nome?: string | null } | { nome?: string | null }[] | null;
+      }> | null)?.[0];
       if (existing?.id) {
         setIsCustomer(true);
         setCustomerId(existing.id);
@@ -347,6 +374,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         // do bot). Sem isso, conversas com remoteJid `@lid` mandavam o JID cru
         // pra Evolution e o envio manual falhava.
         setCustomerPhone(existing.phone_whatsapp ?? insertPhone);
+        setPartnerName(readPartnerName(existing));
         return;
       }
       // Fallback fuzzy: últimos 9 dígitos (DDD + número), evita duplicar
@@ -355,17 +383,23 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       if (tail.length === 9) {
         const { data: fuzzy } = await supabase
           .from("customers")
-          .select("id, phone_whatsapp, created_at")
+          .select("id, phone_whatsapp, created_at, referral_partner_id, referral_partners(nome)")
           .eq("consultant_id", consultantId)
           .like("phone_whatsapp", `%${tail}`)
           .order("created_at", { ascending: false })
           .limit(1);
         if (cancelled) return;
-        const found = (fuzzy as Array<{ id: string; phone_whatsapp?: string | null }> | null)?.[0];
+        const found = (fuzzy as Array<{
+          id: string;
+          phone_whatsapp?: string | null;
+          referral_partner_id?: string | null;
+          referral_partners?: { nome?: string | null } | { nome?: string | null }[] | null;
+        }> | null)?.[0];
         if (found?.id) {
           setIsCustomer(true);
           setCustomerId(found.id);
           setCustomerPhone(found.phone_whatsapp ?? insertPhone);
+          setPartnerName(readPartnerName(found));
           return;
         }
       }
@@ -395,10 +429,12 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         setIsCustomer(true);
         setCustomerId(created.id);
         setCustomerPhone(insertPhone);
+        setPartnerName(null);
       } else if (error) {
         logger.error("Falha ao auto-criar cliente para chat:", error);
         setIsCustomer(false);
         setCustomerId(null);
+        setPartnerName(null);
       }
     })();
     return () => { cancelled = true; };
@@ -540,10 +576,24 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </AvatarFallback>
         </Avatar>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate sensitive-name leading-tight">{chat.name}</p>
+          <p className="text-sm font-semibold text-foreground truncate sensitive-name leading-tight flex items-center gap-1.5">
+            <span className="truncate">{chat.name}</span>
+            {partnerName && (
+              <span
+                className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-600/35"
+                title={`Indicação de ${partnerName} — acompanha as etapas do cadastro`}
+              >
+                <Handshake className="h-3 w-3 text-amber-800" />
+                <span className="text-[9px] font-bold uppercase tracking-wide hidden sm:inline">Indicação</span>
+              </span>
+            )}
+          </p>
           <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1 truncate">
             <span className="inline-block h-1 w-1 rounded-full bg-primary/60 shrink-0" />
             {phoneNumber}
+            {partnerName && (
+              <span className="text-amber-900 font-semibold truncate">· {partnerName}</span>
+            )}
           </p>
         </div>
 
@@ -594,6 +644,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                 ) : (
                   <DropdownMenuItem onClick={() => setShowAddDialog(true)}>
                     <UserPlus className="h-4 w-4 mr-2" /> Adicionar cliente
+                  </DropdownMenuItem>
+                )}
+                {partnerName && (
+                  <DropdownMenuItem disabled className="text-xs opacity-100 text-amber-900">
+                    <Handshake className="h-4 w-4 mr-2" /> Indicação: {partnerName}
                   </DropdownMenuItem>
                 )}
                 {kanbanStages.length > 0 && (
@@ -714,6 +769,22 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </>
         )}
       </div>
+
+      {partnerName && (
+        <div
+          className="flex items-center gap-1.5 px-3 lg:px-3.5 py-1.5 border-b border-amber-600/30 bg-amber-100 text-amber-950 shrink-0"
+          title={`${partnerName} acompanha as etapas do cadastro deste lead (não recebe o chat completo)`}
+          role="status"
+        >
+          <Handshake className="h-3.5 w-3.5 shrink-0 text-amber-800" />
+          <span className="text-[12px] font-semibold truncate text-amber-950">
+            Indicação de {partnerName}
+          </span>
+          <span className="text-[11px] font-medium text-amber-900/80 hidden sm:inline shrink-0">
+            · acompanha as etapas do cadastro
+          </span>
+        </div>
+      )}
 
       <AlertDialog open={endAttendanceDialogOpen} onOpenChange={setEndAttendanceDialogOpen}>
         <AlertDialogContent>
@@ -902,8 +973,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           if (!phone) return;
           void takeoverWithUndo(phone, "humano_assumiu_midia");
           try {
-            // Route documents through sendDocument for proper fileName handling
-            const category = mediaType as "image" | "video" | "document";
+            const category = mediaType as "image" | "video" | "document" | "sticker";
             const fileName = mediaType === "document"
               ? (mediaUrl.split("/").pop()?.split("?")[0] || "documento")
               : undefined;

@@ -229,16 +229,165 @@ async function whapiFetchWithRetry(
 }
 
 // ── Mappers Whapi → formato Evolution (para reaproveitar UI) ──
+
+/** Converte string | { text } | aninhado em texto limpo. */
+function asWhapiText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string" || typeof v === "number") return String(v).trim();
+  if (typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    return asWhapiText(
+      o.text ?? o.body ?? o.title ?? o.content ?? o.caption ?? o.name ?? o.description ?? "",
+    );
+  }
+  return "";
+}
+
+type WhapiBtn = { id: string; title: string };
+
+function extractWhapiButtons(m: any): WhapiBtn[] {
+  const pools = [
+    m?.interactive?.action?.buttons,
+    m?.action?.buttons,
+    m?.interactive?.buttons,
+    m?.buttons,
+    m?.context?.quoted_content?.buttons,
+  ];
+  for (const arr of pools) {
+    if (!Array.isArray(arr) || arr.length === 0) continue;
+    return arr
+      .map((b: any) => ({
+        id: String(b?.id || b?.buttonId || ""),
+        title: asWhapiText(b?.title ?? b?.text ?? b?.buttonText?.displayText ?? b?.name),
+      }))
+      .filter((b) => b.title);
+  }
+  const sections =
+    m?.interactive?.action?.list?.sections ||
+    m?.action?.list?.sections ||
+    m?.interactive?.list?.sections ||
+    [];
+  const rows: WhapiBtn[] = [];
+  for (const s of sections) {
+    for (const r of s?.rows || []) {
+      const title = asWhapiText(r?.title);
+      if (title) rows.push({ id: String(r?.id || ""), title });
+    }
+  }
+  return rows;
+}
+
+/** Monta texto completo + botões de mensagem interactive/list/hsm. */
+function formatWhapiInteractive(m: any): {
+  text: string;
+  header: string;
+  body: string;
+  footer: string;
+  buttons: WhapiBtn[];
+} {
+  const root = m?.interactive && typeof m.interactive === "object" ? m.interactive : m;
+  const header =
+    asWhapiText(root?.header) ||
+    asWhapiText(m?.header) ||
+    asWhapiText(m?.context?.quoted_content?.header);
+  const body =
+    asWhapiText(root?.body) ||
+    asWhapiText(m?.body) ||
+    asWhapiText(m?.text) ||
+    asWhapiText(m?.context?.quoted_content?.body);
+  const footer =
+    asWhapiText(root?.footer) ||
+    asWhapiText(m?.footer) ||
+    asWhapiText(m?.context?.quoted_content?.footer) ||
+    asWhapiText(root?.action?.list?.label);
+  const buttons = extractWhapiButtons(m);
+
+  const parts: string[] = [];
+  if (header) parts.push(header);
+  if (body) parts.push(body);
+  if (buttons.length) {
+    parts.push("");
+    buttons.forEach((b, i) => {
+      parts.push(`${i + 1}️⃣ ${b.title}`);
+    });
+  }
+  if (footer) parts.push(footer);
+
+  const text = parts.join("\n").trim();
+  return { text, header, body, footer, buttons };
+}
+
+/** Extrai texto legível de qualquer tipo Whapi (evita bolha só com horário). */
+function extractWhapiPreview(m: any): string {
+  if (!m || typeof m !== "object") return "";
+  const t = String(m.type || "");
+
+  if (t === "interactive" || t === "button" || t === "list" || t === "hsm" || t === "carousel") {
+    const formatted = formatWhapiInteractive(m);
+    if (formatted.text) return formatted.text;
+    if (t === "carousel") {
+      const cards = m.carousel?.cards || [];
+      const titles = cards
+        .flatMap((c: any) => (c.buttons || []).map((b: any) => asWhapiText(b.text || b.title)))
+        .filter(Boolean);
+      const head = asWhapiText(m.carousel?.text);
+      return [head, ...titles.map((x: string, i: number) => `${i + 1}️⃣ ${x}`)].filter(Boolean).join("\n");
+    }
+  }
+
+  if (t === "reply") {
+    const replyTitle =
+      asWhapiText(m.reply?.buttons_reply?.title) ||
+      asWhapiText(m.reply?.list_reply?.title) ||
+      asWhapiText(m.reply?.buttons_reply?.id);
+    if (replyTitle) return `▢ ${replyTitle}`;
+  }
+
+  const direct =
+    asWhapiText(m.text?.body) ||
+    asWhapiText(m.text) ||
+    asWhapiText(m.caption) ||
+    asWhapiText(m.link_preview?.body) ||
+    asWhapiText(m.link_preview?.title) ||
+    asWhapiText(m.image?.caption) ||
+    asWhapiText(m.video?.caption) ||
+    asWhapiText(m.gif?.caption) ||
+    asWhapiText(m.document?.caption) ||
+    asWhapiText(m.document?.file_name) ||
+    asWhapiText(m.poll?.name) ||
+    asWhapiText(m.location?.name) ||
+    asWhapiText(m.location?.address) ||
+    asWhapiText(m.live_location?.caption) ||
+    asWhapiText(m.contact?.display_name) ||
+    asWhapiText(m.contact?.full_name) ||
+    asWhapiText(m.system?.body) ||
+    asWhapiText(m.reaction?.emoji);
+
+  if (direct) return direct;
+  if (t === "audio" || t === "voice") return "🎵 Áudio";
+  if (t === "sticker") return "Sticker";
+  if (t === "image") return "📷 Imagem";
+  if (t === "video" || t === "gif" || t === "short") return "🎬 Vídeo";
+  if (t === "document") return "📄 Documento";
+  if (t === "action") {
+    const at = String(m.action?.type || m.action?.emoji || "").toLowerCase();
+    if (at.includes("delete") || at.includes("revoke")) return "Mensagem apagada";
+    if (at.includes("edit")) return "Mensagem editada";
+    if (m.action?.emoji) return String(m.action.emoji);
+    return "Ação no chat";
+  }
+  if (t === "call") return "📞 Chamada";
+  if (t === "system") return "Aviso do sistema";
+  if (t === "unknown") return "";
+  return "";
+}
+
 function mapChat(c: any) {
   const lm = c.last_message || c.lastMessage || null;
   const lmType = lm?.type;
-  const lmText =
-    lm?.text?.body ||
-    lm?.caption ||
-    lm?.image?.caption ||
-    lm?.video?.caption ||
-    lm?.document?.file_name ||
-    "";
+  const lmText = extractWhapiPreview(lm);
+  const tsRaw = Number(lm?.timestamp || c.timestamp || 0);
+  const lastMsgTimestamp = tsRaw > 10_000_000_000 ? Math.floor(tsRaw / 1000) : tsRaw;
   return {
     id: c.id,
     remoteJid: c.id,
@@ -246,18 +395,21 @@ function mapChat(c: any) {
     pushName: c.name || c.pushname || undefined,
     profilePicUrl: c.profile_pic_full || c.profile_pic || c.icon_full || c.icon || undefined,
     unreadCount: c.unread_count ?? c.unread ?? 0,
-    lastMsgTimestamp: lm?.timestamp || c.timestamp || 0,
+    lastMsgTimestamp,
     lastMessage: lm
       ? {
           key: { fromMe: !!lm.from_me, remoteJid: c.id, id: lm.id || "" },
           pushName: lm.from_name || undefined,
-          messageTimestamp: lm.timestamp,
+          messageTimestamp: lastMsgTimestamp,
           message: {
-            ...(lmType === "text" || !lmType ? { conversation: lmText } : {}),
+            conversation: lmText || undefined,
             ...(lmType === "image" ? { imageMessage: { caption: lmText } } : {}),
-            ...(lmType === "video" ? { videoMessage: { caption: lmText } } : {}),
+            ...(lmType === "video" || lmType === "gif" || lmType === "short"
+              ? { videoMessage: { caption: lmText } }
+              : {}),
             ...(lmType === "audio" || lmType === "voice" ? { audioMessage: {} } : {}),
-            ...(lmType === "document" ? { documentMessage: { fileName: lm.document?.file_name } } : {}),
+            ...(lmType === "document" ? { documentMessage: { fileName: lm.document?.file_name || lmText } } : {}),
+            ...(lmType === "sticker" ? { stickerMessage: {} } : {}),
           },
         }
       : undefined,
@@ -265,29 +417,77 @@ function mapChat(c: any) {
 }
 
 function mapMessage(m: any, chatId: string) {
-  const t = m.type;
+  const t = String(m.type || "");
   const message: any = {};
-  if (t === "text" || !t) message.conversation = m.text?.body || "";
-  if (t === "image") message.imageMessage = {
-    url: m.image?.link, caption: m.image?.caption || m.caption,
-    mimetype: m.image?.mime_type || "image/jpeg",
-  };
-  if (t === "video") message.videoMessage = {
-    url: m.video?.link, caption: m.video?.caption || m.caption,
-    mimetype: m.video?.mime_type || "video/mp4",
-  };
-  if (t === "audio" || t === "voice") message.audioMessage = {
-    url: (m.audio || m.voice)?.link,
-    mimetype: (m.audio || m.voice)?.mime_type || "audio/ogg; codecs=opus",
-    ptt: t === "voice",
-  };
-  if (t === "document") message.documentMessage = {
-    url: m.document?.link, fileName: m.document?.file_name,
-    mimetype: m.document?.mime_type || "application/pdf",
-  };
-  if (t === "sticker") message.stickerMessage = {
-    url: m.sticker?.link, mimetype: m.sticker?.mime_type || "image/webp",
-  };
+  const preview = extractWhapiPreview(m);
+
+  if (t === "text" || t === "link_preview" || !t) {
+    message.conversation = preview || asWhapiText(m.text?.body) || "";
+  } else if (t === "image") {
+    message.imageMessage = {
+      url: m.image?.link,
+      caption: m.image?.caption || m.caption || "",
+      mimetype: m.image?.mime_type || "image/jpeg",
+    };
+  } else if (t === "video" || t === "gif" || t === "short") {
+    message.videoMessage = {
+      url: (m.video || m.gif || m.short)?.link,
+      caption: (m.video || m.gif || m.short)?.caption || m.caption || "",
+      mimetype: (m.video || m.gif || m.short)?.mime_type || "video/mp4",
+    };
+  } else if (t === "audio" || t === "voice") {
+    message.audioMessage = {
+      url: (m.audio || m.voice)?.link,
+      mimetype: (m.audio || m.voice)?.mime_type || "audio/ogg; codecs=opus",
+      ptt: t === "voice",
+    };
+  } else if (t === "document") {
+    message.documentMessage = {
+      url: m.document?.link,
+      fileName: m.document?.file_name || "documento",
+      mimetype: m.document?.mime_type || "application/pdf",
+    };
+      } else if (t === "sticker") {
+    message.stickerMessage = {
+      url: m.sticker?.link,
+      mimetype: m.sticker?.mime_type || "image/webp",
+      // Media ID Whapi — permite GET /media/{id} quando não há link público
+      mediaId: m.sticker?.id || undefined,
+    };
+  } else if (t === "location" || t === "live_location") {
+    message.locationMessage = {
+      name: m.location?.name || m.live_location?.caption || "Localização",
+    };
+  } else if (t === "contact" || t === "contact_list") {
+    message.contactMessage = {
+      displayName: m.contact?.display_name || m.contact?.full_name || "Contato",
+    };
+  } else if (t === "interactive" || t === "button" || t === "list" || t === "hsm") {
+    const formatted = formatWhapiInteractive(m);
+    message.conversation = formatted.body || formatted.text || preview || "";
+    message.buttonsMessage = {
+      contentText: formatted.body || formatted.text,
+      footerText: formatted.footer || undefined,
+      headerText: formatted.header || undefined,
+      buttons: formatted.buttons.map((b) => ({
+        buttonId: b.id,
+        buttonText: { displayText: b.title },
+      })),
+    };
+  } else if (t === "reply") {
+    message.conversation = preview || "▢ Resposta";
+  } else if (t === "carousel") {
+    message.conversation = preview || "Carrossel";
+  } else if (preview) {
+    message.conversation = preview;
+  } else if (t && t !== "unknown") {
+    const fallback = formatWhapiInteractive(m).text;
+    message.conversation = fallback || `📎 ${t}`;
+  }
+
+  const tsRaw = Number(m.timestamp || 0);
+  const messageTimestamp = tsRaw > 10_000_000_000 ? Math.floor(tsRaw / 1000) : tsRaw;
+
   return {
     key: {
       id: m.id,
@@ -295,7 +495,7 @@ function mapMessage(m: any, chatId: string) {
       fromMe: !!m.from_me,
     },
     pushName: m.from_name,
-    messageTimestamp: m.timestamp || 0,
+    messageTimestamp,
     status: m.status === "read" ? 4 : m.status === "delivered" ? 3 : m.status === "sent" ? 2 : 1,
     message,
   };
@@ -433,12 +633,15 @@ Deno.serve(async (req) => {
           mediatype === "video" ? "/messages/video"
           : mediatype === "document" ? "/messages/document"
           : mediatype === "audio" ? "/messages/voice"
+          : mediatype === "sticker" ? "/messages/sticker"
           : "/messages/image";
         const isAudio = mediatype === "audio";
+        const isSticker = mediatype === "sticker";
 
         const baseBody: Record<string, unknown> = { to, media: mediaUrl };
-        if (caption) baseBody.caption = caption;
-        if (fileName) baseBody.file_name = fileName;
+        // Sticker Whapi não aceita caption/file_name
+        if (caption && !isSticker) baseBody.caption = caption;
+        if (fileName && !isSticker) baseBody.file_name = fileName;
 
         // 1) JSON com URL
         let r = await whapiFetchWithRetry(whapiToken, path, {
@@ -466,13 +669,14 @@ Deno.serve(async (req) => {
           const dl = await ensureDownload();
           if (!dl) return null;
           const body: Record<string, unknown> = { to, media: `data:${mimeAlias};base64,${dl.b64}` };
-          if (caption) body.caption = caption;
-          if (fileName) body.file_name = fileName;
+          if (caption && !isSticker) body.caption = caption;
+          if (fileName && !isSticker) body.file_name = fileName;
           return await whapiFetch(whapiToken, p, { method: "POST", body: JSON.stringify(body) });
         };
 
         if (!r.ok) {
-          const realMime = (await ensureDownload())?.mime || (isAudio ? "audio/webm" : "application/octet-stream");
+          const realMime = (await ensureDownload())?.mime
+            || (isSticker ? "image/webp" : isAudio ? "audio/webm" : "application/octet-stream");
           const r2 = await sendBase64(path, realMime);
           if (r2?.ok) r = r2;
         }
@@ -489,12 +693,12 @@ Deno.serve(async (req) => {
         if (!r.ok) {
           const dl = await ensureDownload();
           if (dl) {
-            const safeName = fileName || (isAudio ? "audio.webm" : "media");
-            const blob = new Blob([dl.bytes], { type: dl.mime });
+            const safeName = fileName || (isSticker ? "sticker.webp" : isAudio ? "audio.webm" : "media");
+            const blob = new Blob([dl.bytes], { type: dl.mime || (isSticker ? "image/webp" : "application/octet-stream") });
             const form = new FormData();
             form.append("to", to);
             form.append("media", blob, safeName);
-            if (caption && !isAudio) form.append("caption", caption);
+            if (caption && !isAudio && !isSticker) form.append("caption", caption);
             const rm = await whapiFetchMultipart(whapiToken, path, form);
             if (rm.ok) r = rm;
             else if (isAudio && path !== "/messages/audio") {
@@ -738,21 +942,56 @@ Deno.serve(async (req) => {
 
       case "download_media": {
         // Proxy de download de mídia (contorna CORS do CDN do Whapi)
-        // necessário para re-uploadar a mídia como template.
+        // necessário para re-uploadar a mídia como template / exibir sticker sem link.
         const url = String(payload.url || "");
-        if (!url) return json(400, { error: "url obrigatória" });
-        try {
-          const r = await fetch(url, { signal: AbortSignal.timeout(45_000) });
-          if (!r.ok) return json(502, { error: `download falhou (${r.status})` });
-          const buf = new Uint8Array(await r.arrayBuffer());
+        const mediaId = payload.mediaId ? String(payload.mediaId) : "";
+        if (!url && !mediaId) return json(400, { error: "url ou mediaId obrigatório" });
+
+        const toBase64 = (buf: Uint8Array) => {
           let bin = "";
           const chunk = 0x8000;
           for (let i = 0; i < buf.length; i += chunk) {
             bin += String.fromCharCode(...buf.subarray(i, i + chunk));
           }
-          const b64 = btoa(bin);
+          return btoa(bin);
+        };
+
+        try {
+          // Preferência: GET /media/{id} (binário) quando não há link público
+          if (mediaId && !url) {
+            const r = await fetch(`${WHAPI_BASE}/media/${encodeURIComponent(mediaId)}`, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${whapiToken}` },
+              signal: AbortSignal.timeout(45_000),
+            });
+            if (!r.ok) return json(502, { error: `download mediaId falhou (${r.status})` });
+            const buf = new Uint8Array(await r.arrayBuffer());
+            const mime = r.headers.get("content-type") || "application/octet-stream";
+            return json(200, { base64: toBase64(buf), mimetype: mime });
+          }
+
+          const r = await fetch(url, {
+            signal: AbortSignal.timeout(45_000),
+            headers: whapiToken ? { Authorization: `Bearer ${whapiToken}` } : undefined,
+          });
+          if (!r.ok) {
+            // Fallback: se URL falhou e temos mediaId, tenta endpoint oficial
+            if (mediaId) {
+              const r2 = await fetch(`${WHAPI_BASE}/media/${encodeURIComponent(mediaId)}`, {
+                method: "GET",
+                headers: { Authorization: `Bearer ${whapiToken}` },
+                signal: AbortSignal.timeout(45_000),
+              });
+              if (!r2.ok) return json(502, { error: `download falhou (${r.status}/${r2.status})` });
+              const buf = new Uint8Array(await r2.arrayBuffer());
+              const mime = r2.headers.get("content-type") || "application/octet-stream";
+              return json(200, { base64: toBase64(buf), mimetype: mime });
+            }
+            return json(502, { error: `download falhou (${r.status})` });
+          }
+          const buf = new Uint8Array(await r.arrayBuffer());
           const mime = r.headers.get("content-type") || "application/octet-stream";
-          return json(200, { base64: b64, mimetype: mime });
+          return json(200, { base64: toBase64(buf), mimetype: mime });
         } catch (e: any) {
           return json(502, { error: e?.message || "download error" });
         }

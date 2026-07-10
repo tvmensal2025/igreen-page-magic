@@ -23,8 +23,11 @@ function extractLastMessage(chat: EvolutionChat): string {
     msg.extendedTextMessage?.text ||
     msg.imageMessage?.caption ||
     (msg.imageMessage ? "📷 Imagem" : "") ||
+    msg.videoMessage?.caption ||
+    (msg.videoMessage ? "🎬 Vídeo" : "") ||
     msg.documentMessage?.fileName ||
     (msg.audioMessage ? "🎵 Áudio" : "") ||
+    (msg.stickerMessage ? "Sticker" : "") ||
     ""
   );
 }
@@ -40,6 +43,13 @@ function formatPhoneNumber(raw: string): string {
     return `+${raw.slice(0, 2)} ${raw.slice(2)}`;
   }
   return raw;
+}
+
+/** Normaliza timestamp pra segundos (lista ordena por atividade recente). */
+function normalizeChatTimestamp(value: unknown): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return n > 10_000_000_000 ? Math.floor(n / 1000) : n;
 }
 
 function isSystemChatJid(jid: string): boolean {
@@ -79,7 +89,9 @@ function mapChat(chat: EvolutionChat, contactsMap: Map<string, EvolutionContact>
     sendTargetJid,
     name: displayName,
     lastMessage: extractLastMessage(chat),
-    lastMessageTimestamp: chat.lastMsgTimestamp || chat.lastMessage?.messageTimestamp || 0,
+    lastMessageTimestamp: normalizeChatTimestamp(
+      chat.lastMsgTimestamp || chat.lastMessage?.messageTimestamp || 0,
+    ),
     unreadCount: chat.unreadMessages || chat.unreadCount || 0,
     profilePicUrl: contact?.profilePicUrl || chat.profilePicUrl,
     isGroup: jid.endsWith("@g.us"),

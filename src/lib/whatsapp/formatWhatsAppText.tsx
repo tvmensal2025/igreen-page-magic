@@ -121,8 +121,9 @@ export function WhatsAppFormattedText({
     <p
       className={className}
       style={{
+        // Figtree/Outfit no Linux não cobrem emoji colorido — fallback explícito.
         fontFamily:
-          'inherit, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif',
+          'Figtree, system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif',
       }}
     >
       {tokens.map((t, i) => renderToken(t, i))}

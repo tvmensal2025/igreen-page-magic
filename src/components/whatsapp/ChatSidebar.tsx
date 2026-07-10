@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Search, MessageCirclePlus, X, Users } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { Search, MessageCirclePlus, X, Users, Handshake } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { ChatItem } from "@/hooks/useChats";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 import { stripWhatsAppMarkup } from "@/lib/whatsapp/formatWhatsAppText";
+import { normalizePhone } from "./customerUtils";
 
 interface CustomerResult {
   name: string | null;
@@ -19,6 +20,42 @@ interface ChatSidebarProps {
   selectedJid: string | null;
   onSelectChat: (jid: string) => void;
   consultantId?: string;
+}
+
+type PartnerJoin = { nome?: string | null } | { nome?: string | null }[] | null;
+
+/** Telefone real do chat (ignora @lid sem sendTarget). */
+function chatPhoneDigits(chat: ChatItem): string | null {
+  const jid =
+    chat.sendTargetJid && chat.sendTargetJid.endsWith("@s.whatsapp.net")
+      ? chat.sendTargetJid
+      : !chat.remoteJid.endsWith("@lid")
+        ? chat.remoteJid
+        : null;
+  if (!jid) return null;
+  const digits = jid.split("@")[0].replace(/\D/g, "");
+  return digits.length >= 10 ? digits : null;
+}
+
+function phoneLookupKeys(raw: string): string[] {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return [];
+  const keys = new Set<string>();
+  keys.add(digits);
+  keys.add(digits.slice(-9));
+  const normalized = normalizePhone(digits);
+  if (normalized) {
+    keys.add(normalized);
+    keys.add(normalized.slice(-9));
+  }
+  if (digits.startsWith("55") && digits.length >= 12) keys.add(digits.slice(2));
+  else if (!digits.startsWith("55") && digits.length >= 10) keys.add(`55${digits}`);
+  return Array.from(keys).filter((k) => k.length >= 9);
+}
+
+function partnerNomeFromJoin(rel: PartnerJoin): string | null {
+  const nome = Array.isArray(rel) ? rel[0]?.nome : rel?.nome;
+  return (nome && String(nome).trim()) || null;
 }
 
 function formatTime(ts: number): string {
@@ -40,12 +77,80 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
   const newPhoneRef = useRef<HTMLInputElement>(null);
   const [customerResults, setCustomerResults] = useState<CustomerResult[]>([]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** remoteJid → nome do parceiro (só leads com referral_partner_id). */
+  const [partnerByJid, setPartnerByJid] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (showNewChat) {
       setTimeout(() => newPhoneRef.current?.focus(), 100);
     }
   }, [showNewChat]);
+
+  // Enrich conversas com flag de parceiro (batch por telefones da lista).
+  useEffect(() => {
+    if (!consultantId || chats.length === 0) {
+      setPartnerByJid({});
+      return;
+    }
+
+    let cancelled = false;
+    const phoneToJids = new Map<string, string[]>();
+    const queryPhones = new Set<string>();
+
+    for (const chat of chats) {
+      if (chat.isGroup) continue;
+      const phone = chatPhoneDigits(chat);
+      if (!phone) continue;
+      // Só variantes “completas” no .in() — cauda de 9 dígitos serve só no match local.
+      const forQuery = phoneLookupKeys(phone).filter((k) => k.length >= 10);
+      for (const key of forQuery) {
+        queryPhones.add(key);
+      }
+      for (const key of phoneLookupKeys(phone)) {
+        const list = phoneToJids.get(key) || [];
+        if (!list.includes(chat.remoteJid)) list.push(chat.remoteJid);
+        phoneToJids.set(key, list);
+      }
+    }
+
+    const candidates = Array.from(queryPhones);
+    if (candidates.length === 0) {
+      setPartnerByJid({});
+      return;
+    }
+
+    (async () => {
+      const next: Record<string, string> = {};
+      // Chunk evita URL longa no .in() do PostgREST.
+      const CHUNK = 80;
+      for (let i = 0; i < candidates.length; i += CHUNK) {
+        const slice = candidates.slice(i, i + CHUNK);
+        const { data } = await supabase
+          .from("customers")
+          .select("phone_whatsapp, referral_partner_id, referral_partners(nome)")
+          .eq("consultant_id", consultantId)
+          .not("referral_partner_id", "is", null)
+          .in("phone_whatsapp", slice);
+        if (cancelled) return;
+        for (const row of data || []) {
+          const nome =
+            partnerNomeFromJoin(
+              (row as { referral_partners?: PartnerJoin }).referral_partners ?? null,
+            ) || "Parceiro";
+          for (const key of phoneLookupKeys(String(row.phone_whatsapp || ""))) {
+            for (const jid of phoneToJids.get(key) || []) {
+              next[jid] = nome;
+            }
+          }
+        }
+      }
+      if (!cancelled) setPartnerByJid(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chats, consultantId]);
 
   // Search customers from DB when search has 3+ chars
   const searchCustomers = useCallback(async (query: string) => {
@@ -88,10 +193,14 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     setCustomerResults([]);
   };
 
-  const filtered = chats.filter(
-    (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.remoteJid.includes(search)
+  const filtered = useMemo(
+    () =>
+      chats.filter(
+        (c) =>
+          c.name.toLowerCase().includes(search.toLowerCase()) ||
+          c.remoteJid.includes(search),
+      ),
+    [chats, search],
   );
 
   return (
@@ -197,6 +306,7 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
         {filtered.map((chat) => {
           const isSelected = selectedJid === chat.remoteJid;
           const hasUnread = chat.unreadCount > 0;
+          const partnerNome = partnerByJid[chat.remoteJid];
           return (
             <button
               key={chat.remoteJid}
@@ -210,7 +320,7 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
               {isSelected && (
                 <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
               )}
-              <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
+              <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : partnerNome ? "ring-2 ring-amber-500/35 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
                 <AvatarImage
                   src={chat.profilePicUrl}
                   onError={(e) => {
@@ -224,8 +334,14 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
               </Avatar>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
-                  <span className={`text-[13px] truncate sensitive-name ${hasUnread ? "font-bold text-foreground" : "font-medium text-foreground/90"}`}>
-                    {chat.name}
+                  <span className={`text-[13px] truncate sensitive-name flex items-center gap-1 min-w-0 ${hasUnread ? "font-bold text-foreground" : "font-medium text-foreground/90"}`}>
+                    <span className="truncate">{chat.name}</span>
+                    {partnerNome && (
+                      <Handshake
+                        className="h-3 w-3 shrink-0 text-amber-800"
+                        aria-label={`Parceiro: ${partnerNome}`}
+                      />
+                    )}
                   </span>
                   <span className={`text-[10px] shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
                     {formatTime(chat.lastMessageTimestamp)}
@@ -235,11 +351,21 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
                   <span className={`text-[11px] truncate ${hasUnread ? "text-foreground/80" : "text-muted-foreground"}`}>
                     {stripWhatsAppMarkup(chat.lastMessage || "") || "..."}
                   </span>
-                  {hasUnread && (
-                    <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">
-                      {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
-                    </span>
-                  )}
+                  <span className="flex items-center gap-1 shrink-0">
+                    {partnerNome && (
+                      <span
+                        className="text-[9px] font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-600/35 rounded px-1 py-px"
+                        title={`Indicação de ${partnerNome} — acompanha as etapas do cadastro`}
+                      >
+                        Indicação
+                      </span>
+                    )}
+                    {hasUnread && (
+                      <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">
+                        {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
+                      </span>
+                    )}
+                  </span>
                 </div>
               </div>
             </button>

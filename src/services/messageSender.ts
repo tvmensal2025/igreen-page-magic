@@ -7,6 +7,7 @@ import {
   sendMedia,
   sendAudio,
   sendDocument,
+  sendSticker,
 } from "@/services/evolutionApi";
 import { whapiSendText, whapiSendMedia } from "@/services/whapiApi";
 import { supabase } from "@/integrations/supabase/client";
@@ -22,7 +23,7 @@ export interface SendResult {
   messageId?: string;
 }
 
-export type MediaCategory = "text" | "image" | "video" | "audio" | "document";
+export type MediaCategory = "text" | "image" | "video" | "audio" | "document" | "sticker";
 
 export interface SendPayload {
   instanceName: string;
@@ -101,6 +102,7 @@ function buildOutboundLogText(
 ): string {
   if (mediaCategory === "text") return text || "";
   if (mediaCategory === "document") return fileName || "[documento]";
+  if (mediaCategory === "sticker") return "[sticker]";
   return `[${mediaCategory}]${text ? `: ${text}` : ""}`;
 }
 
@@ -175,6 +177,11 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
           await whapiSendMedia(phone, mediaUrl, mediaCategory, text || undefined);
           notifyChatOutbound(payload, mediaCategory, text);
           return { status: "sent" };
+        case "sticker":
+          if (!mediaUrl) return { status: "failed", error: "URL do sticker ausente" };
+          await whapiSendMedia(phone, mediaUrl, "sticker");
+          notifyChatOutbound(payload, mediaCategory);
+          return { status: "sent" };
         default:
           return { status: "failed", error: `Tipo desconhecido: ${mediaCategory}` };
       }
@@ -213,6 +220,11 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
           mediaCategory,
           true
         );
+        break;
+
+      case "sticker":
+        if (!mediaUrl) return { status: "failed", error: "URL do sticker ausente" };
+        result = await sendSticker(instanceName, phone, mediaUrl, true);
         break;
 
       default:

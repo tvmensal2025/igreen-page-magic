@@ -55,7 +55,20 @@ const ACTIVE_STEPS = new Set([
   "aguardando_assinatura", "awaiting_signature",
   "cadastro_concluido", "registered_igreen",
   "worker_offline", "automation_failed",
+  "finalizando",
 ]);
+
+/** Erros de log do bot (OCR/arquivo) — NÃO são rejeição do portal iGreen. */
+function looksLikeBotDebugError(raw: string): boolean {
+  const m = raw.toLowerCase();
+  return (
+    m.includes("isfile=") ||
+    m.includes("hasimage=") ||
+    m.includes("filebase64") ||
+    m.includes("sandbox=") ||
+    /^[a-z0-9_]+:\s*isfile=/i.test(raw.trim())
+  );
+}
 
 // Tradução por Classe_de_Erro (portal2_error_kind) — mais robusta que o match
 // textual, usada no banner de intervenção humana (Req 10.3, design §6).
@@ -141,18 +154,34 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
 
   const step = String(row?.conversation_step || row?.status || "").toLowerCase();
   const needsHuman = row?.portal2_status === "needs_human";
+  const isDone = step === "cadastro_concluido" || step === "registered_igreen";
+
+  // Só trata como fase de portal quando já houve envio / trilha do portal.
+  // Durante a captação (ex.: aguard_conta) um error_message de log do bot
+  // NÃO deve abrir o banner vermelho "Cadastro recusado".
+  const inPortalPhase =
+    !!row?.finalized_at ||
+    ACTIVE_STEPS.has(step) ||
+    needsHuman ||
+    row?.portal2_status === "failed" ||
+    (trace?.status === "failed" && !!trace?.error);
+
+  const rawErrorCandidate =
+    (trace?.status === "failed" ? trace?.error : null) || row?.error_message || "";
+  const usableErrorMessage =
+    !!rawErrorCandidate && !looksLikeBotDebugError(rawErrorCandidate) ? rawErrorCandidate : "";
+
   const hasPortalError =
-    (trace?.status === "failed" && !!trace?.error) ||
+    needsHuman ||
     step === "worker_offline" ||
     step === "automation_failed" ||
-    needsHuman ||
-    (!!row?.error_message && step !== "cadastro_concluido" && step !== "registered_igreen");
+    (trace?.status === "failed" && !!trace?.error) ||
+    (inPortalPhase && !!usableErrorMessage && !isDone);
 
-  const visible = !!row?.finalized_at || ACTIVE_STEPS.has(step) || hasPortalError;
+  const visible = inPortalPhase || hasPortalError;
   if (!visible) return null;
 
   const isOffline = step === "worker_offline" || step === "automation_failed";
-  const isDone = step === "cadastro_concluido" || step === "registered_igreen";
   const isOtp = step === "aguardando_otp" || step === "awaiting_otp";
   const isSign = step === "aguardando_assinatura" || step === "awaiting_signature";
   const isValidating = step === "validando_otp" || step === "validating_otp";
@@ -201,22 +230,31 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
 
   // Texto detalhado do erro: para needs_human, prioriza a tradução por
   // Classe_de_Erro (portal2_error_kind); senão usa trace.error / error_message.
-  const rawError = (trace?.status === "failed" ? trace?.error : null) || row?.error_message || "";
+  const rawError = usableErrorMessage;
   const kindLabel = friendlyErrorKind(row?.portal2_error_kind);
   const errorText = needsHuman
     ? (kindLabel || (rawError ? friendlyPortalError(rawError) : "Necessária ação manual no portal."))
     : (rawError ? friendlyPortalError(rawError) : "");
 
-  // ── Badge de extração auto/manual (Req 5.1/5.2/5.3) ──
+  // Badges de extração/IA: só quando já há dado real OU estamos no portal.
+  // Evita "Extração não determinada / IA não analisou" no meio da captação.
   const extractionMode = row?.portal2_extraction_mode;
+  const showExtractionBadges =
+    extractionMode === "auto" ||
+    extractionMode === "manual" ||
+    row?.ocr_done === true ||
+    isDone ||
+    (inPortalPhase && (showError || isOtp || isSign || isValidating || step === "portal_submitting"));
+
   const extractionBadge =
     extractionMode === "auto"
       ? { label: "✅ Extração automática (IA do portal)", cls: "border-primary/40 bg-primary/10 text-primary" }
       : extractionMode === "manual"
         ? { label: "✋ Preenchimento manual", cls: "border-warning/40 bg-warning/10 text-warning" }
-        : { label: "⏳ Extração não determinada", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-900" };
+        : showExtractionBadges
+          ? { label: "⏳ Extração em andamento", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-900" }
+          : null;
 
-  // ── Badge IA_Gemini (Req 5.4/5.5) ──
   const geminiBadge = row?.ocr_done
     ? {
         label:
@@ -225,7 +263,9 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
             : "🤖 IA analisou (confiança indisponível)",
         cls: "border-info/40 bg-info/10 text-info",
       }
-    : { label: "🤖 IA não analisou", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-950" };
+    : showExtractionBadges
+      ? { label: "🤖 Aguardando análise da IA", cls: "border-zinc-500/40 bg-zinc-500/10 text-zinc-950" }
+      : null;
 
   // ── Motivo da queda em manual (Req 5.7/5.8) ──
   // Lê apenas campos já sanitizados pelo worker; nunca reconstrói PII (Req 5.9/12.3).
@@ -258,8 +298,12 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
           </div>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>{extractionBadge.label}</span>
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>{geminiBadge.label}</span>
+          {extractionBadge && (
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>{extractionBadge.label}</span>
+          )}
+          {geminiBadge && (
+            <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>{geminiBadge.label}</span>
+          )}
         </div>
       </div>
     );
@@ -320,15 +364,21 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
         <p className="mt-1 opacity-80">{row.error_message}</p>
       )}
 
-      {/* Extração auto/manual + IA Gemini (Req 5) */}
+      {/* Extração auto/manual + IA — só quando há contexto de portal */}
+      {(extractionBadge || geminiBadge) && (
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>
-          {extractionBadge.label}
-        </span>
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>
-          {geminiBadge.label}
-        </span>
+        {extractionBadge && (
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>
+            {extractionBadge.label}
+          </span>
+        )}
+        {geminiBadge && (
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${geminiBadge.cls}`}>
+            {geminiBadge.label}
+          </span>
+        )}
       </div>
+      )}
       {manualReason && (
         <p className="mt-1 opacity-80 leading-snug">
           <span className="font-semibold">Motivo do manual:</span> {manualReason}

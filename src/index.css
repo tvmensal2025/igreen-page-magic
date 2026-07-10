@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&family=Noto+Color+Emoji&display=swap');
 @import url('./styles/painel-elite.css');
 
 #lovable-badge {
@@ -843,7 +843,7 @@ html {
   --input: 220 13% 91%;
   --ring: 152 100% 33%;
 
-  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+  font-family: 'Figtree', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   color: hsl(var(--ads-text));
   background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .08), transparent 60%),
               hsl(var(--ads-bg));
@@ -892,7 +892,7 @@ html {
   --input: 220 13% 91%;
   --ring: 152 100% 33%;
 
-  font-family: 'Figtree', system-ui, -apple-system, sans-serif;
+  font-family: 'Figtree', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   color: hsl(var(--ads-text));
 }
 

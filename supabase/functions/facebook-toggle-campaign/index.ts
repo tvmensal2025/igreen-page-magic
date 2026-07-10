@@ -3,8 +3,12 @@
 //
 // Regra de ouro: NÃO atualiza status local se a Meta falhar — evita UI "pausada"
 // com anúncio ainda ACTIVE gastando.
+//
+// Pausa MANUAL marca rejection_reason=MANUAL_PAUSE para que cron/healthcheck/
+// recarga de carteira NUNCA despausem sozinhos.
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+import { MANUAL_PAUSE_REASON } from "../_shared/campaign-pause.ts";
 
 
 Deno.serve(async (req) => {
@@ -36,7 +40,10 @@ Deno.serve(async (req) => {
 
     // Sem fb_campaign_id: só rascunho local — pode atualizar DB direto.
     if (!c.fb_campaign_id) {
-      const { error: updErr } = await admin.from("facebook_campaigns").update({ status: dbStatus }).eq("id", c.id);
+      const localPayload: Record<string, unknown> = { status: dbStatus };
+      if (action === "pause") localPayload.rejection_reason = MANUAL_PAUSE_REASON;
+      if (action === "activate") localPayload.rejection_reason = null;
+      const { error: updErr } = await admin.from("facebook_campaigns").update(localPayload).eq("id", c.id);
       if (updErr) return j({ error: updErr.message }, 500);
       return j({ ok: true, status: dbStatus, meta_error: null });
     }
@@ -80,6 +87,7 @@ Deno.serve(async (req) => {
     }
 
     const updatePayload: Record<string, unknown> = { status: dbStatus };
+    if (action === "pause") updatePayload.rejection_reason = MANUAL_PAUSE_REASON;
     if (action === "activate") updatePayload.rejection_reason = null;
     const { error: updErr } = await admin.from("facebook_campaigns").update(updatePayload).eq("id", c.id);
     if (updErr) return j({ error: updErr.message }, 500);

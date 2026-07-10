@@ -449,17 +449,36 @@ async function dedupPartnerStep(
   }
 }
 
+function partnerStepLabel(step: string): string {
+  const map: Record<string, string> = {
+    arrived: "Atendimento iniciado",
+    bill_received: "Conta de luz recebida",
+    cadastro_complete: "Dados do cliente completos",
+    portal_sent: "Cadastro enviado à iGreen",
+    handoff: "Precisa da sua atenção",
+  };
+  return map[step] || "Atualização do indicado";
+}
+
+/** Rodapé amigável do acompanhamento — sem nomes técnicos de step. */
 function partnerFooter(step: string): string {
-  const steps = [
-    { key: "arrived", label: "Sofia iniciou" },
-    { key: "bill_received", label: "Conta recebida" },
-    { key: "cadastro_complete", label: "Cadastro completo" },
-    { key: "portal_sent", label: "Enviado ao portal" },
+  const journey = [
+    { key: "arrived", label: "Atendimento iniciado" },
+    { key: "bill_received", label: "Conta de luz recebida" },
+    { key: "cadastro_complete", label: "Dados completos" },
+    { key: "portal_sent", label: "Enviado à iGreen" },
   ];
-  const idx = steps.findIndex((s) => s.key === step);
-  if (idx < 0) return "_Atualização automática iGreen 🌱_";
-  const current = steps[idx].label;
-  return `📍 Etapa *${idx + 1}/${steps.length}* — ${current}\n_Atualização automática iGreen_ 🌱`;
+  const idx = journey.findIndex((s) => s.key === step);
+  if (step === "handoff") {
+    return `📍 *${partnerStepLabel("handoff")}*\n_Acompanhamento do seu indicado · iGreen_ 🌱`;
+  }
+  if (idx < 0) {
+    return `_Acompanhamento do seu indicado · iGreen_ 🌱`;
+  }
+  return (
+    `📍 Etapa *${idx + 1} de ${journey.length}* — ${journey[idx].label}\n` +
+    `_Acompanhamento do seu indicado · iGreen_ 🌱`
+  );
 }
 
 export async function notifyPartnerNewLead(
@@ -540,8 +559,8 @@ export async function notifyPartnerNewLead(
     if (manual) {
       lines.push(`📌 Atribuído pelo consultor — já é seu!`);
     } else {
-      lines.push(`🤖 Sofia (IA) já está atendendo e coletando os dados.`);
-      lines.push(`📲 Você recebe um aviso a cada etapa concluída.`);
+      lines.push(`🤖 A Sofia já iniciou o atendimento e está coletando os dados.`);
+      lines.push(`📲 Você recebe um aviso a cada etapa importante do cadastro — não o chat completo.`);
     }
     lines.push(``);
     lines.push(partnerFooter("arrived"));
@@ -621,32 +640,31 @@ export async function notifyPartnerStep(
     let body = "";
     switch (step) {
       case "bill_received":
-        title = "📄 *Conta de luz recebida*";
+        title = `📄 *${partnerStepLabel("bill_received")}*`;
         body =
-          `A Sofia acabou de receber a conta de luz do seu lead ` +
-          `*${lead}* e já começou a análise (OCR).\n\n` +
-          `_Próximo passo: coletar CPF, endereço e finalizar o cadastro._`;
+          `Recebemos a conta de luz de *${lead}* e já estamos analisando.\n\n` +
+          `_Próxima etapa: completar os dados do cadastro._`;
         break;
       case "cadastro_complete":
-        title = "🎯 *Cadastro completo*";
+        title = `🎯 *${partnerStepLabel("cadastro_complete")}*`;
         body =
-          `Todos os dados de *${lead}* foram coletados com sucesso! ✅\n\n` +
-          `_Próximo passo: enviar o cadastro ao portal da iGreen._`;
+          `Os dados de *${lead}* estão completos. ✅\n\n` +
+          `_Próxima etapa: enviar o cadastro à iGreen._`;
         break;
       case "portal_sent":
-        title = "🚀 *Enviado ao portal iGreen*";
+        title = `🚀 *${partnerStepLabel("portal_sent")}*`;
         body =
-          `O cadastro de *${lead}* foi enviado ao portal iGreen. ✅\n\n` +
-          `📲 O cliente vai receber um *código de verificação* no WhatsApp — ` +
-          `a Sofia cuida disso automaticamente.\n\n` +
-          `Quando aprovado, o cliente entra na sua carteira! 🎉`;
+          `O cadastro de *${lead}* foi enviado à iGreen. ✅\n\n` +
+          `O cliente recebe o código de verificação no WhatsApp — ` +
+          `cuidamos disso automaticamente.\n\n` +
+          `Quando for aprovado, ele entra na sua carteira! 🎉`;
         break;
       case "handoff":
-        title = "🆘 *Seu lead precisa de você*";
+        title = `🆘 *${partnerStepLabel("handoff")}*`;
         body =
-          `A Sofia pausou o atendimento de *${lead}* porque ` +
-          `${extra?.note || "surgiu uma dúvida fora do fluxo automático"}.\n\n` +
-          `_Assuma a conversa no CRM antes que o lead esfrie._`;
+          `O atendimento de *${lead}* foi pausado porque ` +
+          `${extra?.note || "surgiu uma dúvida que precisa de uma pessoa"}.\n\n` +
+          `_Vale assumir a conversa no CRM enquanto o lead está quente._`;
         break;
     }
 

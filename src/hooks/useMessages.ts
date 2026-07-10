@@ -6,7 +6,7 @@ import {
   getBase64FromMediaMessage,
   type EvolutionMessage,
 } from "@/services/evolutionApi";
-import { whapiListMessages, whapiListMessagesForChat } from "@/services/whapiApi";
+import { whapiListMessages, whapiListMessagesForChat, whapiDownloadMedia } from "@/services/whapiApi";
 import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/services/messageSender";
 import { supabase } from "@/integrations/supabase/client";
 import { createLogger } from "@/lib/logger";
@@ -30,6 +30,12 @@ export interface ChatMessage {
   mediaMimetype?: string;
   mediaCaption?: string;
   fileName?: string;
+  /** ID de mídia Whapi (GET /media/{id}) quando não há link público */
+  whapiMediaId?: string;
+  /** Header/footer/botões de mensagem interactive (Whapi/Evolution). */
+  interactiveHeader?: string;
+  interactiveFooter?: string;
+  interactiveButtons?: { id: string; title: string }[];
 }
 
 function normalizeDeliveryStatus(status: unknown): number | "failed" | undefined {
@@ -88,8 +94,37 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
   let mediaMimetype: string | undefined;
   let mediaCaption: string | undefined;
   let fileName: string | undefined;
+  let interactiveHeader: string | undefined;
+  let interactiveFooter: string | undefined;
+  let interactiveButtons: { id: string; title: string }[] | undefined;
+  let whapiMediaId: string | undefined;
 
-  if (m?.conversation) {
+  // Interactive/botões ANTES de conversation — o proxy Whapi manda os dois juntos.
+  if (m?.buttonsMessage || m?.templateMessage?.hydratedTemplate || m?.interactiveMessage) {
+    const bm = m.buttonsMessage || m.interactiveMessage || {};
+    const header = String(bm.headerText || bm.header?.title || bm.header?.text || "").trim();
+    const body = String(bm.contentText || bm.body?.text || m.conversation || "").trim();
+    const footer = String(bm.footerText || bm.footer?.text || "").trim();
+    const rawButtons = bm.buttons || bm.nativeFlowMessage?.buttons || [];
+    const buttons: { id: string; title: string }[] = (Array.isArray(rawButtons) ? rawButtons : [])
+      .map((b: any) => ({
+        id: String(b.buttonId || b.id || ""),
+        title: String(b.buttonText?.displayText || b.title || b.text || "").trim(),
+      }))
+      .filter((b: { title: string }) => b.title);
+    const hydrated = m.templateMessage?.hydratedTemplate;
+    if (hydrated && buttons.length === 0) {
+      for (const b of hydrated.hydratedButtons || []) {
+        const title = String(b.quickReplyButton?.displayText || "").trim();
+        if (title) buttons.push({ id: String(b.quickReplyButton?.id || b.index || ""), title });
+      }
+    }
+    interactiveHeader = header || undefined;
+    interactiveFooter = footer || undefined;
+    interactiveButtons = buttons.length ? buttons : undefined;
+    // Corpo na bolha; header/footer/botões renderizam separados na UI.
+    text = body || (!header && !buttons.length ? "Mensagem com botões" : "");
+  } else if (m?.conversation) {
     text = m.conversation;
   } else if (m?.extendedTextMessage?.text) {
     text = m.extendedTextMessage.text;
@@ -108,7 +143,6 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaCaption = m.videoMessage.caption;
     text = m.videoMessage.caption || "";
   } else if (m?.ptvMessage) {
-    // Vídeo redondo ("video note") — mesma estrutura do videoMessage.
     mediaType = "video";
     mediaUrl = m.ptvMessage.url;
     mediaBase64 = m.ptvMessage.base64;
@@ -133,9 +167,9 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaUrl = m.stickerMessage.url;
     mediaBase64 = m.stickerMessage.base64;
     mediaMimetype = m.stickerMessage.mimetype || "image/webp";
+    whapiMediaId = m.stickerMessage.mediaId || m.stickerMessage.id || undefined;
     text = "";
   } else if (m?.buttonsResponseMessage) {
-    // Lead respondeu botão (Fluxo D) — extrai o rótulo selecionado.
     text = m.buttonsResponseMessage.selectedDisplayText ||
       m.buttonsResponseMessage.selectedButtonId || "▢ Resposta de botão";
   } else if (m?.templateButtonReplyMessage) {
@@ -157,13 +191,11 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     const name = (m.pollCreationMessage || m.pollCreationMessageV3)?.name;
     text = name ? `📊 Enquete: ${name}` : "📊 Enquete";
   } else {
-    // Fallback: tipo de mensagem não suportado (localização, contato, enquete,
-    // botões, reação etc.). Antes a bolha aparecia totalmente vazia — só o
-    // horário —, dando a impressão de que a mensagem "não chegou". Agora ao
-    // menos mostramos um rótulo curto pra confirmar que a mensagem existe.
-    const inferred = m && typeof m === "object" ? Object.keys(m)[0] : undefined;
-    if (inferred && inferred !== "messageContextInfo") {
+    const inferred = m && typeof m === "object" ? Object.keys(m).find((k) => k !== "messageContextInfo") : undefined;
+    if (inferred) {
       text = "📎 Mensagem não suportada neste formato";
+    } else if (msg.message && typeof msg.message === "object" && Object.keys(msg.message).length === 0) {
+      text = "📎 Mensagem sem conteúdo legível";
     }
   }
 
@@ -181,6 +213,10 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaMimetype,
     mediaCaption,
     fileName,
+    whapiMediaId,
+    interactiveHeader,
+    interactiveFooter,
+    interactiveButtons,
   };
 }
 
@@ -301,22 +337,17 @@ export function useMessages(
     setIsLoadingOlder(false);
   }, [remoteJid]);
 
+  /** Ordenação canônica do chat: antigo → recente. Nunca depende da ordem da API. */
   const sortMapped = useCallback((unique: EvolutionMessage[]) => {
-    let newestFirst = true;
-    for (let i = 0; i < unique.length - 1; i++) {
-      const a = normalizeMessageTimestamp(unique[i]?.messageTimestamp);
-      const b = normalizeMessageTimestamp(unique[i + 1]?.messageTimestamp);
-      if (a !== b) { newestFirst = a > b; break; }
-    }
     const clearedAtMs = clearedAtRef.current;
     return unique
-      .map((msg, sourceIndex) => ({ ...mapMessage(msg), sourceIndex }))
+      .map((msg) => mapMessage(msg))
       .filter((m) => clearedAtMs === 0 || m.timestamp * 1000 >= clearedAtMs)
       .sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-        return newestFirst ? b.sourceIndex - a.sourceIndex : a.sourceIndex - b.sourceIndex;
-      })
-      .map(({ sourceIndex: _sourceIndex, ...m }) => m);
+        // Empate de segundo: id estável (evita inverter ao mesclar JIDs / páginas).
+        return String(a.id || "").localeCompare(String(b.id || ""));
+      });
   }, []);
 
   const fetchMessages = useCallback(async () => {
@@ -394,7 +425,10 @@ export function useMessages(
           }
           return true;
         });
-        return merged.sort((a, b) => a.timestamp - b.timestamp);
+        return merged.sort((a, b) => {
+          if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+          return String(a.id || "").localeCompare(String(b.id || ""));
+        });
       });
 
       const fallbackSendTarget = raw.find((msg) => msg.key.remoteJidAlt)?.key.remoteJidAlt;
@@ -450,7 +484,10 @@ export function useMessages(
             added += 1;
           }
         }
-        return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+        return Array.from(byId.values()).sort((a, b) => {
+          if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+          return String(a.id || "").localeCompare(String(b.id || ""));
+        });
       });
       return added;
     } catch (e) {
@@ -554,8 +591,31 @@ export function useMessages(
       if (!msg) return null;
       // Skip if already loaded
       if (msg.mediaUrl?.startsWith("data:")) return msg.mediaUrl;
-      // Whapi já entrega a URL pública diretamente — não há getBase64
-      if (isWhapi) return msg.mediaUrl || null;
+
+      if (isWhapi) {
+        // Link público direto (Auto Download Whapi)
+        if (msg.mediaUrl && /^https?:\/\//i.test(msg.mediaUrl)) return msg.mediaUrl;
+
+        // Sem link: baixa via mediaId (GET /media/{id}) ou URL via proxy
+        const dl = await whapiDownloadMedia({
+          url: msg.mediaUrl,
+          mediaId: msg.whapiMediaId,
+        });
+        if (dl?.base64) {
+          const mimetype = dl.mimetype || msg.mediaMimetype || "image/webp";
+          const dataUrl = `data:${mimetype};base64,${dl.base64}`;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === messageId
+                ? { ...m, mediaBase64: dl.base64, mediaMimetype: mimetype, mediaUrl: dataUrl }
+                : m
+            )
+          );
+          return dataUrl;
+        }
+        return msg.mediaUrl || null;
+      }
+
       if (!instanceName) return null;
 
       const result = await getBase64FromMediaMessage(

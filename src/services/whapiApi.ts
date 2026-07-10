@@ -88,7 +88,17 @@ export async function whapiListMessagesForChat(
       merged.push(msg);
     }
   }
-  return merged;
+  // Sempre antigo → recente, independente da ordem/sort da API Whapi.
+  return merged.sort((a, b) => {
+    const ta = Number(a.messageTimestamp) > 10_000_000_000
+      ? Number(a.messageTimestamp) / 1000
+      : Number(a.messageTimestamp) || 0;
+    const tb = Number(b.messageTimestamp) > 10_000_000_000
+      ? Number(b.messageTimestamp) / 1000
+      : Number(b.messageTimestamp) || 0;
+    if (ta !== tb) return ta - tb;
+    return String(a.key?.id || "").localeCompare(String(b.key?.id || ""));
+  });
 }
 
 export async function whapiGetProfilePicture(chatId: string): Promise<string | null> {
@@ -107,7 +117,7 @@ export async function whapiSendText(to: string, text: string): Promise<{ key: { 
 export async function whapiSendMedia(
   to: string,
   mediaUrl: string,
-  mediatype: "image" | "video" | "document" | "audio",
+  mediatype: "image" | "video" | "document" | "audio" | "sticker",
   caption?: string,
   fileName?: string,
 ): Promise<{ key: { id: string } }> {
@@ -118,4 +128,21 @@ export async function whapiSendMedia(
     caption,
     fileName,
   });
+}
+
+/** Baixa mídia via proxy (URL pública ou mediaId Whapi → base64). */
+export async function whapiDownloadMedia(opts: {
+  url?: string;
+  mediaId?: string;
+}): Promise<{ base64: string; mimetype: string } | null> {
+  try {
+    const r = await call<{ base64?: string; mimetype?: string; error?: string }>("download_media", {
+      url: opts.url || "",
+      mediaId: opts.mediaId || "",
+    });
+    if (!r?.base64) return null;
+    return { base64: r.base64, mimetype: r.mimetype || "application/octet-stream" };
+  } catch {
+    return null;
+  }
 }
