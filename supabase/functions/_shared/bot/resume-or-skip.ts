@@ -68,6 +68,7 @@ const ADVANCED_PENDING_STEPS = new Set<string>([
   "ask_bill_value",
   "ask_doc_frente_manual",
   "ask_doc_verso_manual",
+  "ask_contaunica",
   "ask_finalizar",
   "finalizando",
 ]);

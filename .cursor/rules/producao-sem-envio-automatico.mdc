@@ -1,0 +1,38 @@
+---
+description: Produção em ajuste — não enviar automático a clientes (sem apagar nada)
+alwaysApply: true
+---
+
+# Produção: ajuste em andamento
+
+O sistema está **em produção** e ainda em **ajuste**. Nenhuma mensagem automática deve ir para clientes até validação explícita.
+
+## Regra de ouro
+
+**Não apagar código, migrations, flags nem configurações existentes.** O trabalho é incremental: arrumar, testar, validar.
+
+## O que NÃO fazer
+
+- Não excluir arquivos, funções, guardas ou migrations.
+- Não reativar envio automático em massa sem pedido explícito do usuário.
+- Não fazer deploy que ligue respostas automáticas para todos os leads de uma vez.
+- Não rodar testes E2E com envio real sem `dryRun`.
+
+## Como testar com segurança
+
+- Usar `dryRun` na vendedora / edge functions de teste.
+- Usar modo `dark`/`shadow` do motor quando disponível.
+- Testar um fluxo por vez antes de liberar para produção.
+- Kill switch manual (quando precisar pausar): Super Admin → **Assistente Global** → `bot_global_enabled`.
+
+## Kill switch existente (já no projeto)
+
+- Flag: `app_settings.bot_global_enabled` (id = `global`)
+- Helper: `supabase/functions/_shared/bot/global-flag.ts` → `isBotGloballyEnabled`
+- UI: `src/components/superadmin/BotGlobalKillSwitch.tsx`
+
+Usar o kill switch **manualmente** quando quiser pausar tudo — não criar migrations que forcem `false` sem o usuário pedir.
+
+## Envio manual (permitido)
+
+Consultor pode enviar manualmente via chat, `manual-step-send`, `start-customer-attendance`, etc.

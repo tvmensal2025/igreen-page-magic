@@ -21,6 +21,7 @@ import { fileURLToPath } from 'url';
 import { Portal2Client, fileFromPath, closeBrowser } from './portal2-api-client.mjs';
 import { runAuditPipeline, getAuditCount, sanitize, checkAuditHealth } from './ai-audit.mjs';
 import { classifyPortalError, CORRECTION_PROMPTS } from './portal-errors.mjs';
+import { resolvePortalWhatsapp } from './portal-phone.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '.env') });
@@ -148,16 +149,18 @@ async function _sendMessageToCustomer(customerId, messageBuilder) {
     supabase.from('settings').select('*'),
     supabase
       .from('customers')
-      .select('id, name, phone_whatsapp, consultant_id')
+      .select('id, name, phone_whatsapp, portal2_celular_alt, phone_landline, phone_contact_confirmed, consultant_id')
       .eq('id', customerId)
       .maybeSingle(),
   ]);
-  if (!customer?.phone_whatsapp) return { skipped: 'no_phone' };
+  // Brasil só: manda no celular do Portal (alt/landline), não só na chave do chat.
+  const destPhone = resolvePortalWhatsapp(customer) || customer?.phone_whatsapp;
+  if (!destPhone) return { skipped: 'no_phone' };
 
   const settings = {};
   settingsRows?.forEach(s => { settings[s.key] = s.value; });
 
-  const phone = String(customer.phone_whatsapp).replace(/\D/g, '');
+  const phone = String(destPhone).replace(/\D/g, '');
   const normalized = phone.startsWith('55') ? phone : `55${phone}`;
   const firstName = String(customer.name || '').trim().split(/\s+/)[0] || 'tudo bem';
   const text = messageBuilder({ firstName, phone: normalized, customer });
@@ -241,8 +244,10 @@ async function processLead(job) {
     const validationLink = buildValidationLink(cadastroResult.idcliente, dados.idconsultor);
     console.log(`  🔗 link: ${validationLink}`);
 
-    // Persistir no banco (best-effort) — popula tanto colunas portal2_* quanto
-    // campos canônicos (link_facial / link_assinatura) que o resto do sistema usa.
+    // Persistir no banco (best-effort).
+    // NÃO grava link_facial/link_assinatura aqui — isso só depois do OTP
+    // validado (sendFacialLinkToCustomer /confirm-otp). Gravar cedo fazia o
+    // watchdog mandar o link da facial antes do código ser confirmado.
     if (supabase && customer_id) {
       const updates = {
         portal2_idcliente: cadastroResult.idcliente,
@@ -250,8 +255,6 @@ async function processLead(job) {
         portal2_status: 'created',
         portal2_created_at: new Date().toISOString(),
         portal2_contract_link: validationLink,
-        link_facial: validationLink,
-        link_assinatura: validationLink,
         igreen_link: validationLink,
         igreen_code: String(cadastroResult.idcliente),
         status: 'awaiting_otp',
@@ -298,14 +301,31 @@ async function processLead(job) {
       }
     } catch (e) {
       console.warn(`  ⚠ falha ao gerar OTP: ${e.message}`);
+      if (supabase && customer_id) {
+        await supabase.from('customers').update({
+          portal2_status: 'otp_generate_failed',
+          last_otp_dispatch_error: `generate_otp_failed: ${String(e.message || '').slice(0, 400)}`,
+          last_otp_dispatch_at: new Date().toISOString(),
+        }).eq('id', customer_id).then(() => {}, () => {});
+      }
+      // Avisa o cliente que o código pode demorar / pedir reenvio
+      try {
+        await _sendMessageToCustomer(customer_id, ({ firstName }) =>
+          `${firstName}, seu cadastro foi enviado ✅\n\n` +
+          `Estou gerando o código de verificação. Se em 1–2 minutos não chegar ` +
+          `uma mensagem da iGreen com o código, me avisa aqui que eu peço de novo.`,
+        );
+      } catch (_) { /* best-effort */ }
     }
 
-    // Mandar o link pro cliente via WhatsApp (mesmo link de OTP/facial/assinatura)
-    try {
-      const sendResult = await sendValidationLinkToCustomer(customer_id, validationLink);
-      console.log(`  📲 pedido de código: ${JSON.stringify(sendResult)}`);
-    } catch (e) {
-      console.warn(`  ⚠ envio do link falhou: ${e.message}`);
+    // Mandar pedido do código só se o OTP foi gerado (senão já avisamos acima).
+    if (otpGenerated) {
+      try {
+        const sendResult = await sendValidationLinkToCustomer(customer_id, validationLink);
+        console.log(`  📲 pedido de código: ${JSON.stringify(sendResult)}`);
+      } catch (e) {
+        console.warn(`  ⚠ envio do pedido de código falhou: ${e.message}`);
+      }
     }
 
     const finalResult = { success: true, validationLink, otpGenerated, ...cadastroResult };
@@ -435,6 +455,31 @@ async function processLead(job) {
             at: new Date().toISOString(),
           },
         }).then(() => {}, (err) => console.warn(`  ⚠ infra_metrics alert falhou: ${err.message}`));
+      }
+
+      // IA reprovada: avisa o cliente e marca handoff (não é correção de campo).
+      if (kind === 'ia_reprovada') {
+        updates.status = 'needs_human';
+        updates.conversation_step = 'aguardando_humano';
+        updates.bot_paused = true;
+        updates.bot_paused_reason = 'portal_ia_reprovada';
+        updates.bot_paused_at = new Date().toISOString();
+        await supabase.from('customers').update(updates).eq('id', customer_id).then(() => {}, () => {});
+        await _sendMessageToCustomer(customer_id, ({ firstName }) =>
+          `${firstName}, recebi seus documentos aqui ✅\n\n` +
+          `A validação automática pediu uma revisão humana antes de concluir. ` +
+          `Um consultor vai te chamar em breve por aqui 👍`,
+        ).catch(() => {});
+        await supabase.from('infra_metrics').insert({
+          metric_key: 'portal_ia_reprovada',
+          value_num: null,
+          meta: {
+            customer_id,
+            gate: e?.body?.gate || null,
+            error: String(e.message || '').slice(0, 500),
+            at: new Date().toISOString(),
+          },
+        }).then(() => {}, () => {});
       }
 
       // Pergunta proativa ao cliente (Req 7.1). Best-effort: só após a
@@ -878,17 +923,21 @@ async function fetchDadosFromSupabase(customerId) {
       data_nascimento,
       phone_whatsapp,
       portal2_celular_alt,
+      phone_landline,
+      phone_contact_confirmed,
       email,
       cep, address_street, address_number, address_complement,
       address_neighborhood, address_city, address_state,
       numero_instalacao, media_consumo, electricity_bill_value,
+      portal_idconsultor_override,
       distribuidora, debitos_aberto, possui_procurador,
       document_type,
       bill_base64, electricity_bill_photo_url,
       document_front_base64, document_front_url,
       document_back_base64, document_back_url,
-      orgao_expedidor, fornecedora, contaunica, possui_placas,
-      transferir_titularidade, logindistribuidora, senhadistribuidora,
+      orgao_expedidor, fornecedora, contaunica, contaunica_answered, possui_placas,
+      transferir_titularidade, transferir_titularidade_answered,
+      logindistribuidora, senhadistribuidora,
       pj_jsonb, procurador_jsonb,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
@@ -900,18 +949,29 @@ async function fetchDadosFromSupabase(customerId) {
   if (!c) return null;
   const consultant = c.consultants;
   const partner = c.referral_partners;
-  // idconsultor efetivo: se o lead foi atribuído a um CONSULTOR PARCEIRO
-  // (referral_partners.partner_igreen_id preenchido), o cadastro inteiro —
-  // incluindo a sessão do Portal 2, OCR e link de validação — usa o id dele.
-  // Senão, usa o id do consultor dono (comportamento atual).
+  // Regra de produto (2026-07-09 + override ficha):
+  //   0) portal_idconsultor_override > 0 → sobrescreve tudo
+  //   1) partner_igreen_id > 0 → idconsultor = partner_igreen_id
+  //   2) cli > 0 (ativo)       → idconsultor = cli  (cli = id iGreen do consultor)
+  //   3) senão                 → idconsultor = dono da instância
+  // indcli = 0: cli/override cadastra PARA o consultor, não como indicador do dono.
+  const overrideRaw = Number(c.portal_idconsultor_override || 0);
+  const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
-  const partnerIgreenId = partner?.partner_igreen_id ? Number(partner.partner_igreen_id) : null;
-  const igreenId = (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
-    ? partnerIgreenId
-    : donoIgreenId;
+  const partnerIgreenId = partner?.partner_igreen_id ? Number(partner.partner_igreen_id) : 0;
+  const partnerCli = partner?.cli ? Number(partner.cli) : 0;
+  const partnerAsConsultant =
+    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+      ? partnerIgreenId
+      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const igreenId = overrideId > 0
+    ? overrideId
+    : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
   if (!igreenId) return null;
-  if (partnerIgreenId && partnerIgreenId > 0) {
-    console.log(`  🤝 [consultor-parceiro] customer=${customerId} idconsultor=${igreenId} (parceiro), dono=${donoIgreenId}`);
+  if (overrideId > 0) {
+    console.log(`  ✏️ [idconsultor-override] customer=${customerId} idconsultor=${overrideId} (parceiro=${partnerAsConsultant || '-'} dono=${donoIgreenId})`);
+  } else if (partnerAsConsultant > 0) {
+    console.log(`  🤝 [consultor-parceiro] customer=${customerId} idconsultor=${igreenId} (cli=${partnerCli || '-'} partner_igreen_id=${partnerIgreenId || '-'}) dono=${donoIgreenId}`);
   }
 
   // ── Resolve anexos do customer (conta + doc frente + doc verso) ──────────
@@ -963,6 +1023,9 @@ async function fetchDadosFromSupabase(customerId) {
   let consumoMedio = Number(c.media_consumo || 0);
   let ocrIdsol = null;
   let ocrBillExtracted = false;
+  // Resposta bruta do extract-receipt — repassada ao cadastrarCliente para o
+  // gate IA (is_authentic / mismatch) quando billAlreadyExtracted=true.
+  let billExtractionResult = null;
 
   if (billFile) {
     console.log(`  📄 OCR fatura: chamando /extractor/extract-receipt (${billFile.mime}, ${billFile.buffer.length}B)`);
@@ -977,6 +1040,7 @@ async function fetchDadosFromSupabase(customerId) {
         idsolcontratovalidacao: ocrIdsol,
       });
       ocrBillExtracted = true;
+      billExtractionResult = resp;
 
       // 1. Distribuidora — só sobrescreve se CEP não resolveu (CEP é a
       //    fonte mais confiável). Caso contrário, OCR é só corroboração.
@@ -1068,7 +1132,7 @@ async function fetchDadosFromSupabase(customerId) {
 
   return _buildDadosObject(c, consultant, partner, igreenId,
     consumoMedio, distribuidora, billFile, docFile, docBackFile,
-    ocrIdsol, ocrBillExtracted);
+    ocrIdsol, ocrBillExtracted, billExtractionResult);
 }
 
 // Extraído pra eliminar duplicação. Quando billAlreadyExtracted=true,
@@ -1076,16 +1140,18 @@ async function fetchDadosFromSupabase(customerId) {
 function _buildDadosObject(c, consultant, partner, igreenId,
                             consumoMedio, distribuidora,
                             billFile, docFile, docBackFile,
-                            idsolcontratovalidacao, billAlreadyExtracted) {
+                            idsolcontratovalidacao, billAlreadyExtracted,
+                            billExtractionResult) {
+  // indcli=0: quando cli/partner_igreen_id define o idconsultor, o parceiro
+  // É o consultor do cadastro (não indicador sob o dono).
   return {
     idconsultor: igreenId,
-    indcli: partner?.cli ? Number(partner.cli) : 0,
+    indcli: 0,
     cpf: c.cpf || '',
     nome: c.doc_holder_name || c.name || '',
     dataNascimento: c.data_nascimento || '',
-    // Req 8.3/8.4/8.5: prioriza o celular alternativo do Portal 2 quando
-    // presente; phone_whatsapp é apenas lido, nunca alterado.
-    whatsapp: c.portal2_celular_alt || c.phone_whatsapp || '',
+    // Telefone do Portal 2: alt → landline confirmado → whatsapp (chave da conversa).
+    whatsapp: resolvePortalWhatsapp(c),
     email: c.email || '',
     cep: c.cep || '',
     endereco: c.address_street || '',
@@ -1102,6 +1168,8 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     // sinaliza ao client que extractReceipt já rodou (evita OCR redundante).
     billFile: billFile || undefined,
     billAlreadyExtracted: !!billAlreadyExtracted,
+    // Veredito bruto do OCR da conta (is_authentic etc.) — gate IA no client.
+    billExtractionResult: billExtractionResult || undefined,
     docFile: docFile || undefined,
     docBackFile: docBackFile || undefined,
     isCnh: _isCnhCustomer(c),
@@ -1112,8 +1180,11 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     orgaoExpedidor: c?.orgao_expedidor || '',
     fornecedora: c?.fornecedora || undefined,            // undefined → cadastrarCliente resolve via /bonus/rules
     possuiPlacas: c?.possui_placas ?? false,
-    contaUnica: c?.contaunica ?? false,
-    transferirTitularidade: c?.transferir_titularidade ?? false,
+    // UX bot = boleto; portal = titularidade. Mesma escolha: unificado ⇔ transferir.
+    contaUnica: c?.contaunica_answered === true ? !!c?.contaunica : false,
+    transferirTitularidade: c?.contaunica_answered === true
+      ? !!c?.contaunica
+      : (c?.transferir_titularidade ?? false),
     loginDistribuidora: c?.logindistribuidora || '',
     // senhadistribuidora hoje vem TEXT pura do banco (a coleta cifrada
     // chega no PR3). Se vier vazio/null, o worker envia '' — comportamento atual.
@@ -1242,6 +1313,12 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
       try {
         const sendResult = await sendFacialLinkToCustomer(customer_id, finalLink);
         console.log(`  📲 chave de ouro (link facial) WhatsApp: ${JSON.stringify(sendResult)}`);
+        // Marca envio para o watchdog C não reenviar / não achar que faltou.
+        if (supabase && sendResult && !sendResult.skipped) {
+          await supabase.from('customers').update({
+            link_facial_sent_at: new Date().toISOString(),
+          }).eq('id', customer_id).then(() => {}, () => {});
+        }
       } catch (e) {
         console.warn(`  ⚠ envio da chave de ouro falhou: ${e.message}`);
       }

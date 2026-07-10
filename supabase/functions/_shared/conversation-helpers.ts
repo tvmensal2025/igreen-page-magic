@@ -114,8 +114,34 @@ export function getNextMissingStep(
     const verso = String(c.document_back_url || "").trim();
     if (!isCnh && (!verso || verso === "nao_aplicavel")) return "ask_doc_verso_manual";
   }
+  // Forma de cobrança (UX invertida vs portal): perguntamos boleto;
+  // unificado ⇒ transferir_titularidade+contaunica; separado ⇒ ambos false.
+  if (c.contaunica_answered !== true) return "ask_contaunica";
   // Todos preenchidos → mostrar botão Finalizar
   return "ask_finalizar";
+}
+
+/** Opções de botão para preferência de boleto (Whapi/Evolution). */
+export const CONTAUNICA_OPTIONS = [
+  { id: "boleto_unificado", title: "1️⃣ Unificado" },
+  { id: "boleto_separado", title: "2️⃣ Separado" },
+] as const;
+
+export function getPreferenceOptions(step: string): ReadonlyArray<{ id: string; title: string }> | null {
+  if (step === "ask_contaunica" || step === "ask_transferir_titularidade") {
+    // ask_transferir_titularidade: legado mid-flight — reapresenta a pergunta de boleto.
+    return CONTAUNICA_OPTIONS;
+  }
+  return null;
+}
+
+/**
+ * Preferência obrigatória ainda não respondida, ou null se ok.
+ * Usado nos gates de ask_finalizar / finalizando.
+ */
+export function missingPreferenceStep(c: any): "ask_contaunica" | null {
+  if (c?.contaunica_answered !== true) return "ask_contaunica";
+  return null;
 }
 
 /**
@@ -144,6 +170,11 @@ export function getReplyForStep(step: string, c: any): string {
     case "ask_bill_value": return "Qual o *valor médio* da sua conta de luz? (ex: 350)";
     case "ask_doc_frente_manual": return "📸 Envie a *FRENTE do seu documento* (RG ou CNH)";
     case "ask_doc_verso_manual": return "📸 Envie o *VERSO do seu documento*";
+    case "ask_contaunica":
+    case "ask_transferir_titularidade":
+      // UX: perguntamos boleto (mais fácil). No portal a pergunta é titularidade;
+      // unificado ⇔ transferir; separado ⇔ não transferir.
+      return "📄 *Como você prefere receber a fatura?*\n\n1️⃣ *Boleto unificado* — um boleto só (energia + iGreen)\n2️⃣ *Boleto separado* — dois boletos (um da distribuidora e outro da iGreen)\n\n_Toque em uma opção ou digite *1* / *2*:_";
     case "ask_finalizar": return "✅ *Todos os dados foram preenchidos!*\n\n1️⃣ ✅ Finalizar\n\n_Digite *1* ou *FINALIZAR* para concluir:_";
     case "finalizando": return "✅ Todos os dados coletados! Processando...";
     default: return `Continuando... (${step})`;
@@ -245,7 +276,9 @@ export type AskField =
   | "numero_instalacao"
   | "electricity_bill_value"
   | "document_front"
-  | "document_back";
+  | "document_back"
+  | "contaunica"
+  | "transferir_titularidade";
 
 export function shouldSkipAsk(field: AskField, customer: any): boolean {
   if (!customer) return false;
@@ -316,6 +349,10 @@ export function shouldSkipAsk(field: AskField, customer: any): boolean {
       const v = String(customer.document_back_url || "").trim();
       return v.length > 0 && v !== "evolution-media:pending" && v !== "nao_aplicavel";
     }
+    case "contaunica":
+    case "transferir_titularidade":
+      // Mesma resposta: boleto unificado ⇔ transferir titularidade.
+      return customer.contaunica_answered === true;
     default:
       return false;
   }
@@ -338,6 +375,8 @@ const ASK_STEP_TO_FIELD: Record<string, AskField> = {
   "ask_bill_value": "electricity_bill_value",
   "ask_doc_frente_manual": "document_front",
   "ask_doc_verso_manual": "document_back",
+  "ask_contaunica": "contaunica",
+  "ask_transferir_titularidade": "transferir_titularidade",
   "aguardando_doc_auto": "document_front",
   "aguardando_doc_frente": "document_front",
   "aguardando_doc_verso": "document_back",

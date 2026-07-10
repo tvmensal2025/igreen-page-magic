@@ -21,6 +21,7 @@ import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { isAttendanceTerminalStep } from "../_shared/attendance-flow.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
 const NUDGE_COOLDOWN_HOURS = 4;
@@ -78,6 +79,12 @@ serve(async (_req: Request) => {
 
   for (const lead of candidates) {
     try {
+      // Nunca nudge durante pesquisa de atendimento ou após finalização.
+      if (isAttendanceTerminalStep((lead as { conversation_step?: string | null }).conversation_step)) {
+        console.log(`[faq-nudge] skip attendance step lead=${lead.id} step=${lead.conversation_step}`);
+        continue;
+      }
+
       const channel = await resolveChannelForCustomer(supabase, lead.id, env);
       if (isUnavailable(channel)) {
         console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);

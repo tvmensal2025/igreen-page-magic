@@ -32,6 +32,7 @@ const RETRY_DELAY_MIN = 10;
 const TERMINAL_STEPS = new Set([
   "complete", "portal_submitting", "portal_submitted", "registered_igreen",
   "awaiting_signature", "finalizando", "validando_otp", "aguardando_humano",
+  "aguardando_avaliacao_atendimento", "atendimento_finalizado",
 ]);
 
 Deno.serve(async (req) => {

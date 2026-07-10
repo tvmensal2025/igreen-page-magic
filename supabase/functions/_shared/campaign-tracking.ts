@@ -45,8 +45,9 @@ const BLOCK_LINE = "━━━━━━━━━━━━━━━━━━";
 
 export function stripTrackingProtocol(value: string | null | undefined): string {
   return String(value || "")
-    // remove bloco visual completo
+    // remove bloco visual completo (formato antigo com ━━━)
     .replace(new RegExp(`${BLOCK_LINE}[\\s\\S]*?${BLOCK_LINE}`, "g"), "")
+    // formato novo e legado: "📋 Protocolo: *XXX*" / "Protocolo de atendimento"
     .replace(/📋\s*Protocolo[^\n]*/gi, "")
     .replace(/\s*[-–—]?\s*protocolo(?:\s+de\s+atendimento)?\s*:?[ \t]*/gi, " ")
     .replace(TRACKING_PROTOCOL_V2_RE, "")
@@ -55,9 +56,10 @@ export function stripTrackingProtocol(value: string | null | undefined): string 
     .trim();
 }
 
-/** Bloco visual profissional exibido ao cliente na mensagem inicial do wa.me. */
+/** Bloco visual no wa.me da campanha. Sem ━━━ (quebra no WhatsApp).
+ * Protocolo permanece em texto puro/negrito para matching nos webhooks. */
 export function formatProtocolBlock(protocol: string): string {
-  return `\n\n${BLOCK_LINE}\n📋 Protocolo de atendimento\n*${protocol}*\n${BLOCK_LINE}`;
+  return `\n\n📋 Protocolo: *${protocol}*`;
 }
 
 export function appendTrackingProtocol(baseMessage: string, protocol: string | null | undefined): string {

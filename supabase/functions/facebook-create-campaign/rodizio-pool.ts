@@ -10,8 +10,7 @@
  *
  * Regras (ver design.md → "Edge function facebook-create-campaign" e Req 6):
  * - Só cria a pool quando o toggle de rodízio veio ligado (`rodizio_enabled`)
- *   E há pelo menos 2 participantes (mínimo que faz a fila circular fazer
- *   sentido — Requisito 5).
+ *   E há pelo menos 1 participante (destino exclusivo = 1; rodízio circular = 2+).
  * - A pool é ligada ao `campaign_id` da campanha recém-criada e ao
  *   `consultant_id` do dono (o consultor logado).
  * - Os membros entram na ORDEM recebida: `position` 0..n e `lead_count` 0.
@@ -59,10 +58,11 @@ export function normalizeRodizioPartnerIds(input: RodizioInput): string[] {
 
 /**
  * Decide se a pool de rodízio deve ser criada para esta campanha.
- * Verdadeiro somente quando o toggle está ligado E há >= 2 participantes.
+ * Verdadeiro quando o toggle está ligado E há >= 1 participante
+ * (1 = destino exclusivo com métricas; 2+ = rodízio circular).
  */
 export function shouldCreateRodizioPool(input: RodizioInput): boolean {
-  return !!input.rodizio_enabled && normalizeRodizioPartnerIds(input).length >= 2;
+  return !!input.rodizio_enabled && normalizeRodizioPartnerIds(input).length >= 1;
 }
 
 /**

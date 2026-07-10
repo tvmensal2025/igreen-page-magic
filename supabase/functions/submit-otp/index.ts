@@ -44,9 +44,9 @@ Deno.serve(async (req) => {
     const { data: customer } = await supabase
       .from("customers")
       .select(`
-        id, portal2_idcliente,
+        id, portal2_idcliente, portal_idconsultor_override,
         consultants:consultant_id(igreen_id),
-        referral_partners:referral_partner_id(partner_igreen_id)
+        referral_partners:referral_partner_id(cli, partner_igreen_id)
       `)
       .eq("id", customer_id)
       .maybeSingle();
@@ -69,13 +69,23 @@ Deno.serve(async (req) => {
       });
     }
 
-    const donoIgreenId = (customer as any)?.consultants?.igreen_id
-      ? Number((customer as any).consultants.igreen_id) : null;
-    const partnerIgreenId = (customer as any)?.referral_partners?.partner_igreen_id
-      ? Number((customer as any).referral_partners.partner_igreen_id) : null;
-    const idconsultor = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
-      ? (partnerIgreenId as number) : donoIgreenId;
-    const idcliente = (customer as any)?.portal2_idcliente ? Number((customer as any).portal2_idcliente) : null;
+    const cust = customer as any;
+    const overrideRaw = Number(cust?.portal_idconsultor_override || 0);
+    const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
+    const donoIgreenId = cust?.consultants?.igreen_id
+      ? Number(cust.consultants.igreen_id) : null;
+    const partnerIgreenId = cust?.referral_partners?.partner_igreen_id
+      ? Number(cust.referral_partners.partner_igreen_id) : 0;
+    const partnerCli = cust?.referral_partners?.cli
+      ? Number(cust.referral_partners.cli) : 0;
+    const partnerAsConsultant =
+      (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+        ? partnerIgreenId
+        : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+    const idconsultor = overrideId > 0
+      ? overrideId
+      : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
+    const idcliente = cust?.portal2_idcliente ? Number(cust.portal2_idcliente) : null;
 
     const resolved = await resolveWorker(supabase, customer_id).catch(() => null);
     const portalWorkerUrl = (resolved?.url || Deno.env.get("PORTAL2_WORKER_URL") || "").replace(/\/$/, "");

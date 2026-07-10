@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Send, Paperclip, Mic, MicOff, MessageSquareText, Loader2, Image, File, Video, X } from "lucide-react";
+import { Send, Paperclip, Mic, MicOff, MessageSquareText, Loader2, Image, File, Video, X, Smile } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { QuickReplyMenu } from "./QuickReplyMenu";
 import { FlowQuickBar } from "./FlowQuickBar";
 import { AiSuggestReplies } from "./AiSuggestReplies";
@@ -10,6 +11,13 @@ import type { MessageTemplate } from "@/types/whatsapp";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
 import { useFileAttach } from "@/hooks/useFileAttach";
 import { useIsLgDown } from "@/hooks/use-mobile";
+
+const QUICK_EMOJIS = [
+  "😀", "😁", "😂", "😊", "😍", "🤩", "😉", "🙂", "😎", "🤗",
+  "👍", "👎", "👏", "🙏", "💪", "🤝", "✌️", "👋", "🙌", "💯",
+  "💚", "❤️", "🔥", "⭐", "✨", "🎉", "✅", "❌", "📌", "📎",
+  "☀️", "🌱", "💡", "📸", "📄", "🏠", "⚡", "💰", "📱", "😊",
+];
 
 type MediaType = "image" | "video" | "document";
 
@@ -36,6 +44,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
   const [showQuickReply, setShowQuickReply] = useState(false);
   const [quickSearch, setQuickSearch] = useState("");
   const [exactShortcut, setExactShortcut] = useState<MessageTemplate | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isCompactLayout = useIsLgDown();
 
@@ -43,6 +52,23 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
   const file = useFileAttach({ consultantId, customerJid, customerName });
 
   useEffect(() => { if (initialMessage != null && initialMessage !== "") setText(initialMessage); }, [initialMessage]);
+
+  const insertEmoji = useCallback((emoji: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setText((prev) => prev + emoji);
+      return;
+    }
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? text.length;
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + emoji.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }, [text]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -135,6 +161,29 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
       <Button variant="ghost" size="icon" className={TOOL_BTN} disabled={disabled || file.isUploading} onClick={() => file.fileInputRef.current?.click()} title="Anexar arquivo">
         <Paperclip className="h-4 w-4" />
       </Button>
+      <Popover open={emojiOpen} onOpenChange={setEmojiOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className={TOOL_BTN} disabled={disabled} title="Inserir emoji">
+            <Smile className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[280px] p-2" side="top">
+          <div className="grid grid-cols-8 gap-0.5">
+            {QUICK_EMOJIS.map((em) => (
+              <button
+                key={em}
+                type="button"
+                className="h-8 w-8 rounded-md text-lg leading-none hover:bg-secondary transition-colors"
+                style={{ fontFamily: '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif' }}
+                onClick={() => insertEmoji(em)}
+                title={em}
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
       <AiSuggestReplies customerId={customerId} disabled={disabled} onPick={(t) => { setText(t); textareaRef.current?.focus(); }} />
     </>
   );
@@ -228,7 +277,10 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
           inputMode="text"
           autoCapitalize="sentences"
           className="flex-1 min-w-0 resize-none bg-secondary rounded-xl lg:rounded-lg px-3.5 py-2.5 lg:py-1.5 text-base lg:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/60 min-h-[44px] lg:min-h-[34px] max-h-[120px] lg:max-h-[88px]"
-          style={{ overflow: "auto" }}
+          style={{
+            overflow: "auto",
+            fontFamily: 'inherit, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',
+          }}
         />
         {sendMicButtons}
       </div>

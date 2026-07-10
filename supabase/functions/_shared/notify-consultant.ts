@@ -105,9 +105,20 @@ export async function sendRawToNumber(
   const number = digits.startsWith("55") ? digits : `55${digits}`;
   const to = `${number}@s.whatsapp.net`;
 
-  // 1) Whapi (canal ativo)
-  const whapiToken = Deno.env.get("WHAPI_TOKEN");
-  const whapiUrl = (Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud").replace(/\/+$/, "");
+  // 1) Whapi (canal ativo) — settings.whapi_token tem prioridade sobre env
+  let whapiToken = Deno.env.get("WHAPI_TOKEN") || "";
+  let whapiUrl = (Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud").replace(/\/+$/, "");
+  try {
+    const { data: whapiRows } = await admin
+      .from("settings")
+      .select("key, value")
+      .in("key", ["whapi_token", "whapi_api_url"]);
+    for (const r of (whapiRows as Array<{ key: string; value: unknown }> | null) || []) {
+      const v = typeof r.value === "string" ? r.value : String(r.value ?? "");
+      if (r.key === "whapi_token" && v) whapiToken = v;
+      if (r.key === "whapi_api_url" && v) whapiUrl = v.replace(/\/+$/, "");
+    }
+  } catch { /* usa env */ }
   if (whapiToken) {
     try {
       const res = await fetch(`${whapiUrl}/messages/text`, {
@@ -163,6 +174,15 @@ function formatPhoneBR(raw?: string | null): string {
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return raw;
+}
+
+/** Link wa.me pronto para o parceiro abrir a conversa do lead. */
+function waMeLink(raw?: string | null): string | null {
+  if (!raw) return null;
+  const digits = String(raw).replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  const number = digits.startsWith("55") ? digits : `55${digits}`;
+  return `https://wa.me/${number}`;
 }
 
 function nowBRT(): string {
@@ -245,13 +265,13 @@ export async function notifyNewLead(
     if (nm) assistantName = nm;
   } catch (_e) { /* usa default */ }
   const text =
-    `🎉 *NOVO LEAD CHEGOU!*\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
+    `🎉 *Novo lead chegou!*\n` +
+    `\n` +
     `👤 *Nome:* ${lead.name?.trim() || "(sem nome ainda)"}\n` +
     `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
-    `🕐 *Entrou em:* ${nowBRT()}\n` +
+    `🕐 *Entrou:* ${nowBRT()}\n` +
     `🤖 *Atendido por:* ${assistantName} (IA)\n\n` +
-    `${assistantName} já iniciou o atendimento. Acompanhe no painel do CRM.`;
+    `${assistantName} já iniciou o atendimento. Acompanhe no painel.`;
   return sendRawToAlertNumber(consultantId, text);
 }
 
@@ -276,8 +296,8 @@ export async function notifyHandoff(
   const stepHuman = String(lead.conversation_step || "").replace(/^(ask_|aguardando_|editing_)/, "").replace(/_/g, " ") || "cadastro";
   const reasonLabel = reason === "duvida_fora_faq" ? "não soube responder a dúvida" : reason;
   const text =
-    `🆘 *LEAD PRECISA DE VOCÊ*\n` +
-    `━━━━━━━━━━━━━━━━━━\n` +
+    `🆘 *Lead precisa de você*\n` +
+    `\n` +
     `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
     `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n` +
     `📍 *Passo:* ${stepHuman}\n\n` +
@@ -302,27 +322,67 @@ export async function notifyHandoff(
 // Dedup só em memória (janela 10 min): evita spam a cada mensagem da rajada sem
 // exigir nova coluna no banco. Como o isolate recicla, no pior caso o consultor
 // recebe um lembrete a mais — aceitável e melhor que perder o lead.
+export type InboundNotifyKind = "text" | "image" | "audio" | "video" | "document" | "unknown";
+
+function describeInboundKind(kind: InboundNotifyKind | undefined, lastMessage: string): {
+  title: string;
+  preview: string;
+} {
+  switch (kind) {
+    case "image":
+      return { title: "📷 Nova imagem recebida", preview: lastMessage?.trim() || "O cliente enviou uma foto." };
+    case "audio":
+      return { title: "🎤 Novo áudio recebido", preview: "O cliente enviou um áudio." };
+    case "video":
+      return { title: "🎬 Novo vídeo recebido", preview: "O cliente enviou um vídeo." };
+    case "document":
+      return { title: "📄 Novo documento recebido", preview: lastMessage?.trim() || "O cliente enviou um arquivo." };
+    case "text":
+    default:
+      return {
+        title: "💬 Nova mensagem recebida",
+        preview: lastMessage?.trim()
+          ? `"${String(lastMessage).slice(0, 280)}"`
+          : "O cliente enviou uma mensagem.",
+      };
+  }
+}
+
 export async function notifyClientReplyWhilePaused(
   consultantId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; conversation_step?: string | null; is_sandbox?: boolean | null },
+  lead: {
+    id?: string;
+    name?: string | null;
+    phone_whatsapp?: string | null;
+    conversation_step?: string | null;
+    tracking_protocol?: string | null;
+    is_sandbox?: boolean | null;
+  },
   lastMessage: string,
+  opts?: { kind?: InboundNotifyKind },
 ): Promise<boolean> {
   try {
     if (!consultantId) return false;
     if (lead?.is_sandbox) return false;
     const memKey = `pausedreply:${consultantId}:${lead.id || lead.phone_whatsapp || ""}`;
-    if (!shouldSend(memKey, 10 * 60_000)) return false;
+    if (!shouldSend(memKey, 3 * 60_000)) return false;
     const stepHuman = String(lead.conversation_step || "")
       .replace(/^(ask_|aguardando_|editing_|flow:)/, "")
       .replace(/_/g, " ") || "atendimento";
+    const { title, preview } = describeInboundKind(opts?.kind, lastMessage);
+    const protocolLine = lead.tracking_protocol
+      ? `📋 *Protocolo:* ${lead.tracking_protocol}\n`
+      : "";
     const text =
-      `💬 *CLIENTE RESPONDEU*\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
+      `${title}\n` +
+      `\n` +
       `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
       `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n` +
-      `📍 *Etapa:* ${stepHuman}\n\n` +
-      `💬 *Mensagem:*\n"${String(lastMessage || "").slice(0, 300)}"\n\n` +
-      `🤖 O bot está pausado (você assumiu). Responda no CRM.`;
+      protocolLine +
+      `📍 *Etapa:* ${stepHuman}\n` +
+      `🕐 ${nowBRT()}\n\n` +
+      `${preview}\n\n` +
+      `_Atendimento humano ativo — responda no painel._`;
     return sendRawToAlertNumber(consultantId, text);
   } catch (e) {
     console.warn("[notify-paused-reply] erro:", (e as Error).message);
@@ -340,27 +400,26 @@ export async function notifyClientReplyWhilePaused(
 // Dedup persistente reaproveitado: 24h por lead (mesma janela do novo lead),
 // porém com chave própria (last_partner_notified_at) para não colidir com o
 // aviso do dono.
-// ─── Resolve telefone do parceiro (notification_phone → phone) ─────────────
-// Preferimos notification_phone (canal dedicado a alertas), mas caímos no
-// telefone principal do parceiro pra garantir que TODO lead atribuído
-// dispara aviso — mesmo que o parceiro não tenha configurado nada.
+// ─── Resolve telefone do parceiro (notification_phone) ─────────────────────
 async function resolvePartnerContact(
   partnerId: string,
 ): Promise<{ phone: string | null; name: string | null }> {
   try {
     const admin = adminClient();
-    const { data } = await admin
+    const { data, error } = await admin
       .from("referral_partners")
-      .select("nome, notification_phone, phone, is_active")
+      .select("nome, notification_phone, is_active")
       .eq("id", partnerId)
       .maybeSingle();
+    if (error) {
+      console.warn("[resolve-partner-contact] query falhou:", error.message);
+      return { phone: null, name: null };
+    }
     if (!data || (data as any).is_active === false) return { phone: null, name: null };
-    const phone =
-      (data as any).notification_phone ||
-      (data as any).phone ||
-      null;
+    const phone = String((data as any).notification_phone || "").trim() || null;
     return { phone, name: (data as any).nome || null };
-  } catch {
+  } catch (e) {
+    console.warn("[resolve-partner-contact] erro:", (e as Error).message);
     return { phone: null, name: null };
   }
 }
@@ -399,34 +458,54 @@ function partnerFooter(step: string): string {
   ];
   const idx = steps.findIndex((s) => s.key === step);
   if (idx < 0) return "_Atualização automática iGreen 🌱_";
-  const bar = steps
-    .map((s, i) => (i < idx ? "🟢" : i === idx ? "🔵" : "⚪"))
-    .join(" ");
-  return `${bar}\n_Etapa ${idx + 1}/${steps.length} — atualização automática iGreen_ 🌱`;
+  const current = steps[idx].label;
+  return `📍 Etapa *${idx + 1}/${steps.length}* — ${current}\n_Atualização automática iGreen_ 🌱`;
 }
 
 export async function notifyPartnerNewLead(
   ownerConsultantId: string,
   partnerId: string,
   lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null; tracking_protocol?: string | null },
-): Promise<boolean> {
+  opts?: { force?: boolean; manual?: boolean },
+): Promise<{ ok: boolean; reason?: string }> {
   try {
-    if (lead?.is_sandbox) return false;
-    if (!partnerId) return false;
+    if (lead?.is_sandbox) return { ok: false, reason: "sandbox" };
+    if (!partnerId) return { ok: false, reason: "no_partner" };
 
     const { phone, name: partnerName } = await resolvePartnerContact(partnerId);
-    if (!phone) return false;
-
-    // Cache rápido em memória (evita dupla chamada no mesmo isolate).
-    const memKey = `partnerlead:${partnerId}:${lead.id || lead.phone_whatsapp || ""}`;
-    if (!shouldSend(memKey, 60_000)) return false;
-    // Persistente: 24h por lead, chave dedicada do parceiro.
-    if (!(await shouldSendPersisted(lead.id, "last_partner_notified_at", 24 * 60 * 60_000))) {
-      console.log(`[notify-partner-lead] skip dedup-db lead=${lead.id}`);
-      return false;
+    if (!phone) {
+      console.warn(`[notify-partner-lead] parceiro ${partnerId} sem notification_phone`);
+      return { ok: false, reason: "partner_no_phone" };
     }
 
-    // Se o protocolo não veio no argumento, tenta buscar em `customers`.
+    const force = opts?.force === true;
+    const manual = opts?.manual === true;
+
+    const memKey = `partnerlead:${partnerId}:${lead.id || lead.phone_whatsapp || ""}:${manual ? "manual" : "auto"}`;
+    if (!force && !shouldSend(memKey, 60_000)) {
+      return { ok: false, reason: "dedup_memory" };
+    }
+
+    // Dedup DB: só LÊ o timestamp. Só grava DEPOIS do envio OK —
+    // antes marcava antes de enviar e, se o WhatsApp falhasse, o parceiro
+    // ficava 24h sem receber o lead.
+    if (!force && lead.id) {
+      try {
+        const { data: prev } = await adminClient()
+          .from("customers")
+          .select("last_partner_notified_at")
+          .eq("id", lead.id)
+          .maybeSingle();
+        const lastIso = (prev as any)?.last_partner_notified_at as string | null | undefined;
+        if (lastIso && Date.now() - new Date(lastIso).getTime() < 24 * 60 * 60_000) {
+          console.log(`[notify-partner-lead] skip dedup-db lead=${lead.id}`);
+          return { ok: false, reason: "dedup_db" };
+        }
+      } catch (e) {
+        console.warn("[notify-partner-lead] dedup check falhou:", (e as Error).message);
+      }
+    }
+
     let protocol = (lead.tracking_protocol || "").trim();
     if (!protocol && lead.id) {
       try {
@@ -440,25 +519,53 @@ export async function notifyPartnerNewLead(
     }
 
     const hi = partnerName ? `Olá, ${partnerName.split(" ")[0]}! 👋\n\n` : "";
-    const protoBlock = protocol
-      ? `━━━━━━━━━━━━━━━━━━\n📋 *Protocolo de atendimento*\n*${protocol}*\n━━━━━━━━━━━━━━━━━━\n`
-      : "";
-    const text =
-      `${hi}🎉 *NOVO LEAD CHEGOU PRA VOCÊ!*\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
-      `👤 *Nome:* ${lead.name?.trim() || "(coletando…)"}\n` +
-      `📱 *WhatsApp:* ${formatPhoneBR(lead.phone_whatsapp)}\n` +
-      `🕐 *Entrou em:* ${nowBRT()}\n` +
-      `🤖 *Atendendo:* Sofia (IA iGreen)\n` +
-      protoBlock +
-      `\nA Sofia já começou o atendimento e vai coletar todos os dados.\n` +
-      `Você vai receber avisos aqui a cada etapa concluída. 🚀\n\n` +
-      partnerFooter("arrived");
+    const phoneNice = formatPhoneBR(lead.phone_whatsapp);
+    const link = waMeLink(lead.phone_whatsapp);
+    const title = manual ? "✅ *Lead atribuído a você!*" : "🎉 *Novo lead pra você!*";
 
-    return sendRawToNumber(ownerConsultantId, phone, text);
+    const lines = [
+      `${hi}${title}`,
+      ``,
+      `👤 *Nome:* ${lead.name?.trim() || "(ainda coletando…)"}`,
+      `📱 *WhatsApp:* ${phoneNice}`,
+    ];
+    if (link) lines.push(`🔗 *Abrir conversa:* ${link}`);
+    lines.push(`🕐 *${manual ? "Atribuído" : "Chegou"}:* ${nowBRT()}`);
+    if (protocol) {
+      lines.push(``);
+      lines.push(`📋 *Código:* \`${protocol}\``);
+      lines.push(`_(só se precisar falar com o suporte)_`);
+    }
+    lines.push(``);
+    if (manual) {
+      lines.push(`📌 Atribuído pelo consultor — já é seu!`);
+    } else {
+      lines.push(`🤖 Sofia (IA) já está atendendo e coletando os dados.`);
+      lines.push(`📲 Você recebe um aviso a cada etapa concluída.`);
+    }
+    lines.push(``);
+    lines.push(partnerFooter("arrived"));
+
+    const text = lines.join("\n");
+
+    const sent = await sendRawToNumber(ownerConsultantId, phone, text);
+    if (!sent) {
+      return { ok: false, reason: "send_failed" };
+    }
+
+    if (lead.id) {
+      try {
+        await adminClient()
+          .from("customers")
+          .update({ last_partner_notified_at: new Date().toISOString() })
+          .eq("id", lead.id);
+      } catch { /* ignore */ }
+    }
+
+    return { ok: true };
   } catch (e) {
     console.warn("[notify-partner-lead] erro:", (e as Error).message);
-    return false;
+    return { ok: false, reason: (e as Error).message };
   }
 }
 
@@ -514,20 +621,20 @@ export async function notifyPartnerStep(
     let body = "";
     switch (step) {
       case "bill_received":
-        title = "📄 *CONTA DE LUZ RECEBIDA*";
+        title = "📄 *Conta de luz recebida*";
         body =
           `A Sofia acabou de receber a conta de luz do seu lead ` +
           `*${lead}* e já começou a análise (OCR).\n\n` +
           `_Próximo passo: coletar CPF, endereço e finalizar o cadastro._`;
         break;
       case "cadastro_complete":
-        title = "🎯 *CADASTRO COMPLETO*";
+        title = "🎯 *Cadastro completo*";
         body =
           `Todos os dados de *${lead}* foram coletados com sucesso! ✅\n\n` +
           `_Próximo passo: enviar o cadastro ao portal da iGreen._`;
         break;
       case "portal_sent":
-        title = "🚀 *ENVIADO AO PORTAL iGREEN*";
+        title = "🚀 *Enviado ao portal iGreen*";
         body =
           `O cadastro de *${lead}* foi enviado ao portal iGreen. ✅\n\n` +
           `📲 O cliente vai receber um *código de verificação* no WhatsApp — ` +
@@ -535,7 +642,7 @@ export async function notifyPartnerStep(
           `Quando aprovado, o cliente entra na sua carteira! 🎉`;
         break;
       case "handoff":
-        title = "🆘 *SEU LEAD PRECISA DE VOCÊ*";
+        title = "🆘 *Seu lead precisa de você*";
         body =
           `A Sofia pausou o atendimento de *${lead}* porque ` +
           `${extra?.note || "surgiu uma dúvida fora do fluxo automático"}.\n\n` +
@@ -545,7 +652,7 @@ export async function notifyPartnerStep(
 
     const text =
       `${hi}${title}\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
+      `\n` +
       `👤 ${lead}\n` +
       `📱 ${leadPhone}\n` +
       `🕐 ${nowBRT()}\n\n` +
@@ -604,7 +711,7 @@ export async function notifySuperAdminUnmatchedLead(
 
     const text =
       `⚠️ *Lead sem campanha clara*\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
+      `\n` +
       `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
       `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n\n` +
       `🔎 Motivo: \`${method}\`\n` +
@@ -655,7 +762,7 @@ export async function notifyOwnerManualReview(
 
     const reasonText: Record<string, string> = {
       no_campaign_ctwa_phrase:
-        "Lead chegou do anúncio (frase-âncora do Meta) mas não foi possível identificar de QUAL campanha veio.",
+        "Lead chegou do anúncio (frase genérica do Meta) sem AD ID, sem ctwa_clid e sem protocolo FB-xxxxx na mensagem. Com 2+ campanhas ativas o sistema não chuta — atribua manualmente ou garanta o protocolo na mensagem do anúncio.",
       rodizio_pool_empty: "A pool de rodízio dessa campanha está vazia ou inativa.",
       rodizio_rpc_error:
         "Erro técnico ao consultar o próximo parceiro da fila (o lead não foi distribuído).",
@@ -664,11 +771,14 @@ export async function notifyOwnerManualReview(
 
     const text =
       `🟡 *Lead para revisão manual*\n` +
-      `━━━━━━━━━━━━━━━━━━\n` +
+      `\n` +
       `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
       `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n\n` +
       `❗ ${reasonText[reason] || reason}\n\n` +
-      `➡️ Abra o painel Admin e atribua manualmente para não ir para o parceiro errado.`;
+      `✅ Para o rodízio rodar sozinho:\n` +
+      `• Mensagem do anúncio com *Protocolo FB-xxxxx*\n` +
+      `• Ou 1 única campanha com pool ativa\n\n` +
+      `➡️ Painel Admin → Meus Parceiros → Fila de revisão.`;
 
     return sendRawToAlertNumber(ownerConsultantId, text);
   } catch (e) {

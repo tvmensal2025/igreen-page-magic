@@ -16,7 +16,6 @@ const ADMIN_TABS = [
   { id: "conversao", label: "Conversão" },
   { id: "clientes", label: "Base de clientes" },
   { id: "parceiros", label: "Parceiros" },
-  { id: "rede", label: "Rede" },
   { id: "central-anuncios", label: "Central de anúncios" },
   { id: "links", label: "Links" },
   { id: "materiais", label: "Materiais" },

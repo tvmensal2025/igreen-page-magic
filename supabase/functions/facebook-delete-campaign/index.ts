@@ -1,5 +1,6 @@
 // Excluir campanha — apenas SuperAdmin.
-// Apaga no Meta (DELETE /{fb_campaign_id}) e remove do DB.
+// Apaga no Meta (DELETE /{fb_campaign_id}) e só então remove do DB.
+// Se a Meta falhar, NÃO apaga do banco (evita órfã gastando fora do painel).
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadPlatformAccount } from "../_shared/fb-graph.ts";
 
 Deno.serve(async (req) => {
@@ -26,6 +27,7 @@ Deno.serve(async (req) => {
 
     let metaDeleted = false;
     let metaError: string | null = null;
+
     if (row.fb_campaign_id) {
       try {
         const platform = await loadPlatformAccount();
@@ -34,8 +36,15 @@ Deno.serve(async (req) => {
           const r = await fetch(url, { method: "DELETE" });
           const t = await r.text();
           if (!r.ok) {
-            metaError = `Meta ${r.status}: ${t.slice(0, 300)}`;
-            console.warn("[fb-delete] meta delete failed:", metaError);
+            // Já deletada na Meta (404) → pode limpar o DB com segurança.
+            const alreadyGone = r.status === 404 || /does not exist|Unsupported (get|delete) request/i.test(t);
+            if (alreadyGone) {
+              metaDeleted = true;
+              console.warn("[fb-delete] Meta 404/gone — tratando como deletada:", t.slice(0, 200));
+            } else {
+              metaError = `Meta ${r.status}: ${t.slice(0, 300)}`;
+              console.warn("[fb-delete] meta delete failed:", metaError);
+            }
           } else {
             metaDeleted = true;
           }
@@ -46,6 +55,17 @@ Deno.serve(async (req) => {
         metaError = (e as Error).message;
         console.warn("[fb-delete] exception:", metaError);
       }
+
+      if (!metaDeleted) {
+        return j({
+          error: "Falha ao excluir na Meta — campanha NÃO foi removida do sistema (evita órfã gastando).",
+          meta_deleted: false,
+          meta_error: metaError,
+        }, 502);
+      }
+    } else {
+      // Sem ID Meta: só existe no nosso banco.
+      metaDeleted = true;
     }
 
     // Limpa filhos antes (insights/adsets/ads) se existirem.

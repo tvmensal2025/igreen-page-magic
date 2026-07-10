@@ -1,5 +1,8 @@
 // Pausa ou reativa uma campanha no Meta (campanha + adsets + ads) e atualiza o DB.
 // Body: { campaign_id: uuid, action: "pause" | "activate" }
+//
+// Regra de ouro: NÃO atualiza status local se a Meta falhar — evita UI "pausada"
+// com anúncio ainda ACTIVE gastando.
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
 
@@ -31,41 +34,58 @@ Deno.serve(async (req) => {
     const target = action === "pause" ? "PAUSED" : "ACTIVE";
     const dbStatus = action === "pause" ? "paused" : "active";
 
-    let metaError: string | null = null;
-    if (c.fb_campaign_id) {
-      const conn = await loadCampaignConnection(c.consultant_id);
-      if (!conn?.token) {
-        metaError = "Sem token Meta válido — só atualizei o status local.";
-      } else {
-        const token = conn.token;
-        const setStatus = async (id: string) => {
-          const r = await fetch(`${FB_GRAPH}/${id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({ status: target, access_token: token }),
-          });
-          if (!r.ok) {
-            const t = await r.text();
-            throw new Error(`Meta ${r.status}: ${t.slice(0, 300)}`);
-          }
-        };
-        try {
-          for (const adId of (c.fb_ad_ids || []) as string[]) await setStatus(adId);
-          for (const adsetId of (c.fb_adset_ids || []) as string[]) await setStatus(adsetId);
-          await setStatus(c.fb_campaign_id);
-        } catch (e) {
-          metaError = (e as Error).message;
-        }
+    // Sem fb_campaign_id: só rascunho local — pode atualizar DB direto.
+    if (!c.fb_campaign_id) {
+      const { error: updErr } = await admin.from("facebook_campaigns").update({ status: dbStatus }).eq("id", c.id);
+      if (updErr) return j({ error: updErr.message }, 500);
+      return j({ ok: true, status: dbStatus, meta_error: null });
+    }
+
+    const conn = await loadCampaignConnection(c.consultant_id);
+    if (!conn?.token) {
+      return j({
+        error: "Sem token Meta válido — status local NÃO foi alterado. Reconecte a conta da plataforma.",
+        status: c.status,
+        meta_error: "missing_platform_token",
+      }, 502);
+    }
+
+    const token = conn.token;
+    const setStatus = async (id: string) => {
+      const r = await fetch(`${FB_GRAPH}/${id}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ status: target, access_token: token }),
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`Meta ${r.status}: ${t.slice(0, 300)}`);
       }
+    };
+
+    try {
+      // Campanha primeiro (para a entrega parar mesmo se ad/adset falhar depois),
+      // depois adsets e ads para manter o Ads Manager consistente.
+      await setStatus(c.fb_campaign_id);
+      for (const adsetId of (c.fb_adset_ids || []) as string[]) await setStatus(adsetId);
+      for (const adId of (c.fb_ad_ids || []) as string[]) await setStatus(adId);
+    } catch (e) {
+      const metaError = (e as Error).message;
+      console.error("[fb-toggle] Meta falhou — DB intacto:", metaError);
+      return j({
+        error: `Falha ao ${action === "pause" ? "pausar" : "ativar"} na Meta. Status local NÃO foi alterado.`,
+        status: c.status,
+        meta_error: metaError,
+      }, 502);
     }
 
     const updatePayload: Record<string, unknown> = { status: dbStatus };
-    if (action === "activate" && !metaError) updatePayload.rejection_reason = null;
+    if (action === "activate") updatePayload.rejection_reason = null;
     const { error: updErr } = await admin.from("facebook_campaigns").update(updatePayload).eq("id", c.id);
-    if (updErr) return j({ error: updErr.message, meta_error: metaError }, 500);
+    if (updErr) return j({ error: updErr.message }, 500);
 
     // Rodízio: aviso 1× ao pausar; reset dos flags ao reativar.
-    if (action === "pause" && !metaError) {
+    if (action === "pause") {
       try {
         await notifyRodizioOnCampaignPaused(admin, c.id, "manual");
       } catch (e) {
@@ -83,7 +103,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return j({ ok: !metaError, status: dbStatus, meta_error: metaError });
+    return j({ ok: true, status: dbStatus, meta_error: null });
 
   } catch (e) {
     console.error("[fb-toggle]", e);

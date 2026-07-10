@@ -165,7 +165,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       const generic = finalKeywords.find((k) => isGenericKeyword(k));
       if (generic) {
         newErrors.keywords =
-          `"${generic}" é uma palavra muito genérica e atribuiria leads errados. Use algo único deste parceiro (ex.: sobrenome + cidade).`;
+          `"${generic}" é genérica demais e pode pegar lead de outro. Use algo único (ex.: sobrenome + cidade).`;
       }
     }
 
@@ -311,9 +311,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Palavras-chave</Label>
+                <Label className="text-xs">Palavra-chave do parceiro</Label>
                 {keywords.length > 0 && (
-                  <span className="text-[10px] text-muted-foreground">{keywords.length} adicionada(s)</span>
+                  <span className="text-[10px] text-muted-foreground">{keywords.length} cadastrada(s)</span>
                 )}
               </div>
               <div className="flex gap-2">
@@ -324,7 +324,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     if (errors.keywords) setErrors((prev) => ({ ...prev, keywords: undefined }));
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Digite e pressione Enter"
+                  placeholder="Ex.: Melquiades Uberlândia"
                   className="flex-1 h-9"
                 />
                 <Button type="button" variant="secondary" onClick={addKeyword} size="sm" className="h-9 px-3">
@@ -351,7 +351,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 <p className="text-[11px] text-destructive">{errors.keywords}</p>
               ) : (
                 <p className="text-[10px] text-muted-foreground">
-                  Use algo único deste parceiro (ex.: sobrenome + cidade). Evite palavras comuns como "energia" ou "desconto".
+                  É o que o cliente escreve no WhatsApp para cair neste parceiro.
+                  Prefira nome + cidade (único). Evite "energia", "desconto", "oi" — isso pega lead errado.
                 </p>
               )}
               {keywords.length > 0 && (

@@ -10,15 +10,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, PlayCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { useIsLgDown } from "@/hooks/use-mobile";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
+import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
+import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -49,12 +51,23 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const { toast } = useToast();
   const [isCustomer, setIsCustomer] = useState(false);
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const { messages, isLoading, sendMessage, loadMedia, resolveSendTargetJid, refetch } = useMessages(
+  const {
+    messages,
+    isLoading,
+    isLoadingOlder,
+    hasMoreOlder,
+    loadOlderMessages,
+    sendMessage,
+    loadMedia,
+    resolveSendTargetJid,
+    refetch,
+  } = useMessages(
     instanceName,
     chat?.remoteJid || null,
     chat?.sendTargetJid || null,
     isWhapi,
     customerId,
+    consultantId,
   );
   // Telefone real do cliente (customers.phone_whatsapp), MESMA fonte de verdade
   // que o bot (manual-step-send) usa para enviar. Quando o `remoteJid` da
@@ -71,60 +84,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [botForceEnabled, setBotForceEnabled] = useState<boolean>(false);
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
-  const [welcomeSentAt, setWelcomeSentAt] = useState<string | null>(null);
-  const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
-  const [startingAttendance, setStartingAttendance] = useState(false);
+  const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const isCompactLayout = useIsLgDown();
   const { width: vw } = useViewportWidth();
   const isXl = vw >= 1280;
-
-  // Carrega estado do "welcome" pra decidir botão vs selo. Usa captureCustomer
-  // como trigger de refresh (muda quando o consultor edita a ficha).
-  useEffect(() => {
-    if (!customerId) { setWelcomeSentAt(null); setTrackingProtocol(null); return; }
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("welcome_sent_at, tracking_protocol")
-        .eq("id", customerId)
-        .maybeSingle();
-      if (cancelled) return;
-      setWelcomeSentAt((data as { welcome_sent_at?: string | null } | null)?.welcome_sent_at ?? null);
-      setTrackingProtocol((data as { tracking_protocol?: string | null } | null)?.tracking_protocol ?? null);
-    })();
-    return () => { cancelled = true; };
-  }, [customerId]);
-
-  const handleStartAttendance = useCallback(async () => {
-    if (!customerId || startingAttendance) return;
-    setStartingAttendance(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
-        body: { customerId, consultantId },
-      });
-      if (error) throw error;
-      if (data?.ok === false) {
-        toast({
-          title: data?.fallback ? "Envie manualmente" : "Não deu pra iniciar",
-          description: data?.message || data?.detail || data?.error || "Tente de novo.",
-          variant: "destructive",
-        });
-        return;
-      }
-      setWelcomeSentAt(new Date().toISOString());
-      if (data?.protocol) setTrackingProtocol(String(data.protocol));
-      toast({
-        title: data?.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
-        description: data?.protocol ? `Protocolo ${data.protocol}` : undefined,
-      });
-    } catch (e) {
-      toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
-    } finally {
-      setStartingAttendance(false);
-    }
-  }, [customerId, consultantId, startingAttendance, toast]);
-
 
   // Restaura largura do painel lateral de Captação salva pelo consultor.
   useEffect(() => {
@@ -134,6 +97,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } catch {}
   }, []);
   const { customer: captureCustomer, filledCount, totalFields } = useCaptureSession(customerId);
+
+  const attendance = useCustomerAttendance(customerId, consultantId);
   const { attachMediaToCapture } = useCaptureAttach();
   // Captação é SEMPRE manual (default global) — incompleto = pendente.
   const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
@@ -481,13 +446,33 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const onScroll = () => {
+    let loadingGate = false;
+    const onScroll = async () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       stickToBottomRef.current = distance < 120;
+
+      // Ao chegar perto do topo, carrega histórico antigo (ordem cronológica preservada).
+      if (el.scrollTop < 80 && hasMoreOlder && !isLoadingOlder && !loadingGate && isWhapi) {
+        loadingGate = true;
+        const prevHeight = el.scrollHeight;
+        const prevTop = el.scrollTop;
+        try {
+          const added = await loadOlderMessages();
+          if (added > 0) {
+            // Mantém o ponto de leitura: não “pula” a tela ao prepend.
+            requestAnimationFrame(() => {
+              const nextHeight = el.scrollHeight;
+              el.scrollTop = prevTop + (nextHeight - prevHeight);
+            });
+          }
+        } finally {
+          loadingGate = false;
+        }
+      }
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, []);
+  }, [hasMoreOlder, isLoadingOlder, loadOlderMessages, isWhapi]);
 
   useEffect(() => {
     const scroller = scrollRef.current;
@@ -544,7 +529,12 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       {/* Chat header — mobile: nome + captação + menu ⋯; desktop: barra completa */}
       <div className="flex items-center gap-2 px-3 lg:px-3.5 min-h-12 lg:min-h-14 py-1.5 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
         <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
-          <AvatarImage src={chat.profilePicUrl} />
+          <AvatarImage
+            src={chat.profilePicUrl}
+            onError={(e) => {
+              (e.currentTarget as HTMLImageElement).style.display = "none";
+            }}
+          />
           <AvatarFallback className="bg-gradient-to-br from-primary/25 to-primary/5 text-primary text-[11px] font-bold">
             {chat.name.slice(0, 2).toUpperCase()}
           </AvatarFallback>
@@ -557,33 +547,17 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </p>
         </div>
 
-        {/* Iniciar atendimento — botão único visível quando ainda não abrimos os 2 balões */}
-        {isCustomer && customerId && !welcomeSentAt && (
-          <Button
-            size="sm"
-            onClick={handleStartAttendance}
-            disabled={startingAttendance}
-            className="h-8 gap-1.5 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 shrink-0"
-            title="Envia saudação + protocolo e pede o nome"
-          >
-            {startingAttendance
-              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : <PlayCircle className="h-3.5 w-3.5" />}
-            <span className="text-[11px] font-semibold hidden sm:inline">Iniciar atendimento</span>
-            <span className="text-[11px] font-semibold sm:hidden">Iniciar</span>
-          </Button>
-        )}
-        {isCustomer && customerId && welcomeSentAt && (
-          <span
-            className="inline-flex items-center gap-1 h-7 px-2 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 shrink-0"
-            title={trackingProtocol ? `Protocolo ${trackingProtocol}` : "Atendimento iniciado"}
-          >
-            <CheckCircle2 className="h-3 w-3" />
-            <span className="text-[10px] font-semibold hidden md:inline">
-              Atendimento iniciado{trackingProtocol ? ` · ${trackingProtocol}` : ""}
-            </span>
-            <span className="text-[10px] font-semibold md:hidden">Iniciado</span>
-          </span>
+        {isCustomer && customerId && (
+          <AttendanceStatusBar
+            state={attendance.uiState}
+            protocol={attendance.protocol}
+            rating={attendance.rating}
+            starting={attendance.starting}
+            ending={attendance.ending}
+            onStart={() => void attendance.startAttendance()}
+            onRequestEnd={() => setEndAttendanceDialogOpen(true)}
+            compact={isCompactLayout}
+          />
         )}
 
 
@@ -741,6 +715,34 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         )}
       </div>
 
+      <AlertDialog open={endAttendanceDialogOpen} onOpenChange={setEndAttendanceDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Finalizar atendimento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vamos enviar a mensagem de encerramento e a pesquisa de satisfação (responda com um número de 1 a 5).
+              O cliente não receberá botões interativos — só texto, para funcionar em todos os canais.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={attendance.ending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void (async () => {
+                  await attendance.endAttendance();
+                  setEndAttendanceDialogOpen(false);
+                })();
+              }}
+              disabled={attendance.ending}
+              className="bg-amber-600 hover:bg-amber-500"
+            >
+              {attendance.ending ? "Enviando…" : "Finalizar e pedir nota"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -780,8 +782,21 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             Nenhuma mensagem encontrada
           </div>
         )}
-        {messages.map((msg, index) => (
-          <div key={`${msg.id}-${index}`} data-msg-bubble>
+        {isLoadingOlder && (
+          <div className="flex justify-center py-2 sticky top-0 z-10">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-card/95 border border-border/60 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Carregando mensagens anteriores…
+            </span>
+          </div>
+        )}
+        {!hasMoreOlder && messages.length > 0 && isWhapi && (
+          <p className="text-center text-[10px] text-muted-foreground py-2">
+            Início da conversa
+          </p>
+        )}
+        {messages.map((msg) => (
+          <div key={msg.id} data-msg-bubble>
             <MessageBubble
               message={msg}
               onLoadMedia={loadMedia}

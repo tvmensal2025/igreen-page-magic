@@ -1,4 +1,23 @@
 project_id = "zlzasfhcxcznaprrragl"
 
+# Cron/webhook: gateway NÃO pode exigir JWT de usuário.
+# pg_cron manda só `apikey` (anon); Whapi não manda Authorization.
+# Auth fica no código (service role / secret / grace).
 [functions.notify-partner-leads-batch]
+verify_jwt = false
+
+[functions.rodizio-metrics-broadcast]
+verify_jwt = false
+
+[functions.facebook-sync-metrics]
+verify_jwt = false
+
+[functions.whapi-webhook]
+verify_jwt = false
+
+# Voice Dialer (PSTN): cron + webhook Twilio sem JWT de usuário
+[functions.voice-dialer-cron]
+verify_jwt = false
+
+[functions.voice-dialer-webhook]
 verify_jwt = false

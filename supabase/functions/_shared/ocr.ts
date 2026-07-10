@@ -3,6 +3,7 @@ import { normalizarRG, validarDataNascimento, validarNomeOCR, validarCPFDigitos 
 import { captureError } from "./sentry.ts";
 import { isMockMode, mockBillOcr, mockDocOcr, shouldForceOcrFail, isTestMode } from "./test-mode.ts";
 import { normalizeDistribuidora, isHoldingName } from "./distribuidoras.ts";
+import { parseMoneyBR } from "./parse-money.ts";
 
 // ─── Lovable AI Gateway shim ────────────────────────────────────────
 // Substitui chamadas diretas a generativelanguage.googleapis.com pelo
@@ -288,17 +289,9 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
 
     if (dados.numeroInstalacao) { const n = dados.numeroInstalacao.replace(/\D/g, ""); dados.numeroInstalacao = (n.length >= 7 && n.length <= 12) ? n : ""; }
     if (dados.valorConta) {
-      // Parse robusto BR/US: "1.688,15" → 1688.15 ; "1688.15" → 1688.15 ; "1688" → 1688
-      let raw = String(dados.valorConta).replace(/[^\d.,]/g, "");
-      if (raw.includes(",")) {
-        // Formato BR: "." é milhar, "," é decimal
-        raw = raw.replace(/\./g, "").replace(",", ".");
-      } else if ((raw.match(/\./g) || []).length > 1) {
-        // Múltiplos pontos sem vírgula = todos são milhar (ex: "1.688.150")
-        raw = raw.replace(/\./g, "");
-      }
-      const v = parseFloat(raw);
-      dados.valorConta = (!isNaN(v) && v > 0) ? v.toFixed(2) : "";
+      // Parse robusto BR/US via fonte única (parseMoneyBR)
+      const v = parseMoneyBR(dados.valorConta);
+      dados.valorConta = (v != null) ? v.toFixed(2) : "";
     }
     // Consumo médio em kWh — só dígitos, aceita faixa 50..5000.
     if (dados.consumoMedio) {

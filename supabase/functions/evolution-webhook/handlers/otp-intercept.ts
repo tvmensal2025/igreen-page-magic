@@ -51,9 +51,9 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
   const { data: otpCustomer } = await supabase
     .from("customers")
     .select(`
-      id, name, status, portal2_idcliente,
+      id, name, status, portal2_idcliente, portal_idconsultor_override,
       consultants:consultant_id(igreen_id),
-      referral_partners:referral_partner_id(partner_igreen_id)
+      referral_partners:referral_partner_id(cli, partner_igreen_id)
     `)
     .eq("phone_whatsapp", phone)
     .eq("consultant_id", consultantId)
@@ -75,13 +75,21 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
     })
     .eq("id", otpCustomer.id);
 
-  // Resolve idconsultor (parceiro tem precedência, mesma regra do buildPortal2Payload)
+  // Resolve idconsultor (mesma prioridade do buildPortal2Payload)
   const c: any = otpCustomer;
+  const overrideRaw = Number(c.portal_idconsultor_override || 0);
+  const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const donoIgreenId = c.consultants?.igreen_id ? Number(c.consultants.igreen_id) : null;
   const partnerIgreenId = c.referral_partners?.partner_igreen_id
-    ? Number(c.referral_partners.partner_igreen_id) : null;
-  const idconsultor = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
-    ? (partnerIgreenId as number) : donoIgreenId;
+    ? Number(c.referral_partners.partner_igreen_id) : 0;
+  const partnerCli = c.referral_partners?.cli ? Number(c.referral_partners.cli) : 0;
+  const partnerAsConsultant =
+    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+      ? partnerIgreenId
+      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const idconsultor = overrideId > 0
+    ? overrideId
+    : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
   const idcliente = c.portal2_idcliente ? Number(c.portal2_idcliente) : null;
 
   await sender.sendText(remoteJid, `✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...`);

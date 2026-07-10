@@ -1,20 +1,33 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PORTAL_FIELDS, validateForPortal, type ValidationResult } from "@/lib/captacao/portalValidation";
+import { resolvePortalWhatsapp, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 
 /**
  * Lista canônica usada pela ficha + barra de progresso.
  * É a MESMA lista que o portal iGreen exige no POST /customers — não tem
  * mais "RG" nem "Telefone fixo" inventados que sempre ficavam vermelhos.
- * Inclui media_consumo e numero_instalacao, que antes ficavam ocultos e
- * causavam falha silenciosa no worker (404 em /bonus/rules).
+ * Inclui media_consumo (obrigatório no Portal 2) e ID opcional no final.
  */
-export const CAPTURE_FIELDS = PORTAL_FIELDS
+const PORTAL_CAPTURE_FIELDS = PORTAL_FIELDS
   // Documentos (uploads) ficam num módulo separado (CaptureDocumentTiles)
   .filter((f) => f.group !== "docs")
   .map((f) => ({ key: f.key, label: f.label } as const));
 
-export type CaptureFieldKey = typeof PORTAL_FIELDS[number]["key"];
+/** Campo opcional na ficha: sobrescreve idconsultor no Portal 2. */
+export const ID_OVERRIDE_FIELD = {
+  key: "portal_idconsultor_override" as const,
+  label: "ID",
+};
+
+export const CAPTURE_FIELDS = [
+  ...PORTAL_CAPTURE_FIELDS,
+  ID_OVERRIDE_FIELD,
+] as const;
+
+export type CaptureFieldKey =
+  | typeof PORTAL_FIELDS[number]["key"]
+  | typeof ID_OVERRIDE_FIELD.key;
 
 export interface CaptureCustomer {
   id: string;
@@ -32,6 +45,15 @@ export interface CaptureCustomer {
   address_complement: string | null;
   electricity_bill_value: number | null;
   media_consumo?: number | null;
+  /** Preferência de fatura (bot ask_contaunica). Unificado ⇔ transferir titularidade. */
+  contaunica?: boolean | null;
+  contaunica_answered?: boolean | null;
+  transferir_titularidade?: boolean | null;
+  transferir_titularidade_answered?: boolean | null;
+  /** Se preenchido, sobrescreve idconsultor no Portal 2. */
+  portal_idconsultor_override?: number | null;
+  /** Telefone de contato do portal (edição da ficha). phone_whatsapp = chave do chat. */
+  portal2_celular_alt?: string | null;
   document_front_url: string | null;
   document_back_url: string | null;
   electricity_bill_photo_url: string | null;
@@ -65,10 +87,14 @@ export interface CaptureCustomer {
 
 function isFieldFilled(c: CaptureCustomer | null | undefined, key: CaptureFieldKey): boolean {
   if (!c) return false;
+  if (key === "phone_whatsapp") return !!resolvePortalWhatsapp(c);
   const v = (c as any)[key];
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && !v.trim()) return false;
-  if ((key === "electricity_bill_value" || key === "media_consumo") && Number(v) <= 0) return false;
+  if (key === "electricity_bill_value" || key === "media_consumo") {
+    if (Number(v) <= 0) return false;
+  }
+  if (key === "portal_idconsultor_override" && Number(v) <= 0) return false;
   return true;
 }
 
@@ -81,7 +107,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, ocr_review_pending, ocr_review_started_at, created_at")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, ocr_review_pending, ocr_review_started_at, created_at")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);
@@ -141,20 +167,69 @@ export function useCaptureSession(customerId: string | null) {
 
   const updateField = useCallback(async (field: CaptureFieldKey, value: any) => {
     if (!customerId || !customer) return;
+    let nextValue = value;
+    // media_consumo: número positivo (kWh)
+    if (field === "media_consumo") {
+      const n = Number(String(value ?? "").replace(",", "."));
+      nextValue = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+    }
+    // ID iGreen: só dígitos; vazio → NULL (usa consultor da página).
+    if (field === "portal_idconsultor_override") {
+      const digitsOnly = String(value ?? "").replace(/\D/g, "");
+      nextValue = digitsOnly ? Number(digitsOnly) : null;
+      if (nextValue !== null && (!Number.isFinite(nextValue) || nextValue <= 0)) {
+        nextValue = null;
+      }
+    }
+    // WhatsApp da ficha = telefone do PORTAL, não a chave da conversa.
+    // phone_whatsapp tem índice único e identifica o chat — NÃO sobrescrever.
+    // Grava em portal2_celular_alt (mesma regra do bot ask_phone / resolvePortalWhatsapp).
+    if (field === "phone_whatsapp") {
+      const canonical = toWhatsappCanonical(value);
+      nextValue = canonical.length >= 12 ? canonical : null;
+      const prevAlt = customer.portal2_celular_alt ?? null;
+      const wasFilled = isFieldFilled(customer, field);
+      setCustomer((c) => c
+        ? ({ ...c, portal2_celular_alt: nextValue } as CaptureCustomer)
+        : c);
+      const { error } = await supabase
+        .from("customers")
+        .update({ portal2_celular_alt: nextValue } as never)
+        .eq("id", customerId);
+      if (error) {
+        setCustomer((c) => c
+          ? ({ ...c, portal2_celular_alt: prevAlt } as CaptureCustomer)
+          : c);
+        throw error;
+      }
+      const nowFilled = !!nextValue;
+      if (!wasFilled && nowFilled) {
+        await supabase.from("capture_field_events").insert({
+          consultant_id: customer.consultant_id,
+          customer_id: customerId,
+          field: "portal2_celular_alt",
+          source: "manual",
+        });
+      }
+      return;
+    }
     const prevValue = (customer as any)[field];
     const wasFilled = isFieldFilled(customer, field);
     // optimistic
-    setCustomer((c) => c ? ({ ...c, [field]: value }) as CaptureCustomer : c);
+    setCustomer((c) => c ? ({ ...c, [field]: nextValue } as CaptureCustomer) : c);
     const { error } = await supabase
       .from("customers")
-      .update({ [field]: value } as never)
+      .update({ [field]: nextValue } as never)
       .eq("id", customerId);
     if (error) {
       // rollback
-      setCustomer((c) => c ? ({ ...c, [field]: prevValue }) as CaptureCustomer : c);
+      setCustomer((c) => c ? ({ ...c, [field]: prevValue } as CaptureCustomer) : c);
       throw error;
     }
-    const nowFilled = value !== null && value !== undefined && String(value).trim() !== "";
+    const nowFilled = nextValue !== null && nextValue !== undefined && String(nextValue).trim() !== ""
+      && (field !== "portal_idconsultor_override" || Number(nextValue) > 0)
+      && (field !== "media_consumo" || Number(nextValue) > 0)
+      && (field !== "electricity_bill_value" || Number(nextValue) > 0);
     if (!wasFilled && nowFilled) {
       // log event for XP analytics
       await supabase.from("capture_field_events").insert({
@@ -166,5 +241,56 @@ export function useCaptureSession(customerId: string | null) {
     }
   }, [customerId, customer]);
 
-  return { customer, loading, filledCount, totalFields, progress, missing, isComplete, validation, updateField, reload: load };
+  /**
+   * Preferência de boleto (espelha ask_contaunica do bot).
+   * Unificado ⇔ contaunica + transferir_titularidade; separado ⇔ ambos false.
+   */
+  const updateBoletoPreference = useCallback(async (preference: "unificado" | "separado") => {
+    if (!customerId || !customer) return;
+    const unificado = preference === "unificado";
+    const patch = {
+      contaunica: unificado,
+      transferir_titularidade: unificado,
+      contaunica_answered: true,
+      transferir_titularidade_answered: true,
+    };
+    const prev = {
+      contaunica: customer.contaunica ?? null,
+      transferir_titularidade: customer.transferir_titularidade ?? null,
+      contaunica_answered: customer.contaunica_answered ?? null,
+      transferir_titularidade_answered: customer.transferir_titularidade_answered ?? null,
+    };
+    const wasAnswered = customer.contaunica_answered === true;
+    setCustomer((c) => (c ? ({ ...c, ...patch } as CaptureCustomer) : c));
+    const { error } = await supabase
+      .from("customers")
+      .update(patch as never)
+      .eq("id", customerId);
+    if (error) {
+      setCustomer((c) => (c ? ({ ...c, ...prev } as CaptureCustomer) : c));
+      throw error;
+    }
+    if (!wasAnswered) {
+      await supabase.from("capture_field_events").insert({
+        consultant_id: customer.consultant_id,
+        customer_id: customerId,
+        field: "boleto_preference",
+        source: "manual",
+      });
+    }
+  }, [customerId, customer]);
+
+  return {
+    customer,
+    loading,
+    filledCount,
+    totalFields,
+    progress,
+    missing,
+    isComplete,
+    validation,
+    updateField,
+    updateBoletoPreference,
+    reload: load,
+  };
 }

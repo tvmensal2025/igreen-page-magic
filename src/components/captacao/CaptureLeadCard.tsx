@@ -7,8 +7,10 @@ import { Check, Edit2, Loader2, X, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { CaptureDocumentTiles } from "./CaptureDocumentTiles";
 import { CaptureDataConfirmCard } from "./CaptureDataConfirmCard";
+import { CaptureBoletoPreference, resolveBoletoPreference } from "./CaptureBoletoPreference";
 import { bumpMission } from "./CaptureMissionsPanel";
 import { ProgressRing } from "./ProgressRing";
+import { resolvePortalWhatsapp } from "@/lib/captacao/portalPhone";
 
 interface Props {
   customerId: string;
@@ -20,12 +22,22 @@ interface Props {
 }
 
 export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sentStepsCount = 0, footer }: Props) {
-  const { customer, loading, filledCount, totalFields, progress, updateField, validation } = useCaptureSession(customerId);
+  const {
+    customer,
+    loading,
+    filledCount,
+    totalFields,
+    progress,
+    updateField,
+    updateBoletoPreference,
+    validation,
+  } = useCaptureSession(customerId);
   const { suggestions, resolve } = useCaptureSuggestions(customerId);
   const { toast } = useToast();
   const [editing, setEditing] = useState<CaptureFieldKey | null>(null);
   const [editValue, setEditValue] = useState("");
   const [flashKey, setFlashKey] = useState<string | null>(null);
+  const [savingBoleto, setSavingBoleto] = useState(false);
   const lastCountRef = useRef<number>(0);
 
   const suggestionByField = new Map(suggestions.map((s) => [s.field_name, s]));
@@ -36,6 +48,10 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
     try {
       let value: any = s.suggested_value;
       if (key === "electricity_bill_value") value = Number(String(value).replace(",", ".")) || null;
+      if (key === "media_consumo") {
+        const n = Number(String(value).replace(",", "."));
+        value = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+      }
       await updateField(key, value);
       await resolve(s.id, "accepted");
       if (customer?.consultant_id) bumpMission(customer.consultant_id, "aiAccepts");
@@ -64,6 +80,11 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
 
   const startEdit = (key: CaptureFieldKey) => {
     setEditing(key);
+    if (key === "phone_whatsapp") {
+      // Mostra o telefone que vai ao portal (alt/landline), não a chave do chat.
+      setEditValue(resolvePortalWhatsapp(customer) || "");
+      return;
+    }
     const v = customer ? (customer as any)[key] : "";
     setEditValue(v ?? "");
   };
@@ -73,11 +94,29 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
     try {
       let value: any = editValue;
       if (editing === "electricity_bill_value") value = Number(String(editValue).replace(",", ".")) || null;
+      if (editing === "media_consumo") {
+        const n = Number(String(editValue).replace(",", "."));
+        value = Number.isFinite(n) && n > 0 ? Math.round(n) : null;
+      }
+      if (editing === "portal_idconsultor_override") {
+        value = String(editValue).replace(/\D/g, "") || null;
+      }
       if (typeof value === "string") value = value.trim() || null;
       await updateField(editing, value);
       setEditing(null);
     } catch (e: any) {
       toast({ title: "Erro ao salvar", description: e?.message || String(e), variant: "destructive" });
+    }
+  };
+
+  const saveBoleto = async (next: "unificado" | "separado") => {
+    setSavingBoleto(true);
+    try {
+      await updateBoletoPreference(next);
+    } catch (e: any) {
+      toast({ title: "Erro ao salvar boleto", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setSavingBoleto(false);
     }
   };
 
@@ -87,6 +126,7 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
 
   const canSubmit = !!validation?.ok;
   const firstPending = validation?.pendingItems?.[0];
+  const boletoValue = resolveBoletoPreference(customer);
 
   return (
     <aside className={embedded
@@ -113,11 +153,20 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
           <CaptureDataConfirmCard kind="doc" customer={customer} />
           <div className="flex flex-col gap-1">
           {CAPTURE_FIELDS.filter((f) => f.key !== "document_front_url").map(f => {
-            const v = (customer as any)[f.key];
-            const filled = v !== null && v !== undefined && String(v).trim() !== "" && (f.key !== "electricity_bill_value" || Number(v) > 0);
+            const isPhoneField = f.key === "phone_whatsapp";
+            const isConsumoField = f.key === "media_consumo";
+            const v = isPhoneField
+              ? resolvePortalWhatsapp(customer)
+              : (customer as any)[f.key];
+            const isIdField = f.key === "portal_idconsultor_override";
+            const filled = v !== null && v !== undefined && String(v).trim() !== ""
+              && (f.key !== "electricity_bill_value" || Number(v) > 0)
+              && (!isConsumoField || Number(v) > 0)
+              && (!isIdField || Number(v) > 0);
             const isEditingThis = editing === f.key;
-            const sugg = suggestionByField.get(f.key);
+            const sugg = !isIdField ? suggestionByField.get(f.key) : undefined;
             const isFlashing = flashKey === f.key;
+            const emptyHint = isIdField ? "vazio = consultor da página" : "toque para preencher";
 
             return (
               <div
@@ -141,7 +190,7 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
                       className={`flex-1 min-w-0 truncate text-[11px] leading-tight ${filled ? "text-foreground font-medium" : "text-muted-foreground/40 italic"}`}
                       title={filled ? String(v) : undefined}
                     >
-                      {filled ? String(v) : "toque para preencher"}
+                      {filled ? String(v) : emptyHint}
                     </p>
                   )}
                   {!isEditingThis && filled && (
@@ -152,7 +201,13 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
                   <div className="mt-1 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                     <Input
                       value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
+                      onChange={(e) => setEditValue(
+                        isIdField || isPhoneField
+                          ? e.target.value.replace(/\D/g, "")
+                          : e.target.value,
+                      )}
+                      inputMode={isIdField || isPhoneField || isConsumoField || f.key === "electricity_bill_value" ? "numeric" : undefined}
+                      placeholder={isIdField ? "ID iGreen (opcional)" : (isPhoneField ? "DDD + número" : (isConsumoField ? "kWh médio" : undefined))}
                       onKeyDown={(e) => { if (e.key === "Enter") void saveEdit(); if (e.key === "Escape") setEditing(null); }}
                       autoFocus
                       className="h-7 text-xs"
@@ -182,6 +237,13 @@ export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sen
             );
           })}
           </div>
+
+          <CaptureBoletoPreference
+            value={boletoValue}
+            saving={savingBoleto}
+            onChange={saveBoleto}
+          />
+
           {/* Documentos */}
           <div className="border-t border-border/60 pt-1.5">
             <CaptureDocumentTiles

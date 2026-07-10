@@ -6,6 +6,7 @@ import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
 import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
 import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
+import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -292,28 +293,9 @@ function StickerViewer({ message, onLoadMedia }: { message: ChatMessage; onLoadM
   );
 }
 
+/** Formatação WhatsApp (*negrito*, _itálico_, ~riscado~, `mono`) + links. */
 function LinkifiedText({ text }: { text: string }) {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
-  return (
-    <p className="text-sm whitespace-pre-wrap break-words">
-      {parts.map((part, i) =>
-        urlRegex.test(part) ? (
-          <a
-            key={i}
-            href={part}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary underline hover:opacity-80 break-all"
-          >
-            {part}
-          </a>
-        ) : (
-          <span key={i}>{part}</span>
-        )
-      )}
-    </p>
-  );
+  return <WhatsAppFormattedText text={text} />;
 }
 
 export function MessageBubble({ message, onLoadMedia, consultantId, customerId, onAttachToCapture, onTemplateSaved }: MessageBubbleProps) {
@@ -350,7 +332,7 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
   return (
     <div className={`group flex ${fromMe ? "justify-end" : "justify-start"} mb-1.5`}>
       <div
-        className={`relative max-w-[75%] rounded-2xl px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${
+        className={`relative max-w-[min(85%,28rem)] sm:max-w-[min(75%,36rem)] rounded-2xl px-3 py-2 shadow-sm transition-shadow hover:shadow-md break-words ${
           fromMe
             ? "bg-gradient-to-br from-primary/15 to-primary/10 text-foreground rounded-br-md border border-primary/15"
             : "bg-card text-foreground rounded-bl-md border border-border/60"

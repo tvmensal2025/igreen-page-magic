@@ -213,7 +213,11 @@ Deno.serve(async (req) => {
   try {
     const { data: pending } = await supabase
       .from("customers")
-      .select("id, consultant_id, otp_code, portal2_idcliente, consultants:consultant_id(igreen_id)")
+      .select(`
+        id, consultant_id, otp_code, portal2_idcliente, portal_idconsultor_override,
+        consultants:consultant_id(igreen_id),
+        referral_partners:referral_partner_id(cli, partner_igreen_id)
+      `)
       .eq("otp_pending_replay", true)
       .not("portal2_idcliente", "is", null)
       .not("otp_code", "is", null)
@@ -227,7 +231,20 @@ Deno.serve(async (req) => {
         replayResults.push({ id: lead.id, replayed: false, reason: "worker_not_configured" });
         continue;
       }
-      const idconsultor = (lead as any)?.consultants?.igreen_id;
+      const lc: any = lead;
+      const overrideRaw = Number(lc.portal_idconsultor_override || 0);
+      const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
+      const dono = lc.consultants?.igreen_id ? Number(lc.consultants.igreen_id) : null;
+      const partnerIgreenId = lc.referral_partners?.partner_igreen_id
+        ? Number(lc.referral_partners.partner_igreen_id) : 0;
+      const partnerCli = lc.referral_partners?.cli ? Number(lc.referral_partners.cli) : 0;
+      const partnerAsConsultant =
+        (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+          ? partnerIgreenId
+          : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+      const idconsultor = overrideId > 0
+        ? overrideId
+        : (partnerAsConsultant > 0 ? partnerAsConsultant : dono);
       const idcliente = lead.portal2_idcliente;
       if (!idconsultor || !idcliente) {
         replayResults.push({ id: lead.id, replayed: false, reason: "missing_ids" });

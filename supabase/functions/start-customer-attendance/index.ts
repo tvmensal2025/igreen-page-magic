@@ -1,11 +1,14 @@
 // start-customer-attendance
 // Botão "Iniciar atendimento" do consultor. Envia os 2 balões de abertura
-// (saudação + protocolo + pedido de nome) ao lead. Idempotente:
-// se `customers.welcome_sent_at` já existir, retorna 200 sem reenviar.
+// (saudação + Atendimento iniciado + protocolo + pedido de nome) ao lead.
+// Idempotente: se `customers.welcome_sent_at` já existir, retorna 200 sem reenviar.
+//
+// Canal: Super Admin → Whapi (settings.whapi_token); demais → Evolution.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { sendWelcomeHeader } from "../_shared/welcome-header.ts";
+import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 
 interface Body { customerId: string; consultantId: string }
 
@@ -46,33 +49,38 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "forbidden" }, 403);
     }
 
-    const env = {
-      evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
-      evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
-      whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
-    };
+    const channelEnv = await loadChannelEnv(supabase);
+    const result = await sendWelcomeHeader(supabase, {
+      customerId,
+      consultantId,
+      env: channelEnv,
+      superadminConsultantId: channelEnv.superadminConsultantId,
+    });
 
-    const result = await sendWelcomeHeader(supabase, { customerId, consultantId, env });
     if (!result.ok) {
-      // Erros de envio (número inválido no WhatsApp, instância recusou payload etc.)
-      // NÃO devem virar 5xx — o frontend trata como crash. Retornamos 200 com
-      // sinal de fallback para o botão exibir toast + manter fluxo manual.
-      if (result.code === "send_failed_greeting" || result.code === "send_failed_name_request") {
+      // NUNCA 5xx para falha de envio — frontend trata como crash ("non-2xx").
+      const soft = [
+        "send_failed_greeting",
+        "send_failed_protocol",
+        "channel_unavailable",
+        "rate_limited",
+        "no_phone",
+        "protocol_generation_failed",
+      ];
+      if (soft.includes(String(result.code))) {
         return json({
           ok: false,
           error: result.code,
           detail: result.detail,
           fallback: true,
-          message: "Não foi possível enviar automaticamente. Envie a saudação manualmente pelo chat.",
+          message: result.code === "channel_unavailable"
+            ? "Canal WhatsApp indisponível. Verifique Whapi (super admin) ou Evolution (consultor)."
+            : "Não foi possível enviar automaticamente. Envie a saudação manualmente pelo chat.",
         }, 200);
       }
-      const status = result.code === "channel_unavailable"
-        ? 409
-        : result.code === "no_phone"
-        ? 400
-        : 502;
-      return json({ ok: false, error: result.code, detail: result.detail }, status);
+      return json({ ok: false, error: result.code, detail: result.detail }, 200);
     }
+
     return json({
       ok: true,
       protocol: result.protocol,
@@ -81,6 +89,7 @@ Deno.serve(async (req) => {
       skipped: result.skipped,
     });
   } catch (e) {
-    return json({ ok: false, error: "exception", message: (e as Error).message }, 500);
+    // Mesmo em exception, 200 com ok:false — evita toast genérico "non-2xx"
+    return json({ ok: false, error: "exception", message: (e as Error).message, fallback: true }, 200);
   }
 });

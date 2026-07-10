@@ -2,6 +2,7 @@
 // rejeitando o lead com EXATAMENTE a mesma régua que o frontend mostra ao consultor.
 // Se mudar a lógica aqui, atualize o arquivo do src também.
 import { isValidDistribuidora, isHoldingName, suggestDistribuidoras } from "./distribuidoras.ts";
+import { resolvePortalWhatsapp } from "./portal-phone.ts";
 
 
 
@@ -12,7 +13,8 @@ export type FieldKey =
   | "address_neighborhood" | "address_city" | "address_state"
   | "distribuidora" | "numero_instalacao"
   | "electricity_bill_value" | "media_consumo"
-  | "document_front_url" | "document_back_url" | "electricity_bill_photo_url";
+  | "document_front_url" | "document_back_url" | "electricity_bill_photo_url"
+  | "boleto_preference";
 
 export interface FieldDef { key: FieldKey; label: string; }
 
@@ -36,6 +38,12 @@ export const PORTAL_FIELDS: FieldDef[] = [
   { key: "document_back_url", label: "Documento (verso)" },
   { key: "electricity_bill_photo_url", label: "Conta de luz" },
 ];
+
+/** Campo sintético — UI própria na ficha; mesma régua do bot ask_contaunica. */
+export const BOLETO_PREFERENCE_FIELD: FieldDef = {
+  key: "boleto_preference",
+  label: "Boleto",
+};
 
 export interface InvalidIssue {
   field: string;
@@ -95,13 +103,22 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
   const invalid: InvalidIssue[] = [];
 
   if (!c) {
-    return { ok: false, missing: PORTAL_FIELDS.map((f) => ({ key: f.key, label: f.label })), invalid: [] };
+    return {
+      ok: false,
+      missing: [...PORTAL_FIELDS, BOLETO_PREFERENCE_FIELD],
+      invalid: [],
+    };
   }
 
   for (const f of PORTAL_FIELDS) {
     const v = (c as any)[f.key];
     if (f.key === "electricity_bill_value" || f.key === "media_consumo") {
       if (v === null || v === undefined || Number(v) <= 0) missing.push({ key: f.key, label: f.label });
+      continue;
+    }
+    if (f.key === "phone_whatsapp") {
+      // Telefone do portal: alt → landline confirmado → chave do chat
+      if (!resolvePortalWhatsapp(c)) missing.push({ key: f.key, label: f.label });
       continue;
     }
     if (f.key === "document_back_url") {
@@ -131,14 +148,19 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
       if (age < 18 || age > 100) invalid.push({ field: "data_nascimento", label: "Nascimento", reason: `Idade ${Math.floor(age)} fora da faixa 18–100` });
     }
   }
-  if (isStrFilled(c.phone_whatsapp)) {
-    const ph = digits(c.phone_whatsapp).replace(/^55/, "");
-    if (ph.length < 10 || ph.length > 11) invalid.push({ field: "phone_whatsapp", label: "WhatsApp", reason: "Telefone com DDD precisa de 10–11 dígitos" });
+  {
+    const portalPhone = resolvePortalWhatsapp(c);
+    if (portalPhone) {
+      const ph = digits(portalPhone).replace(/^55/, "");
+      if (ph.length < 10 || ph.length > 11) {
+        invalid.push({ field: "phone_whatsapp", label: "WhatsApp", reason: "Telefone com DDD precisa de 10–11 dígitos" });
+      }
+    }
   }
   if (isStrFilled(c.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(c.email).trim())) {
     invalid.push({ field: "email", label: "E-mail", reason: `"${c.email}" não é um e-mail válido — corrija para enviar ao portal` });
     const emailField = PORTAL_FIELDS.find((f) => f.key === "email");
-    if (emailField && !missing.includes(emailField)) missing.push(emailField);
+    if (emailField && !missing.some((m) => m.key === emailField.key)) missing.push(emailField);
   }
   if (isStrFilled(c.cep) && digits(c.cep).length !== 8) {
     invalid.push({ field: "cep", label: "CEP", reason: "CEP precisa de 8 dígitos" });
@@ -173,6 +195,7 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
     }
   }
 
+  // Cruzamento crítico — R$/kWh tem que bater
   const valor = Number(c.electricity_bill_value || 0);
   const kwh = Number(c.media_consumo || 0);
   if (valor > 0 && kwh > 0) {
@@ -190,6 +213,11 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
 
   if (c.name_mismatch_flag && !c.name_mismatch_acknowledged_at) {
     invalid.push({ field: "name_mismatch", label: "Titularidade", reason: "Nome do documento difere da conta — confirme antes de enviar" });
+  }
+
+  // Preferência de boleto (unificado ⇔ transferir titularidade) — mesma régua do bot
+  if (c.contaunica_answered !== true) {
+    missing.push(BOLETO_PREFERENCE_FIELD);
   }
 
   return { ok: missing.length === 0 && invalid.length === 0, missing, invalid };

@@ -7,7 +7,7 @@
  *   - valida o form inline (CONSULTOR exige código iGreen; PARCEIRO exige cli;
  *     ambos exigem nome e telefone de aviso);
  *   - cria o participante e já o adiciona à lista ordenada;
- *   - valida o mínimo de 2 participantes quando o rodízio está ligado.
+ *   - valida o mínimo de 1 participante quando o rodízio/destino exclusivo está ligado.
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -359,12 +359,11 @@ export function useRodizioLogic({ open, state, patch, patchFn }: Deps) {
     }
   }, [availablePartners, state.rodizioPartners, patchFn, toast]);
 
-  // Mensagem de erro do mínimo de 2 participantes (Requisito 5.2).
+  // Mensagem de erro do mínimo de 1 participante (destino exclusivo ou rodízio).
   const minParticipantsError = useMemo<string | null>(() => {
     if (!state.rodizioEnabled) return null;
-    const faltam = 2 - state.rodizioPartners.length;
-    if (faltam > 0) {
-      return `⚠️ Faltam participantes — o rodízio precisa de pelo menos 2 pessoas. Adicione mais ${faltam} ou desligue o rodízio.`;
+    if (state.rodizioPartners.length < 1) {
+      return "⚠️ Adicione pelo menos 1 pessoa — você (“Sou eu”) ou outra pessoa — para receber os leads e as métricas horárias.";
     }
     return null;
   }, [state.rodizioEnabled, state.rodizioPartners.length]);

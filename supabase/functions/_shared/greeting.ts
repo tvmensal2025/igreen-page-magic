@@ -4,9 +4,10 @@ export function greetingForNow(now: Date = new Date()): string {
   // BRT = UTC-3 (sem horário de verão desde 2019).
   const sp = new Date(now.getTime() - 3 * 3600 * 1000);
   const h = sp.getUTCHours();
-  if (h >= 5 && h < 12) return "Muito Bom Dia";
-  if (h >= 12 && h < 18) return "Muita Boa Tarde";
-  return "Muita Boa Noite";
+  // Português natural — evita "Muito Bom Dia" / "Muita Boa Tarde".
+  if (h >= 5 && h < 12) return "Bom dia";
+  if (h >= 12 && h < 18) return "Boa tarde";
+  return "Boa noite";
 }
 
 export function partnerInitials(name: string | null | undefined): string {

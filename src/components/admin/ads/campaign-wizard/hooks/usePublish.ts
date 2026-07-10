@@ -59,9 +59,13 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
       toast({ title: "Telefone do consultor não configurado", description: "Adicione seu WhatsApp na aba Dados antes de publicar.", variant: "destructive" });
       return;
     }
-    // Rodízio ligado exige pelo menos 2 participantes para fazer sentido (Req 5.2).
-    if (state.rodizioEnabled && state.rodizioPartners.length < 2) {
-      toast({ title: "Rodízio incompleto", description: "O rodízio exige pelo menos 2 participantes.", variant: "destructive" });
+    // Destino exclusivo / rodízio ligado exige pelo menos 1 participante.
+    if (state.rodizioEnabled && state.rodizioPartners.length < 1) {
+      toast({
+        title: "Participante faltando",
+        description: "Adicione pelo menos 1 pessoa (você ou um consultor/parceiro) para receber os leads e as métricas.",
+        variant: "destructive",
+      });
       return;
     }
     if (state.preflight && !state.preflight.ok) {

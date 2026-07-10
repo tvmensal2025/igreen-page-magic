@@ -376,11 +376,18 @@ Deno.serve(async (req) => {
 
       case "list_messages": {
         const chatId = normalizeChatId(String(payload.chatId || ""));
-        const count = Math.min(Number(payload.count) || 50, 200);
+        // Whapi aceita count 1–500; offset para histórico antigo ao rolar pra cima.
+        const count = Math.min(Math.max(Number(payload.count) || 50, 1), 500);
+        const offset = Math.max(Number(payload.offset) || 0, 0);
         if (!chatId) return json(400, { error: "chatId obrigatório" });
+        const qs = new URLSearchParams({
+          count: String(count),
+          offset: String(offset),
+          sort: "desc",
+        });
         const r = await whapiFetch(
           whapiToken,
-          `/messages/list/${encodeURIComponent(chatId)}?count=${count}`,
+          `/messages/list/${encodeURIComponent(chatId)}?${qs.toString()}`,
           { method: "GET" },
         );
         if (!r.ok) {

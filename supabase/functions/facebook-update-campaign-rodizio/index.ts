@@ -5,7 +5,7 @@
 //
 // Regras:
 // - Apenas o dono da campanha (consultant_id) pode alterar.
-// - Requer ≥2 participantes quando `enabled=true`.
+// - Requer ≥1 participante quando `enabled=true` (1 = destino exclusivo; 2+ = rodízio).
 // - Todos os partner_ids devem pertencer a referral_partners do consultor.
 import { adminClient, authConsultant, corsHeaders } from "../_shared/fb-graph.ts";
 
@@ -36,8 +36,8 @@ Deno.serve(async (req) => {
     if (!body?.campaign_id) return fail("campaign_id obrigatório");
 
     const partnerIds = Array.isArray(body.partner_ids) ? body.partner_ids.filter(Boolean) : [];
-    if (body.enabled && partnerIds.length < 2) {
-      return fail("Rodízio requer pelo menos 2 participantes.");
+    if (body.enabled && partnerIds.length < 1) {
+      return fail("Selecione pelo menos 1 participante (você ou outra pessoa).");
     }
 
     const admin = adminClient();

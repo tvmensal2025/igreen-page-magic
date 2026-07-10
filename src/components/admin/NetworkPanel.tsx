@@ -1,11 +1,14 @@
 import { useState, useEffect, useMemo, useCallback, useRef, useLayoutEffect, lazy, Suspense } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound, Plus } from "lucide-react";
+import { Users, UserCheck, TrendingUp, CheckCircle2, RefreshCw, Loader2, Search, MessageCircle, Table2, Network, ZoomIn, ZoomOut, MapPin, Calendar, Phone, X, ChevronDown, Zap, Award, ExternalLink, KeyRound, Plus, GitBranch, ListTree } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription,
+} from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { runIgreenSync } from "@/lib/igreenSync";
@@ -51,6 +54,121 @@ function effectiveSponsor(m: { sponsor_id: number | null; sponsor_override_id?: 
   return (m.sponsor_override_id ?? m.sponsor_id) || null;
 }
 
+function emptyMemberStats(partial: Pick<NetworkMember, "id" | "igreen_id" | "name">): NetworkMember {
+  return {
+    id: partial.id,
+    igreen_id: partial.igreen_id,
+    name: partial.name,
+    phone: null,
+    sponsor_id: null,
+    nivel: 0,
+    data_ativo: null,
+    cidade: null,
+    uf: null,
+    clientes_ativos: 0,
+    gp: 0,
+    gi: 0,
+    qtde_diretos: 0,
+    total_pontos: 0,
+    updated_at: "",
+    graduacao: null,
+    graduacao_expansao: null,
+    data_nascimento: null,
+    gp_total: 0,
+    gi_total: 0,
+    bonificavel: 0,
+    green_points: 0,
+    gp_mes: 0,
+    gi_mes: 0,
+    green_points_mes: 0,
+    diretos_ativos: 0,
+    pro: null,
+    inicio_rapido: null,
+    diretos_inicio_rapido: 0,
+    diretos_mes: 0,
+    sponsor_override_id: null,
+  };
+}
+
+/**
+ * Garante o dono da página (consultor) como raiz visual:
+ * - injeta o consultor se a sync só trouxe a rede de uma subconta (Sirlene/Nilma);
+ * - recalcula níveis a partir dele;
+ * - quem não alcança o dono fica pendurado nele (nunca como raiz concorrente).
+ */
+type SubAccountSeed = { igreenId: number; name: string };
+
+function normalizeMembersForViewer(
+  members: NetworkMember[],
+  viewerIgreenId: number | null,
+  viewerName = "Você",
+  subAccounts: SubAccountSeed[] = [],
+): NetworkMember[] {
+  if (!viewerIgreenId) return members;
+  if (members.length === 0 && subAccounts.length === 0) return members;
+
+  const list = [...members];
+  const byId = new Map(list.map((m) => [m.igreen_id, m]));
+
+  if (!byId.has(viewerIgreenId)) {
+    const placeholder = emptyMemberStats({
+      id: `viewer-root-${viewerIgreenId}`,
+      igreen_id: viewerIgreenId,
+      name: viewerName || "Você",
+    });
+    list.unshift(placeholder);
+    byId.set(viewerIgreenId, placeholder);
+  }
+
+  // Subcontas conectadas (Sirlene, Nilma, …) entram abaixo do dono só se
+  // ainda não existem na lista. Sem override automático: o consultor organiza
+  // no painel lateral quem fica abaixo de quem.
+  for (const sub of subAccounts) {
+    if (!sub.igreenId || sub.igreenId === viewerIgreenId) continue;
+    if (byId.has(sub.igreenId)) continue;
+    const seed = {
+      ...emptyMemberStats({
+        id: `subaccount-${sub.igreenId}`,
+        igreen_id: sub.igreenId,
+        name: sub.name || `Licenciado #${sub.igreenId}`,
+      }),
+      nivel: 1,
+      sponsor_id: viewerIgreenId,
+    };
+    list.push(seed);
+    byId.set(sub.igreenId, seed);
+  }
+
+  const depthFromViewer = new Map<number, number>();
+  depthFromViewer.set(viewerIgreenId, 0);
+  const queue = [viewerIgreenId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    const parentDepth = depthFromViewer.get(current)!;
+    for (const m of list) {
+      if (m.igreen_id === viewerIgreenId) continue;
+      const sponsor = effectiveSponsor(m);
+      if (sponsor === current && !depthFromViewer.has(m.igreen_id)) {
+        depthFromViewer.set(m.igreen_id, parentDepth + 1);
+        queue.push(m.igreen_id);
+      }
+    }
+  }
+
+  return list.map((m) => {
+    if (m.igreen_id === viewerIgreenId) {
+      return m.nivel === 0 ? m : { ...m, nivel: 0 };
+    }
+    const depth = depthFromViewer.get(m.igreen_id);
+    if (depth != null) {
+      return depth === m.nivel ? m : { ...m, nivel: depth };
+    }
+    // Sem upline conhecido: fica como raiz secundária até o consultor organizar.
+    // NÃO forçar abaixo de ninguém (evita Nilma cair sob Leonardo por engano).
+    return m;
+  });
+}
+
 interface TreeNode {
   member: NetworkMember;
   children: TreeNode[];
@@ -82,128 +200,38 @@ function sortNodes(nodes: TreeNode[]) {
   nodes.forEach((node) => sortNodes(node.children));
 }
 
-function getRemainingDirectSlots(node: TreeNode) {
-  if (node.member.id.startsWith("virtual-")) return Number.POSITIVE_INFINITY;
-  return (node.member.qtde_diretos || 0) - node.children.length;
-}
-
+/**
+ * Monta a árvore só com patrocinadores reais (sponsor / override).
+ * Não inventa “pai” para órfãos — isso colocava Nilma sob Leonardo por engano.
+ * Órfãos viram raiz e o consultor organiza no painel lateral.
+ */
 function buildTree(members: NetworkMember[]): TreeNode[] {
   const byId = new Map<number, TreeNode>();
-  const nodesByLevel = new Map<number, TreeNode[]>();
   const membersSorted = [...members].sort((a, b) => a.nivel - b.nivel || a.igreen_id - b.igreen_id);
-  const registerByLevel = (node: TreeNode) => {
-    const levelNodes = nodesByLevel.get(node.member.nivel) || [];
-    levelNodes.push(node);
-    nodesByLevel.set(node.member.nivel, levelNodes);
-  };
 
   membersSorted.forEach((m) => {
-    const node = { member: m, children: [], isOrphan: false };
-    byId.set(m.igreen_id, node);
-    registerByLevel(node);
+    byId.set(m.igreen_id, { member: m, children: [], isOrphan: false });
   });
 
   const roots: TreeNode[] = [];
-  const orphanGroups = new Map<number, TreeNode[]>();
 
   membersSorted.forEach((m) => {
     const node = byId.get(m.igreen_id)!;
     const sponsor = effectiveSponsor(m);
-    if (sponsor && byId.has(sponsor)) {
+    if (sponsor && byId.has(sponsor) && sponsor !== m.igreen_id) {
       byId.get(sponsor)!.children.push(node);
-    } else if (m.nivel === 0 || !sponsor) {
-      roots.push(node);
     } else {
-      node.isOrphan = true;
-      const grouped = orphanGroups.get(sponsor) || [];
-      grouped.push(node);
-      orphanGroups.set(sponsor, grouped);
+      if (sponsor && !byId.has(sponsor)) node.isOrphan = true;
+      roots.push(node);
     }
   });
 
-  const pickBestParent = (virtualLevel: number, sponsorId: number) => {
-    for (let candidateLevel = virtualLevel - 1; candidateLevel >= 0; candidateLevel -= 1) {
-      const candidates = (nodesByLevel.get(candidateLevel) || []).filter((candidate) => candidate.member.id !== `virtual-${sponsorId}`);
-      if (!candidates.length) continue;
-
-      const ranked = [...candidates].sort((a, b) => {
-        const aRemaining = getRemainingDirectSlots(a);
-        const bRemaining = getRemainingDirectSlots(b);
-
-        const aCapacityPenalty = aRemaining > 0 ? 0 : Math.abs(aRemaining) * 10000 + 5000;
-        const bCapacityPenalty = bRemaining > 0 ? 0 : Math.abs(bRemaining) * 10000 + 5000;
-        if (aCapacityPenalty !== bCapacityPenalty) return aCapacityPenalty - bCapacityPenalty;
-
-        const aDistance = Math.abs(a.member.igreen_id - sponsorId);
-        const bDistance = Math.abs(b.member.igreen_id - sponsorId);
-        if (aDistance !== bDistance) return aDistance - bDistance;
-
-        return b.member.nivel - a.member.nivel;
-      });
-
-      if (ranked[0]) return ranked[0];
-    }
-
-    return roots[0] || null;
-  };
-
-  if (orphanGroups.size > 0) {
-    const orderedGroups = Array.from(orphanGroups.entries()).sort((a, b) => {
-      const aLevel = (a[1][0]?.member.nivel || 1) - 1;
-      const bLevel = (b[1][0]?.member.nivel || 1) - 1;
-      return aLevel - bLevel || a[0] - b[0];
-    });
-
-    for (const [sponsorId, children] of orderedGroups) {
-      const virtualLevel = Math.max(0, (children[0]?.member.nivel || 1) - 1);
-      const virtualMember: NetworkMember = {
-        id: `virtual-${sponsorId}`,
-        igreen_id: sponsorId,
-        name: `Patrocinador Externo #${sponsorId}`,
-        phone: null,
-        sponsor_id: null,
-        nivel: virtualLevel,
-        data_ativo: null,
-        cidade: null,
-        uf: null,
-        clientes_ativos: 0,
-        gp: 0,
-        gi: 0,
-        qtde_diretos: children.length,
-        total_pontos: 0,
-        updated_at: "",
-        graduacao: null,
-        graduacao_expansao: null,
-        data_nascimento: null,
-        gp_total: 0,
-        gi_total: 0,
-        bonificavel: 0,
-        green_points: 0,
-        gp_mes: 0,
-        gi_mes: 0,
-        green_points_mes: 0,
-        diretos_ativos: 0,
-        pro: null,
-        inicio_rapido: null,
-        diretos_inicio_rapido: 0,
-        diretos_mes: 0,
-      };
-
-      const virtualNode: TreeNode = { member: virtualMember, children, isOrphan: true };
-      const parent = pickBestParent(virtualLevel, sponsorId);
-
-      if (parent) {
-        parent.children.push(virtualNode);
-      } else {
-        roots.push(virtualNode);
-      }
-
-      registerByLevel(virtualNode);
-    }
-  }
-
   sortNodes(roots);
   return roots;
+}
+
+function isPersistedMemberId(id: string) {
+  return !!id && !id.startsWith("virtual-") && !id.startsWith("viewer-root-") && !id.startsWith("subaccount-");
 }
 
 function openWhatsApp(phone: string | null) {
@@ -613,6 +641,231 @@ function OrgChartNode({ node, depth = 0, onSelect }: { node: TreeNode; depth?: n
   );
 }
 
+/* ── Painel lateral: consultor organiza quem fica abaixo de quem ── */
+function OrganizeNetworkSheet({
+  open,
+  onOpenChange,
+  members,
+  viewerIgreenId,
+  consultantId,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  members: NetworkMember[];
+  viewerIgreenId: number | null;
+  consultantId: string;
+  onSaved: () => void | Promise<void>;
+}) {
+  const { toast } = useToast();
+  const [query, setQuery] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  const editable = useMemo(() => {
+    return members
+      .filter((m) => m.igreen_id !== viewerIgreenId)
+      .filter((m) => !m.id.startsWith("virtual-") && !m.id.startsWith("viewer-root-"))
+      .sort((a, b) => nameCollator.compare(a.name, b.name));
+  }, [members, viewerIgreenId]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return editable;
+    return editable.filter(
+      (m) =>
+        m.name.toLowerCase().includes(q) ||
+        String(m.igreen_id).includes(q),
+    );
+  }, [editable, query]);
+
+  const parentOptions = useMemo(() => {
+    return members
+      .filter((m) => !m.id.startsWith("virtual-"))
+      .sort((a, b) => {
+        if (a.igreen_id === viewerIgreenId) return -1;
+        if (b.igreen_id === viewerIgreenId) return 1;
+        return nameCollator.compare(a.name, b.name);
+      });
+  }, [members, viewerIgreenId]);
+
+  useEffect(() => {
+    if (!open) return;
+    const next: Record<string, string> = {};
+    for (const m of editable) {
+      const current = effectiveSponsor(m);
+      next[m.id] = current ? String(current) : "";
+    }
+    setDraft(next);
+    setQuery("");
+  }, [open, editable]);
+
+  const saveOne = async (member: NetworkMember) => {
+    const raw = draft[member.id] ?? "";
+    const newSponsorId = raw ? Number(raw) : null;
+    if (newSponsorId != null && Number.isNaN(newSponsorId)) return;
+    if (newSponsorId === member.igreen_id) {
+      toast({ title: "Não pode ficar abaixo de si mesmo", variant: "destructive" });
+      return;
+    }
+
+    setSavingId(member.id);
+    try {
+      // null = limpa override e volta ao patrocinador original da iGreen
+      const value =
+        newSponsorId == null
+          ? null
+          : newSponsorId === member.sponsor_id
+            ? null
+            : newSponsorId;
+
+      if (isPersistedMemberId(member.id)) {
+        const { error } = await supabase
+          .from("network_members" as any)
+          .update({ sponsor_override_id: value })
+          .eq("id", member.id);
+        if (error) throw error;
+      } else {
+        // Subconta ainda sem linha (ex.: Nilma só na lista de contas) → cria registro mínimo.
+        const { error } = await supabase
+          .from("network_members" as any)
+          .upsert(
+            {
+              consultant_id: consultantId,
+              igreen_id: member.igreen_id,
+              name: member.name,
+              sponsor_id: member.sponsor_id ?? viewerIgreenId,
+              sponsor_override_id: value ?? viewerIgreenId,
+              nivel: 1,
+              clientes_ativos: member.clientes_ativos || 0,
+              gp: member.gp || 0,
+              gi: member.gi || 0,
+              qtde_diretos: member.qtde_diretos || 0,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "consultant_id,igreen_id" },
+          );
+        if (error) throw error;
+      }
+
+      const parent = parentOptions.find((p) => p.igreen_id === newSponsorId);
+      toast({
+        title: "Hierarquia salva",
+        description: parent
+          ? `${member.name.split(" ")[0]} agora abaixo de ${parent.name.split(" ")[0]}`
+          : `${member.name.split(" ")[0]} voltou ao patrocinador original`,
+      });
+      await onSaved();
+    } catch (err) {
+      toast({
+        title: "Erro ao salvar",
+        description: err instanceof Error ? err.message : "Erro",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
+        <SheetHeader className="p-5 pb-3 border-b border-border/60 text-left space-y-1">
+          <SheetTitle className="flex items-center gap-2 text-base">
+            <ListTree className="w-5 h-5 text-primary" />
+            Organizar rede
+          </SheetTitle>
+          <SheetDescription className="text-xs">
+            Você (consultor) fica no topo. Escolha quem fica abaixo de quem — a alteração é salva na hora.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="p-4 border-b border-border/40">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Buscar licenciado..."
+              className="pl-9 h-9 rounded-xl text-sm"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Nenhum licenciado para organizar.
+            </p>
+          ) : (
+            filtered.map((m) => {
+              const currentId = effectiveSponsor(m);
+              const current = parentOptions.find((p) => p.igreen_id === currentId);
+              const draftVal = draft[m.id] ?? "";
+              const dirty = draftVal !== (currentId ? String(currentId) : "");
+              const isManual = m.sponsor_override_id != null;
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-xl border border-border/60 bg-card/40 p-3 space-y-2"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate sensitive-name">{m.name}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        #{m.igreen_id}
+                        {isManual ? " · ajuste manual" : ""}
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">
+                      hoje: {current ? current.name.split(" ")[0] : "—"}
+                    </span>
+                  </div>
+
+                  <label className="block text-[11px] text-muted-foreground">
+                    Fica abaixo de:
+                  </label>
+                  <select
+                    className="w-full h-9 rounded-lg border border-input bg-background px-2 text-xs"
+                    value={draftVal}
+                    onChange={(e) =>
+                      setDraft((prev) => ({ ...prev, [m.id]: e.target.value }))
+                    }
+                  >
+                    <option value="">Patrocinador original (iGreen)</option>
+                    {parentOptions
+                      .filter((p) => p.igreen_id !== m.igreen_id)
+                      .map((p) => (
+                        <option key={p.id} value={String(p.igreen_id)}>
+                          {p.igreen_id === viewerIgreenId ? "★ " : ""}
+                          {p.name} (#{p.igreen_id})
+                        </option>
+                      ))}
+                  </select>
+
+                  <Button
+                    size="sm"
+                    className="w-full h-8 text-xs gap-1.5"
+                    disabled={!dirty || savingId === m.id}
+                    onClick={() => saveOne(m)}
+                  >
+                    {savingId === m.id ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <GitBranch className="w-3.5 h-3.5" />
+                    )}
+                    {savingId === m.id ? "Salvando…" : "Salvar posição"}
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 /* ── Main Panel ── */
 export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   // Hidrata do sessionStorage para nunca mostrar lista vazia ao abrir/F5.
@@ -639,17 +892,59 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const [selectedMember, setSelectedMember] = useState<NetworkMember | null>(null);
   const [showAccounts, setShowAccounts] = useState(false);
   const [accountCount, setAccountCount] = useState<number | null>(null);
+  const [viewerIgreenId, setViewerIgreenId] = useState<number | null>(null);
+  const [viewerName, setViewerName] = useState("Você");
+  const [subAccountSeeds, setSubAccountSeeds] = useState<SubAccountSeed[]>([]);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { count } = await supabase
-        .from("igreen_portal_accounts")
-        .select("id", { count: "exact", head: true })
-        .eq("consultant_id", consultantId);
-      if (!cancelled) setAccountCount(count ?? 0);
+      const [{ count }, consultantRes, accountsRes] = await Promise.all([
+        supabase
+          .from("igreen_portal_accounts")
+          .select("id", { count: "exact", head: true })
+          .eq("consultant_id", consultantId),
+        supabase
+          .from("consultants")
+          .select("name, display_name, igreen_id, igreen_consultor_id")
+          .eq("id", consultantId)
+          .maybeSingle(),
+        supabase
+          .from("igreen_portal_accounts")
+          .select("position, label, portal_email, igreen_consultor_id")
+          .eq("consultant_id", consultantId)
+          .order("position", { ascending: true }),
+      ]);
+      if (cancelled) return;
+      setAccountCount(count ?? 0);
+      const accounts = (accountsRes.data || []) as Array<{
+        position: number;
+        label: string | null;
+        portal_email: string | null;
+        igreen_consultor_id: string | null;
+      }>;
+      const primary = accounts.find((a) => Number(a.position) === 1);
+      const fromPrimary = Number(primary?.igreen_consultor_id || 0);
+      const fromConsultant = Number(
+        consultantRes.data?.igreen_id || consultantRes.data?.igreen_consultor_id || 0,
+      );
+      const ownerId = fromPrimary || fromConsultant || null;
+      setViewerIgreenId(ownerId);
+      const name =
+        String(consultantRes.data?.display_name || consultantRes.data?.name || "").trim();
+      setViewerName(name || "Você");
+      setSubAccountSeeds(
+        accounts
+          .filter((a) => Number(a.position) > 1)
+          .map((a) => ({
+            igreenId: Number(a.igreen_consultor_id || 0),
+            name: String(a.label || a.portal_email || "").trim() || `Licenciado #${a.igreen_consultor_id}`,
+          }))
+          .filter((a) => a.igreenId > 0 && a.igreenId !== ownerId),
+      );
     })();
     return () => { cancelled = true; };
   }, [consultantId, showAccounts]);
@@ -746,20 +1041,53 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     }
   };
 
-  const rootMember = useMemo(() => members.find(m => m.nivel === 0), [members]);
-  const totalClientes = useMemo(() => members.reduce((sum, m) => sum + m.clientes_ativos, 0), [members]);
-  const networkCount = useMemo(() => members.filter(m => m.nivel > 0).length, [members]);
-  const tree = useMemo(() => buildTree(members), [members]);
+  const displayMembers = useMemo(
+    () => normalizeMembersForViewer(members, viewerIgreenId, viewerName, subAccountSeeds),
+    [members, viewerIgreenId, viewerName, subAccountSeeds],
+  );
+  const rootMember = useMemo(() => {
+    if (viewerIgreenId) {
+      const byViewer = displayMembers.find((m) => m.igreen_id === viewerIgreenId);
+      if (byViewer) return byViewer;
+    }
+    return displayMembers.find((m) => m.nivel === 0);
+  }, [displayMembers, viewerIgreenId]);
+  const totalClientes = useMemo(
+    () => displayMembers.reduce((sum, m) => sum + m.clientes_ativos, 0),
+    [displayMembers],
+  );
+  const networkCount = useMemo(() => {
+    if (viewerIgreenId) {
+      return displayMembers.filter((m) => m.igreen_id !== viewerIgreenId).length;
+    }
+    return displayMembers.filter((m) => m.nivel > 0).length;
+  }, [displayMembers, viewerIgreenId]);
+  const tree = useMemo(() => {
+    const roots = buildTree(displayMembers);
+    if (!viewerIgreenId) return roots;
+
+    const preferredIdx = roots.findIndex((r) => r.member.igreen_id === viewerIgreenId);
+    if (preferredIdx < 0) return roots;
+
+    const preferred = roots[preferredIdx];
+    const others = roots.filter((_, i) => i !== preferredIdx);
+    // Dono da página SEMPRE sozinho no topo; Sirlene/Nilma/órfãos ficam abaixo.
+    if (others.length === 0) return [preferred];
+    return [{
+      ...preferred,
+      children: [...preferred.children, ...others],
+    }];
+  }, [displayMembers, viewerIgreenId]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return members;
+    if (!search.trim()) return displayMembers;
     const q = search.toLowerCase();
-    return members.filter(m =>
+    return displayMembers.filter(m =>
       m.name.toLowerCase().includes(q) || String(m.igreen_id).includes(q) ||
       (m.cidade || "").toLowerCase().includes(q) || (m.phone || "").includes(q) ||
       (m.uf || "").toLowerCase().includes(q) || (m.graduacao || "").toLowerCase().includes(q)
     );
-  }, [members, search]);
+  }, [displayMembers, search]);
 
   // Measure intrinsic tree size (independent of zoom) and auto-fit to container width.
   useLayoutEffect(() => {
@@ -820,7 +1148,16 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   return (
     <div className="space-y-5">
       {/* Detail Modal */}
-      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} allMembers={members} onSaved={fetchMembers} />}
+      {selectedMember && <DetailModal member={selectedMember} onClose={() => setSelectedMember(null)} allMembers={displayMembers} onSaved={fetchMembers} />}
+
+      <OrganizeNetworkSheet
+        open={organizeOpen}
+        onOpenChange={setOrganizeOpen}
+        members={displayMembers}
+        viewerIgreenId={viewerIgreenId}
+        consultantId={consultantId}
+        onSaved={fetchMembers}
+      />
 
 
 
@@ -844,7 +1181,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
             </div>
             <div>
               <h3 className="font-bold text-foreground text-base tracking-tight">Mapa de Rede</h3>
-              <p className="text-xs text-muted-foreground">{members.length} licenciados • clique para detalhes</p>
+              <p className="text-xs text-muted-foreground">{displayMembers.length} licenciados • clique para detalhes</p>
             </div>
           </div>
 
@@ -885,6 +1222,16 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
               </div>
             )}
 
+            <Button
+              onClick={() => setOrganizeOpen(true)}
+              size="sm"
+              variant="outline"
+              className="gap-1.5 rounded-xl font-semibold h-9 px-4 text-xs border-warning/30 text-warning bg-warning/10 hover:bg-warning/20"
+            >
+              <ListTree className="w-3.5 h-3.5" />
+              Organizar
+            </Button>
+
             <Button onClick={handleSync} size="sm" disabled={syncing || syncCooldown > 0}
               className="gap-1.5 rounded-xl font-semibold h-9 px-4 text-xs bg-primary/10 text-primary border border-primary/20 
                 hover:bg-primary/20 hover:border-primary/30 transition-all duration-200 shadow-sm"
@@ -895,7 +1242,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
           </div>
         </div>
 
-        {members.length === 0 ? (
+        {displayMembers.length === 0 ? (
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mx-auto mb-4">
               <Network className="w-8 h-8 text-muted-foreground/30" />
@@ -907,6 +1254,17 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
           </div>
         ) : viewMode === "tree" ? (
           <div ref={treeScrollRef} className="overflow-auto relative" style={{ maxHeight: "72vh" }}>
+            {/* Botão lateral fixo — consultor organiza a hierarquia */}
+            <button
+              type="button"
+              onClick={() => setOrganizeOpen(true)}
+              className="sticky top-4 float-right mr-3 z-20 flex items-center gap-1.5 rounded-xl border border-warning/40 bg-warning/15 px-3 py-2 text-xs font-semibold text-warning shadow-lg backdrop-blur-sm hover:bg-warning/25"
+              title="Organizar quem fica abaixo de quem"
+            >
+              <ListTree className="w-3.5 h-3.5" />
+              Organizar
+            </button>
+
             {/* Background dots pattern */}
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{
               backgroundImage: "radial-gradient(circle, currentColor 1px, transparent 1px)",

@@ -15,6 +15,8 @@ interface Props {
   sentSteps: Set<string>;
   onSent: (stepId: string) => void;
   onEditTemplate?: (stepKey: string, text: string) => void;
+  /** Notifica o total de passos exibidos (inclui sintéticos). */
+  onTotalSteps?: (total: number) => void;
 }
 
 interface StepRow {
@@ -51,7 +53,7 @@ const SYNTHETIC_CONFIRM_PHONE: StepRow = {
   __synthetic: true,
 };
 
-export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sentSteps, onSent, onEditTemplate }: Props) {
+export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sentSteps, onSent, onEditTemplate, onTotalSteps }: Props) {
   const { toast } = useToast();
   const [sending, setSending] = useState<string | null>(null);
   const [steps, setSteps] = useState<StepRow[]>([]);
@@ -128,6 +130,10 @@ export function CaptureStepsGrid({ consultantId, customerId, variant = "A", sent
     })();
     return () => { mounted = false; };
   }, [consultantId, variant]);
+
+  useEffect(() => {
+    onTotalSteps?.(steps.length);
+  }, [steps.length, onTotalSteps]);
 
   // Load customer name + bill for variable rendering in inline preview
   useEffect(() => {

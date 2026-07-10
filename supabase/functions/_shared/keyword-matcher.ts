@@ -78,17 +78,21 @@ export function matchKeyword(
 }
 
 /**
- * Generates the registration link with or without the cli parameter.
+ * Gera o link de cadastro no portal.
+ *
+ * Regra (2026-07-09): se o parceiro tem `cli` ativo (>0), o cadastro é
+ * PARA esse consultor — o `id` do link vira o próprio cli. Caso contrário,
+ * usa o id do dono da instância (sem &cli=).
  */
 export function buildCadastroLink(
   consultantIgreenId: string,
   partnerCli: string | null,
 ): string {
-  const base = `${BASE_URL}?id=${consultantIgreenId}`;
-  if (partnerCli) {
-    return `${base}&cli=${partnerCli}`;
-  }
-  return base;
+  const cliNum = partnerCli ? Number(String(partnerCli).replace(/\D/g, "")) : 0;
+  const id = Number.isFinite(cliNum) && cliNum > 0
+    ? String(cliNum)
+    : String(consultantIgreenId || "");
+  return `${BASE_URL}?id=${id}`;
 }
 
 /**

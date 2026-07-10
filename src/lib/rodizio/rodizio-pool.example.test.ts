@@ -9,7 +9,7 @@
  * O `index.ts` da edge function consome esse mesmo helper e só faz os `insert`.
  *
  * Cobertura (Requisitos 6.1, 6.2, 6.3):
- * - Com `rodizio_enabled` e >= 2 participantes: cria 1 pool ligada à campanha,
+ * - Com `rodizio_enabled` e >= 1 participante: cria 1 pool ligada à campanha,
  *   com os membros na ordem certa e `lead_count = 0`.
  * - Sem `rodizio_enabled`: nenhuma pool é criada (plano nulo).
  */
@@ -106,16 +106,17 @@ describe("Tarefa 5.3 — sem rodizio_enabled, nenhuma pool é criada (Req 6.3)",
   });
 });
 
-describe("Tarefa 5.3 — guarda do mínimo de 2 participantes (Req 5/6.1)", () => {
-  it("não cria pool com apenas 1 participante, mesmo com o toggle ligado", () => {
+describe("Tarefa 5.3 — guarda do mínimo de 1 participante (destino exclusivo / rodízio)", () => {
+  it("cria pool com apenas 1 participante (destino exclusivo + métricas)", () => {
     const plan = buildRodizioPoolPlan({
       input: { rodizio_enabled: true, rodizio_partner_ids: [PARTNER_A] },
       campaignId: CAMPAIGN_ID,
       consultantId: CONSULTANT_ID,
       label: LABEL,
     });
-    expect(plan).toBeNull();
-    expect(shouldCreateRodizioPool({ rodizio_enabled: true, rodizio_partner_ids: [PARTNER_A] })).toBe(false);
+    expect(plan).not.toBeNull();
+    expect(shouldCreateRodizioPool({ rodizio_enabled: true, rodizio_partner_ids: [PARTNER_A] })).toBe(true);
+    expect(plan!.buildMembers("p").length).toBe(1);
   });
 
   it("não cria pool com lista vazia ou ausente, mesmo com o toggle ligado", () => {
@@ -137,7 +138,7 @@ describe("Tarefa 5.3 — guarda do mínimo de 2 participantes (Req 5/6.1)", () =
     ).toBeNull();
   });
 
-  it("cria pool a partir de exatamente 2 participantes (limite mínimo)", () => {
+  it("cria pool a partir de exatamente 2 participantes (rodízio circular)", () => {
     const plan = buildRodizioPoolPlan({
       input: { rodizio_enabled: true, rodizio_partner_ids: [PARTNER_A, PARTNER_B] },
       campaignId: CAMPAIGN_ID,

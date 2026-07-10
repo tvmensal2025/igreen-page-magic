@@ -1,13 +1,15 @@
 /**
- * RodizioBlock — bloco do Step 4 (StepBudget) que liga/desliga o rodízio de
- * leads e configura os participantes. Apenas apresentação: TODA a lógica
- * (carregar/criar participantes, validar, adicionar/remover, mínimo de 2) mora
- * no hook `useRodizioLogic`.
+ * RodizioBlock — bloco do Step 4 (StepBudget) que liga/desliga o destino
+ * exclusivo / rodízio de leads e configura os participantes. Apenas
+ * apresentação: TODA a lógica (carregar/criar participantes, validar,
+ * adicionar/remover, mínimo de 1) mora no hook `useRodizioLogic`.
  *
  * Estrutura:
- *   - Toggle (Switch) "Distribuir leads entre vários participantes (rodízio)";
+ *   - Toggle (Switch) "Definir quem recebe os leads deste anúncio";
  *   - Quando ligado: multi-select de participantes existentes (Combobox) +
  *     lista ordenada (com remover) + botões de criar participante + form inline.
+ *   - 1 pessoa = destino exclusivo (todos os leads + métricas horárias);
+ *     2+ = rodízio circular.
  *
  * Limite do projeto: ≤ 250 linhas. Por isso a regra de negócio fica no hook.
  */
@@ -109,7 +111,7 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
           className="flex items-center gap-2 text-sm font-semibold cursor-pointer"
         >
           <Users className="w-4 h-4 text-[hsl(var(--ads-emerald-2))]" />
-          Distribuir leads entre vários participantes (rodízio)
+          Definir quem recebe os leads deste anúncio
         </Label>
         <Switch
           id="rodizio-toggle"
@@ -122,8 +124,9 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
       {rodizioEnabled && (
         <div className="px-3 pb-3 space-y-3 border-t border-[hsl(var(--ads-border))] pt-3">
           <p className="text-[11px] text-[hsl(var(--ads-muted))]">
-            Os leads deste anúncio são repartidos em ordem circular entre os
-            participantes abaixo. A conversa continua no número central.
+            {rodizioPartners.length <= 1
+              ? "Com 1 pessoa, todos os leads e as métricas horárias (gasto, custo por lead, campanha) vão só para ela. Com 2 ou mais, vira rodízio circular. A conversa continua no número central."
+              : "Os leads deste anúncio são repartidos em ordem circular entre os participantes abaixo. Cada um recebe métricas horárias. A conversa continua no número central."}
           </p>
 
           {/* Multi-select de participantes existentes */}
@@ -169,12 +172,18 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
             </ol>
           )}
 
-          {/* Aviso de mínimo de 2 participantes (Requisito 5.2) */}
+          {/* Aviso de mínimo de 1 participante */}
           {minParticipantsError && (
             <div className="flex items-center gap-1.5 text-[11px] text-warning">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
               {minParticipantsError}
             </div>
+          )}
+
+          {rodizioPartners.length === 1 && !minParticipantsError && (
+            <p className="text-[11px] text-[hsl(var(--ads-emerald-2))]">
+              Destino exclusivo: todos os leads e o aviso horário de métricas vão para esta pessoa.
+            </p>
           )}
 
           {/* Form inline de criação ou botões para abri-lo */}

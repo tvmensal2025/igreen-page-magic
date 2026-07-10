@@ -1,6 +1,8 @@
 // Template loader — reads bot_messages from DB with hardcoded fallback.
 // FONTE ÚNICA (Etapa 3a unificação): superset Whapi + Evolution.
 
+import { parseMoneyBR } from "../parse-money.ts";
+
 const FALLBACK: Record<string, string> = {
   "welcome:saudacao": "Oi! Aqui é o {{representante}} 👋",
   "menu_inicial:reforco": "{{nome}}, ainda quer entender como funciona o desconto?",
@@ -25,8 +27,8 @@ export interface TemplateVars {
 
 function parseValor(v: number | string | null | undefined): number | null {
   if (v === null || v === undefined || v === "") return null;
-  const n = typeof v === "number" ? v : Number(String(v).replace(/[^\d.,-]/g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  return parseMoneyBR(v);
 }
 
 function fmtValor(v: number | string | null | undefined): string {

@@ -107,7 +107,7 @@ export async function attributeLeadSource(
           q = q.eq("fb_campaign_id", String(fbCampaignId));
         } else if (adId) {
           // fb_ad_ids é jsonb array
-          q = q.contains("fb_ad_ids", JSON.stringify([adId]));
+          q = q.contains("fb_ad_ids", [String(adId)]);
         }
         const { data: camp } = await q.maybeSingle();
         if (camp?.id) result.source_campaign_id = camp.id;

@@ -12,6 +12,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://esm.sh/zod@3.23.8";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
+import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
 
 const BodySchema = z.object({
   customer_ids: z.array(z.string().uuid()).min(1).max(50),
@@ -190,11 +191,12 @@ Deno.serve(async (req) => {
             if (s > 0) spendCents = s;
           }
         }
-        // leads: fallback via customers reais
+        // leads: fallback via customers com prova Meta (nunca misturar manual)
         if (!campaignLeads) {
           const { count } = await admin
             .from("customers").select("id", { count: "exact", head: true })
-            .eq("source_campaign_id", campaignId);
+            .eq("source_campaign_id", campaignId)
+            .or(META_CAMPAIGN_PROOF_OR);
           if (count && count > 0) campaignLeads = count;
         }
       }
@@ -235,46 +237,51 @@ Deno.serve(async (req) => {
         .eq("consultant_id", ownerConsultantId);
 
       // -------- Montagem da mensagem --------
+      const leadPhone = (customer as any).phone_whatsapp as string | null;
+      const phoneDigits = String(leadPhone || "").replace(/\D/g, "").replace(/^55/, "");
+      const waLink = phoneDigits.length >= 10 ? `https://wa.me/55${phoneDigits}` : null;
+      const statusLabel =
+        campaignStatus === "active" ? "🟢 no ar"
+        : campaignStatus === "paused" ? "⏸️ pausada"
+        : campaignStatus ? `⚡ ${campaignStatus}` : null;
+
       const hi = (partner as any).nome ? `Olá, ${(partner as any).nome.split(" ")[0]}! 👋\n\n` : "";
       const lines: string[] = [];
-      lines.push(`${hi}🎉 *NOVO LEAD DA CAMPANHA*`);
-      lines.push(`━━━━━━━━━━━━━━━━━━`);
-      lines.push(`👤 *Nome:* ${(customer as any).name?.trim() || "(coletando…)"}`);
-      lines.push(`📱 *WhatsApp:* ${formatPhoneBR((customer as any).phone_whatsapp)}`);
+      lines.push(`${hi}🎉 *Novo lead pra você!*`);
+      lines.push(``);
+      lines.push(`👤 *Nome:* ${(customer as any).name?.trim() || "(ainda coletando…)"}`);
+      lines.push(`📱 *WhatsApp:* ${formatPhoneBR(leadPhone)}`);
+      if (waLink) lines.push(`🔗 *Abrir conversa:* ${waLink}`);
       lines.push(`🕐 *Chegou:* ${nowBRT()}`);
-      lines.push(`🤖 *Sofia (IA) já está atendendo*`);
+      lines.push(`🤖 Sofia (IA) já está atendendo`);
       lines.push(``);
 
-      const hasCampFields = campaignName || campaignStarted || campaignStatus || dailyBudgetCents != null || spendCents != null || campaignLeads != null;
+      const hasCampFields = !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null);
       if (hasCampFields) {
-        lines.push(`📢 *CAMPANHA*`);
-        lines.push(`━━━━━━━━━━━━━━━━━━`);
-        if (campaignName) lines.push(`🏷️  ${campaignName}`);
-        if (campaignStarted) lines.push(`📅 Ativa desde: ${shortDateBR(campaignStarted)}`);
-        if (campaignStatus) lines.push(`⚡ Status: ${campaignStatus}`);
-        if (dailyBudgetCents != null) lines.push(`💰 Orçamento/dia: ${money(dailyBudgetCents)}`);
-        if (spendCents != null) lines.push(`📊 Total investido: ${money(spendCents)}`);
-        if (campaignLeads != null) lines.push(`🎯 Leads gerados: ${campaignLeads}`);
-        lines.push(``);
-      } else {
-        lines.push(`📢 *Atribuição manual / lead sem campanha vinculada*`);
+        lines.push(`📢 *Campanha*`);
+        if (campaignName) lines.push(`🎯 *${campaignName}*`);
+        if (statusLabel) lines.push(`📡 Status: ${statusLabel}`);
+        if (campaignStarted) lines.push(`📅 No ar desde: ${shortDateBR(campaignStarted)}`);
+        if (dailyBudgetCents != null) lines.push(`💵 Orçamento/dia: *${money(dailyBudgetCents)}*`);
+        if (spendCents != null) lines.push(`💰 Já investido: *${money(spendCents)}*`);
+        if (campaignLeads != null) lines.push(`📥 Leads desta campanha: *${campaignLeads}*`);
         lines.push(``);
       }
 
       if (poolResolved) {
-        lines.push(`🔄 *SEU RODÍZIO*`);
-        lines.push(`━━━━━━━━━━━━━━━━━━`);
-        lines.push(`📍 Pool: ${cleanLabel(poolResolved.label)}`);
-        if (myPosition && totalPositions) lines.push(`🎖️  Sua posição: ${myPosition}º de ${totalPositions}`);
-        if (myLeadsCount != null) lines.push(`📈 Leads recebidos por você: ${myLeadsCount}`);
-        if (nextPartnerName && nextPartnerLabel) lines.push(`➡️  ${nextPartnerLabel}: ${nextPartnerName}`);
+        lines.push(`👥 *Seu rodízio*`);
+        const poolName = cleanLabel(poolResolved.label);
+        if (poolName) lines.push(`🏷️ ${poolName}`);
+        if (myPosition && totalPositions) lines.push(`🏅 Posição: *${myPosition}º* de ${totalPositions}`);
+        if (myLeadsCount != null) lines.push(`📈 Seus leads totais: *${myLeadsCount}*`);
+        if (nextPartnerName && nextPartnerLabel) lines.push(`➡️ ${nextPartnerLabel}: *${nextPartnerName}*`);
         lines.push(``);
       } else if (myLeadsCount != null) {
-        lines.push(`📈 *Leads recebidos por você:* ${myLeadsCount}`);
+        lines.push(`📈 *Seus leads totais:* ${myLeadsCount}`);
         lines.push(``);
       }
 
-      lines.push(`_Automático · iGreen 🌱_`);
+      lines.push(`✨ _iGreen Ads · automático_`);
       const text = lines.join("\n");
 
       if (dry_run) {

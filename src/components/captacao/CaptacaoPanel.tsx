@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { CaptureLeadList } from "@/components/captacao/CaptureLeadList";
 import { CaptureStepsGrid } from "@/components/captacao/CaptureStepsGrid";
@@ -9,7 +9,9 @@ import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/
 import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ClipboardCheck, X } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { MessageComposer } from "@/components/whatsapp/MessageComposer";
+import { AttendanceStatusBar } from "@/components/whatsapp/AttendanceStatusBar";
 import { useTemplates } from "@/hooks/useTemplates";
+import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { FinalizeButton } from "@/components/captacao/FinalizeButton";
@@ -18,6 +20,10 @@ import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
 import { WhatsAppStatusPill } from "@/components/captacao/WhatsAppStatusPill";
 import { CapturedLeadsPanel } from "@/components/captacao/CapturedLeadsPanel";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface Props { consultantId: string; onOpenChat?: (phone: string) => void; instanceName?: string | null; isWhapi?: boolean; }
 
@@ -39,13 +45,17 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [stepsOpen, setStepsOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("cap_steps_open") === "1"; } catch { return false; }
   });
+  const [totalSteps, setTotalSteps] = useState<number | null>(null);
+  const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const toggleSteps = () => setStepsOpen((v) => { const n = !v; try { localStorage.setItem("cap_steps_open", n ? "1" : "0"); } catch {} return n; });
   const { templates } = useTemplates(consultantId);
   const session = useCaptureSession(selectedId);
+  const attendance = useCustomerAttendance(selectedId, consultantId);
+  const onTotalSteps = useCallback((n: number) => setTotalSteps(n), []);
 
   const connected = !!instanceName;
 
-  useEffect(() => { setSentSteps(new Set()); setPhone(null); setCustomerName(null); setShowAside(false); setVariant("A"); setMismatch({ flag: false, bill: "", doc: "", acked: false }); }, [selectedId]);
+  useEffect(() => { setSentSteps(new Set()); setPhone(null); setCustomerName(null); setShowAside(false); setVariant("A"); setMismatch({ flag: false, bill: "", doc: "", acked: false }); setTotalSteps(null); }, [selectedId]);
 
   // Carrega os fluxos ativos do consultor (variante + nome) para o atalho.
   // Reassina a tabela bot_flows para refletir criacao/renomeacao em tempo real
@@ -183,6 +193,10 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   };
 
   // Rodapé da ficha: status do portal + botão de finalizar (acende quando completo)
+  // null = ainda carregando passos; 0 = sem fluxo (não bloqueia); N = exige todos enviados.
+  const stepsKnown = totalSteps !== null;
+  const allStepsSent = stepsKnown && (totalSteps === 0 || sentSteps.size >= totalSteps);
+  const pendingStepsCount = stepsKnown ? Math.max(0, totalSteps - sentSteps.size) : 0;
   const fichaFooter = selectedId ? (
     <>
       <PortalStatusTracker customerId={selectedId} consultantId={consultantId} />
@@ -192,8 +206,8 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
         variant={variant}
         missing={session.missing || []}
         isComplete={!!session.isComplete}
-        allStepsSent={sentSteps.size > 0}
-        pendingStepsCount={Math.max(0, 10 - sentSteps.size)}
+        allStepsSent={allStepsSent}
+        pendingStepsCount={pendingStepsCount}
         botPaused={!!session.customer?.bot_paused}
         captureMode={session.customer?.capture_mode}
       />
@@ -269,6 +283,16 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1 pb-0.5">
                 <WhatsAppStatusPill connected={connected} />
+                <AttendanceStatusBar
+                  state={attendance.uiState}
+                  protocol={attendance.protocol}
+                  rating={attendance.rating}
+                  starting={attendance.starting}
+                  ending={attendance.ending}
+                  onStart={() => void attendance.startAttendance()}
+                  onRequestEnd={() => setEndAttendanceDialogOpen(true)}
+                  compact
+                />
                 {/* Atalho de fluxos reais do consultor (variante + nome) */}
                 <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-full overflow-x-auto">
                   {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "CEMIG" }]).map((f) => (
@@ -305,20 +329,20 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                     onClick={toggleSteps}
                     className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground hover:bg-secondary/40 transition"
                   >
-                    <span>Passos do roteiro · {sentSteps.size}/10 enviados</span>
+                    <span>Passos do roteiro · {sentSteps.size}/{totalSteps ?? "—"} enviados</span>
                     {stepsOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                   </button>
-                  {stepsOpen && (
-                    <div className="px-2 pb-1.5">
-                      <CaptureStepsGrid
-                        consultantId={consultantId}
-                        customerId={selectedId}
-                        variant={variant}
-                        sentSteps={sentSteps}
-                        onSent={(stepId) => setSentSteps((s) => new Set(s).add(stepId))}
-                      />
-                    </div>
-                  )}
+                  {/* Sempre montado para reportar totalSteps ao FinalizeButton; só esconde visualmente. */}
+                  <div className={stepsOpen ? "px-2 pb-1.5" : "hidden"}>
+                    <CaptureStepsGrid
+                      consultantId={consultantId}
+                      customerId={selectedId}
+                      variant={variant}
+                      sentSteps={sentSteps}
+                      onSent={(stepId) => setSentSteps((s) => new Set(s).add(stepId))}
+                      onTotalSteps={onTotalSteps}
+                    />
+                  </div>
                 </div>
 
                 {/* Conversa — ocupa o espaço restante */}
@@ -377,6 +401,34 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           </div>
         </SheetContent>
       </Sheet>
+
+      <AlertDialog open={endAttendanceDialogOpen} onOpenChange={setEndAttendanceDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Finalizar atendimento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Vamos enviar a mensagem de encerramento e a pesquisa de satisfação (responda com um número de 1 a 5).
+              O cliente não receberá botões interativos — só texto, para funcionar em todos os canais.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={attendance.ending}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void (async () => {
+                  await attendance.endAttendance();
+                  setEndAttendanceDialogOpen(false);
+                })();
+              }}
+              disabled={attendance.ending}
+              className="bg-amber-600 hover:bg-amber-500"
+            >
+              {attendance.ending ? "Enviando…" : "Finalizar e pedir nota"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

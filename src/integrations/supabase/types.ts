@@ -3671,6 +3671,10 @@ export type Database = {
           assinatura_cliente_status: string | null
           assinatura_igreen: string | null
           assinatura_igreen_status: string | null
+          attendance_ended_at: string | null
+          attendance_rating: number | null
+          attendance_rating_at: string | null
+          attendance_rating_requested_at: string | null
           bill_base64: string | null
           bill_data_confirmation_by: string | null
           bill_data_confirmed_at: string | null
@@ -3854,6 +3858,7 @@ export type Database = {
           portal2_otp_sent_at: string | null
           portal2_otp_validated_at: string | null
           portal2_status: string | null
+          portal_idconsultor_override: number | null
           pos_venda_approved_at: string | null
           pos_venda_invalid: boolean
           pos_venda_manual: boolean
@@ -3909,6 +3914,10 @@ export type Database = {
           assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
           assinatura_igreen_status?: string | null
+          attendance_ended_at?: string | null
+          attendance_rating?: number | null
+          attendance_rating_at?: string | null
+          attendance_rating_requested_at?: string | null
           bill_base64?: string | null
           bill_data_confirmation_by?: string | null
           bill_data_confirmed_at?: string | null
@@ -4092,6 +4101,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          portal_idconsultor_override?: number | null
           pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
@@ -4147,6 +4157,10 @@ export type Database = {
           assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
           assinatura_igreen_status?: string | null
+          attendance_ended_at?: string | null
+          attendance_rating?: number | null
+          attendance_rating_at?: string | null
+          attendance_rating_requested_at?: string | null
           bill_base64?: string | null
           bill_data_confirmation_by?: string | null
           bill_data_confirmed_at?: string | null
@@ -4330,6 +4344,7 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
+          portal_idconsultor_override?: number | null
           pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean

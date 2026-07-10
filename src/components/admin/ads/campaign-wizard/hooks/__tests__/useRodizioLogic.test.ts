@@ -8,7 +8,7 @@
  *   - Comportamento do hook renderizado:
  *       * toggle liga/desliga e descarta a seleção (Requisitos 1.2, 1.3);
  *       * bloqueio de participante duplicado com aviso (Requisito 2.4);
- *       * mínimo de 2 participantes quando o rodízio está ligado (Requisito 5.2).
+ *       * mínimo de 1 participante quando o destino exclusivo/rodízio está ligado.
  *
  * O serviço `@/services/referralPartners` e o `useToast` são mockados para
  * isolar a lógica do hook (sem rede e sem toasts reais).
@@ -35,10 +35,14 @@ const { listActiveReferralPartnersMock, createReferralPartnerMock } = vi.hoisted
   }),
 );
 
-vi.mock("@/services/referralPartners", () => ({
-  listActiveReferralPartners: listActiveReferralPartnersMock,
-  createReferralPartner: createReferralPartnerMock,
-}));
+vi.mock("@/services/referralPartners", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/services/referralPartners")>();
+  return {
+    ...actual,
+    listActiveReferralPartners: listActiveReferralPartnersMock,
+    createReferralPartner: createReferralPartnerMock,
+  };
+});
 
 import { useRodizioLogic, validateInlineForm } from "../useRodizioLogic";
 import type {
@@ -109,6 +113,10 @@ beforeEach(() => {
 
 // --- validateInlineForm (Req 3.2, 3.3, 4.2, 4.3) ----------------------------
 
+function fieldsOf(erros: ReturnType<typeof validateInlineForm>) {
+  return erros.map((e) => e.field);
+}
+
 describe("validateInlineForm — CONSULTOR", () => {
   const baseConsultor: RodizioInlineForm = {
     tipo: "consultor",
@@ -124,27 +132,27 @@ describe("validateInlineForm — CONSULTOR", () => {
 
   it("Req 3.2 — bloqueia quando partner_igreen_id está vazio", () => {
     const erros = validateInlineForm({ ...baseConsultor, partner_igreen_id: "" });
-    expect(erros).toContain("O código iGreen é obrigatório para o tipo CONSULTOR.");
+    expect(fieldsOf(erros)).toContain("partner_igreen_id");
   });
 
   it("Req 3.2 — partner_igreen_id só com espaços também é inválido", () => {
     const erros = validateInlineForm({ ...baseConsultor, partner_igreen_id: "   " });
-    expect(erros).toContain("O código iGreen é obrigatório para o tipo CONSULTOR.");
+    expect(fieldsOf(erros)).toContain("partner_igreen_id");
   });
 
   it("Req 3.3 — bloqueia quando o nome está vazio", () => {
     const erros = validateInlineForm({ ...baseConsultor, nome: "" });
-    expect(erros).toContain("Informe o nome do participante.");
+    expect(fieldsOf(erros)).toContain("nome");
   });
 
   it("Req 3.3 — bloqueia quando o telefone de aviso está vazio", () => {
     const erros = validateInlineForm({ ...baseConsultor, notification_phone: "" });
-    expect(erros).toContain("Informe o telefone de aviso.");
+    expect(fieldsOf(erros)).toContain("notification_phone");
   });
 
   it("Req 3.3 — não exige cli para CONSULTOR", () => {
     const erros = validateInlineForm({ ...baseConsultor, cli: "" });
-    expect(erros).not.toContain("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    expect(fieldsOf(erros)).not.toContain("cli");
   });
 });
 
@@ -163,29 +171,27 @@ describe("validateInlineForm — PARCEIRO/INDICADOR", () => {
 
   it("Req 4.2 — bloqueia quando cli está vazio", () => {
     const erros = validateInlineForm({ ...baseParceiro, cli: "" });
-    expect(erros).toContain("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    expect(fieldsOf(erros)).toContain("cli");
   });
 
   it("Req 4.2 — cli só com espaços também é inválido", () => {
     const erros = validateInlineForm({ ...baseParceiro, cli: "  " });
-    expect(erros).toContain("O cli é obrigatório para o tipo PARCEIRO/INDICADOR.");
+    expect(fieldsOf(erros)).toContain("cli");
   });
 
   it("Req 4.3 — bloqueia quando o nome está vazio", () => {
     const erros = validateInlineForm({ ...baseParceiro, nome: "" });
-    expect(erros).toContain("Informe o nome do participante.");
+    expect(fieldsOf(erros)).toContain("nome");
   });
 
   it("Req 4.3 — bloqueia quando o telefone de aviso está vazio", () => {
     const erros = validateInlineForm({ ...baseParceiro, notification_phone: "" });
-    expect(erros).toContain("Informe o telefone de aviso.");
+    expect(fieldsOf(erros)).toContain("notification_phone");
   });
 
   it("Req 4.2 — não exige partner_igreen_id para PARCEIRO", () => {
     const erros = validateInlineForm({ ...baseParceiro, partner_igreen_id: "" });
-    expect(erros).not.toContain(
-      "O código iGreen é obrigatório para o tipo CONSULTOR.",
-    );
+    expect(fieldsOf(erros)).not.toContain("partner_igreen_id");
   });
 });
 
@@ -198,11 +204,7 @@ describe("validateInlineForm — múltiplos erros", () => {
       partner_igreen_id: "",
       cli: "",
     });
-    expect(erros).toEqual([
-      "Informe o nome do participante.",
-      "Informe o telefone de aviso.",
-      "O código iGreen é obrigatório para o tipo CONSULTOR.",
-    ]);
+    expect(fieldsOf(erros)).toEqual(["nome", "notification_phone", "partner_igreen_id"]);
   });
 
   it("PARCEIRO com tudo vazio acumula nome + telefone + cli", () => {
@@ -213,11 +215,7 @@ describe("validateInlineForm — múltiplos erros", () => {
       partner_igreen_id: "",
       cli: "",
     });
-    expect(erros).toEqual([
-      "Informe o nome do participante.",
-      "Informe o telefone de aviso.",
-      "O cli é obrigatório para o tipo PARCEIRO/INDICADOR.",
-    ]);
+    expect(fieldsOf(erros)).toEqual(["nome", "notification_phone", "cli"]);
   });
 });
 
@@ -275,7 +273,7 @@ describe("useRodizioLogic — adicionar/remover participantes", () => {
     // Continua com 1 só (não duplica).
     expect(result.current.state.rodizioPartners.map((p) => p.id)).toEqual(["a"]);
     expect(toastMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Participante já adicionado" }),
+      expect.objectContaining({ title: "♻️ Já está no rodízio" }),
     );
   });
 
@@ -292,33 +290,29 @@ describe("useRodizioLogic — adicionar/remover participantes", () => {
   });
 });
 
-// --- Mínimo de 2 participantes (Req 5.2) ------------------------------------
+// --- Mínimo de 1 participante (destino exclusivo / rodízio) -----------------
 
-describe("useRodizioLogic — mínimo de 2 participantes", () => {
+describe("useRodizioLogic — mínimo de 1 participante", () => {
   it("rodízio desligado → sem erro de mínimo", () => {
     const { result } = renderHook(() => useHarness({ rodizioEnabled: false }));
     expect(result.current.logic.minParticipantsError).toBeNull();
   });
 
-  it("Req 5.2 — ligado com 0 participantes → erro de mínimo", async () => {
+  it("ligado com 0 participantes → erro de mínimo", async () => {
     const { result } = renderHook(() => useHarness({ rodizioEnabled: true }));
     await flushEffects();
-    expect(result.current.logic.minParticipantsError).toBe(
-      "O rodízio exige pelo menos 2 participantes.",
-    );
+    expect(result.current.logic.minParticipantsError).toMatch(/pelo menos 1 pessoa/);
   });
 
-  it("Req 5.2 — ligado com 1 participante → erro de mínimo", async () => {
+  it("ligado com 1 participante → sem erro (destino exclusivo)", async () => {
     const { result } = renderHook(() =>
       useHarness({ rodizioEnabled: true, rodizioPartners: [makePartner("a")] }),
     );
     await flushEffects();
-    expect(result.current.logic.minParticipantsError).toBe(
-      "O rodízio exige pelo menos 2 participantes.",
-    );
+    expect(result.current.logic.minParticipantsError).toBeNull();
   });
 
-  it("Req 5.2 — ligado com 2 participantes → sem erro", async () => {
+  it("ligado com 2 participantes → sem erro (rodízio circular)", async () => {
     const { result } = renderHook(() =>
       useHarness({
         rodizioEnabled: true,
@@ -353,7 +347,7 @@ describe("useRodizioLogic — submitInlineForm", () => {
 
     expect(createReferralPartnerMock).not.toHaveBeenCalled();
     expect(toastMock).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Confira os campos" }),
+      expect.objectContaining({ title: "⚠️ Confira os campos abaixo" }),
     );
   });
 

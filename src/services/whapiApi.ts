@@ -48,8 +48,16 @@ export function whapiListChats(): Promise<EvolutionChat[]> {
   return call<EvolutionChat[]>("list_chats", { count: 100 });
 }
 
-export function whapiListMessages(chatId: string, count = 50): Promise<EvolutionMessage[]> {
-  return call<EvolutionMessage[]>("list_messages", { chatId: normalizeJid(chatId), count });
+export function whapiListMessages(
+  chatId: string,
+  count = 50,
+  offset = 0,
+): Promise<EvolutionMessage[]> {
+  return call<EvolutionMessage[]>("list_messages", {
+    chatId: normalizeJid(chatId),
+    count,
+    offset,
+  });
 }
 
 /** Mesma lógica de findMessagesForChat — Whapi/Evolution podem indexar msgs em JIDs diferentes. */
@@ -57,6 +65,7 @@ export async function whapiListMessagesForChat(
   remoteJid: string,
   altJid?: string | null,
   count = 50,
+  offset = 0,
 ): Promise<EvolutionMessage[]> {
   const jids = new Set<string>([normalizeJid(remoteJid)]);
   if (altJid) jids.add(normalizeJid(altJid));
@@ -65,7 +74,7 @@ export async function whapiListMessagesForChat(
 
   const batches = await Promise.all(
     Array.from(jids).map((jid) =>
-      whapiListMessages(jid, count).catch(() => [] as EvolutionMessage[]),
+      whapiListMessages(jid, count, offset).catch(() => [] as EvolutionMessage[]),
     ),
   );
 

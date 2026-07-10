@@ -31,6 +31,9 @@ export const ERROR_KINDS = Object.freeze({
   duplicate_document:     { recoverable: false },
   no_coverage:            { recoverable: false },
   attachment_not_confirmed:{ recoverable: false },
+  // IA da iGreen reprovou conta/doc (is_authentic=false, doc error, validade
+  // vencida, mismatch titular). Não é retry de payload — precisa humano.
+  ia_reprovada:           { recoverable: false },
   validation_error:       { recoverable: false },
   unknown:                { recoverable: false },
 });
@@ -111,6 +114,9 @@ export function classifyPortalError(message) {
   // attachment_not_confirmed — OCR leu, mas o Portal não confirmou anexo físico.
   } else if (hasAny('portal_attachments_not_confirmed', 'attachment_not_confirmed', 'anexos obrigatórios não confirmados', 'anexos obrigatorios nao confirmados')) {
     kind = 'attachment_not_confirmed';
+  // ia_reprovada — veredito explícito da IA (conta/doc) antes do POST /customers.
+  } else if (hasAny('ia_reprovada', 'portal_ia_reprovada', 'conta reprovada pela ia', 'documento reprovado pela ia', 'titular divergente', 'documento vencido')) {
+    kind = 'ia_reprovada';
 
   // ── 2) Recuperáveis ──
   // duplicate_phone — celular/telefone já cadastrado. Req 6.2
@@ -231,6 +237,97 @@ export function buildExtractionResult({ docResp, docBackResp, billResp, isCnh, b
   const mode = (doc.mode === 'auto' && bill.mode === 'auto') ? 'auto' : 'manual';
 
   return { mode, doc, bill };
+}
+
+/**
+ * Gate da IA iGreen — só bloqueia reprovação EXPLÍCITA (não OCR incompleto).
+ *
+ * Bloqueia POST /customers quando:
+ *   1) conta com `is_authentic === false` (reprovada)
+ *   2) documento com `success === false` ou `error` (sem ser só transporte)
+ *   3) validade do documento vencida
+ *   4) titular doc × conta claramente divergente (ambos nomes presentes)
+ *
+ * NÃO bloqueia quando OCR falhou por timeout/transporte ou quando
+ * `is_authentic` está ausente (modo manual observacional).
+ *
+ * @returns {{ ok: true } | { ok: false, reason: string, code: string, details?: object }}
+ */
+export function evaluateIaGate({ docResp, billResp, dados } = {}) {
+  const details = {};
+
+  // 1) Conta explicitamente reprovada pela IA
+  if (isObject(billResp) && !billResp.__transport_error && billResp.is_authentic === false) {
+    const reason = billResp.rejection_reason
+      ? `Conta reprovada pela IA: ${billResp.rejection_reason}`
+      : 'Conta reprovada pela IA (is_authentic=false)';
+    return {
+      ok: false,
+      code: 'IA_REPROVADA_CONTA',
+      reason: `PORTAL_IA_REPROVADA: ${reason}`,
+      details: { rejection_reason: billResp.rejection_reason ?? null },
+    };
+  }
+
+  // 2) Documento explicitamente falhou (não transporte)
+  if (isObject(docResp) && !docResp.__transport_error) {
+    if (docResp.success === false || (docResp.error && docResp.success !== true)) {
+      return {
+        ok: false,
+        code: 'IA_REPROVADA_DOC',
+        reason: `PORTAL_IA_REPROVADA: Documento reprovado pela IA: ${extractError(docResp) || 'success=false'}`,
+        details: { error: extractError(docResp) },
+      };
+    }
+
+    // 3) Validade vencida
+    const validade = docResp?.data?.validade || docResp?.validade;
+    if (validade) {
+      const m = String(validade).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (m) {
+        const exp = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), 23, 59, 59);
+        if (Number.isFinite(exp.getTime()) && exp.getTime() < Date.now()) {
+          return {
+            ok: false,
+            code: 'IA_DOC_VENCIDO',
+            reason: `PORTAL_IA_REPROVADA: Documento vencido (${validade})`,
+            details: { validade },
+          };
+        }
+      }
+    }
+  }
+
+  // 4) Mismatch titular — só quando os dois nomes existem e divergem de verdade
+  const normName = (s) => String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tokens = (s) => normName(s).split(' ').filter((t) => t.length >= 3);
+  const docName = docResp?.data?.nome || docResp?.nome || dados?.nome || '';
+  const billName = billResp?.data?.nome || billResp?.nome || '';
+  const docTok = tokens(docName);
+  const billTok = tokens(billName);
+  if (docTok.length >= 2 && billTok.length >= 2) {
+    const docSet = new Set(docTok);
+    const shared = billTok.filter((t) => docSet.has(t));
+    // Exige pelo menos 2 tokens em comum (nome+sobrenome) — senão divergente
+    if (shared.length < 2) {
+      details.docName = docName;
+      details.billName = billName;
+      details.shared = shared;
+      return {
+        ok: false,
+        code: 'IA_TITULAR_DIVERGENTE',
+        reason: `PORTAL_IA_REPROVADA: Titular divergente (doc="${docName}" × conta="${billName}")`,
+        details,
+      };
+    }
+  }
+
+  return { ok: true };
 }
 
 // ─── Normalização anti-repetição (Req 9.1) ───────────────────────────────────

@@ -21,7 +21,7 @@
 import crypto from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { chromium } from 'playwright-chromium';
-import { buildExtractionResult } from './portal-errors.mjs';
+import { buildExtractionResult, evaluateIaGate } from './portal-errors.mjs';
 
 const BASE_URL = 'https://api-green-connection.igreenenergy.com.br';
 const PORTAL_LANDING = 'https://green.igreenenergy.com.br/autoconexao/';
@@ -83,11 +83,14 @@ const formatCep = c => {
   return d.length === 8 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
 };
 const formatPhone = c => {
+  // Brasil só — DDI 55 fixo. Reusa a mesma normalização do portal-phone
+  // (evita o bug Osmar: slice(-11) em WA 12 dígitos → DDD 53).
   let d = onlyDigits(c);
-  // Remove DDI 55 quando presente (números BR sempre 11 ou 10 dígitos no
-  // formato (DD) X XXXX-XXXX). Ex: "5511971254913" → "11971254913".
-  if (d.length === 13 && d.startsWith('55')) d = d.slice(2);
-  if (d.length === 12 && d.startsWith('55')) d = d.slice(2);
+  while (d.startsWith('0') && d.length > 11) d = d.slice(1);
+  if (d.startsWith('0') && (d.length === 11 || d.length === 12)) d = d.slice(1);
+  if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+  if (d.startsWith('55') && d.length >= 12) d = d.slice(2);
+  if (d.length > 11) d = d.slice(-11);
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
   if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
   return c;
@@ -1045,6 +1048,23 @@ export class Portal2Client {
         err.code = 'PORTAL_ATTACHMENTS_NOT_CONFIRMED';
         err.extraction = extraction;
         err.body = { idsolcontratovalidacao, missing, upload: extraction.upload };
+        throw err;
+      }
+    }
+
+    // ─── Gate IA iGreen (reprovação explícita) ───────────────────────────────
+    // Espelha o portal manual: se a IA reprova conta/doc ou titular diverge,
+    // NÃO cria o cliente — encaminha para needs_human. OCR incompleto/transporte
+    // NÃO bloqueia (só is_authentic===false, doc success===false, validade
+    // vencida, mismatch claro de nomes).
+    {
+      const gate = evaluateIaGate({ docResp, billResp, dados });
+      if (!gate.ok) {
+        console.warn(`  ⛔ gate IA: ${gate.code} — ${gate.reason}`);
+        const err = new Error(gate.reason);
+        err.code = gate.code || 'IA_REPROVADA';
+        err.extraction = extraction;
+        err.body = { idsolcontratovalidacao, gate };
         throw err;
       }
     }

@@ -14,6 +14,7 @@ import {
   appendTrackingProtocol,
   detectTrackingChannel,
   ensureCampaignTrackingProtocol,
+  normalizeTrackingProtocol,
 } from "../_shared/campaign-tracking.ts";
 import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
 
@@ -205,6 +206,13 @@ Deno.serve(async (req) => {
       buildInitialMessage(body.initial_message, body.distribuidora),
       trackingProtocol,
     );
+    // Trava: mensagem CTWA SEM protocolo = matching cego no webhook.
+    if (!normalizeTrackingProtocol(trackedInitialMessage)) {
+      return new Response(JSON.stringify({
+        error: `A mensagem inicial precisa incluir o protocolo rastreável ${trackingProtocol}. Sem isso o rodízio não identifica a campanha.`,
+        code: "MISSING_TRACKING_PROTOCOL",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     // ─── BLOQUEIO: primeira mensagem CTWA precisa ser ÚNICA por consultor ───
     // Como o protocolo agora faz parte da mensagem, duas campanhas podem usar a
@@ -1192,8 +1200,8 @@ Deno.serve(async (req) => {
     const campaignRowId = (insertedCampaign as { id?: string } | null)?.id ?? null;
 
     // ─── Rodízio: cria a pool e os membros ligados a esta campanha ──────────
-    // Só cria quando o toggle de rodízio veio ligado E há pelo menos 2
-    // participantes (o mínimo que faz a distribuição circular fazer sentido).
+    // Só cria quando o toggle de rodízio veio ligado E há pelo menos 1
+    // participante (1 = destino exclusivo + métricas; 2+ = rodízio circular).
     // Quando desligado, nada acontece aqui — o anúncio segue com destino único
     // (whatsapp_destination_number), exatamente como antes.
     //
@@ -1203,7 +1211,7 @@ Deno.serve(async (req) => {
     // o consultor logado (auth.id), o mesmo que a RLS de referral_partners usa.
     // O plano (pool + construtor de membros) e a regra "criar ou não" vivem no
     // helper puro `rodizio-pool.ts` (testável sob Vitest). Retorna null quando o
-    // rodízio está desligado ou há < 2 participantes — nesse caso nada é criado.
+    // rodízio está desligado ou há 0 participantes — nesse caso nada é criado.
     const rodizioPlan = buildRodizioPoolPlan({
       input: body,
       campaignId: campaignRowId ?? "",

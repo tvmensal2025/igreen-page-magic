@@ -6,6 +6,8 @@
 // (`worker-portal-2`, API direta). O campo `consultants.portal_kind` segue no
 // banco apenas para auditoria — o roteamento é sempre Portal 2.
 
+import { resolvePortalWhatsapp } from "./portal-phone.ts";
+
 export interface DispatchResult {
   ok: boolean;
   mode: "dispatched" | "queued_offline" | "not_configured";
@@ -134,10 +136,17 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
       data_nascimento,
       phone_whatsapp,
       portal2_celular_alt,
+      phone_landline,
+      phone_contact_confirmed,
+      contaunica,
+      contaunica_answered,
+      transferir_titularidade,
+      transferir_titularidade_answered,
       email,
       cep, address_street, address_number, address_complement,
       address_neighborhood, address_city, address_state,
       numero_instalacao, media_consumo, electricity_bill_value,
+      portal_idconsultor_override,
       distribuidora, debitos_aberto, possui_procurador,
       referral_partner_id, consultant_id,
       consultants:consultant_id(igreen_id, name, portal_kind),
@@ -151,29 +160,37 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
   const consultant = c.consultants as any;
   const partner = c.referral_partners as any;
 
-  // ─── Resolução de idconsultor + indcli (junção dono / parceiro) ───
-  // Regra única que cobre os 4 casos:
-  //   1) lead direto do dono (sem parceiro)        => idconsultor=dono, indcli=0
-  //   2) dono + parceiro indicador (tem cli)        => idconsultor=dono, indcli=cli
-  //   3) consultor parceiro só dele (tem id próprio)=> idconsultor=parceiro, indcli=0
-  //   4) consultor parceiro + indicação (id + cli)  => idconsultor=parceiro, indcli=cli
-  // partner.partner_igreen_id NULL => caminho atual (idconsultor = dono).
+  // ─── Resolução de idconsultor + indcli (dono / parceiro / override) ───
+  // Regra de produto (2026-07-09 + override ficha):
+  //   0) portal_idconsultor_override > 0 → sobrescreve tudo (ficha manual)
+  //   1) partner_igreen_id > 0  → cadastra NO consultor parceiro (id próprio)
+  //   2) cli > 0 (ativo)        → cadastra NO consultor do cli (cli = id iGreen)
+  //   3) sem parceiro / sem cli → cadastra no dono da instância
+  // indcli fica 0: quando o cli/override define o consultor, ele É o dono
+  // do cadastro, não um indicador sob outro.
+  const overrideRaw = Number((c as any).portal_idconsultor_override || 0);
+  const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
   const partnerIgreenId = partner?.partner_igreen_id
     ? Number(partner.partner_igreen_id)
-    : null;
-  // Quem é o dono do cadastro: o consultor parceiro (se tiver id próprio) ou o dono.
-  const igreenId = Number.isFinite(partnerIgreenId as number) && (partnerIgreenId as number) > 0
-    ? (partnerIgreenId as number)
-    : donoIgreenId;
+    : 0;
+  const partnerCli = partner?.cli ? Number(partner.cli) : 0;
+  const partnerAsConsultant =
+    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+      ? partnerIgreenId
+      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const igreenId = overrideId > 0
+    ? overrideId
+    : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
   if (!igreenId) {
     console.warn(`[portal-worker] customer=${customerId} sem igreen_id do consultor`);
     return null;
   }
-  // indcli: cli do parceiro indicador (vale para os dois tipos de dono).
-  const indcli = partner?.cli ? Number(partner.cli) : 0;
-  if (partnerIgreenId) {
-    console.log(`[portal-worker] customer=${customerId} cadastro via consultor parceiro id=${igreenId} indcli=${indcli}`);
+  const indcli = 0;
+  if (overrideId > 0) {
+    console.log(`[portal-worker] customer=${customerId} idconsultor OVERRIDE ficha=${overrideId} (parceiro=${partnerAsConsultant || "-"} dono=${donoIgreenId})`);
+  } else if (partnerAsConsultant > 0) {
+    console.log(`[portal-worker] customer=${customerId} cadastro via consultor parceiro id=${igreenId} (cli=${partnerCli || "-"} partner_igreen_id=${partnerIgreenId || "-"}) dono=${donoIgreenId}`);
   }
 
   const consumoAtual = Number(c.media_consumo || 0);
@@ -201,9 +218,8 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
       cpf: c.cpf || "",
       nome: c.doc_holder_name || c.name || "",
       dataNascimento: c.data_nascimento || "",
-      // Req 8.3/8.4/8.5: prioriza o celular alternativo do Portal 2 quando
-      // presente; phone_whatsapp é apenas lido, nunca alterado.
-      whatsapp: c.portal2_celular_alt || c.phone_whatsapp || "",
+      // Telefone do Portal 2: alt → landline confirmado → whatsapp (chave da conversa).
+      whatsapp: resolvePortalWhatsapp(c),
       email: c.email || "",
       cep: c.cep || "",
       endereco: c.address_street || "",
@@ -220,6 +236,11 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
       concessionaria: c.distribuidora || "",
       // Sinais que disparam fluxos especiais no Portal 2
       possuiPlacas: false,
+      // UX bot = boleto; portal = titularidade. Mesma escolha: unificado ⇔ transferir.
+      contaUnica: c.contaunica_answered === true ? !!c.contaunica : false,
+      transferirTitularidade: c.contaunica_answered === true
+        ? !!c.contaunica
+        : !!c.transferir_titularidade,
       sendcontract: true,
     },
   };

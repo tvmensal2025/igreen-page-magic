@@ -127,7 +127,7 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
             .order("position", { ascending: true });
           const ids = ((members as any[]) || []).map((m) => m.partner_id).filter(Boolean);
           setSelectedIds(ids);
-          setRodEnabled(ids.length >= 2);
+          setRodEnabled(ids.length >= 1);
         }
       } catch { /* pool pode não existir — modo destino único */ }
       setCurrentPoolLoaded(true);
@@ -176,8 +176,8 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
 
   async function handleSaveRodizio() {
     if (!campaign) return;
-    if (rodEnabled && selectedIds.length < 2) {
-      return toast({ title: "Rodízio requer pelo menos 2 participantes", variant: "destructive" });
+    if (rodEnabled && selectedIds.length < 1) {
+      return toast({ title: "Selecione pelo menos 1 participante", variant: "destructive" });
     }
     setSavingRod(true);
     try {
@@ -243,9 +243,9 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
           <TabsContent value="rodizio" className="space-y-3 pt-3">
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div>
-                <div className="font-medium text-sm">Rodízio de participantes</div>
+                <div className="font-medium text-sm">Quem recebe os leads</div>
                 <div className="text-xs text-muted-foreground">
-                  Distribui os clientes interessados desta campanha em ordem circular entre os participantes selecionados.
+                  1 pessoa = destino exclusivo (leads + métricas horárias). 2 ou mais = rodízio circular.
                 </div>
               </div>
               <Switch checked={rodEnabled} onCheckedChange={setRodEnabled} disabled={!currentPoolLoaded} />
@@ -290,8 +290,15 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
                         );
                       })}
                     </div>
-                    {selectedIds.length < 2 && <p className="text-xs text-destructive mt-1">Selecione pelo menos 2 participantes.</p>}
+                    {selectedIds.length === 1 && (
+                      <p className="text-xs text-primary mt-1">
+                        Destino exclusivo: todos os leads e o aviso horário vão para esta pessoa.
+                      </p>
+                    )}
                   </div>
+                )}
+                {selectedIds.length === 0 && (
+                  <p className="text-xs text-destructive mt-1">Selecione pelo menos 1 participante.</p>
                 )}
               </div>
             )}

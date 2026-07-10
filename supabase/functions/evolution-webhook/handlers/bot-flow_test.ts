@@ -7,6 +7,7 @@ import {
   assertEquals,
   assertAlmostEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { extractMoneyFromText } from "../../_shared/parse-money.ts";
 import { __test } from "./bot-flow.ts";
 
 const { sleepForMedia, fetchUrlToBase64, trigramSim, resolvePostBillNextStepId } = __test;
@@ -200,17 +201,17 @@ Deno.test("checkin: pergunta com '?' deve cair na rota de dúvida", () => {
   assert(/\?/.test(txt));
 });
 Deno.test("checkin: '1600' captura valor (≥30)", () => {
-  const txt = "1600";
-  const m = txt.match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-  assert(m);
-  const v = Number(m![1].replace(".", "").replace(",", "."));
+  const v = extractMoneyFromText("1600") ?? 0;
   assertEquals(v, 1600);
   assert(v >= 30);
 });
 Deno.test("checkin: 'r$ 250,50' captura valor com vírgula", () => {
-  const txt = "r$ 250,50";
-  const m = txt.match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-  assert(m);
-  const v = Number(m![1].replace(".", "").replace(",", "."));
+  const v = extractMoneyFromText("r$ 250,50") ?? 0;
   assertAlmostEquals(v, 250.5, 0.001);
+});
+Deno.test("checkin: '350.00' NÃO vira 35000 (regressão)", () => {
+  assertEquals(extractMoneyFromText("350.00"), 350);
+});
+Deno.test("checkin: '200.0' NÃO vira 2000 (regressão)", () => {
+  assertEquals(extractMoneyFromText("200.0"), 200);
 });

@@ -52,6 +52,8 @@ export const CADASTRO_STEPS: ReadonlySet<string> = new Set([
   // ENTER_CADASTRO (pede conta de novo) em vez de cair no handler
   // ask_quero_cadastrar do bot-flow.ts que despacha capture_documento.
   "ask_quero_cadastrar",
+  "ask_contaunica",
+  "ask_transferir_titularidade",
   "ask_finalizar",
   "finalizando",
   "portal_submitting",

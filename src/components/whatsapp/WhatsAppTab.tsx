@@ -347,12 +347,12 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         {/* Banner global de billing Whapi — aparece em qualquer sub-aba quando o canal está bloqueado por pagamento */}
         <WhapiBillingBanner enabled={!!isWhapi} />
         {activeSubTab === "dashboard" && (
-          <Suspense fallback={<LazyFallback />}>
-            <div className="p-3 space-y-3">
-              {isWhapi && whapiDown && <WhapiConnectionPanel visible={true} />}
+          <div className="p-3 space-y-3 overflow-y-auto h-full min-h-0 min-w-0">
+            {isWhapi && whapiDown && <WhapiConnectionPanel visible={true} />}
+            <Suspense fallback={<LazyFallback />}>
               <WhatsAppDashboard consultantId={userId} />
-            </div>
-          </Suspense>
+            </Suspense>
+          </div>
         )}
 
         {activeSubTab === "conversas" && (

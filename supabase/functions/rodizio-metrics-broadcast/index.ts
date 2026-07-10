@@ -7,7 +7,7 @@
 // (Whapi → Evolution fallback).
 //
 // Guardrails principais:
-//  - Só envia entre 08h e 22h America/Sao_Paulo
+//  - Quiet hours POR POOL (padrão 21h–09h BRT; configurável na UI)
 //  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 30/60/120/240; padrão 60)
 //  - NUNCA envia com métricas fake: se a Meta API falhar → mensagem de fallback
 //  - Se campanha < 30 min e tudo zero → skip (evita "vazio")
@@ -23,11 +23,66 @@ import {
   formatCampaignApprovedMessage,
 } from "../_shared/rodizio-metrics-format.ts";
 import { fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+type PartnerLeadRow = { id: string; created_at: string };
+
+/**
+ * Leads do parceiro nesta campanha (rodízio): referral_partner_id +
+ * (source_campaign_id = campanha OU campaign_match_log). Sem prova Meta.
+ * Só quantidade — não lista telefone/nome no aviso.
+ */
+async function loadPartnerCampaignLeads(
+  supabase: ReturnType<typeof createClient>,
+  campaignId: string,
+  partnerId: string,
+  sinceIso?: string,
+): Promise<PartnerLeadRow[]> {
+  const { data: logs } = await supabase
+    .from("campaign_match_log")
+    .select("customer_id")
+    .eq("campaign_id", campaignId)
+    .limit(500);
+  const matchIds = [...new Set(((logs || []) as any[]).map((l) => l.customer_id).filter(Boolean))] as string[];
+
+  const byId = new Map<string, PartnerLeadRow>();
+
+  let q1 = supabase
+    .from("customers")
+    .select("id, created_at")
+    .eq("referral_partner_id", partnerId)
+    .eq("source_campaign_id", campaignId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (sinceIso) q1 = q1.gte("created_at", sinceIso);
+  const { data: bySource } = await q1;
+  for (const r of (bySource || []) as PartnerLeadRow[]) byId.set(r.id, r);
+
+  if (matchIds.length) {
+    for (let i = 0; i < matchIds.length; i += 100) {
+      const chunk = matchIds.slice(i, i + 100);
+      let q2 = supabase
+        .from("customers")
+        .select("id, created_at")
+        .eq("referral_partner_id", partnerId)
+        .in("id", chunk)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (sinceIso) q2 = q2.gte("created_at", sinceIso);
+      const { data: byMatch } = await q2;
+      for (const r of (byMatch || []) as PartnerLeadRow[]) byId.set(r.id, r);
+    }
+  }
+
+  return [...byId.values()].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+}
 
 function nowBRT(): { label: string; hour: number; minutesSinceMidnightUTC: number } {
   const d = new Date();
@@ -55,23 +110,37 @@ interface LiveMetrics {
   spendTodayCents: number;
   reachToday: number;
   impressionsToday: number;
+  clicksToday: number;
   conversationsToday: number;
   spend7dCents: number;
+  clicks7d: number;
   conversations7d: number;
 }
 
-function parseInsightRow(row: any): { spendCents: number; reach: number; impressions: number; conversations: number } {
+function parseInsightRow(row: any): {
+  spendCents: number;
+  reach: number;
+  impressions: number;
+  clicks: number;
+  conversations: number;
+} {
   const spendCents = Math.round(Number(row?.spend || 0) * 100);
   const reach = Number(row?.reach || 0);
   const impressions = Number(row?.impressions || 0);
+  // link_clicks / clicks — Meta manda em actions ou campo clicks
+  let clicks = Number(row?.clicks || 0);
   let conversations = 0;
   for (const a of (row?.actions || []) as any[]) {
-    // CTWA: Meta reporta como onsite_conversion.messaging_conversation_started_7d
-    if (typeof a?.action_type === "string" && a.action_type.includes("messaging_conversation_started")) {
+    const t = typeof a?.action_type === "string" ? a.action_type : "";
+    // CTWA: onsite_conversion.messaging_conversation_started_7d
+    if (t.includes("messaging_conversation_started")) {
       conversations += Number(a.value || 0);
     }
+    if (!clicks && (t === "link_click" || t === "outbound_click")) {
+      clicks += Number(a.value || 0);
+    }
   }
-  return { spendCents, reach, impressions, conversations };
+  return { spendCents, reach, impressions, clicks, conversations };
 }
 
 // Cache em memória por 5 min para não bater na Meta por cada parceiro do pool
@@ -81,20 +150,24 @@ async function fetchLiveMetrics(fbCampaignId: string, token: string): Promise<Li
   if (cached && Date.now() - cached.at < 5 * 60_000) return cached.data;
 
   try {
-    const fields = "spend,reach,impressions,actions";
+    const fields = "spend,reach,impressions,clicks,actions";
     const [today, week] = await Promise.all([
       fbFetch(`/${fbCampaignId}/insights?fields=${fields}&date_preset=today&access_token=${encodeURIComponent(token)}`),
       fbFetch(`/${fbCampaignId}/insights?fields=${fields}&date_preset=last_7d&access_token=${encodeURIComponent(token)}`),
     ]);
     const t = parseInsightRow(today?.data?.[0] || {});
     const w = parseInsightRow(week?.data?.[0] || {});
+    // Meta date_preset=last_7d = últimos 7 dias COMPLETOS (exclui hoje).
+    // "Últimos 7 dias" na mensagem = last_7d + today (janela rolante real).
     const data: LiveMetrics = {
       spendTodayCents: t.spendCents,
       reachToday: t.reach,
       impressionsToday: t.impressions,
+      clicksToday: t.clicks,
       conversationsToday: t.conversations,
-      spend7dCents: w.spendCents,
-      conversations7d: w.conversations,
+      spend7dCents: w.spendCents + t.spendCents,
+      clicks7d: w.clicks + t.clicks,
+      conversations7d: w.conversations + t.conversations,
     };
     liveCache.set(fbCampaignId, { at: Date.now(), data });
     return data;
@@ -115,12 +188,11 @@ Deno.serve(async (req) => {
 
   const { label, hour, minutesSinceMidnightUTC } = nowBRT();
 
-  // Quiet hours: 08h–21h BRT (envia até 21:59)
-  if (hour < 8 || hour >= 22) {
-    return new Response(
-      JSON.stringify({ ok: true, skipped: "quiet_hours", hour_brt: hour }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
+  /** Quiet hours por pool. start=21 end=9 → silêncio de 21h até 08:59. start===end → desligado. */
+  function inQuietHours(startH: number, endH: number, h: number): boolean {
+    if (startH === endH) return false;
+    if (startH < endH) return h >= startH && h < endH; // ex: 0–6
+    return h >= startH || h < endH; // ex: 21–9 (atravessa meia-noite)
   }
 
   const todayStart = todayBRTStartISO();
@@ -128,6 +200,7 @@ Deno.serve(async (req) => {
 
   let sent = 0;
   let skippedInterval = 0;
+  let skippedQuiet = 0;
   let skippedDedup = 0;
   let skippedColdStart = 0;
   let fallbackSent = 0;
@@ -139,6 +212,7 @@ Deno.serve(async (req) => {
       .from("rodizio_pools")
       .select(`
         id, campaign_id, consultant_id, metrics_broadcast_interval_minutes, approval_notified_at,
+        metrics_quiet_start_hour, metrics_quiet_end_hour,
         facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at)
       `)
       .eq("facebook_campaigns.status", "active");
@@ -148,6 +222,13 @@ Deno.serve(async (req) => {
       const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 60);
       if (!camp?.id || !camp.fb_campaign_id) continue;
       if (intervalMin <= 0) { skippedInterval++; continue; }
+
+      const quietStart = Number(pool.metrics_quiet_start_hour ?? 21);
+      const quietEnd = Number(pool.metrics_quiet_end_hour ?? 9);
+      if (inQuietHours(quietStart, quietEnd, hour)) {
+        skippedQuiet++;
+        continue;
+      }
 
       // Slot da pool: sempre múltiplo do intervalo escolhido
       const slot = Math.floor(minutesSinceMidnightUTC / intervalMin);
@@ -159,12 +240,16 @@ Deno.serve(async (req) => {
       const conn = await loadCampaignConnection(camp.consultant_id);
       const live = conn?.token ? await fetchLiveMetrics(camp.fb_campaign_id, conn.token) : null;
 
-      // 2) Leads reais do CRM
+      // 2) Leads reais do CRM — só com prova Meta (AD ID / ctwa_clid)
       const [{ count: leadsCrmToday }, { count: leadsCrm7d }] = await Promise.all([
         supabase.from("customers").select("id", { count: "exact", head: true })
-          .eq("source_campaign_id", camp.id).gte("created_at", todayStart),
+          .eq("source_campaign_id", camp.id)
+          .or(META_CAMPAIGN_PROOF_OR)
+          .gte("created_at", todayStart),
         supabase.from("customers").select("id", { count: "exact", head: true })
-          .eq("source_campaign_id", camp.id).gte("created_at", sevenDaysAgoISO),
+          .eq("source_campaign_id", camp.id)
+          .or(META_CAMPAIGN_PROOF_OR)
+          .gte("created_at", sevenDaysAgoISO),
       ]);
 
       // 3) Guard "cold start vazio": campanha < 30min e literalmente 0 em tudo → não envia
@@ -252,14 +337,14 @@ Deno.serve(async (req) => {
           console.warn("[rodizio-metrics] insert log fail:", insErr.message);
         }
 
-        // Leads novos do parceiro desde a janela anterior
+        // Leads do parceiro nesta campanha (rodízio) — SEM prova Meta; só quantidade.
         const windowAgo = new Date(Date.now() - intervalMin * 60_000).toISOString();
-        const { count: partnerNewLeads } = await supabase
-          .from("customers")
-          .select("id", { count: "exact", head: true })
-          .eq("source_campaign_id", camp.id)
-          .eq("referral_partner_id", m.partner_id)
-          .gte("created_at", windowAgo);
+        const [partnerAll, partnerNew] = await Promise.all([
+          loadPartnerCampaignLeads(supabase, camp.id, m.partner_id),
+          loadPartnerCampaignLeads(supabase, camp.id, m.partner_id, windowAgo),
+        ]);
+        const partnerTotalLeads = partnerAll.length;
+        const partnerNewLeads = partnerNew.length;
 
         let text: string;
         if (!live) {
@@ -272,15 +357,17 @@ Deno.serve(async (req) => {
             spendTodayCents: live.spendTodayCents,
             reachToday: live.reachToday,
             impressionsToday: live.impressionsToday,
+            clicksToday: live.clicksToday,
             conversationsStartedToday: live.conversationsToday,
             spend7dCents: live.spend7dCents,
             conversations7d: live.conversations7d,
+            clicks7d: live.clicks7d,
             leadsCrmToday: leadsCrmToday || 0,
             leadsCrm7d: leadsCrm7d || 0,
             partnerPosition: (m.position ?? 0) + 1,
             partnerPoolSize: poolSize,
-            partnerLeadsTotal: Number(m.lead_count || 0),
-            partnerNewLeadsSinceLast: partnerNewLeads || 0,
+            partnerLeadsTotal: partnerTotalLeads,
+            partnerNewLeadsSinceLast: partnerNewLeads,
             nowLabel: label,
             intervalMinutes: intervalMin,
           });
@@ -307,9 +394,11 @@ Deno.serve(async (req) => {
         approvedSent,
         fallbackSent,
         skippedInterval,
+        skippedQuiet,
         skippedDedup,
         skippedColdStart,
         errors,
+        hour_brt: hour,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

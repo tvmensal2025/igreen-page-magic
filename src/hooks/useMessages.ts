@@ -184,20 +184,107 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
   };
 }
 
+const PAGE_SIZE = 200;
+
+/**
+ * Ao enviar mensagem a um lead: se ainda não tem parceiro e o consultor tem
+ * exatamente 1 campanha com pool ativa, atribui via rodízio + protocolo + aviso.
+ * Nunca chuta entre 2+ campanhas. Não bloqueia o envio se falhar.
+ */
+async function ensureLeadPartnerLink(
+  customerId: string,
+  consultantId?: string | null,
+): Promise<void> {
+  try {
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("id, consultant_id, referral_partner_id, tracking_protocol, source_campaign_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (!cust) return;
+
+    // Já vinculado a parceiro + protocolo → nada a fazer
+    if ((cust as any).referral_partner_id && (cust as any).tracking_protocol) return;
+
+    const ownerId = String((cust as any).consultant_id || consultantId || "");
+    if (!ownerId) return;
+
+    // Já tem parceiro, falta protocolo
+    if ((cust as any).referral_partner_id && !(cust as any).tracking_protocol) {
+      const partnerId = (cust as any).referral_partner_id as string;
+      const { data: prow } = await supabase
+        .from("referral_partners")
+        .select("nome, short_code")
+        .eq("id", partnerId)
+        .maybeSingle();
+      const initials = String((prow as any)?.short_code || (prow as any)?.nome || "IGR").slice(0, 6);
+      const { data: protocol } = await supabase.rpc("generate_partner_protocol", {
+        _partner_id: partnerId,
+        _initials: initials,
+      });
+      if (protocol) {
+        await supabase
+          .from("customers")
+          .update({ tracking_protocol: String(protocol) })
+          .eq("id", customerId)
+          .is("tracking_protocol", null);
+      }
+      return;
+    }
+
+    // Sem parceiro: só auto-atribui com 1 campanha/pool ativa (ou campanha já no lead)
+    let campaignId = (cust as any).source_campaign_id as string | null;
+    if (!campaignId) {
+      const { data: pools } = await supabase
+        .from("rodizio_pools")
+        .select("campaign_id, facebook_campaigns!inner(id, status)")
+        .eq("consultant_id", ownerId)
+        .eq("is_active", true);
+      const active = ((pools || []) as any[]).filter((p) => {
+        const st = p.facebook_campaigns?.status;
+        return st === "active" || st === "pending_review";
+      });
+      const unique = [...new Set(active.map((p) => String(p.campaign_id)).filter(Boolean))];
+      if (unique.length !== 1) return;
+      campaignId = unique[0];
+    }
+
+    const { data: rodizioRows, error: rodizioError } = await supabase.rpc("rodizio_next", {
+      p_campaign_id: campaignId,
+    });
+    if (rodizioError || !rodizioRows) return;
+    const row = Array.isArray(rodizioRows) ? rodizioRows[0] : rodizioRows;
+    const partnerId = (row as any)?.partner_id || (row as any)?.referral_partner_id;
+    if (!partnerId) return;
+
+    // Atribui + protocolo + avisa parceiro (edge function já validada)
+    await supabase.functions.invoke("assign-lead-manual", {
+      body: { customer_id: customerId, partner_id: partnerId },
+    });
+  } catch (e) {
+    logger.warn("ensureLeadPartnerLink falhou (não bloqueia envio):", e);
+  }
+}
+
 export function useMessages(
   instanceName: string | null,
   remoteJid: string | null,
   preferredSendTargetJid: string | null = null,
   isWhapi: boolean = false,
   customerId: string | null = null,
+  consultantId: string | null = null,
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const [hasMoreOlder, setHasMoreOlder] = useState(true);
   const [resolvedSendTargetJid, setResolvedSendTargetJid] = useState<string | null>(
     preferredSendTargetJid
   );
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const fetchingRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  const offsetRef = useRef(0);
   const lastReadIdRef = useRef<string | null>(null);
   const clearedAtRef = useRef<number>(0);
 
@@ -205,16 +292,36 @@ export function useMessages(
     setResolvedSendTargetJid(preferredSendTargetJid || null);
   }, [preferredSendTargetJid, remoteJid]);
 
-  // Reset lastReadId when chat changes
+  // Reset when chat changes
   useEffect(() => {
     lastReadIdRef.current = null;
     clearedAtRef.current = 0;
+    offsetRef.current = 0;
+    setHasMoreOlder(true);
+    setIsLoadingOlder(false);
   }, [remoteJid]);
+
+  const sortMapped = useCallback((unique: EvolutionMessage[]) => {
+    let newestFirst = true;
+    for (let i = 0; i < unique.length - 1; i++) {
+      const a = normalizeMessageTimestamp(unique[i]?.messageTimestamp);
+      const b = normalizeMessageTimestamp(unique[i + 1]?.messageTimestamp);
+      if (a !== b) { newestFirst = a > b; break; }
+    }
+    const clearedAtMs = clearedAtRef.current;
+    return unique
+      .map((msg, sourceIndex) => ({ ...mapMessage(msg), sourceIndex }))
+      .filter((m) => clearedAtMs === 0 || m.timestamp * 1000 >= clearedAtMs)
+      .sort((a, b) => {
+        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
+        return newestFirst ? b.sourceIndex - a.sourceIndex : a.sourceIndex - b.sourceIndex;
+      })
+      .map(({ sourceIndex: _sourceIndex, ...m }) => m);
+  }, []);
 
   const fetchMessages = useCallback(async () => {
     if (!remoteJid) return;
     if (!isWhapi && !instanceName) return;
-    // Prevent overlapping fetches
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
@@ -229,10 +336,11 @@ export function useMessages(
       const normalized = normalizeBrazilPhone(rawFromAlt || rawFromJid);
       if (normalized) phoneCandidates.add(normalized);
 
+      // Página 0 (mais recentes). Histórico antigo vem via loadOlderMessages.
       const [raw, clearedRow] = await Promise.all([
         isWhapi
-          ? whapiListMessagesForChat(remoteJid, altJid, 200)
-          : findMessagesForChat(instanceName!, remoteJid, altJid, 200),
+          ? whapiListMessagesForChat(remoteJid, altJid, PAGE_SIZE, 0)
+          : findMessagesForChat(instanceName!, remoteJid, altJid, PAGE_SIZE),
         phoneCandidates.size > 0
           ? supabase
               .from("customers")
@@ -249,7 +357,6 @@ export function useMessages(
         : 0;
       clearedAtRef.current = clearedAtMs;
 
-      // Deduplicate by message id
       const seen = new Set<string>();
       const unique = (Array.isArray(raw) ? raw : []).filter((msg) => {
         const id = msg.key?.id;
@@ -258,59 +365,43 @@ export function useMessages(
         return true;
       });
 
-      // Detecta a direção do feed bruto comparando o PRIMEIRO PAR de timestamps
-      // DIFERENTES (não só os extremos). Comparar apenas first/last falha quando
-      // o lead manda várias mensagens no mesmo segundo: nesse caso firstTs===lastTs
-      // e o desempate ficava imprevisível, fazendo uma msg nova aparecer acima de
-      // uma anterior. Varrendo o primeiro par distinto, a direção é confiável mesmo
-      // com blocos de mensagens no mesmo segundo. Default newest-first (padrão
-      // Evolution/Whapi) quando todos os timestamps são iguais.
-      let newestFirst = true;
-      for (let i = 0; i < unique.length - 1; i++) {
-        const a = normalizeMessageTimestamp(unique[i]?.messageTimestamp);
-        const b = normalizeMessageTimestamp(unique[i + 1]?.messageTimestamp);
-        if (a !== b) { newestFirst = a > b; break; }
+      const mapped = sortMapped(unique);
+
+      // Se a 1ª página veio cheia, ainda pode haver histórico antigo.
+      if (offsetRef.current === 0) {
+        setHasMoreOlder(unique.length >= PAGE_SIZE);
+        offsetRef.current = unique.length;
       }
 
-      const mapped = unique
-        .map((msg, sourceIndex) => ({ ...mapMessage(msg), sourceIndex }))
-        .filter((m) => clearedAtMs === 0 || m.timestamp * 1000 >= clearedAtMs)
-        .sort((a, b) => {
-          if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-          // Mesmo segundo: render final é oldest-first, então o desempate respeita
-          // a direção em que o provedor entregou o feed bruto.
-          return newestFirst ? b.sourceIndex - a.sourceIndex : a.sourceIndex - b.sourceIndex;
-        })
-        .map(({ sourceIndex: _sourceIndex, ...m }) => m);
-      // Merge incremental: preserva mensagens otimistas (id começando com "temp-")
-      // e bolhas que o provedor ainda não indexou no próximo poll, evitando
-      // flicker de "apareceu e sumiu". Mensagens com mesmo id ganham os campos
-      // mais recentes do servidor (status, mídia resolvida, etc.).
       setMessages((prev) => {
         const byId = new Map<string, ChatMessage>();
+        // Mantém histórico antigo já carregado (offset > 0) + otimistas
+        for (const m of prev) {
+          if (m.id.startsWith("temp-")) {
+            byId.set(m.id, m);
+            continue;
+          }
+          // Mensagens mais antigas que a janela atual (já paginadas)
+          const inFresh = mapped.some((x) => x.id === m.id);
+          if (!inFresh) byId.set(m.id, m);
+        }
         for (const m of mapped) byId.set(m.id, m);
-        const extras = prev.filter((m) => {
-          if (byId.has(m.id)) return false;
-          // Mantém otimistas recentes (últimos 60s) e mensagens fora do clearedAt.
-          const ageMs = Date.now() - m.timestamp * 1000;
-          if (m.id.startsWith("temp-") && ageMs < 60_000) return true;
+        // Limpa otimistas expirados / cleared
+        const merged = Array.from(byId.values()).filter((m) => {
           if (clearedAtMs > 0 && m.timestamp * 1000 < clearedAtMs) return false;
-          // Mantém mensagens que sumiram do feed por estarem antes do limite (200).
-          // Quando o histórico antigo já foi carregado e o provedor encurtou a
-          // janela, conservamos o que já tínhamos pra não desaparecer do topo.
-          return ageMs < 7 * 86400_000;
+          if (m.id.startsWith("temp-")) {
+            return Date.now() - m.timestamp * 1000 < 60_000;
+          }
+          return true;
         });
-        const merged = [...extras, ...byId.values()].sort((a, b) => a.timestamp - b.timestamp);
-        return merged;
+        return merged.sort((a, b) => a.timestamp - b.timestamp);
       });
-
 
       const fallbackSendTarget = raw.find((msg) => msg.key.remoteJidAlt)?.key.remoteJidAlt;
       if (fallbackSendTarget) {
         setResolvedSendTargetJid((prev) => prev || fallbackSendTarget);
       }
 
-      // Only markAsRead if there's a NEW inbound message we haven't marked yet
       const lastIncoming = [...mapped].reverse().find((m) => !m.fromMe);
       if (!isWhapi && lastIncoming && lastIncoming.id !== lastReadIdRef.current && instanceName) {
         lastReadIdRef.current = lastIncoming.id;
@@ -326,10 +417,55 @@ export function useMessages(
       fetchingRef.current = false;
       setIsLoading(false);
     }
-  }, [instanceName, remoteJid, preferredSendTargetJid, resolvedSendTargetJid, isWhapi]);
+  }, [instanceName, remoteJid, preferredSendTargetJid, resolvedSendTargetJid, isWhapi, sortMapped]);
+
+  /** Carrega mensagens mais antigas (scroll pra cima). Preserva posição do scroll. */
+  const loadOlderMessages = useCallback(async (): Promise<number> => {
+    if (!remoteJid || !isWhapi) return 0;
+    if (!hasMoreOlder || loadingOlderRef.current) return 0;
+    loadingOlderRef.current = true;
+    setIsLoadingOlder(true);
+    try {
+      const altJid = preferredSendTargetJid || resolvedSendTargetJid;
+      const offset = offsetRef.current;
+      const raw = await whapiListMessagesForChat(remoteJid, altJid, PAGE_SIZE, offset);
+      const seen = new Set<string>();
+      const unique = (Array.isArray(raw) ? raw : []).filter((msg) => {
+        const id = msg.key?.id;
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+
+      if (unique.length < PAGE_SIZE) setHasMoreOlder(false);
+      offsetRef.current = offset + unique.length;
+
+      const mapped = sortMapped(unique);
+      let added = 0;
+      setMessages((prev) => {
+        const byId = new Map(prev.map((m) => [m.id, m]));
+        for (const m of mapped) {
+          if (!byId.has(m.id)) {
+            byId.set(m.id, m);
+            added += 1;
+          }
+        }
+        return Array.from(byId.values()).sort((a, b) => a.timestamp - b.timestamp);
+      });
+      return added;
+    } catch (e) {
+      logger.warn("loadOlderMessages falhou:", e);
+      return 0;
+    } finally {
+      loadingOlderRef.current = false;
+      setIsLoadingOlder(false);
+    }
+  }, [remoteJid, isWhapi, hasMoreOlder, preferredSendTargetJid, resolvedSendTargetJid, sortMapped]);
 
   useEffect(() => {
     setMessages([]);
+    offsetRef.current = 0;
+    setHasMoreOlder(true);
     fetchMessages();
     if (!remoteJid) return;
     if (!isWhapi && !instanceName) return;
@@ -534,6 +670,11 @@ export function useMessages(
           logger.warn("auto-takeover error (não bloqueia envio):", e);
         }
 
+        // Vínculo consultor + parceiro do rodízio (quando seguro) + protocolo
+        if (customerId) {
+          ensureLeadPartnerLink(customerId, consultantId).catch(() => null);
+        }
+
         // Status WhatsApp: 1 = pendente (✓), 2 = entregue ao servidor (✓✓).
         // Quando Evolution devolve PENDING, mantemos status=1 (um check) até
         // o webhook real confirmar entrega.
@@ -575,8 +716,18 @@ export function useMessages(
         throw err;
       }
     },
-    [instanceName, remoteJid, resolveSendTargetJid, isWhapi, customerId]
+    [instanceName, remoteJid, resolveSendTargetJid, isWhapi, customerId, consultantId]
   );
 
-  return { messages, isLoading, sendMessage, loadMedia, refetch: fetchMessages, resolveSendTargetJid };
+  return {
+    messages,
+    isLoading,
+    isLoadingOlder,
+    hasMoreOlder,
+    loadOlderMessages,
+    sendMessage,
+    loadMedia,
+    refetch: fetchMessages,
+    resolveSendTargetJid,
+  };
 }

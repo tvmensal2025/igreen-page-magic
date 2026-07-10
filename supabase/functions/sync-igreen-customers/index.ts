@@ -503,8 +503,17 @@ async function runSyncAllBackgroundPhase(
     }
 
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
+    // Multi-conta: NÃO sobrescrever consultants.igreen_consultor_id com ID de
+    // subconta (Sirlene/Nilma). Só atualiza a linha da conta atual; a coluna
+    // legada do consultor fica para a conta principal (Fase A).
     if (consultantId && consultorId) {
-      await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+      if (igreenAccountId) {
+        await supabase.from("igreen_portal_accounts").update({
+          igreen_consultor_id: consultorId,
+        }).eq("id", igreenAccountId);
+      } else {
+        await supabase.from("consultants").update({ igreen_consultor_id: consultorId }).eq("id", consultantId);
+      }
     }
     out.portal_identity = { igreen_consultor_id: consultorId };
     out.diagnostics = buildProductDiagnostics(r.data, buildExtrasOnly(toggles));
@@ -1494,8 +1503,22 @@ async function syncOneConsultant(
       // atualizada para a conta principal (compatibilidade com telas antigas).
       if (igreenAccountId) {
         await supabase.from("igreen_portal_accounts").update({ igreen_consultor_id: baseConsultorId, last_sync_at: new Date().toISOString() }).eq("id", igreenAccountId);
+        const { data: accRow } = await supabase
+          .from("igreen_portal_accounts")
+          .select("position")
+          .eq("id", igreenAccountId)
+          .maybeSingle();
+        if (Number(accRow?.position ?? 0) === 1) {
+          await supabase.from("consultants").update({
+            igreen_consultor_id: baseConsultorId,
+            igreen_id: Number(baseConsultorId) || null,
+          }).eq("id", consultantId);
+        }
       } else {
-        await supabase.from("consultants").update({ igreen_consultor_id: baseConsultorId }).eq("id", consultantId);
+        await supabase.from("consultants").update({
+          igreen_consultor_id: baseConsultorId,
+          igreen_id: Number(baseConsultorId) || null,
+        }).eq("id", consultantId);
       }
     }
     out.portal_identity = { igreen_consultor_id: baseConsultorId };
@@ -1675,6 +1698,33 @@ async function syncOneConsultant(
 
 // deno-lint-ignore no-explicit-any
 async function persistNetwork(supabase: any, consultantId: string | null, members: Record<string, unknown>[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
+  // Multi-conta: cada portal devolve a árvore com nivel=0 = logado naquela
+  // conta. Se a subconta (Sirlene/Nilma) gravar em network_members do mesmo
+  // consultant_id, ela sobrescreve a raiz/níveis da conta principal (unique
+  // consultant_id+igreen_id) e o mapa fica com a pessoa errada no topo.
+  // Por isso só a conta principal (position=1) — ou sync legado sem account —
+  // persiste a rede do consultor.
+  if (consultantId && igreenAccountId) {
+    const { data: acc } = await supabase
+      .from("igreen_portal_accounts")
+      .select("position, label, portal_email")
+      .eq("id", igreenAccountId)
+      .maybeSingle();
+    const position = Number(acc?.position ?? 0);
+    if (position > 1) {
+      console.log(
+        `[persistNetwork] skip subconta position=${position} (${acc?.label || acc?.portal_email || igreenAccountId}) — rede só pela conta principal`,
+      );
+      return {
+        skipped: true,
+        reason: "subaccount_network_skipped",
+        account_id: igreenAccountId,
+        position,
+        total_members: members.length,
+      };
+    }
+  }
+
   // Dedup por igreen_id dentro DESTA conta.
   const deduped = new Map<number, Record<string, unknown>>();
   for (const m of members) {
@@ -1725,11 +1775,9 @@ async function persistNetwork(supabase: any, consultantId: string | null, member
     else netUpdated += (data?.length || 0);
   }
 
-  // Remove stale members ESCOPADO POR CONTA iGreen (igreen_account_id).
-  // Sem esse escopo, sincronizar uma conta apagaria os membros das outras
-  // contas do mesmo consultor dono. Se o mesmo idconsultor aparecer em 2
-  // contas, o upsert acima reatribui a linha à conta atual — comportamento
-  // esperado (dedup no owner) e sem risco de apagar.
+  // Remove stale members da conta que está gravando (em geral a principal).
+  // Escopo por igreen_account_id evita apagar linhas legadas de outras contas
+  // se ainda existirem; o unique (consultant_id,igreen_id) garante 1 linha/pessoa.
   let staleDeleted = 0;
   if (consultantId && igreenAccountId) {
     const apiIds = netRecords.map((r) => Number(r.igreen_id));

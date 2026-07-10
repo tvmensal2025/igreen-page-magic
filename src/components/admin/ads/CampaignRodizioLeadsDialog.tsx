@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Users, Phone, MessageCircle, ChevronDown, ChevronRight, Bell } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { META_CAMPAIGN_PROOF_OR, META_CAMPAIGN_PROOF_METHODS } from "@/lib/metaCampaignProof";
 
 interface Props {
   open: boolean;
@@ -42,7 +43,10 @@ export function CampaignRodizioLeadsDialog({
   const [error, setError] = useState<string | null>(null);
   const [poolId, setPoolId] = useState<string | null>(null);
   const [interval, setIntervalMin] = useState<number>(60);
+  const [quietStart, setQuietStart] = useState<number>(21);
+  const [quietEnd, setQuietEnd] = useState<number>(9);
   const [savingInterval, setSavingInterval] = useState(false);
+  const [savingQuiet, setSavingQuiet] = useState(false);
 
   useEffect(() => {
     if (!open || !campaignId) return;
@@ -54,7 +58,7 @@ export function CampaignRodizioLeadsDialog({
         // 1) Pool ativa (mais recente ativa da campanha)
         const { data: pool, error: e1 } = await supabase
           .from("rodizio_pools")
-          .select("id, metrics_broadcast_interval_minutes")
+          .select("id, metrics_broadcast_interval_minutes, metrics_quiet_start_hour, metrics_quiet_end_hour")
           .eq("campaign_id", campaignId)
           .eq("is_active", true)
           .order("created_at", { ascending: false })
@@ -64,6 +68,8 @@ export function CampaignRodizioLeadsDialog({
         if (!cancelled) {
           setPoolId(pool?.id ?? null);
           setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 60));
+          setQuietStart(Number((pool as any)?.metrics_quiet_start_hour ?? 21));
+          setQuietEnd(Number((pool as any)?.metrics_quiet_end_hour ?? 9));
         }
 
         // 2) Membros + parceiros
@@ -78,17 +84,45 @@ export function CampaignRodizioLeadsDialog({
           members = mem || [];
         }
 
-        // 3) Leads (customers) da campanha com referral_partner_id
+        // 3) Leads da campanha — só com prova Meta (AD ID / ctwa_clid).
+        // Distribuição manual e fallback_pool NÃO entram aqui.
         const { data: leads, error: e3 } = await supabase
           .from("customers")
           .select("id, name, phone_whatsapp, created_at, referral_partner_id")
           .eq("source_campaign_id", campaignId)
+          .or(META_CAMPAIGN_PROOF_OR)
           .order("created_at", { ascending: false });
         if (e3) throw e3;
 
+        // 3b) Complemento via campaign_match_log com methods de prova real
+        // (nunca manual_backfill / fallback_single_active_pool).
+        const byId = new Map<string, any>();
+        for (const c of (leads || []) as any[]) byId.set(c.id, c);
+        try {
+          const { data: logs } = await supabase
+            .from("campaign_match_log")
+            .select("customer_id")
+            .eq("campaign_id", campaignId)
+            .in("method", [...META_CAMPAIGN_PROOF_METHODS])
+            .order("created_at", { ascending: false })
+            .limit(500);
+          const missingIds = [...new Set(((logs || []) as any[]).map((l) => l.customer_id).filter(Boolean))]
+            .filter((id: string) => !byId.has(id));
+          if (missingIds.length) {
+            const { data: extras } = await supabase
+              .from("customers")
+              .select("id, name, phone_whatsapp, created_at, referral_partner_id, source_ad_id, ctwa_clid, source_ctwa_clid")
+              .in("id", missingIds.slice(0, 200))
+              .or(META_CAMPAIGN_PROOF_OR);
+            for (const c of (extras || []) as any[]) byId.set(c.id, c);
+          }
+        } catch {
+          /* fail-open: dialog ainda mostra a fonte principal */
+        }
+
         const byPartner: Record<string, LeadRow[]> = {};
         const noPartner: LeadRow[] = [];
-        for (const c of (leads || []) as any[]) {
+        for (const c of byId.values()) {
           const row: LeadRow = {
             id: c.id,
             name: c.name,
@@ -177,6 +211,34 @@ export function CampaignRodizioLeadsDialog({
     }
   }
 
+  async function handleQuietChange(start: number, end: number) {
+    if (!poolId) return;
+    setQuietStart(start);
+    setQuietEnd(end);
+    setSavingQuiet(true);
+    try {
+      const { error: uerr } = await supabase
+        .from("rodizio_pools")
+        .update({
+          metrics_quiet_start_hour: start,
+          metrics_quiet_end_hour: end,
+        } as any)
+        .eq("id", poolId);
+      if (uerr) throw uerr;
+      if (start === end) {
+        toast.success("Silêncio noturno desligado — envia 24h");
+      } else {
+        toast.success(`Sem avisos de ${String(start).padStart(2, "0")}h às ${String(end).padStart(2, "0")}h`);
+      }
+    } catch (e) {
+      toast.error("Falha ao salvar horário: " + (e as Error).message);
+    } finally {
+      setSavingQuiet(false);
+    }
+  }
+
+  const HOUR_OPTS = Array.from({ length: 24 }, (_, i) => i);
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -203,26 +265,76 @@ export function CampaignRodizioLeadsDialog({
         {!loading && !error && (
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
             {poolId && (
-              <div className="rounded-lg border bg-muted/30 p-3 flex items-center gap-3">
-                <Bell className="w-4 h-4 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
-                  <div className="text-[11px] text-muted-foreground">
-                    Métricas ao vivo da Meta (gasto, alcance, conversas, leads)
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Bell className="w-4 h-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
+                    <div className="text-[11px] text-muted-foreground">
+                      Gasto, visualizações, conversas e leads — ao vivo da Meta
+                    </div>
                   </div>
+                  <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>
+                    <SelectTrigger className="w-[140px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="0">Desligado</SelectItem>
+                      <SelectItem value="30">A cada 30 min</SelectItem>
+                      <SelectItem value="60">A cada 1 hora</SelectItem>
+                      <SelectItem value="120">A cada 2 horas</SelectItem>
+                      <SelectItem value="240">A cada 4 horas</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>
-                  <SelectTrigger className="w-[140px] h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Desligado</SelectItem>
-                    <SelectItem value="30">A cada 30 min</SelectItem>
-                    <SelectItem value="60">A cada 1 hora</SelectItem>
-                    <SelectItem value="120">A cada 2 horas</SelectItem>
-                    <SelectItem value="240">A cada 4 horas</SelectItem>
-                  </SelectContent>
-                </Select>
+
+                <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-border/50">
+                  <span className="text-[11px] text-muted-foreground shrink-0">Não enviar de</span>
+                  <Select
+                    value={String(quietStart)}
+                    onValueChange={(v) => handleQuietChange(Number(v), quietEnd)}
+                    disabled={savingQuiet || interval === 0}
+                  >
+                    <SelectTrigger className="w-[88px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOUR_OPTS.map((h) => (
+                        <SelectItem key={`qs-${h}`} value={String(h)}>
+                          {String(h).padStart(2, "0")}:00
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-[11px] text-muted-foreground">às</span>
+                  <Select
+                    value={String(quietEnd)}
+                    onValueChange={(v) => handleQuietChange(quietStart, Number(v))}
+                    disabled={savingQuiet || interval === 0}
+                  >
+                    <SelectTrigger className="w-[88px] h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {HOUR_OPTS.map((h) => (
+                        <SelectItem key={`qe-${h}`} value={String(h)}>
+                          {String(h).padStart(2, "0")}:00
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <button
+                    type="button"
+                    className="text-[11px] text-primary underline-offset-2 hover:underline disabled:opacity-40"
+                    disabled={savingQuiet || interval === 0 || (quietStart === 21 && quietEnd === 9)}
+                    onClick={() => handleQuietChange(21, 9)}
+                  >
+                    Padrão 21h–09h
+                  </button>
+                  {quietStart === quietEnd && (
+                    <span className="text-[10px] text-warning">Silêncio desligado (24h)</span>
+                  )}
+                </div>
               </div>
             )}
 

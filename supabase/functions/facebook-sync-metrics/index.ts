@@ -4,6 +4,7 @@
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
 
 
 const corsHeaders = {
@@ -47,10 +48,15 @@ Deno.serve(async (req) => {
       }
     } catch (_) { /* sem body, segue global */ }
 
-    // Auth: aceita SERVICE_ROLE (cron) OU consultor autenticado pedindo sync das próprias campanhas.
+    // Auth: aceita SERVICE_ROLE (cron), chamada pg_cron com só `apikey` (mesmo
+    // padrão de facebook-sync-ad-creatives), OU consultor autenticado pedindo
+    // sync das próprias campanhas. Sem isso o cron 6h enfileira HTTP mas a
+    // função responde 401 e a carteira/métricas ficam congeladas.
     const authHeader = req.headers.get("Authorization") || "";
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    const isCron = authHeader === `Bearer ${serviceRole}`;
+    const isCron =
+      authHeader === `Bearer ${serviceRole}` ||
+      (!authHeader && !!req.headers.get("apikey"));
     if (!isCron) {
       const auth = await authConsultant(req);
       if (!auth) {
@@ -93,7 +99,7 @@ Deno.serve(async (req) => {
     const cplAvgCache: Record<string, number | null> = {};
     async function getConsultantAvgCpl(consultantId: string): Promise<number | null> {
       if (cplAvgCache[consultantId] !== undefined) return cplAvgCache[consultantId];
-      const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+      const since = new Date(Date.now() - 30 * 86400_000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const { data } = await admin
         .from("facebook_metrics_daily")
         .select("spend_cents,leads,campaign_id,facebook_campaigns!inner(consultant_id)")
@@ -156,8 +162,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        const since = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
-        const until = new Date().toISOString().slice(0, 10);
+        const since = new Date(Date.now() - 7 * 86400_000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+        const until = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
         const url = `${FB_GRAPH}/${c.fb_campaign_id}/insights?fields=impressions,reach,clicks,ctr,cpm,spend,actions,frequency&time_range={"since":"${since}","until":"${until}"}&time_increment=1&access_token=${token}`;
         const json = await fbFetch(url);
 
@@ -321,32 +327,35 @@ Deno.serve(async (req) => {
           console.warn("[fb-sync] ad-level insights falhou", c.fb_campaign_id, (ae as Error).message);
         }
 
-        // Reconcilia leads + customers_acquired POR CAMPANHA baseado no CRM real,
-        // usando customers.source_campaign_id (preenchido por lead-attribution).
-        // Antes o filtro era só lead_source='meta_ads' → todas as campanhas
-        // recebiam o total (resultado: customers_acquired sempre 0 ou inflado).
+        // Reconcilia leads + customers_acquired POR CAMPANHA baseado no CRM real.
+        // Só conta customers com prova Meta (AD ID / ctwa_clid) — nunca
+        // manual_backfill / fallback_pool / só source_campaign_id.
         try {
           const sinceIso = new Date(Date.now() - 7 * 86400_000).toISOString();
-          // Leads atribuídos a esta campanha (qualquer estágio)
           const { data: attributedLeads } = await admin
             .from("customers")
             .select("created_at")
             .eq("source_campaign_id", c.id)
+            .or(META_CAMPAIGN_PROOF_OR)
             .gte("created_at", sinceIso);
           const leadsByDate: Record<string, number> = {};
           for (const l of (attributedLeads || []) as any[]) {
             const dt = String(l.created_at).slice(0, 10);
             leadsByDate[dt] = (leadsByDate[dt] || 0) + 1;
           }
-          // Clientes aprovados desta campanha
+          // Clientes aprovados desta campanha (filtra prova Meta em memória —
+          // PostgREST .or em join embutido é frágil).
           const { data: deals } = await admin
             .from("crm_deals")
-            .select("created_at, customers!inner(source_campaign_id)")
+            .select("created_at, customers!inner(source_campaign_id, source_ad_id, ctwa_clid, source_ctwa_clid)")
             .eq("stage", "aprovado")
             .eq("customers.source_campaign_id", c.id)
             .gte("created_at", sinceIso);
           const customersByDate: Record<string, number> = {};
           for (const d of (deals || []) as any[]) {
+            const cust = d.customers || {};
+            const proven = !!(cust.source_ad_id || cust.ctwa_clid || cust.source_ctwa_clid);
+            if (!proven) continue;
             const dt = String(d.created_at).slice(0, 10);
             customersByDate[dt] = (customersByDate[dt] || 0) + 1;
           }

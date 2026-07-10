@@ -44,7 +44,6 @@ const PosVendaKanban = lazy(() => import("@/components/whatsapp/PosVendaKanban")
 const CustomerManager = lazy(() => import("@/components/whatsapp/CustomerManager").then(m => ({ default: m.CustomerManager })));
 
 const MaterialsTab = lazy(() => import("@/components/admin/MaterialsTab").then(m => ({ default: m.MaterialsTab })));
-const NetworkPanel = lazy(() => import("@/components/admin/NetworkPanel").then(m => ({ default: m.NetworkPanel })));
 const PanfletoModal = lazy(() => import("@/components/admin/PanfletoModal").then(m => ({ default: m.PanfletoModal })));
 
 const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").then(m => ({ default: m.AdsCentralTab })));
@@ -53,6 +52,7 @@ const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTa
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub").then(m => ({ default: m.AgendamentosHub })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
+const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => ({ default: m.VozTab })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
 const CarteiraGreenPanel = lazy(() => import("@/features/produtos/carteira-green/CarteiraGreenPanel").then(m => ({ default: m.CarteiraGreenPanel })));
@@ -61,25 +61,11 @@ const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/Finance
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
-
-
-import { SupportChatButton } from "@/components/support/SupportChatButton";
-
 const ADMIN_ACTIVE_TAB_KEY = "igreen_admin_active_tab_v1";
-/** Abas onde o FAB de suporte some no mobile/tablet para não cobrir CTAs, composer ou kanban. */
-const SUPPORT_FAB_HIDDEN_COMPACT: ReadonlySet<AdminTabId> = new Set([
-  "whatsapp",
-  "captacao",
-  "crm",
-  "crm-clientes",
-  "produtos",
-  "academy",
-  "conversao",
-]);
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "financeiro", "produtos",
-  "captacao", "parceiros", "rede", "whatsapp", "agendamentos", "central-anuncios", "links",
-  "materiais", "audio-studio", "academy",
+  "captacao", "parceiros", "whatsapp", "agendamentos", "central-anuncios", "links",
+  "materiais", "audio-studio", "voz", "academy",
 ];
 
 const AdminContent = () => {
@@ -114,7 +100,9 @@ const AdminContent = () => {
       if (tab === "whatsapp" || tab === "historico" || (tab && (AI_SUB_TABS as readonly string[]).includes(tab))) return "whatsapp";
       if (tab === "preview") return "links";
       if (tab === "captacao" || tab === "game" || tab === "modo-game") return "captacao";
-      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "financeiro" || tab === "rede" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "academy" || tab === "produtos" || tab === "agendamentos") return tab as AdminTabId;
+      // Aba "rede" removida da UI — dados/sync permanecem; deep-link antigo cai no dashboard
+      if (tab === "rede") return "dashboard";
+      if (tab === "crm" || tab === "crm-clientes" || tab === "clientes" || tab === "financeiro" || tab === "materiais" || tab === "parceiros" || tab === "conversao" || tab === "audio-studio" || tab === "voz" || tab === "academy" || tab === "produtos" || tab === "agendamentos") return tab as AdminTabId;
       const stored = window.localStorage.getItem(ADMIN_ACTIVE_TAB_KEY) as AdminTabId | null;
       if (stored && ADMIN_TAB_IDS.includes(stored)) return stored;
     }
@@ -322,13 +310,13 @@ const AdminContent = () => {
     "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, pipeline, ganhos e faturas Green" },
     "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
-    "rede": { title: "Rede", subtitle: "Sua estrutura e hierarquia" },
     "whatsapp": { title: "WhatsApp", subtitle: "Atendimento, automação e disparo" },
     "agendamentos": { title: "Agendamentos", subtitle: "Central unificada de envios programados e automações" },
     "central-anuncios": { title: "Central de Anúncios", subtitle: "Performance de campanhas" },
     "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
     "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
+    "voz": { title: "Ligação", subtitle: "Ligações com número da empresa e histórico detalhado" },
     "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
   };
   const currentMeta = TAB_META[activeTab];
@@ -475,11 +463,6 @@ const AdminContent = () => {
             </Suspense>
           )}
 
-
-          {userId && activeTab === "rede" && (
-            <NetworkPanel consultantId={userId} />
-          )}
-
           {userId && activeTab === "whatsapp" && (
             <WhatsAppErrorBoundary>
               <WhatsAppTab
@@ -562,6 +545,10 @@ const AdminContent = () => {
             </div>
           )}
 
+          {userId && activeTab === "voz" && (
+            <VozTab consultantId={userId} />
+          )}
+
           {activeTab === "academy" && (
             <AcademyTab />
           )}
@@ -630,11 +617,6 @@ const AdminContent = () => {
           igreenId={form.igreen_id || ""}
         />
       </Suspense>
-
-      {/* Suporte IA — oculto na aba Produtos em mobile (CTA sticky no rodapé) */}
-      <SupportChatButton
-        className={SUPPORT_FAB_HIDDEN_COMPACT.has(activeTab) ? "max-lg:hidden" : undefined}
-      />
     </div>
   );
 };

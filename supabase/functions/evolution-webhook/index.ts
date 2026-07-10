@@ -105,15 +105,15 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Validação de origem (fail-open): só bloqueia se EVOLUTION_WEBHOOK_SECRET
-  // estiver configurado. Sem a env, mantém o comportamento atual.
+  // Validação de origem em modo GRACE (log-only).
+  // Mesmo motivo do whapi-webhook: se o secret estiver setado sem o provedor
+  // enviar o header/query, o 401 engolia inbound e travava o cliente.
   const originAuth = verifyWebhookOrigin(req, "EVOLUTION_WEBHOOK_SECRET");
   if (!originAuth.ok) {
-    console.warn("[evolution-webhook] origem rejeitada:", originAuth.reason);
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.warn(
+      "[evolution-webhook] origem sem secret (grace/log-only, NÃO bloqueia):",
+      originAuth.reason,
+    );
   }
 
   // Lock state hoisted to function scope so the outer `finally` can guarantee
@@ -916,7 +916,7 @@ Deno.serve(async (req) => {
               .from("facebook_campaigns")
               .select("id")
               .eq("consultant_id", instanceData.consultant_id)
-              .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+              .contains("fb_ad_ids", [String(sourceAdId)])
               .maybeSingle();
             if ((campByAd as any)?.id) {
               sourceCampaignId = (campByAd as any).id;
@@ -1080,6 +1080,7 @@ Deno.serve(async (req) => {
       matchesMetaCtwaPhrase(messageText)
     ) {
       try {
+        // Protocolo FB-xxxxx → 1 pool ativa (sole) → fuzzy Jaccard.
         const { resolveCampaignBySinglePoolFuzzy } = await import(
           "../_shared/single-pool-campaign-resolver.ts"
         );
@@ -1460,11 +1461,81 @@ Deno.serve(async (req) => {
       console.warn("[capture-confirm] err:", (e as Error).message);
     }
 
+    // ─── ⭐ Avaliação de atendimento profissional (1–5) ─────────────────
+    // Intercepta ANTES de bot_paused / bot-flow / OCR. Cobre texto e mídia.
+    if (customer && (messageText || buttonId || isFile || hasAudio || hasDocument || hasImage)) {
+      const { tryInterceptAttendanceRating, isAwaitingAttendanceRating } = await import(
+        "../_shared/attendance-flow.ts"
+      );
+      if (isAwaitingAttendanceRating(customer as any)) {
+        const ratingMediaKind = hasDocument ? "document"
+          : hasImage ? "image"
+          : hasAudio ? "audio"
+          : mediaKind === "video" ? "video"
+          : isFile ? "file"
+          : null;
+        const ratingHit = await tryInterceptAttendanceRating({
+          supabase,
+          customer: {
+            id: customer.id,
+            conversation_step: (customer as any).conversation_step,
+            attendance_rating: (customer as any).attendance_rating,
+            attendance_rating_requested_at: (customer as any).attendance_rating_requested_at,
+          },
+          remoteJid,
+          messageText,
+          buttonId,
+          isMedia: !!(isFile || hasAudio || hasDocument || hasImage),
+          mediaKind: ratingMediaKind,
+          // Evolution já logou o inbound acima — evita duplicar.
+          skipInboundLog: true,
+          sendText: async (jid, text) => {
+            try { return !!(await sender.sendText(jid, text)); } catch { return false; }
+          },
+        });
+        if (ratingHit.intercepted) {
+          return new Response(JSON.stringify({
+            ok: true,
+            msg: ratingHit.media
+              ? "attendance_rating_media_hint"
+              : ratingHit.invalid
+              ? "attendance_rating_invalid_retry"
+              : "attendance_rating_recorded",
+            rating: ratingHit.rating ?? null,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
 
     // ─── 6.1) BOT PAUSED — handoff humano ativo ────────────────────────
-    // Se um humano assumiu, NÃO responder. Apenas registrar inbound (acima) e sair.
+    // Se um humano assumiu, NÃO responder. Avisa o consultor (texto/mídia).
     if ((customer as any).bot_paused === true) {
       console.log(`🤝 [handoff] bot pausado para ${customer.id} (motivo: ${(customer as any).bot_paused_reason}). Skip auto-reply.`);
+      try {
+        const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
+        if (notifyTo) {
+          const kind = (mediaKind === "video" ? "video"
+            : hasImage ? "image"
+            : hasAudio ? "audio"
+            : hasDocument ? "document"
+            : "text") as "text" | "image" | "audio" | "video" | "document";
+          const preview = messageText
+            || (kind === "image" ? "[imagem]"
+              : kind === "audio" ? "[áudio]"
+              : kind === "video" ? "[vídeo]"
+              : kind === "document" ? "[documento]"
+              : "[mensagem]");
+          const { notifyClientReplyWhilePaused } = await import("../_shared/notify-consultant.ts");
+          notifyClientReplyWhilePaused(
+            notifyTo,
+            customer as any,
+            preview,
+            { kind: kind as any },
+          ).catch((e) => console.warn("[notify-paused-reply] falhou:", (e as Error).message));
+        }
+      } catch (e) {
+        console.warn("[notify-paused-reply] setup falhou:", (e as Error).message);
+      }
       return new Response(JSON.stringify({ ok: true, msg: "bot_paused" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

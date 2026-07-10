@@ -10,6 +10,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../_shared/ocr.ts";
 import { buscarCepPorEndereco } from "../_shared/utils.ts";
+import { parseMoneyBR } from "../_shared/parse-money.ts";
 
 type Kind = "bill" | "doc";
 
@@ -135,7 +136,7 @@ Deno.serve(async (req) => {
         if (cepBuscado) updates.cep = cepBuscado;
       }
       updates.ocr_confianca = confianca;
-      const valorParsed = d.valorConta ? parseFloat(String(d.valorConta).replace(",", ".")) : 0;
+      const valorParsed = parseMoneyBR(d.valorConta) ?? 0;
       if (valorParsed >= 30) updates.electricity_bill_value = valorParsed;
 
       // Salva a URL como bill photo (se ainda não foi)

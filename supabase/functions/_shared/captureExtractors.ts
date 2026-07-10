@@ -1,6 +1,18 @@
 // Capture extractors com cascata: regex → números por extenso → validação.
 // Usado pelo Fluxo da Camila para extrair dados da mensagem do lead.
 
+import { parseMoneyBR, MONEY_NUM_SRC } from "./parse-money.ts";
+
+const MONEY_NUM_RE = new RegExp(`(${MONEY_NUM_SRC})`);
+const MONEY_BARE_RE = new RegExp(
+  `^\\s*(?:${MONEY_NUM_SRC})\\s*(?:reais?|pila|mangos?|contos?|r?\\$)?\\s*$`,
+  "i",
+);
+const MONEY_PREFIXED_RE = new RegExp(
+  `(?:r?\\$\\s*|reais?\\s*|conta\\s+(?:de|vem|tá|é|cerca de|uns|umas|aproximadamente)?\\s*|valor\\s+(?:de|é)?\\s*)?(${MONEY_NUM_SRC})`,
+  "i",
+);
+
 const NUM_EXTENSO: Record<string, number> = {
   cem: 100, duzentos: 200, trezentos: 300, quatrocentos: 400, quinhentos: 500,
   seiscentos: 600, setecentos: 700, oitocentos: 800, novecentos: 900, mil: 1000,
@@ -33,19 +45,15 @@ function cpfValido(cpf: string): boolean {
 export function extractValor(text: string): number | null {
   if (!text) return null;
   const t = text.toLowerCase().trim();
-  // 1) Regex direto: "R$ 380,50", "$380", "380 reais", "uns 400", "umas 500 pila", "minha conta vem 450"
-  const rx = /(?:r?\$\s*|reais?\s*|conta\s+(?:de|vem|tá|é|cerca de|uns|umas|aproximadamente)?\s*|valor\s+(?:de|é)?\s*)?(\d{2,5}(?:[.,]\d{1,2})?)/i;
-  // dispara se houver indício de dinheiro (R$, $, reais, conta, luz, valor, pila)
-  // OU se a mensagem for praticamente só um número (resposta direta a "qual o valor?")
-  // OU se contiver expressões de aproximação ("uns 200", "200 mais ou menos", "cerca de 300")
+  // 1) Regex direto: "R$ 380,50", "$380", "380 reais", "uns 400", "350.00", "1.688,15"
   const moneyHint = /r?\$|\breais?\b|\bconta\b|\bluz\b|\bvalor\b|\bpila\b|\bmangos?\b|\bcontos?\b/i.test(t);
   const approxHint = /\b(uns|umas|cerca\s+de|aproximadamente|aprox|por\s+volta|em\s+torno|quase|talvez|ma[is]?\s+ou\s+menos)\b/i.test(t);
-  const bareNumber = /^\s*\d{2,5}(?:[.,]\d{1,2})?\s*(?:reais?|pila|mangos?|contos?|r?\$)?\s*$/i.test(t);
+  const bareNumber = MONEY_BARE_RE.test(t);
   if (moneyHint || bareNumber || approxHint) {
-    const m = t.match(rx);
+    const m = t.match(MONEY_PREFIXED_RE);
     if (m) {
-      const v = parseFloat(m[1].replace(/\./g, "").replace(",", "."));
-      if (!isNaN(v) && v >= 30 && v <= 50000) return v;
+      const v = parseMoneyBR(m[1]);
+      if (v != null && v >= 30 && v <= 50000) return v;
     }
   }
   // 2) Extenso: "trezentos", "quinhentos e cinquenta"
@@ -67,10 +75,10 @@ export function extractValorPermissivo(text: string): number | null {
   if (!text) return null;
   const direct = extractValor(text);
   if (direct != null) return direct;
-  const m = text.match(/\b(\d{2,5}(?:[.,]\d{1,2})?)\b/);
+  const m = text.match(MONEY_NUM_RE);
   if (!m) return null;
-  const v = parseFloat(m[1].replace(/\./g, "").replace(",", "."));
-  if (!isNaN(v) && v >= 30 && v <= 50000) return v;
+  const v = parseMoneyBR(m[1]);
+  if (v != null && v >= 30 && v <= 50000) return v;
   return null;
 }
 

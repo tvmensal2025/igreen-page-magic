@@ -10,6 +10,7 @@
 // `supabase/functions/_shared/portalValidation.ts` (mesma lógica, Deno).
 // Se mudar aqui, mude lá também.
 import { isValidDistribuidora, isHoldingName, suggestDistribuidoras } from "./distribuidoras";
+import { resolvePortalWhatsapp } from "./portalPhone";
 
 
 export type FieldKey =
@@ -19,13 +20,18 @@ export type FieldKey =
   | "address_neighborhood" | "address_city" | "address_state"
   | "distribuidora" | "numero_instalacao"
   | "electricity_bill_value" | "media_consumo"
-  | "document_front_url" | "document_back_url" | "electricity_bill_photo_url";
+  | "document_front_url" | "document_back_url" | "electricity_bill_photo_url"
+  | "boleto_preference";
 
 export interface PortalCustomer {
   name?: string | null;
   cpf?: string | null;
   data_nascimento?: string | null;
   phone_whatsapp?: string | null;
+  /** Telefone de contato do portal (edição da ficha). */
+  portal2_celular_alt?: string | null;
+  phone_landline?: string | null;
+  phone_contact_confirmed?: boolean | null;
   email?: string | null;
   cep?: string | null;
   address_street?: string | null;
@@ -37,6 +43,11 @@ export interface PortalCustomer {
   numero_instalacao?: string | null;
   electricity_bill_value?: number | string | null;
   media_consumo?: number | string | null;
+  /** Preferência de fatura (bot ask_contaunica). */
+  contaunica?: boolean | null;
+  contaunica_answered?: boolean | null;
+  transferir_titularidade?: boolean | null;
+  transferir_titularidade_answered?: boolean | null;
   document_front_url?: string | null;
   document_back_url?: string | null;
   electricity_bill_photo_url?: string | null;
@@ -73,6 +84,13 @@ export const PORTAL_FIELDS: FieldDef[] = [
   { key: "electricity_bill_photo_url", label: "Conta de luz", group: "docs" },
 ];
 
+/** Campo sintético — não entra em PORTAL_FIELDS (UI própria na ficha). */
+export const BOLETO_PREFERENCE_FIELD: FieldDef = {
+  key: "boleto_preference",
+  label: "Boleto",
+  group: "conta",
+};
+
 export interface InvalidIssue {
   field: FieldKey | "consumo_vs_valor" | "name_mismatch";
   label: string;
@@ -97,12 +115,6 @@ export interface ValidationResult {
    *  exatamente o que está bloqueando o CADASTRAR, sem desencontro. */
   pendingItems: PendingItem[];
 }
-
-// Faixa esperada R$/kWh — regra de negócio do cliente: ≈ R$1/kWh.
-// Tarifa real fica em 0,8–1,3 dependendo da distribuidora; abrimos um
-// pouquinho pra evitar falso-positivo, mas mantemos apertado.
-const KWH_MIN_RATIO = 0.6;
-const KWH_MAX_RATIO = 1.6;
 
 function isStrFilled(v: any): boolean {
   return v !== null && v !== undefined && typeof v === "string" && v.trim().length > 0;
@@ -155,19 +167,32 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
   if (!c) {
     return {
       ok: false,
-      missing: [...PORTAL_FIELDS],
+      missing: [...PORTAL_FIELDS, BOLETO_PREFERENCE_FIELD],
       invalid: [],
       filledCount: 0,
-      totalFields: PORTAL_FIELDS.length,
-      pendingItems: PORTAL_FIELDS.map((f) => ({ kind: "missing" as const, field: f.key, label: f.label })),
+      totalFields: PORTAL_FIELDS.length + 1,
+      pendingItems: [...PORTAL_FIELDS, BOLETO_PREFERENCE_FIELD].map((f) => ({
+        kind: "missing" as const,
+        field: f.key,
+        label: f.label,
+      })),
     };
   }
+
+  // Faixa esperada R$/kWh (~R$1/kWh). Evita mandar consumo incoerente ao portal.
+  const KWH_MIN_RATIO = 0.6;
+  const KWH_MAX_RATIO = 1.6;
 
   // 1) Presença — campos string
   for (const f of PORTAL_FIELDS) {
     const v = (c as any)[f.key];
     if (f.key === "electricity_bill_value" || f.key === "media_consumo") {
       if (v === null || v === undefined || Number(v) <= 0) missing.push(f);
+      continue;
+    }
+    if (f.key === "phone_whatsapp") {
+      // Telefone do portal: alt → landline confirmado → chave do chat
+      if (!resolvePortalWhatsapp(c)) missing.push(f);
       continue;
     }
     if (f.key === "document_back_url") {
@@ -201,10 +226,13 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
       }
     }
   }
-  if (isStrFilled(c.phone_whatsapp)) {
-    const ph = digits(c.phone_whatsapp).replace(/^55/, "");
-    if (ph.length < 10 || ph.length > 11) {
-      invalid.push({ field: "phone_whatsapp", label: "WhatsApp", reason: "Telefone precisa ter DDD + 8/9 dígitos" });
+  {
+    const portalPhone = resolvePortalWhatsapp(c);
+    if (portalPhone) {
+      const ph = digits(portalPhone).replace(/^55/, "");
+      if (ph.length < 10 || ph.length > 11) {
+        invalid.push({ field: "phone_whatsapp", label: "WhatsApp", reason: "Telefone precisa ter DDD + 8/9 dígitos" });
+      }
     }
   }
   if (isStrFilled(c.email) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email!.trim())) {
@@ -273,7 +301,14 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     });
   }
 
-  const filledCount = PORTAL_FIELDS.length - missing.length;
+  // 6) Preferência de boleto (unificado ⇔ transferir titularidade) — mesma régua do bot
+  const boletoAnswered = c.contaunica_answered === true;
+  if (!boletoAnswered) {
+    missing.push(BOLETO_PREFERENCE_FIELD);
+  }
+
+  const totalFields = PORTAL_FIELDS.length + 1; // + boleto
+  const filledCount = totalFields - missing.length;
   const pendingItems: PendingItem[] = [
     ...missing.map((f) => ({ kind: "missing" as const, field: f.key, label: f.label })),
     ...invalid.map((i) => ({ kind: "invalid" as const, field: String(i.field), label: i.label, reason: i.reason })),
@@ -283,7 +318,7 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     missing,
     invalid,
     filledCount,
-    totalFields: PORTAL_FIELDS.length,
+    totalFields,
     pendingItems,
   };
 }

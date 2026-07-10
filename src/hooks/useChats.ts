@@ -142,7 +142,11 @@ interface PicCacheEntry {
   fetchedAt: number;
 }
 
-const GLOBAL_PIC_PAUSE_TTL = 5 * 60 * 1000; // 5 minutes
+const GLOBAL_PIC_PAUSE_TTL = 2 * 60 * 1000; // 2 min — só em rate-limit / falha em massa
+const PIC_BATCH_SIZE = 8; // antes: 3 — lista grande ficava sem foto por muito tempo
+const PIC_NULL_TTL = 15 * 60 * 1000; // null = sem foto / privado — re-tenta em 15 min (antes 1h)
+const PIC_OK_TTL = 60 * 60 * 1000; // URL ok — cache 1h
+const PIC_LS_KEY = "igreen_wa_profile_pics_v1";
 
 const TRUSTED_NAME_SOURCES = new Set([
   "self_introduced", "user_confirmed", "ocr_conta", "ocr_doc", "ocr_cnh", "ocr_rg", "manual", "freeform_multi",
@@ -162,10 +166,53 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const contactsMapRef = useRef<Map<string, EvolutionContact>>(new Map());
   const profilePicCacheRef = useRef<Map<string, PicCacheEntry>>(new Map());
+  const picsHydratedRef = useRef(false);
   const fetchingChatsRef = useRef(false);
   const fetchingPicsRef = useRef(false);
   const globalPicPauseUntilRef = useRef(0);
+  const consecutiveNullRoundsRef = useRef(0);
   const { toast } = useToast();
+
+  // Hidrata cache de fotos do localStorage (sobrevive a F5; sem migration no banco).
+  if (!picsHydratedRef.current && typeof window !== "undefined") {
+    picsHydratedRef.current = true;
+    try {
+      const raw = localStorage.getItem(PIC_LS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Record<string, PicCacheEntry>;
+        const now = Date.now();
+        for (const [jid, entry] of Object.entries(parsed || {})) {
+          if (!entry || typeof entry.fetchedAt !== "number") continue;
+          const ttl = entry.url ? PIC_OK_TTL : PIC_NULL_TTL;
+          if (now - entry.fetchedAt < ttl) {
+            profilePicCacheRef.current.set(jid, entry);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  const persistPicCache = useCallback(() => {
+    try {
+      const obj: Record<string, PicCacheEntry> = {};
+      const now = Date.now();
+      // Limita tamanho: só entradas recentes com URL (ou null recente)
+      for (const [jid, entry] of profilePicCacheRef.current.entries()) {
+        const ttl = entry.url ? PIC_OK_TTL : PIC_NULL_TTL;
+        if (now - entry.fetchedAt < ttl) obj[jid] = entry;
+      }
+      const keys = Object.keys(obj);
+      if (keys.length > 400) {
+        // Mantém as 400 mais recentes
+        const sorted = keys.sort((a, b) => (obj[b].fetchedAt - obj[a].fetchedAt));
+        const trimmed: Record<string, PicCacheEntry> = {};
+        for (const k of sorted.slice(0, 400)) trimmed[k] = obj[k];
+        localStorage.setItem(PIC_LS_KEY, JSON.stringify(trimmed));
+      } else {
+        localStorage.setItem(PIC_LS_KEY, JSON.stringify(obj));
+      }
+    } catch { /* quota / private mode */ }
+  }, []);
 
   // Overlay nomes capturados (self_introduced/OCR/user_confirmed) sobre o pushName
   // do WhatsApp para que a sidebar e o header reflitam o nome real do lead.
@@ -237,22 +284,34 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
         return; // don't start another pic round
       }
 
-      const CACHE_TTL = 60 * 60 * 1000; // 1 hour
       const now = Date.now();
+      // Já veio foto no list_chats / contacts → grava no cache (evita re-fetch)
+      for (const c of mapped) {
+        if (c.profilePicUrl) {
+          const prev = cache.get(c.remoteJid);
+          if (!prev?.url || prev.url !== c.profilePicUrl) {
+            cache.set(c.remoteJid, { url: c.profilePicUrl, fetchedAt: now });
+          }
+        }
+      }
+
       const missingPics = mapped
         .filter((c) => {
           const targetJid = c.sendTargetJid || c.remoteJid;
           if (!canFetchProfilePicture(targetJid)) return false;
           if (c.profilePicUrl) return false;
           const cached = cache.get(c.remoteJid);
-          if (cached && now - cached.fetchedAt < CACHE_TTL) return false;
+          if (cached?.url) return false;
+          // null recente = sem foto / privado — não martela a API
+          if (cached && !cached.url && now - cached.fetchedAt < PIC_NULL_TTL) return false;
           return true;
         })
-        .slice(0, 3);
+        .slice(0, PIC_BATCH_SIZE);
 
       if (missingPics.length > 0 && (isWhapi || instanceName) && now >= globalPicPauseUntilRef.current) {
         fetchingPicsRef.current = true;
-        processWithConcurrency(missingPics, 1, async (chat) => {
+        // Concorrência 2: mais rápido que 1, ainda seguro p/ Whapi/Evolution
+        processWithConcurrency(missingPics, 2, async (chat) => {
           const targetJid = chat.sendTargetJid || chat.remoteJid;
           try {
             const picUrl = isWhapi
@@ -261,7 +320,8 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
             cache.set(chat.remoteJid, { url: picUrl || null, fetchedAt: Date.now() });
             return { jid: chat.remoteJid, picUrl };
           } catch {
-            cache.set(chat.remoteJid, { url: null, fetchedAt: Date.now() });
+            // Erro de rede/API — TTL curto (não trata como "sem foto")
+            cache.set(chat.remoteJid, { url: null, fetchedAt: Date.now() - (PIC_NULL_TTL - 60_000) });
             return { jid: chat.remoteJid, picUrl: null };
           }
         }).then((results) => {
@@ -269,15 +329,24 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
             results.filter((r) => r.picUrl).map((r) => [r.jid, r.picUrl!])
           );
           if (picMap.size > 0) {
+            consecutiveNullRoundsRef.current = 0;
             setChats((prev) =>
               prev.map((c) => (picMap.has(c.remoteJid) ? { ...c, profilePicUrl: picMap.get(c.remoteJid) } : c))
             );
           } else {
-            // All returned null — pause globally for 5 minutes
-            globalPicPauseUntilRef.current = Date.now() + GLOBAL_PIC_PAUSE_TTL;
+            // Rodada inteira null: pode ser LID/privado OU rate-limit.
+            // Só pausa após 2 rodadas seguidas (não trava a lista no 1º ciclo).
+            consecutiveNullRoundsRef.current += 1;
+            if (consecutiveNullRoundsRef.current >= 2) {
+              globalPicPauseUntilRef.current = Date.now() + GLOBAL_PIC_PAUSE_TTL;
+              consecutiveNullRoundsRef.current = 0;
+            }
           }
+          persistPicCache();
         }).catch(() => { /* non-critical */ })
           .finally(() => { fetchingPicsRef.current = false; });
+      } else if (mapped.some((c) => c.profilePicUrl)) {
+        persistPicCache();
       }
     } catch {
       // Silently ignore auth / transient errors on polling — next interval will retry
@@ -285,7 +354,7 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
       fetchingChatsRef.current = false;
       setIsLoading(false);
     }
-  }, [instanceName, isWhapi]);
+  }, [instanceName, isWhapi, persistPicCache]);
 
   // Supabase Realtime subscription for inbound messages
   useEffect(() => {

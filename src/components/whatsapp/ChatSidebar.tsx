@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import type { ChatItem } from "@/hooks/useChats";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
+import { stripWhatsAppMarkup } from "@/lib/whatsapp/formatWhatsAppText";
 
 interface CustomerResult {
   name: string | null;
@@ -210,7 +211,13 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
                 <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
               )}
               <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
-                <AvatarImage src={chat.profilePicUrl} />
+                <AvatarImage
+                  src={chat.profilePicUrl}
+                  onError={(e) => {
+                    // URL do CDN expirou — some a img quebrada e deixa o fallback
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
                 <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/5 text-primary text-[10px] font-bold">
                   {chat.name.slice(0, 2).toUpperCase()}
                 </AvatarFallback>
@@ -226,7 +233,7 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
                 </div>
                 <div className="flex items-center justify-between gap-2 mt-0.5">
                   <span className={`text-[11px] truncate ${hasUnread ? "text-foreground/80" : "text-muted-foreground"}`}>
-                    {chat.lastMessage || "..."}
+                    {stripWhatsAppMarkup(chat.lastMessage || "") || "..."}
                   </span>
                   {hasUnread && (
                     <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">

@@ -12,6 +12,7 @@ import { CampaignHealthCheck } from "./CampaignHealthCheck";
 import { useUserRole } from "@/hooks/useUserRole";
 import { startFacebookOAuth } from "@/services/facebookAds";
 import { ExtendCampaignDialog } from "./ExtendCampaignDialog";
+import { META_CAMPAIGN_PROOF_OR } from "@/lib/metaCampaignProof";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -26,6 +27,24 @@ interface Campaign {
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }
+interface DaySlice { impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number }
+
+const EMPTY_DAY: DaySlice = { impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0 };
+
+/** YYYY-MM-DD no fuso America/Sao_Paulo (evita “hoje” virar ontem perto da meia-noite UTC). */
+function brDateOffset(daysAgo: number): string {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const parts = fmt.formatToParts(new Date(Date.now() - daysAgo * 86400_000));
+  const y = parts.find((p) => p.type === "year")!.value;
+  const m = parts.find((p) => p.type === "month")!.value;
+  const d = parts.find((p) => p.type === "day")!.value;
+  return `${y}-${m}-${d}`;
+}
 
 function healthOf(m: { spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }): { level: "green" | "yellow" | "red" | "idle"; label: string } {
   const spend = m.spend_cents / 100;
@@ -88,6 +107,8 @@ function explainRejection(raw: string | null | undefined): { title: string; sugg
 export function CampaignsList({ consultantId, refreshKey }: { consultantId: string; refreshKey: number }) {
   const [items, setItems] = useState<Campaign[]>([]);
   const [metrics, setMetrics] = useState<Record<string, Metric>>({});
+  const [todayByCamp, setTodayByCamp] = useState<Record<string, DaySlice>>({});
+  const [yesterdayByCamp, setYesterdayByCamp] = useState<Record<string, DaySlice>>({});
   const [creatives, setCreatives] = useState<Record<string, Creative>>({});
   const [waLeads, setWaLeads] = useState<Record<string, number>>({});
   const [waNumber, setWaNumber] = useState<string | null>(null);
@@ -139,12 +160,16 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         }, Date.now());
         const sinceMs = Math.max(cutoff30d, earliestStart);
         const since = new Date(sinceMs).toISOString().slice(0, 10);
+        const todayKey = brDateOffset(0);
+        const yesterdayKey = brDateOffset(1);
         const { data: ms } = await supabase
           .from("facebook_metrics_daily")
-          .select("campaign_id,impressions,clicks,spend_cents,leads,messaging_conversations_started,cost_per_lead_cents")
+          .select("campaign_id,date,impressions,clicks,spend_cents,leads,messaging_conversations_started,cost_per_lead_cents")
           .in("campaign_id", list.map(c => c.id))
           .gte("date", since);
         const agg: Record<string, Metric> = {};
+        const todayMap: Record<string, DaySlice> = {};
+        const yestMap: Record<string, DaySlice> = {};
         (ms || []).forEach((m: any) => {
           const cur = agg[m.campaign_id] || { campaign_id: m.campaign_id, impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
           cur.impressions += m.impressions || 0;
@@ -153,16 +178,29 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           cur.leads += m.leads || 0;
           cur.messaging_conversations_started += m.messaging_conversations_started || 0;
           agg[m.campaign_id] = cur;
+
+          const slice: DaySlice = {
+            impressions: Number(m.impressions || 0),
+            clicks: Number(m.clicks || 0),
+            spend_cents: Number(m.spend_cents || 0),
+            leads: Number(m.leads || 0),
+            messaging_conversations_started: Number(m.messaging_conversations_started || 0),
+          };
+          if (m.date === todayKey) todayMap[m.campaign_id] = slice;
+          if (m.date === yesterdayKey) yestMap[m.campaign_id] = slice;
         });
         Object.values(agg).forEach(m => { m.cost_per_lead_cents = m.leads > 0 ? Math.round(m.spend_cents / m.leads) : 0; });
         setMetrics(agg);
+        setTodayByCamp(todayMap);
+        setYesterdayByCamp(yestMap);
 
-        // ─── Clientes interessados reais do WhatsApp atribuídos por campanha ───────────
-        // Conta customers com source_campaign_id = cada campanha (últimos 30 dias).
+        // ─── Leads WA da campanha (só com prova Meta: AD ID ou ctwa_clid) ───────────
+        // Nunca conta manual_backfill / fallback_pool / só source_campaign_id.
         const { data: waRows } = await (supabase as any)
           .from("customers")
           .select("source_campaign_id")
           .in("source_campaign_id", list.map(c => c.id))
+          .or(META_CAMPAIGN_PROOF_OR)
           .gte("created_at", new Date(Date.now() - 30 * 86400_000).toISOString());
         const waCounts: Record<string, number> = {};
         (waRows || []).forEach((r: any) => {
@@ -274,13 +312,21 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
-      const newStatus = (data as any)?.status || (action === "pause" ? "paused" : "active");
       const metaWarn = (data as any)?.meta_error;
-      setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: newStatus, rejection_reason: action === "activate" && !metaWarn ? null : x.rejection_reason } : x));
+      if (metaWarn || (data as any)?.ok === false) {
+        // Backend agora NÃO altera o DB se a Meta falhar — mantém status local.
+        toast({
+          title: action === "pause" ? "Não pausou na Meta" : "Não ativou na Meta",
+          description: metaWarn || (data as any)?.error || "Status local preservado.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const newStatus = (data as any)?.status || (action === "pause" ? "paused" : "active");
+      setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: newStatus, rejection_reason: action === "activate" ? null : x.rejection_reason } : x));
       toast({
         title: action === "pause" ? "Campanha pausada" : "Campanha ativada",
-        description: metaWarn ? `Status local atualizado. Aviso Meta: ${metaWarn}` : "Sincronizado com o Meta.",
-        variant: metaWarn ? "destructive" : "default",
+        description: "Sincronizado com o Meta.",
       });
     } catch (e: any) {
       toast({ title: "Falha ao alterar status", description: e?.message || "Erro", variant: "destructive" });
@@ -297,11 +343,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
+      if ((data as any)?.meta_deleted === false) {
+        toast({
+          title: "Não excluiu na Meta",
+          description: (data as any)?.meta_error || "Campanha mantida no sistema para não virar órfã.",
+          variant: "destructive",
+        });
+        return;
+      }
       setItems((prev) => prev.filter((x) => x.id !== c.id));
-      const metaWarn = (data as any)?.meta_error;
       toast({
         title: "Campanha apagada",
-        description: metaWarn ? `Removida do sistema. Aviso Meta: ${metaWarn}` : "Removida do Meta e do sistema.",
+        description: "Removida do Meta e do sistema.",
       });
     } catch (e: any) {
       toast({ title: "Falha ao apagar", description: e?.message || "Erro desconhecido", variant: "destructive" });
@@ -319,6 +372,10 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       {items.map(c => {
         const m = metrics[c.id] || { impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
         const waCount = waLeads[c.id] || 0;
+        const today = todayByCamp[c.id] || EMPTY_DAY;
+        const yesterday = yesterdayByCamp[c.id] || EMPTY_DAY;
+        const hasDayActivity = today.spend_cents > 0 || yesterday.spend_cents > 0
+          || today.impressions > 0 || yesterday.impressions > 0;
         return (
           <Card key={c.id} className="p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
@@ -504,6 +561,44 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 tooltip="Custo por lead = Gasto ÷ Clientes interessados Meta"
               />
             </div>
+            {hasDayActivity && (
+              <div className="rounded-lg border border-border/60 bg-muted/20 overflow-hidden text-[11px]">
+                <div className="grid grid-cols-[4.5rem_repeat(5,minmax(0,1fr))] gap-px bg-border/40">
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground" />
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Gasto</div>
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Impr.</div>
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Cliques</div>
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Conversas</div>
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Leads</div>
+                  {([
+                    ["Hoje", today],
+                    ["Ontem", yesterday],
+                  ] as const).map(([label, day]) => (
+                    <div key={label} className="contents">
+                      <div className="bg-card px-2 py-1.5 font-semibold text-foreground">{label}</div>
+                      <div className={`bg-card px-2 py-1.5 text-right tabular-nums ${day.spend_cents > 0 ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                        R$ {(day.spend_cents / 100).toFixed(2)}
+                      </div>
+                      <div className="bg-card px-2 py-1.5 text-right tabular-nums text-foreground">
+                        {day.impressions.toLocaleString("pt-BR")}
+                      </div>
+                      <div className={`bg-card px-2 py-1.5 text-right tabular-nums ${day.clicks > 0 ? "text-foreground font-medium" : "text-muted-foreground"}`}>
+                        {day.clicks.toLocaleString("pt-BR")}
+                      </div>
+                      <div className="bg-card px-2 py-1.5 text-right tabular-nums text-foreground">
+                        {day.messaging_conversations_started}
+                      </div>
+                      <div className="bg-card px-2 py-1.5 text-right tabular-nums text-foreground">
+                        {day.leads}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-2 py-1 text-[10px] text-muted-foreground border-t border-border/40">
+                  Acima: totais do período · Aqui: custo e engajamento de hoje e ontem (Meta)
+                </div>
+              </div>
+            )}
             <CampaignHealthCheck campaignId={c.id} fbCampaignId={c.fb_campaign_id} whatsappNumber={waNumber} />
           </Card>
         );

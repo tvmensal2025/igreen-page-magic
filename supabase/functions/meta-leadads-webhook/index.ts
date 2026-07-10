@@ -94,7 +94,7 @@ async function resolveConsultant(
     const { data } = await supabase
       .from("facebook_campaigns")
       .select("consultant_id")
-      .contains("fb_ad_ids", JSON.stringify([adId]))
+      .contains("fb_ad_ids", [String(adId)])
       .maybeSingle();
     if (data?.consultant_id) return data.consultant_id as string;
   }

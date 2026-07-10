@@ -39,6 +39,13 @@ import {
   TIMEOUT_VIA_CEP,
   logStructured,
 } from "../../_shared/utils.ts";
+import {
+  toWhatsappCanonical,
+  toNationalPhoneDigits,
+  formatBrLandline,
+  isValidBrNationalPhone,
+} from "../../_shared/portal-phone.ts";
+import { parseMoneyBR, extractMoneyFromText } from "../../_shared/parse-money.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
 import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
@@ -47,6 +54,8 @@ import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
   getReplyForStep,
   getNextMissingStep,
+  getPreferenceOptions,
+  missingPreferenceStep,
   validarCPFDigitos,
   RE_INTENT_CADASTRAR,
   RE_INTENT_HUMANO,
@@ -603,9 +612,10 @@ const NO_QA_STEPS = new Set([
   "ask_name", "ask_cpf", "ask_rg", "ask_birth_date", "ask_phone", "ask_phone_confirm",
   "ask_email", "ask_cep", "ask_number", "ask_complement",
   "ask_installation_number", "ask_distribuidora", "ask_bill_value",
-  "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_finalizar",
+  "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_contaunica", "ask_transferir_titularidade", "ask_finalizar",
   "finalizando", "portal_submitting", "aguardando_otp", "validando_otp", "otp_falhou",
   "aguardando_assinatura", "complete", "aguardando_humano",
+  "aguardando_avaliacao_atendimento", "atendimento_finalizado",
   // Loop de correção Portal 2 — steps determinísticos, QA semântico não dispara.
   "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
   "editing_conta_menu", "editing_conta_nome", "editing_conta_endereco",
@@ -2347,8 +2357,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const txt = messageText.trim();
     const currentNameTrusted = !!(customer as any).name && !isBogusCapturedName((customer as any).name);
     const typedName = normalizeLeadName(txt);
-    const valueMatch = String(txt || "").match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-    const typedBillValue = valueMatch ? Number(valueMatch[1].replace(".", "").replace(",", ".")) : 0;
+    const typedBillValue = extractMoneyFromText(txt) ?? 0;
 
     if (RE_GREETING_ONLY.test(txt)) {
       return {
@@ -2399,10 +2408,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   ) {
     const raw = messageText.trim();
     // Só captura se a msg parece um valor (curta e majoritariamente numérica)
-    if (raw.length <= 20 && /^[r\$\s]*\d{2,5}([\.,]\d{1,2})?[\s,reais]*$/i.test(raw)) {
-      const m = raw.match(/(\d{2,5}(?:[\.,]\d{1,2})?)/);
-      const v = m ? Number(m[1].replace(".", "").replace(",", ".")) : 0;
-      if (Number.isFinite(v) && v >= 30 && v <= 50000) {
+    if (raw.length <= 24) {
+      const v = extractMoneyFromText(raw) ?? 0;
+      const looksLikeBareValue = /^[r\$\s]*[\d.,]+[\s,reais]*$/i.test(raw);
+      if (looksLikeBareValue && Number.isFinite(v) && v >= 30 && v <= 50000) {
         updates.electricity_bill_value = v;
         (customer as any).electricity_bill_value = v;
         console.log(`💰 [bill-precapture] valor=${v} capturado em step=${step}`);
@@ -2449,8 +2458,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const txt = messageText.trim();
     const firstNm = ((customer as any).name || "").split(/\s+/)[0];
     const v = firstNm ? `${firstNm}, ` : "";
-    const valueMatch = txt.match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-    const billValue = valueMatch ? Number(valueMatch[1].replace(".", "").replace(",", ".")) : 0;
+    const billValue = extractMoneyFromText(txt) ?? 0;
     const positive = isPositiveCheckinIntent(txt);
     if (Number.isFinite(billValue) && billValue >= 100) {
       return {
@@ -2833,7 +2841,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "editing_doc_rg", "editing_doc_cpf", "editing_doc_nascimento",
     "ask_name", "ask_cpf", "ask_birth_date", "ask_phone", "ask_phone_confirm",
     "ask_bill_value", "ask_installation_number", "ask_cep", "ask_number",
-    "ask_complement", "ask_email", "ask_rg", "ask_finalizar", "ask_distribuidora",
+    "ask_complement", "ask_email", "ask_rg", "ask_contaunica", "ask_transferir_titularidade", "ask_finalizar", "ask_distribuidora",
     "confirmar_titularidade", "validacao_facial", "pos_video",
     "finalizando", "finalizar_cadastro", "complete", "valor_baixo",
     "cadastro_em_analise", "aguardando_facial", "otp_falhou",
@@ -3393,9 +3401,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         (customer as any).name_source = "unknown";
       }
 
-      const valueMatch = String(messageText || "").match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-      if (valueMatch) {
-        const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
+      const billValue = extractMoneyFromText(messageText) ?? 0;
+      if (billValue > 0) {
         if (Number.isFinite(billValue) && billValue > 0 && billValue < 100) {
           updates.electricity_bill_value = billValue;
           updates.status = "rejected";
@@ -3445,9 +3452,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       // Não deu pra classificar → trata como começo de qualificação
-      const valueMatch = txt.match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-      if (valueMatch) {
-        const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
+      const billValue = extractMoneyFromText(txt) ?? 0;
+      if (billValue > 0) {
         if (Number.isFinite(billValue) && billValue >= 30) {
           updates.electricity_bill_value = billValue;
           updates.sales_phase = "fechamento";
@@ -3537,9 +3543,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         // Captura valor digitado no meio do aguardando_conta (lead já mandando dado útil)
-        const valueMatch = txt.match(/(?:r\$\s*)?(\d{2,5}(?:[\.,]\d{1,2})?)/i);
-        if (valueMatch && !((customer as any).electricity_bill_value)) {
-          const billValue = Number(valueMatch[1].replace(".", "").replace(",", "."));
+        const billValue = extractMoneyFromText(txt) ?? 0;
+        if (billValue > 0 && !((customer as any).electricity_bill_value)) {
           if (Number.isFinite(billValue) && billValue >= 30) {
             updates.electricity_bill_value = billValue;
             // Simulação inicial já com base no valor digitado. Fluxo M usa 10-28%; demais 8-20%.
@@ -4927,7 +4932,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "editing_conta_valor": {
-      const val = parseFloat(messageText.replace(/[^\d.,]/g, "").replace(",", "."));
+      const val = (parseMoneyBR(messageText) ?? NaN);
       if (isNaN(val) || val < 30) { reply = "❌ Valor inválido. Digite um número (ex: 350,50):"; break; }
       updates.electricity_bill_value = val;
       updates.conversation_step = "confirmando_dados_conta";
@@ -5079,6 +5084,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const editar = numKey === "editar_phone"
         || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(rawResp);
 
+      // Cliente digitou um telefone em vez de Sim/Não (caso Osmar: "034 99992-7145").
+      // Brasil só — DDI 55 fixo via toNationalPhoneDigits.
+      if (!isButton && !sim && !editar && isValidBrNationalPhone(messageText)) {
+        const num = toNationalPhoneDigits(messageText);
+        const land = formatBrLandline(num);
+        if (land) {
+          updates.phone_landline = land;
+          updates.portal2_celular_alt = toWhatsappCanonical(num);
+          updates.phone_contact_confirmed = true;
+          const merged = { ...customer, ...updates };
+          const next = await autoResolveCepIfNeeded(merged, updates);
+          updates.conversation_step = next;
+          reply = getReplyForStep(next, merged);
+          break;
+        }
+      }
+
       // ── PROTEÇÃO: Se o phone_whatsapp é o número do consultor/instância,
       // NÃO permitir confirmar — forçar digitar outro número ──
       let phoneIsConsultant = false;
@@ -5098,13 +5120,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
 
       if (sim && !phoneIsConsultant) {
-        const p = (customer.phone_whatsapp || phone).replace(/\D/g, "");
-        const num = p.length >= 11 ? p.slice(-11) : p;
-        updates.phone_landline = num.length === 11
-          ? num.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-          : num.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
-        // NÃO atualizar phone_whatsapp — é a chave da conversa e tem unique constraint
-        // ✅ Cliente CONFIRMOU explicitamente que o número de WhatsApp é o telefone de contato
+        // NUNCA slice(-11) em WA com DDI — corrompe 12 dígitos (55+DDD+8 → DDD 53).
+        const num = toNationalPhoneDigits(customer.phone_whatsapp || phone);
+        const land = formatBrLandline(num);
+        if (!land || !isValidBrNationalPhone(num)) {
+          updates.conversation_step = "ask_phone";
+          reply = "Não consegui confirmar esse número. Informe o *telefone com DDD* (ex: 11999998888):";
+          break;
+        }
+        updates.phone_landline = land;
+        // Troca completa: o número confirmado também vira o celular do Portal 2.
+        // phone_whatsapp permanece a chave da conversa (unique).
+        updates.portal2_celular_alt = toWhatsappCanonical(num);
         updates.phone_contact_confirmed = true;
         const merged = { ...customer, ...updates };
         const next = await autoResolveCepIfNeeded(merged, updates);
@@ -5135,13 +5162,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         console.log(`📧 [ask_phone] Cliente enviou email (${messageText.trim().length} chars) ao invés de telefone — salvando e avançando`);
         updates.email = messageText.trim().toLowerCase();
         // Usar telefone do WhatsApp como telefone de contato (NÃO alterar phone_whatsapp — é chave da conversa)
-        const p = (customer.phone_whatsapp || phone).replace(/\D/g, "");
-        const num = p.startsWith("55") && p.length >= 12 ? p.substring(2) : p;
-        if (num.length >= 10) {
-          updates.phone_landline = num.length === 11
-            ? num.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-            : num.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
+        const num = toNationalPhoneDigits(customer.phone_whatsapp || phone);
+        const land = formatBrLandline(num);
+        if (land) {
+          updates.phone_landline = land;
           // NÃO atualizar phone_whatsapp — causa duplicate key violation
+          updates.portal2_celular_alt = toWhatsappCanonical(num);
           updates.phone_contact_confirmed = true;
         }
         const merged = { ...customer, ...updates };
@@ -5150,16 +5176,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = getReplyForStep(next, merged);
         break;
       }
-      let phoneClean = messageText.replace(/\D/g, "");
-      // Aceitar formatos: +55 11 94574-4147, 55 11945744147, (11) 94574-4147, 11945744147
-      // Remover prefixo 55 se presente (código do país)
-      if (phoneClean.startsWith("55") && phoneClean.length >= 12) {
-        phoneClean = phoneClean.substring(2);
+      // Brasil só — DDI 55 fixo. Aceita +55, 55, 034…, (11) 9…
+      const num11 = toNationalPhoneDigits(messageText);
+      if (!isValidBrNationalPhone(num11)) {
+        reply = "❌ Telefone inválido. Digite com DDD (ex: 11999998888):";
+        break;
       }
-      if (phoneClean.length < 10 || phoneClean.length > 11) { reply = "❌ Telefone inválido. Digite com DDD (ex: 11999998888):"; break; }
-      // Validar DDD
-      const ddd = parseInt(phoneClean.substring(0, 2));
-      if (ddd < 11 || ddd > 99) { reply = "❌ DDD inválido. Informe um telefone com DDD válido (ex: 11999998888):"; break; }
       // Buscar telefone do consultor + número da instância conectada para evitar auto-cadastro acidental
       try {
         const [{ data: cons }, { data: inst }] = await Promise.all([
@@ -5167,19 +5189,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           supabase.from("whatsapp_instances").select("connected_phone").eq("consultant_id", consultorId).maybeSingle(),
         ]);
         const blockNumbers = [cons?.phone, inst?.connected_phone].filter(Boolean) as string[];
-        if (blockNumbers.some((n) => isSameContact(phoneClean, n))) {
+        if (blockNumbers.some((n) => isSameContact(num11, n))) {
           reply = "❌ Esse telefone é o número do consultor. Por favor, informe *seu próprio telefone* de contato:";
           break;
         }
       } catch (_) { /* segue */ }
-      const num11 = phoneClean.length >= 11 ? phoneClean.slice(-11) : phoneClean;
-      updates.phone_landline = num11.length === 11
-        ? num11.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-        : num11.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
-      // ⚠️ NÃO atualizar phone_whatsapp aqui — é a chave da conversa (número real do remetente)
-      // e tem unique constraint. Só phone_landline (telefone de contato) muda.
-      // updates.phone_whatsapp = normalizePhone(num11);  // REMOVIDO — causa duplicate key
-      // ✅ Cliente DIGITOU o telefone — confirmado explicitamente
+      updates.phone_landline = formatBrLandline(num11)!;
+      // ⚠️ NÃO atualizar phone_whatsapp — chave da conversa (unique).
+      // Troca completa: o número DIGITADO vira o celular do Portal 2.
+      updates.portal2_celular_alt = toWhatsappCanonical(num11);
       updates.phone_contact_confirmed = true;
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
@@ -5234,13 +5252,30 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.email = lower;
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
-      updates.conversation_step = next;
       console.log(`[ask_email] customer=${customer.id} → aceito, next_step="${next}"`);
-      if (next === "ask_email") {
-        reply = "❌ E-mail não aceito. Me manda *outro e-mail seu* (qualquer provedor):";
+      // 🚀 Atalho: se email foi o último dado e o sistema iria
+      // perguntar "Deseja finalizar?", pula esse passo e finaliza direto.
+      // Preferências Portal 2: perguntamos boleto (unificado ⇔ transferir titularidade).
+      if (next === "ask_finalizar") {
+        updates.conversation_step = "finalizando";
+        reply = "✅ Tudo certo! Processando seu cadastro no portal iGreen...";
+      } else if (next === "ask_contaunica" || next === "ask_transferir_titularidade") {
+        updates.conversation_step = "ask_contaunica";
+        const msg = getReplyForStep("ask_contaunica", merged);
+        const opts = getPreferenceOptions("ask_contaunica") || [];
+        const sent = await sendOptions(remoteJid, msg, [...opts]);
+        if (!sent) reply = msg;
+        else reply = "";
       } else {
-        reply = getReplyForStep(next, merged);
+        updates.conversation_step = next;
+        if (next === "ask_email") {
+          reply = "❌ E-mail não aceito. Me manda *outro e-mail seu* (qualquer provedor):";
+        } else {
+          reply = getReplyForStep(next, merged);
+        }
       }
+
+
       break;
     }
 
@@ -5309,9 +5344,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const next = await autoResolveCepIfNeeded(merged, updates);
       // 🚀 Atalho: se o complemento foi o último campo, pula ask_finalizar
       // e dispara a finalização automática (bloco abaixo cuida do envio ao portal).
+      // Preferências Portal 2: perguntamos boleto (unificado ⇔ transferir titularidade).
       if (next === "ask_finalizar") {
         updates.conversation_step = "finalizando";
         reply = "✅ Tudo certo! Processando seu cadastro...";
+      } else if (next === "ask_contaunica" || next === "ask_transferir_titularidade") {
+        updates.conversation_step = "ask_contaunica";
+        const msg = getReplyForStep("ask_contaunica", merged);
+        const opts = getPreferenceOptions("ask_contaunica") || [];
+        const sent = await sendOptions(remoteJid, msg, [...opts]);
+        if (!sent) reply = msg;
+        else reply = "";
       } else {
         updates.conversation_step = next;
         reply = getReplyForStep(next, merged);
@@ -5352,7 +5395,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = getReplyForStep(next, merged);
         break;
       }
-      const val = parseFloat(messageText.replace(/[^\d.,]/g, "").replace(",", "."));
+      const val = (parseMoneyBR(messageText) ?? NaN);
       if (isNaN(val) || val <= 0) { reply = "❌ Valor inválido. Digite um número (ex: 350):"; break; }
       updates.electricity_bill_value = val;
       const merged = { ...customer, ...updates };
@@ -5450,7 +5493,71 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       break;
     }
 
+    case "ask_transferir_titularidade":
+      // Legado mid-flight: redireciona para a pergunta de boleto (mesma escolha).
+      updates.conversation_step = "ask_contaunica";
+      // fallthrough
+    case "ask_contaunica": {
+      const rawResp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
+      // Aceita ids novos (boleto_*) e legado (titularidade_*) — mesma semântica.
+      const numKey = ({
+        "1": "boleto_unificado",
+        "2": "boleto_separado",
+        "titularidade_sim": "boleto_unificado",
+        "titularidade_nao": "boleto_separado",
+      } as Record<string, string>)[rawResp] ?? rawResp;
+      const unificado = numKey === "boleto_unificado"
+        || /^(unificad[oa]|unico|única|unica|junto|sim|s|quero|transferir|1)\b/.test(rawResp)
+        || /\bunificad|\btransfer/.test(rawResp);
+      const separado = numKey === "boleto_separado"
+        || /^(separad[oa]|dois|nao|não|n|2)\b/.test(rawResp)
+        || /\bseparad|\bn[aã]o\b/.test(rawResp);
+
+      if (unificado || separado) {
+        // Se ambos casarem (ex.: "não transferir"), prioriza separado/não.
+        const chooseUnificado = separado ? false : true;
+        // Portal: transferir titularidade ⇒ boleto único; não transferir ⇒ 2 boletos.
+        // Bot pergunta boleto (UX mais clara) e grava os dois campos juntos.
+        updates.contaunica = chooseUnificado;
+        updates.transferir_titularidade = chooseUnificado;
+        updates.contaunica_answered = true;
+        updates.transferir_titularidade_answered = true;
+        const merged = { ...customer, ...updates };
+        const next = await autoResolveCepIfNeeded(merged, updates);
+        if (next === "ask_finalizar" || next === "ask_transferir_titularidade" || next === "ask_contaunica") {
+          updates.conversation_step = "finalizando";
+          reply = chooseUnificado
+            ? "✅ *Boleto unificado* anotado! Processando seu cadastro..."
+            : "✅ *Boleto separado* anotado! Processando seu cadastro...";
+        } else {
+          updates.conversation_step = next;
+          reply = getReplyForStep(next, merged);
+        }
+      } else {
+        updates.conversation_step = "ask_contaunica";
+        const msg = getReplyForStep("ask_contaunica", customer);
+        const opts = getPreferenceOptions("ask_contaunica") || [];
+        const sent = await sendOptions(remoteJid, msg, [...opts]);
+        if (!sent) reply = "Digite *1* para boleto unificado ou *2* para boleto separado:";
+        else reply = "";
+      }
+      break;
+    }
+
     case "ask_finalizar": {
+      // Gate: preferência de boleto obrigatória antes de finalizar
+      {
+        const pref = missingPreferenceStep({ ...customer, ...updates });
+        if (pref) {
+          updates.conversation_step = pref;
+          const msg = getReplyForStep(pref, customer);
+          const opts = getPreferenceOptions(pref) || [];
+          const sent = await sendOptions(remoteJid, msg, [...opts]);
+          if (!sent) reply = msg;
+          else reply = "";
+          break;
+        }
+      }
 
       const resp = (isButton ? buttonId : messageText.toLowerCase().trim()) || "";
       // Aceita botão OU texto livre (cliente quase nunca clica no botão)
@@ -5537,10 +5644,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = "Esse número já tentamos e não foi aceito. Me envia *outro* número de celular (com DDD):";
         break;
       }
-      const _celDigits = messageText.replace(/\D/g, "");
+      const _celDigits = toWhatsappCanonical(messageText);
       // ⚠️ NUNCA grava phone_whatsapp (chave única da conversa) — só o campo
       // alternativo do Portal 2 (Req 8.2/8.6, Property 2).
       updates.portal2_celular_alt = _celDigits;
+      updates.phone_landline = (() => {
+        const n = toNationalPhoneDigits(messageText);
+        return n.length === 11
+          ? n.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
+          : n.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
+      })();
+      updates.phone_contact_confirmed = true;
       reply = "Perfeito! Atualizei o número e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
       await persistAndRedispatch("duplicate_phone", maskCorrectionValueForLog("duplicate_phone", _celDigits));
       break;
@@ -5667,6 +5781,30 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "cadastro_em_analise": {
+      // Guarda: nunca fingir "em análise" se OTP ainda pendente (caso Osmar).
+      {
+        const st = String(customer.status || "");
+        if (st === "awaiting_otp" || st === "portal_submitting" || st === "validating_otp") {
+          updates.conversation_step = "aguardando_otp";
+          reply =
+            "📱 Ainda estamos aguardando o *código de verificação* que a iGreen enviou no WhatsApp.\n\n" +
+            "Quando chegar, *digite o código aqui* (4 a 6 dígitos).";
+          break;
+        }
+        if (
+          (st === "awaiting_signature" || st === "awaiting_facial") &&
+          ((customer as any).link_facial || (customer as any).link_assinatura) &&
+          !(customer as any).facial_confirmed_at
+        ) {
+          updates.conversation_step = "aguardando_facial";
+          const link = (customer as any).link_facial || (customer as any).link_assinatura;
+          reply =
+            "📸 *Última etapa: Validação Facial*\n\n👉 Abra este link no seu celular e siga as instruções:\n" +
+            `${link}\n\n` +
+            "Quando terminar a selfie, me responda *PRONTO* aqui que finalizamos seu cadastro! ✅";
+          break;
+        }
+      }
       // Lead já concluiu a selfie. Aguardando aprovação da iGreen (24-48h).
       // Não voltar para aguardando_conta nem reiniciar fluxo. Só responder educadamente.
       const _firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
@@ -5744,17 +5882,30 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // AUTO-FINALIZAÇÃO (BLOCO ESPECIAL — extraído verbatim do index.ts antigo)
   // ═══════════════════════════════════════════════════════════════════
   if (updates.conversation_step === "finalizando") {
+    // Gate: não finaliza sem escolha de boleto (unificado ⇔ transferir titularidade)
+    {
+      const pref = missingPreferenceStep({ ...customer, ...updates });
+      if (pref) {
+        updates.conversation_step = pref;
+        const msg = getReplyForStep(pref, { ...customer, ...updates });
+        const opts = getPreferenceOptions(pref) || [];
+        const sent = await sendOptions(remoteJid, msg, [...opts]);
+        if (!sent) reply = msg;
+        else reply = "";
+        return { reply, updates };
+      }
+    }
+
     // ── AUTO-CONFIRM: Se o cliente chegou até aqui pelo WhatsApp e tem telefone válido,
     // garantir que phone_contact_confirmed=true e phone_landline está preenchido.
     // Evita o bug do Valdeir onde o campo não existia na época do cadastro.
     if (!customer.phone_contact_confirmed && !updates.phone_contact_confirmed) {
-      const p = (customer.phone_whatsapp || phone || "").replace(/\D/g, "");
-      const num = p.startsWith("55") && p.length >= 12 ? p.substring(2) : p;
-      if (num.length >= 10) {
+      const num = toNationalPhoneDigits(customer.phone_whatsapp || phone || "");
+      const land = formatBrLandline(num);
+      if (land) {
         updates.phone_contact_confirmed = true;
-        updates.phone_landline = num.length === 11
-          ? num.replace(/(\d{2})(\d{5})(\d{4})/, "($1) $2-$3")
-          : num.replace(/(\d{2})(\d{4})(\d{4})/, "($1) $2-$3");
+        updates.phone_landline = land;
+        updates.portal2_celular_alt = toWhatsappCanonical(num);
         console.log(`📞 [AUTO-CONFIRM] Telefone auto-confirmado para finalização: ${updates.phone_landline}`);
       }
     }
@@ -5886,14 +6037,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           try {
             const { data: partner } = await supabase
               .from("referral_partners")
-              .select("cli")
+              .select("cli, partner_igreen_id")
               .eq("id", (customer as any).referral_partner_id)
               .maybeSingle();
-            partnerCli = (partner as any)?.cli || null;
+            const ownId = Number((partner as any)?.partner_igreen_id || 0);
+            const cliNum = Number(String((partner as any)?.cli || "").replace(/\D/g, "") || 0);
+            partnerCli = ownId > 0 ? String(ownId) : (cliNum > 0 ? String(cliNum) : null);
           } catch (_) { /* segue sem cli */ }
         }
         updates.igreen_link = buildCadastroLink(consultantRow.igreen_id, partnerCli);
-        console.log(`🔗 igreen_link regenerado para consultor dono: ${consultantRow.id}${partnerCli ? ` cli=${partnerCli}` : ""}`);
+        console.log(`🔗 igreen_link regenerado: dono=${consultantRow.igreen_id}${partnerCli ? ` → consultor=${partnerCli}` : ""}`);
       } else if (consultantRow?.cadastro_url) {
         updates.igreen_link = consultantRow.cadastro_url;
         console.log(`🔗 igreen_link regenerado para consultor dono: ${consultantRow.id}`);
@@ -5912,8 +6065,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       console.log(`✅ Lead completo: ${merged.name} (${merged.id}) - disparando worker-portal`);
 
       // Roteamento + retry + payload Portal2 fica no helper compartilhado.
-      // Ele lê consultant.portal_kind do customer e escolhe entre worker-portal (digital)
-      // ou worker-portal-2 (autoconexao).
+      // Sempre Portal Worker 2 (autoconexao). portal_kind legado é ignorado.
       try {
         const { dispatchPortalWorker } = await import("../../_shared/portal-worker.ts");
         const dr = await dispatchPortalWorker(supabase, customer.id);

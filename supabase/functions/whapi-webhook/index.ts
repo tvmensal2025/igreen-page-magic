@@ -59,15 +59,18 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Validação de origem (fail-open): só bloqueia se WHAPI_WEBHOOK_SECRET
-  // estiver configurado. Sem a env, mantém o comportamento atual.
+  // Validação de origem em modo GRACE (log-only).
+  // Motivo: Whapi Cloud NÃO envia `x-webhook-secret` por padrão. Se
+  // WHAPI_WEBHOOK_SECRET estiver setado no Supabase sem a URL do webhook
+  // incluir `?secret=...`, o 401 engolia TODAS as mensagens do cliente
+  // (nota 1–5, PDF, texto) e o lead ficava travado sem resposta.
+  // Enforce rígido só volta quando a URL do Whapi for atualizada com o secret.
   const originAuth = verifyWebhookOrigin(req, "WHAPI_WEBHOOK_SECRET");
   if (!originAuth.ok) {
-    console.warn("[whapi-webhook] origem rejeitada:", originAuth.reason);
-    return new Response(JSON.stringify({ ok: false, error: "unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.warn(
+      "[whapi-webhook] origem sem secret (grace/log-only, NÃO bloqueia):",
+      originAuth.reason,
+    );
   }
 
   try {
@@ -469,7 +472,11 @@ Deno.serve(async (req) => {
       if (extractedOtp) {
         const { data: otpCustomer } = await supabase
           .from("customers")
-          .select("id, name, status, consultant_id, portal2_idcliente")
+          .select(`
+            id, name, status, consultant_id, portal2_idcliente, portal_idconsultor_override,
+            consultants:consultant_id(igreen_id),
+            referral_partners:referral_partner_id(cli, partner_igreen_id)
+          `)
           .eq("phone_whatsapp", phone)
           .eq("consultant_id", superAdminConsultantId)
           .in("status", ["awaiting_otp", "portal_submitting"])
@@ -490,14 +497,22 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", otpCustomer.id);
 
-          // Resolve idconsultor (iGreen) a partir do consultor do customer.
-          // Sem esse id, o worker rejeita o /confirm-otp com 400.
-          const { data: consultantRow } = await supabase
-            .from("consultants")
-            .select("igreen_id")
-            .eq("id", otpCustomer.consultant_id)
-            .maybeSingle();
-          const idconsultor = consultantRow?.igreen_id ? Number(consultantRow.igreen_id) : null;
+          // Mesma prioridade do buildPortal2Payload:
+          // override > partner_igreen_id > cli > dono
+          const oc: any = otpCustomer;
+          const overrideRaw = Number(oc.portal_idconsultor_override || 0);
+          const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
+          const donoIgreenId = oc.consultants?.igreen_id ? Number(oc.consultants.igreen_id) : null;
+          const partnerIgreenId = oc.referral_partners?.partner_igreen_id
+            ? Number(oc.referral_partners.partner_igreen_id) : 0;
+          const partnerCli = oc.referral_partners?.cli ? Number(oc.referral_partners.cli) : 0;
+          const partnerAsConsultant =
+            (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+              ? partnerIgreenId
+              : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+          const idconsultor = overrideId > 0
+            ? overrideId
+            : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
           const idcliente = otpCustomer.portal2_idcliente
             ? Number(otpCustomer.portal2_idcliente)
             : null;
@@ -639,11 +654,19 @@ Deno.serve(async (req) => {
         "portal_submitting",
       ]);
       if (!safeSteps.has(curStep)) {
-        // Step legacy/desconhecido em customer já finalizado → coloca em cadastro_em_analise.
+        // Step legacy/desconhecido: alinha ao status real (nunca forçar
+        // cadastro_em_analise enquanto OTP/facial ainda pendentes — caso Osmar).
+        const st = String(customer.status || "");
+        const fixStep =
+          (st === "awaiting_otp" || st === "validating_otp" || st === "portal_submitting")
+            ? "aguardando_otp"
+            : (st === "awaiting_signature" || st === "awaiting_facial")
+              ? "aguardando_facial"
+              : "cadastro_em_analise";
         await supabase.from("customers")
-          .update({ conversation_step: "cadastro_em_analise" })
+          .update({ conversation_step: fixStep })
           .eq("id", customer.id);
-        customer.conversation_step = "cadastro_em_analise";
+        customer.conversation_step = fixStep;
       }
       console.log(`[find-customer] customer ${customer.id} pós-cadastro (status=${customer.status}, step=${customer.conversation_step}) — mantendo, sem reset`);
     }
@@ -827,7 +850,7 @@ Deno.serve(async (req) => {
                 .from("facebook_campaigns")
                 .select("id")
                 .eq("consultant_id", (customer as any).consultant_id)
-                .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+                .contains("fb_ad_ids", [String(sourceAdId)])
                 .maybeSingle();
               if ((campByAd as any)?.id) {
                 candidateCampaignId = (campByAd as any).id;
@@ -847,11 +870,9 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 2.5) Frase-âncora do Meta CTWA — marca sinal e tenta 4ª tentativa:
-          //      se o consultor tem EXATAMENTE 1 pool ativa cuja initial_message
-          //      tem similaridade Jaccard ≥ 0.4 com o texto, atribui. Se houver
-          //      2+ pools ativas, mantém metaCtwaSignal e vai pra fila manual
-          //      (não chuta — blindagem do rodízio preservada).
+          // 2.5) Frase-âncora do Meta CTWA — marca sinal e tenta resolver campanha:
+          //      protocolo FB-xxxxx → 1 pool ativa (sole) → fuzzy Jaccard.
+          //      Com 2+ pools e sem protocolo, mantém metaCtwaSignal → fila manual.
           if (!candidateCampaignId && messageText && !isFile && !hasAudio) {
             if (matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
@@ -888,6 +909,31 @@ Deno.serve(async (req) => {
               .update({ lead_source: "meta_ads" })
               .eq("id", customer.id);
             (customer as any).lead_source = "meta_ads";
+          }
+
+          // SEMPRE marca a conversa com a campanha assim que resolvida
+          // (protocolo / ad_id / ctwa / fuzzy). Antes só gravava se o rodízio
+          // ganhasse o CAS — leads ficavam sem source_campaign_id e sumiam
+          // do dialog "Ver leads do rodízio".
+          if (candidateCampaignId && !campaignAlreadyPersisted) {
+            try {
+              const { error: tagErr } = await supabase
+                .from("customers")
+                .update({
+                  source_campaign_id: candidateCampaignId,
+                  lead_source: "meta_ads",
+                })
+                .eq("id", customer.id)
+                .is("source_campaign_id", null);
+              if (!tagErr) {
+                (customer as any).source_campaign_id = candidateCampaignId;
+                (customer as any).lead_source = "meta_ads";
+              } else {
+                console.warn("[rodizio] persist source_campaign_id falhou:", tagErr.message);
+              }
+            } catch (e) {
+              console.warn("[rodizio] persist source_campaign_id exceção:", (e as Error).message);
+            }
           }
 
           // 3) há pool de rodízio ATIVA para essa campanha?
@@ -1165,6 +1211,11 @@ Deno.serve(async (req) => {
         const cs = String((customer as any).conversation_step || "");
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const inCustomFlow = cs.startsWith("flow:") || cs.startsWith("passo_") || UUID_RE.test(cs);
+        // Nunca resetar durante pesquisa de atendimento (nota 1–5) nem após nota salva.
+        const inAttendanceRating =
+          cs === "aguardando_avaliacao_atendimento" ||
+          cs === "atendimento_finalizado" ||
+          (!!(customer as any).attendance_rating_requested_at && (customer as any).attendance_rating == null);
 
         // Atividade recente em transições = lead engajado, não resetar.
         const since30 = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -1192,7 +1243,7 @@ Deno.serve(async (req) => {
         const shortMsg = trimmed.length <= 24;
         const baseShould =
           (hoursSinceBot >= 4 && (isGreeting || shortMsg)) || hoursSinceBot >= 24;
-        const shouldRewelcome = baseShould && !inCustomFlow && (recentTrans ?? 0) === 0;
+        const shouldRewelcome = baseShould && !inCustomFlow && !inAttendanceRating && (recentTrans ?? 0) === 0;
 
         if (shouldRewelcome) {
           const prevStep = (customer as any).conversation_step;
@@ -1263,6 +1314,51 @@ Deno.serve(async (req) => {
     const isCustomFlowStep = UUID_RX_LOCAL.test(currentStep) || currentStep.startsWith("passo_");
     const isCaptureModeManual = (customer as any)?.capture_mode === "manual";
     const inActiveCapture = ACTIVE_CAPTURE_STEPS.has(currentStep) || (isCaptureModeManual && isCustomFlowStep);
+
+    // ─── ⭐ Avaliação de atendimento profissional (1–5) ─────────────────
+    // Intercepta ANTES de global-off / bot-paused / bot-flow / OCR.
+    // Cobre texto, botão E mídia (PDF/foto) — mídia NUNCA trava o lead.
+    if (customer && (messageText || buttonId || isFile || hasAudio || hasDocument || hasImage)) {
+      const { tryInterceptAttendanceRating, isAwaitingAttendanceRating } = await import(
+        "../_shared/attendance-flow.ts"
+      );
+      if (isAwaitingAttendanceRating(customer as any)) {
+        const mediaKind = hasDocument ? "document"
+          : hasImage ? "image"
+          : hasAudio ? "audio"
+          : isFile ? "file"
+          : null;
+        const ratingHit = await tryInterceptAttendanceRating({
+          supabase,
+          customer: {
+            id: customer.id,
+            conversation_step: (customer as any).conversation_step,
+            attendance_rating: (customer as any).attendance_rating,
+            attendance_rating_requested_at: (customer as any).attendance_rating_requested_at,
+          },
+          remoteJid,
+          messageText,
+          buttonId,
+          isMedia: !!(isFile || hasAudio || hasDocument || hasImage),
+          mediaKind,
+          sendText: async (jid, text) => {
+            try { return !!(await sender.sendText(jid, text)); } catch { return false; }
+          },
+        });
+        if (ratingHit.intercepted) {
+          return new Response(JSON.stringify({
+            ok: true,
+            msg: ratingHit.media
+              ? "attendance_rating_media_hint"
+              : ratingHit.invalid
+              ? "attendance_rating_invalid_retry"
+              : "attendance_rating_recorded",
+            rating: ratingHit.rating ?? null,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+    }
+
     // Override por lead: customer.bot_force_enabled=true ignora IA global off.
     // Setado pelo botão "Zerar" (via trigger apply_force_bot_on_customer_insert
     // + tabela force_bot_phones) e pelo toggle individual no chat.
@@ -1294,9 +1390,6 @@ Deno.serve(async (req) => {
     } else if (globalAiDisabled === true && inActiveCapture) {
       console.log(`✅ [manual-capture-active] IA manual mas lead em passo ativo "${currentStep}" → bot responde normalmente customer=${customer.id}`);
     }
-
-
-
 
     // ─── 🔇 BOT PAUSADO (handoff humano ativo) ────────────────────────
     // Respeita bot_paused, assigned_human_id E bot_paused_until via helper único.
@@ -1340,15 +1433,28 @@ Deno.serve(async (req) => {
         const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (_pausedUntil ? "paused_until" : "manual"));
         console.log(`🔇 Bot pausado para ${phone} (flag=${(customer as any).bot_paused === true}, human=${(customer as any).assigned_human_id || "—"}, until=${(customer as any).bot_paused_until || "—"}, reason=${_reason}) — ignorando msg`);
 
-        // Cliente respondeu durante o atendimento humano: avisa o consultor que
-        // assumiu para o lead não esfriar. Fire-and-forget (dedup interno 10min).
-        if ((customer as any).assigned_human_id && messageText) {
-          const { notifyClientReplyWhilePaused } = await import("../_shared/notify-consultant.ts");
-          notifyClientReplyWhilePaused(
-            (customer as any).assigned_human_id || (customer as any).consultant_id,
-            customer as any,
-            messageText,
-          ).catch((e) => console.warn("[notify-paused-reply] falhou:", (e as Error).message));
+        // Cliente respondeu durante o atendimento humano: avisa o consultor.
+        // Fire-and-forget (dedup interno). Cobre texto, imagem, áudio e documento.
+        {
+          const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id;
+          if (notifyTo) {
+            const kind = hasImage ? "image"
+              : hasAudio ? "audio"
+              : hasDocument ? "document"
+              : "text";
+            const preview = messageText
+              || (kind === "image" ? "[imagem]"
+                : kind === "audio" ? "[áudio]"
+                : kind === "document" ? "[documento]"
+                : "[mensagem]");
+            const { notifyClientReplyWhilePaused } = await import("../_shared/notify-consultant.ts");
+            notifyClientReplyWhilePaused(
+              notifyTo,
+              customer as any,
+              preview,
+              { kind: kind as any },
+            ).catch((e) => console.warn("[notify-paused-reply] falhou:", (e as Error).message));
+          }
         }
         return new Response(JSON.stringify({ ok: true, msg: "bot_paused", reason: _reason, paused_until: (customer as any).bot_paused_until || null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -1590,7 +1696,7 @@ Deno.serve(async (req) => {
               .from("facebook_campaigns")
               .select("id")
               .eq("consultant_id", (customer as any).consultant_id)
-              .contains("fb_ad_ids", JSON.stringify([String(sourceAdId)]))
+              .contains("fb_ad_ids", [String(sourceAdId)])
               .maybeSingle();
             if ((campByAd as any)?.id) {
               sourceCampaignId = (campByAd as any).id;

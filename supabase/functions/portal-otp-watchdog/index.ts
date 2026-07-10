@@ -55,16 +55,25 @@ async function resolveIds(supabase: any, customerId: string): Promise<{
     .from("customers")
     .select(`
       portal2_idcliente,
+      portal_idconsultor_override,
       consultants:consultant_id(igreen_id),
-      referral_partners:referral_partner_id(partner_igreen_id)
+      referral_partners:referral_partner_id(cli, partner_igreen_id)
     `)
     .eq("id", customerId)
     .maybeSingle();
+  const overrideRaw = Number(c?.portal_idconsultor_override || 0);
+  const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const dono = c?.consultants?.igreen_id ? Number(c.consultants.igreen_id) : null;
-  const partner = c?.referral_partners?.partner_igreen_id
-    ? Number(c.referral_partners.partner_igreen_id) : null;
-  const idconsultor = Number.isFinite(partner as number) && (partner as number) > 0
-    ? (partner as number) : dono;
+  const partnerIgreenId = c?.referral_partners?.partner_igreen_id
+    ? Number(c.referral_partners.partner_igreen_id) : 0;
+  const partnerCli = c?.referral_partners?.cli ? Number(c.referral_partners.cli) : 0;
+  const partnerAsConsultant =
+    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
+      ? partnerIgreenId
+      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const idconsultor = overrideId > 0
+    ? overrideId
+    : (partnerAsConsultant > 0 ? partnerAsConsultant : dono);
   const idcliente = c?.portal2_idcliente ? Number(c.portal2_idcliente) : null;
   return { idconsultor, idcliente };
 }
@@ -300,12 +309,14 @@ async function bucketB(supabase: any) {
 }
 
 async function bucketC(supabase: any) {
+  // CRÍTICO: só envia link facial DEPOIS do OTP validado.
+  // Antes, link_facial era gravado no create e o watchdog mandava cedo demais.
   const cutoff = new Date(Date.now() - 60_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, portal2_idcliente, consultant_id, phone_whatsapp, name, link_facial, link_facial_sent_at, updated_at")
+    .select("id, portal2_idcliente, consultant_id, phone_whatsapp, name, link_facial, link_facial_sent_at, updated_at, portal2_otp_validated_at")
     .not("portal2_idcliente", "is", null)
-    .or("portal2_otp_validated_at.not.is.null,link_facial.not.is.null")
+    .not("portal2_otp_validated_at", "is", null)
     .or("link_facial.is.null,link_facial_sent_at.is.null")
     .lt("updated_at", cutoff)
     .limit(BATCH_LIMIT);
@@ -422,6 +433,90 @@ async function bucketC(supabase: any) {
   return { scanned: rows?.length ?? 0, recovered, sent, offline };
 }
 
+/**
+ * Bucket D — sync iGreen → nosso banco.
+ * Se o contrato na iGreen já está completed (ou OTP used + linkassinatura),
+ * fecha o ciclo sem depender do cliente digitar "PRONTO".
+ * Cobre leads que concluíram no portal / link e ficaram presos no nosso step.
+ */
+async function bucketD(supabase: any) {
+  const { data: rows } = await supabase
+    .from("customers")
+    .select("id, name, portal2_idcliente, status, conversation_step, facial_confirmed_at, portal2_otp_validated_at, link_facial")
+    .not("portal2_idcliente", "is", null)
+    .is("facial_confirmed_at", null)
+    .not("status", "in", "(cadastro_concluido,registered_igreen,complete,active,approved)")
+    .order("updated_at", { ascending: true })
+    .limit(BATCH_LIMIT);
+
+  let synced = 0;
+  let checked = 0;
+
+  for (const r of rows ?? []) {
+    const { idconsultor, idcliente } = await resolveIds(supabase, r.id);
+    if (!idconsultor || !idcliente) continue;
+    const resolved = await resolveWorker(supabase, r.id).catch(() => null);
+    if (!resolved) continue;
+    checked++;
+    try {
+      const url = `${resolved.url}/lead/${idcliente}/status?idconsultor=${idconsultor}`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${resolved.secret}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!res.ok) continue;
+      const json: any = await res.json().catch(() => ({}));
+      const otpStatus = String(json?.otp_status?.status || "").toLowerCase();
+      const contractStatus = String(json?.contract?.status || "").toLowerCase();
+      const link =
+        json?.contract?.linkassinatura ||
+        json?.contract?.link_assinatura ||
+        json?.contract?.linkAssinatura ||
+        r.link_facial ||
+        null;
+
+      const otpDone = otpStatus === "used" || otpStatus === "completed" || otpStatus === "validated";
+      const contractDone = contractStatus === "completed" || contractStatus === "signed";
+
+      if (!otpDone && !contractDone) continue;
+
+      const patch: Record<string, unknown> = {
+        updated_at: new Date().toISOString(),
+      };
+      if (otpDone && !r.portal2_otp_validated_at) {
+        patch.portal2_otp_validated_at = new Date().toISOString();
+        patch.otp_validated_at = new Date().toISOString();
+        patch.portal2_status = "otp_validated";
+      }
+      if (link) {
+        patch.link_facial = link;
+        patch.link_assinatura = link;
+        patch.portal2_contract_link = link;
+      }
+
+      if (contractDone) {
+        patch.facial_confirmed_at = new Date().toISOString();
+        patch.status = "cadastro_concluido";
+        patch.conversation_step = "cadastro_em_analise";
+        patch.portal2_status = "contract_completed";
+      } else if (otpDone) {
+        // OTP ok, contrato ainda não — garante step de facial + link
+        patch.status = "awaiting_signature";
+        patch.conversation_step = "aguardando_facial";
+      }
+
+      await supabase.from("customers").update(patch).eq("id", r.id);
+      synced++;
+      console.log(
+        `[watchdog D] sync customer=${r.id} otp=${otpStatus} contract=${contractStatus} → ${JSON.stringify(Object.keys(patch))}`,
+      );
+    } catch (e: any) {
+      console.warn(`[watchdog D] customer=${r.id}: ${e?.message || e}`);
+    }
+  }
+  return { scanned: rows?.length ?? 0, checked, synced };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   const supabase = createClient(
@@ -430,8 +525,13 @@ Deno.serve(async (req) => {
   );
   const started = Date.now();
   try {
-    const [a, b, c] = await Promise.all([bucketA(supabase), bucketB(supabase), bucketC(supabase)]);
-    const out = { ok: true, ms: Date.now() - started, a, b, c };
+    const [a, b, c, d] = await Promise.all([
+      bucketA(supabase),
+      bucketB(supabase),
+      bucketC(supabase),
+      bucketD(supabase),
+    ]);
+    const out = { ok: true, ms: Date.now() - started, a, b, c, d };
     console.log(`📊 watchdog ${JSON.stringify(out)}`);
     return new Response(JSON.stringify(out), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

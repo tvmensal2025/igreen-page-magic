@@ -8,7 +8,6 @@ import {
   Database,
   ClipboardList,
   Handshake,
-  Network,
   MessageSquare,
   Megaphone,
   Link as LinkIcon,
@@ -16,6 +15,7 @@ import {
   ChevronLeft,
   LogOut,
   Mic,
+  Phone,
   GraduationCap,
   Package,
   Settings,
@@ -34,13 +34,13 @@ export type AdminTabId =
   | "produtos"
   | "captacao"
   | "parceiros"
-  | "rede"
   | "whatsapp"
   | "agendamentos"
   | "central-anuncios"
   | "links"
   | "materiais"
   | "audio-studio"
+  | "voz"
   | "academy";
 
 interface NavItem {
@@ -74,7 +74,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "produtos", label: "Produtos & Vendas", icon: Package },
       { id: "captacao", label: "Captação", icon: ClipboardList },
       { id: "parceiros", label: "Parceiros", icon: Handshake },
-      { id: "rede", label: "Rede", icon: Network },
       { id: "whatsapp", label: "WhatsApp", icon: MessageSquare },
       { id: "agendamentos", label: "Agendamentos", icon: CalendarClock },
     ],
@@ -86,6 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "links", label: "Links", icon: LinkIcon },
       { id: "materiais", label: "Materiais", icon: FolderDown },
       { id: "audio-studio", label: "Estúdio de áudio", icon: Mic },
+      { id: "voz", label: "Ligação", icon: Phone },
       { id: "academy", label: "Academy", icon: GraduationCap },
     ],
   },
