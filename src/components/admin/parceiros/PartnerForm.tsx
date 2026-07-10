@@ -40,6 +40,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [qrPhrase, setQrPhrase] = useState("");
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
+  const [ownerIgreenId, setOwnerIgreenId] = useState("");
   const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
@@ -47,17 +48,36 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const { toast } = useToast();
 
   const isEdit = !!partner;
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    (async () => {
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id;
+      if (!uid) return;
+      const { data } = await supabase
+        .from("consultants")
+        .select("igreen_id")
+        .eq("id", uid)
+        .maybeSingle();
+      if (!active) return;
+      setOwnerIgreenId(String(data?.igreen_id ?? "").replace(/\D/g, ""));
+    })();
+    return () => { active = false; };
+  }, [open]);
+
   useEffect(() => {
     if (partner) {
       setNome(partner.nome);
-      setCli(partner.cli || "");
+      setCli(partner.cli || ownerIgreenId || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
       setPartnerIgreenId(partner.partner_igreen_id || "");
       setNotificationPhone(partner.notification_phone || "");
     } else {
       setNome("");
-      setCli("");
+      setCli(ownerIgreenId || "");
       setKeywords([]);
       setQrPhrase("");
       setPartnerIgreenId("");
@@ -65,7 +85,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
     }
     setErrors({});
     setAiExample(null);
-  }, [partner, open]);
+  }, [partner, open, ownerIgreenId]);
 
   const addKeyword = () => {
     const trimmed = keywordInput.trim();
@@ -263,8 +283,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     setCli(e.target.value);
                     if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
                   }}
+                  readOnly={!!ownerIgreenId}
                   placeholder="Seu ID iGreen (abonador)"
-                  className="h-9"
+                  className="h-9 read-only:bg-muted/50 read-only:text-muted-foreground"
                 />
                 {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
               </div>
