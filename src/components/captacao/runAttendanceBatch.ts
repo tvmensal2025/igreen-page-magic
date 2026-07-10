@@ -137,11 +137,13 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
       continue;
     }
 
-    if ((audioUrl || imageUrl) && !instanceName) {
+    const needsChannel = !!(audioUrl || imageUrl || (customText && customText.trim()));
+    if (needsChannel && !instanceName) {
       results[i] = { id: lead.id, status: "failed", detail: "WhatsApp desconectado" };
       emit();
       continue;
     }
+
 
     const phone = String(lead.phone_whatsapp);
     const parts: string[] = [];
