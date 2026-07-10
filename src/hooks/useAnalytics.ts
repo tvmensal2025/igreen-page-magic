@@ -122,22 +122,36 @@ export function useAnalytics(
 
       const scopeConsultantId = consultantId!;
 
-      const [{ data: consultantProfile }, { data: greenRow }] = await Promise.all([
+      const [{ data: consultantProfile }, { data: greenRow }, partnersRes] = await Promise.all([
         supabase.from("consultants").select("igreen_id, name").eq("id", scopeConsultantId).maybeSingle(),
         supabase
           .from("consultant_commission_settings" as any)
           .select("cadastro_igreen_ids")
           .eq("consultant_id", scopeConsultantId)
           .maybeSingle(),
+        applyScope(
+          supabase
+            .from("referral_partners")
+            .select("cli, partner_igreen_id") as any,
+        ).eq("is_active", true),
       ]);
+      if ((partnersRes as any)?.error) throw (partnersRes as any).error;
+      const normalizeIgreenId = (value: unknown): string | null => {
+        const digits = String(value ?? "").replace(/\D/g, "");
+        return digits.length > 0 ? digits : null;
+      };
+      const partnerIgreenIds = ((partnersRes as any)?.data ?? [])
+        .flatMap((row: any) => [row.cli, row.partner_igreen_id])
+        .map(normalizeIgreenId)
+        .filter((v: string | null): v is string => !!v);
       const localGreen = loadLocalGreenSettings(scopeConsultantId);
       const dbCadastroIds = (greenRow as { cadastro_igreen_ids?: string[] } | null)?.cadastro_igreen_ids;
       const myClientsSettings: MyClientsSettings = {
-        myIgreenId: consultantProfile?.igreen_id != null ? String(consultantProfile.igreen_id) : null,
+        myIgreenId: normalizeIgreenId(consultantProfile?.igreen_id),
         consultantName: consultantProfile?.name ?? null,
         cadastroIgreenIds: dbCadastroIds?.length
-          ? dbCadastroIds.map(String)
-          : localGreen?.cadastroIgreenIds?.map(String) ?? [],
+          ? dbCadastroIds.map(normalizeIgreenId).filter((v): v is string => !!v)
+          : localGreen?.cadastroIgreenIds?.map(normalizeIgreenId).filter((v): v is string => !!v) ?? [],
       };
 
       const views = viewsRes.data;
@@ -180,7 +194,8 @@ export function useAnalytics(
           [
             myClientsSettings.myIgreenId,
             ...(myClientsSettings.cadastroIgreenIds || []),
-            ...((networkIgreenIds ?? []) as (string | null)[]),
+            ...partnerIgreenIds,
+            ...((networkIgreenIds ?? []) as (string | null)[]).map(normalizeIgreenId),
           ]
             .filter((v): v is string => !!v && String(v).length > 0)
             .map(String),
@@ -297,6 +312,7 @@ export function useAnalytics(
           wallet: walletCustomers.length,
           scoped: scopedWalletCustomers.length,
           myIgreenIds: myIgreenIds.length,
+          partnerIgreenIds: partnerIgreenIds.length,
         });
       } catch { /* noop */ }
 

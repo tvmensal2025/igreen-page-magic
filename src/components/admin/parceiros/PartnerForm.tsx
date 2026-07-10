@@ -47,8 +47,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const { toast } = useToast();
 
   const isEdit = !!partner;
-  // Consultor parceiro = tem ID iGreen próprio. Nesse modo o CLI é opcional
-  // (o cadastro vai no nome dele; cli só entra se ele também indicar alguém).
+  // ID do parceiro é opcional. O CLI continua sendo o ID iGreen do consultor
+  // dono/abonador e, quando os dois existem, as métricas somam os dois IDs.
   const isConsultorParceiro = partnerIgreenId.trim().length > 0;
 
   useEffect(() => {
@@ -142,9 +142,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const handleSubmit = () => {
     const newErrors: { nome?: string; cli?: string; keywords?: string } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
-    // CLI só é obrigatório para parceiro indicador comum. Consultor parceiro
-    // (com ID iGreen próprio) pode não ter cli.
-    if (!isConsultorParceiro && !cli.trim()) newErrors.cli = "CLI é obrigatório";
+    if (!cli.trim()) newErrors.cli = "Meu ID iGreen é obrigatório";
 
     // Consome o que está digitado no input mesmo se o usuário esqueceu de
     // pressionar Enter — evita criar parceiro "sem keyword" por engano.
@@ -260,7 +258,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
               <div className="space-y-1">
                 <Label htmlFor="partner-cli" className="text-xs">
-                  CLI (ID iGreen) {isConsultorParceiro ? "(opcional)" : "*"}
+                  Meu ID iGreen / CLI *
                 </Label>
                 <Input
                   id="partner-cli"
@@ -269,7 +267,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     setCli(e.target.value);
                     if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
                   }}
-                  placeholder="ID iGreen"
+                  placeholder="Seu ID iGreen (abonador)"
                   className="h-9"
                 />
                 {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
@@ -277,13 +275,13 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
               <div className="space-y-1">
                 <Label htmlFor="partner-igreen-id" className="text-xs">
-                  ID consultor parceiro <span className="text-muted-foreground">(opcional)</span>
+                  ID iGreen do parceiro <span className="text-muted-foreground">(opcional)</span>
                 </Label>
                 <Input
                   id="partner-igreen-id"
                   value={partnerIgreenId}
                   onChange={(e) => setPartnerIgreenId(e.target.value)}
-                  placeholder="Ex: 123456"
+                  placeholder="ID do parceiro, se ele também tiver"
                   className="h-9"
                 />
               </div>
