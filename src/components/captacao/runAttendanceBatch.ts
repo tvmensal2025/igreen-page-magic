@@ -25,10 +25,13 @@ export interface RunAttendanceBatchOptions {
   startAttendance: boolean;
   audioUrl: string | null;
   imageUrl: string | null;
+  /** Texto livre (suporta {{nome}}). Enviado após protocolo/áudio/imagem. */
+  customText?: string | null;
   delayMs?: number;
   signal?: AbortSignal;
   onProgress?: (results: BatchLeadResult[]) => void;
 }
+
 
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {
