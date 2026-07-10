@@ -10,6 +10,7 @@
 // fora, mas todos os players testados tocam normalmente.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { uploadAudioFile, velipConfigured } from "../_shared/voice-dialer/velip.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -208,13 +209,31 @@ Deno.serve(async (req) => {
     const finalUrl = uploaded?.url;
     if (!finalUrl) return json(502, { error: "upload sem url" });
 
+    // Upload para Velip (lazy) — usado por PlayAudioFile nas ligações
+    let velipAudioId: string | null = null;
+    if (velipConfigured()) {
+      try {
+        const up = await uploadAudioFile(merged, slug, "audio/ogg");
+        if (up.ok && up.audio_id) velipAudioId = up.audio_id;
+        else console.warn("[stitch] velip upload failed:", up.error);
+      } catch (e) {
+        console.warn("[stitch] velip upload threw:", (e as Error).message);
+      }
+    }
+
     // Salva cache (upsert)
     await admin.from("voice_template_renders").upsert(
-      { template_id: templateId, name_normalized: cacheKey, final_audio_url: finalUrl },
+      {
+        template_id: templateId,
+        name_normalized: cacheKey,
+        final_audio_url: finalUrl,
+        velip_audio_id: velipAudioId,
+        velip_uploaded_at: velipAudioId ? new Date().toISOString() : null,
+      },
       { onConflict: "template_id,name_normalized" },
     );
 
-    return json(200, { url: finalUrl, cached: false, matched_name: hasNameSlot ? nameNorm : null });
+    return json(200, { url: finalUrl, cached: false, matched_name: hasNameSlot ? nameNorm : null, velip_audio_id: velipAudioId });
   } catch (e: any) {
     console.error("[voice-template-stitch] erro:", e);
     return json(500, { error: e?.message || "erro interno" });
