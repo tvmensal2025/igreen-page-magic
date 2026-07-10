@@ -121,6 +121,43 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
   const captureActive = captureOpen || captureIncomplete;
 
+  // Sync capture_closed_at do cliente atual pra esconder o botão quando já encerrado.
+  useEffect(() => {
+    const closed = (captureCustomer as any)?.capture_closed_at ?? null;
+    setCaptureClosedAt(closed);
+  }, [captureCustomer]);
+
+  const runCloseCapture = useCallback(async () => {
+    if (!customerId || closingCapture) return;
+    setClosingCapture(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("close-capture-and-register-sale", {
+        body: { customerId, consultantId },
+      });
+      if (error) throw new Error(error.message || "Falha ao encerrar");
+      const res = (data as any) || {};
+      if (!res.ok) throw new Error(res.error || "Falha ao encerrar");
+      const roi = res.campaignRoi;
+      const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      let description = "Lead vinculado em Vendas, CRM e Comissão. O chat continua ativo.";
+      if (roi) {
+        const sign = roi.positive ? "🟢" : "🔴";
+        description = `${sign} Campanha: ${brl(roi.investedCents)} investido · ${brl(roi.returnedCents)} retorno · ${roi.leadsCount} leads`;
+      }
+      toast({
+        title: res.alreadyClosed ? "Captação já estava encerrada" : "✅ Captação encerrada",
+        description,
+        duration: 6000,
+      });
+      setCaptureClosedAt(new Date().toISOString());
+      setCloseCaptureOpen(false);
+    } catch (e: any) {
+      toast({ title: "Erro ao encerrar", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setClosingCapture(false);
+    }
+  }, [customerId, consultantId, closingCapture, toast]);
+
   // Ao trocar de conversa, fecha a ficha para não bloquear o composer do novo chat.
   useEffect(() => {
     setCaptureOpen(false);
