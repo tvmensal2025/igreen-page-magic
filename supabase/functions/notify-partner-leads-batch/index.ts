@@ -230,20 +230,36 @@ Deno.serve(async (req) => {
         }
       }
 
-      // -------- Total de leads recebidos por este parceiro (verdade absoluta) --------
-      const { count: myLeadsCount } = await admin
-        .from("customers").select("id", { count: "exact", head: true })
-        .eq("referral_partner_id", partnerId)
-        .eq("consultant_id", ownerConsultantId);
+      // -------- Total de leads recebidos por este parceiro (só campanhas vivas) --------
+      // Antes somava tudo do parceiro (misturava campanhas antigas/pausadas).
+      // Agora escopa por source_campaign_id ∈ campanhas active/pending_review do consultor.
+      const { data: liveCamps } = await admin
+        .from("facebook_campaigns")
+        .select("id")
+        .eq("consultant_id", ownerConsultantId)
+        .in("status", ["active", "pending_review"]);
+      const liveIds = (liveCamps || []).map((c: any) => c.id);
+      let myLeadsCount: number | null = null;
+      if (liveIds.length > 0) {
+        const { count } = await admin
+          .from("customers").select("id", { count: "exact", head: true })
+          .eq("referral_partner_id", partnerId)
+          .eq("consultant_id", ownerConsultantId)
+          .in("source_campaign_id", liveIds);
+        myLeadsCount = count ?? 0;
+      }
 
       // -------- Montagem da mensagem --------
       const leadPhone = (customer as any).phone_whatsapp as string | null;
       const phoneDigits = String(leadPhone || "").replace(/\D/g, "").replace(/^55/, "");
       const waLink = phoneDigits.length >= 10 ? `https://wa.me/55${phoneDigits}` : null;
-      const statusLabel =
-        campaignStatus === "active" ? "🟢 no ar"
-        : campaignStatus === "paused" ? "⏸️ pausada"
-        : campaignStatus ? `⚡ ${campaignStatus}` : null;
+
+      // Bloco de campanha SÓ aparece se a campanha está no ar.
+      // Nunca mostrar dados (invested/leads/orçamento) de campanha pausada.
+      const isCampaignLive = campaignStatus === "active" || campaignStatus === "pending_review";
+      const statusLabel = isCampaignLive
+        ? (campaignStatus === "active" ? "🟢 no ar" : "⚡ em revisão")
+        : null;
 
       const hi = (partner as any).nome ? `Olá, ${(partner as any).nome.split(" ")[0]}! 👋\n\n` : "";
       const lines: string[] = [];
@@ -256,7 +272,7 @@ Deno.serve(async (req) => {
       lines.push(`🤖 Sofia (IA) já está atendendo`);
       lines.push(``);
 
-      const hasCampFields = !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null);
+      const hasCampFields = isCampaignLive && !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null);
       if (hasCampFields) {
         lines.push(`📢 *Campanha*`);
         if (campaignName) lines.push(`🎯 *${campaignName}*`);
@@ -267,6 +283,7 @@ Deno.serve(async (req) => {
         if (campaignLeads != null) lines.push(`📥 Leads desta campanha: *${campaignLeads}*`);
         lines.push(``);
       }
+
 
       if (poolResolved) {
         lines.push(`👥 *Seu rodízio*`);
