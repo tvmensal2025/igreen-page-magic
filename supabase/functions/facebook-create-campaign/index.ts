@@ -860,13 +860,18 @@ Deno.serve(async (req) => {
       // Headline curta pra não ser truncada em Reels (~40 chars visíveis) e Stories.
       const videoTitle = String(body.headline || "").slice(0, 27);
 
-      // NÃO enviar image_url: força a Meta a usar a thumbnail nativa do vídeo,
-      // que respeita o aspect ratio 9:16. Enviar imagem custom em outro aspect
-      // causa crop no card do feed/ads manager (docs: ad-creative-video-data).
+      // Meta exige image_url/image_hash explícito em video_data desde 2025
+      // (subcode 1443226 "Seu anúncio precisa de uma miniatura de vídeo").
+      // Reusamos a thumb já resolvida (preferred do próprio CDN da Meta),
+      // que respeita 9:16 e não causa crop nos placements Reels/Stories.
+      if (!thumbUrl) {
+        throw new Error("Miniatura do vídeo não disponível; tente publicar novamente em alguns segundos.");
+      }
       const videoData: Record<string, unknown> = {
         video_id: fbVideoId,
         title: videoTitle,
         message: body.primary_text,
+        image_url: thumbUrl,
         call_to_action: { type: "WHATSAPP_MESSAGE", value: { link: waLinkV } },
       };
 
