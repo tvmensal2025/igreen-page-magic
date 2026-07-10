@@ -9,7 +9,10 @@ import {
   interpretStatus,
   isRetryable,
   isVelipCallerIp,
+  makeSMS,
   outcomeToTargetStatus,
+  toCtid,
+  velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
 
@@ -297,6 +300,52 @@ Deno.serve(async (req) => {
 
   if (target.campaign_id && (newStatus || shouldRetry)) {
     await recountCampaign(admin, target.campaign_id);
+  }
+
+  // ── Automações pós-callback ────────────────────────────────────────────
+  const consultantId = (camp as { consultant_id?: string } | null)?.consultant_id ?? null;
+
+  // Auto-DNC: bloqueios permanentes viram Não Perturbe
+  if (consultantId && (outcome === "do_not_disturb" || outcome === "invalid_number" || outcome === "nonexistent")) {
+    try {
+      await admin.from("voice_dnc_list").upsert({
+        consultant_id: consultantId,
+        phone: (dest || "").replace(/\D/g, ""),
+        reason: `auto_${outcome}`,
+        source: "velip_callback",
+      }, { onConflict: "consultant_id,phone" });
+    } catch (_e) { /* ignore */ }
+  }
+
+  // SMS de fallback para NA terminal
+  if (!shouldRetry && newStatus === "no_answer" && target.campaign_id && velipConfigured()) {
+    const { data: campFull } = await admin
+      .from("voice_campaigns")
+      .select("sms_on_no_answer_text")
+      .eq("id", target.campaign_id)
+      .maybeSingle();
+    const smsText = (campFull as { sms_on_no_answer_text?: string | null } | null)?.sms_on_no_answer_text?.trim();
+    if (smsText && dest) {
+      try {
+        const smsRes = await makeSMS({
+          to: dest.replace(/\D/g, ""),
+          message: smsText,
+          ctid: toCtid(target.id),
+        });
+        await admin.from("voice_sms_log").insert({
+          consultant_id: consultantId,
+          campaign_id: target.campaign_id,
+          phone: dest.replace(/\D/g, ""),
+          message: `[fallback NA] ${smsText}`,
+          status: smsRes.ok ? "sent" : "failed",
+          velip_sms_id: smsRes.cdls_id ?? null,
+          velip_ctid: toCtid(target.id),
+          error: smsRes.ok ? null : (smsRes.error ?? "unknown"),
+        });
+      } catch (e) {
+        console.error("[voice-webhook] SMS fallback falhou:", (e as Error).message);
+      }
+    }
   }
 
   return json(200, { ok: true, matched: true, outcome, retry: shouldRetry });

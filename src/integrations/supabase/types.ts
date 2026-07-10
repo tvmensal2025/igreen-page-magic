@@ -9673,6 +9673,7 @@ export type Database = {
           id: string
           name: string
           scheduled_at: string | null
+          sms_on_no_answer_text: string | null
           started_at: string | null
           status: string
           total: number
@@ -9699,6 +9700,7 @@ export type Database = {
           id?: string
           name?: string
           scheduled_at?: string | null
+          sms_on_no_answer_text?: string | null
           started_at?: string | null
           status?: string
           total?: number
@@ -9725,6 +9727,7 @@ export type Database = {
           id?: string
           name?: string
           scheduled_at?: string | null
+          sms_on_no_answer_text?: string | null
           started_at?: string | null
           status?: string
           total?: number
@@ -9810,6 +9813,33 @@ export type Database = {
           total?: number
           updated_at?: string
           velip_base_id?: string | null
+        }
+        Relationships: []
+      }
+      voice_dnc_list: {
+        Row: {
+          consultant_id: string
+          created_at: string
+          id: string
+          phone: string
+          reason: string | null
+          source: string | null
+        }
+        Insert: {
+          consultant_id: string
+          created_at?: string
+          id?: string
+          phone: string
+          reason?: string | null
+          source?: string | null
+        }
+        Update: {
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          phone?: string
+          reason?: string | null
+          source?: string | null
         }
         Relationships: []
       }

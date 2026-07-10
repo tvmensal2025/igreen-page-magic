@@ -76,6 +76,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [ttsText, setTtsText] = useState("");
   const [callerId, setCallerId] = useState("");
   const [maxAttempts, setMaxAttempts] = useState(2);
+  const [smsFallback, setSmsFallback] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -268,6 +269,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
         tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
         caller_id: callerId.trim() || null,
         max_attempts: maxAttempts,
+        sms_on_no_answer_text: smsFallback.trim() || null,
         phones,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         config: {
@@ -472,7 +474,20 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               1‑a‑1 respeita janela local. Lote entrega mais rápido, mas segue as regras da conta Velip.
             </p>
           </div>
+          <div className="space-y-1.5">
+            <Label>SMS automático se não atender</Label>
+            <Textarea
+              value={smsFallback}
+              onChange={(e) => setSmsFallback(e.target.value.slice(0, 160))}
+              rows={2}
+              placeholder="Oi {nome}, tentei ligar. Me chama no WhatsApp quando puder 🌱 iGreen"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Opcional. Enviado só depois das tentativas terminarem em "não atendeu". {smsFallback.length}/160
+            </p>
+          </div>
         </VozSection>
+
 
         <VozSection title="Janela e agendamento">
           <div className="grid gap-3 sm:grid-cols-3">

@@ -320,6 +320,28 @@ Deno.serve(async (req) => {
     }
   }
 
+  // DNC (Não Perturbe) — remove alvos bloqueados pelo consultor
+  if (targets.length) {
+    const { data: dnc } = await admin
+      .from("voice_dnc_list")
+      .select("phone")
+      .eq("consultant_id", consultantId);
+    const blocked = new Set((dnc ?? []).map((r: { phone: string }) => r.phone.replace(/\D/g, "")));
+    if (blocked.size) {
+      const before = targets.length;
+      // remove destino se qualquer sufixo bater
+      for (let i = targets.length - 1; i >= 0; i--) {
+        const digits = String(targets[i].phone).replace(/\D/g, "");
+        if (blocked.has(digits) || [...blocked].some((b) => digits.endsWith(b) || b.endsWith(digits))) {
+          targets.splice(i, 1);
+        }
+      }
+      if (before !== targets.length) {
+        console.log(`[dnc] removidos ${before - targets.length} alvo(s) por Não Perturbe`);
+      }
+    }
+  }
+
   if (targets.length === 0) return json(422, { error: "no_valid_targets" });
   if (targets.length > MAX_TARGETS) return json(400, { error: "too_many_targets", max: MAX_TARGETS });
 
@@ -356,6 +378,9 @@ Deno.serve(async (req) => {
       started_at: scheduled ? null : new Date().toISOString(),
       total: targets.length,
       velip_mode: velipMode,
+      sms_on_no_answer_text: typeof (body as { sms_on_no_answer_text?: unknown }).sms_on_no_answer_text === "string"
+        ? String((body as { sms_on_no_answer_text?: string }).sms_on_no_answer_text).trim() || null
+        : null,
     })
     .select("id")
     .single();
