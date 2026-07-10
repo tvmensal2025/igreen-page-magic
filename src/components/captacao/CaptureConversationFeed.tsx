@@ -85,8 +85,52 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
 
   useEffect(() => {
     stickRef.current = true;
+    openedAtRef.current = new Date().toISOString();
+    setHasMore(true);
     scheduleScrollToBottom(true);
   }, [customerId, scheduleScrollToBottom]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || rows.length === 0) return;
+    setLoadingMore(true);
+    try {
+      const oldest = rows[0]?.created_at;
+      if (!oldest) return;
+      const { data } = await supabase
+        .from("conversations")
+        .select("id, message_direction, message_text, message_type, media_id, created_at, slot_key")
+        .eq("customer_id", customerId)
+        .lt("created_at", oldest)
+        .not("message_text", "like", "[__safety_ping__]%")
+        .not("message_text", "like", "[inline-sent]%")
+        .not("message_text", "like", "[failed:%")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const older = ((data as ConvRow[]) || []).reverse();
+      if (older.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      // preserva posição de scroll ao prepender
+      const el = scrollRef.current;
+      const prevHeight = el?.scrollHeight || 0;
+      const prevTop = el?.scrollTop || 0;
+      setRows((prev) => {
+        const seen = new Set(prev.map((r) => r.id));
+        const merged = [...older.filter((r) => !seen.has(r.id)), ...prev];
+        return merged.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      });
+      requestAnimationFrame(() => {
+        const el2 = scrollRef.current;
+        if (!el2) return;
+        const delta = el2.scrollHeight - prevHeight;
+        el2.scrollTop = prevTop + delta;
+      });
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [customerId, rows, hasMore, loadingMore]);
+
 
   useEffect(() => {
     let mounted = true;
