@@ -76,6 +76,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [ttsText, setTtsText] = useState("");
   const [callerId, setCallerId] = useState("");
   const [maxAttempts, setMaxAttempts] = useState(2);
+  const [smsFallback, setSmsFallback] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
