@@ -304,7 +304,9 @@ export function OpenAttendanceBatchDialog({
         startAttendance,
         audioUrl,
         imageUrl,
+        customText,
         delayMs: 5000,
+
         signal: ac.signal,
         onProgress: (batchResults) => {
           if (!aliveRef.current || runId !== runIdRef.current) return;
