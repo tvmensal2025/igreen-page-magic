@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Mic, Square, Upload, Phone, PhoneCall, RefreshCw, Users, X, Pause, Play, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { uploadMedia } from "@/services/minioUpload";
@@ -71,6 +72,10 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
   const [testPhone, setTestPhone] = useState("");
   const [velipMode, setVelipMode] = useState<VelipMode>("auto");
+  const [dispatchKind, setDispatchKind] = useState<"audio" | "tts">("audio");
+  const [ttsText, setTtsText] = useState("");
+  const [callerId, setCallerId] = useState("");
+  const [maxAttempts, setMaxAttempts] = useState(2);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -218,8 +223,11 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
       const data = await invokeEnqueue({
         action: "test_call",
         test_phone: phone,
-        audio_clip_id: clipId || null,
-        audio_url: audioUrl,
+        audio_clip_id: dispatchKind === "audio" ? (clipId || null) : null,
+        audio_url: dispatchKind === "audio" ? audioUrl : null,
+        dispatch_kind: dispatchKind,
+        tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
+        caller_id: callerId.trim() || null,
         campaign_name: "Teste PSTN",
       });
       toast.success(`Ligação iniciada (ID Velip: ${data.velip_call_id || data.campaign_id})`);
@@ -232,8 +240,12 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   };
 
   const createCampaign = async () => {
-    if (!audioUrl && !clipId) {
+    if (dispatchKind === "audio" && !audioUrl && !clipId) {
       toast.error("Grave ou escolha um clipe primeiro");
+      return;
+    }
+    if (dispatchKind === "tts" && !ttsText.trim()) {
+      toast.error("Escreva o texto que a voz vai falar");
       return;
     }
     if (contacts.length === 0) {
@@ -250,8 +262,12 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
       const enqueueBody: Record<string, unknown> = {
         action: "create_campaign",
         campaign_name: campaignName.trim() || "Campanha de ligação",
-        audio_clip_id: clipId || null,
-        audio_url: audioUrl,
+        audio_clip_id: dispatchKind === "audio" ? (clipId || null) : null,
+        audio_url: dispatchKind === "audio" ? audioUrl : null,
+        dispatch_kind: dispatchKind,
+        tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
+        caller_id: callerId.trim() || null,
+        max_attempts: maxAttempts,
         phones,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         config: {
@@ -306,7 +322,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
             <Button
               type="button"
               onClick={() => void createCampaign()}
-              disabled={busy || contacts.length === 0 || (!audioUrl && !clipId)}
+              disabled={busy || contacts.length === 0 || (dispatchKind === "audio" ? (!audioUrl && !clipId) : !ttsText.trim())}
               className="gap-1.5"
               style={{ background: "var(--pe-emerald)", color: "#fff" }}
             >
@@ -316,7 +332,35 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           </div>
         }
       >
-        <VozSection title="Clipe de voz">
+        <VozSection title="Como falar com o cliente">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant={dispatchKind === "audio" ? "default" : "outline"} onClick={() => setDispatchKind("audio")}>
+              🎙 Áudio gravado
+            </Button>
+            <Button type="button" size="sm" variant={dispatchKind === "tts" ? "default" : "outline"} onClick={() => setDispatchKind("tts")}>
+              💬 Texto (voz sintetizada)
+            </Button>
+          </div>
+          {dispatchKind === "tts" && (
+            <div className="space-y-1.5">
+              <Label>Texto que a voz vai falar</Label>
+              <Textarea value={ttsText} onChange={(e) => setTtsText(e.target.value)} rows={4} placeholder="Olá {{nome}}, tudo bem? Sou consultor da iGreen…" />
+              <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>Até ~500 caracteres. A Velip gera o áudio automaticamente.</p>
+            </div>
+          )}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>BINA (número que aparece)</Label>
+              <Input value={callerId} onChange={(e) => setCallerId(e.target.value)} placeholder="55DDNNNNNNNN (opcional)" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Tentativas por contato</Label>
+              <Input type="number" min={1} max={5} value={maxAttempts} onChange={(e) => setMaxAttempts(Math.max(1, Math.min(5, Number(e.target.value) || 1)))} />
+            </div>
+          </div>
+        </VozSection>
+
+        {dispatchKind === "audio" && <VozSection title="Clipe de voz">
           <div className="space-y-1.5">
             <Label>Nome do clipe</Label>
             <Input value={clipName} onChange={(e) => setClipName(e.target.value)} />
@@ -376,7 +420,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
             </Select>
           )}
           {audioUrl && <audio controls src={audioUrl} className="w-full" />}
-        </VozSection>
+        </VozSection>}
 
         <VozSection title="Teste (obrigatório antes da massa)">
           <div className="flex flex-col sm:flex-row gap-2">

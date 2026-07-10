@@ -185,7 +185,20 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
     total: rows.length,
     completed: rows.filter((r) => ["completed", "answered"].includes((r.status || "").toLowerCase())).length,
     failed: rows.filter((r) => ["failed", "busy", "no_answer", "machine"].includes((r.status || "").toLowerCase())).length,
+    cost: rows.reduce((s, r) => s + (Number(r.velip_cost) || 0), 0),
+    avgDur: (() => {
+      const durs = rows.map((r) => r.velip_time_sec ?? r.duration_sec ?? 0).filter((n) => n > 0);
+      return durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0;
+    })(),
   };
+  const answerRate = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
+
+  // Agrupa por dia
+  const grouped = filtered.reduce<Record<string, CallLogRow[]>>((acc, r) => {
+    const day = new Date(r.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+    (acc[day] = acc[day] || []).push(r);
+    return acc;
+  }, {});
 
   return (
     <>
@@ -203,6 +216,20 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
           </div>
         }
       >
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+          {[
+            { l: "Ligações", v: String(stats.total) },
+            { l: "Atendimento", v: `${answerRate}%` },
+            { l: "Duração média", v: formatDuration(stats.avgDur) },
+            { l: "Custo total", v: fmtBRL(stats.cost) },
+          ].map((k) => (
+            <div key={k.l} className="rounded-[var(--pe-radius)] border p-2 text-center" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}>
+              <div className="text-[10px] uppercase tracking-wide" style={{ color: "var(--pe-text-muted)" }}>{k.l}</div>
+              <div className="text-lg font-bold" style={{ color: "var(--pe-text)" }}>{k.v}</div>
+            </div>
+          ))}
+        </div>
+
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -222,8 +249,14 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
             Nenhuma ligação ainda. Faça um teste ou campanha na aba Nova ligação.
           </p>
         ) : (
-          <ul className="space-y-2 max-h-[28rem] overflow-y-auto">
-            {filtered.map((r) => (
+          <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-1">
+            {Object.entries(grouped).map(([day, items]) => (
+              <div key={day} className="space-y-2">
+                <div className="sticky top-0 z-10 -mx-1 px-1 py-1 text-xs font-semibold uppercase tracking-wide backdrop-blur" style={{ color: "var(--pe-text-label)", background: "var(--pe-bg)" }}>
+                  {day} · {items.length}
+                </div>
+                <ul className="space-y-2">
+                  {items.map((r) => (
               <li key={r.id}>
                 <button
                   type="button"
