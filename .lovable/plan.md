@@ -1,70 +1,80 @@
-## O que você pediu
+## Objetivo
 
-1. **Recolher a ficha lateral direita** (aquela coluna de 340px com "Nome completo / WhatsApp / Documentos / Boleto…") sempre que quiser mais espaço para a conversa.
-2. **Separação da lista de leads** em blocos tipo "Em atendimento", "Em espera", "Novos" — do jeito que empresas de atendimento (Intercom, Zendesk, HubSpot Inbox, RD Station) organizam.
-3. **Botão "Encerrar captação" em TODO lead**, não só nos "prontos". Hoje aparece só no cabeçalho do chat WhatsApp e no rodapé como "Cadastrar mesmo assim" (que envia pro portal). Você quer o botão de **fechar a captação e ir pra Vendas/Comissão** disponível sempre, em cada lead da Captação.
+Transformar o botão **"Encerrar captação"** em uma decisão real de **Ganho / Perdido**, com atribuição correta de **origem** (campanha ou parceiro) e cálculo automático de **comissão** conforme regras financeiras. Hoje ele sempre grava `status='fechado'` — não distingue ganho de perdido e não gera comissão de acordo com a origem real.
 
 ---
 
-## Como vou fazer
+## Fluxo novo do botão
 
-### 1. Ficha lateral recolhível (Cockpit desktop)
+Ao clicar em **"Encerrar captação"** abre um modal com 2 caminhos:
 
-Arquivo: `src/components/captacao/CaptacaoPanel.tsx` (linhas ~387-392, o bloco `<div className="hidden lg:flex lg:w-[340px]…">`).
+### 1) 🏆 Ganho (virou cliente)
+- **Produto** (default: primeiro ativo — Energia)
+- **kWh / valor da conta** (pré-preenchido com `media_consumo` / `electricity_bill_value`)
+- **Origem do fechamento** (rádio):
+  - `Campanha Meta` → dropdown com `facebook_campaigns` ativas + a que o lead já veio (`source_campaign_id` selecionada por padrão se existir)
+  - `Parceiro / indicação` → dropdown com `referral_partners` ativos (selecionado por padrão o `referral_partner_id` atual, se houver)
+  - `Orgânico / próprio` → sem origem externa
+- **Observações** (opcional)
+- Preview: "Comissão estimada: R$ X,XX (regra Y aplicada)"
 
-- Adicionar estado `fichaCollapsed` persistido em `localStorage` (`cap_ficha_collapsed`).
-- Quando **expandida** (padrão): coluna 340px como hoje, com um botão `»` no topo pra recolher.
-- Quando **recolhida**: vira uma faixa vertical de ~40px encostada na direita, com ícone `ClipboardCheck` + contador "3/19" e um botão `«` pra expandir. A conversa ganha os 300px extras.
-- Botão também vai no sub-header do Cockpit (ao lado de "Ficha" mobile), pra alternar rápido em desktop.
+### 2) ❌ Perdido
+- **Motivo** (select): sem interesse · não qualificado · número inválido · sumiu · concorrente · outro
+- **Observação livre**
+- Sem produto, sem comissão
 
-Padrão que grandes usam: Intercom/HubSpot fazem exatamente isso — sidebar direita colapsa em faixa fina mantendo ícones-chave.
+Em ambos os casos: chat WhatsApp continua vivo; lead sai da lista de captação.
 
-### 2. Lista de leads agrupada por estado de atendimento
+---
 
-Arquivo: `src/components/captacao/CaptureLeadList.tsx`.
+## Backend — `close-capture-and-register-sale` (revisão)
 
-Hoje é uma lista plana ordenada por âncora temporal. Vou agrupar em 3 seções colapsáveis (dentro do mesmo filtro de período), com contador em cada:
-
-```text
-▾ Em atendimento (5)     ← welcome_sent_at != null && attendance_rating == null && !capture_closed_at
-   • Ana Júlia · há 3min
-   • Meire · há 8min
-▾ Em espera (12)         ← welcome_sent_at == null (ainda não iniciou atendimento)
-   • ...
-▸ Finalizados (3)        ← capture_closed_at != null OU attendance_rating != null
+Aceita novos campos:
+```ts
+{
+  customerId, consultantId,
+  outcome: 'won' | 'lost',
+  // won:
+  productId?, amountCents?, pointsKwh?,
+  attribution?: { kind: 'campaign'|'partner'|'organic', id?: string },
+  // lost:
+  lostReason?: string,
+  notes?
+}
 ```
 
-- Cada seção com header cinza discreto: nome + contador + chevron.
-- Estado aberto/fechado por seção salvo em `localStorage` (`cap_group_<key>`).
-- "Finalizados" começa **fechado** por padrão (some do caminho sem sumir do histórico).
-- Ordem dentro de cada seção mantém a lógica atual (mais recente primeiro).
-- Precisa incluir `attendance_rating` e `capture_closed_at` no `select` da lista (colunas já existem no schema; se `capture_closed_at` não existir para algum lead antigo, cai em `Em atendimento`/`Em espera` normalmente).
+Comportamento:
+- **won** → mantém lógica atual (upsert `sales` com `status='fechado'`), + grava `sales.source_kind` e `sales.source_id` (campanha ou parceiro); atualiza `customers.source_campaign_id` / `referral_partner_id` se o usuário mudou a origem; CRM deal → `stage='ganho'`.
+- **lost** → `sales` com `status='perdido'` + `lost_reason`; CRM deal → `stage='perdido'`; **não** gera comissão.
+- **Comissão (won)**: consulta `consultant_commission_settings` do consultor + regra da origem:
+  - Se `attribution.kind='partner'` → aplica `referral_partners.commission_pct` (split parceiro/consultor conforme o registro).
+  - Se `campaign` ou `organic` → percentual cheio do consultor.
+  - Cria linha em `wallet_transactions` (tipo `commission_pending`) vinculada ao `sale_id` — igual às vendas normais já geram hoje.
+- Idempotência: se já fechado, retorna estado atual.
 
-Isso resolve o "não misturar quem estou atendendo agora com quem tá parado esperando" — inspirado no **Intercom Inbox** (Open/Snoozed/Closed) e **HubSpot Conversations** (Unassigned/Assigned/Closed).
-
-### 3. Botão "Encerrar captação" em todo lead
-
-Arquivo: `src/components/captacao/FinalizeButton.tsx` + `CaptacaoPanel.tsx` (rodapé da ficha, via `fichaFooter`).
-
-Hoje o rodapé mostra só o `FinalizeButton` (envia pro portal iGreen). Vou:
-
-- **Manter** o `FinalizeButton` como está (envio ao portal / "Cadastrar mesmo assim").
-- **Adicionar** um segundo botão logo abaixo/acima: `Encerrar captação` (variante outline, ícone `ClipboardCheck`), sempre visível **até que `capture_closed_at` esteja preenchido**. Depois some (com selo "Captação encerrada em 10/07").
-- Ao clicar → dialog de confirmação → chama a mesma edge `close-capture-and-register-sale` já usada no header do chat (mesma função, mesma lógica: sai da captação, vai pra Vendas/CRM/Comissão, chat WhatsApp continua vivo).
-- Após sucesso, muda `selectedId = null` e a lista realtime tira o lead da seção ativa.
-
-Assim o botão fica **em cada lead** (não depende de estar "pronto"), você pode encerrar mesmo faltando dados — igual você já pode com "Cadastrar mesmo assim".
+Migração:
+- Adicionar colunas em `sales`: `outcome text ('won'|'lost')`, `source_kind text`, `source_id uuid`, `lost_reason text` (se ainda não existirem — vou checar antes).
+- Backfill: linhas antigas com `status='fechado'` → `outcome='won'`; nenhum backfill de comissão retroativa.
 
 ---
 
-## Escopo
+## Frontend
 
-- Só front-end/UX. Nenhuma migration, nenhum edge function novo. A `close-capture-and-register-sale` já existe e funciona.
-- Sem mexer na lógica de bot, envio, portal ou comissão.
-- Arquivos tocados: `CaptacaoPanel.tsx`, `CaptureLeadList.tsx`, `FinalizeButton.tsx` (ou um `CloseCaptureButton.tsx` novo separado pra não misturar responsabilidades — prefiro esse, mais limpo).
+- Novo componente `CloseCaptureDialog.tsx` (substitui o `AlertDialog` simples atual em `CloseCaptureButton.tsx` e no header do `ChatView.tsx`).
+- Reaproveita o mesmo componente nos dois pontos (ficha da captação + header do chat).
+- Mostra selo diferente após encerrar: verde "Ganho em DD/MM" ou cinza "Perdido em DD/MM · motivo".
+- Lista de captação: leads perdidos também somem da fila (mesma coluna `capture_closed_at`), mas ganham filtro futuro "ver encerrados" (fora deste escopo).
+
+---
+
+## Fora do escopo
+
+- Tela de listagem "encerrados" separada em Captação.
+- Edição pós-encerramento (usuário refaz via CRM/Vendas se precisar corrigir).
+- Split multi-parceiro (usa a regra única atual de `referral_partners`).
+
+---
 
 ## Detalhes técnicos
 
-- **Ficha recolhível**: hook `useLocalStorageState<boolean>("cap_ficha_collapsed", false)`. Largura via classe condicional `lg:w-[40px]` vs `lg:w-[340px]`, com `transition-[width]`. Conteúdo interno renderizado só quando expandida (perf).
-- **Agrupamento**: `useMemo` sobre `leads`, retorna `{ atendimento: [], espera: [], finalizados: [] }`. Header component reutilizado por seção. Zero query extra — usa colunas já buscadas + as duas novas no select.
-- **CloseCaptureButton**: componente enxuto (~50 linhas) — dialog + `supabase.functions.invoke("close-capture-and-register-sale")` + toast + callback `onClosed` que reseta a seleção no painel pai.
+Antes de gerar a migração, vou confirmar via `supabase--read_query` quais colunas já existem em `sales` (o schema mostra 14 colunas, preciso ver quais) e a estrutura real de `consultant_commission_settings` + `referral_partners.commission_pct` pra usar os nomes exatos. Se alguma coluna já existir com nome diferente (ex.: `status='perdido'` já cobrindo), reuso ao invés de criar duplicata.
