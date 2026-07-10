@@ -977,60 +977,45 @@ function LeadCard({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
             <span
-              className={`truncate text-sm text-foreground sensitive-name ${hasUnread ? "font-bold" : "font-medium"}`}
+              className={`flex-1 min-w-0 truncate text-[13px] leading-tight text-foreground sensitive-name ${hasUnread ? "font-bold" : "font-medium"}`}
             >
               {l.name || "Sem nome"}
             </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className={`text-[10px] tabular-nums ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
-                {fmtTime(l.lastMsgAt || l.created_at)}
+            <span className={`text-[10px] tabular-nums shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+              {fmtTime(l.lastMsgAt || l.created_at)}
+            </span>
+            {hasUnread && (
+              <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center shrink-0">
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
-              {hasUnread && (
-                <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </div>
+            )}
+            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <ScheduleCallButton
+                  phone={l.phone_whatsapp}
+                  consultantId={consultantId}
+                  contactName={l.name}
+                  customerId={l.id}
+                  triggerLabel="Ligar"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[10px] gap-0.5 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                />
+              </div>
+            )}
           </div>
           <p
             className={`truncate text-[11px] mt-0.5 sensitive-phone ${hasUnread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}
           >
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span
-              className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
-            >
-              {l.filled}/{CAPTURE_FIELDS.length}
-            </span>
-            {/* Agendar ligação inline — sempre visível pra o consultor achar rápido */}
-            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
-              <div
-                className="shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ScheduleCallButton
-                  phone={l.phone_whatsapp}
-                  consultantId={consultantId}
-                  contactName={l.name}
-                  customerId={l.id}
-                  triggerLabel="Agendar"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                  iconOnly
-                />
-              </div>
-            )}
-
+          <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
       </div>
