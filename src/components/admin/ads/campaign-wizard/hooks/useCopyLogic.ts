@@ -138,5 +138,5 @@ export function useCopyLogic({ open, state, derived, patch }: Deps) {
     } finally { patch({ initialMsgVarying: false }); }
   }, [state.initialMessage, distribuidoraPrimary, patch, toast]);
 
-  return { generateCopyForCities, handleVaryInitialMessage };
+  return { generateCopyForCities, reshuffleCopy, adaptCopyWithAI, handleVaryInitialMessage };
 }
