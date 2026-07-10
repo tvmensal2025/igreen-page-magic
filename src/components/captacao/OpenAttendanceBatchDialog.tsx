@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -17,8 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Loader2, Mic, Image as ImageIcon, Play, Square, RotateCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Mic, Image as ImageIcon, MessageSquare, Play, Square, RotateCcw, XCircle } from "lucide-react";
 import { toast } from "sonner";
+
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 import {
