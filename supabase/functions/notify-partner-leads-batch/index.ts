@@ -106,13 +106,14 @@ Deno.serve(async (req) => {
 
       const { data: partner } = await admin
         .from("referral_partners")
-        .select("id, nome, notification_phone, is_active")
+        .select("id, nome, notification_phone, is_active, partner_igreen_id, short_code")
         .eq("id", partnerId).maybeSingle();
       if (!partner || (partner as any).is_active === false) {
         results.push({ customer_id, skipped: "partner_inactive" }); continue;
       }
       const partnerPhone = (partner as any).notification_phone;
       if (!partnerPhone) { results.push({ customer_id, skipped: "partner_no_phone" }); continue; }
+      const partnerCode = (partner as any).partner_igreen_id || (partner as any).short_code || null;
 
       const campaignId: string | null = (customer as any).source_campaign_id ?? null;
 
@@ -158,11 +159,13 @@ Deno.serve(async (req) => {
       let dailyBudgetCents: number | null = null;
       let spendCents: number | null = null;
       let campaignLeads: number | null = null;
+      let durationDays: number | null = null;
+      let campaignFbId: string | null = null;
 
       if (campaignId) {
         const { data: camp } = await admin
           .from("facebook_campaigns")
-          .select("name, started_at, status, daily_budget_cents, leads_count")
+          .select("name, started_at, status, daily_budget_cents, leads_count, duration_days, fb_campaign_id")
           .eq("id", campaignId).maybeSingle();
         if (camp) {
           campaignName = cleanLabel((camp as any).name || "");
@@ -170,6 +173,8 @@ Deno.serve(async (req) => {
           campaignStatus = (camp as any).status || null;
           dailyBudgetCents = (camp as any).daily_budget_cents ?? null;
           campaignLeads = (camp as any).leads_count ?? null;
+          durationDays = (camp as any).duration_days ?? null;
+          campaignFbId = (camp as any).fb_campaign_id ?? null;
         }
 
         // spend: fb_metrics_daily → ad_spend_daily
@@ -201,11 +206,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // -------- Posição no rodízio --------
+      // -------- Posição no rodízio + lista de integrantes --------
       let myPosition: number | null = null;
       let totalPositions: number | null = null;
-      let nextPartnerLabel: string | null = null; // "Próximo do giro" ou "Depois de você"
+      let nextPartnerLabel: string | null = null;
       let nextPartnerName: string | null = null;
+      let rosterLines: string[] = [];
 
       if (poolResolved && members.length > 0) {
         const myMember = members.find((m) => m.partner_id === partnerId);
@@ -220,13 +226,32 @@ Deno.serve(async (req) => {
           nextMember = members.find((m) => m.position === afterIdx) || null as any;
           label = "Depois de você";
         }
+
+        // Buscar dados de todos integrantes de uma vez
+        const allIds = members.map((m) => m.partner_id);
+        const { data: allPartnerRows } = await admin
+          .from("referral_partners")
+          .select("id, nome, partner_igreen_id, short_code")
+          .in("id", allIds);
+        const byId = new Map<string, any>((allPartnerRows || []).map((p: any) => [p.id, p]));
+
         if (nextMember) {
-          const { data: np } = await admin
-            .from("referral_partners").select("nome").eq("id", nextMember.partner_id).maybeSingle();
-          if (np && (np as any).nome) {
-            nextPartnerName = (np as any).nome;
-            nextPartnerLabel = label;
-          }
+          const np = byId.get(nextMember.partner_id);
+          if (np?.nome) { nextPartnerName = np.nome; nextPartnerLabel = label; }
+        }
+
+        // Monta roster (nome + ID) — apenas se tiver >1 participante
+        if (totalPositions > 1) {
+          rosterLines = members
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((m) => {
+              const p = byId.get(m.partner_id);
+              const nome = p?.nome || "(sem nome)";
+              const idLabel = p?.partner_igreen_id || p?.short_code || null;
+              const you = m.partner_id === partnerId ? " ← você" : "";
+              return `  ${m.position + 1}º ${nome}${idLabel ? ` · ID ${idLabel}` : ""}${you}`;
+            });
         }
       }
 
@@ -272,26 +297,41 @@ Deno.serve(async (req) => {
       lines.push(`🤖 Sofia (IA) já está atendendo`);
       lines.push(``);
 
-      const hasCampFields = isCampaignLive && !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null);
+      const hasCampFields = isCampaignLive && !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null || durationDays != null);
       if (hasCampFields) {
         lines.push(`📢 *Campanha*`);
         if (campaignName) lines.push(`🎯 *${campaignName}*`);
+        if (campaignFbId) lines.push(`🆔 ID Meta: \`${campaignFbId}\``);
         if (statusLabel) lines.push(`📡 Status: ${statusLabel}`);
         if (campaignStarted) lines.push(`📅 No ar desde: ${shortDateBR(campaignStarted)}`);
-        if (dailyBudgetCents != null) lines.push(`💵 Orçamento/dia: *${money(dailyBudgetCents)}*`);
+        if (durationDays != null && durationDays > 0) lines.push(`⏳ Duração: *${durationDays} ${durationDays === 1 ? "dia" : "dias"}*`);
+        if (dailyBudgetCents != null) {
+          lines.push(`💵 Orçamento/dia: *${money(dailyBudgetCents)}*`);
+          if (durationDays != null && durationDays > 0) {
+            lines.push(`💼 Investimento total previsto: *${money(dailyBudgetCents * durationDays)}*`);
+          }
+        }
         if (spendCents != null) lines.push(`💰 Já investido: *${money(spendCents)}*`);
         if (campaignLeads != null) lines.push(`📥 Leads desta campanha: *${campaignLeads}*`);
         lines.push(``);
       }
 
+      // Bloco "Seu cadastro" — sempre útil para o parceiro confirmar
+      lines.push(`🪪 *Seu cadastro*`);
+      lines.push(`   Nome: *${(partner as any).nome}*`);
+      if (partnerCode) lines.push(`   ID iGreen: *${partnerCode}*`);
+      lines.push(``);
 
       if (poolResolved) {
-        lines.push(`👥 *Seu rodízio*`);
-        const poolName = cleanLabel(poolResolved.label);
-        if (poolName) lines.push(`🏷️ ${poolName}`);
-        if (myPosition && totalPositions) lines.push(`🏅 Posição: *${myPosition}º* de ${totalPositions}`);
-        if (myLeadsCount != null) lines.push(`📈 Seus leads totais: *${myLeadsCount}*`);
+        lines.push(`👥 *Rodízio: ${cleanLabel(poolResolved.label) || "seu grupo"}*`);
+        if (myPosition && totalPositions) lines.push(`🏅 Sua posição: *${myPosition}º* de *${totalPositions}*`);
+        if (myLeadsCount != null) lines.push(`📈 Seus leads (campanhas ativas): *${myLeadsCount}*`);
         if (nextPartnerName && nextPartnerLabel) lines.push(`➡️ ${nextPartnerLabel}: *${nextPartnerName}*`);
+        if (rosterLines.length > 0) {
+          lines.push(``);
+          lines.push(`📋 *Integrantes do rodízio:*`);
+          lines.push(...rosterLines);
+        }
         lines.push(``);
       } else if (myLeadsCount != null) {
         lines.push(`📈 *Seus leads totais:* ${myLeadsCount}`);
