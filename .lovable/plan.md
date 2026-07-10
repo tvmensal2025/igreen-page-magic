@@ -1,47 +1,46 @@
-## O que muda na lista de captação
+## Problema
 
-Dois ajustes cirúrgicos na coluna esquerda de **Captação**, inspirados em Intercom Inbox / HubSpot Conversations / Front:
+Lucineia continua aparecendo em **Captação → Em espera** mesmo depois de encerrada. Investigando o registro dela:
 
-### 1. Arrastar livremente a largura da lista
+- `capture_closed_at = null` (nunca foi marcada como encerrada)
+- `igreen_code = 1585552` (**já é cliente ativa no portal iGreen**)
+- Existe `sale` com `outcome = 'won'` (venda já registrada)
 
-Hoje o `DragResizer` limita entre **180px e 360px**. Vamos ampliar para acompanhar padrão do mercado:
+Ou seja: ela virou cliente por outro caminho (sync do iGreen), mas o filtro da lista só olha `capture_closed_at IS NULL`. Além disso, o botão **"Encerrar captação"** que fica no **header do ChatView** está chamando a edge function **sem o campo obrigatório `outcome`** — a função responde 400 e nada é atualizado, mas o toast de erro passa despercebido. Há 3 leads hoje no mesmo estado (já clientes/vendidos, mas ainda listados).
 
-- **Mínimo:** 220px (não some do útil)
-- **Máximo:** 560px (dá pra ver mensagem/telefone inteiros)
-- **Duplo clique no divisor:** reseta pro default (260px)
-- **Cursor `col-resize`** já existe, mantemos
-- Handle fica visualmente mais evidente no hover (linha de 2px vira 4px em accent color)
+## O que vamos fazer
 
-Estado persiste em `localStorage` como já é hoje (`captacao-list`).
+### 1. Filtro da lista de Captação (esconder quem já não é lead)
+Em `CaptureLeadList.tsx` (query principal), esconder automaticamente quem se enquadrar em qualquer um destes:
+- `capture_closed_at IS NOT NULL` (já)
+- `igreen_code IS NOT NULL` (já virou cliente iGreen)
+- `assinatura_cliente IS NOT NULL` (já assinou)
+- existe `sales` com `outcome IN ('won','lost')` para o par consultor/cliente
 
-### 2. Cabeçalhos "Em atendimento" / "Em espera" fixos no topo
+Sem botão manual — o sistema decide sozinho, como você pediu antes.
 
-Hoje cada header é `sticky top-0` isolado — quando você rola, o de "Em espera" **empurra** o de "Em atendimento" pra cima em vez de empilhar. Padrão do Intercom/Front é:
+### 2. Backfill imediato (3 leads afetados hoje)
+Rodar UPDATE marcando `capture_closed_at = now()` + `capture_mode = null` para os customers que já tinham `igreen_code` ou `sales.outcome` preenchido mas continuavam abertos. Lucineia sai da lista na hora.
 
-- **"Em atendimento"** gruda no topo enquanto seus leads passam
-- Quando chega o fim do grupo, **"Em espera"** desliza por cima e assume o topo
-- Contadores (`16` / `1`) sempre visíveis à direita
-- Cores tonais mantidas (verde/âmbar), mas com **fundo sólido** (`bg-card`) em vez de `bg-muted/30` translúcido — evita o texto atrás vazar durante scroll
-- Adicionar sombra sutil (`shadow-sm`) só quando grudado no topo (via `[&.is-stuck]` ou `top-0` + backdrop)
-- Micro-badge de status: pontinho verde pulsando em "Em atendimento" quando há leads ativos (padrão Intercom)
+### 3. Corrigir o botão "Encerrar" do header do ChatView
+Hoje `ChatView.runCloseCapture` chama a edge function **sem `outcome`** → 400 silencioso. Trocar por:
+- Abrir o mesmo `CloseCaptureDialog` (Ganho / Perdido, produto, origem, motivo) que já usamos no rodapé da ficha em Captação.
+- Após fechar, atualizar o estado local (`capture_closed_at`) para esconder o botão.
 
-### 3. Refinos visuais que acompanham (pequenos)
+Assim o botão do chat e o da ficha usam **o mesmo fluxo** — nunca mais um encerramento "fantasma".
 
-- Header da coluna ("Conversas · 17") também ganha `bg-card` sólido para não misturar com a área rolável
-- Contadores dos grupos ficam com tipografia tabular mais firme (`font-semibold tabular-nums`)
-- Divisor entre grupos vira uma linha de 1px mais discreta
+### 4. Aviso quando o lead virar cliente sozinho (via iGreen sync)
+Quando o worker de sync do iGreen encontrar um `customer` que ainda estava em `capture_mode='manual'` e passar a ter `igreen_code`, também setar `capture_closed_at = now()` no mesmo update. Assim não depende do filtro de UI e o histórico fica limpo.
 
-## Arquivos afetados
+## Detalhes técnicos
 
-- `src/components/captacao/CaptacaoPanel.tsx` — só ajustar `minPx`/`maxPx`/`defaultPx` do `<DragResizer>` (linha 275) e `--cap-list-w` inicial
-- `src/components/captacao/CaptureLeadList.tsx` — cabeçalho `<section>` do `LeadSection` (linha ~600): trocar `bg-muted/30` por `bg-card`, garantir empilhamento correto do sticky, adicionar dot animado no "Em atendimento"
-- (Se necessário) `src/components/common/DragResizer.tsx` — suporte a duplo-clique = reset
+- **Arquivo:** `src/components/captacao/CaptureLeadList.tsx` — trocar `.is("capture_closed_at", null)` por filtro composto com `or()` de PostgREST, e adicionar `not.exists` via subconsulta (ou fazer um segundo passo em JS após o fetch, cruzando com `sales`).
+- **Arquivo:** `src/components/whatsapp/ChatView.tsx` — substituir `runCloseCapture` direto por abertura de `<CloseCaptureDialog />` (importar do módulo captacao).
+- **Migração SQL (backfill):** update pontual em `customers` para os 3 registros no estado inconsistente.
+- **Worker iGreen sync:** localizar onde é feito o upsert de `igreen_code` no customer (pesquisar `igreen_code` em `worker-igreen-sync/` e `supabase/functions/`) e adicionar `capture_closed_at = now()` quando `capture_mode = 'manual'`.
 
-## O que **não** muda
+## Fora de escopo
 
-- Lógica de agrupamento (`welcome_sent_at != null` → atendimento)
-- Filtros de período, seleção em lote, botão "Novo cliente", "Abrir atendimento"
-- Painel direito (details) e seu colapso `»` continuam iguais
-- Nenhuma mudança em backend, edge functions ou dados
-
-Confirma que é isso? Se sim, aprovo e implemento.
+- Não mexer no chat WhatsApp da Lucineia (continua vivo).
+- Não recalcular ROI/comissões existentes.
+- Não mudar regras de quem pode encerrar (só o consultor dono / admin, como já é hoje).
