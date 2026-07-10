@@ -104,10 +104,12 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
     startAttendance,
     audioUrl,
     imageUrl,
+    customText,
     delayMs = 5000,
     signal,
     onProgress,
   } = opts;
+
 
   // Cópia local — nunca mutar o array/objetos do caller (retry / React state).
   const queue = leads.map((l) => ({ ...l }));
