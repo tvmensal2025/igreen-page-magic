@@ -650,6 +650,21 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           />
         )}
 
+        {isCustomer && customerId && !captureClosedAt && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCloseCaptureOpen(true)}
+            disabled={closingCapture}
+            className="h-8 gap-1.5 px-3 rounded-full border-emerald-600/40 text-emerald-700 hover:bg-emerald-600/10 shrink-0"
+            title="Remove da lista de Captação e vincula em Vendas/CRM/Comissão (o chat continua ativo)"
+          >
+            {closingCapture ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
+            <span className="text-[11px] font-semibold hidden md:inline">Encerrar captação</span>
+            <span className="text-[11px] font-semibold md:hidden">Encerrar</span>
+          </Button>
+        )}
+
 
 
         {isCompactLayout ? (
