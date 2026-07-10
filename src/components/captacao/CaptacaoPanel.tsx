@@ -400,11 +400,45 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           )}
         </main>
 
-        {/* Ficha fixa à direita no desktop (lg+) — evita o "vazio" da conversa */}
+        {/* Ficha fixa à direita no desktop (lg+) — colapsável (padrão Intercom/HubSpot) */}
         {selectedId && (
-          <div className="hidden lg:flex lg:w-[340px] lg:shrink-0 border-l border-border/60 flex-col overflow-hidden">
-            <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
-          </div>
+          fichaCollapsed ? (
+            <div className="hidden lg:flex lg:w-10 lg:shrink-0 border-l border-border/60 flex-col items-center py-2 gap-2 bg-card/40">
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Expandir ficha"
+                aria-label="Expandir ficha"
+                className="w-8 h-8 rounded-md hover:bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Abrir ficha"
+                className="w-8 h-8 rounded-md hover:bg-secondary/60 flex items-center justify-center text-primary"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+              </button>
+              <span className="text-[10px] font-bold tabular-nums text-muted-foreground writing-mode-vertical" style={{ writingMode: "vertical-rl" }}>
+                {session.filledCount}/{session.totalFields}
+              </span>
+            </div>
+          ) : (
+            <div className="hidden lg:flex lg:w-[340px] lg:shrink-0 border-l border-border/60 flex-col overflow-hidden relative">
+              <button
+                type="button"
+                onClick={toggleFichaCollapsed}
+                title="Recolher ficha (mais espaço para a conversa)"
+                aria-label="Recolher ficha"
+                className="absolute top-2 right-2 z-10 w-7 h-7 rounded-md hover:bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground bg-background/80 backdrop-blur"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
+              <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
+            </div>
+          )
         )}
       </div>
       )}
