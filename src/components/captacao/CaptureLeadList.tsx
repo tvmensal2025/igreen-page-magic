@@ -584,14 +584,44 @@ export function CaptureLeadList({
           </div>
         )}
 
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar nome ou telefone"
-            className="h-9 pl-8 text-xs rounded-lg"
-          />
+        </div>
+
+        {/* Abas Em atendimento / Em espera (padrão WhatsApp Business) */}
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-0.5">
+          {([
+            { key: "atendimento" as const, label: "Em atendimento", count: emAtendimento.length, unread: unreadByTab.atend, live: emAtendimento.length > 0 },
+            { key: "espera" as const, label: "Em espera", count: emEspera.length, unread: unreadByTab.esp, live: false },
+          ]).map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setActiveTab(t.key)}
+                className={`relative flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition ${
+                  active
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.live && active && (
+                  <span className="relative inline-flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
+                    <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                )}
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] tabular-nums font-bold px-1.5 py-px rounded-full ${
+                  active ? "bg-primary/15 text-primary" : "bg-background/80 text-muted-foreground border border-border/60"
+                }`}>{t.count}</span>
+                {t.unread > 0 && (
+                  <span className="text-[9px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[14px] h-[14px] px-1 rounded-full flex items-center justify-center">
+                    {t.unread > 9 ? "9+" : t.unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -607,20 +637,24 @@ export function CaptureLeadList({
             </p>
           </div>
         )}
-        <GroupedLeads
-          consultantId={consultantId}
-          leads={filtered}
-          selectedId={selectedId}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onSelect={onSelect}
-          toggleId={toggleId}
-          fmtTime={fmtTime}
-          fmtPhone={fmtPhone}
-          unread={unread}
-          flash={flash}
-        />
+        {!loading && filtered.length > 0 && (
+          <GroupedLeads
+            mode={activeTab}
+            consultantId={consultantId}
+            leads={activeTab === "atendimento" ? emAtendimento : emEspera}
+            selectedId={selectedId}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onSelect={onSelect}
+            toggleId={toggleId}
+            fmtTime={fmtTime}
+            fmtPhone={fmtPhone}
+            unread={unread}
+            flash={flash}
+          />
+        )}
       </div>
+
 
       {selectMode && selectedVisibleCount > 0 ? (
         <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0 bg-card/80">
