@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
       .select(`
         id, campaign_id, consultant_id, metrics_broadcast_interval_minutes, approval_notified_at,
         metrics_quiet_start_hour, metrics_quiet_end_hour,
-        facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at)
+        facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at, cities, duration_days, daily_budget_cents, tracking_protocol, fb_adset_ids)
       `)
       .eq("facebook_campaigns.status", "active");
 
@@ -286,13 +286,74 @@ Deno.serve(async (req) => {
 
       // 4.1) Aviso ÚNICO de "campanha aprovada pela Meta". Se ainda não
       // enviamos para esta pool E a campanha está active (aprovada), dispara
-      // 1× para cada parceiro elegível, marca timestamp e pula o card de
-      // métricas neste tick (evita 2 mensagens seguidas).
+      // 1× para cada parceiro elegível (mensagem personalizada com posição no
+      // rodízio + roster), marca timestamp e pula o card de métricas neste
+      // tick (evita 2 mensagens seguidas).
       if (!pool.approval_notified_at && poolSize > 0) {
-        const approvedText = formatCampaignApprovedMessage(camp.name, intervalMin);
+        // Cidades
+        const cityNames: string[] = Array.isArray(camp.cities)
+          ? (camp.cities as any[]).map((c) => c?.name).filter((x) => typeof x === "string" && x.length > 0)
+          : [];
+
+        // Alcance estimado — 1 chamada Meta por pool, cacheado nesta iteração
+        let estimatedReach: { lower: number; upper: number } | null = null;
+        try {
+          const adsetIds: string[] = Array.isArray(camp.fb_adset_ids) ? (camp.fb_adset_ids as any[]).map(String) : [];
+          if (adsetIds.length > 0 && conn?.token) {
+            const de = await fbFetch(
+              `/${adsetIds[0]}/delivery_estimate?optimization_goal=REACH&access_token=${encodeURIComponent(conn.token)}`,
+            ).catch(() => null);
+            const est = Array.isArray(de?.data) ? de.data[0] : null;
+            const lo = Number(est?.estimate_mau_lower_bound ?? est?.users_lower_bound ?? 0);
+            const up = Number(est?.estimate_mau_upper_bound ?? est?.users_upper_bound ?? 0);
+            if (up > 0) estimatedReach = { lower: lo, upper: up };
+          }
+        } catch (e) {
+          console.warn("[rodizio-metrics] delivery_estimate falhou:", (e as Error).message);
+        }
+
+        // Roster (todos os parceiros elegíveis, com nome + ID)
+        const partnerIds = eligible.map((m: any) => m.partner_id);
+        const { data: partnerRows } = await supabase
+          .from("referral_partners")
+          .select("id, nome, partner_igreen_id, short_code")
+          .in("id", partnerIds);
+        const partnerById = new Map<string, any>(((partnerRows || []) as any[]).map((p) => [p.id, p]));
+
+        const sortedEligible = [...eligible].sort((a: any, b: any) => a.position - b.position);
+
         let anySent = false;
-        for (const m of eligible as any[]) {
+        for (const m of sortedEligible as any[]) {
           const partner = m.referral_partners;
+          const partnerFull = partnerById.get(m.partner_id) || {};
+          const partnerIgreen = partnerFull.partner_igreen_id || partnerFull.short_code || null;
+
+          const rosterLines = sortedEligible.map((mm: any, idx: number) => {
+            const p = partnerById.get(mm.partner_id) || {};
+            const nome = p.nome || "(sem nome)";
+            const idLabel = p.partner_igreen_id || p.short_code || null;
+            const you = mm.partner_id === m.partner_id ? " ← você" : "";
+            return `  ${idx + 1}º ${nome}${idLabel ? ` · ID ${idLabel}` : ""}${you}`;
+          });
+
+          const myPosition = sortedEligible.findIndex((mm: any) => mm.partner_id === m.partner_id) + 1;
+
+          const approvedText = formatCampaignApprovedMessage({
+            campaignName: camp.name,
+            trackingProtocol: camp.tracking_protocol || null,
+            fbCampaignId: camp.fb_campaign_id || null,
+            dailyBudgetCents: camp.daily_budget_cents ?? null,
+            durationDays: camp.duration_days ?? null,
+            cities: cityNames,
+            estimatedReach,
+            partnerName: partner?.nome || partnerFull.nome || null,
+            partnerIgreenId: partnerIgreen,
+            position: myPosition,
+            totalPositions: sortedEligible.length,
+            rosterLines,
+            intervalMinutes: intervalMin,
+          });
+
           const approvedIdem = `rodizio_approved:${m.partner_id}:${camp.id}`;
           const { error: insErr } = await supabase
             .from("outbound_message_log")
