@@ -74,6 +74,14 @@ function templateMediaUrl(t: MessageTemplate | undefined, kind: "audio" | "image
   return item?.media_url || item?.image_url || null;
 }
 
+function templateTextContent(t: MessageTemplate | undefined): string {
+  if (!t) return "";
+  if (t.content && t.content.trim()) return t.content;
+  const item = (t.items || []).find((i) => !!(i as { content?: string }).content);
+  return ((item as { content?: string })?.content) || "";
+}
+
+
 function leadPill(lead: CaptureBatchLead, result?: BatchLeadResult) {
   if (result?.status === "running") {
     return (
