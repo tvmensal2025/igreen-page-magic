@@ -64,17 +64,18 @@ export async function assignProtocolToCustomer(
     // ainda assim passamos short_code/iniciais como hint de fallback.
     const initialsHint = shortCode || partnerInitials(partnerName || opts.consultantName || "");
 
-    const { data: gen, error } = await supabase.rpc("generate_partner_protocol", {
+    const { data: gen, error } = await supabase.rpc("generate_partner_protocol_v2", {
       _partner_id: partnerId,
       _initials: initialsHint,
     });
     if (error || !gen) {
-      console.warn("[protocol] rpc falhou:", error?.message);
-      // Fallback local: short_code ou iniciais + data + 4 chars do customer
-      const stamp = new Date().toISOString().slice(2, 10).replace(/-/g, "");
-      const key = (shortCode || partnerInitials(partnerName || opts.consultantName || "") || "IGR").toUpperCase();
-      const short = String(customerId).replace(/-/g, "").slice(0, 4).toUpperCase();
-      const protocol = `${key}-${stamp}-${short}`;
+      console.warn("[protocol] rpc v2 falhou:", error?.message);
+      // Fallback local no MESMO formato IGR-XXX-####
+      const rawIni = (shortCode || partnerInitials(partnerName || opts.consultantName || "") || "IGR")
+        .toUpperCase().replace(/[^A-Z0-9]/g, "");
+      const ini3 = (rawIni.length >= 3 ? rawIni.slice(0, 3) : rawIni.padEnd(3, "X"));
+      const seq4 = String(Math.floor(1000 + Math.random() * 9000));
+      const protocol = `IGR-${ini3}-${seq4}`;
       await supabase.from("customers").update({ tracking_protocol: protocol }).eq("id", customerId);
       return { protocol, isNew: true };
     }
@@ -87,6 +88,7 @@ export async function assignProtocolToCustomer(
     return null;
   }
 }
+
 
 export function buildWelcomeHeaderGreeting(consultantName?: string | null): string {
   const who = (consultantName || "").trim();
