@@ -255,6 +255,34 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── GUARDA ANTI-DUPLO-CLIQUE ───────────────────────────────────────────
+    // Se o mesmo consultor publicou uma campanha com mesmo nome + mesmo daily
+    // budget nos últimos 3 minutos, bloqueia. Cobre o caso do usuário clicar
+    // "Publicar" duas vezes por engano (aconteceu com Horácio: 2026-0007 e
+    // 2026-0008 criadas com 43s de diferença).
+    {
+      const adminDup = adminClient();
+      const cutoffIso = new Date(Date.now() - 3 * 60_000).toISOString();
+      const { data: recent } = await adminDup
+        .from("facebook_campaigns")
+        .select("id, name, daily_budget_cents, created_at")
+        .eq("consultant_id", auth.id)
+        .gte("created_at", cutoffIso)
+        .limit(20);
+      const nameNorm = (body.name || "").trim().toLowerCase();
+      const clash = (recent || []).find((r: any) =>
+        String(r.name || "").trim().toLowerCase() === nameNorm &&
+        Number(r.daily_budget_cents) === Number(body.daily_budget_cents)
+      );
+      if (clash) {
+        return new Response(JSON.stringify({
+          error: "Você acabou de publicar uma campanha idêntica há menos de 3 minutos. Recarregue a lista — ela já foi criada.",
+          code: "DUPLICATE_RECENT_CAMPAIGN",
+          existing_id: clash.id,
+        }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     // Admin (Super Admin) usa a conta Facebook da plataforma diretamente —
     // bypass dos guardrails de carteira (ele paga via cartão na conta Meta).
     const adminDb = adminClient();
