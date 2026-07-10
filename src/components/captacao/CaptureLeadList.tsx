@@ -354,13 +354,30 @@ export function CaptureLeadList({
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
-  const unreadTotal = useMemo(() => {
-    let n = 0;
-    for (const id of Object.keys(unread)) {
-      if (filteredIds.has(id) && unread[id] > 0) n += unread[id];
+  const emAtendimento = useMemo(() => filtered.filter((l) => !!l.welcome_sent_at), [filtered]);
+  const emEspera = useMemo(() => filtered.filter((l) => !l.welcome_sent_at), [filtered]);
+
+  const [activeTab, setActiveTab] = useState<"atendimento" | "espera">(() => {
+    try {
+      const v = localStorage.getItem("cap_active_tab");
+      return v === "espera" ? "espera" : "atendimento";
+    } catch { return "atendimento"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("cap_active_tab", activeTab); } catch {}
+  }, [activeTab]);
+
+  const unreadByTab = useMemo(() => {
+    let atend = 0, esp = 0;
+    for (const l of filtered) {
+      const n = unread[l.id] || 0;
+      if (n <= 0) continue;
+      if (l.welcome_sent_at) atend += n; else esp += n;
     }
-    return n;
-  }, [unread, filteredIds]);
+    return { atend, esp };
+  }, [filtered, unread]);
+
+  const unreadTotal = unreadByTab.atend + unreadByTab.esp;
 
   const activeToday = useMemo(() => {
     const now = new Date();
@@ -384,6 +401,7 @@ export function CaptureLeadList({
     writeLastSeen(id, 0);
     setUnread((prev) => ({ ...prev, [id]: Math.max(1, prev[id] || 0) }));
   }, []);
+
 
 
   useEffect(() => {
