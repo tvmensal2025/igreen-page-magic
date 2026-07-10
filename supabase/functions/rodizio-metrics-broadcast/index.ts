@@ -300,9 +300,8 @@ Deno.serve(async (req) => {
         try {
           const adsetIds: string[] = Array.isArray(camp.fb_adset_ids) ? (camp.fb_adset_ids as any[]).map(String) : [];
           if (adsetIds.length > 0 && conn?.token) {
-            const de = await fbFetch<any>(
-              `/${adsetIds[0]}/delivery_estimate?optimization_goal=REACH`,
-              conn.token,
+            const de = await fbFetch(
+              `/${adsetIds[0]}/delivery_estimate?optimization_goal=REACH&access_token=${encodeURIComponent(conn.token)}`,
             ).catch(() => null);
             const est = Array.isArray(de?.data) ? de.data[0] : null;
             const lo = Number(est?.estimate_mau_lower_bound ?? est?.users_lower_bound ?? 0);
