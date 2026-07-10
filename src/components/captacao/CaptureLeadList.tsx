@@ -1,12 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Search, UserPlus, RefreshCw, CheckSquare, X, ChevronDown, ChevronRight, MessageCircle, Clock } from "lucide-react";
+import {
+  Search,
+  UserPlus,
+  RefreshCw,
+  CheckSquare,
+  X,
+  ChevronDown,
+  ChevronRight,
+  MessageCircle,
+  Clock,
+  CheckCheck,
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { toast } from "sonner";
+import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 
 export type CapturePeriodKey = "48h" | "7d" | "30d" | "60d" | "90d" | "all";
 
@@ -67,10 +79,20 @@ function initialsFrom(name: string | null, phone: string | null) {
   return (phone || "?").replace(/\D/g, "").slice(-2) || "?";
 }
 
-function leadAnchor(l: CaptureBatchLead): number {
-  const iso = l.capture_started_at || l.created_at;
-  const t = new Date(iso).getTime();
-  return Number.isFinite(t) ? t : 0;
+/** Âncora de atividade: prioriza última mensagem, cai pra início de captação/created. */
+function activityAnchor(l: CaptureBatchLead): number {
+  const candidates = [l.lastMsgAt, l.capture_started_at, l.created_at];
+  let best = 0;
+  for (const iso of candidates) {
+    if (!iso) continue;
+    const t = new Date(iso).getTime();
+    if (Number.isFinite(t) && t > best) best = t;
+  }
+  return best;
+}
+
+function sortByActivity(rows: CaptureBatchLead[]): CaptureBatchLead[] {
+  return [...rows].sort((a, b) => activityAnchor(b) - activityAnchor(a));
 }
 
 async function fetchLastMessagesByCustomer(
@@ -96,6 +118,21 @@ async function fetchLastMessagesByCustomer(
   return lastByCustomer;
 }
 
+const LAST_SEEN_KEY = (id: string) => `cap_last_seen_${id}`;
+function readLastSeen(id: string): number {
+  try {
+    const v = localStorage.getItem(LAST_SEEN_KEY(id));
+    return v ? Number(v) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+function writeLastSeen(id: string, ts: number) {
+  try {
+    localStorage.setItem(LAST_SEEN_KEY(id), String(ts));
+  } catch {}
+}
+
 export function CaptureLeadList({
   consultantId,
   selectedId,
@@ -110,9 +147,17 @@ export function CaptureLeadList({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [period, setPeriod] = useState<CapturePeriodKey>("60d");
+  /** unread por lead (client-side, apoiado em localStorage cap_last_seen_*) */
+  const [unread, setUnread] = useState<Record<string, number>>({});
+  /** flag para “piscar” a borda do card quando entra msg nova */
+  const [flash, setFlash] = useState<Record<string, number>>({});
   const loadSeqRef = useRef(0);
+  const selectedRef = useRef<string | null>(selectedId);
+  useEffect(() => {
+    selectedRef.current = selectedId;
+  }, [selectedId]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     const seq = ++loadSeqRef.current;
     setLoading(true);
     try {
@@ -136,7 +181,6 @@ export function CaptureLeadList({
         setLoading(false);
         return;
       }
-      // Filtra também quem já tem venda com outcome (won/lost) — captação encerrada por outro caminho.
       const rawIds = (data || []).map((c: any) => c.id);
       let closedElsewhere = new Set<string>();
       if (rawIds.length) {
@@ -163,36 +207,53 @@ export function CaptureLeadList({
           return true;
         }).length,
       }));
-      setLeads(rows);
+      setLeads(sortByActivity(rows));
       setLoading(false);
 
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) return;
       const lastByCustomer = await fetchLastMessagesByCustomer(ids);
       if (seq !== loadSeqRef.current) return;
-      setLeads((prev) =>
-        prev.map((r) => {
+      setLeads((prev) => {
+        const merged = prev.map((r) => {
           const last = lastByCustomer.get(r.id);
           return last ? { ...r, lastMsg: last.text, lastMsgAt: last.at } : r;
-        }),
-      );
+        });
+        return sortByActivity(merged);
+      });
+      // Recalcula unread com base em cap_last_seen_*
+      setUnread((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          const last = lastByCustomer.get(r.id);
+          if (!last) continue;
+          const lastTs = new Date(last.at).getTime();
+          const seen = readLastSeen(r.id);
+          if (lastTs > seen && r.id !== selectedRef.current) {
+            // Não sabemos ao certo quantas msgs vieram; mostra “•” (1) se ainda não tinha contador.
+            if (!next[r.id]) next[r.id] = 1;
+          }
+        }
+        return next;
+      });
     } catch {
       if (seq !== loadSeqRef.current) return;
       toast.error("Falha ao carregar conversas");
       setLoading(false);
     }
-  };
+  }, [consultantId]);
 
   useEffect(() => {
     void load();
-  }, [consultantId]);
+  }, [consultantId, load]);
 
   useEffect(() => {
     const onBatchDone = () => void load();
     window.addEventListener("captacao:batch-finished", onBatchDone);
     return () => window.removeEventListener("captacao:batch-finished", onBatchDone);
-  }, [consultantId]);
+  }, [consultantId, load]);
 
+  // Realtime — customers do consultor
   useEffect(() => {
     const ch = supabase
       .channel(`capture-list-${consultantId}`)
@@ -205,7 +266,76 @@ export function CaptureLeadList({
     return () => {
       void supabase.removeChannel(ch);
     };
-  }, [consultantId]);
+  }, [consultantId, load]);
+
+  // Realtime — mensagens do consultor (bubbles leads para o topo + unread)
+  useEffect(() => {
+    const ch = supabase
+      .channel(`capture-conv-${consultantId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "conversations", filter: `consultant_id=eq.${consultantId}` },
+        (payload) => {
+          const row = payload.new as {
+            customer_id: string;
+            message_direction: string;
+            message_text: string | null;
+            message_type: string | null;
+            created_at: string;
+          };
+          if (!row?.customer_id) return;
+          const txt = row.message_text || `[${row.message_type || "mídia"}]`;
+          // Filtra sentinels internos
+          if (typeof row.message_text === "string" && (
+            row.message_text.startsWith("[__safety_ping__]") ||
+            row.message_text.startsWith("[inline-sent]") ||
+            row.message_text.startsWith("[failed:")
+          )) return;
+
+          setLeads((prev) => {
+            const idx = prev.findIndex((l) => l.id === row.customer_id);
+            if (idx === -1) {
+              // Lead ainda não está na lista — recarrega para trazer.
+              void load();
+              return prev;
+            }
+            const updated = { ...prev[idx], lastMsg: txt, lastMsgAt: row.created_at };
+            const next = [...prev];
+            next[idx] = updated;
+            return sortByActivity(next);
+          });
+
+          if (row.message_direction === "inbound" && row.customer_id !== selectedRef.current) {
+            setUnread((prev) => ({ ...prev, [row.customer_id]: (prev[row.customer_id] || 0) + 1 }));
+            setFlash((prev) => ({ ...prev, [row.customer_id]: Date.now() }));
+            // toast discreto — se doc não estiver visível, o browser ainda mostra a badge
+            toast("Nova mensagem", { description: txt.slice(0, 80) });
+            // ping sonoro leve, respeitando visibilidade
+            try {
+              if (document.visibilityState !== "visible") {
+                const audio = new Audio("data:audio/wav;base64,UklGRhwAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=");
+                void audio.play().catch(() => {});
+              }
+            } catch {}
+          }
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [consultantId, load]);
+
+  // Zera unread + registra last_seen quando um lead é selecionado
+  useEffect(() => {
+    if (!selectedId) return;
+    writeLastSeen(selectedId, Date.now());
+    setUnread((prev) => {
+      if (!prev[selectedId]) return prev;
+      const { [selectedId]: _drop, ...rest } = prev;
+      return rest;
+    });
+  }, [selectedId]);
 
   const periodMs = PERIOD_OPTIONS.find((o) => o.key === period)?.ms ?? null;
 
@@ -213,7 +343,7 @@ export function CaptureLeadList({
     const now = Date.now();
     return leads.filter((l) => {
       if (periodMs != null) {
-        const anchor = leadAnchor(l);
+        const anchor = activityAnchor(l);
         if (!anchor || now - anchor > periodMs) return false;
       }
       if (!q) return true;
@@ -224,7 +354,21 @@ export function CaptureLeadList({
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
-  // Remove da seleção quem saiu do filtro/período (evita CTA com IDs invisíveis).
+  const unreadTotal = useMemo(() => {
+    let n = 0;
+    for (const id of Object.keys(unread)) {
+      if (filteredIds.has(id) && unread[id] > 0) n += unread[id];
+    }
+    return n;
+  }, [unread, filteredIds]);
+
+  const markAllRead = () => {
+    const now = Date.now();
+    for (const id of filteredIds) writeLastSeen(id, now);
+    setUnread({});
+    toast.success("Marcado como lido");
+  };
+
   useEffect(() => {
     setSelectedIds((prev) => {
       if (prev.size === 0) return prev;
@@ -267,12 +411,10 @@ export function CaptureLeadList({
         setSelectedIds(new Set());
         return false;
       }
-      // Ao entrar em modo seleção: já marca todos do período pra dar feedback visível.
       setSelectedIds(new Set(filtered.map((l) => l.id)));
       return true;
     });
   };
-
 
   const toggleId = (id: string) => {
     setSelectedIds((prev) => {
@@ -316,23 +458,41 @@ export function CaptureLeadList({
             <span className="text-xs tabular-nums font-medium text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
               {filtered.length}
             </span>
-          </div>
-          <Button
-            size="sm"
-            variant={selectMode ? "secondary" : "outline"}
-            className="h-7 px-2 text-[11px] gap-1 shrink-0"
-            onClick={toggleSelectMode}
-          >
-            {selectMode ? (
-              <>
-                <X className="w-3 h-3" /> Cancelar
-              </>
-            ) : (
-              <>
-                <CheckSquare className="w-3 h-3" /> Selecionar
-              </>
+            {unreadTotal > 0 && (
+              <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary px-1.5 py-0.5 rounded-full">
+                {unreadTotal} não lidas
+              </span>
             )}
-          </Button>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {unreadTotal > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-[11px] gap-1"
+                onClick={markAllRead}
+                title="Marcar todas como lidas"
+              >
+                <CheckCheck className="w-3 h-3" /> Ler tudo
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={selectMode ? "secondary" : "outline"}
+              className="h-7 px-2 text-[11px] gap-1"
+              onClick={toggleSelectMode}
+            >
+              {selectMode ? (
+                <>
+                  <X className="w-3 h-3" /> Cancelar
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="w-3 h-3" /> Selecionar
+                </>
+              )}
+            </Button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-1">
@@ -404,6 +564,7 @@ export function CaptureLeadList({
           </div>
         )}
         <GroupedLeads
+          consultantId={consultantId}
           leads={filtered}
           selectedId={selectedId}
           selectMode={selectMode}
@@ -412,6 +573,8 @@ export function CaptureLeadList({
           toggleId={toggleId}
           fmtTime={fmtTime}
           fmtPhone={fmtPhone}
+          unread={unread}
+          flash={flash}
         />
       </div>
 
@@ -497,12 +660,11 @@ export function CaptureLeadList({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agrupamento visual: "Em atendimento" (welcome_sent_at != null) vs
-// "Em espera" (welcome_sent_at == null). Inspirado no Intercom Inbox e
-// HubSpot Conversations — separa quem já teve o primeiro contato profissional
-// de quem ainda está aguardando saudação.
+// Agrupamento: "Em atendimento" (welcome_sent_at != null) e "Em espera"
+// subdividido em Hoje / Ontem / Semana / Antigos (padrão Intercom / HubSpot).
 // ─────────────────────────────────────────────────────────────────────────────
 interface GroupedLeadsProps {
+  consultantId: string;
   leads: CaptureBatchLead[];
   selectedId: string | null;
   selectMode: boolean;
@@ -511,6 +673,8 @@ interface GroupedLeadsProps {
   toggleId: (id: string) => void;
   fmtTime: (iso: string | null) => string;
   fmtPhone: (p: string | null) => string;
+  unread: Record<string, number>;
+  flash: Record<string, number>;
 }
 
 function useGroupOpen(key: string, initial: boolean) {
@@ -530,57 +694,79 @@ function useGroupOpen(key: string, initial: boolean) {
   return [open, setOpen] as const;
 }
 
-function GroupedLeads({
-  leads,
-  selectedId,
-  selectMode,
-  selectedIds,
-  onSelect,
-  toggleId,
-  fmtTime,
-  fmtPhone,
-}: GroupedLeadsProps) {
+function timeBucket(l: CaptureBatchLead): "hoje" | "ontem" | "semana" | "antigos" {
+  const t = activityAnchor(l);
+  if (!t) return "antigos";
+  const now = new Date();
+  const d = new Date(t);
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startYesterday = startToday - 86400000;
+  const startWeek = startToday - 6 * 86400000;
+  if (t >= startToday) return "hoje";
+  if (t >= startYesterday) return "ontem";
+  if (t >= startWeek) return "semana";
+  return "antigos";
+}
+
+function GroupedLeads(props: GroupedLeadsProps) {
+  const { leads } = props;
   const groups = useMemo(() => {
     const emAtendimento: CaptureBatchLead[] = [];
-    const emEspera: CaptureBatchLead[] = [];
+    const espera = { hoje: [] as CaptureBatchLead[], ontem: [] as CaptureBatchLead[], semana: [] as CaptureBatchLead[], antigos: [] as CaptureBatchLead[] };
     for (const l of leads) {
       if (l.welcome_sent_at) emAtendimento.push(l);
-      else emEspera.push(l);
+      else espera[timeBucket(l)].push(l);
     }
-    return { emAtendimento, emEspera };
+    return { emAtendimento: sortByActivity(emAtendimento), espera };
   }, [leads]);
 
   return (
     <div>
       <LeadSection
+        {...props}
         groupKey="atendimento"
         title="Em atendimento"
         icon={<MessageCircle className="w-3 h-3" />}
         toneClass="text-emerald-700 dark:text-emerald-400"
         leads={groups.emAtendimento}
-        selectedId={selectedId}
-        selectMode={selectMode}
-        selectedIds={selectedIds}
-        onSelect={onSelect}
-        toggleId={toggleId}
-        fmtTime={fmtTime}
-        fmtPhone={fmtPhone}
+        showLiveDot
         defaultOpen
       />
       <LeadSection
-        groupKey="espera"
-        title="Em espera"
+        {...props}
+        groupKey="espera_hoje"
+        title="Em espera · Hoje"
         icon={<Clock className="w-3 h-3" />}
         toneClass="text-amber-700 dark:text-amber-400"
-        leads={groups.emEspera}
-        selectedId={selectedId}
-        selectMode={selectMode}
-        selectedIds={selectedIds}
-        onSelect={onSelect}
-        toggleId={toggleId}
-        fmtTime={fmtTime}
-        fmtPhone={fmtPhone}
+        leads={sortByActivity(groups.espera.hoje)}
         defaultOpen
+      />
+      <LeadSection
+        {...props}
+        groupKey="espera_ontem"
+        title="Em espera · Ontem"
+        icon={<Clock className="w-3 h-3" />}
+        toneClass="text-amber-700 dark:text-amber-400"
+        leads={sortByActivity(groups.espera.ontem)}
+        defaultOpen
+      />
+      <LeadSection
+        {...props}
+        groupKey="espera_semana"
+        title="Em espera · Últimos 7 dias"
+        icon={<Clock className="w-3 h-3" />}
+        toneClass="text-amber-700 dark:text-amber-400"
+        leads={sortByActivity(groups.espera.semana)}
+        defaultOpen={false}
+      />
+      <LeadSection
+        {...props}
+        groupKey="espera_antigos"
+        title="Em espera · Mais antigos"
+        icon={<Clock className="w-3 h-3" />}
+        toneClass="text-muted-foreground"
+        leads={sortByActivity(groups.espera.antigos)}
+        defaultOpen={false}
       />
     </div>
   );
@@ -592,9 +778,11 @@ interface LeadSectionProps extends GroupedLeadsProps {
   icon: React.ReactNode;
   toneClass: string;
   defaultOpen: boolean;
+  showLiveDot?: boolean;
 }
 
 function LeadSection({
+  consultantId,
   groupKey,
   title,
   icon,
@@ -608,6 +796,9 @@ function LeadSection({
   toggleId,
   fmtTime,
   fmtPhone,
+  unread,
+  flash,
+  showLiveDot,
 }: LeadSectionProps) {
   const [open, setOpen] = useGroupOpen(groupKey, defaultOpen);
   if (leads.length === 0) return null;
@@ -627,7 +818,7 @@ function LeadSection({
         <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
           {title}
         </span>
-        {groupKey === "atendimento" && leads.length > 0 && (
+        {showLiveDot && leads.length > 0 && (
           <span className="relative inline-flex w-1.5 h-1.5 ml-0.5">
             <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
             <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -640,93 +831,182 @@ function LeadSection({
 
       {open && (
         <ul className="divide-y divide-border/60">
-          {leads.map((l) => {
-            const active = l.id === selectedId && !selectMode;
-            const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
-            const ready = l.filled >= CAPTURE_FIELDS.length;
-            const checked = selectedIds.has(l.id);
-            return (
-              <li key={l.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (selectMode) toggleId(l.id);
-                    else onSelect(l.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (selectMode) toggleId(l.id);
-                      else onSelect(l.id);
-                    }
-                  }}
-                  className={`w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors cursor-pointer ${
-                    selectMode && checked
-                      ? "bg-primary/10 border-l-2 border-primary"
-                      : active
-                        ? "bg-primary/10 border-l-2 border-primary"
-                        : "border-l-2 border-transparent hover:bg-secondary/50"
-                  }`}
-                >
-                  {selectMode && (
-                    <div
-                      className="shrink-0 pt-2.5"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleId(l.id);
-                      }}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleId(l.id)}
-                        aria-label={`Selecionar ${l.name || l.id}`}
-                      />
-                    </div>
-                  )}
-                  <div
-                    className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}
-                  >
-                    {initialsFrom(l.name, l.phone_whatsapp)}
-                    {ready && (
-                      <span
-                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card"
-                        title="Cadastro completo"
-                      />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-foreground sensitive-name">
-                        {l.name || "Sem nome"}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
-                        {fmtTime(l.lastMsgAt || l.created_at)}
-                      </span>
-                    </div>
-                    <p className="truncate text-[11px] text-muted-foreground mt-0.5 sensitive-phone">
-                      {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
-                    </p>
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span
-                        className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
-                      >
-                        {l.filled}/{CAPTURE_FIELDS.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
+          {leads.map((l) => (
+            <LeadCard
+              key={l.id}
+              lead={l}
+              consultantId={consultantId}
+              selectedId={selectedId}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onSelect={onSelect}
+              toggleId={toggleId}
+              fmtTime={fmtTime}
+              fmtPhone={fmtPhone}
+              unreadCount={unread[l.id] || 0}
+              flashAt={flash[l.id] || 0}
+            />
+          ))}
         </ul>
       )}
     </section>
+  );
+}
+
+interface LeadCardProps {
+  lead: CaptureBatchLead;
+  consultantId: string;
+  selectedId: string | null;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onSelect: (id: string) => void;
+  toggleId: (id: string) => void;
+  fmtTime: (iso: string | null) => string;
+  fmtPhone: (p: string | null) => string;
+  unreadCount: number;
+  flashAt: number;
+}
+
+function LeadCard({
+  lead: l,
+  consultantId,
+  selectedId,
+  selectMode,
+  selectedIds,
+  onSelect,
+  toggleId,
+  fmtTime,
+  fmtPhone,
+  unreadCount,
+  flashAt,
+}: LeadCardProps) {
+  const active = l.id === selectedId && !selectMode;
+  const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
+  const ready = l.filled >= CAPTURE_FIELDS.length;
+  const checked = selectedIds.has(l.id);
+  const hasUnread = unreadCount > 0;
+
+  // Piscar borda por 4s após novo inbound
+  const [flashOn, setFlashOn] = useState(false);
+  useEffect(() => {
+    if (!flashAt) return;
+    setFlashOn(true);
+    const t = window.setTimeout(() => setFlashOn(false), 4000);
+    return () => window.clearTimeout(t);
+  }, [flashAt]);
+
+  const borderClass =
+    selectMode && checked
+      ? "bg-primary/10 border-l-2 border-primary"
+      : active
+        ? "bg-primary/10 border-l-2 border-primary"
+        : flashOn
+          ? "bg-emerald-500/10 border-l-2 border-emerald-500"
+          : hasUnread
+            ? "bg-primary/[0.04] border-l-2 border-primary/60"
+            : "border-l-2 border-transparent hover:bg-secondary/50";
+
+  return (
+    <li>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => {
+          if (selectMode) toggleId(l.id);
+          else onSelect(l.id);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (selectMode) toggleId(l.id);
+            else onSelect(l.id);
+          }
+        }}
+        className={`group w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors cursor-pointer ${borderClass}`}
+      >
+        {selectMode && (
+          <div
+            className="shrink-0 pt-2.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleId(l.id);
+            }}
+          >
+            <Checkbox
+              checked={checked}
+              onCheckedChange={() => toggleId(l.id)}
+              aria-label={`Selecionar ${l.name || l.id}`}
+            />
+          </div>
+        )}
+        <div
+          className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}
+        >
+          {initialsFrom(l.name, l.phone_whatsapp)}
+          {ready && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card"
+              title="Cadastro completo"
+            />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span
+              className={`truncate text-sm text-foreground sensitive-name ${hasUnread ? "font-bold" : "font-medium"}`}
+            >
+              {l.name || "Sem nome"}
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className={`text-[10px] tabular-nums ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                {fmtTime(l.lastMsgAt || l.created_at)}
+              </span>
+              {hasUnread && (
+                <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </div>
+          </div>
+          <p
+            className={`truncate text-[11px] mt-0.5 sensitive-phone ${hasUnread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}
+          >
+            {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
+          </p>
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <span
+              className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
+            >
+              {l.filled}/{CAPTURE_FIELDS.length}
+            </span>
+            {/* Agendar ligação inline — aparece no hover, sem entrar no cockpit */}
+            {!selectMode && l.phone_whatsapp && (
+              <div
+                className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ScheduleCallButton
+                  phone={l.phone_whatsapp}
+                  consultantId={consultantId}
+                  contactName={l.name}
+                  customerId={l.id}
+                  triggerLabel="Agendar ligação"
+                  size="icon-sm"
+                  variant="ghost"
+                  className="h-6 w-6"
+                  iconOnly
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </li>
   );
 }
