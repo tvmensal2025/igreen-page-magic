@@ -389,93 +389,16 @@ export function CaptureLeadList({
             </p>
           </div>
         )}
-        <ul className="divide-y divide-border/60">
-          {filtered.map((l) => {
-            const active = l.id === selectedId && !selectMode;
-            const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
-            const ready = l.filled >= CAPTURE_FIELDS.length;
-            const checked = selectedIds.has(l.id);
-            return (
-              <li key={l.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (selectMode) toggleId(l.id);
-                    else onSelect(l.id);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      if (selectMode) toggleId(l.id);
-                      else onSelect(l.id);
-                    }
-                  }}
-                  className={`w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors cursor-pointer ${
-                    selectMode && checked
-                      ? "bg-primary/10 border-l-2 border-primary"
-                      : active
-                        ? "bg-primary/10 border-l-2 border-primary"
-                        : "border-l-2 border-transparent hover:bg-secondary/50"
-                  }`}
-                >
-                  {selectMode && (
-                    <div
-                      className="shrink-0 pt-2.5"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleId(l.id);
-                      }}
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={() => toggleId(l.id)}
-                        aria-label={`Selecionar ${l.name || l.id}`}
-                      />
-                    </div>
-                  )}
-                  <div
-                    className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}
-                  >
-                    {initialsFrom(l.name, l.phone_whatsapp)}
-                    {ready && (
-                      <span
-                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card"
-                        title="Cadastro completo"
-                      />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-medium text-foreground sensitive-name">
-                        {l.name || "Sem nome"}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
-                        {fmtTime(l.lastMsgAt || l.created_at)}
-                      </span>
-                    </div>
-                    <p className="truncate text-[11px] text-muted-foreground mt-0.5 sensitive-phone">
-                      {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
-                    </p>
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <span
-                        className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
-                      >
-                        {l.filled}/{CAPTURE_FIELDS.length}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <GroupedLeads
+          leads={filtered}
+          selectedId={selectedId}
+          selectMode={selectMode}
+          selectedIds={selectedIds}
+          onSelect={onSelect}
+          toggleId={toggleId}
+          fmtTime={fmtTime}
+          fmtPhone={fmtPhone}
+        />
       </div>
 
       {selectMode && selectedVisibleCount > 0 ? (
