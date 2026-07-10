@@ -38,6 +38,7 @@ function toLocalDatetimeValue(d: Date) {
 
 export function ScheduleCallButton({
   phone,
+  consultantId,
   contactName,
   customerId,
   triggerLabel = "Agendar ligação",
@@ -46,8 +47,6 @@ export function ScheduleCallButton({
   className,
   iconOnly,
 }: Props) {
-  const { consultant } = useAuth();
-  const consultantId = consultant?.id;
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [mode, setMode] = useState<"audio" | "tts">("tts");
