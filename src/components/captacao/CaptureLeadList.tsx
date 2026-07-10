@@ -985,10 +985,10 @@ function LeadCard({
             >
               {l.filled}/{CAPTURE_FIELDS.length}
             </span>
-            {/* Agendar ligação inline — aparece no hover, sem entrar no cockpit */}
-            {!selectMode && l.phone_whatsapp && (
+            {/* Agendar ligação inline — sempre visível pra o consultor achar rápido */}
+            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
               <div
-                className="opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                className="shrink-0"
                 onClick={(e) => e.stopPropagation()}
               >
                 <ScheduleCallButton
@@ -996,14 +996,15 @@ function LeadCard({
                   consultantId={consultantId}
                   contactName={l.name}
                   customerId={l.id}
-                  triggerLabel="Agendar ligação"
-                  size="icon-sm"
+                  triggerLabel="Agendar"
+                  size="icon-xs"
                   variant="ghost"
-                  className="h-6 w-6"
+                  className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
                   iconOnly
                 />
               </div>
             )}
+
           </div>
         </div>
       </div>
