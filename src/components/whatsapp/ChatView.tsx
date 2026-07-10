@@ -20,6 +20,7 @@ import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
+import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 
 import {
