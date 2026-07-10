@@ -294,8 +294,8 @@ export function renderPlaceholders(
   ctx: { distribuidora?: string | null; cidade?: string | null },
 ): string {
   let out = text;
-  if (ctx.distribuidora) out = out.replaceAll("{{distribuidora}}", ctx.distribuidora);
-  if (ctx.cidade) out = out.replaceAll("{{cidade}}", ctx.cidade);
+  if (ctx.distribuidora) out = out.split("{{distribuidora}}").join(ctx.distribuidora);
+  if (ctx.cidade) out = out.split("{{cidade}}").join(ctx.cidade);
   return out;
 }
 
