@@ -249,10 +249,16 @@ export function CaptureLeadList({
 
   const toggleSelectMode = () => {
     setSelectMode((v) => {
-      if (v) setSelectedIds(new Set());
-      return !v;
+      if (v) {
+        setSelectedIds(new Set());
+        return false;
+      }
+      // Ao entrar em modo seleção: já marca todos do período pra dar feedback visível.
+      setSelectedIds(new Set(filtered.map((l) => l.id)));
+      return true;
     });
   };
+
 
   const toggleId = (id: string) => {
     setSelectedIds((prev) => {
