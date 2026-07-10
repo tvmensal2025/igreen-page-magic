@@ -8802,9 +8802,13 @@ export type Database = {
           created_at: string
           customer_id: string | null
           id: string
+          lost_reason: string | null
           notes: string | null
+          outcome: string | null
           points_kwh: number
           product_id: string
+          source_id: string | null
+          source_kind: string | null
           status: Database["public"]["Enums"]["sale_status"]
           submitted_at: string | null
           updated_at: string
@@ -8818,9 +8822,13 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           id?: string
+          lost_reason?: string | null
           notes?: string | null
+          outcome?: string | null
           points_kwh?: number
           product_id: string
+          source_id?: string | null
+          source_kind?: string | null
           status?: Database["public"]["Enums"]["sale_status"]
           submitted_at?: string | null
           updated_at?: string
@@ -8834,9 +8842,13 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           id?: string
+          lost_reason?: string | null
           notes?: string | null
+          outcome?: string | null
           points_kwh?: number
           product_id?: string
+          source_id?: string | null
+          source_kind?: string | null
           status?: Database["public"]["Enums"]["sale_status"]
           submitted_at?: string | null
           updated_at?: string
@@ -10978,9 +10990,13 @@ export type Database = {
           created_at: string
           customer_id: string | null
           id: string
+          lost_reason: string | null
           notes: string | null
+          outcome: string | null
           points_kwh: number
           product_id: string
+          source_id: string | null
+          source_kind: string | null
           status: Database["public"]["Enums"]["sale_status"]
           submitted_at: string | null
           updated_at: string
