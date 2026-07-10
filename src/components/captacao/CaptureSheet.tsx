@@ -790,9 +790,51 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         onWithoutNotice={() => void runFinalize(false)}
         onWithNotice={() => void runFinalize(true)}
       />
+      <CloseCaptureConfirmDialog
+        open={closeConfirm}
+        onOpenChange={setCloseConfirm}
+        onConfirm={() => void runCloseCapture()}
+        loading={closing}
+        leadName={customerName || phoneNumber}
+      />
     </Sheet>
   );
 }
+
+function CloseCaptureConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  loading,
+  leadName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  loading: boolean;
+  leadName?: string | null;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Encerrar captação{leadName ? ` de ${leadName}` : ""}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O lead sai da lista de captação e é vinculado em <strong>Vendas</strong>, <strong>CRM</strong> e <strong>Comissão</strong> como fechamento.
+            O chat no WhatsApp continua ativo normalmente. Se o lead veio de campanha, mostramos o retorno vs investido logo em seguida.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} disabled={loading}>
+            {loading ? "Encerrando…" : "Encerrar e vincular"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 
 function FinalizeNoticeDialog({
   open,
