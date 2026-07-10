@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       _deleted_customers_backup: {
@@ -3699,6 +3724,7 @@ export type Database = {
           consultant_id: string | null
           conta_pdf_protegida: boolean | null
           contaunica: boolean | null
+          contaunica_answered: boolean
           conversation_step: string | null
           conversation_summary: string | null
           conversational_flow_enabled: boolean | null
@@ -3841,6 +3867,7 @@ export type Database = {
           phone_landline: string | null
           phone_whatsapp: string
           pj_jsonb: Json | null
+          portal_idconsultor_override: number | null
           portal_last_retry_at: string | null
           portal_retry_count: number
           portal_submitted_at: string | null
@@ -3858,7 +3885,6 @@ export type Database = {
           portal2_otp_sent_at: string | null
           portal2_otp_validated_at: string | null
           portal2_status: string | null
-          portal_idconsultor_override: number | null
           pos_venda_approved_at: string | null
           pos_venda_invalid: boolean
           pos_venda_manual: boolean
@@ -3893,6 +3919,7 @@ export type Database = {
           tipo_produto: string
           tracking_protocol: string | null
           transferir_titularidade: boolean | null
+          transferir_titularidade_answered: boolean
           updated_at: string
           variant_id: string | null
           welcome_sent_at: string | null
@@ -3942,6 +3969,7 @@ export type Database = {
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           contaunica?: boolean | null
+          contaunica_answered?: boolean
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
@@ -4084,6 +4112,7 @@ export type Database = {
           phone_landline?: string | null
           phone_whatsapp: string
           pj_jsonb?: Json | null
+          portal_idconsultor_override?: number | null
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
@@ -4101,7 +4130,6 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
-          portal_idconsultor_override?: number | null
           pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
@@ -4136,6 +4164,7 @@ export type Database = {
           tipo_produto?: string
           tracking_protocol?: string | null
           transferir_titularidade?: boolean | null
+          transferir_titularidade_answered?: boolean
           updated_at?: string
           variant_id?: string | null
           welcome_sent_at?: string | null
@@ -4185,6 +4214,7 @@ export type Database = {
           consultant_id?: string | null
           conta_pdf_protegida?: boolean | null
           contaunica?: boolean | null
+          contaunica_answered?: boolean
           conversation_step?: string | null
           conversation_summary?: string | null
           conversational_flow_enabled?: boolean | null
@@ -4327,6 +4357,7 @@ export type Database = {
           phone_landline?: string | null
           phone_whatsapp?: string
           pj_jsonb?: Json | null
+          portal_idconsultor_override?: number | null
           portal_last_retry_at?: string | null
           portal_retry_count?: number
           portal_submitted_at?: string | null
@@ -4344,7 +4375,6 @@ export type Database = {
           portal2_otp_sent_at?: string | null
           portal2_otp_validated_at?: string | null
           portal2_status?: string | null
-          portal_idconsultor_override?: number | null
           pos_venda_approved_at?: string | null
           pos_venda_invalid?: boolean
           pos_venda_manual?: boolean
@@ -4379,6 +4409,7 @@ export type Database = {
           tipo_produto?: string
           tracking_protocol?: string | null
           transferir_titularidade?: boolean | null
+          transferir_titularidade_answered?: boolean
           updated_at?: string
           variant_id?: string | null
           welcome_sent_at?: string | null
@@ -8340,6 +8371,8 @@ export type Database = {
           last_pause_reason: string | null
           message: string | null
           metrics_broadcast_interval_minutes: number
+          metrics_quiet_end_hour: number
+          metrics_quiet_start_hour: number
           paused_notified_at: string | null
           phones: string[] | null
           slug: string | null
@@ -8357,6 +8390,8 @@ export type Database = {
           last_pause_reason?: string | null
           message?: string | null
           metrics_broadcast_interval_minutes?: number
+          metrics_quiet_end_hour?: number
+          metrics_quiet_start_hour?: number
           paused_notified_at?: string | null
           phones?: string[] | null
           slug?: string | null
@@ -8374,6 +8409,8 @@ export type Database = {
           last_pause_reason?: string | null
           message?: string | null
           metrics_broadcast_interval_minutes?: number
+          metrics_quiet_end_hour?: number
+          metrics_quiet_start_hour?: number
           paused_notified_at?: string | null
           phones?: string[] | null
           slug?: string | null
@@ -9419,6 +9456,220 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      voice_audio_clips: {
+        Row: {
+          audio_url: string
+          consultant_id: string
+          created_at: string
+          duration_sec: number | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          audio_url: string
+          consultant_id: string
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Update: {
+          audio_url?: string
+          consultant_id?: string
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      voice_call_logs: {
+        Row: {
+          answered_by: string | null
+          campaign_id: string | null
+          consultant_id: string
+          created_at: string
+          duration_sec: number | null
+          error: string | null
+          from_phone: string | null
+          id: string
+          price: string | null
+          raw: Json
+          status: string | null
+          target_id: string | null
+          to_phone: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          answered_by?: string | null
+          campaign_id?: string | null
+          consultant_id: string
+          created_at?: string
+          duration_sec?: number | null
+          error?: string | null
+          from_phone?: string | null
+          id?: string
+          price?: string | null
+          raw?: Json
+          status?: string | null
+          target_id?: string | null
+          to_phone: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          answered_by?: string | null
+          campaign_id?: string | null
+          consultant_id?: string
+          created_at?: string
+          duration_sec?: number | null
+          error?: string | null
+          from_phone?: string | null
+          id?: string
+          price?: string | null
+          raw?: Json
+          status?: string | null
+          target_id?: string | null
+          to_phone?: string
+          twilio_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_call_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "voice_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "voice_call_logs_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "voice_campaign_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_campaign_targets: {
+        Row: {
+          answered_by: string | null
+          campaign_id: string
+          created_at: string
+          customer_id: string | null
+          dialed_at: string | null
+          error: string | null
+          finished_at: string | null
+          id: string
+          name: string | null
+          phone: string
+          status: string
+          twilio_sid: string | null
+        }
+        Insert: {
+          answered_by?: string | null
+          campaign_id: string
+          created_at?: string
+          customer_id?: string | null
+          dialed_at?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          name?: string | null
+          phone: string
+          status?: string
+          twilio_sid?: string | null
+        }
+        Update: {
+          answered_by?: string | null
+          campaign_id?: string
+          created_at?: string
+          customer_id?: string | null
+          dialed_at?: string | null
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          name?: string | null
+          phone?: string
+          status?: string
+          twilio_sid?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_campaign_targets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "voice_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_campaigns: {
+        Row: {
+          answered: number
+          audio_clip_id: string | null
+          audio_url: string
+          config: Json
+          consultant_id: string
+          created_at: string
+          dialed: number
+          failed: number
+          finished_at: string | null
+          id: string
+          name: string
+          scheduled_at: string | null
+          started_at: string | null
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          answered?: number
+          audio_clip_id?: string | null
+          audio_url: string
+          config?: Json
+          consultant_id: string
+          created_at?: string
+          dialed?: number
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          name?: string
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          answered?: number
+          audio_clip_id?: string | null
+          audio_url?: string
+          config?: Json
+          consultant_id?: string
+          created_at?: string
+          dialed?: number
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          name?: string
+          scheduled_at?: string | null
+          started_at?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_campaigns_audio_clip_id_fkey"
+            columns: ["audio_clip_id"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       voice_name_clips: {
         Row: {
@@ -10930,6 +11181,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin", "user", "super_admin"],

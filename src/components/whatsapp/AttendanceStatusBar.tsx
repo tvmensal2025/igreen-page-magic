@@ -126,7 +126,7 @@ export function AttendanceStatusBar({
             </span>
           </>
         )}
-        {protocol && state !== "not_started" && (
+        {protocol && (
           <button
             type="button"
             onClick={() => void copyProtocol()}

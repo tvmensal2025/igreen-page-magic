@@ -9,12 +9,13 @@
 // existir, atualiza o canal/atribuição quando descobrimos que o lead veio de
 // anúncio (CTWA / Meta Ads).
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+// Aceita qualquer client: createClient(@2) e pins de patch divergem nos generics.
 import { ingestLead, type LeadChannel } from "./lead-ingest.ts";
 import { normalizePhone } from "../utils.ts";
 
 export async function mirrorCustomerToCaptation(
-  supabase: SupabaseClient,
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
   customerId: string,
 ): Promise<void> {
   try {
