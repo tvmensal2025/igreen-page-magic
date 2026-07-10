@@ -294,8 +294,11 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
                   </div>
                 </button>
               </li>
+                  ))}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         )}
       </VozCampaignShell>
 
