@@ -1,13 +1,21 @@
 /**
  * StepCopy — Step 3: título, texto, descrição + primeira mensagem WhatsApp.
- * Reaproveita a geração de copy via IA, checagem de frase única e variação.
+ *
+ * MUDANÇA jul/2026: o pack de copy agora vem do catálogo local (200 opções
+ * curadas) — sem loading, sem depender de IA. Botões:
+ *   🔄 Sortear outras 5    → re-embaralha instantaneamente
+ *   📚 Ver 200 opções      → abre catálogo completo com filtro por ângulo
+ *   ✨ Adaptar com IA      → chama Gemini como refinamento OPCIONAL
  */
-import { Loader2, Wand2, Smartphone, X } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Wand2, Smartphone, X, Shuffle, BookOpen, Sparkles } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AdQualityPanel } from "../../AdQualityPanel";
+import { CopyCatalogSheet } from "../CopyCatalogSheet";
 import { COPY_LIMITS, INITIAL_MSG_LIMIT, buildDefaultInitialMessage, type AdFormat } from "../wizardHelpers";
+import { CATALOG_TOTALS } from "@/data/copyCatalog";
 import type { WizardState } from "../hooks/useWizardState";
 import type { WizardDerived } from "../hooks/useWizardState";
 import type { useCopyLogic } from "../hooks/useCopyLogic";
@@ -21,20 +29,14 @@ interface Props {
 
 export function StepCopy({ state, derived, patch, copyLogic }: Props) {
   const { copy } = state;
-
-  if (state.copyLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-[hsl(var(--ads-muted))] py-10 justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" /> Gerando copy com IA...
-      </div>
-    );
-  }
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   const primaryImage = state.creativeMode === "video" ? null : (() => {
     const f = state.filesByFormat.vertical[0] || state.filesByFormat.square[0] || state.filesByFormat.story[0];
     const fmt: AdFormat = state.filesByFormat.vertical[0] ? "vertical" : state.filesByFormat.square[0] ? "square" : "story";
     return f ? { url: f.url, w: f.w, h: f.h, format: fmt } : null;
   })();
+
 
   return (
     <div className="space-y-4">
