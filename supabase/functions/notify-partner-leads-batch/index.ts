@@ -297,26 +297,41 @@ Deno.serve(async (req) => {
       lines.push(`🤖 Sofia (IA) já está atendendo`);
       lines.push(``);
 
-      const hasCampFields = isCampaignLive && !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null);
+      const hasCampFields = isCampaignLive && !!(campaignName || campaignStarted || statusLabel || dailyBudgetCents != null || spendCents != null || campaignLeads != null || durationDays != null);
       if (hasCampFields) {
         lines.push(`📢 *Campanha*`);
         if (campaignName) lines.push(`🎯 *${campaignName}*`);
+        if (campaignFbId) lines.push(`🆔 ID Meta: \`${campaignFbId}\``);
         if (statusLabel) lines.push(`📡 Status: ${statusLabel}`);
         if (campaignStarted) lines.push(`📅 No ar desde: ${shortDateBR(campaignStarted)}`);
-        if (dailyBudgetCents != null) lines.push(`💵 Orçamento/dia: *${money(dailyBudgetCents)}*`);
+        if (durationDays != null && durationDays > 0) lines.push(`⏳ Duração: *${durationDays} ${durationDays === 1 ? "dia" : "dias"}*`);
+        if (dailyBudgetCents != null) {
+          lines.push(`💵 Orçamento/dia: *${money(dailyBudgetCents)}*`);
+          if (durationDays != null && durationDays > 0) {
+            lines.push(`💼 Investimento total previsto: *${money(dailyBudgetCents * durationDays)}*`);
+          }
+        }
         if (spendCents != null) lines.push(`💰 Já investido: *${money(spendCents)}*`);
         if (campaignLeads != null) lines.push(`📥 Leads desta campanha: *${campaignLeads}*`);
         lines.push(``);
       }
 
+      // Bloco "Seu cadastro" — sempre útil para o parceiro confirmar
+      lines.push(`🪪 *Seu cadastro*`);
+      lines.push(`   Nome: *${(partner as any).nome}*`);
+      if (partnerCode) lines.push(`   ID iGreen: *${partnerCode}*`);
+      lines.push(``);
 
       if (poolResolved) {
-        lines.push(`👥 *Seu rodízio*`);
-        const poolName = cleanLabel(poolResolved.label);
-        if (poolName) lines.push(`🏷️ ${poolName}`);
-        if (myPosition && totalPositions) lines.push(`🏅 Posição: *${myPosition}º* de ${totalPositions}`);
-        if (myLeadsCount != null) lines.push(`📈 Seus leads totais: *${myLeadsCount}*`);
+        lines.push(`👥 *Rodízio: ${cleanLabel(poolResolved.label) || "seu grupo"}*`);
+        if (myPosition && totalPositions) lines.push(`🏅 Sua posição: *${myPosition}º* de *${totalPositions}*`);
+        if (myLeadsCount != null) lines.push(`📈 Seus leads (campanhas ativas): *${myLeadsCount}*`);
         if (nextPartnerName && nextPartnerLabel) lines.push(`➡️ ${nextPartnerLabel}: *${nextPartnerName}*`);
+        if (rosterLines.length > 0) {
+          lines.push(``);
+          lines.push(`📋 *Integrantes do rodízio:*`);
+          lines.push(...rosterLines);
+        }
         lines.push(``);
       } else if (myLeadsCount != null) {
         lines.push(`📈 *Seus leads totais:* ${myLeadsCount}`);
