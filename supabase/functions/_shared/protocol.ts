@@ -1,11 +1,17 @@
-// Geração e envio do "welcome header" (saudação + protocolo).
+// Geração e envio do "welcome header" (saudação + protocolo de atendimento).
 //
 // Idempotente: se `customers.tracking_protocol` já estiver preenchido,
 // NÃO regera nem reenvia.
 //
-// Formato do protocolo do parceiro (RPC generate_partner_protocol):
-//   {short_code}-{YYMMDD}-{seq4}  ex.: 481070-260709-0001
-// Fallback sem short_code: 3 iniciais do nome.
+// Formato do PROTOCOLO DE ATENDIMENTO (ticket do cliente):
+//   IGR-{XXX}-{seq4}  ex.: IGR-RFF-0042
+//   - XXX = short_code do parceiro OU 3 iniciais do nome (pad 'X' se curto).
+//   - seq4 = sequência global crescente por parceiro (não zera por dia).
+//
+// IMPORTANTE — não confundir com o PROTOCOLO DA CAMPANHA (2026-####),
+// que vai no anúncio Meta e é usado pra casar o lead com a campanha/rodízio.
+// Esse aqui é o "número do chamado" que fica com o cliente pra suporte.
+
 
 import { greetingForNow, partnerInitials } from "./greeting.ts";
 
