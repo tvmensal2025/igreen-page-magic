@@ -1,13 +1,21 @@
 /**
  * StepCopy — Step 3: título, texto, descrição + primeira mensagem WhatsApp.
- * Reaproveita a geração de copy via IA, checagem de frase única e variação.
+ *
+ * MUDANÇA jul/2026: o pack de copy agora vem do catálogo local (200 opções
+ * curadas) — sem loading, sem depender de IA. Botões:
+ *   🔄 Sortear outras 5    → re-embaralha instantaneamente
+ *   📚 Ver 200 opções      → abre catálogo completo com filtro por ângulo
+ *   ✨ Adaptar com IA      → chama Gemini como refinamento OPCIONAL
  */
-import { Loader2, Wand2, Smartphone, X } from "lucide-react";
+import { useState } from "react";
+import { Loader2, Wand2, Smartphone, X, Shuffle, BookOpen, Sparkles } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { AdQualityPanel } from "../../AdQualityPanel";
+import { CopyCatalogSheet } from "../CopyCatalogSheet";
 import { COPY_LIMITS, INITIAL_MSG_LIMIT, buildDefaultInitialMessage, type AdFormat } from "../wizardHelpers";
+import { CATALOG_TOTALS } from "@/data/copyCatalog";
 import type { WizardState } from "../hooks/useWizardState";
 import type { WizardDerived } from "../hooks/useWizardState";
 import type { useCopyLogic } from "../hooks/useCopyLogic";
@@ -21,14 +29,7 @@ interface Props {
 
 export function StepCopy({ state, derived, patch, copyLogic }: Props) {
   const { copy } = state;
-
-  if (state.copyLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-[hsl(var(--ads-muted))] py-10 justify-center">
-        <Loader2 className="w-4 h-4 animate-spin" /> Gerando copy com IA...
-      </div>
-    );
-  }
+  const [catalogOpen, setCatalogOpen] = useState(false);
 
   const primaryImage = state.creativeMode === "video" ? null : (() => {
     const f = state.filesByFormat.vertical[0] || state.filesByFormat.square[0] || state.filesByFormat.story[0];
@@ -36,10 +37,42 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
     return f ? { url: f.url, w: f.w, h: f.h, format: fmt } : null;
   })();
 
+
   return (
     <div className="space-y-4">
+      {/* Barra de ações do catálogo */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--ads-emerald-2))]/20 bg-primary/5 p-2.5">
+        <span className="text-[11px] text-[hsl(var(--ads-muted))] mr-auto">
+          <BookOpen className="w-3 h-3 inline mr-1" /> Sugestões do catálogo ({CATALOG_TOTALS.total} copies prontos)
+        </span>
+        <button
+          type="button"
+          onClick={copyLogic.reshuffleCopy}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-background border border-border hover:border-primary"
+        >
+          <Shuffle className="w-3 h-3" /> Sortear outras
+        </button>
+        <button
+          type="button"
+          onClick={() => setCatalogOpen(true)}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-background border border-border hover:border-primary"
+        >
+          <BookOpen className="w-3 h-3" /> Ver todas ({CATALOG_TOTALS.total})
+        </button>
+        <button
+          type="button"
+          onClick={copyLogic.adaptCopyWithAI}
+          disabled={state.copyLoading}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-[hsl(var(--ads-emerald-2))] text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {state.copyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+          Adaptar com IA
+        </button>
+      </div>
+
       {/* Título */}
       <div>
+
         <Label className="flex justify-between">
           <span>Título principal</span>
           <span className={`text-[10px] ${state.headline.length > COPY_LIMITS.headline ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.headline.length}/{COPY_LIMITS.headline}</span>
@@ -133,6 +166,17 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
         primaryVideo={state.creativeMode === "video" && state.videoMeta ? { w: state.videoMeta.w, h: state.videoMeta.h, duration: state.videoMeta.duration } : null}
         onChange={(q) => patch({ quality: q })}
       />
+
+      <CopyCatalogSheet
+        open={catalogOpen}
+        onOpenChange={setCatalogOpen}
+        distribuidora={derived.distribuidoraPrimary}
+        cidade={state.cities[0]?.name || null}
+        onPickHeadline={(t) => patch({ headline: t })}
+        onPickPrimary={(t) => patch({ primaryText: t })}
+        onPickDescription={(t) => patch({ description: t })}
+      />
     </div>
   );
+
 }

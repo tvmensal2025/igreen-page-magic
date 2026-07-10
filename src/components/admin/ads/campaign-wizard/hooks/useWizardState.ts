@@ -162,7 +162,7 @@ const INITIAL_STATE: WizardState = {
   duration: 3,
   placementMode: "auto",
   placements: ALL_PLACEMENTS,
-  rodizioEnabled: false,
+  rodizioEnabled: true,
   rodizioPartners: [],
   rodizioPartnersLoading: false,
   rodizioInlineForm: null,
