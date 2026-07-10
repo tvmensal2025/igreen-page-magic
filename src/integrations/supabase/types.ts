@@ -9579,6 +9579,7 @@ export type Database = {
       voice_campaign_targets: {
         Row: {
           answered_by: string | null
+          attempts: number
           campaign_id: string
           created_at: string
           customer_id: string | null
@@ -9586,7 +9587,9 @@ export type Database = {
           error: string | null
           finished_at: string | null
           id: string
+          max_attempts: number
           name: string | null
+          next_attempt_at: string | null
           phone: string
           status: string
           twilio_sid: string | null
@@ -9597,6 +9600,7 @@ export type Database = {
         }
         Insert: {
           answered_by?: string | null
+          attempts?: number
           campaign_id: string
           created_at?: string
           customer_id?: string | null
@@ -9604,7 +9608,9 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          max_attempts?: number
           name?: string | null
+          next_attempt_at?: string | null
           phone: string
           status?: string
           twilio_sid?: string | null
@@ -9615,6 +9621,7 @@ export type Database = {
         }
         Update: {
           answered_by?: string | null
+          attempts?: number
           campaign_id?: string
           created_at?: string
           customer_id?: string | null
@@ -9622,7 +9629,9 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          max_attempts?: number
           name?: string | null
+          next_attempt_at?: string | null
           phone?: string
           status?: string
           twilio_sid?: string | null
@@ -9790,6 +9799,8 @@ export type Database = {
           id: string
           name_normalized: string
           template_id: string
+          velip_audio_id: string | null
+          velip_uploaded_at: string | null
         }
         Insert: {
           created_at?: string
@@ -9797,6 +9808,8 @@ export type Database = {
           id?: string
           name_normalized: string
           template_id: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Update: {
           created_at?: string
@@ -9804,6 +9817,8 @@ export type Database = {
           id?: string
           name_normalized?: string
           template_id?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Relationships: [
           {
