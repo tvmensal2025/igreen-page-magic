@@ -159,11 +159,13 @@ Deno.serve(async (req) => {
       let dailyBudgetCents: number | null = null;
       let spendCents: number | null = null;
       let campaignLeads: number | null = null;
+      let durationDays: number | null = null;
+      let campaignFbId: string | null = null;
 
       if (campaignId) {
         const { data: camp } = await admin
           .from("facebook_campaigns")
-          .select("name, started_at, status, daily_budget_cents, leads_count")
+          .select("name, started_at, status, daily_budget_cents, leads_count, duration_days, fb_campaign_id")
           .eq("id", campaignId).maybeSingle();
         if (camp) {
           campaignName = cleanLabel((camp as any).name || "");
@@ -171,6 +173,8 @@ Deno.serve(async (req) => {
           campaignStatus = (camp as any).status || null;
           dailyBudgetCents = (camp as any).daily_budget_cents ?? null;
           campaignLeads = (camp as any).leads_count ?? null;
+          durationDays = (camp as any).duration_days ?? null;
+          campaignFbId = (camp as any).fb_campaign_id ?? null;
         }
 
         // spend: fb_metrics_daily → ad_spend_daily
