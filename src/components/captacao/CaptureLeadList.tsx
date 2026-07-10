@@ -481,3 +481,231 @@ export function CaptureLeadList({
     </aside>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Agrupamento visual: "Em atendimento" (welcome_sent_at != null) vs
+// "Em espera" (welcome_sent_at == null). Inspirado no Intercom Inbox e
+// HubSpot Conversations — separa quem já teve o primeiro contato profissional
+// de quem ainda está aguardando saudação.
+// ─────────────────────────────────────────────────────────────────────────────
+interface GroupedLeadsProps {
+  leads: CaptureBatchLead[];
+  selectedId: string | null;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onSelect: (id: string) => void;
+  toggleId: (id: string) => void;
+  fmtTime: (iso: string | null) => string;
+  fmtPhone: (p: string | null) => string;
+}
+
+function useGroupOpen(key: string, initial: boolean) {
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem(`cap_group_${key}`);
+      return v === null ? initial : v === "1";
+    } catch {
+      return initial;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(`cap_group_${key}`, open ? "1" : "0");
+    } catch {}
+  }, [key, open]);
+  return [open, setOpen] as const;
+}
+
+function GroupedLeads({
+  leads,
+  selectedId,
+  selectMode,
+  selectedIds,
+  onSelect,
+  toggleId,
+  fmtTime,
+  fmtPhone,
+}: GroupedLeadsProps) {
+  const groups = useMemo(() => {
+    const emAtendimento: CaptureBatchLead[] = [];
+    const emEspera: CaptureBatchLead[] = [];
+    for (const l of leads) {
+      if (l.welcome_sent_at) emAtendimento.push(l);
+      else emEspera.push(l);
+    }
+    return { emAtendimento, emEspera };
+  }, [leads]);
+
+  return (
+    <div>
+      <LeadSection
+        groupKey="atendimento"
+        title="Em atendimento"
+        icon={<MessageCircle className="w-3 h-3" />}
+        toneClass="text-emerald-700 dark:text-emerald-400"
+        leads={groups.emAtendimento}
+        selectedId={selectedId}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        toggleId={toggleId}
+        fmtTime={fmtTime}
+        fmtPhone={fmtPhone}
+        defaultOpen
+      />
+      <LeadSection
+        groupKey="espera"
+        title="Em espera"
+        icon={<Clock className="w-3 h-3" />}
+        toneClass="text-amber-700 dark:text-amber-400"
+        leads={groups.emEspera}
+        selectedId={selectedId}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onSelect={onSelect}
+        toggleId={toggleId}
+        fmtTime={fmtTime}
+        fmtPhone={fmtPhone}
+        defaultOpen
+      />
+    </div>
+  );
+}
+
+interface LeadSectionProps extends GroupedLeadsProps {
+  groupKey: string;
+  title: string;
+  icon: React.ReactNode;
+  toneClass: string;
+  defaultOpen: boolean;
+}
+
+function LeadSection({
+  groupKey,
+  title,
+  icon,
+  toneClass,
+  leads,
+  defaultOpen,
+  selectedId,
+  selectMode,
+  selectedIds,
+  onSelect,
+  toggleId,
+  fmtTime,
+  fmtPhone,
+}: LeadSectionProps) {
+  const [open, setOpen] = useGroupOpen(groupKey, defaultOpen);
+  if (leads.length === 0) return null;
+  return (
+    <section className="border-b border-border/40 last:border-b-0">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 bg-muted/30 hover:bg-muted/50 transition sticky top-0 z-[1]"
+      >
+        {open ? (
+          <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+        )}
+        <span className={`inline-flex items-center gap-1 ${toneClass}`}>{icon}</span>
+        <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          {title}
+        </span>
+        <span className="ml-auto text-[10px] tabular-nums font-semibold text-muted-foreground bg-background/80 px-1.5 py-0.5 rounded-full">
+          {leads.length}
+        </span>
+      </button>
+      {open && (
+        <ul className="divide-y divide-border/60">
+          {leads.map((l) => {
+            const active = l.id === selectedId && !selectMode;
+            const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
+            const ready = l.filled >= CAPTURE_FIELDS.length;
+            const checked = selectedIds.has(l.id);
+            return (
+              <li key={l.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (selectMode) toggleId(l.id);
+                    else onSelect(l.id);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      if (selectMode) toggleId(l.id);
+                      else onSelect(l.id);
+                    }
+                  }}
+                  className={`w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors cursor-pointer ${
+                    selectMode && checked
+                      ? "bg-primary/10 border-l-2 border-primary"
+                      : active
+                        ? "bg-primary/10 border-l-2 border-primary"
+                        : "border-l-2 border-transparent hover:bg-secondary/50"
+                  }`}
+                >
+                  {selectMode && (
+                    <div
+                      className="shrink-0 pt-2.5"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleId(l.id);
+                      }}
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={() => toggleId(l.id)}
+                        aria-label={`Selecionar ${l.name || l.id}`}
+                      />
+                    </div>
+                  )}
+                  <div
+                    className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}
+                  >
+                    {initialsFrom(l.name, l.phone_whatsapp)}
+                    {ready && (
+                      <span
+                        className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card"
+                        title="Cadastro completo"
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-sm font-medium text-foreground sensitive-name">
+                        {l.name || "Sem nome"}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">
+                        {fmtTime(l.lastMsgAt || l.created_at)}
+                      </span>
+                    </div>
+                    <p className="truncate text-[11px] text-muted-foreground mt-0.5 sensitive-phone">
+                      {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
+                    </p>
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span
+                        className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
+                      >
+                        {l.filled}/{CAPTURE_FIELDS.length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
+  );
+}
