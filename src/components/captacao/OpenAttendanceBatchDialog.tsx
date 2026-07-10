@@ -157,6 +157,8 @@ export function OpenAttendanceBatchDialog({
   const [startAttendance, setStartAttendance] = useState(true);
   const [audioId, setAudioId] = useState<string>("__none__");
   const [imageId, setImageId] = useState<string>("__none__");
+  const [textId, setTextId] = useState<string>("__none__");
+  const [textBody, setTextBody] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BatchLeadResult[]>([]);
   const [workLeads, setWorkLeads] = useState<CaptureBatchLead[]>(leads);
@@ -171,6 +173,10 @@ export function OpenAttendanceBatchDialog({
   );
   const imageTemplates = useMemo(
     () => templates.filter((t) => !!templateMediaUrl(t, "image")),
+    [templates],
+  );
+  const textTemplates = useMemo(
+    () => templates.filter((t) => !!templateTextContent(t).trim()),
     [templates],
   );
 
@@ -190,6 +196,7 @@ export function OpenAttendanceBatchDialog({
   const selectedImage = imageTemplates.find((t) => t.id === imageId);
   const audioUrl = templateMediaUrl(selectedAudio, "audio");
   const imageUrl = templateMediaUrl(selectedImage, "image");
+  const customText = textBody.trim() ? textBody : null;
 
   const resultById = useMemo(() => {
     const m = new Map<string, BatchLeadResult>();
@@ -210,11 +217,12 @@ export function OpenAttendanceBatchDialog({
   const failCount = results.filter((r) => r.status === "failed").length;
   const showConfig = !done || failCount > 0;
 
-  const needsChannel = !!audioUrl || !!imageUrl;
+  const needsChannel = !!audioUrl || !!imageUrl || !!customText;
   const canSend =
-    (startAttendance || !!audioUrl || !!imageUrl) &&
+    (startAttendance || !!audioUrl || !!imageUrl || !!customText) &&
     (!needsChannel || !!instanceName) &&
     workLeads.length > 0;
+
 
   useEffect(() => {
     if (open) {
