@@ -1,80 +1,47 @@
-## Objetivo
+## O que muda na lista de captação
 
-Transformar o botão **"Encerrar captação"** em uma decisão real de **Ganho / Perdido**, com atribuição correta de **origem** (campanha ou parceiro) e cálculo automático de **comissão** conforme regras financeiras. Hoje ele sempre grava `status='fechado'` — não distingue ganho de perdido e não gera comissão de acordo com a origem real.
+Dois ajustes cirúrgicos na coluna esquerda de **Captação**, inspirados em Intercom Inbox / HubSpot Conversations / Front:
 
----
+### 1. Arrastar livremente a largura da lista
 
-## Fluxo novo do botão
+Hoje o `DragResizer` limita entre **180px e 360px**. Vamos ampliar para acompanhar padrão do mercado:
 
-Ao clicar em **"Encerrar captação"** abre um modal com 2 caminhos:
+- **Mínimo:** 220px (não some do útil)
+- **Máximo:** 560px (dá pra ver mensagem/telefone inteiros)
+- **Duplo clique no divisor:** reseta pro default (260px)
+- **Cursor `col-resize`** já existe, mantemos
+- Handle fica visualmente mais evidente no hover (linha de 2px vira 4px em accent color)
 
-### 1) 🏆 Ganho (virou cliente)
-- **Produto** (default: primeiro ativo — Energia)
-- **kWh / valor da conta** (pré-preenchido com `media_consumo` / `electricity_bill_value`)
-- **Origem do fechamento** (rádio):
-  - `Campanha Meta` → dropdown com `facebook_campaigns` ativas + a que o lead já veio (`source_campaign_id` selecionada por padrão se existir)
-  - `Parceiro / indicação` → dropdown com `referral_partners` ativos (selecionado por padrão o `referral_partner_id` atual, se houver)
-  - `Orgânico / próprio` → sem origem externa
-- **Observações** (opcional)
-- Preview: "Comissão estimada: R$ X,XX (regra Y aplicada)"
+Estado persiste em `localStorage` como já é hoje (`captacao-list`).
 
-### 2) ❌ Perdido
-- **Motivo** (select): sem interesse · não qualificado · número inválido · sumiu · concorrente · outro
-- **Observação livre**
-- Sem produto, sem comissão
+### 2. Cabeçalhos "Em atendimento" / "Em espera" fixos no topo
 
-Em ambos os casos: chat WhatsApp continua vivo; lead sai da lista de captação.
+Hoje cada header é `sticky top-0` isolado — quando você rola, o de "Em espera" **empurra** o de "Em atendimento" pra cima em vez de empilhar. Padrão do Intercom/Front é:
 
----
+- **"Em atendimento"** gruda no topo enquanto seus leads passam
+- Quando chega o fim do grupo, **"Em espera"** desliza por cima e assume o topo
+- Contadores (`16` / `1`) sempre visíveis à direita
+- Cores tonais mantidas (verde/âmbar), mas com **fundo sólido** (`bg-card`) em vez de `bg-muted/30` translúcido — evita o texto atrás vazar durante scroll
+- Adicionar sombra sutil (`shadow-sm`) só quando grudado no topo (via `[&.is-stuck]` ou `top-0` + backdrop)
+- Micro-badge de status: pontinho verde pulsando em "Em atendimento" quando há leads ativos (padrão Intercom)
 
-## Backend — `close-capture-and-register-sale` (revisão)
+### 3. Refinos visuais que acompanham (pequenos)
 
-Aceita novos campos:
-```ts
-{
-  customerId, consultantId,
-  outcome: 'won' | 'lost',
-  // won:
-  productId?, amountCents?, pointsKwh?,
-  attribution?: { kind: 'campaign'|'partner'|'organic', id?: string },
-  // lost:
-  lostReason?: string,
-  notes?
-}
-```
+- Header da coluna ("Conversas · 17") também ganha `bg-card` sólido para não misturar com a área rolável
+- Contadores dos grupos ficam com tipografia tabular mais firme (`font-semibold tabular-nums`)
+- Divisor entre grupos vira uma linha de 1px mais discreta
 
-Comportamento:
-- **won** → mantém lógica atual (upsert `sales` com `status='fechado'`), + grava `sales.source_kind` e `sales.source_id` (campanha ou parceiro); atualiza `customers.source_campaign_id` / `referral_partner_id` se o usuário mudou a origem; CRM deal → `stage='ganho'`.
-- **lost** → `sales` com `status='perdido'` + `lost_reason`; CRM deal → `stage='perdido'`; **não** gera comissão.
-- **Comissão (won)**: consulta `consultant_commission_settings` do consultor + regra da origem:
-  - Se `attribution.kind='partner'` → aplica `referral_partners.commission_pct` (split parceiro/consultor conforme o registro).
-  - Se `campaign` ou `organic` → percentual cheio do consultor.
-  - Cria linha em `wallet_transactions` (tipo `commission_pending`) vinculada ao `sale_id` — igual às vendas normais já geram hoje.
-- Idempotência: se já fechado, retorna estado atual.
+## Arquivos afetados
 
-Migração:
-- Adicionar colunas em `sales`: `outcome text ('won'|'lost')`, `source_kind text`, `source_id uuid`, `lost_reason text` (se ainda não existirem — vou checar antes).
-- Backfill: linhas antigas com `status='fechado'` → `outcome='won'`; nenhum backfill de comissão retroativa.
+- `src/components/captacao/CaptacaoPanel.tsx` — só ajustar `minPx`/`maxPx`/`defaultPx` do `<DragResizer>` (linha 275) e `--cap-list-w` inicial
+- `src/components/captacao/CaptureLeadList.tsx` — cabeçalho `<section>` do `LeadSection` (linha ~600): trocar `bg-muted/30` por `bg-card`, garantir empilhamento correto do sticky, adicionar dot animado no "Em atendimento"
+- (Se necessário) `src/components/common/DragResizer.tsx` — suporte a duplo-clique = reset
 
----
+## O que **não** muda
 
-## Frontend
+- Lógica de agrupamento (`welcome_sent_at != null` → atendimento)
+- Filtros de período, seleção em lote, botão "Novo cliente", "Abrir atendimento"
+- Painel direito (details) e seu colapso `»` continuam iguais
+- Nenhuma mudança em backend, edge functions ou dados
 
-- Novo componente `CloseCaptureDialog.tsx` (substitui o `AlertDialog` simples atual em `CloseCaptureButton.tsx` e no header do `ChatView.tsx`).
-- Reaproveita o mesmo componente nos dois pontos (ficha da captação + header do chat).
-- Mostra selo diferente após encerrar: verde "Ganho em DD/MM" ou cinza "Perdido em DD/MM · motivo".
-- Lista de captação: leads perdidos também somem da fila (mesma coluna `capture_closed_at`), mas ganham filtro futuro "ver encerrados" (fora deste escopo).
-
----
-
-## Fora do escopo
-
-- Tela de listagem "encerrados" separada em Captação.
-- Edição pós-encerramento (usuário refaz via CRM/Vendas se precisar corrigir).
-- Split multi-parceiro (usa a regra única atual de `referral_partners`).
-
----
-
-## Detalhes técnicos
-
-Antes de gerar a migração, vou confirmar via `supabase--read_query` quais colunas já existem em `sales` (o schema mostra 14 colunas, preciso ver quais) e a estrutura real de `consultant_commission_settings` + `referral_partners.commission_pct` pra usar os nomes exatos. Se alguma coluna já existir com nome diferente (ex.: `status='perdido'` já cobrindo), reuso ao invés de criar duplicata.
+Confirma que é isso? Se sim, aprovo e implemento.
