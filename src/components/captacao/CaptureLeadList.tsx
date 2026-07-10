@@ -117,7 +117,7 @@ export function CaptureLeadList({
     setLoading(true);
     try {
       const cols =
-        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, " +
+        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, igreen_code, assinatura_cliente, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
       const { data, error } = await supabase
         .from("customers")
@@ -125,6 +125,8 @@ export function CaptureLeadList({
         .eq("consultant_id", consultantId)
         .eq("capture_mode", "manual")
         .is("capture_closed_at", null)
+        .is("igreen_code", null)
+        .is("assinatura_cliente", null)
         .order("created_at", { ascending: false })
         .limit(400);
       if (seq !== loadSeqRef.current) return;
@@ -134,6 +136,18 @@ export function CaptureLeadList({
         setLoading(false);
         return;
       }
+      // Filtra também quem já tem venda com outcome (won/lost) — captação encerrada por outro caminho.
+      const rawIds = (data || []).map((c: any) => c.id);
+      let closedElsewhere = new Set<string>();
+      if (rawIds.length) {
+        const { data: closedSales } = await supabase
+          .from("sales")
+          .select("customer_id")
+          .in("customer_id", rawIds)
+          .not("outcome", "is", null);
+        closedElsewhere = new Set((closedSales || []).map((s: any) => s.customer_id));
+      }
+      const filtered = (data || []).filter((c: any) => !closedElsewhere.has(c.id));
       const rows: CaptureBatchLead[] = (data || []).map((c: any) => ({
         id: c.id,
         name: c.name,
