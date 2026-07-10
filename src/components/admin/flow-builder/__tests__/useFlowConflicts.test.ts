@@ -33,13 +33,16 @@ describe("detectConflicts — só conflito real", () => {
   });
 
   it("mesma palavra 'como funciona' em passos diferentes NÃO é conflito", () => {
+    // Títulos distintos — senão duplicateTitle mascara o caso (default do helper é "T").
     const r = detectConflicts([
       step({
         id: "1",
+        title: "Passo A",
         transitions: [{ trigger_phrases: ["como funciona"], goto_step_id: "a" }] as any,
       }),
       step({
         id: "2",
+        title: "Passo B",
         transitions: [{ trigger_phrases: ["como funciona"], goto_step_id: "b" }] as any,
       }),
     ]);

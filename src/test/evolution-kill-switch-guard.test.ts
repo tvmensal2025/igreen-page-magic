@@ -156,16 +156,22 @@ describe("REQ 1 — Paridade de semântica com whapi-webhook (Critério 1.4)", (
     expect(whapiSrc).toContain('msg: "bot_globally_disabled"');
   });
 
-  it("whapi: guarda precede req.json(); evolution: guarda precede isConsultantAIDisabled", () => {
+  it("whapi: guarda precede parse do body; evolution: guarda precede isConsultantAIDisabled", () => {
     const evoGuard = evoSrc.indexOf("isBotGloballyEnabled(supabase as any)");
     const evoConsultantGuard = evoSrc.indexOf("isConsultantAIDisabled(supabase as any");
     const whapiGuard = whapiSrc.indexOf("isBotGloballyEnabled(supabase as any)");
-    const whapiReqJson = whapiSrc.indexOf("await req.json()");
+    // Whapi passou de req.json() para req.text() + JSON.parse (body vazio / parse seguro).
+    const whapiBodyParse = (() => {
+      const textIdx = whapiSrc.indexOf("await req.text()");
+      if (textIdx >= 0) return textIdx;
+      return whapiSrc.indexOf("await req.json()");
+    })();
 
     expect(evoGuard).toBeGreaterThanOrEqual(0);
     expect(whapiGuard).toBeGreaterThanOrEqual(0);
+    expect(whapiBodyParse).toBeGreaterThanOrEqual(0);
     // Whapi: guarda antes do parsing do corpo.
-    expect(whapiGuard).toBeLessThan(whapiReqJson);
+    expect(whapiGuard).toBeLessThan(whapiBodyParse);
     // Evolution: ACK/conexão parseiam o body cedo; kill switch silencia só o fluxo conversacional.
     expect(evoGuard).toBeLessThan(evoConsultantGuard);
   });
