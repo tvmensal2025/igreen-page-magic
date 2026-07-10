@@ -157,26 +157,87 @@ export function formatRodizioFallbackMessage(campaignName: string, nowLabel: str
   ].join("\n");
 }
 
+export interface CampaignApprovedInput {
+  campaignName: string;
+  trackingProtocol?: string | null;
+  fbCampaignId?: string | null;
+  dailyBudgetCents?: number | null;
+  durationDays?: number | null;
+  cities?: string[];               // até 5+ nomes
+  estimatedReach?: { lower: number; upper: number } | null;
+  partnerName?: string | null;
+  partnerIgreenId?: string | null;
+  position?: number | null;        // 1-based
+  totalPositions?: number | null;
+  rosterLines?: string[];          // ["1º Fulano · ID 123 ← você", ...]
+  intervalMinutes: number;
+}
+
 /**
  * Mensagem única de "campanha aprovada pela Meta". Enviada 1x por pool para
- * cada parceiro elegível assim que a campanha entra em ACTIVE. Depois disso
- * o parceiro recebe apenas o card de métricas na cadência configurada.
+ * cada parceiro elegível assim que a campanha entra em ACTIVE. Traz o pacote
+ * completo (protocolo, orçamento, cidades, alcance, rodízio) — campos sem
+ * dado confiável são simplesmente omitidos.
  */
-export function formatCampaignApprovedMessage(campaignName: string, intervalMinutes: number): string {
-  const name = shortCampaignName(campaignName);
-  return [
-    `✅ *Campanha aprovada pela Meta!*`,
-    ``,
-    `🎯 *${name}*`,
-    ``,
-    `🚀 Anúncio no ar.`,
-    `📊 Você recebe atualização a cada *${intervalLabel(intervalMinutes)}*`,
-    `(gasto, cliques, conversas e seus leads).`,
-    ``,
-    `🌙 Sem mensagens de madrugada (horário configurável).`,
-    ``,
-    `💪 Bons leads!`,
-  ].join("\n");
+export function formatCampaignApprovedMessage(input: CampaignApprovedInput): string {
+  const name = shortCampaignName(input.campaignName);
+  const hi = input.partnerName ? `Olá, ${String(input.partnerName).split(" ")[0]}! 👋\n\n` : "";
+
+  const lines: string[] = [];
+  lines.push(`${hi}✅ *Campanha aprovada pela Meta!*`);
+  lines.push(`🚀 Seu anúncio já está no ar.`);
+  lines.push(``);
+
+  // Campanha
+  lines.push(`📢 *Campanha*`);
+  lines.push(`🎯 *${name}*`);
+  if (input.fbCampaignId) lines.push(`🆔 ID Meta: \`${input.fbCampaignId}\``);
+  if (input.trackingProtocol) lines.push(`🔖 Protocolo: *${input.trackingProtocol}*`);
+  if (input.durationDays && input.durationDays > 0) {
+    lines.push(`📅 Duração: *${input.durationDays} ${input.durationDays === 1 ? "dia" : "dias"}*`);
+  }
+  if (input.dailyBudgetCents != null && input.dailyBudgetCents > 0) {
+    lines.push(`💵 Orçamento/dia: *R$ ${brl(input.dailyBudgetCents)}*`);
+    if (input.durationDays && input.durationDays > 0) {
+      lines.push(`💼 Investimento total previsto: *R$ ${brl(input.dailyBudgetCents * input.durationDays)}*`);
+    }
+  }
+  if (input.cities && input.cities.length > 0) {
+    const shown = input.cities.slice(0, 5).join(", ");
+    const extra = input.cities.length > 5 ? ` +${input.cities.length - 5}` : "";
+    lines.push(`📍 Cidades: ${shown}${extra}`);
+  }
+  if (input.estimatedReach && input.estimatedReach.upper > 0) {
+    lines.push(`👀 Alcance estimado: *${n(input.estimatedReach.lower)}–${n(input.estimatedReach.upper)} pessoas*`);
+  }
+  lines.push(``);
+
+  // Cadastro do parceiro
+  if (input.partnerName || input.partnerIgreenId) {
+    lines.push(`🪪 *Seu cadastro*`);
+    if (input.partnerName) lines.push(`   Nome: *${input.partnerName}*`);
+    if (input.partnerIgreenId) lines.push(`   ID iGreen: *${input.partnerIgreenId}*`);
+    lines.push(``);
+  }
+
+  // Rodízio
+  if (input.position && input.totalPositions && input.totalPositions > 1) {
+    lines.push(`👥 *Rodízio*`);
+    lines.push(`🏅 Sua posição: *${input.position}º* de *${input.totalPositions}*`);
+    if (input.rosterLines && input.rosterLines.length > 0) {
+      lines.push(`📋 Integrantes:`);
+      lines.push(...input.rosterLines);
+    }
+    lines.push(``);
+  }
+
+  lines.push(`📊 Atualização de métricas a cada *${intervalLabel(input.intervalMinutes)}*`);
+  lines.push(`   (gasto, cliques, conversas e seus leads)`);
+  lines.push(`🌙 Sem mensagens de madrugada.`);
+  lines.push(``);
+  lines.push(`💪 Bons leads!`);
+  lines.push(`✨ _iGreen Ads_`);
+  return lines.join("\n");
 }
 
 export type CampaignPausedReason =
