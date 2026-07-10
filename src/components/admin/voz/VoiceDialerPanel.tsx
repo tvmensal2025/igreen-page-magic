@@ -269,6 +269,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
         tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
         caller_id: callerId.trim() || null,
         max_attempts: maxAttempts,
+        sms_on_no_answer_text: smsFallback.trim() || null,
         phones,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null,
         config: {
