@@ -1,34 +1,25 @@
-// voice-dialer-webhook
-// TwiML + StatusCallback + AsyncAMD.
-// Auth OBRIGATÓRIA: ?auth=TWILIO_WEBHOOK_AUTH
-// Assinatura Twilio: hard-fail quando TWILIO_AUTH_TOKEN está setado.
-// Isolado do WhatsApp/bot.
+// voice-dialer-webhook (Velip)
+// Callback global cadastrado no painel Velip → Integrações → URLs para Retorno.
+// Auth OBRIGATÓRIA via ?auth=VELIP_WEBHOOK_AUTH.
+// Aceita POST JSON e POST x-www-form-urlencoded.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  hangupCall,
-  isMachineAnsweredBy,
-  twimlHangup,
-  twimlPlay,
-  validateTwilioSignature,
-  webhookAuthConfigured,
-} from "../_shared/voice-dialer/twilio.ts";
+  getVelipWebhookAuth,
+  interpretStatus,
+  isRetryable,
+  isVelipCallerIp,
+  outcomeToTargetStatus,
+  velipWebhookAuthConfigured,
+} from "../_shared/voice-dialer/velip.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-twilio-signature",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-function xml(body: string, status = 200) {
-  return new Response(body, {
-    status,
-    headers: { ...cors, "Content-Type": "text/xml; charset=utf-8" },
-  });
-}
 
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
@@ -37,29 +28,39 @@ function json(status: number, body: unknown) {
   });
 }
 
-async function parseForm(req: Request): Promise<Record<string, string>> {
+async function parsePayload(req: Request): Promise<Record<string, unknown>> {
   const ct = req.headers.get("content-type") || "";
+  if (ct.includes("application/json")) {
+    try {
+      return (await req.json()) ?? {};
+    } catch {
+      return {};
+    }
+  }
   if (ct.includes("application/x-www-form-urlencoded") || ct.includes("multipart/form-data")) {
     const fd = await req.formData();
-    const out: Record<string, string> = {};
-    for (const [k, v] of fd.entries()) {
-      if (typeof v === "string") out[k] = v;
-    }
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of fd.entries()) out[k] = typeof v === "string" ? v : String(v);
     return out;
   }
+  // fallback: tenta ambos
+  const text = await req.text().catch(() => "");
+  if (!text) return {};
   try {
-    const j = await req.json();
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(j ?? {})) {
-      if (v != null) out[k] = String(v);
-    }
-    return out;
+    return JSON.parse(text);
   } catch {
-    return {};
+    try {
+      const p = new URLSearchParams(text);
+      const o: Record<string, unknown> = {};
+      p.forEach((v, k) => (o[k] = v));
+      return o;
+    } catch {
+      return { _raw: text };
+    }
   }
 }
 
-const TERMINAL = new Set(["completed", "busy", "no_answer", "failed", "machine"]);
+const TERMINAL = new Set(["completed", "no_answer", "failed", "machine"]);
 
 async function recountCampaign(
   admin: ReturnType<typeof createClient>,
@@ -70,21 +71,11 @@ async function recountCampaign(
     .select("status")
     .eq("campaign_id", campaignId);
 
-  let answered = 0;
-  let failed = 0;
-  let dialed = 0;
-  let pending = 0;
+  let answered = 0, failed = 0, dialed = 0, pending = 0;
   for (const t of targets ?? []) {
     const s = String(t.status || "");
-    if (s === "queued") {
-      pending++;
-      continue;
-    }
-    if (s === "dialing" || s === "answered") {
-      dialed++;
-      pending++;
-      continue;
-    }
+    if (s === "queued") { pending++; continue; }
+    if (s === "dialing" || s === "answered") { dialed++; pending++; continue; }
     dialed++;
     if (s === "completed") answered++;
     else if (TERMINAL.has(s)) failed++;
@@ -98,206 +89,175 @@ async function recountCampaign(
   await admin.from("voice_campaigns").update(patch).eq("id", campaignId);
 }
 
+interface MatchResult {
+  id: string;
+  campaign_id: string | null;
+  attempts: number;
+  max_attempts: number;
+}
+
+async function matchTarget(
+  admin: ReturnType<typeof createClient>,
+  ctid: string,
+  velipCallId: string,
+  dest: string,
+): Promise<MatchResult | null> {
+  // 1) ctid = target.id.slice(0,15)  → prefixo
+  if (ctid) {
+    const { data } = await admin
+      .from("voice_campaign_targets")
+      .select("id, campaign_id, attempts, max_attempts")
+      .ilike("id", `${ctid}%`)
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as MatchResult;
+  }
+  // 2) velip_call_id
+  if (velipCallId) {
+    const { data } = await admin
+      .from("voice_campaign_targets")
+      .select("id, campaign_id, attempts, max_attempts")
+      .eq("velip_call_id", velipCallId)
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as MatchResult;
+  }
+  // 3) dest + janela de 60 min (mais tolerante que 60s)
+  if (dest) {
+    const cutoff = new Date(Date.now() - 60 * 60_000).toISOString();
+    const { data } = await admin
+      .from("voice_campaign_targets")
+      .select("id, campaign_id, attempts, max_attempts, dialed_at")
+      .eq("phone", dest)
+      .in("status", ["dialing", "answered"])
+      .gte("dialed_at", cutoff)
+      .order("dialed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as MatchResult;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  if (!webhookAuthConfigured()) {
+  if (!velipWebhookAuthConfigured()) {
     return json(503, {
-      error: "twilio_webhook_auth_missing",
-      message: "Configure TWILIO_WEBHOOK_AUTH nos secrets antes de receber callbacks.",
+      error: "velip_webhook_auth_missing",
+      message: "Configure VELIP_WEBHOOK_AUTH nos secrets antes de receber callbacks.",
     });
   }
 
   const url = new URL(req.url);
-  const action = url.searchParams.get("action") || "status";
-  const targetId = url.searchParams.get("target_id");
-  const campaignId = url.searchParams.get("campaign_id");
   const authParam = url.searchParams.get("auth");
-  const expectedAuth = Deno.env.get("TWILIO_WEBHOOK_AUTH")!.trim();
-
-  if (authParam !== expectedAuth) {
+  if (authParam !== getVelipWebhookAuth()) {
     return json(401, { error: "unauthorized" });
   }
 
+  // Soft-warn IP não Velip (não bloqueia — proxies podem esconder)
+  const xfwd = req.headers.get("x-forwarded-for");
+  const callerIp = xfwd?.split(",")[0]?.trim() ?? null;
+  const trusted = isVelipCallerIp(callerIp);
+
+  if (req.method === "GET") {
+    // Endpoint de teste do painel Velip
+    return json(200, { ok: true, service: "voice-dialer-webhook", driver: "velip", ip_trusted: trusted });
+  }
+
+  const params = await parsePayload(req);
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
-  const params = req.method === "POST" ? await parseForm(req) : {};
 
-  // Assinatura Twilio: hard-fail se token configurado
-  const authToken = Deno.env.get("TWILIO_AUTH_TOKEN")?.trim();
-  const sig = req.headers.get("X-Twilio-Signature");
-  if (authToken) {
-    if (!sig) return json(401, { error: "missing_twilio_signature" });
-    const publicUrl = `${SUPABASE_URL}/functions/v1/voice-dialer-webhook${url.search}`;
-    const ok = await validateTwilioSignature(sig, publicUrl, params);
-    if (!ok) {
-      // Tenta também a URL do request (proxies às vezes divergem)
-      const ok2 = await validateTwilioSignature(sig, req.url, params);
-      if (!ok2) return json(401, { error: "invalid_twilio_signature" });
-    }
+  const cd_id = String(params.cd_id ?? params.call_id ?? "");
+  const ctid = String(params.ctid ?? "");
+  const dest = String(params.dest ?? params.destino ?? params.to ?? "");
+  const called_status = String(params.cd_called_status ?? params.called_status ?? "");
+  const time_sec = Number(params.cd_time_sec ?? params.time_sec ?? NaN);
+  const cost = Number(params.cd_value ?? params.cd_price ?? params.cost ?? NaN);
+  const saldo = Number(params.saldo ?? params.balance ?? NaN);
+  const dtmf: Record<string, string> = {};
+  for (let i = 1; i <= 12; i++) {
+    const k = `cd_resp${i}`;
+    if (params[k] != null && String(params[k]) !== "") dtmf[`resp${i}`] = String(params[k]);
   }
 
-  // ─── AsyncAMD: máquina → hangup ──────────────────────────────────────────
-  if (action === "amd") {
-    const answeredBy = (params.AnsweredBy || "").toLowerCase();
-    const callSid = params.CallSid || "";
-    if (isMachineAnsweredBy(answeredBy)) {
-      if (callSid) await hangupCall(callSid);
-      if (targetId) {
-        await admin
-          .from("voice_campaign_targets")
-          .update({
-            status: "machine",
-            answered_by: answeredBy,
-            finished_at: new Date().toISOString(),
-            twilio_sid: callSid || null,
-          })
-          .eq("id", targetId)
-          .in("status", ["queued", "dialing", "answered"]);
-        if (campaignId) await recountCampaign(admin, campaignId);
-      }
-    }
-    return json(200, { ok: true });
+  if (!cd_id && !ctid && !dest) {
+    return json(400, { error: "missing_identifiers" });
   }
 
-  // ─── TwiML ───────────────────────────────────────────────────────────────
-  if (action === "twiml") {
-    if (!targetId || !campaignId) return xml(twimlHangup());
-
-    const answeredBy = (params.AnsweredBy || params.answered_by || "").toLowerCase();
-    if (isMachineAnsweredBy(answeredBy)) {
-      await admin
-        .from("voice_campaign_targets")
-        .update({
-          status: "machine",
-          answered_by: answeredBy,
-          finished_at: new Date().toISOString(),
-        })
-        .eq("id", targetId);
-      await recountCampaign(admin, campaignId);
-      return xml(twimlHangup());
-    }
-
-    // Se já marcado machine por AsyncAMD, não toca áudio
-    const { data: tgt } = await admin
-      .from("voice_campaign_targets")
-      .select("status")
-      .eq("id", targetId)
-      .maybeSingle();
-    if (tgt?.status === "machine") return xml(twimlHangup());
-
-    const { data: camp } = await admin
-      .from("voice_campaigns")
-      .select("audio_url")
-      .eq("id", campaignId)
-      .maybeSingle();
-
-    const audioUrl = camp?.audio_url;
-    if (!audioUrl) return xml(twimlHangup());
-
-    await admin
-      .from("voice_campaign_targets")
-      .update({
-        status: "answered",
-        answered_by: answeredBy || null,
-      })
-      .eq("id", targetId)
-      .in("status", ["queued", "dialing", "answered"]);
-
-    return xml(twimlPlay(audioUrl));
+  const target = await matchTarget(admin, ctid, cd_id, dest);
+  if (!target) {
+    // Não achamos target — grava log solto para auditoria e retorna 200 pra Velip não retentar
+    await admin.from("voice_call_logs").insert({
+      to_phone: dest || "",
+      status: called_status || "unknown",
+      velip_call_id: cd_id || null,
+      velip_status: called_status || null,
+      velip_time_sec: Number.isFinite(time_sec) ? time_sec : null,
+      velip_cost: Number.isFinite(cost) ? cost : null,
+      velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
+      velip_dtmf: Object.keys(dtmf).length ? dtmf : null,
+      velip_raw: params,
+      raw: params,
+      error: "unmatched_callback",
+    });
+    return json(200, { ok: true, matched: false });
   }
 
-  // ─── Status callback ─────────────────────────────────────────────────────
-  if (action === "status") {
-    if (!targetId) return json(400, { error: "missing_target_id" });
+  const outcome = interpretStatus(called_status);
+  const newStatus = outcomeToTargetStatus(outcome);
+  const patch: Record<string, unknown> = {
+    velip_call_id: cd_id || null,
+    velip_status: called_status || null,
+    velip_cost: Number.isFinite(cost) ? cost : null,
+    velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
+  };
 
-    const callStatus = (params.CallStatus || "").toLowerCase();
-    const answeredBy = (params.AnsweredBy || "").toLowerCase() || null;
-    const duration = params.CallDuration ? parseInt(params.CallDuration, 10) : null;
-    const sid = params.CallSid || null;
-    const price = params.Price || null;
+  const attempts = (target.attempts ?? 0) + 1;
+  const maxAttempts = target.max_attempts ?? 1;
+  const shouldRetry = isRetryable(outcome) && attempts < maxAttempts;
 
-    // Estado atual do target (idempotência)
-    const { data: current } = await admin
-      .from("voice_campaign_targets")
-      .select("status, campaign_id")
-      .eq("id", targetId)
-      .maybeSingle();
+  if (shouldRetry) {
+    patch.status = "queued";
+    patch.attempts = attempts;
+    patch.next_attempt_at = new Date(Date.now() + 15 * 60_000).toISOString();
+  } else if (newStatus) {
+    patch.status = newStatus;
+    patch.attempts = attempts;
+    patch.finished_at = new Date().toISOString();
+  }
 
-    const alreadyTerminal = current?.status && TERMINAL.has(current.status);
+  await admin.from("voice_campaign_targets").update(patch).eq("id", target.id);
 
-    let targetStatus: string | null = null;
-    if (callStatus === "completed") {
-      targetStatus = isMachineAnsweredBy(answeredBy) ? "machine" : "completed";
-    } else if (callStatus === "busy") {
-      targetStatus = "busy";
-    } else if (callStatus === "no-answer" || callStatus === "canceled") {
-      targetStatus = "no_answer";
-    } else if (callStatus === "failed") {
-      targetStatus = "failed";
-    } else if (callStatus === "answered" || callStatus === "in-progress") {
-      targetStatus = isMachineAnsweredBy(answeredBy) ? "machine" : "answered";
-    }
-
-    if (targetStatus && !alreadyTerminal) {
-      const patch: Record<string, unknown> = {
-        status: targetStatus,
-        answered_by: answeredBy,
-      };
-      if (sid) patch.twilio_sid = sid;
-      if (TERMINAL.has(targetStatus)) {
-        patch.finished_at = new Date().toISOString();
-      }
-      await admin.from("voice_campaign_targets").update(patch).eq("id", targetId);
-    } else if (sid && current) {
-      await admin
-        .from("voice_campaign_targets")
-        .update({ twilio_sid: sid, answered_by: answeredBy })
-        .eq("id", targetId);
-    }
-
-    // Log: 1 por SID+status terminal (evita spam de initiated/ringing)
-    const campId = campaignId || current?.campaign_id;
-    if (campId && targetStatus && TERMINAL.has(targetStatus)) {
-      const { data: camp } = await admin
+  // Log detalhado
+  const { data: camp } = target.campaign_id
+    ? await admin
         .from("voice_campaigns")
         .select("consultant_id")
-        .eq("id", campId)
-        .maybeSingle();
+        .eq("id", target.campaign_id)
+        .maybeSingle()
+    : { data: null };
 
-      if (camp) {
-        // Evita duplicar log do mesmo SID+status
-        let shouldInsert = true;
-        if (sid) {
-          const { count } = await admin
-            .from("voice_call_logs")
-            .select("id", { count: "exact", head: true })
-            .eq("twilio_sid", sid)
-            .eq("status", callStatus || targetStatus);
-          if ((count ?? 0) > 0) shouldInsert = false;
-        }
+  await admin.from("voice_call_logs").insert({
+    campaign_id: target.campaign_id,
+    target_id: target.id,
+    consultant_id: (camp as { consultant_id?: string } | null)?.consultant_id ?? null,
+    velip_call_id: cd_id || null,
+    velip_status: called_status || null,
+    velip_time_sec: Number.isFinite(time_sec) ? time_sec : null,
+    velip_cost: Number.isFinite(cost) ? cost : null,
+    velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
+    velip_dtmf: Object.keys(dtmf).length ? dtmf : null,
+    velip_raw: params,
+    raw: params,
+    to_phone: dest || "",
+    status: newStatus ?? "unknown",
+    duration_sec: Number.isFinite(time_sec) ? time_sec : null,
+  });
 
-        if (shouldInsert) {
-          await admin.from("voice_call_logs").insert({
-            campaign_id: campId,
-            target_id: targetId,
-            consultant_id: camp.consultant_id,
-            twilio_sid: sid,
-            to_phone: params.To || "",
-            from_phone: params.From || null,
-            status: callStatus || targetStatus,
-            answered_by: answeredBy,
-            duration_sec: Number.isFinite(duration as number) ? duration : null,
-            price,
-            raw: params,
-          });
-        }
-
-        await recountCampaign(admin, campId);
-      }
-    }
-
-    return json(200, { ok: true });
+  if (target.campaign_id && (newStatus || shouldRetry)) {
+    await recountCampaign(admin, target.campaign_id);
   }
 
-  return json(400, { error: "unknown_action" });
+  return json(200, { ok: true, matched: true, outcome, retry: shouldRetry });
 });

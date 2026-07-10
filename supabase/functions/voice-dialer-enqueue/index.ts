@@ -1,4 +1,4 @@
-// voice-dialer-enqueue
+// voice-dialer-enqueue (Velip)
 // Cria campanha PSTN + targets, ou dispara teste de 1 número.
 // Autenticado por JWT do consultor. Isolado do WhatsApp/bot.
 
@@ -6,12 +6,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import {
-  createOutboundCall,
-  toE164BR,
-  twilioConfigured,
-  webhookAuthConfigured,
-  webhookAuthQuery,
-} from "../_shared/voice-dialer/twilio.ts";
+  createDestinationBase,
+  createCampaign as velipCreateCampaign,
+  getVelipWebhookAuth,
+  playAudioFile,
+  toCtid,
+  toVelipBRDest,
+  uploadAudioFile,
+  velipConfigured,
+  velipWebhookAuthConfigured,
+} from "../_shared/voice-dialer/velip.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -29,19 +33,51 @@ interface Body {
   audio_url?: string | null;
   scheduled_at?: string | null;
   config?: Record<string, unknown>;
-  /** Lista manual de phones */
   phones?: TargetIn[];
-  /** Filtrar customers por conversation_step */
   conversation_step?: string | null;
-  /** Lead frio: sem atividade há N horas (default 24) */
   cold_hours?: number | null;
-  /** Limite máximo de targets */
   max_targets?: number;
-  /** Só para test_call */
   test_phone?: string | null;
+  /** 'single' (default, cron dispara 1-a-1) ou 'batch' (usa CreateCampaign Velip). */
+  velip_mode?: "single" | "batch";
 }
 
-const MAX_TARGETS = 2000;
+const MAX_TARGETS = 5000;
+
+/** Garante que o clipe tem velip_audio_id — sobe on-demand se preciso. */
+async function ensureVelipAudioForClip(
+  admin: ReturnType<typeof createClient>,
+  clipId: string,
+  consultantId: string,
+): Promise<{ audio_id: string; audio_url: string } | { error: string }> {
+  const { data: clip } = await admin
+    .from("voice_audio_clips")
+    .select("id, audio_url, name, velip_audio_id")
+    .eq("id", clipId)
+    .eq("consultant_id", consultantId)
+    .maybeSingle();
+  if (!clip?.audio_url) return { error: "clip_not_found" };
+  if (clip.velip_audio_id) {
+    return { audio_id: clip.velip_audio_id, audio_url: clip.audio_url };
+  }
+  // Baixa e sobe p/ Velip
+  try {
+    const r = await fetch(clip.audio_url, { signal: AbortSignal.timeout(30_000) });
+    if (!r.ok) return { error: `download_failed_${r.status}` };
+    const bytes = new Uint8Array(await r.arrayBuffer());
+    const up = await uploadAudioFile(bytes, clip.name || `clip_${clipId}`);
+    if (!up.ok || !up.audio_id) {
+      return { error: up.error || "velip_upload_failed" };
+    }
+    await admin
+      .from("voice_audio_clips")
+      .update({ velip_audio_id: up.audio_id, velip_uploaded_at: new Date().toISOString() })
+      .eq("id", clipId);
+    return { audio_id: up.audio_id, audio_url: clip.audio_url };
+  } catch (e) {
+    return { error: (e as Error).message || "upload_error" };
+  }
+}
 
 Deno.serve(async (req) => {
   const cors = buildCors(req);
@@ -68,63 +104,53 @@ Deno.serve(async (req) => {
     return json(400, { error: "invalid_json" });
   }
 
+  if (!velipConfigured()) {
+    return json(422, {
+      error: "velip_not_configured",
+      message: "Configure VELIP_API_TOKEN nos secrets antes de discar.",
+    });
+  }
+  if (!velipWebhookAuthConfigured()) {
+    return json(422, {
+      error: "velip_webhook_auth_missing",
+      message: "Configure VELIP_WEBHOOK_AUTH (token aleatório) e cadastre no painel Velip → Integrações → URLs para Retorno.",
+    });
+  }
+
   const action = body.action ?? "create_campaign";
 
   // ─── Teste: 1 ligação imediata ───────────────────────────────────────────
   if (action === "test_call") {
-    if (!twilioConfigured()) {
-      return json(422, {
-        error: "twilio_not_configured",
-        message:
-          "Configure TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_FROM_NUMBER nos secrets da Edge Function.",
-      });
-    }
-    if (!webhookAuthConfigured()) {
-      return json(422, {
-        error: "twilio_webhook_auth_missing",
-        message:
-          "Configure TWILIO_WEBHOOK_AUTH (token aleatório) nos secrets — obrigatório para callbacks seguros.",
-      });
-    }
-    const e164 = toE164BR(body.test_phone);
-    if (!e164) return json(400, { error: "invalid_test_phone" });
+    const dest = toVelipBRDest(body.test_phone);
+    if (!dest) return json(400, { error: "invalid_test_phone" });
+    if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
 
-    let audioUrl = (body.audio_url ?? "").trim();
-    if (!audioUrl && body.audio_clip_id) {
-      const { data: clip } = await admin
-        .from("voice_audio_clips")
-        .select("audio_url")
-        .eq("id", body.audio_clip_id)
-        .eq("consultant_id", consultantId)
-        .maybeSingle();
-      audioUrl = clip?.audio_url ?? "";
-    }
-    if (!audioUrl) return json(400, { error: "missing_audio_url" });
+    const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
+    if ("error" in aud) return json(502, { error: aud.error });
 
     const { data: campaign, error: campErr } = await admin
       .from("voice_campaigns")
       .insert({
         consultant_id: consultantId,
         name: body.campaign_name?.trim() || "Teste de ligação",
-        audio_clip_id: body.audio_clip_id ?? null,
-        audio_url: audioUrl,
+        audio_clip_id: body.audio_clip_id,
+        audio_url: aud.audio_url,
         config: { ...(body.config ?? {}), test: true, weekdaysOnly: false, windowStart: "00:00", windowEnd: "23:59" },
         status: "running",
         total: 1,
         started_at: new Date().toISOString(),
+        velip_mode: "single",
       })
       .select("id")
       .single();
 
-    if (campErr || !campaign?.id) {
-      return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
-    }
+    if (campErr || !campaign?.id) return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
 
     const { data: target, error: tgtErr } = await admin
       .from("voice_campaign_targets")
       .insert({
         campaign_id: campaign.id,
-        phone: e164,
+        phone: dest,
         name: "Teste",
         status: "queued",
       })
@@ -136,41 +162,34 @@ Deno.serve(async (req) => {
       return json(500, { error: tgtErr?.message ?? "target_insert_failed" });
     }
 
-    const baseFn = `${SUPABASE_URL}/functions/v1/voice-dialer-webhook`;
-    const authQ = webhookAuthQuery();
-    const twimlUrl =
-      `${baseFn}?action=twiml&target_id=${target.id}&campaign_id=${campaign.id}${authQ}`;
-    const statusUrl =
-      `${baseFn}?action=status&target_id=${target.id}&campaign_id=${campaign.id}${authQ}`;
-    const amdUrl =
-      `${baseFn}?action=amd&target_id=${target.id}&campaign_id=${campaign.id}${authQ}`;
-
-    const call = await createOutboundCall({
-      to: e164,
-      twimlUrl,
-      statusCallbackUrl: statusUrl,
-      amdCallbackUrl: amdUrl,
-      machineDetection: "Enable",
+    const call = await playAudioFile({
+      to: dest,
+      audioId: aud.audio_id,
+      ctid: toCtid(target.id),
       timeLimitSec: 40,
     });
 
     if (!call.ok) {
       await admin
         .from("voice_campaign_targets")
-        .update({ status: "failed", error: call.error ?? "twilio_error", finished_at: new Date().toISOString() })
+        .update({
+          status: "failed",
+          error: call.error ?? "velip_error",
+          finished_at: new Date().toISOString(),
+        })
         .eq("id", target.id);
       await admin
         .from("voice_campaigns")
         .update({ status: "finished", failed: 1, dialed: 1, finished_at: new Date().toISOString() })
         .eq("id", campaign.id);
-      return json(502, { error: "twilio_call_failed", detail: call.error });
+      return json(502, { error: "velip_call_failed", detail: call.error, raw: call.raw });
     }
 
     await admin
       .from("voice_campaign_targets")
       .update({
         status: "dialing",
-        twilio_sid: call.sid ?? null,
+        velip_call_id: call.cd_id ?? null,
         dialed_at: new Date().toISOString(),
       })
       .eq("id", target.id);
@@ -179,71 +198,41 @@ Deno.serve(async (req) => {
       campaign_id: campaign.id,
       target_id: target.id,
       consultant_id: consultantId,
-      twilio_sid: call.sid ?? null,
-      to_phone: e164,
-      from_phone: Deno.env.get("TWILIO_FROM_NUMBER") ?? null,
-      status: call.status ?? "queued",
+      velip_call_id: call.cd_id ?? null,
+      to_phone: dest,
+      status: "dialing",
       raw: call.raw ?? {},
+      velip_raw: call.raw ?? {},
     });
 
-    await admin
-      .from("voice_campaigns")
-      .update({ dialed: 1 })
-      .eq("id", campaign.id);
+    await admin.from("voice_campaigns").update({ dialed: 1 }).eq("id", campaign.id);
 
-    return json(200, {
-      ok: true,
-      campaign_id: campaign.id,
-      target_id: target.id,
-      twilio_sid: call.sid,
-    });
+    return json(200, { ok: true, campaign_id: campaign.id, target_id: target.id, velip_call_id: call.cd_id });
   }
 
   // ─── create_campaign ─────────────────────────────────────────────────────
-  if (!twilioConfigured()) {
-    return json(422, {
-      error: "twilio_not_configured",
-      message:
-        "Configure TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN e TWILIO_FROM_NUMBER nos secrets antes de criar campanhas.",
-    });
-  }
-  if (!webhookAuthConfigured()) {
-    return json(422, {
-      error: "twilio_webhook_auth_missing",
-      message: "Configure TWILIO_WEBHOOK_AUTH nos secrets antes de criar campanhas.",
-    });
-  }
 
-  let audioUrl = (body.audio_url ?? "").trim();
-  if (!audioUrl && body.audio_clip_id) {
-    const { data: clip } = await admin
-      .from("voice_audio_clips")
-      .select("audio_url")
-      .eq("id", body.audio_clip_id)
-      .eq("consultant_id", consultantId)
-      .maybeSingle();
-    audioUrl = clip?.audio_url ?? "";
-  }
-  if (!audioUrl) return json(400, { error: "missing_audio_url" });
+  if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
+
+  const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
+  if ("error" in aud) return json(502, { error: aud.error });
 
   const targets: TargetIn[] = [];
   const seen = new Set<string>();
 
   const pushPhone = (raw: string, name?: string | null, customerId?: string | null) => {
-    const e164 = toE164BR(raw);
-    if (!e164 || seen.has(e164)) return;
-    seen.add(e164);
-    targets.push({ phone: e164, name: name ?? null, customer_id: customerId ?? null });
+    const dest = toVelipBRDest(raw);
+    if (!dest || seen.has(dest)) return;
+    seen.add(dest);
+    targets.push({ phone: dest, name: name ?? null, customer_id: customerId ?? null });
   };
 
-  // 1) Lista manual
   if (Array.isArray(body.phones)) {
     for (const p of body.phones) {
       if (p?.phone) pushPhone(p.phone, p.name, p.customer_id);
     }
   }
 
-  // 2) Customers por conversation_step e/ou lead frio
   const step = (body.conversation_step ?? "").trim();
   const coldHours = body.cold_hours != null ? Number(body.cold_hours) : null;
   if (step || (coldHours != null && coldHours > 0)) {
@@ -274,17 +263,15 @@ Deno.serve(async (req) => {
       const wa = String(row.phone_whatsapp ?? "");
       const confirmed = row.phone_contact_confirmed === true;
       const phone =
-        (alt && toE164BR(alt)) ||
-        (confirmed && land && toE164BR(land)) ||
-        toE164BR(wa);
+        (alt && toVelipBRDest(alt)) ||
+        (confirmed && land && toVelipBRDest(land)) ||
+        toVelipBRDest(wa);
       if (phone) pushPhone(phone, (row.name as string) ?? null, row.id as string);
     }
   }
 
   if (targets.length === 0) return json(422, { error: "no_valid_targets" });
-  if (targets.length > MAX_TARGETS) {
-    return json(400, { error: "too_many_targets", max: MAX_TARGETS });
-  }
+  if (targets.length > MAX_TARGETS) return json(400, { error: "too_many_targets", max: MAX_TARGETS });
 
   const scheduled = body.scheduled_at ?? null;
   const defaultConfig = {
@@ -297,25 +284,28 @@ Deno.serve(async (req) => {
     ...(body.config ?? {}),
   };
 
+  const preferBatch = body.velip_mode === "batch" ||
+    (body.velip_mode !== "single" && targets.length >= 30);
+  const velipMode: "single" | "batch" = preferBatch ? "batch" : "single";
+
   const { data: campaign, error: campErr } = await admin
     .from("voice_campaigns")
     .insert({
       consultant_id: consultantId,
       name: body.campaign_name?.trim() || "Campanha de ligação",
-      audio_clip_id: body.audio_clip_id ?? null,
-      audio_url: audioUrl,
+      audio_clip_id: body.audio_clip_id,
+      audio_url: aud.audio_url,
       config: defaultConfig,
       status: scheduled ? "scheduled" : "running",
       scheduled_at: scheduled,
       started_at: scheduled ? null : new Date().toISOString(),
       total: targets.length,
+      velip_mode: velipMode,
     })
     .select("id")
     .single();
 
-  if (campErr || !campaign?.id) {
-    return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
-  }
+  if (campErr || !campaign?.id) return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
 
   const rows = targets.map((t) => ({
     campaign_id: campaign.id,
@@ -325,7 +315,6 @@ Deno.serve(async (req) => {
     status: "queued",
   }));
 
-  // insert em chunks
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const { error: tgtErr } = await admin
@@ -337,10 +326,51 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Modo batch: cria base + campanha na Velip agora
+  if (velipMode === "batch" && !scheduled) {
+    const { data: created } = await admin
+      .from("voice_campaign_targets")
+      .select("id, phone, name")
+      .eq("campaign_id", campaign.id);
+
+    const items = (created || []).map((t) => ({
+      dest: t.phone,
+      ctid: toCtid(t.id),
+      name: t.name ?? undefined,
+    }));
+
+    const base = await createDestinationBase(items, `base_${campaign.id.slice(0, 8)}`);
+    if (!base.ok || !base.base_id) {
+      return json(502, {
+        error: "velip_base_failed",
+        detail: base.error,
+        message: "Base de destinos rejeitada pela Velip. Alvos criados no banco — pode reprocessar em modo single.",
+      });
+    }
+    const cp = await velipCreateCampaign({
+      baseId: base.base_id,
+      audioId: aud.audio_id,
+      name: campaign.id.slice(0, 30),
+      ctid: toCtid(campaign.id),
+    });
+    if (!cp.ok || !cp.cp_id) {
+      return json(502, {
+        error: "velip_campaign_failed",
+        detail: cp.error,
+        message: "Falha ao criar campanha Velip — targets ficam em queued para o cron.",
+      });
+    }
+    await admin
+      .from("voice_campaigns")
+      .update({ velip_campaign_id: cp.cp_id })
+      .eq("id", campaign.id);
+  }
+
   return json(200, {
     ok: true,
     campaign_id: campaign.id,
     total: targets.length,
     status: scheduled ? "scheduled" : "running",
+    velip_mode: velipMode,
   });
 });

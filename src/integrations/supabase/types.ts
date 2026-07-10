@@ -9462,6 +9462,8 @@ export type Database = {
           id: string
           name: string
           updated_at: string
+          velip_audio_id: string | null
+          velip_uploaded_at: string | null
         }
         Insert: {
           audio_url: string
@@ -9471,6 +9473,8 @@ export type Database = {
           id?: string
           name?: string
           updated_at?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Update: {
           audio_url?: string
@@ -9480,6 +9484,8 @@ export type Database = {
           id?: string
           name?: string
           updated_at?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Relationships: []
       }
@@ -9499,6 +9505,13 @@ export type Database = {
           target_id: string | null
           to_phone: string
           twilio_sid: string | null
+          velip_call_id: string | null
+          velip_cost: number | null
+          velip_dtmf: Json | null
+          velip_raw: Json | null
+          velip_saldo_after: number | null
+          velip_status: string | null
+          velip_time_sec: number | null
         }
         Insert: {
           answered_by?: string | null
@@ -9515,6 +9528,13 @@ export type Database = {
           target_id?: string | null
           to_phone: string
           twilio_sid?: string | null
+          velip_call_id?: string | null
+          velip_cost?: number | null
+          velip_dtmf?: Json | null
+          velip_raw?: Json | null
+          velip_saldo_after?: number | null
+          velip_status?: string | null
+          velip_time_sec?: number | null
         }
         Update: {
           answered_by?: string | null
@@ -9531,6 +9551,13 @@ export type Database = {
           target_id?: string | null
           to_phone?: string
           twilio_sid?: string | null
+          velip_call_id?: string | null
+          velip_cost?: number | null
+          velip_dtmf?: Json | null
+          velip_raw?: Json | null
+          velip_saldo_after?: number | null
+          velip_status?: string | null
+          velip_time_sec?: number | null
         }
         Relationships: [
           {
@@ -9552,6 +9579,7 @@ export type Database = {
       voice_campaign_targets: {
         Row: {
           answered_by: string | null
+          attempts: number
           campaign_id: string
           created_at: string
           customer_id: string | null
@@ -9559,13 +9587,20 @@ export type Database = {
           error: string | null
           finished_at: string | null
           id: string
+          max_attempts: number
           name: string | null
+          next_attempt_at: string | null
           phone: string
           status: string
           twilio_sid: string | null
+          velip_call_id: string | null
+          velip_cost: number | null
+          velip_saldo_after: number | null
+          velip_status: string | null
         }
         Insert: {
           answered_by?: string | null
+          attempts?: number
           campaign_id: string
           created_at?: string
           customer_id?: string | null
@@ -9573,13 +9608,20 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          max_attempts?: number
           name?: string | null
+          next_attempt_at?: string | null
           phone: string
           status?: string
           twilio_sid?: string | null
+          velip_call_id?: string | null
+          velip_cost?: number | null
+          velip_saldo_after?: number | null
+          velip_status?: string | null
         }
         Update: {
           answered_by?: string | null
+          attempts?: number
           campaign_id?: string
           created_at?: string
           customer_id?: string | null
@@ -9587,10 +9629,16 @@ export type Database = {
           error?: string | null
           finished_at?: string | null
           id?: string
+          max_attempts?: number
           name?: string | null
+          next_attempt_at?: string | null
           phone?: string
           status?: string
           twilio_sid?: string | null
+          velip_call_id?: string | null
+          velip_cost?: number | null
+          velip_saldo_after?: number | null
+          velip_status?: string | null
         }
         Relationships: [
           {
@@ -9620,6 +9668,8 @@ export type Database = {
           status: string
           total: number
           updated_at: string
+          velip_campaign_id: string | null
+          velip_mode: string
         }
         Insert: {
           answered?: number
@@ -9638,6 +9688,8 @@ export type Database = {
           status?: string
           total?: number
           updated_at?: string
+          velip_campaign_id?: string | null
+          velip_mode?: string
         }
         Update: {
           answered?: number
@@ -9656,6 +9708,8 @@ export type Database = {
           status?: string
           total?: number
           updated_at?: string
+          velip_campaign_id?: string | null
+          velip_mode?: string
         }
         Relationships: [
           {
@@ -9745,6 +9799,8 @@ export type Database = {
           id: string
           name_normalized: string
           template_id: string
+          velip_audio_id: string | null
+          velip_uploaded_at: string | null
         }
         Insert: {
           created_at?: string
@@ -9752,6 +9808,8 @@ export type Database = {
           id?: string
           name_normalized: string
           template_id: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Update: {
           created_at?: string
@@ -9759,6 +9817,8 @@ export type Database = {
           id?: string
           name_normalized?: string
           template_id?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Relationships: [
           {
@@ -9780,6 +9840,8 @@ export type Database = {
           name: string
           shortcut: string | null
           updated_at: string
+          velip_audio_id: string | null
+          velip_uploaded_at: string | null
         }
         Insert: {
           consultant_id: string
@@ -9790,6 +9852,8 @@ export type Database = {
           name: string
           shortcut?: string | null
           updated_at?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Update: {
           consultant_id?: string
@@ -9800,6 +9864,8 @@ export type Database = {
           name?: string
           shortcut?: string | null
           updated_at?: string
+          velip_audio_id?: string | null
+          velip_uploaded_at?: string | null
         }
         Relationships: []
       }

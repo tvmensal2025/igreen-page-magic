@@ -1,5 +1,5 @@
 /**
- * Histórico detalhado de ligações PSTN (voice_call_logs + targets).
+ * Histórico detalhado de ligações PSTN (voice_call_logs + targets) — driver Velip.
  */
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,6 +25,13 @@ interface CallLogRow {
   campaign_id: string | null;
   target_id: string | null;
   twilio_sid: string | null;
+  velip_call_id: string | null;
+  velip_status: string | null;
+  velip_time_sec: number | null;
+  velip_cost: number | null;
+  velip_saldo_after: number | null;
+  velip_dtmf: Record<string, string> | null;
+  velip_raw: Record<string, unknown> | null;
   to_phone: string;
   from_phone: string | null;
   status: string | null;
@@ -37,6 +44,11 @@ interface CallLogRow {
   campaign_name?: string | null;
   target_name?: string | null;
   target_status?: string | null;
+}
+
+function fmtBRL(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 4 }).format(n);
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -107,7 +119,7 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("voice_call_logs")
-      .select("id, campaign_id, target_id, twilio_sid, to_phone, from_phone, status, answered_by, duration_sec, price, error, raw, created_at")
+      .select("id, campaign_id, target_id, twilio_sid, velip_call_id, velip_status, velip_time_sec, velip_cost, velip_saldo_after, velip_dtmf, velip_raw, to_phone, from_phone, status, answered_by, duration_sec, price, error, raw, created_at")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -179,7 +191,7 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
     <>
       <VozCampaignShell
         title="Histórico de ligações"
-        subtitle="Cada tentativa registrada pela Twilio — status, duração, quem atendeu e campanha."
+        subtitle="Cada tentativa registrada pela Velip — status, duração, custo, DTMF e campanha."
         footer={
           <div className="flex flex-wrap items-center justify-between gap-2 w-full">
             <span className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
@@ -195,7 +207,7 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Buscar por nome, telefone, campanha ou SID…"
+            placeholder="Buscar por nome, telefone, campanha ou ID Velip…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -243,8 +255,8 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
                       </p>
                     </div>
                     <div className="text-right text-xs text-muted-foreground shrink-0">
-                      <div>{formatDuration(r.duration_sec)}</div>
-                      {r.price != null && r.price !== "" && <div>{r.price}</div>}
+                      <div>{formatDuration(r.velip_time_sec ?? r.duration_sec)}</div>
+                      {r.velip_cost != null ? <div>{fmtBRL(r.velip_cost)}</div> : (r.price != null && r.price !== "" && <div>{r.price}</div>)}
                     </div>
                   </div>
                 </button>
@@ -274,22 +286,28 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
               />
               <Detail label="Status do alvo" value={selected.target_status || "—"} />
               <Detail label="Atendido por" value={selected.answered_by || "—"} />
-              <Detail label="Duração" value={formatDuration(selected.duration_sec)} />
-              <Detail label="Custo (Twilio)" value={selected.price || "—"} />
+              <Detail label="Duração" value={formatDuration(selected.velip_time_sec ?? selected.duration_sec)} />
+              <Detail label="Custo (Velip)" value={selected.velip_cost != null ? fmtBRL(selected.velip_cost) : (selected.price || "—")} />
+              <Detail label="Saldo após" value={selected.velip_saldo_after != null ? fmtBRL(selected.velip_saldo_after) : "—"} />
               <Detail label="Campanha" value={selected.campaign_name || "—"} />
-              <Detail label="Twilio SID" value={selected.twilio_sid || "—"} mono />
+              <Detail label="ID Velip" value={selected.velip_call_id || "—"} mono />
+              <Detail label="Status Velip" value={selected.velip_status || "—"} mono />
+              {selected.twilio_sid && <Detail label="Twilio SID (legado)" value={selected.twilio_sid} mono />}
+              {selected.velip_dtmf && Object.keys(selected.velip_dtmf).length > 0 && (
+                <Detail label="DTMF" value={Object.entries(selected.velip_dtmf).map(([k,v]) => `${k}=${v}`).join(" · ")} mono />
+              )}
               {selected.error && <Detail label="Erro" value={selected.error} />}
-              {selected.raw && Object.keys(selected.raw).length > 0 && (
+              {(selected.velip_raw ?? selected.raw) && Object.keys((selected.velip_raw ?? selected.raw) || {}).length > 0 && (
                 <div>
                   <dt className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: "var(--pe-text-label)" }}>
-                    Payload Twilio
+                    Payload Velip
                   </dt>
                   <dd>
                     <pre
                       className="text-[11px] rounded-[var(--pe-radius)] border p-3 overflow-auto max-h-40"
                       style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}
                     >
-                      {JSON.stringify(selected.raw, null, 2)}
+                      {JSON.stringify(selected.velip_raw ?? selected.raw, null, 2)}
                     </pre>
                   </dd>
                 </div>

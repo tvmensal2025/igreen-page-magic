@@ -1,23 +1,25 @@
-// voice-dialer-cron
-// Worker: promove campanhas e disca via Twilio.
-// Auth OBRIGATÓRIA (não aceita anon key pública):
-//   header x-voice-dialer-cron-secret == VOICE_DIALER_CRON_SECRET
-//   OU x-service-secret == SERVICE_SHARED_SECRET
-//   OU Authorization Bearer == SUPABASE_SERVICE_ROLE_KEY
-// Isolado do WhatsApp.
+// voice-dialer-cron (Velip)
+// Worker: promove campanhas e disca via Velip PlayAudioFile.
+// Também reconcilia targets travados em "dialing" via GetCallStatus.
+// Auth OBRIGATÓRIA (fail-closed).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  createOutboundCall,
+  getCallStatus,
   inCallWindow,
-  twilioConfigured,
-  webhookAuthConfigured,
-  webhookAuthQuery,
-} from "../_shared/voice-dialer/twilio.ts";
+  interpretStatus,
+  outcomeToTargetStatus,
+  playAudioFile,
+  toCtid,
+  toVelipBRDest,
+  velipConfigured,
+  velipWebhookAuthConfigured,
+} from "../_shared/voice-dialer/velip.ts";
 
 const MAX_CAMPAIGNS = 5;
 const MAX_CALLS_PER_CAMPAIGN = 10;
 const MAX_EXEC_MS = 45_000;
+const RECONCILE_STALE_MIN = 10;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -48,12 +50,9 @@ Deno.serve(async (req) => {
   const okCron = !!(cronSecret && timingSafeEqual(cronHeader, cronSecret));
   const okServiceSecret = !!(serviceSecret && timingSafeEqual(headerSecret, serviceSecret));
   const okServiceRole = !!(serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey));
-
-  // Fail-closed: sem secret de cron configurado, só service_role / service secret
   if (!okCron && !okServiceSecret && !okServiceRole) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { ...cors, "Content-Type": "application/json" },
+      status: 401, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
@@ -61,27 +60,27 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   if (!serviceRoleKey) {
     return new Response(JSON.stringify({ error: "missing_service_role" }), {
-      status: 500,
-      headers: { ...cors, "Content-Type": "application/json" },
+      status: 500, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
-  if (!twilioConfigured()) {
+  if (!velipConfigured()) {
     return new Response(
-      JSON.stringify({ ok: false, skipped: true, reason: "twilio_not_configured" }),
+      JSON.stringify({ ok: false, skipped: true, reason: "velip_not_configured" }),
       { status: 200, headers: { ...cors, "Content-Type": "application/json" } },
     );
   }
-  if (!webhookAuthConfigured()) {
+  if (!velipWebhookAuthConfigured()) {
     return new Response(
-      JSON.stringify({ ok: false, skipped: true, reason: "twilio_webhook_auth_missing" }),
+      JSON.stringify({ ok: false, skipped: true, reason: "velip_webhook_auth_missing" }),
       { status: 200, headers: { ...cors, "Content-Type": "application/json" } },
     );
   }
 
   const nowIso = new Date().toISOString();
 
+  // Promove scheduled → running
   await admin
     .from("voice_campaigns")
     .update({ status: "running", started_at: nowIso })
@@ -90,37 +89,82 @@ Deno.serve(async (req) => {
 
   const { data: camps, error: e1 } = await admin
     .from("voice_campaigns")
-    .select("id, consultant_id, audio_url, config, status, total, dialed, answered, failed")
+    .select("id, consultant_id, audio_clip_id, audio_url, config, status, total, dialed, answered, failed, velip_mode")
     .eq("status", "running")
     .order("created_at", { ascending: true })
     .limit(MAX_CAMPAIGNS);
 
   if (e1) {
     return new Response(JSON.stringify({ error: e1.message }), {
-      status: 500,
-      headers: { ...cors, "Content-Type": "application/json" },
+      status: 500, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
 
   const report: unknown[] = [];
-  const authQ = webhookAuthQuery();
-  const baseFn = `${supabaseUrl}/functions/v1/voice-dialer-webhook`;
 
+  // Reconciliação: targets em "dialing" há > RECONCILE_STALE_MIN sem callback
+  try {
+    const staleCutoff = new Date(Date.now() - RECONCILE_STALE_MIN * 60_000).toISOString();
+    const { data: stale } = await admin
+      .from("voice_campaign_targets")
+      .select("id, campaign_id, velip_call_id, dialed_at")
+      .eq("status", "dialing")
+      .not("velip_call_id", "is", null)
+      .lt("dialed_at", staleCutoff)
+      .limit(20);
+    for (const t of stale ?? []) {
+      if (Date.now() - started > MAX_EXEC_MS) break;
+      const s = await getCallStatus(String(t.velip_call_id));
+      if (!s.ok || !s.called_status) continue;
+      const outcome = interpretStatus(s.called_status);
+      const newStatus = outcomeToTargetStatus(outcome);
+      if (!newStatus) continue;
+      await admin
+        .from("voice_campaign_targets")
+        .update({
+          status: newStatus,
+          velip_status: s.called_status,
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", t.id);
+    }
+  } catch (e) {
+    console.warn("reconcile_failed:", (e as Error).message);
+  }
+
+  // Disparo modo `single` — batch é orquestrado pela Velip sozinha
   for (const camp of camps ?? []) {
     if (Date.now() - started > MAX_EXEC_MS) break;
+    if ((camp as { velip_mode?: string }).velip_mode === "batch") {
+      report.push({ campaign_id: camp.id, skipped: "batch_mode" });
+      continue;
+    }
 
     const cfg = (camp.config ?? {}) as {
       windowStart?: string;
       windowEnd?: string;
       weekdaysOnly?: boolean;
     };
-
     if (!inCallWindow(cfg)) {
       report.push({ campaign_id: camp.id, skipped: "outside_window" });
       continue;
     }
 
-    // Claim atômico: queued → dialing antes de chamar Twilio (evita double-dial)
+    // Resolve audio_id Velip
+    let audioId: string | null = null;
+    if (camp.audio_clip_id) {
+      const { data: clip } = await admin
+        .from("voice_audio_clips")
+        .select("velip_audio_id")
+        .eq("id", camp.audio_clip_id)
+        .maybeSingle();
+      audioId = clip?.velip_audio_id ?? null;
+    }
+    if (!audioId) {
+      report.push({ campaign_id: camp.id, skipped: "no_velip_audio_id" });
+      continue;
+    }
+
     const { data: targets } = await admin
       .from("voice_campaign_targets")
       .select("id, phone, name")
@@ -152,7 +196,6 @@ Deno.serve(async (req) => {
     for (const t of targets) {
       if (Date.now() - started > MAX_EXEC_MS) break;
 
-      // Claim: só segue se ainda estiver queued
       const { data: claimed } = await admin
         .from("voice_campaign_targets")
         .update({ status: "dialing", dialed_at: new Date().toISOString() })
@@ -160,22 +203,13 @@ Deno.serve(async (req) => {
         .eq("status", "queued")
         .select("id")
         .maybeSingle();
-
       if (!claimed) continue;
 
-      const twimlUrl =
-        `${baseFn}?action=twiml&target_id=${t.id}&campaign_id=${camp.id}${authQ}`;
-      const statusUrl =
-        `${baseFn}?action=status&target_id=${t.id}&campaign_id=${camp.id}${authQ}`;
-      const amdUrl =
-        `${baseFn}?action=amd&target_id=${t.id}&campaign_id=${camp.id}${authQ}`;
-
-      const call = await createOutboundCall({
-        to: t.phone,
-        twimlUrl,
-        statusCallbackUrl: statusUrl,
-        amdCallbackUrl: amdUrl,
-        machineDetection: "Enable",
+      const dest = toVelipBRDest(t.phone) || t.phone;
+      const call = await playAudioFile({
+        to: dest,
+        audioId,
+        ctid: toCtid(t.id),
         timeLimitSec: 40,
       });
 
@@ -185,7 +219,7 @@ Deno.serve(async (req) => {
           .from("voice_campaign_targets")
           .update({
             status: "failed",
-            error: call.error ?? "twilio_error",
+            error: call.error ?? "velip_error",
             finished_at: new Date().toISOString(),
           })
           .eq("id", t.id);
@@ -193,11 +227,11 @@ Deno.serve(async (req) => {
           campaign_id: camp.id,
           target_id: t.id,
           consultant_id: camp.consultant_id,
-          to_phone: t.phone,
-          from_phone: Deno.env.get("TWILIO_FROM_NUMBER") ?? null,
+          to_phone: dest,
           status: "failed",
           error: call.error ?? null,
           raw: call.raw ?? {},
+          velip_raw: call.raw ?? {},
         });
         continue;
       }
@@ -205,24 +239,21 @@ Deno.serve(async (req) => {
       dialedNow++;
       await admin
         .from("voice_campaign_targets")
-        .update({ twilio_sid: call.sid ?? null })
+        .update({ velip_call_id: call.cd_id ?? null })
         .eq("id", t.id);
-
       await admin.from("voice_call_logs").insert({
         campaign_id: camp.id,
         target_id: t.id,
         consultant_id: camp.consultant_id,
-        twilio_sid: call.sid ?? null,
-        to_phone: t.phone,
-        from_phone: Deno.env.get("TWILIO_FROM_NUMBER") ?? null,
-        status: call.status ?? "queued",
+        velip_call_id: call.cd_id ?? null,
+        to_phone: dest,
+        status: "dialing",
         raw: call.raw ?? {},
+        velip_raw: call.raw ?? {},
       });
-
       await new Promise((r) => setTimeout(r, 400));
     }
 
-    // Recount a partir dos targets (fonte da verdade)
     const { data: allT } = await admin
       .from("voice_campaign_targets")
       .select("status")

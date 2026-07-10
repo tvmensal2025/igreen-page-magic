@@ -1,5 +1,5 @@
 /**
- * Aba Admin > Ligação — PSTN (Twilio) + histórico detalhado.
+ * Aba Admin > Ligação — PSTN (Velip) + histórico detalhado.
  * Não altera WhatsApp / Evolution / bot.
  */
 import { useEffect, useState } from "react";
@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Loader2, Phone, History } from "lucide-react";
 import { VoiceDialerPanel } from "@/components/admin/voz/VoiceDialerPanel";
 import { VoiceCallHistoryPanel } from "@/components/admin/voz/VoiceCallHistoryPanel";
+import { VelipHealthBanner } from "@/components/admin/voz/VelipHealthBanner";
 import type { VozCustomer } from "@/components/admin/voz/VozContactPickerDialog";
 
 interface Props {
@@ -55,6 +56,8 @@ export function VozTab({ consultantId }: Props) {
           </p>
         </div>
       </div>
+
+      <VelipHealthBanner />
 
       <Tabs defaultValue="nova">
         <TabsList>
