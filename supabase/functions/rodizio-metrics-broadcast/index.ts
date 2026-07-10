@@ -253,6 +253,8 @@ Deno.serve(async (req) => {
       ]);
 
       // 3) Guard "cold start vazio": campanha < 30min e literalmente 0 em tudo → não envia
+      //    MÉTRICAS. O aviso "campanha aprovada" (abaixo) roda ANTES do guard, pois
+      //    é um envio único e independente de haver métricas.
       const ageMin = (Date.now() - new Date(camp.created_at).getTime()) / 60_000;
       const allZero = live
         && live.spendTodayCents === 0
@@ -260,7 +262,8 @@ Deno.serve(async (req) => {
         && live.reachToday === 0
         && live.conversationsToday === 0
         && (leadsCrmToday || 0) === 0;
-      if (allZero && ageMin < 30) {
+      const isColdStartMetrics = allZero && ageMin < 30;
+      if (isColdStartMetrics && pool.approval_notified_at) {
         skippedColdStart++;
         continue;
       }
