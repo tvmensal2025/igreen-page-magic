@@ -88,7 +88,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
     const load = async () => {
       const { data } = await supabase
         .from("conversations")
-        .select("id, message_direction, message_text, message_type, media_url, created_at, slot_key")
+        .select("id, message_direction, message_text, message_type, media_id, created_at, slot_key")
         .eq("customer_id", customerId)
         .not("message_text", "like", "[__safety_ping__]%")
         .not("message_text", "like", "[inline-sent]%")
