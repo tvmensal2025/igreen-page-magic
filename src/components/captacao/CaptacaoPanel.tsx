@@ -16,6 +16,7 @@ import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { FinalizeButton } from "@/components/captacao/FinalizeButton";
+import { CloseCaptureButton } from "@/components/captacao/CloseCaptureButton";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
