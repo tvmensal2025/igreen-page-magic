@@ -50,6 +50,26 @@ export function WhapiConnectionPanel({ visible }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, backfillStatus?.state]);
 
+  const stopReauthPoll = () => {
+    if (reauthPollRef.current) {
+      window.clearInterval(reauthPollRef.current);
+      reauthPollRef.current = null;
+    }
+  };
+
+  // Para polling quando canal volta a AUTH ou componente desmonta
+  // (hooks antes do early return — rules-of-hooks)
+  useEffect(() => {
+    if (health.status === "AUTH" && reauthPollRef.current) {
+      stopReauthPoll();
+      setQrImage(null);
+      toast.success("Canal reconectado ✅");
+    }
+    return () => {
+      if (!visible) stopReauthPoll();
+    };
+  }, [health.status, visible]);
+
   const handleBackfill = async () => {
     if (!confirm(
       "Importar TODO o histórico do WhatsApp deste canal?\n\n" +
@@ -145,13 +165,6 @@ export function WhapiConnectionPanel({ visible }: Props) {
     }
   };
 
-  const stopReauthPoll = () => {
-    if (reauthPollRef.current) {
-      window.clearInterval(reauthPollRef.current);
-      reauthPollRef.current = null;
-    }
-  };
-
   const handleReauth = async () => {
     setBusy("reauth");
     setQrImage(null);
@@ -196,17 +209,6 @@ export function WhapiConnectionPanel({ visible }: Props) {
       setBusy(null);
     }
   };
-
-  // Para polling quando canal volta a AUTH ou componente desmonta
-  useEffect(() => {
-    if (health.status === "AUTH" && reauthPollRef.current) {
-      stopReauthPoll();
-      setQrImage(null);
-      toast.success("Canal reconectado ✅");
-    }
-    return () => { if (!visible) stopReauthPoll(); };
-  }, [health.status, visible]);
-
 
   return (
     <Card className="border-border">

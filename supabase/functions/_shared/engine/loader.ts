@@ -218,6 +218,12 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
   ingest(ownedRows as any[], true);
   ingest(orphanRows as any[], false);
 
+  // Lookup por media_id (objetos ricos em flow_step_media_order).
+  const mediaById = new Map<string, any>();
+  for (const m of [...(ownedRows as any[] || []), ...(orphanRows as any[] || [])]) {
+    if (m?.id) mediaById.set(String(m.id), m);
+  }
+
   function resolveMediaForSlot(
     slotKey: string,
     kind: "audio" | "image" | "video" | "document",
@@ -323,7 +329,7 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
           continue;
         }
         if (typeof o.media_id === "string") {
-          const found = ((mediaLib as any[]) || []).find((m) => m.id === o.media_id);
+          const found = mediaById.get(o.media_id);
           if (found?.url) {
             resolved.push({
               kind: k as MediaOrderEntry["kind"],

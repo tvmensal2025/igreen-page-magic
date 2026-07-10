@@ -62,7 +62,12 @@ export function SolarRealRoofView({
       .then((res) => {
         if (active && res?.url) setHdUrl(res.url);
       })
-      .finally(() => active && setHdPending(false));
+      .finally(() => {
+        if (active) setHdPending(false);
+      });
+    return () => {
+      active = false;
+    };
   }, [analysisId, consultantId]);
 
   // URL do satélite (base que carrega rápido).
