@@ -217,7 +217,7 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
 
       if (parts.length === 0) {
         results[i] = { id: lead.id, status: "skipped", detail: "Nada a enviar" };
-      } else if (onlySkippedProtocol && parts.length === 1 && !audioUrl && !imageUrl) {
+      } else if (onlySkippedProtocol && parts.length === 1 && !audioUrl && !imageUrl && !(customText && customText.trim())) {
         // Só "já tinha protocolo" e sem mídia → não conta como sucesso novo.
         results[i] = { id: lead.id, status: "skipped", detail: "Já iniciado" };
       } else {
