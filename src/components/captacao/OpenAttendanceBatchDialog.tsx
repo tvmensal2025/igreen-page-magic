@@ -490,6 +490,64 @@ export function OpenAttendanceBatchDialog({
                 )}
               </div>
 
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Mensagem de texto (opcional)</Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <div className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Select
+                      value={textId}
+                      onValueChange={(v) => {
+                        setTextId(v);
+                        if (v === "__none__") setTextBody("");
+                        else if (v === "__blank__") setTextBody("");
+                        else {
+                          const t = textTemplates.find((x) => x.id === v);
+                          setTextBody(templateTextContent(t) || "");
+                        }
+                      }}
+                      disabled={running}
+                    >
+                      <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
+                        <SelectValue placeholder="Nenhum texto" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[130]">
+                        <SelectItem value="__none__">Nenhum texto</SelectItem>
+                        <SelectItem value="__blank__">Escrever novo texto…</SelectItem>
+                        {textTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {(textId !== "__none__" || textBody) && (
+                  <>
+                    <Textarea
+                      value={textBody}
+                      onChange={(e) => setTextBody(e.target.value)}
+                      placeholder="Escreva ou edite a mensagem… use {{nome}} para personalizar."
+                      rows={4}
+                      disabled={running}
+                      className="text-xs rounded-lg resize-none"
+                    />
+                    <div className="flex gap-1.5">
+                      <button
+                        type="button"
+                        disabled={running}
+                        onClick={() => setTextBody((v) => v + "{{nome}}")}
+                        className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
+                      >
+                        {"{{nome}}"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+
               {needsChannel && !instanceName && (
                 <p className="text-[11px] text-destructive">
                   WhatsApp desconectado — reconecte para enviar áudio/imagem.
