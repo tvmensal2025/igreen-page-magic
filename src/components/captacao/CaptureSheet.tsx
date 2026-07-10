@@ -29,7 +29,7 @@ import { ComboTimer } from "@/components/captacao/game/ComboTimer";
 import { XpFloaterProvider, useXpFloater } from "@/components/captacao/game/XpFloater";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap } from "lucide-react";
+import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2 } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
 
 interface Props {
@@ -237,6 +237,43 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
       await askLeadName({ consultantId, customerId: customer.id, phoneHint: phoneNumber || undefined });
     } finally {
       setAskingName(false);
+    }
+  };
+
+  // ─── Encerrar captação: remove da lista e vincula em Vendas/CRM/Comissão
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const runCloseCapture = async () => {
+    if (!customer || closing) return;
+    setClosing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("close-capture-and-register-sale", {
+        body: { customerId: customer.id, consultantId },
+      });
+      if (error) throw new Error(error.message || "Falha ao encerrar");
+      const res = (data as any) || {};
+      if (!res.ok) throw new Error(res.error || "Falha ao encerrar");
+
+      const roi = res.campaignRoi;
+      const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      let description = "Lead vinculado em Vendas, CRM e Comissão. O chat continua ativo.";
+      if (roi) {
+        const sign = roi.positive ? "🟢" : "🔴";
+        description = `${sign} Campanha: ${brl(roi.investedCents)} investido · ${brl(roi.returnedCents)} retorno · ${roi.leadsCount} leads`;
+      }
+      toast({
+        title: res.alreadyClosed ? "Captação já estava encerrada" : "✅ Captação encerrada",
+        description,
+        duration: 6000,
+      });
+      fireRandomCelebration();
+      onOpenChange(false);
+    } catch (e: any) {
+      haptics.error();
+      toast({ title: "Erro ao encerrar", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setClosing(false);
+      setCloseConfirm(false);
     }
   };
 
@@ -464,6 +501,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
             </div>
           )}
+          {!isRegistered && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full h-7 text-[10px] rounded-full border-primary/40 text-primary hover:bg-primary/10 gap-1 font-semibold"
+              onClick={() => setCloseConfirm(true)}
+              disabled={closing}
+              title="Encerra a captação, vincula o lead em Vendas/CRM/Comissão e mantém o chat WhatsApp"
+            >
+              {closing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+              Encerrar captação
+            </Button>
+          )}
         </footer>
 
 
@@ -483,6 +533,13 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           onOpenChange={setAskNotice}
           onWithoutNotice={() => void runFinalize(false)}
           onWithNotice={() => void runFinalize(true)}
+        />
+        <CloseCaptureConfirmDialog
+          open={closeConfirm}
+          onOpenChange={setCloseConfirm}
+          onConfirm={() => void runCloseCapture()}
+          loading={closing}
+          leadName={customerName || phoneNumber}
         />
       </aside>
     );
@@ -700,6 +757,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
             </div>
           )}
+          {!isRegistered && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={`w-full gap-1 font-semibold border-primary/40 text-primary hover:bg-primary/10 rounded-full ${expanded ? "h-10 text-xs" : "h-7 text-[10px]"}`}
+              onClick={() => setCloseConfirm(true)}
+              disabled={closing}
+              title="Encerra a captação, vincula o lead em Vendas/CRM/Comissão e mantém o chat WhatsApp"
+            >
+              {closing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+              Encerrar captação
+            </Button>
+          )}
         </footer>
       </SheetContent>
 
@@ -720,9 +790,51 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         onWithoutNotice={() => void runFinalize(false)}
         onWithNotice={() => void runFinalize(true)}
       />
+      <CloseCaptureConfirmDialog
+        open={closeConfirm}
+        onOpenChange={setCloseConfirm}
+        onConfirm={() => void runCloseCapture()}
+        loading={closing}
+        leadName={customerName || phoneNumber}
+      />
     </Sheet>
   );
 }
+
+function CloseCaptureConfirmDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  loading,
+  leadName,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  loading: boolean;
+  leadName?: string | null;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Encerrar captação{leadName ? ` de ${leadName}` : ""}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            O lead sai da lista de captação e é vinculado em <strong>Vendas</strong>, <strong>CRM</strong> e <strong>Comissão</strong> como fechamento.
+            O chat no WhatsApp continua ativo normalmente. Se o lead veio de campanha, mostramos o retorno vs investido logo em seguida.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="gap-2">
+          <AlertDialogCancel disabled={loading}>Cancelar</AlertDialogCancel>
+          <AlertDialogAction onClick={onConfirm} disabled={loading}>
+            {loading ? "Encerrando…" : "Encerrar e vincular"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 
 function FinalizeNoticeDialog({
   open,

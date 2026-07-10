@@ -124,6 +124,7 @@ export function CaptureLeadList({
         .select(cols)
         .eq("consultant_id", consultantId)
         .eq("capture_mode", "manual")
+        .is("capture_closed_at", null)
         .order("created_at", { ascending: false })
         .limit(400);
       if (seq !== loadSeqRef.current) return;
