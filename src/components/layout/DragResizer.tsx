@@ -106,6 +106,14 @@ export function DragResizer({
     [dragging, cssVar, storageKey],
   );
 
+  const onDoubleClick = useCallback(() => {
+    if (locked) return;
+    const scope = ref.current?.closest("[data-resize-scope]") as HTMLElement | null;
+    if (!scope) return;
+    scope.style.setProperty(`--${cssVar}`, `${defaultPx}px`);
+    try { localStorage.removeItem(STORAGE + storageKey); } catch {}
+  }, [locked, cssVar, defaultPx, storageKey]);
+
   const isX = axis === "x";
   const Grip = isX ? GripVertical : GripHorizontal;
 
