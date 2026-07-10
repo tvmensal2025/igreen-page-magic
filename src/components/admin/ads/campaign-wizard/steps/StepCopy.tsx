@@ -40,8 +40,39 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
 
   return (
     <div className="space-y-4">
+      {/* Barra de ações do catálogo */}
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[hsl(var(--ads-emerald-2))]/20 bg-primary/5 p-2.5">
+        <span className="text-[11px] text-[hsl(var(--ads-muted))] mr-auto">
+          <BookOpen className="w-3 h-3 inline mr-1" /> Sugestões do catálogo ({CATALOG_TOTALS.total} copies prontos)
+        </span>
+        <button
+          type="button"
+          onClick={copyLogic.reshuffleCopy}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-background border border-border hover:border-primary"
+        >
+          <Shuffle className="w-3 h-3" /> Sortear outras
+        </button>
+        <button
+          type="button"
+          onClick={() => setCatalogOpen(true)}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-background border border-border hover:border-primary"
+        >
+          <BookOpen className="w-3 h-3" /> Ver todas ({CATALOG_TOTALS.total})
+        </button>
+        <button
+          type="button"
+          onClick={copyLogic.adaptCopyWithAI}
+          disabled={state.copyLoading}
+          className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-md bg-[hsl(var(--ads-emerald-2))] text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {state.copyLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+          Adaptar com IA
+        </button>
+      </div>
+
       {/* Título */}
       <div>
+
         <Label className="flex justify-between">
           <span>Título principal</span>
           <span className={`text-[10px] ${state.headline.length > COPY_LIMITS.headline ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.headline.length}/{COPY_LIMITS.headline}</span>
