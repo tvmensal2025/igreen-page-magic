@@ -213,7 +213,7 @@ Deno.serve(async (req) => {
       .select(`
         id, campaign_id, consultant_id, metrics_broadcast_interval_minutes, approval_notified_at,
         metrics_quiet_start_hour, metrics_quiet_end_hour,
-        facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at)
+        facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at, cities, duration_days, daily_budget_cents, tracking_protocol, fb_adset_ids)
       `)
       .eq("facebook_campaigns.status", "active");
 
