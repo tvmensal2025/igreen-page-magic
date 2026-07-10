@@ -240,6 +240,43 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
     }
   };
 
+  // ─── Encerrar captação: remove da lista e vincula em Vendas/CRM/Comissão
+  const [closeConfirm, setCloseConfirm] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const runCloseCapture = async () => {
+    if (!customer || closing) return;
+    setClosing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("close-capture-and-register-sale", {
+        body: { customerId: customer.id, consultantId },
+      });
+      if (error) throw new Error(error.message || "Falha ao encerrar");
+      const res = (data as any) || {};
+      if (!res.ok) throw new Error(res.error || "Falha ao encerrar");
+
+      const roi = res.campaignRoi;
+      const brl = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      let description = "Lead vinculado em Vendas, CRM e Comissão. O chat continua ativo.";
+      if (roi) {
+        const sign = roi.positive ? "🟢" : "🔴";
+        description = `${sign} Campanha: ${brl(roi.investedCents)} investido · ${brl(roi.returnedCents)} retorno · ${roi.leadsCount} leads`;
+      }
+      toast({
+        title: res.alreadyClosed ? "Captação já estava encerrada" : "✅ Captação encerrada",
+        description,
+        duration: 6000,
+      });
+      fireRandomCelebration();
+      onOpenChange(false);
+    } catch (e: any) {
+      haptics.error();
+      toast({ title: "Erro ao encerrar", description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setClosing(false);
+      setCloseConfirm(false);
+    }
+  };
+
   // ⌨️ Atalhos de teclado (desktop only — mobile virtual keyboard ignora):
   //   Esc        → minimiza painel
   //   1..9, 0    → seleciona campo correspondente da ficha (vai pra tab "ficha")
