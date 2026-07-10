@@ -77,9 +77,10 @@ function templateMediaUrl(t: MessageTemplate | undefined, kind: "audio" | "image
 function templateTextContent(t: MessageTemplate | undefined): string {
   if (!t) return "";
   if (t.content && t.content.trim()) return t.content;
-  const item = (t.items || []).find((i) => !!(i as { content?: string }).content);
-  return ((item as { content?: string })?.content) || "";
+  const item = (t.items || []).find((i) => !!i.message_text);
+  return item?.message_text || "";
 }
+
 
 
 function leadPill(lead: CaptureBatchLead, result?: BatchLeadResult) {
