@@ -58,9 +58,14 @@ function sortRows(rows: ConvRow[], limit: number) {
 export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false }: Props) {
   const [rows, setRows] = useState<ConvRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickRef = useRef(true);
+  /** ISO do momento em que a conversa foi aberta — separa "novas mensagens" das já vistas */
+  const openedAtRef = useRef<string>(new Date().toISOString());
+
 
   const scheduleScrollToBottom = useCallback((force = false) => {
     if (!force && !stickRef.current) return;
