@@ -534,6 +534,13 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           onWithoutNotice={() => void runFinalize(false)}
           onWithNotice={() => void runFinalize(true)}
         />
+        <CloseCaptureConfirmDialog
+          open={closeConfirm}
+          onOpenChange={setCloseConfirm}
+          onConfirm={() => void runCloseCapture()}
+          loading={closing}
+          leadName={customerName || phoneNumber}
+        />
       </aside>
     );
   }
