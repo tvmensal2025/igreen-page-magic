@@ -750,6 +750,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
             </div>
           )}
+          {!isRegistered && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={`w-full gap-1 font-semibold border-primary/40 text-primary hover:bg-primary/10 rounded-full ${expanded ? "h-10 text-xs" : "h-7 text-[10px]"}`}
+              onClick={() => setCloseConfirm(true)}
+              disabled={closing}
+              title="Encerra a captação, vincula o lead em Vendas/CRM/Comissão e mantém o chat WhatsApp"
+            >
+              {closing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+              Encerrar captação
+            </Button>
+          )}
         </footer>
       </SheetContent>
 
