@@ -1,6 +1,7 @@
 /**
- * Painel B — ligação PSTN (Twilio).
+ * Painel B — ligação PSTN (Velip).
  * Visual Disparo PRO + modal de seleção de clientes/leads parados.
+ * Modo de disparo: Auto (default), Single (1-a-1 pelo cron) ou Batch (CreateCampaign Velip).
  */
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Mic, Square, Upload, Phone, PhoneCall, RefreshCw, Users, X } from "lucide-react";
+import { Loader2, Mic, Square, Upload, Phone, PhoneCall, RefreshCw, Users, X, Pause, Play, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { uploadMedia } from "@/services/minioUpload";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
@@ -43,7 +44,11 @@ interface CampaignRow {
   failed: number;
   scheduled_at: string | null;
   created_at: string;
+  velip_mode: string | null;
+  velip_campaign_id: string | null;
 }
+
+type VelipMode = "auto" | "single" | "batch";
 
 export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [clips, setClips] = useState<ClipRow[]>([]);
@@ -65,6 +70,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [windowEnd, setWindowEnd] = useState("18:00");
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
   const [testPhone, setTestPhone] = useState("");
+  const [velipMode, setVelipMode] = useState<VelipMode>("auto");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -86,7 +92,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const loadCampaigns = useCallback(async () => {
     const { data } = await (supabase as any)
       .from("voice_campaigns")
-      .select("id, name, status, total, dialed, answered, failed, scheduled_at, created_at")
+      .select("id, name, status, total, dialed, answered, failed, scheduled_at, created_at, velip_mode, velip_campaign_id")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false })
       .limit(15);
@@ -116,7 +122,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
     toast.success("Clipe salvo");
   };
 
-  /** Twilio Play: preferir mp3/wav (OGG Opus costuma falhar na PSTN). */
+  /** PSTN Velip: preferir MP3 (Opus na PSTN pode falhar; a Velip aceita MP3/WAV). */
   const toPstnAudioFile = async (file: File): Promise<File> => {
     const name = file.name.toLowerCase();
     const type = (file.type || "").toLowerCase();
@@ -165,7 +171,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
         rawOpus: false,
       });
       rec.ondataavailable = async (buf: ArrayBuffer) => {
-        // Grava OGG e converte para MP3 antes do upload (compatível com Twilio Play)
+        // Grava OGG e converte para MP3 antes do upload (compatível com Velip PlayAudioFile)
         const blob = new Blob([buf], { type: "audio/ogg; codecs=opus" });
         const file = new File([blob], `pstn-${Date.now()}.ogg`, { type: "audio/ogg" });
         await handleUploadFile(file);
@@ -216,7 +222,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
         audio_url: audioUrl,
         campaign_name: "Teste PSTN",
       });
-      toast.success(`Ligação iniciada (${data.twilio_sid || data.campaign_id})`);
+      toast.success(`Ligação iniciada (ID Velip: ${data.velip_call_id || data.campaign_id})`);
       await loadCampaigns();
     } catch (e) {
       toast.error((e as Error).message);
@@ -241,7 +247,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
         name: c.name,
         customer_id: c.source === "database" ? c.id : null,
       }));
-      const data = await invokeEnqueue({
+      const enqueueBody: Record<string, unknown> = {
         action: "create_campaign",
         campaign_name: campaignName.trim() || "Campanha de ligação",
         audio_clip_id: clipId || null,
@@ -254,8 +260,10 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           weekdaysOnly,
           leaveVoicemail: false,
         },
-      });
-      toast.success(`Campanha criada: ${data.total} alvos (${data.status})`);
+      };
+      if (velipMode !== "auto") enqueueBody.velip_mode = velipMode;
+      const data = await invokeEnqueue(enqueueBody);
+      toast.success(`Campanha criada: ${data.total} alvos · modo ${data.velip_mode || "auto"} (${data.status})`);
       await loadCampaigns();
     } catch (e) {
       toast.error((e as Error).message);
@@ -268,11 +276,28 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
     setContacts((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const controlCampaign = async (campaignId: string, action: "pause" | "resume" | "cancel") => {
+    setBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("voice-campaign-control", {
+        body: { campaign_id: campaignId, action },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Campanha ${action === "pause" ? "pausada" : action === "resume" ? "retomada" : "cancelada"}`);
+      await loadCampaigns();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <VozCampaignShell
         title="Ligação telefônica"
-        subtitle="Número da empresa (Twilio) · áudio MP3/WAV ~20s · caixa postal sem recado."
+        subtitle="Número da empresa (Velip) · áudio MP3/WAV ~20s · retry inteligente para não atendidas."
         footer={
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
@@ -387,6 +412,22 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               {contacts.length > 12 && <Badge variant="outline">+{contacts.length - 12}</Badge>}
             </div>
           )}
+          <div className="space-y-1.5">
+            <Label>Modo de disparo</Label>
+            <Select value={velipMode} onValueChange={(v) => setVelipMode(v as VelipMode)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Automático (≥30 alvos = Lote Velip)</SelectItem>
+                <SelectItem value="single">1‑a‑1 (cron a cada 5 min)</SelectItem>
+                <SelectItem value="batch">Lote (CreateCampaign Velip)</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              1‑a‑1 respeita janela local. Lote entrega mais rápido, mas segue as regras da conta Velip.
+            </p>
+          </div>
         </VozSection>
 
         <VozSection title="Janela e agendamento">
@@ -420,15 +461,37 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
             <p className="text-sm text-muted-foreground">Nenhuma ainda.</p>
           ) : (
             <ul className="space-y-2">
-              {campaigns.map((c) => (
-                <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-[var(--pe-radius)] border px-3 py-2 text-sm" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}>
-                  <span className="font-medium truncate flex-1" style={{ color: "var(--pe-text)" }}>{c.name}</span>
-                  <Badge variant="secondary">{c.status}</Badge>
-                  <span className="text-muted-foreground text-xs">
-                    {c.dialed}/{c.total} · ok {c.answered} · falha {c.failed}
-                  </span>
-                </li>
-              ))}
+              {campaigns.map((c) => {
+                const isBatch = c.velip_mode === "batch" && !!c.velip_campaign_id;
+                const canPause = isBatch && c.status === "running";
+                const canResume = isBatch && c.status === "paused";
+                const canCancel = isBatch && (c.status === "running" || c.status === "paused" || c.status === "scheduled");
+                return (
+                  <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-[var(--pe-radius)] border px-3 py-2 text-sm" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}>
+                    <span className="font-medium truncate flex-1" style={{ color: "var(--pe-text)" }}>{c.name}</span>
+                    <Badge variant="secondary">{c.status}</Badge>
+                    {c.velip_mode && <Badge variant="outline" className="text-[10px]">{c.velip_mode}</Badge>}
+                    <span className="text-muted-foreground text-xs">
+                      {c.dialed}/{c.total} · ok {c.answered} · falha {c.failed}
+                    </span>
+                    {canPause && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy} onClick={() => void controlCampaign(c.id, "pause")}>
+                        <Pause className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canResume && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2" disabled={busy} onClick={() => void controlCampaign(c.id, "resume")}>
+                        <Play className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    {canCancel && (
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-destructive" disabled={busy} onClick={() => void controlCampaign(c.id, "cancel")}>
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </VozSection>
