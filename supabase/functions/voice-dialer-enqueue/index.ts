@@ -253,16 +253,20 @@ Deno.serve(async (req) => {
   // Puxa alvos de uma base salva
   if (body.base_id) {
     const { data: base } = await admin
-      .from("voice_contact_bases").select("consultant_id").eq("id", body.base_id).maybeSingle();
+      .from("voice_contact_bases").select("consultant_id, phones").eq("id", body.base_id).maybeSingle();
     if (!base || (base as { consultant_id: string }).consultant_id !== consultantId) {
       return json(404, { error: "base_not_found" });
     }
-    const { data: items } = await admin
-      .from("voice_contact_base_items").select("phone, name").eq("base_id", body.base_id).limit(MAX_TARGETS);
-    for (const it of items || []) {
-      const row = it as { phone: string; name: string | null };
-      pushPhone(row.phone, row.name);
+    const items = Array.isArray((base as { phones?: unknown[] }).phones) ? (base as { phones: unknown[] }).phones : [];
+    for (const it of items) {
+      if (typeof it === "string") pushPhone(it);
+      else if (it && typeof it === "object") {
+        const row = it as { phone?: string; name?: string | null };
+        if (row.phone) pushPhone(row.phone, row.name ?? null);
+      }
+    }
   }
+
 
 
 
