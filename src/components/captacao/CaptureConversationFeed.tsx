@@ -254,6 +254,12 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
           const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
+          // marcador "Novas mensagens" na 1ª msg inbound recebida após abrir o lead
+          const prev = rows[idx - 1];
+          const isNewSince =
+            !out &&
+            r.created_at > openedAtRef.current &&
+            (!prev || !(prev.message_direction !== "outbound" && prev.created_at > openedAtRef.current));
           return (
             <div key={r.id}>
               {showDay && (
@@ -261,6 +267,15 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                   <span className="px-2.5 py-0.5 rounded-full bg-black/30 text-white/70 text-[10px] font-medium">
                     {dayLabel(r.created_at)}
                   </span>
+                </div>
+              )}
+              {isNewSince && (
+                <div className="flex items-center gap-2 my-2" aria-label="Novas mensagens">
+                  <span className="flex-1 h-px bg-emerald-500/40" />
+                  <span className="text-[9px] uppercase tracking-widest font-bold text-emerald-400">
+                    Novas mensagens
+                  </span>
+                  <span className="flex-1 h-px bg-emerald-500/40" />
                 </div>
               )}
               <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
@@ -284,6 +299,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             </div>
           );
         })}
+
         <div ref={bottomRef} aria-hidden className="h-1" />
       </div>
     </div>
