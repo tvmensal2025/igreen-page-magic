@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2 } from "lucide-react";
+import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2, Play, Download } from "lucide-react";
+import { whapiDownloadMedia } from "@/services/whapiApi";
 
 interface Props {
   customerId: string;
@@ -16,6 +17,7 @@ interface ConvRow {
   message_direction: string;
   message_text: string | null;
   message_type: string | null;
+  media_id: string | null;
   created_at: string;
   slot_key: string | null;
 }
@@ -86,7 +88,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
     const load = async () => {
       const { data } = await supabase
         .from("conversations")
-        .select("id, message_direction, message_text, message_type, created_at, slot_key")
+        .select("id, message_direction, message_text, message_type, media_id, created_at, slot_key")
         .eq("customer_id", customerId)
         .not("message_text", "like", "[__safety_ping__]%")
         .not("message_text", "like", "[inline-sent]%")
@@ -183,7 +185,6 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         )}
         {rows.map((r, idx) => {
           const out = r.message_direction === "outbound";
-          const text = r.message_text || `[${r.message_type || "mídia"}]`;
           const showDay = idx === 0 || dayLabel(r.created_at) !== dayLabel(rows[idx - 1].created_at);
           return (
             <div key={r.id}>
@@ -209,7 +210,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                     <span className="tabular-nums">{fmtTime(r.created_at)}</span>
                     {r.slot_key && <span className="ml-1 opacity-60">· {r.slot_key}</span>}
                   </div>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{text}</p>
+                  <MessageBody row={r} />
                 </div>
               </div>
             </div>
@@ -217,6 +218,131 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         })}
         <div ref={bottomRef} aria-hidden className="h-1" />
       </div>
+    </div>
+  );
+}
+
+/* ----- Corpo da mensagem: renderiza texto ou mídia inline ----- */
+
+function isMediaType(t: string | null | undefined) {
+  return t === "image" || t === "audio" || t === "video" || t === "document" || t === "sticker";
+}
+
+function stripPlaceholder(text: string | null, type: string | null) {
+  if (!text) return "";
+  // remove marcadores "[áudio] " / "[image:slot]" / "[arquivo]"
+  const cleaned = text
+    .replace(/^\[(?:áudio|audio|image|imagem|video|arquivo|document|sticker)(?::[^\]]*)?\]\s*/i, "")
+    .trim();
+  return cleaned;
+}
+
+const MEDIA_LABEL: Record<string, string> = {
+  image: "Imagem",
+  audio: "Áudio",
+  video: "Vídeo",
+  document: "Documento",
+  sticker: "Figurinha",
+};
+
+function MessageBody({ row }: { row: ConvRow }) {
+  const type = row.message_type || "text";
+  const caption = stripPlaceholder(row.message_text, type);
+  const hasMedia = isMediaType(type);
+
+  const [loading, setLoading] = useState(false);
+  const [dataUrl, setDataUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!row.media_id || dataUrl || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await whapiDownloadMedia({ mediaId: row.media_id });
+      if (!r?.base64) {
+        setError("Mídia indisponível");
+        return;
+      }
+      setDataUrl(`data:${r.mimetype};base64,${r.base64}`);
+    } catch (e: any) {
+      setError(e?.message || "Falha ao abrir mídia");
+    } finally {
+      setLoading(false);
+    }
+  }, [row.media_id, dataUrl, loading]);
+
+  // Auto-carrega imagens pequenas / stickers pra ficar bonito no feed
+  useEffect(() => {
+    if ((type === "image" || type === "sticker") && row.media_id && !dataUrl && !loading) {
+      load();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [type, row.media_id]);
+
+  if (!hasMedia) {
+    return (
+      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+        {row.message_text || ""}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {/* Mídia carregada */}
+      {dataUrl && (type === "image" || type === "sticker") && (
+        <a href={dataUrl} target="_blank" rel="noreferrer">
+          <img
+            src={dataUrl}
+            alt={MEDIA_LABEL[type]}
+            className="rounded-md max-h-64 w-auto object-cover border border-white/10"
+          />
+        </a>
+      )}
+      {dataUrl && type === "audio" && (
+        <audio controls preload="metadata" src={dataUrl} className="w-full h-9" />
+      )}
+      {dataUrl && type === "video" && (
+        <video controls preload="metadata" src={dataUrl} className="rounded-md max-h-64 w-auto border border-white/10" />
+      )}
+      {dataUrl && type === "document" && (
+        <a
+          href={dataUrl}
+          download
+          className="inline-flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-md px-2 py-1"
+        >
+          <Download className="w-3.5 h-3.5" /> Baixar documento
+        </a>
+      )}
+
+      {/* Fallback / botão de abrir para tipos não pré-carregados */}
+      {!dataUrl && (
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading || !row.media_id}
+          className="inline-flex items-center gap-2 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-50 px-2.5 py-1.5 text-xs font-medium transition"
+        >
+          {loading ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Play className="w-3.5 h-3.5" />
+          )}
+          <span>
+            {loading ? "Carregando…" : `Abrir ${MEDIA_LABEL[type] || "mídia"}`}
+          </span>
+        </button>
+      )}
+
+      {error && <p className="text-[11px] text-red-300">{error}</p>}
+      {!row.media_id && !dataUrl && (
+        <p className="text-[11px] opacity-60 italic">Mídia sem identificador — abra no chat completo.</p>
+      )}
+
+      {caption && (
+        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{caption}</p>
+      )}
     </div>
   );
 }
