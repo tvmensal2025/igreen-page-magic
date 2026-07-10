@@ -16,12 +16,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { useAuth } from "@/contexts/AuthContext";
 
 interface ClipRow { id: string; name: string; duration_sec: number | null; }
 
 interface Props {
   phone: string | null | undefined;
+  consultantId: string;
   contactName?: string | null;
   customerId?: string | null;
   triggerLabel?: string;
