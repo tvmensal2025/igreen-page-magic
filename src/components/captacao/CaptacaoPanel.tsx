@@ -7,7 +7,7 @@ import { CaptureConversationFeed } from "@/components/captacao/CaptureConversati
 import { CaptureLeadCard } from "@/components/captacao/CaptureLeadCard";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ClipboardCheck, X } from "lucide-react";
+import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, ClipboardCheck, X } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { MessageComposer } from "@/components/whatsapp/MessageComposer";
 import { AttendanceStatusBar } from "@/components/whatsapp/AttendanceStatusBar";
