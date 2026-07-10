@@ -124,6 +124,7 @@ export function DragResizer({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onDoubleClick={onDoubleClick}
       data-dragging={dragging || undefined}
       className={cn(
         "group relative hidden md:flex items-center justify-center transition-all shrink-0 z-20 touch-none select-none",
