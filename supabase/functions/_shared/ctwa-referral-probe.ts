@@ -42,37 +42,51 @@ export function findReferralPaths(root: unknown, maxDepth = 12): ProbeHit {
 
   const seen = new WeakSet<object>();
 
-  const walk = (node: unknown, path: string, depth: number) => {
+  const walk = (node: unknown, path: string, depth: number, parentKey = "") => {
     if (depth > maxDepth || node == null) return;
     if (typeof node !== "object") return;
     if (seen.has(node as object)) return;
     seen.add(node as object);
 
     if (Array.isArray(node)) {
-      node.forEach((v, i) => walk(v, `${path}[${i}]`, depth + 1));
+      node.forEach((v, i) => walk(v, `${path}[${i}]`, depth + 1, parentKey));
       return;
     }
 
     for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
       const lower = k.toLowerCase();
+      const parentLower = parentKey.toLowerCase();
       const nextPath = path ? `${path}.${k}` : k;
 
-      if (REFERRAL_KEYS.has(lower)) {
+      // Whapi shape: context.ad = { ctwa, source: { id, type, url } }
+      const isAdCtwa = lower === "ctwa" && parentLower === "ad";
+      const isAdSourceId = lower === "id" && parentLower === "source";
+      const isAdSourceUrl = lower === "url" && parentLower === "source";
+
+      if (REFERRAL_KEYS.has(lower) || isAdCtwa || isAdSourceId || isAdSourceUrl) {
         matchedPaths.push(nextPath);
         raw[nextPath] = v;
-        const strVal = typeof v === "string" ? v : null;
-        if (lower === "ctwaclid" || lower === "ctwa_clid") ctwaClid = ctwaClid || strVal;
-        if (lower === "sourceid" || lower === "source_id" || lower === "ad_id" || lower === "adid") {
-          sourceAdId = sourceAdId || (strVal ?? (typeof v === "number" ? String(v) : null));
+        const strVal = typeof v === "string" ? v : (typeof v === "number" ? String(v) : null);
+        if (lower === "ctwaclid" || lower === "ctwa_clid" || isAdCtwa) {
+          ctwaClid = ctwaClid || strVal;
         }
-        if (lower === "sourceurl" || lower === "source_url") sourceUrl = sourceUrl || strVal;
+        if (
+          lower === "sourceid" || lower === "source_id" ||
+          lower === "ad_id" || lower === "adid" ||
+          isAdSourceId
+        ) {
+          sourceAdId = sourceAdId || strVal;
+        }
+        if (lower === "sourceurl" || lower === "source_url" || isAdSourceUrl) {
+          sourceUrl = sourceUrl || strVal;
+        }
       }
 
-      walk(v, nextPath, depth + 1);
+      walk(v, nextPath, depth + 1, k);
     }
   };
 
-  walk(root, "", 0);
+  walk(root, "", 0, "");
   return { matchedPaths, ctwaClid, sourceAdId, sourceUrl, raw };
 }
 
