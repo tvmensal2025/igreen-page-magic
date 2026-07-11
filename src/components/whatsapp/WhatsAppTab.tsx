@@ -66,6 +66,16 @@ const MOBILE_MORE_TABS: SubTab[] = ["templates", "agendamentos", "historico"];
 
 export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab, onSubTabConsumed }: WhatsAppTabProps) {
   const isCompactLayout = useIsLgDown();
+  const [sideCollapsed, setSideCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("igreen:wa-side-collapsed") === "1"; } catch { return false; }
+  });
+  const toggleSide = useCallback(() => {
+    setSideCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem("igreen:wa-side-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
   const {
     connectionStatus,
     instanceName,
