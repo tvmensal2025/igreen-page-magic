@@ -236,18 +236,28 @@ Deno.serve(async (req) => {
     if (!shouldDispatch(stage, now)) { skipped++; continue; }
 
     let status: "queued" | "sent" | "failed" = "queued";
-    let detail: Record<string, unknown> = { note: "phase2_orchestrator", scheduled_next: def.next };
+    let detail: Record<string, unknown> = { note: "phase3_orchestrator", scheduled_next: def.next };
 
-    // Fase 2: WhatsApp real para COLD_*
-    if (def.channel === "whatsapp" && stage.startsWith("COLD_")) {
+    const needsDispatch =
+      (def.channel === "whatsapp" && stage.startsWith("COLD_")) ||
+      (def.channel === "voice"    && stage.startsWith("CALL_")) ||
+      (def.channel === "sms"      && stage.startsWith("SMS_"));
+
+    if (needsDispatch) {
       const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
       if (!cfg || !cfg.enabled) {
         detail = { ...detail, reason: "config_disabled_or_missing" };
       } else {
-        const res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+        let res: { ok: boolean; detail: string };
+        if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+        else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
+        else res = await dispatchSMS(supabase, row, stage, cfg);
         status = res.ok ? "sent" : "failed";
         detail = { ...detail, dispatch: res.detail };
         if (res.ok) sent++; else failed++;
+      }
+    }
+
       }
     }
 
