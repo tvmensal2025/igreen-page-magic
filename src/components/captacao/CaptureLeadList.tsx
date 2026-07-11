@@ -695,7 +695,9 @@ export function CaptureLeadList({
             title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
             onClick={openBatch}
           >
-            Abrir atendimento
+            {selectedVisibleCount === 1
+              ? "Iniciar atendimento"
+              : `Abrir atendimento (${selectedVisibleCount}) — áudio/mensagem`}
           </Button>
         </div>
       ) : (

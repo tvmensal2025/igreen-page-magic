@@ -83,7 +83,7 @@ function markRestSkipped(results: BatchLeadResult[], fromIndex: number) {
 async function startAttendanceForLead(
   customerId: string,
   consultantId: string,
-): Promise<"sent" | "already"> {
+): Promise<"sent" | "already" | { fallback: string }> {
   const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
     body: { customerId, consultantId },
   });
@@ -93,10 +93,17 @@ async function startAttendanceForLead(
     message?: string;
     detail?: string;
     error?: string;
+    fallback?: boolean;
   } | null;
 
   if (error && !body) throw new Error(errorMessage(error, "Falha no protocolo"));
-  if (body?.ok === false && body.skipped !== "already_sent") {
+  if (body?.ok === false) {
+    if (body.skipped === "already_sent") return "already";
+    // Erros "soft" que a edge marca como fallback: não tratamos como falha hard;
+    // devolvemos um status leve para o loop marcar como "skipped" com aviso.
+    if (body.fallback) {
+      return { fallback: body.message || body.detail || body.error || "envio manual" };
+    }
     throw new Error(body.message || body.detail || body.error || "Falha no protocolo");
   }
   if (body?.skipped === "already_sent") return "already";
@@ -184,6 +191,12 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
         if (outcome === "already") {
           parts.push("já iniciado");
           lead.welcome_sent_at = lead.welcome_sent_at || new Date().toISOString();
+        } else if (typeof outcome === "object" && "fallback" in outcome) {
+          // Envio automático não rolou (canal/rate/etc). Marca skipped legível
+          // em vez de "Falhou" e pula os próximos envios deste lead.
+          results[i] = { id: lead.id, status: "skipped", detail: `Envie manualmente: ${outcome.fallback}` };
+          emit();
+          continue;
         } else {
           parts.push("protocolo");
           lead.welcome_sent_at = new Date().toISOString();
