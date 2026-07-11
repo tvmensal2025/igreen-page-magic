@@ -302,7 +302,7 @@ export function OpenAttendanceBatchDialog({
           phone_whatsapp: l.phone_whatsapp,
           welcome_sent_at: l.welcome_sent_at,
         })),
-        startAttendance,
+        startAttendance: startAttendance && !customText,
         audioUrl,
         imageUrl,
         customText,
@@ -390,21 +390,71 @@ export function OpenAttendanceBatchDialog({
 
           {showConfig && (
             <>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                <div className="min-w-0">
-                  <Label htmlFor="batch-start-att" className="text-sm font-medium">
-                    Iniciar atendimento
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">Envia protocolo (pula quem já iniciou)</p>
+              {/* 1) MENSAGEM DE TEXTO — protagonista, sempre visível e editável */}
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold text-foreground">
+                  Mensagem para enviar <span className="text-muted-foreground font-normal">(escolha um template ou escreva)</span>
+                </Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+                  <div className="shrink-0 w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
+                    <MessageSquare className="w-4 h-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <Select
+                      value={textId}
+                      onValueChange={(v) => {
+                        setTextId(v);
+                        if (v === "__none__") setTextBody("");
+                        else if (v === "__blank__") setTextBody("");
+                        else {
+                          const t = textTemplates.find((x) => x.id === v);
+                          setTextBody(templateTextContent(t) || "");
+                        }
+                      }}
+                      disabled={running}
+                    >
+                      <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
+                        <SelectValue placeholder="Escolher template ou escrever" />
+                      </SelectTrigger>
+                      <SelectContent className="z-[130]">
+                        <SelectItem value="__none__">Nenhuma mensagem</SelectItem>
+                        <SelectItem value="__blank__">Escrever nova mensagem…</SelectItem>
+                        {textTemplates.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <Switch
-                  id="batch-start-att"
-                  checked={startAttendance}
-                  onCheckedChange={setStartAttendance}
+                <Textarea
+                  value={textBody}
+                  onChange={(e) => {
+                    setTextBody(e.target.value);
+                    if (e.target.value.trim() && textId === "__none__") setTextId("__blank__");
+                  }}
+                  placeholder="Escreva a mensagem que vai pra todos… use {{nome}} para personalizar."
+                  rows={5}
                   disabled={running}
+                  className="text-xs rounded-lg resize-none"
                 />
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    disabled={running}
+                    onClick={() => setTextBody((v) => (v ? `${v} {{nome}}` : "{{nome}}"))}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
+                  >
+                    inserir {"{{nome}}"}
+                  </button>
+                  {textBody.trim() && workLeads[0] && (
+                    <span className="text-[10px] text-muted-foreground truncate max-w-[60%]" title={`Para ${workLeads[0].name || "cliente"}: ${textBody.split("{{nome}}").join((workLeads[0].name || "").split(/\s+/)[0] || "tudo bem")}`}>
+                      Prévia: {(textBody.split("{{nome}}").join((workLeads[0].name || "").split(/\s+/)[0] || "tudo bem")).slice(0, 40)}…
+                    </span>
+                  )}
+                </div>
               </div>
 
+              {/* 2) ÁUDIO */}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Áudio (opcional)</Label>
                 <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
@@ -457,6 +507,7 @@ export function OpenAttendanceBatchDialog({
                 )}
               </div>
 
+              {/* 3) IMAGEM */}
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">Imagem (opcional)</Label>
                 <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
@@ -491,63 +542,25 @@ export function OpenAttendanceBatchDialog({
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Mensagem de texto (opcional)</Label>
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                  <div className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <Select
-                      value={textId}
-                      onValueChange={(v) => {
-                        setTextId(v);
-                        if (v === "__none__") setTextBody("");
-                        else if (v === "__blank__") setTextBody("");
-                        else {
-                          const t = textTemplates.find((x) => x.id === v);
-                          setTextBody(templateTextContent(t) || "");
-                        }
-                      }}
-                      disabled={running}
-                    >
-                      <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
-                        <SelectValue placeholder="Nenhum texto" />
-                      </SelectTrigger>
-                      <SelectContent className="z-[130]">
-                        <SelectItem value="__none__">Nenhum texto</SelectItem>
-                        <SelectItem value="__blank__">Escrever novo texto…</SelectItem>
-                        {textTemplates.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              {/* 4) Protocolo interno — secundário */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 bg-muted/20">
+                <div className="min-w-0">
+                  <Label htmlFor="batch-start-att" className="text-xs font-medium">
+                    Registrar protocolo interno
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    {customText
+                      ? "Desligado — sua mensagem substitui a frase padrão."
+                      : "Envia frase padrão de abertura (pula quem já iniciou)."}
+                  </p>
                 </div>
-                {(textId !== "__none__" || textBody) && (
-                  <>
-                    <Textarea
-                      value={textBody}
-                      onChange={(e) => setTextBody(e.target.value)}
-                      placeholder="Escreva ou edite a mensagem… use {{nome}} para personalizar."
-                      rows={4}
-                      disabled={running}
-                      className="text-xs rounded-lg resize-none"
-                    />
-                    <div className="flex gap-1.5">
-                      <button
-                        type="button"
-                        disabled={running}
-                        onClick={() => setTextBody((v) => v + "{{nome}}")}
-                        className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20"
-                      >
-                        {"{{nome}}"}
-                      </button>
-                    </div>
-                  </>
-                )}
+                <Switch
+                  id="batch-start-att"
+                  checked={startAttendance && !customText}
+                  onCheckedChange={setStartAttendance}
+                  disabled={running || !!customText}
+                />
               </div>
-
 
               {needsChannel && !instanceName && (
                 <p className="text-[11px] text-destructive">
@@ -556,7 +569,7 @@ export function OpenAttendanceBatchDialog({
               )}
 
               <p className="text-[11px] text-muted-foreground">
-                Envia protocolo e/ou mídia, com intervalo de 5s entre cada.
+                Envio com intervalo de 5s entre cada cliente.
               </p>
             </>
           )}
