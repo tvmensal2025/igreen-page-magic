@@ -42,7 +42,9 @@ interface Props {
   gameOn?: boolean;
   whatsappConnected?: boolean;
   onOpenBatch?: (leads: CaptureBatchLead[], periodLabel: string) => void;
+  onCollapseList?: () => void;
 }
+
 
 const PERIOD_OPTIONS: { key: CapturePeriodKey; label: string; ms: number | null }[] = [
   { key: "48h", label: "48h", ms: 48 * 60 * 60 * 1000 },
