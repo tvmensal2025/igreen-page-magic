@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ArrowLeft, Save, Zap, ZapOff, Clock, Activity } from "lucide-react";
+import { Loader2, ArrowLeft, Save, Zap, ZapOff, Clock, Activity, AlertTriangle, Play, Pause, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 /**
@@ -68,9 +68,18 @@ export default function AdminMotorCadencia() {
   const [stages, setStages] = useState<Record<StageKey, StageRow>>({} as any);
   const [stats, setStats] = useState<{ stage: string; count: number }[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [dueLeads, setDueLeads] = useState<any[]>([]);
+  const [slaCount, setSlaCount] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [ticking, setTicking] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000);
+    const t2 = setInterval(() => void loadDue(), 30000);
+    return () => { clearInterval(t); clearInterval(t2); };
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -98,7 +107,52 @@ export default function AdminMotorCadencia() {
     setStats(Object.entries(grouped).map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count));
 
     setLogs(recentLogs || []);
+    await loadDue();
     setLoading(false);
+  }
+
+  async function loadDue() {
+    const soon = new Date(Date.now() + 60 * 60_000).toISOString(); // próxima 1h
+    const { data } = await supabase
+      .from("lead_cadence_state")
+      .select("id, stage, next_action_at, customer_id, consultant_id, paused_until, customers:customer_id(name, phone_whatsapp), consultants:consultant_id(name)")
+      .lte("next_action_at", soon)
+      .not("stage", "in", "(WON,PAUSED,RETARGET_META)")
+      .order("next_action_at", { ascending: true })
+      .limit(50);
+    const list = data || [];
+    setDueLeads(list);
+    const nowMs = Date.now();
+    setSlaCount(list.filter((l: any) => l.next_action_at && new Date(l.next_action_at).getTime() < nowMs - 30 * 60_000).length);
+  }
+
+  async function forceNow(id: string) {
+    const { error } = await supabase.from("lead_cadence_state").update({ next_action_at: new Date().toISOString(), paused_until: null, paused_reason: null }).eq("id", id);
+    if (error) { toast.error("Falha ao forçar"); return; }
+    toast.success("Próxima ação agendada agora");
+    await loadDue();
+  }
+
+  async function pause24h(id: string) {
+    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const { error } = await supabase.from("lead_cadence_state").update({ paused_until: until, paused_reason: "manual_admin", next_action_at: until }).eq("id", id);
+    if (error) { toast.error("Falha ao pausar"); return; }
+    toast.success("Pausado por 24h");
+    await loadDue();
+  }
+
+  async function runTickNow() {
+    setTicking(true);
+    try {
+      const { error } = await supabase.functions.invoke("cadence-tick", { body: { manual: true } });
+      if (error) throw error;
+      toast.success("Tick executado");
+      await loadDue();
+    } catch (e: any) {
+      toast.error("Falha no tick: " + (e?.message || e));
+    } finally {
+      setTicking(false);
+    }
   }
 
   async function toggleEngine(v: boolean) {
@@ -176,6 +230,55 @@ export default function AdminMotorCadencia() {
                 </Badge>
               ))}
           </div>
+        </Card>
+
+        {/* Command Center — SLA tempo real */}
+        <Card className="p-4 border-l-4" style={{ borderLeftColor: slaCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--primary))" }}>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              {slaCount > 0 ? <AlertTriangle className="h-4 w-4 text-destructive" /> : <Activity className="h-4 w-4 text-primary" />}
+              Central de comando — próximas ações
+              {slaCount > 0 && <Badge variant="destructive" className="ml-1">{slaCount} SLA violado</Badge>}
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => loadDue()}><RefreshCw className="h-3 w-3 mr-1" /> Atualizar</Button>
+              <Button size="sm" onClick={runTickNow} disabled={ticking}>
+                {ticking ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                Executar tick agora
+              </Button>
+            </div>
+          </div>
+          {dueLeads.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhuma ação pendente na próxima 1h.</p>
+          ) : (
+            <div className="space-y-1 text-xs max-h-96 overflow-auto">
+              {dueLeads.map((l: any) => {
+                const nextMs = l.next_action_at ? new Date(l.next_action_at).getTime() : 0;
+                const diffMin = Math.round((nextMs - now) / 60000);
+                const overdue = diffMin < -30;
+                const due = diffMin <= 0;
+                return (
+                  <div key={l.id} className={`flex items-center gap-2 border-b py-2 ${overdue ? "bg-destructive/5" : ""}`}>
+                    <Badge variant={overdue ? "destructive" : due ? "default" : "outline"} className="min-w-20 justify-center">
+                      {overdue ? `${Math.abs(diffMin)}m atrasado` : due ? "agora" : `em ${diffMin}m`}
+                    </Badge>
+                    <Badge variant="secondary">{l.stage}</Badge>
+                    <span className="flex-1 truncate">
+                      <b>{l.customers?.name || "sem nome"}</b>
+                      <span className="text-muted-foreground"> · {l.customers?.phone_whatsapp || "-"}</span>
+                      <span className="text-muted-foreground"> · {l.consultants?.name || "-"}</span>
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => forceNow(l.id)} title="Forçar próxima ação agora">
+                      <Play className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => pause24h(l.id)} title="Pausar 24h">
+                      <Pause className="h-3 w-3" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Card>
 
         {/* Janela útil */}
