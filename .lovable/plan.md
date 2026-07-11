@@ -1,49 +1,51 @@
-## Diagnóstico
+## Refinar Captação — parity com padrão WhatsApp Business
 
-O botão **Agendar ligação** JÁ está no `CaptureLeadList.tsx` (linha 994) e no `CaptureSheet.tsx` (linha 507), mas na lista ele está com `opacity-0 group-hover:opacity-100` — só aparece ao passar o mouse. Em telas touch, monitor grande ou quando o consultor não passa por cima, ele fica invisível. Por isso "sumiu".
+### Diagnóstico
+1. Botão "Agendar ligação" no card é um ícone 24×24 ghost espremido ao lado da barra de progresso — some visualmente.
+2. Header do `CaptureSheet` (painel do lead aberto) NÃO tem botão Agendar — só existe no rodapé, embaixo de CADASTRAR/Encerrar. Por isso "aqui dentro não aparece".
+3. Nomes ficam estreitos porque a linha divide espaço com timestamp + badge unread + ícone telefone.
+4. "Em atendimento" e "Em espera" hoje são acordeões empilhados. Ferramentas do mercado (WhatsApp Business, Kommo, RD) usam abas no topo — o consultor troca entre visões sem rolar.
 
-Além disso, comparando com o chat do WhatsApp (`ChatView`), a Captação ainda tem lacunas menores que valem consolidar agora.
+### O que vou fazer
 
-## O que fazer
+**1. Abas no topo da lista** — em `CaptureLeadList.tsx`, substituir os 5 acordeões por 2 abas:
+- `Em atendimento (N)` — lista plana ordenada por atividade
+- `Em espera (N •)` — mantém sub-headers Hoje / Ontem / 7d / Antigos
+- Cada aba mostra sua própria bolinha de não-lidas
+- Aba selecionada persiste em `localStorage`
 
-### 1. Botão Agendar sempre visível no card (fix principal)
-- Em `src/components/captacao/CaptureLeadList.tsx`: remover `opacity-0 group-hover:opacity-100`. Deixar o ícone de telefone com `opacity-70 hover:opacity-100`, tamanho `icon-xs` (24px) pra caber sem competir com a barra de progresso.
-- Manter `onClick={(e) => e.stopPropagation()}` pra não abrir o cockpit ao clicar.
-- Ocultar apenas no `selectMode` (batch).
+```text
+Conversas · 165
+[buscar…]
+┌─────────────┬─────────────────┐
+│ Em atend 16 │ Em espera 149 • │
+└─────────────┴─────────────────┘
+[48h 7d 30d 60d 90d Todos]
+```
 
-### 2. Botão no header do CaptureSheet
-- Hoje `ScheduleCallButton` aparece só no rodapé de ações. Adicionar também no header do sheet (ao lado do CloseCaptureButton) igual ao `ChatView`, pra ficar 1 clique quando o lead já está aberto.
+**2. Botão "Ligar" visível no card** — trocar ícone-only 24×24 por botão pequeno com ícone + texto "Ligar" (`h-6 px-2 text-[10px]`), reposicionado pra linha do timestamp (canto superior direito). Libera a linha da barra de progresso e fica clicável sem hover.
 
-### 3. Lacunas remanescentes vs. ChatView
+**3. Nome com mais espaço** — remover contador numérico `filled/total` (barra já é o feedback), reduzir gaps internos, subir nome pra `text-[13px] leading-tight`.
 
-a. **"Iniciar atendimento" (start-customer-attendance)** — existe no `ChatView` mas não no cockpit da Captação. Adicionar botão no header do `CaptureSheet` quando o lead ainda não teve saudação enviada (mesma edge function).
+**4. Header do `CaptureSheet` ganha atalhos** — ao lado do X de fechar:
+- 📞 Ligar → abre dialog de `ScheduleCallButton`
+- ▶ Iniciar atendimento → dispara `start-customer-attendance` (só quando `!welcome_sent_at`)
+- Botões `h-6 px-2 text-[10px]` variant ghost, sem competir com o CADASTRAR do rodapé.
 
-b. **Status de entrega por mensagem (✓/✓✓/lido)** — o feed atual mostra só timestamp. Renderizar os ticks quando `conversations.message_status` existir (`sent`, `delivered`, `read`), reaproveitando o helper que o ChatView usa.
-
-c. **Indicador "cliente digitando…"** — o ChatView escuta presence do Evolution. Adicionar o mesmo listener no `CaptureConversationFeed` (subheader do lead selecionado).
-
-d. **Busca dentro da lista** — o ChatView tem input de busca por nome/telefone; a Captação só tem filtros por período/status. Adicionar `<Input>` de busca no topo da lista (client-side sobre `leads`).
-
-e. **Atalho "Marcar como não lido"** — inverso do "Ler tudo". Menu de contexto no card (botão de 3 pontinhos ou long-press) que força `unread_count = 1` e regrava `cap_last_seen_{id}` no `localStorage` como 0.
-
-f. **Contador de "conversas ativas hoje"** no header — hoje só mostra total e não-lidas. Adicionar "X ativas hoje" (leads com `lastMsgAt >= startOfDay`) pra o consultor medir volume do dia.
+**5. Não-lidas por aba** — dividir `unreadTotal` global em `unreadEmAtendimento` / `unreadEmEspera` pra pintar a bolinha da aba certa.
 
 ### Fora do escopo
-- Mudanças em edge functions, schema ou tabelas.
-- Mexer em fluxos do bot, composer, ou lógica de encerramento.
-- Persistir unread no banco (segue client-side).
+- Edge functions, bot, fluxo de mensagens.
+- Persistir aba/unread no banco (segue client-side).
+- Redesenhar o feed de mensagens (`CaptureConversationFeed`).
 
-## Arquivos afetados
+### Arquivos afetados
+- `src/components/captacao/CaptureLeadList.tsx`
+- `src/components/captacao/CaptureSheet.tsx`
 
-- `src/components/captacao/CaptureLeadList.tsx` — botão sempre visível, busca client-side, contador "ativas hoje", menu "marcar não-lido".
-- `src/components/captacao/CaptureSheet.tsx` — botão Agendar + Iniciar atendimento no header.
-- `src/components/captacao/CaptureConversationFeed.tsx` — ticks de status, presence "digitando".
-
-## Critérios de aceite
-
-- Ícone de telefone visível em todos os cards da Captação sem precisar hover, e clicável sem abrir o cockpit.
-- Header do CaptureSheet tem "Agendar ligação" e "Iniciar atendimento" ao lado do botão de encerrar.
-- Feed mostra ✓/✓✓ nas mensagens outbound quando o Evolution reporta status.
-- Barra de busca filtra a lista por nome ou telefone em tempo real.
-- Header da lista exibe "N conversas · X não-lidas · Y ativas hoje".
-- Card tem opção "marcar como não lido" que devolve o badge sem precisar aguardar nova mensagem.
+### Critérios de aceite
+- Header da lista tem 2 abas ("Em atendimento N" / "Em espera N") — clicar troca a view sem misturar.
+- Cada aba mostra sua própria contagem de não-lidas.
+- Botão "Ligar" visível no canto superior direito de todo card sem depender de hover.
+- Nome do lead ocupa pelo menos 60% da largura do card antes de truncar.
+- Header do painel do lead aberto (inline) tem "📞 Ligar" e (quando aplicável) "▶ Iniciar atendimento".

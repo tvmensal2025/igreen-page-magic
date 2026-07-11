@@ -29,9 +29,10 @@ import { ComboTimer } from "@/components/captacao/game/ComboTimer";
 import { XpFloaterProvider, useXpFloater } from "@/components/captacao/game/XpFloater";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2 } from "lucide-react";
+import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2, Phone, Play } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
+import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 
 interface Props {
   open: boolean;
@@ -74,6 +75,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [seqOpen, setSeqOpen] = useState(false);
   const [askNotice, setAskNotice] = useState(false);
   const lastCountRef = useRef(0);
+  const attendance = useCustomerAttendance(customerId, consultantId);
 
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
   // Mas quando o consultor expande, vai direto pra fullscreen (sem estado compacto intermediário).
@@ -387,6 +389,31 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               >
                 {askingName ? <Loader2 className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
                 Nome
+              </Button>
+            )}
+            {phoneNumber && !/sem_celular/i.test(phoneNumber) && (
+              <ScheduleCallButton
+                phone={phoneNumber}
+                consultantId={consultantId}
+                contactName={customerName || phoneNumber}
+                customerId={customerId}
+                triggerLabel="Ligar"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] gap-1 shrink-0 text-primary hover:bg-primary/10"
+              />
+            )}
+            {attendance.uiState === "not_started" && !isRegistered && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] gap-1 shrink-0 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                onClick={() => void attendance.startAttendance()}
+                disabled={attendance.starting}
+                title="Envia a saudação inicial e gera o protocolo"
+              >
+                {attendance.starting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                Iniciar
               </Button>
             )}
             <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => onOpenChange(false)} title="Fechar painel">

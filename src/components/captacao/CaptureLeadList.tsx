@@ -10,7 +10,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  MessageCircle,
+  
   Clock,
   CheckCheck,
 } from "lucide-react";
@@ -354,13 +354,30 @@ export function CaptureLeadList({
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
-  const unreadTotal = useMemo(() => {
-    let n = 0;
-    for (const id of Object.keys(unread)) {
-      if (filteredIds.has(id) && unread[id] > 0) n += unread[id];
+  const emAtendimento = useMemo(() => filtered.filter((l) => !!l.welcome_sent_at), [filtered]);
+  const emEspera = useMemo(() => filtered.filter((l) => !l.welcome_sent_at), [filtered]);
+
+  const [activeTab, setActiveTab] = useState<"atendimento" | "espera">(() => {
+    try {
+      const v = localStorage.getItem("cap_active_tab");
+      return v === "espera" ? "espera" : "atendimento";
+    } catch { return "atendimento"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("cap_active_tab", activeTab); } catch {}
+  }, [activeTab]);
+
+  const unreadByTab = useMemo(() => {
+    let atend = 0, esp = 0;
+    for (const l of filtered) {
+      const n = unread[l.id] || 0;
+      if (n <= 0) continue;
+      if (l.welcome_sent_at) atend += n; else esp += n;
     }
-    return n;
-  }, [unread, filteredIds]);
+    return { atend, esp };
+  }, [filtered, unread]);
+
+  const unreadTotal = unreadByTab.atend + unreadByTab.esp;
 
   const activeToday = useMemo(() => {
     const now = new Date();
@@ -384,6 +401,7 @@ export function CaptureLeadList({
     writeLastSeen(id, 0);
     setUnread((prev) => ({ ...prev, [id]: Math.max(1, prev[id] || 0) }));
   }, []);
+
 
 
   useEffect(() => {
@@ -575,6 +593,44 @@ export function CaptureLeadList({
             className="h-9 pl-8 text-xs rounded-lg"
           />
         </div>
+
+        {/* Abas Em atendimento / Em espera (padrão WhatsApp Business) */}
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-0.5">
+          {([
+            { key: "atendimento" as const, label: "Em atendimento", count: emAtendimento.length, unread: unreadByTab.atend, live: emAtendimento.length > 0 },
+            { key: "espera" as const, label: "Em espera", count: emEspera.length, unread: unreadByTab.esp, live: false },
+          ]).map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setActiveTab(t.key)}
+                className={`relative flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition ${
+                  active
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.live && active && (
+                  <span className="relative inline-flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
+                    <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                )}
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] tabular-nums font-bold px-1.5 py-px rounded-full ${
+                  active ? "bg-primary/15 text-primary" : "bg-background/80 text-muted-foreground border border-border/60"
+                }`}>{t.count}</span>
+                {t.unread > 0 && (
+                  <span className="text-[9px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[14px] h-[14px] px-1 rounded-full flex items-center justify-center">
+                    {t.unread > 9 ? "9+" : t.unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
@@ -589,20 +645,24 @@ export function CaptureLeadList({
             </p>
           </div>
         )}
-        <GroupedLeads
-          consultantId={consultantId}
-          leads={filtered}
-          selectedId={selectedId}
-          selectMode={selectMode}
-          selectedIds={selectedIds}
-          onSelect={onSelect}
-          toggleId={toggleId}
-          fmtTime={fmtTime}
-          fmtPhone={fmtPhone}
-          unread={unread}
-          flash={flash}
-        />
+        {!loading && filtered.length > 0 && (
+          <GroupedLeads
+            mode={activeTab}
+            consultantId={consultantId}
+            leads={activeTab === "atendimento" ? emAtendimento : emEspera}
+            selectedId={selectedId}
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            onSelect={onSelect}
+            toggleId={toggleId}
+            fmtTime={fmtTime}
+            fmtPhone={fmtPhone}
+            unread={unread}
+            flash={flash}
+          />
+        )}
       </div>
+
 
       {selectMode && selectedVisibleCount > 0 ? (
         <div className="p-2 border-t border-border flex items-center gap-1.5 shrink-0 bg-card/80">
@@ -734,66 +794,58 @@ function timeBucket(l: CaptureBatchLead): "hoje" | "ontem" | "semana" | "antigos
   return "antigos";
 }
 
-function GroupedLeads(props: GroupedLeadsProps) {
-  const { leads } = props;
-  const groups = useMemo(() => {
-    const emAtendimento: CaptureBatchLead[] = [];
+function GroupedLeads(props: GroupedLeadsProps & { mode: "atendimento" | "espera" }) {
+  const { leads, mode } = props;
+  const buckets = useMemo(() => {
     const espera = { hoje: [] as CaptureBatchLead[], ontem: [] as CaptureBatchLead[], semana: [] as CaptureBatchLead[], antigos: [] as CaptureBatchLead[] };
-    for (const l of leads) {
-      if (l.welcome_sent_at) emAtendimento.push(l);
-      else espera[timeBucket(l)].push(l);
-    }
-    return { emAtendimento: sortByActivity(emAtendimento), espera };
+    for (const l of leads) espera[timeBucket(l)].push(l);
+    return espera;
   }, [leads]);
+
+  if (mode === "atendimento") {
+    if (leads.length === 0) {
+      return (
+        <p className="p-6 text-center text-xs text-muted-foreground">
+          Nenhum lead em atendimento agora.
+        </p>
+      );
+    }
+    return (
+      <ul className="divide-y divide-border/60">
+        {sortByActivity(leads).map((l) => (
+          <LeadCard
+            key={l.id}
+            lead={l}
+            consultantId={props.consultantId}
+            selectedId={props.selectedId}
+            selectMode={props.selectMode}
+            selectedIds={props.selectedIds}
+            onSelect={props.onSelect}
+            toggleId={props.toggleId}
+            fmtTime={props.fmtTime}
+            fmtPhone={props.fmtPhone}
+            unreadCount={props.unread[l.id] || 0}
+            flashAt={props.flash[l.id] || 0}
+          />
+        ))}
+      </ul>
+    );
+  }
+
+  if (leads.length === 0) {
+    return (
+      <p className="p-6 text-center text-xs text-muted-foreground">
+        Nenhum lead em espera.
+      </p>
+    );
+  }
 
   return (
     <div>
-      <LeadSection
-        {...props}
-        groupKey="atendimento"
-        title="Em atendimento"
-        icon={<MessageCircle className="w-3 h-3" />}
-        toneClass="text-emerald-700 dark:text-emerald-400"
-        leads={groups.emAtendimento}
-        showLiveDot
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_hoje"
-        title="Em espera · Hoje"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.hoje)}
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_ontem"
-        title="Em espera · Ontem"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.ontem)}
-        defaultOpen
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_semana"
-        title="Em espera · Últimos 7 dias"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-amber-700 dark:text-amber-400"
-        leads={sortByActivity(groups.espera.semana)}
-        defaultOpen={false}
-      />
-      <LeadSection
-        {...props}
-        groupKey="espera_antigos"
-        title="Em espera · Mais antigos"
-        icon={<Clock className="w-3 h-3" />}
-        toneClass="text-muted-foreground"
-        leads={sortByActivity(groups.espera.antigos)}
-        defaultOpen={false}
-      />
+      <LeadSection {...props} groupKey="espera_hoje" title="Hoje" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.hoje)} defaultOpen />
+      <LeadSection {...props} groupKey="espera_ontem" title="Ontem" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.ontem)} defaultOpen />
+      <LeadSection {...props} groupKey="espera_semana" title="Últimos 7 dias" icon={<Clock className="w-3 h-3" />} toneClass="text-amber-700 dark:text-amber-400" leads={sortByActivity(buckets.semana)} defaultOpen={false} />
+      <LeadSection {...props} groupKey="espera_antigos" title="Mais antigos" icon={<Clock className="w-3 h-3" />} toneClass="text-muted-foreground" leads={sortByActivity(buckets.antigos)} defaultOpen={false} />
     </div>
   );
 }
@@ -977,60 +1029,45 @@ function LeadCard({
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
             <span
-              className={`truncate text-sm text-foreground sensitive-name ${hasUnread ? "font-bold" : "font-medium"}`}
+              className={`flex-1 min-w-0 truncate text-[13px] leading-tight text-foreground sensitive-name ${hasUnread ? "font-bold" : "font-medium"}`}
             >
               {l.name || "Sem nome"}
             </span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className={`text-[10px] tabular-nums ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
-                {fmtTime(l.lastMsgAt || l.created_at)}
+            <span className={`text-[10px] tabular-nums shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+              {fmtTime(l.lastMsgAt || l.created_at)}
+            </span>
+            {hasUnread && (
+              <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center shrink-0">
+                {unreadCount > 9 ? "9+" : unreadCount}
               </span>
-              {hasUnread && (
-                <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center">
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </div>
+            )}
+            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
+              <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <ScheduleCallButton
+                  phone={l.phone_whatsapp}
+                  consultantId={consultantId}
+                  contactName={l.name}
+                  customerId={l.id}
+                  triggerLabel="Ligar"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-1.5 text-[10px] gap-0.5 text-muted-foreground hover:text-primary hover:bg-primary/10"
+                />
+              </div>
+            )}
           </div>
           <p
             className={`truncate text-[11px] mt-0.5 sensitive-phone ${hasUnread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}
           >
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
-          <div className="mt-1.5 flex items-center gap-1.5">
-            <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <span
-              className={`text-[10px] tabular-nums font-medium shrink-0 ${ready ? "text-primary" : "text-muted-foreground"}`}
-            >
-              {l.filled}/{CAPTURE_FIELDS.length}
-            </span>
-            {/* Agendar ligação inline — sempre visível pra o consultor achar rápido */}
-            {!selectMode && l.phone_whatsapp && !/sem_celular/i.test(l.phone_whatsapp) && (
-              <div
-                className="shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ScheduleCallButton
-                  phone={l.phone_whatsapp}
-                  consultantId={consultantId}
-                  contactName={l.name}
-                  customerId={l.id}
-                  triggerLabel="Agendar"
-                  size="icon-xs"
-                  variant="ghost"
-                  className="h-6 w-6 text-muted-foreground hover:text-primary hover:bg-primary/10"
-                  iconOnly
-                />
-              </div>
-            )}
-
+          <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
+              style={{ width: `${pct}%` }}
+            />
           </div>
         </div>
       </div>
