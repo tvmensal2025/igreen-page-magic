@@ -107,6 +107,79 @@ async function dispatchWhatsApp(
   }
 }
 
+/** Busca telefone + nome do consultor para merge nas variáveis do template. */
+async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
+  const { data: cust } = await supabase
+    .from("customers")
+    .select("id, name, phone_whatsapp")
+    .eq("id", customerId).maybeSingle();
+  let consultantName = "";
+  let consultantPhone = "";
+  if (consultantId) {
+    const { data: c } = await supabase
+      .from("consultants")
+      .select("name, whatsapp_number, phone")
+      .eq("id", consultantId).maybeSingle();
+    consultantName = (c?.name || "").split(" ")[0] || "";
+    consultantPhone = String(c?.whatsapp_number || c?.phone || "").replace(/\D/g, "");
+  }
+  return { cust, consultantName, consultantPhone };
+}
+
+async function dispatchVoiceCall(
+  supabase: any, row: any, stage: Stage, cfg: StageConfig,
+): Promise<{ ok: boolean; detail: string }> {
+  if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
+  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+  const dest = toVelipBRDest(cust.phone_whatsapp);
+  if (!dest) return { ok: false, detail: "invalid_phone" };
+
+  const firstName = (cust.name || "").split(" ")[0] || "";
+  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
+  const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${Date.now()}`);
+
+  try {
+    const r = cfg.velip_audio_id
+      ? await playAudioFile({ to: dest, audioId: cfg.velip_audio_id, ctid })
+      : await makeTTSCall({ to: dest, ttsText: text, ctid });
+    if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
+    return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
+  } catch (e) {
+    return { ok: false, detail: `exception:${(e as Error).message}` };
+  }
+}
+
+async function dispatchSMS(
+  supabase: any, row: any, stage: Stage, cfg: StageConfig,
+): Promise<{ ok: boolean; detail: string }> {
+  if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
+  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+  const dest = toVelipBRDest(cust.phone_whatsapp);
+  if (!dest) return { ok: false, detail: "invalid_phone" };
+
+  const firstName = (cust.name || "").split(" ")[0] || "";
+  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
+  if (!text.trim()) return { ok: false, detail: "empty_message" };
+
+  try {
+    const r = await makeSMS({ to: dest, text });
+    await supabase.from("voice_sms_log").insert({
+      consultant_id: row.consultant_id, phone: dest, message: text,
+      velip_sms_id: r.cdls_id ?? null, velip_ctid: r.ctid ?? null,
+      status: r.ok ? "sent" : "failed",
+      error: r.ok ? null : (r.error ?? "velip_error"),
+      raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
+    });
+    if (!r.ok) return { ok: false, detail: `velip:${r.error || "sms_failed"}` };
+    return { ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
+  } catch (e) {
+    return { ok: false, detail: `exception:${(e as Error).message}` };
+  }
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
