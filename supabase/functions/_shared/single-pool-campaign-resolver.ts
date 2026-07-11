@@ -55,15 +55,15 @@ async function listActivePoolCampaigns(
 }
 
 
-/**
- * Se o consultor tem exatamente 1 campanha com pool de rodízio ativa,
- * retorna esse campaign_id. Usado quando a frase-âncora do Meta chega
- * sem AD ID / ctwa_clid / FB-xxxxx — sem ambiguidade, o rodízio pode rodar.
- */
+/** @deprecated Única pool ativa não prova campanha. Sem protocolo/AD ID/CTWA, retorna null. */
 export async function resolveCampaignBySoleActivePool(
   supabase: any,
   consultantId: string,
 ): Promise<string | null> {
+  console.warn("[sole-active-pool] desativado: única pool ativa não prova origem do anúncio");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     // Dedup por campaign_id (pode haver 2 pools apontando pra mesma campanha)
