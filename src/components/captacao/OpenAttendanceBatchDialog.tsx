@@ -621,7 +621,7 @@ export function OpenAttendanceBatchDialog({
                       setUploadingFile(true);
                       try {
                         const res = await uploadMedia(f, undefined, {
-                          scope: "captacao-batch",
+                          scope: "chat",
                           consultant_id: consultantId,
                           kind: "batch-attachment",
                         });
