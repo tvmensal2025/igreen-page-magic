@@ -976,6 +976,22 @@ Deno.serve(async (req) => {
           }
         }
 
+        // 2.5) Rede de segurança: ad_id embutido em source_url (quando Meta não
+        //      manda referral.source_id direto mas manda a URL do anúncio).
+        if (!sourceCampaignId && sourceUrl) {
+          try {
+            const { resolveCampaignByAdIdInUrl } = await import("../_shared/ctwa-url-extractor.ts");
+            const hit = await resolveCampaignByAdIdInUrl(supabase, instanceData.consultant_id, sourceUrl);
+            if (hit) {
+              sourceCampaignId = hit.campaignId;
+              sourceAdId = sourceAdId || hit.adId;
+              matchMethod = "ad_id_in_url";
+            }
+          } catch (e) {
+            console.warn("[lead-source] ad_id-in-url match falhou:", (e as Error).message);
+          }
+        }
+
         // 3) Match por initial_message (heurística — texto pré-preenchido da campanha)
         if (!sourceCampaignId && messageText && messageText.trim().length > 5) {
           try {
