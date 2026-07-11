@@ -1,56 +1,56 @@
 
-# Ajustes na Captação
+# Modal "Iniciar atendimento" — unificar e destravar
 
-Quatro problemas relatados, todos em `src/components/captacao/`.
+Nota: `.lovable/` está no `.gitignore` — este plano não persiste no repo. Se quiser mantê-lo, me diga para remover a entrada.
 
-## 1. Botão "Selecionar" está marcando todo mundo
+## O que muda
 
-Hoje `toggleSelectMode` já entra no modo com **todos** os leads filtrados pré-selecionados. Vai passar a entrar com **seleção vazia** — o consultor marca os que quiser (1, 2, 10…). Os atalhos "Todos do período" e "Só sem atendimento" continuam pra quem quiser marcar em massa.
+### 1. Um único modal para 1 lead ou vários
 
-Arquivo: `CaptureLeadList.tsx` (`toggleSelectMode`, ~L448).
+Hoje:
+- `Selecionar` + `Abrir atendimento` → abre `OpenAttendanceBatchDialog` (com template editável).
+- Botão ▶ `Iniciar` no cabeçalho do chat (`AttendanceStatusBar` via `attendance.startAttendance()`) → dispara direto a frase padrão, **sem** modal.
 
-## 2. Checkbox "branco/estranho" ao marcar
+Vai passar a:
+- `onStart` do `AttendanceStatusBar` (linha 346 de `CaptacaoPanel.tsx`) abre o **mesmo** `OpenAttendanceBatchDialog`, pré-carregado com **1 lead** (o cliente selecionado).
+- No cabeçalho do WhatsApp Tab (mesmo componente `AttendanceStatusBar`) idem: `onStart` abre o modal em vez de disparar direto.
 
-O `Checkbox` shadcn atual (`src/components/ui/checkbox.tsx`) é 16px, borda fina e sem fundo quando desmarcado — some no card. Vou:
+Assim, sempre que o consultor clicar "Iniciar", ele vê o modal editável.
 
-- Aumentar pra `h-5 w-5`, borda mais visível (`border-2`), fundo `bg-background` quando desmarcado.
-- Marcado: fundo `bg-primary` com check branco bem visível (já é primary-foreground, ajustar contraste do ícone pra ficar nítido).
-- Estilo aplicado só no local (via `className` no uso em `LeadCard`) para não mexer no shadcn global.
+### 2. Protocolo padrão + mensagem própria juntos
 
-## 3. Modal "Abrir atendimento" — template editável em vez de frase fixa
+Regra confirmada pelo usuário: **envia os dois**.
 
-Hoje o toggle "Iniciar atendimento" dispara o **texto fixo do protocolo** (`start-customer-attendance`). O consultor quer escolher um **template** e **editar** o texto antes de disparar em lote.
+Em `runAttendanceBatch.ts`, o `startAttendance: startAttendance && !customText` atual **anula** o protocolo quando há texto próprio. Vai virar apenas `startAttendance` (respeitando o toggle). Ordem por lead: protocolo → áudio → imagem → texto próprio, com o mesmo `delayMs` de 5s entre leads.
 
-Reorganizar o `OpenAttendanceBatchDialog.tsx`:
+No `OpenAttendanceBatchDialog.tsx`:
+- Toggle "Registrar protocolo interno" fica com label mais clara: **"Enviar saudação + protocolo padrão"** e descrição "Envia a frase de abertura do sistema antes da sua mensagem". Default **ligado**, e **não** desliga sozinho quando há texto — porque agora os dois convivem.
+- Remover a linha `startAttendance: startAttendance && !customText` — passa `startAttendance` puro.
 
-- Colocar o bloco **"Mensagem de texto"** no topo, aberto por padrão, com o `Select` de templates + `Textarea` sempre visível (não escondido atrás de condição).
-- Chip `{{nome}}` continua, e adicionar preview do primeiro lead ("Como será enviado pra Fulano: …").
-- O toggle "Iniciar atendimento (registrar protocolo)" fica em **posição secundária** e com descrição clara: "só marca protocolo interno, sem enviar frase padrão". Default: **ligado** se nenhum template escolhido, **desligado** se o consultor escolheu template próprio (evita mandar 2 mensagens).
-- Botões `Áudio` e `Imagem` seguem como estão.
+### 3. Consertar visual do modal ("não dá para editar direito")
 
-Envio já suporta `customText` no `runAttendanceBatch` — só é UX.
+Auditando `OpenAttendanceBatchDialog.tsx`:
+- `max-h-[90dvh]` + `overflow-hidden` no container e `overflow-y-auto` no meio → em telas 742px CSS, com a lista de leads (`max-h-44 = 176px`), o textarea de 5 rows fica cortado atrás do footer sticky. Vou:
+  - Baixar a lista para `max-h-32` quando ≤3 leads e `max-h-44` acima disso.
+  - Textarea `rows={4}` com `min-h-[96px]` e `max-h-[160px]` para não engolir os blocos de áudio/imagem.
+  - Garantir que o bloco de texto fica no topo do scroll (já está — só reforçar `scroll-mt-2`).
+- O `Select` do template está com trigger `border-0` dentro de outra borda; alguns usuários não percebem que é clicável. Trocar para trigger visível (`h-9`, `border`, ícone chevron), colocando o Select como linha própria acima do textarea, sem o "cartão com ícone MessageSquare" (que confunde por parecer o campo de edição).
+- Aumentar `max-w-md` para `max-w-lg` (o modal está apertado demais na largura atual).
 
-## 4. Leads novos em "Em espera" não aparecem na Captação
+### 4. Ajustes no hook `useCustomerAttendance`
 
-Causa: a query em `CaptureLeadList.tsx` (L172-181) filtra `capture_mode = 'manual'`. Lead novo que entrou por anúncio/whapi vem com `capture_mode = 'auto'` (bot cuidando), então nunca aparece na Captação — fica só no chat do WhatsApp.
-
-Solução: relaxar o filtro para trazer também os `auto` que ainda **não têm `welcome_sent_at`** e **não estão fechados** (sem `capture_closed_at`, sem `igreen_code`, sem `assinatura_cliente`). Assim:
-
-- Aba **Em atendimento**: leads com `welcome_sent_at != null` (como hoje).
-- Aba **Em espera**: leads sem `welcome_sent_at` — tanto `manual` quanto `auto` (todos os novos, inclusive campanha).
-
-Mudança na query:
-
-```ts
-.or('capture_mode.eq.manual,welcome_sent_at.is.null')
-```
-
-Continua respeitando: mesmo consultor, sem `capture_closed_at`, sem `igreen_code`, sem `assinatura_cliente`, e sem sale com `outcome` (já filtrado). Isso não interfere no bot — só amplia o que a UI mostra.
+`startAttendance()` continua existindo para uso programático (fluxo antigo/interno), mas na UI ninguém mais chama direto. O componente `CaptacaoPanel` passa um novo callback `onStart={() => openBatchWith([currentLead])}`. Mesma mudança no `WhatsAppTab` onde o `AttendanceStatusBar` renderiza.
 
 ## Arquivos tocados
 
-- `src/components/captacao/CaptureLeadList.tsx` — seleção vazia, filtro de query, className do checkbox.
-- `src/components/captacao/OpenAttendanceBatchDialog.tsx` — reorganizar bloco de texto, default do toggle.
-- `src/components/ui/checkbox.tsx` — só se o className local não bastar (evito mexer se der).
+- `src/components/captacao/OpenAttendanceBatchDialog.tsx` — reorganizar bloco de texto, aumentar largura, textarea com min/max-h, toggle com label nova.
+- `src/components/captacao/runAttendanceBatch.ts` — na verdade **nada**; a mudança de "sempre respeitar startAttendance" é feita no dialog (parâmetro que ele passa). Se preferir, deixo só no dialog.
+- `src/components/captacao/CaptacaoPanel.tsx` — trocar `onStart` para abrir o modal com o lead atual em vez de disparar direto; expor helper `openBatchWith(leads, label)`.
+- `src/components/whatsapp/WhatsAppTab.tsx` (ou onde `AttendanceStatusBar` é usado no chat) — mesmo tratamento: `onStart` abre modal com o cliente atual (a definir arquivo exato ao implementar).
 
-Sem mudanças de banco, edge functions ou lógica do bot.
+Sem mudanças de edge function, banco ou lógica do bot.
+
+## Fora de escopo
+
+- Editar visual do `Select` shadcn global.
+- Mudar o `start-customer-attendance` (continua enviando saudação+protocolo como hoje).
