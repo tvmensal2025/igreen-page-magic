@@ -75,6 +75,7 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [seqOpen, setSeqOpen] = useState(false);
   const [askNotice, setAskNotice] = useState(false);
   const lastCountRef = useRef(0);
+  const attendance = useCustomerAttendance(customerId, consultantId);
 
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
   // Mas quando o consultor expande, vai direto pra fullscreen (sem estado compacto intermediário).
