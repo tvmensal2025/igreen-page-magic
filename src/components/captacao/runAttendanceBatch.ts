@@ -1,4 +1,5 @@
-// Fila operacional: inicia atendimento + envia áudio/imagem por lead, com delay.
+// Fila operacional: inicia atendimento + envia áudio/imagem/texto/arquivo por lead, com delay.
+// Também agenda o auto-fechamento do atendimento se `autoCloseAfterMin` for informado.
 import { supabase } from "@/integrations/supabase/client";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 
@@ -25,9 +26,17 @@ export interface RunAttendanceBatchOptions {
   startAttendance: boolean;
   audioUrl: string | null;
   imageUrl: string | null;
-  /** Texto livre (suporta {{nome}}). Enviado após protocolo/áudio/imagem. */
+  /** Áudio extra (gravado na hora ou upload). */
+  extraAudioUrl?: string | null;
+  /** Arquivo genérico (imagem/documento/vídeo). */
+  fileUrl?: string | null;
+  fileType?: "image" | "video" | "document" | null;
+  fileName?: string | null;
+  /** Texto livre (suporta {{nome}}). Enviado após protocolo/mídia. */
   customText?: string | null;
   delayMs?: number;
+  /** Se > 0: agenda auto-fechamento X minutos após o disparo (por lead). */
+  autoCloseAfterMin?: number;
   signal?: AbortSignal;
   onProgress?: (results: BatchLeadResult[]) => void;
 }
@@ -86,13 +95,24 @@ async function startAttendanceForLead(
     error?: string;
   } | null;
 
-  // Edge devolve 200 com ok:false em falhas soft; só explode se não houver body útil.
   if (error && !body) throw new Error(errorMessage(error, "Falha no protocolo"));
   if (body?.ok === false && body.skipped !== "already_sent") {
     throw new Error(body.message || body.detail || body.error || "Falha no protocolo");
   }
   if (body?.skipped === "already_sent") return "already";
   return "sent";
+}
+
+async function scheduleAutoClose(customerId: string, minutes: number) {
+  if (!Number.isFinite(minutes) || minutes <= 0) return;
+  const at = new Date(Date.now() + minutes * 60_000).toISOString();
+  await supabase
+    .from("customers")
+    .update({
+      attendance_auto_close_at: at,
+      attendance_auto_close_source: "batch",
+    })
+    .eq("id", customerId);
 }
 
 export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promise<BatchLeadResult[]> {
@@ -104,14 +124,17 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
     startAttendance,
     audioUrl,
     imageUrl,
+    extraAudioUrl,
+    fileUrl,
+    fileType,
+    fileName,
     customText,
     delayMs = 5000,
+    autoCloseAfterMin = 0,
     signal,
     onProgress,
   } = opts;
 
-
-  // Cópia local — nunca mutar o array/objetos do caller (retry / React state).
   const queue = leads.map((l) => ({ ...l }));
   const results: BatchLeadResult[] = queue.map((l) => ({ id: l.id, status: "pending" as const }));
   const emit = () => onProgress?.(results.map((r) => ({ ...r })));
@@ -119,6 +142,9 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
   const assertNotAborted = () => {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   };
+
+  const hasCustomText = !!(customText && customText.trim());
+  const needsChannel = !!(audioUrl || imageUrl || extraAudioUrl || fileUrl || hasCustomText);
 
   for (let i = 0; i < queue.length; i++) {
     if (signal?.aborted) {
@@ -137,18 +163,17 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
       continue;
     }
 
-    const needsChannel = !!(audioUrl || imageUrl || (customText && customText.trim()));
     if (needsChannel && !instanceName) {
       results[i] = { id: lead.id, status: "failed", detail: "WhatsApp desconectado" };
       emit();
       continue;
     }
 
-
     const phone = String(lead.phone_whatsapp);
     const parts: string[] = [];
     let failed = false;
     let onlySkippedProtocol = false;
+    let anythingSent = false;
 
     try {
       assertNotAborted();
@@ -162,6 +187,7 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
         } else {
           parts.push("protocolo");
           lead.welcome_sent_at = new Date().toISOString();
+          anythingSent = true;
         }
       } else if (startAttendance && lead.welcome_sent_at) {
         onlySkippedProtocol = true;
@@ -171,57 +197,80 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
       if (audioUrl) {
         assertNotAborted();
         const r = await sendWhatsAppMessage({
-          instanceName,
-          phone,
-          mediaCategory: "audio",
-          mediaUrl: audioUrl,
-          isWhapi,
-          customerId: lead.id,
+          instanceName, phone, mediaCategory: "audio",
+          mediaUrl: audioUrl, isWhapi, customerId: lead.id,
         });
         if (r.status === "failed") throw new Error(r.error || "Falha no áudio");
         parts.push(r.status === "pending" || r.status === "timeout" ? "áudio (fila)" : "áudio");
+        anythingSent = true;
+      }
+
+      if (extraAudioUrl && extraAudioUrl !== audioUrl) {
+        assertNotAborted();
+        const r = await sendWhatsAppMessage({
+          instanceName, phone, mediaCategory: "audio",
+          mediaUrl: extraAudioUrl, isWhapi, customerId: lead.id,
+        });
+        if (r.status === "failed") throw new Error(r.error || "Falha no áudio gravado");
+        parts.push(r.status === "pending" || r.status === "timeout" ? "áudio (fila)" : "áudio gravado");
+        anythingSent = true;
       }
 
       if (imageUrl) {
         assertNotAborted();
         const r = await sendWhatsAppMessage({
-          instanceName,
-          phone,
-          mediaCategory: "image",
-          mediaUrl: imageUrl,
-          isWhapi,
-          customerId: lead.id,
+          instanceName, phone, mediaCategory: "image",
+          mediaUrl: imageUrl, isWhapi, customerId: lead.id,
         });
         if (r.status === "failed") throw new Error(r.error || "Falha na imagem");
         parts.push(r.status === "pending" || r.status === "timeout" ? "imagem (fila)" : "imagem");
+        anythingSent = true;
       }
 
-      if (customText && customText.trim()) {
+      if (fileUrl) {
+        assertNotAborted();
+        const cat = fileType || "document";
+        const r = await sendWhatsAppMessage({
+          instanceName, phone, mediaCategory: cat,
+          mediaUrl: fileUrl,
+          fileName: cat === "document" ? (fileName || fileUrl.split("/").pop() || "documento") : undefined,
+          isWhapi, customerId: lead.id,
+        });
+        if (r.status === "failed") throw new Error(r.error || "Falha no arquivo");
+        parts.push(r.status === "pending" || r.status === "timeout" ? "arquivo (fila)" : "arquivo");
+        anythingSent = true;
+      }
+
+      if (hasCustomText) {
         assertNotAborted();
         const firstName = (lead.name || "").trim().split(/\s+/)[0] || "";
-        const rendered = customText
+        const rendered = customText!
           .split("{{nome}}").join(firstName || "tudo bem")
           .split("{{name}}").join(firstName || "tudo bem");
         const r = await sendWhatsAppMessage({
-          instanceName,
-          phone,
-          mediaCategory: "text",
-          text: rendered,
-          isWhapi,
-          customerId: lead.id,
+          instanceName, phone, mediaCategory: "text",
+          text: rendered, isWhapi, customerId: lead.id,
         });
         if (r.status === "failed") throw new Error(r.error || "Falha no texto");
         parts.push(r.status === "pending" || r.status === "timeout" ? "texto (fila)" : "texto");
+        anythingSent = true;
       }
-
 
       if (parts.length === 0) {
         results[i] = { id: lead.id, status: "skipped", detail: "Nada a enviar" };
-      } else if (onlySkippedProtocol && parts.length === 1 && !audioUrl && !imageUrl && !(customText && customText.trim())) {
-        // Só "já tinha protocolo" e sem mídia → não conta como sucesso novo.
+      } else if (onlySkippedProtocol && !anythingSent) {
         results[i] = { id: lead.id, status: "skipped", detail: "Já iniciado" };
       } else {
         results[i] = { id: lead.id, status: "ok", detail: parts.join(" · ") };
+        // Auto-close só se algo foi realmente enviado.
+        if (autoCloseAfterMin > 0) {
+          try {
+            await scheduleAutoClose(lead.id, autoCloseAfterMin);
+            results[i].detail = `${results[i].detail} · auto-fechar ${autoCloseAfterMin}min`;
+          } catch (e) {
+            console.warn("[batch] auto-close schedule fail", lead.id, e);
+          }
+        }
       }
     } catch (e) {
       failed = true;
