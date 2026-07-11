@@ -142,7 +142,9 @@ export function CaptureLeadList({
   onSelect,
   whatsappConnected = false,
   onOpenBatch,
+  onCollapseList,
 }: Props) {
+
   const prompt = usePrompt();
   const [leads, setLeads] = useState<CaptureBatchLead[]>([]);
   const [q, setQ] = useState("");
