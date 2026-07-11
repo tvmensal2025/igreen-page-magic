@@ -195,16 +195,24 @@ export default function AdminMotorCadencia() {
 
         {/* Estágios */}
         <Card className="p-4">
-          <h2 className="text-sm font-semibold mb-3">Mensagens de reaquecimento (WhatsApp)</h2>
-          <p className="text-xs text-muted-foreground mb-4">Use <code className="text-primary">{"{{nome}}"}</code> para o primeiro nome do lead. Áudios/imagens são opcionais.</p>
+          <h2 className="text-sm font-semibold mb-3">Cadência multi-canal (WhatsApp → Ligação → SMS)</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Variáveis: <code className="text-primary">{"{{nome}}"}</code>, <code className="text-primary">{"{{consultor}}"}</code>, <code className="text-primary">{"{{consultor_phone}}"}</code>.
+            Ligações usam TTS por padrão; informe um <b>Velip audio_id</b> para tocar um áudio pré-gravado do consultor.
+          </p>
           <div className="space-y-4">
             {STAGES.map(s => {
               const row = stages[s]; if (!row) return null;
+              const meta = STAGE_META[s];
+              const channelColor = meta.channel === "voice" ? "bg-blue-500/10 text-blue-600"
+                : meta.channel === "sms" ? "bg-amber-500/10 text-amber-600"
+                : "bg-green-500/10 text-green-600";
               return (
                 <div key={s} className="border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <Badge>{s}</Badge>
+                      <span className={`text-xs px-2 py-0.5 rounded ${channelColor}`}>{meta.label}</span>
                       <Switch checked={row.enabled} onCheckedChange={v => setStages({ ...stages, [s]: { ...row, enabled: v } })} />
                       <Label className="text-xs">{row.enabled ? "Ativo" : "Pausado"}</Label>
                     </div>
@@ -215,24 +223,35 @@ export default function AdminMotorCadencia() {
                       <span className="text-xs text-muted-foreground">horas</span>
                     </div>
                   </div>
-                  <Textarea rows={3} placeholder="Texto da mensagem..." value={row.message_text}
+                  <Textarea rows={3}
+                    placeholder={meta.channel === "voice" ? "Texto que a locutora vai falar (TTS)..." : meta.channel === "sms" ? "Texto do SMS (até 160 caracteres)..." : "Texto da mensagem..."}
+                    value={row.message_text}
                     onChange={e => setStages({ ...stages, [s]: { ...row, message_text: e.target.value } })} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input placeholder="URL de mídia opcional (áudio/imagem/vídeo)" value={row.media_url || ""}
-                      onChange={e => setStages({ ...stages, [s]: { ...row, media_url: e.target.value || null } })} />
-                    <select className="h-10 rounded-md border bg-background px-3 text-sm"
-                      value={row.media_type || "text"}
-                      onChange={e => setStages({ ...stages, [s]: { ...row, media_type: e.target.value } })}>
-                      <option value="text">Somente texto</option>
-                      <option value="audio">Áudio</option>
-                      <option value="image">Imagem</option>
-                      <option value="video">Vídeo</option>
-                    </select>
-                  </div>
+
+                  {meta.channel === "whatsapp" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input placeholder="URL de mídia opcional (áudio/imagem/vídeo)" value={row.media_url || ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, media_url: e.target.value || null } })} />
+                      <select className="h-10 rounded-md border bg-background px-3 text-sm"
+                        value={row.media_type || "text"}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, media_type: e.target.value } })}>
+                        <option value="text">Somente texto</option>
+                        <option value="audio">Áudio</option>
+                        <option value="image">Imagem</option>
+                        <option value="video">Vídeo</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {meta.channel === "voice" && (
+                    <Input placeholder="Velip audio_id (opcional — se vazio usa TTS acima)" value={row.velip_audio_id || ""}
+                      onChange={e => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })} />
+                  )}
                 </div>
               );
             })}
           </div>
+
           <div className="mt-4 flex justify-end">
             <Button onClick={saveAll} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
