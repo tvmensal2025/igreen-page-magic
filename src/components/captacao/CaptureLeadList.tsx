@@ -510,7 +510,19 @@ export function CaptureLeadList({
               {activeToday} hoje
             </span>
           )}
+          {onCollapseList && (
+            <button
+              type="button"
+              onClick={onCollapseList}
+              title="Recolher lista"
+              aria-label="Recolher lista"
+              className="ml-auto hidden md:inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50"
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
+
 
         <div className="flex items-center gap-1">
           {unreadTotal > 0 && (
