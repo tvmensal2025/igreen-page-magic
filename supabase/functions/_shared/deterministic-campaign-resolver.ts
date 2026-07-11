@@ -112,7 +112,7 @@ async function campaignByAdId(supabase: any, consultantId: string, adId: string 
     .eq("consultant_id", consultantId)
     .not("fb_ad_ids", "is", null)
     .order("updated_at", { ascending: false })
-    .limit(200);
+    .limit(1000);
   if (error) {
     console.warn("[campaignByAdId] lookup falhou:", error.message);
     return null;
