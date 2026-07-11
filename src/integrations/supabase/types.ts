@@ -1527,6 +1527,7 @@ export type Database = {
           bot_engine_production_mode: boolean
           bot_global_enabled: boolean
           cadence_engine_enabled: boolean
+          cadence_window: Json | null
           devtools_blocked: boolean
           fluxo_b_persona: string | null
           id: string
@@ -1541,6 +1542,7 @@ export type Database = {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
           cadence_engine_enabled?: boolean
+          cadence_window?: Json | null
           devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
@@ -1555,6 +1557,7 @@ export type Database = {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
           cadence_engine_enabled?: boolean
+          cadence_window?: Json | null
           devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
@@ -2316,6 +2319,74 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      cadence_stage_config: {
+        Row: {
+          consultant_id: string | null
+          created_at: string
+          delay_hours: number
+          enabled: boolean
+          id: string
+          media_type: string | null
+          media_url: string | null
+          message_text: string | null
+          stage: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id?: string | null
+          created_at?: string
+          delay_hours?: number
+          enabled?: boolean
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          stage: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string | null
+          created_at?: string
+          delay_hours?: number
+          enabled?: boolean
+          id?: string
+          media_type?: string | null
+          media_url?: string | null
+          message_text?: string | null
+          stage?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cadence_stage_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       campaign_match_log: {
         Row: {
