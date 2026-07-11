@@ -29,9 +29,10 @@ import { ComboTimer } from "@/components/captacao/game/ComboTimer";
 import { XpFloaterProvider, useXpFloater } from "@/components/captacao/game/XpFloater";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2 } from "lucide-react";
+import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2, Phone, Play } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
+import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 
 interface Props {
   open: boolean;
