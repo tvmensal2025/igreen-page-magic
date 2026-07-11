@@ -57,17 +57,28 @@ export function AttendanceStatusBar({
 
   if (state === "not_started") {
     return (
-      <Button
-        size="sm"
-        onClick={onStart}
-        disabled={starting}
-        className="h-8 gap-1.5 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 shrink-0"
-        title="Envia saudação + protocolo e pede o nome"
-      >
-        {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
-        <span className="text-[11px] font-semibold hidden sm:inline">Iniciar atendimento</span>
-        <span className="text-[11px] font-semibold sm:hidden">Iniciar</span>
-      </Button>
+      <div className="flex items-center gap-1 shrink-0">
+        <Button
+          size="sm"
+          onClick={onStart}
+          disabled={starting}
+          className="h-8 gap-1.5 px-3 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/30 shrink-0"
+          title="Envia saudação + protocolo e pede o nome"
+        >
+          {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
+          <span className="text-[11px] font-semibold hidden sm:inline">Iniciar atendimento</span>
+          <span className="text-[11px] font-semibold sm:hidden">Iniciar</span>
+        </Button>
+        <Button
+          asChild
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
+          title="Personalizar a mensagem de abrir chamado"
+        >
+          <Link to="/consultor/mensagens"><Settings className="h-3.5 w-3.5" /></Link>
+        </Button>
+      </div>
     );
   }
 
