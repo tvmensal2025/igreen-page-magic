@@ -2332,6 +2332,7 @@ export type Database = {
           message_text: string | null
           stage: string
           updated_at: string
+          velip_audio_id: string | null
         }
         Insert: {
           consultant_id?: string | null
@@ -2344,6 +2345,7 @@ export type Database = {
           message_text?: string | null
           stage: string
           updated_at?: string
+          velip_audio_id?: string | null
         }
         Update: {
           consultant_id?: string | null
@@ -2356,6 +2358,7 @@ export type Database = {
           message_text?: string | null
           stage?: string
           updated_at?: string
+          velip_audio_id?: string | null
         }
         Relationships: [
           {
