@@ -13,6 +13,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://esm.sh/zod@3.23.8";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const BodySchema = z.object({
   customer_ids: z.array(z.string().uuid()).min(1).max(50),
@@ -53,6 +54,11 @@ Deno.serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
 
     const admin = createClient(supabaseUrl, serviceKey);
+    if (!(await isAutomationEnabled(admin, "notify_partner_leads_batch"))) {
+      await logSkipped(admin, "notify_partner_leads_batch");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "notify_partner_leads_batch" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
     let ownerConsultantId: string | null = null;
 
     if (token && token === serviceKey) {

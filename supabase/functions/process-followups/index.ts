@@ -14,6 +14,7 @@ import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,6 +44,11 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if (!(await isAutomationEnabled(supabase, "process_followups"))) {
+      await logSkipped(supabase, "process_followups");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "process_followups" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
     // Auth: aceita cron interno (x-internal-secret == embed_internal_token) ou Bearer admin.
     const internalSecret = req.headers.get("x-internal-secret") || "";
