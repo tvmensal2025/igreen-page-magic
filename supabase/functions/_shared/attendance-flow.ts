@@ -274,7 +274,9 @@ export async function sendWelcomeHeader(
   // ▶ Override — se o consultor personalizou a msg de "abrir chamado", envia ela
   //   como mensagem única (protocolo/nome do consultor já são substituídos via {{var}}).
   if (args.customTemplate && args.customTemplate.text?.trim()) {
-    const text = args.customTemplate.text;
+    const text = args.customTemplate.text
+      .replaceAll("{{protocolo}}", protocol || "")
+      .replaceAll("{{ protocolo }}", protocol || "");
     const sendCtxOv = {
       customerId,
       consultantId: consultantId || "",
