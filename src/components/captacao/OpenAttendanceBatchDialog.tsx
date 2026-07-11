@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CheckCircle2, Loader2, Mic, Image as ImageIcon, MessageSquare, Play, Square, RotateCcw, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Mic, Image as ImageIcon, MessageSquare, Play, Square, RotateCcw, XCircle, Paperclip, Timer, X } from "lucide-react";
 import { toast } from "sonner";
 
 import type { MessageTemplate } from "@/types/whatsapp";
@@ -28,6 +28,9 @@ import {
   hasValidBatchPhone,
   type BatchLeadResult,
 } from "@/components/captacao/runAttendanceBatch";
+import { VoiceClipRecorder } from "@/components/whatsapp/voice/VoiceClipRecorder";
+import { Input } from "@/components/ui/input";
+import { uploadMedia } from "@/services/minioUpload";
 
 interface Props {
   open: boolean;
