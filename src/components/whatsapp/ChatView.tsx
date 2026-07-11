@@ -625,7 +625,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             rating={attendance.rating}
             starting={attendance.starting}
             ending={attendance.ending}
-            onStart={() => setStartBatchOpen(true)}
+            onStart={() => void attendance.startAttendance()}
             onRequestEnd={() => setEndAttendanceDialogOpen(true)}
             compact={isCompactLayout}
           />
@@ -868,27 +868,6 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         />
       )}
 
-      {customerId && consultantId && (
-        <OpenAttendanceBatchDialog
-          open={startBatchOpen}
-          onOpenChange={setStartBatchOpen}
-          consultantId={consultantId}
-          instanceName={instanceName || ""}
-          isWhapi={isWhapi}
-          leads={[{
-            id: customerId,
-            name: chat?.name || null,
-            phone_whatsapp: phoneNumber,
-            capture_started_at: null,
-            created_at: new Date().toISOString(),
-            welcome_sent_at: null,
-            filled: 0,
-          } as CaptureBatchLead]}
-          periodLabel="este cliente"
-          templates={templates}
-          onFinished={() => attendance.refresh()}
-        />
-      )}
 
 
 
