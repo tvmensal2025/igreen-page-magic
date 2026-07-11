@@ -232,6 +232,55 @@ export default function AdminMotorCadencia() {
           </div>
         </Card>
 
+        {/* Command Center — SLA tempo real */}
+        <Card className="p-4 border-l-4" style={{ borderLeftColor: slaCount > 0 ? "hsl(var(--destructive))" : "hsl(var(--primary))" }}>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="text-sm font-semibold flex items-center gap-2">
+              {slaCount > 0 ? <AlertTriangle className="h-4 w-4 text-destructive" /> : <Activity className="h-4 w-4 text-primary" />}
+              Central de comando — próximas ações
+              {slaCount > 0 && <Badge variant="destructive" className="ml-1">{slaCount} SLA violado</Badge>}
+            </h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => loadDue()}><RefreshCw className="h-3 w-3 mr-1" /> Atualizar</Button>
+              <Button size="sm" onClick={runTickNow} disabled={ticking}>
+                {ticking ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                Executar tick agora
+              </Button>
+            </div>
+          </div>
+          {dueLeads.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhuma ação pendente na próxima 1h.</p>
+          ) : (
+            <div className="space-y-1 text-xs max-h-96 overflow-auto">
+              {dueLeads.map((l: any) => {
+                const nextMs = l.next_action_at ? new Date(l.next_action_at).getTime() : 0;
+                const diffMin = Math.round((nextMs - now) / 60000);
+                const overdue = diffMin < -30;
+                const due = diffMin <= 0;
+                return (
+                  <div key={l.id} className={`flex items-center gap-2 border-b py-2 ${overdue ? "bg-destructive/5" : ""}`}>
+                    <Badge variant={overdue ? "destructive" : due ? "default" : "outline"} className="min-w-20 justify-center">
+                      {overdue ? `${Math.abs(diffMin)}m atrasado` : due ? "agora" : `em ${diffMin}m`}
+                    </Badge>
+                    <Badge variant="secondary">{l.stage}</Badge>
+                    <span className="flex-1 truncate">
+                      <b>{l.customers?.name || "sem nome"}</b>
+                      <span className="text-muted-foreground"> · {l.customers?.phone_whatsapp || "-"}</span>
+                      <span className="text-muted-foreground"> · {l.consultants?.name || "-"}</span>
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={() => forceNow(l.id)} title="Forçar próxima ação agora">
+                      <Play className="h-3 w-3" />
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => pause24h(l.id)} title="Pausar 24h">
+                      <Pause className="h-3 w-3" />
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
         {/* Janela útil */}
         <Card className="p-4">
           <h2 className="text-sm font-semibold flex items-center gap-2 mb-3"><Clock className="h-4 w-4" /> Janela de disparo</h2>
