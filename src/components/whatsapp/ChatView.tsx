@@ -105,6 +105,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [togglingBot, setTogglingBot] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
+  const [startBatchOpen, setStartBatchOpen] = useState(false);
+
   const [closingCapture, setClosingCapture] = useState(false);
   const [captureClosedAt, setCaptureClosedAt] = useState<string | null>(null);
   const isCompactLayout = useIsLgDown();
