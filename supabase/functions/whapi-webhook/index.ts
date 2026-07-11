@@ -35,7 +35,6 @@ import { resolveWorker } from "../_shared/portal-worker.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
 import { casAssignPartner, markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
-import { resolveCampaignByTrackingProtocol } from "../_shared/campaign-tracking.ts";
 import {
   campaignContainsAdId,
   extractMetaReferralFields,
