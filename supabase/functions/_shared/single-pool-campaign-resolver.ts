@@ -195,26 +195,37 @@ export async function resolveByFallbackRotation(
     if (active.length === 0) return null;
     const ids = [...new Set(active.map((a) => a.campaignId))].sort();
 
-    // Último lead atribuído por campanha (qualquer sinal, últimos 30 dias)
-    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    // Últimos 30 dias — usado para ordenar rodízio justo.
+    const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
     const { data } = await supabase
       .from("customers")
       .select("source_campaign_id, created_at")
       .eq("consultant_id", consultantId)
       .in("source_campaign_id", ids)
-      .gte("created_at", since)
+      .gte("created_at", since30)
       .order("created_at", { ascending: false })
       .limit(500);
 
     const lastByCamp = new Map<string, string>();
+    const countByCamp = new Map<string, number>();
     for (const row of (data || []) as any[]) {
       const cid = String(row.source_campaign_id);
       if (!lastByCamp.has(cid)) lastByCamp.set(cid, row.created_at);
+      countByCamp.set(cid, (countByCamp.get(cid) || 0) + 1);
     }
 
-    // Ordena: campanha sem lead recente vem primeiro; empate por id estável.
-    const ranked = ids
-      .map((id) => ({ id, last: lastByCamp.get(id) || null }))
+    // "Prova de vida": campanha precisa ter ≥1 lead nos últimos 7 dias.
+    // Isso evita atribuir a campanhas fantasma (ativas no papel, sem tráfego).
+    const cutoff7 = Date.now() - 7 * 24 * 3600 * 1000;
+    const alive = ids.filter((id) => {
+      const last = lastByCamp.get(id);
+      return last ? new Date(last).getTime() >= cutoff7 : false;
+    });
+    // Se nenhuma tem prova de vida, cai pra "todas ativas" (comportamento antigo)
+    const pool = alive.length > 0 ? alive : ids;
+
+    const ranked = pool
+      .map((id) => ({ id, last: lastByCamp.get(id) || null, n: countByCamp.get(id) || 0 }))
       .sort((a, b) => {
         if (a.last === null && b.last === null) return a.id.localeCompare(b.id);
         if (a.last === null) return -1;
@@ -222,6 +233,7 @@ export async function resolveByFallbackRotation(
         const cmp = a.last.localeCompare(b.last); // mais antigo primeiro
         return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
       });
+
 
     const winner = ranked[0];
     const summary = ranked
