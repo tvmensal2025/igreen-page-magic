@@ -12,6 +12,13 @@
  *      (só se 1 match claro ou líder com margem)
  *
  * Se houver empate ou nenhum sinal, retorna null. Não escolhe por acaso.
+ *
+ * REGRA DE BLINDAGEM 2026-07-11:
+ * - `recent_strong_activity` e `fallback_rotation` NÃO podem mais atribuir
+ *   campanha em produção. Eles escolhiam a campanha "quente" do momento e
+ *   contaminaram leads de Jaraguá/Francisco para Horácio/Rodrigo.
+ * - Campanha individual só é automática por sinal determinístico: AD ID,
+ *   CTWA, protocolo, única pool ativa sem ambiguidade, ou fuzzy claro.
  */
 
 import {
@@ -143,11 +150,19 @@ export async function resolveByDddCity(
   }
 }
 
-/** Degrau 7 — única campanha com sinal forte (AD ID / ctwa_clid) nas últimas 24h. */
+/**
+ * @deprecated NÃO usar para atribuir campanha. Mantido só para compatibilidade
+ * de imports antigos. Atividade recente não prova que o próximo lead pertence
+ * à mesma campanha.
+ */
 export async function resolveByRecentActivity(
   supabase: any,
   consultantId: string,
 ): Promise<LadderResult> {
+  console.warn("[resolveByRecentActivity] desativado: fallback por campanha quente é inseguro");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     if (active.length < 2) return null;
@@ -199,6 +214,10 @@ export async function resolveByFallbackRotation(
   consultantId: string,
   phone?: string | null,
 ): Promise<LadderResult> {
+  console.warn("[resolveByFallbackRotation] desativado: fallback sem sinal determinístico é inseguro");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     if (active.length === 0) return null;
@@ -282,7 +301,10 @@ export async function resolveByFallbackRotation(
   }
 }
 
-/** Roda a escada 6→7→8 na ordem. Devolve null se nenhum degrau tiver certeza. */
+/**
+ * Roda apenas fallback seguro. Devolve null se não houver certeza.
+ * Nunca usa "campanha quente" nem rotação para descobrir campanha.
+ */
 export async function resolveCampaignAutoLadder(
   supabase: any,
   consultantId: string,
@@ -290,10 +312,6 @@ export async function resolveCampaignAutoLadder(
 ): Promise<LadderResult> {
   const step6 = await resolveByDddCity(supabase, consultantId, ctx.phone);
   if (step6) return step6;
-  const step7 = await resolveByRecentActivity(supabase, consultantId);
-  if (step7) return step7;
-  const step8 = await resolveByFallbackRotation(supabase, consultantId, ctx.phone);
-  if (step8) return step8;
   return null;
 }
 
