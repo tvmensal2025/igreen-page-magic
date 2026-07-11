@@ -394,41 +394,38 @@ export function OpenAttendanceBatchDialog({
           {showConfig && (
             <>
               {/* 1) MENSAGEM DE TEXTO — protagonista, sempre visível e editável */}
-              <div className="space-y-2">
-                <Label className="text-xs font-semibold text-foreground">
-                  Mensagem para enviar <span className="text-muted-foreground font-normal">(escolha um template ou escreva)</span>
-                </Label>
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-                  <div className="shrink-0 w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
-                    <MessageSquare className="w-4 h-4 text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <Select
-                      value={textId}
-                      onValueChange={(v) => {
-                        setTextId(v);
-                        if (v === "__none__") setTextBody("");
-                        else if (v === "__blank__") setTextBody("");
-                        else {
-                          const t = textTemplates.find((x) => x.id === v);
-                          setTextBody(templateTextContent(t) || "");
-                        }
-                      }}
-                      disabled={running}
-                    >
-                      <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
-                        <SelectValue placeholder="Escolher template ou escrever" />
-                      </SelectTrigger>
-                      <SelectContent className="z-[130]">
-                        <SelectItem value="__none__">Nenhuma mensagem</SelectItem>
-                        <SelectItem value="__blank__">Escrever nova mensagem…</SelectItem>
-                        {textTemplates.map((t) => (
-                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+              <div className="space-y-2 scroll-mt-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-primary" />
+                    Mensagem para enviar
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">template ou escreva</span>
                 </div>
+                <Select
+                  value={textId}
+                  onValueChange={(v) => {
+                    setTextId(v);
+                    if (v === "__none__") setTextBody("");
+                    else if (v === "__blank__") setTextBody("");
+                    else {
+                      const t = textTemplates.find((x) => x.id === v);
+                      setTextBody(templateTextContent(t) || "");
+                    }
+                  }}
+                  disabled={running}
+                >
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue placeholder="Escolher template ou escrever nova…" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[130]">
+                    <SelectItem value="__none__">Nenhuma mensagem</SelectItem>
+                    <SelectItem value="__blank__">Escrever nova mensagem…</SelectItem>
+                    {textTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Textarea
                   value={textBody}
                   onChange={(e) => {
@@ -436,9 +433,9 @@ export function OpenAttendanceBatchDialog({
                     if (e.target.value.trim() && textId === "__none__") setTextId("__blank__");
                   }}
                   placeholder="Escreva a mensagem que vai pra todos… use {{nome}} para personalizar."
-                  rows={5}
+                  rows={4}
                   disabled={running}
-                  className="text-xs rounded-lg resize-none"
+                  className="text-xs rounded-lg resize-y min-h-[96px] max-h-[200px]"
                 />
                 <div className="flex items-center justify-between gap-2">
                   <button
@@ -456,6 +453,7 @@ export function OpenAttendanceBatchDialog({
                   )}
                 </div>
               </div>
+
 
               {/* 2) ÁUDIO */}
               <div className="space-y-2">
