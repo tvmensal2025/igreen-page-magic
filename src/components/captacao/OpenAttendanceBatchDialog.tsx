@@ -227,11 +227,11 @@ export function OpenAttendanceBatchDialog({
   const failCount = results.filter((r) => r.status === "failed").length;
   const showConfig = !done || failCount > 0;
 
-  const needsChannel = !!audioUrl || !!imageUrl || !!customText;
+  const needsChannel = !!audioUrl || !!imageUrl || !!customText || !!recordedAudioUrl || !!fileUrl;
   const canSend =
-    (startAttendance || !!audioUrl || !!imageUrl || !!customText) &&
+    (startAttendance || !!audioUrl || !!imageUrl || !!customText || !!recordedAudioUrl || !!fileUrl) &&
     (!needsChannel || !!instanceName) &&
-    workLeads.length > 0;
+    workLeads.length > 0 && !uploadingFile;
 
 
   useEffect(() => {
