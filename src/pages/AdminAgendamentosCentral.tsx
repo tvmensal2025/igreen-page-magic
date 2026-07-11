@@ -164,14 +164,16 @@ export default function AdminAgendamentosCentral() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Atalhos</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" asChild><Link to="/admin/motor">Motor de Cadência</Link></Button>
-            <Button variant="outline" size="sm" asChild><Link to="/admin/reaquecimento">Reaquecimento</Link></Button>
-            <Button variant="outline" size="sm" asChild><Link to="/admin/voz">Voz / Velip</Link></Button>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Atalhos</CardTitle></CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" asChild><Link to="/admin/motor">Motor de Cadência</Link></Button>
+                <Button variant="outline" size="sm" asChild><Link to="/admin/reaquecimento">Reaquecimento</Link></Button>
+                <Button variant="outline" size="sm" asChild><Link to="/admin/voz">Voz / Velip</Link></Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
