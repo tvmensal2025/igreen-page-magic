@@ -9,13 +9,10 @@
  * `matchesMetaCtwaPhrase(text)` — confere se a primeira mensagem do lead
  * bate com uma das frases-âncora típicas do CTWA.
  *
- * ⚠️ `resolveSingleActivePool` foi removido — não escolher campanha "no chute"
- * quando existe 1 pool única já é feito por `resolveCampaignBySoleActivePool`
- * (que exige exatamente 1 ativa). Quando há **2+ pools ativas** e nenhum sinal
- * forte, a escada `resolveCampaignAutoLadder` (degraus DDD/cidade → atividade
- * recente → rodízio justo) decide de forma determinística e rastreável em
- * `campaign_match_log`. `customers.needs_manual_review = true` só vira último
- * recurso quando o consultor não tem nenhuma pool ativa.
+ * ⚠️ Quando há **2+ pools/campanhas ativas** e nenhum sinal forte, NÃO escolher
+ * campanha. DDD, atividade recente e rotação não provam a origem do lead e já
+ * causaram contaminação entre campanhas individuais. O lead deve ir para revisão
+ * manual até chegar AD ID / CTWA / protocolo / fuzzy claro.
  */
 
 
