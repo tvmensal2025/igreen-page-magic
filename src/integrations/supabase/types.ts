@@ -1627,6 +1627,42 @@ export type Database = {
         }
         Relationships: []
       }
+      automation_toggles: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          enabled: boolean
+          id: string
+          key: string
+          label: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          id?: string
+          key: string
+          label: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          enabled?: boolean
+          id?: string
+          key?: string
+          label?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       bot_flow_audit_log: {
         Row: {
           action: string
@@ -2955,6 +2991,54 @@ export type Database = {
             referencedColumns: ["consultant_id"]
           },
         ]
+      }
+      consultant_message_templates: {
+        Row: {
+          audio_url: string | null
+          category: string
+          consultant_id: string | null
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          label: string
+          template_key: string
+          text_content: string
+          typing_delay_ms: number
+          updated_at: string
+          variables: Json
+        }
+        Insert: {
+          audio_url?: string | null
+          category?: string
+          consultant_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          label: string
+          template_key: string
+          text_content?: string
+          typing_delay_ms?: number
+          updated_at?: string
+          variables?: Json
+        }
+        Update: {
+          audio_url?: string | null
+          category?: string
+          consultant_id?: string | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          label?: string
+          template_key?: string
+          text_content?: string
+          typing_delay_ms?: number
+          updated_at?: string
+          variables?: Json
+        }
+        Relationships: []
       }
       consultant_network: {
         Row: {
