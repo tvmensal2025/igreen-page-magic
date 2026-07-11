@@ -38,6 +38,16 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [phone, setPhone] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [variant, setVariant] = useState<"A" | "B" | "C" | "D" | "E" | "M">("A");
+  const [listCollapsed, setListCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("igreen:cap-list-collapsed") === "1"; } catch { return false; }
+  });
+  const toggleList = useCallback(() => {
+    setListCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem("igreen:cap-list-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
   // Fluxos reais do consultor (variante + nome) para o atalho dinâmico —
   // substitui o A/B/C fixo. Reflete renomeacoes feitas no construtor.
   const [flowOptions, setFlowOptions] = useState<Array<{ variant: string; name: string }>>([]);
