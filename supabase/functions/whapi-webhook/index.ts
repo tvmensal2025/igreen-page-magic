@@ -835,8 +835,9 @@ Deno.serve(async (req) => {
         // Fail-open total: qualquer erro só loga e segue para o keyword.
         let rodizioPoolAtiva = false;
         let resolvedCampaignId: string | null = null;
-        let rodizioMatchMethod: "cached_campaign" | "protocol" | "ad_id_or_ctwa_clid" | "fallback_single_active_pool" = "cached_campaign";
+        let rodizioMatchMethod: "cached_campaign" | "protocol" | "ad_id_or_ctwa_clid" | "fallback_single_active_pool" | "ddd_city_match" | "recent_strong_activity" | "fallback_rotation" = "cached_campaign";
         let metaCtwaSignal = false;
+        let strongMetaSignalPresent = false;
         try {
           // 1) campaign_id já resolvido numa mensagem anterior?
           let candidateCampaignId: string | null = (customer as any).source_campaign_id || null;
@@ -870,6 +871,8 @@ Deno.serve(async (req) => {
                 console.warn("[lead-source whapi] recursive scan falhou:", (e as Error).message);
               }
             }
+
+            strongMetaSignalPresent = !!(sourceAdId || ctwaClid || fields.fbCampaignId || sourceUrl);
 
             // Probe diagnóstico (fire-and-forget).
             try {
@@ -919,8 +922,23 @@ Deno.serve(async (req) => {
             }
           }
 
+          // Blindagem absoluta: se o payload trouxe AD ID/CTWA, a campanha é
+          // individual e só pode ser definida por esse sinal. Se ainda não
+          // mapeamos o AD ID, NÃO pode cair em "campanha quente"/fallback.
+          if (!candidateCampaignId && strongMetaSignalPresent) {
+            await markManualReview(supabase, customer.id, "strong_meta_unmapped");
+            await logRodizioOutcome(supabase, {
+              customerId: customer.id,
+              campaignId: null,
+              method: "strong_meta_unmapped",
+              outcome: "no_campaign_manual_review",
+              messageSample: messageText,
+            });
+            console.warn(`[lead-attribution] customer=${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
+          }
+
           // 2.1) protocolo profissional no texto só roda DEPOIS dos sinais fortes.
-          if (!candidateCampaignId && messageText) {
+          if (!candidateCampaignId && !strongMetaSignalPresent && messageText) {
             const byProtocol = await resolveCampaignByProtocolOnly(
               supabase,
               (customer as any).consultant_id,
@@ -935,7 +953,7 @@ Deno.serve(async (req) => {
           // 2.5) Frase-âncora do Meta CTWA — marca sinal e tenta resolver campanha:
           //      protocolo FB-xxxxx → 1 pool ativa (sole) → fuzzy Jaccard.
           //      Com 2+ pools e sem protocolo, mantém metaCtwaSignal → fila manual.
-          if (!candidateCampaignId && messageText && !isFile && !hasAudio) {
+          if (!candidateCampaignId && !strongMetaSignalPresent && messageText && !isFile && !hasAudio) {
             if (matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
               try {
@@ -1788,6 +1806,7 @@ Deno.serve(async (req) => {
         const sourceUrl = fields.sourceUrl;
         const sourceType = (referral as any)?.source_type || (referral as any)?.sourceType || null;
         const hasReferral = !!(referral || ctwaClid || sourceAdId || sourceUrl);
+        const strongMetaSignalPresent = !!(sourceAdId || ctwaClid || fields.fbCampaignId || sourceUrl);
 
         const referralPayload = referral
           ? { ...referral, source_id: sourceAdId, source_type: sourceType, ctwa_clid: ctwaClid }
@@ -1810,7 +1829,7 @@ Deno.serve(async (req) => {
         }
 
         // 1) Protocolo só depois dos sinais fortes.
-        if (!sourceCampaignId && messageText) {
+        if (!sourceCampaignId && !strongMetaSignalPresent && messageText) {
           const byProtocol = await resolveCampaignByProtocolOnly(
             supabase,
             (customer as any).consultant_id,
@@ -1823,7 +1842,7 @@ Deno.serve(async (req) => {
         }
 
         // 3) Match por initial_message (heurística)
-        if (!sourceCampaignId && messageText && messageText.trim().length > 5) {
+        if (!sourceCampaignId && !strongMetaSignalPresent && messageText && messageText.trim().length > 5) {
           try {
             const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
             // Na ambiguidade (várias campanhas com a MESMA initial_message),
@@ -1883,6 +1902,18 @@ Deno.serve(async (req) => {
             sourceCampaignId = null;
             matchMethod = "unmatched";
           }
+        }
+
+        if (!sourceCampaignId && strongMetaSignalPresent) {
+          await markManualReview(supabase, customer.id, "strong_meta_unmapped");
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: null,
+            method: "strong_meta_unmapped",
+            outcome: "no_campaign_manual_review",
+            messageSample: messageText,
+          });
+          console.warn(`[lead-source] customer ${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
         }
 
         if (hasReferral || textMatch || sourceCampaignId || utmDetail || ctwaClid) {
