@@ -563,7 +563,128 @@ export function OpenAttendanceBatchDialog({
                 )}
               </div>
 
-              {/* 4) Protocolo interno — secundário */}
+              {/* 3b) GRAVAR ÁUDIO na hora */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Gravar áudio agora (opcional)</Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
+                  <VoiceClipRecorder
+                    consultantId={consultantId}
+                    slug={`captacao-batch-${Date.now()}`}
+                    idleLabel={recordedAudioUrl ? "Regravar" : "Gravar áudio"}
+                    onUploaded={(url) => setRecordedAudioUrl(url)}
+                    disabled={running}
+                  />
+                  {recordedAudioUrl && (
+                    <>
+                      <Button
+                        type="button" size="icon" variant="ghost" className="h-8 w-8"
+                        disabled={running}
+                        onClick={() => {
+                          try {
+                            const a = new Audio(recordedAudioUrl);
+                            void a.play().catch(() => toast.error("Não foi possível reproduzir"));
+                          } catch { toast.error("Não foi possível reproduzir"); }
+                        }}
+                        title="Ouvir"
+                      >
+                        <Play className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        type="button" size="icon" variant="ghost" className="h-8 w-8"
+                        disabled={running}
+                        onClick={() => setRecordedAudioUrl(null)}
+                        title="Remover"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* 3c) ENVIAR ARQUIVO (imagem/vídeo/documento) */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Anexar arquivo (opcional)</Label>
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
+                  <div className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center">
+                    <Paperclip className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <Input
+                    type="file"
+                    accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                    disabled={running || uploadingFile}
+                    className="h-8 text-xs border-0 shadow-none px-0 focus-visible:ring-0 flex-1"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      setUploadingFile(true);
+                      try {
+                        const res = await uploadMedia(f, undefined, {
+                          scope: "captacao-batch",
+                          consultant_id: consultantId,
+                          kind: "batch-attachment",
+                        });
+                        setFileUrl(res.url);
+                        setFileName(f.name);
+                        setFileType(
+                          f.type.startsWith("image/") ? "image" :
+                          f.type.startsWith("video/") ? "video" : "document"
+                        );
+                        toast.success("Arquivo pronto");
+                      } catch (err) {
+                        toast.error((err as Error)?.message || "Falha no upload");
+                      } finally {
+                        setUploadingFile(false);
+                      }
+                    }}
+                  />
+                  {uploadingFile && <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />}
+                  {fileUrl && !uploadingFile && (
+                    <Button
+                      type="button" size="icon" variant="ghost" className="h-8 w-8"
+                      disabled={running}
+                      onClick={() => { setFileUrl(null); setFileName(null); setFileType(null); }}
+                      title="Remover"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                </div>
+                {fileUrl && fileType === "image" && (
+                  <img src={fileUrl} alt="anexo" className="max-h-24 rounded-md border border-border object-contain bg-muted/30" />
+                )}
+                {fileUrl && fileType !== "image" && (
+                  <p className="text-[10px] text-muted-foreground truncate">{fileName}</p>
+                )}
+              </div>
+
+              {/* 3d) AUTO-FECHAR ATENDIMENTO */}
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 bg-muted/20">
+                <div className="min-w-0 flex items-center gap-2">
+                  <Timer className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <div>
+                    <Label htmlFor="batch-auto-close" className="text-xs font-medium">
+                      Fechar atendimento sozinho
+                    </Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      Se o cliente não responder em X min, envia a pesquisa 1-5. Só roda com o toggle ligado no Admin.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Input
+                    id="batch-auto-close" type="number" min={0} max={2880} step={15}
+                    value={autoCloseMin}
+                    onChange={(e) => setAutoCloseMin(Math.max(0, Math.min(2880, Number(e.target.value) || 0)))}
+                    disabled={running}
+                    className="h-8 w-20 text-xs text-right"
+                  />
+                  <span className="text-[10px] text-muted-foreground">min</span>
+                </div>
+              </div>
+
+
               <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 bg-muted/20">
                 <div className="min-w-0">
                   <Label htmlFor="batch-start-att" className="text-xs font-medium">
