@@ -35,7 +35,12 @@ import { resolveWorker } from "../_shared/portal-worker.ts";
 import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
 import { casAssignPartner, markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
-import { resolveCampaignByTrackingProtocol } from "../_shared/campaign-tracking.ts";
+import {
+  campaignContainsAdId,
+  extractMetaReferralFields,
+  resolveCampaignFromStrongMeta,
+  resolveCampaignByProtocolOnly,
+} from "../_shared/deterministic-campaign-resolver.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
@@ -822,33 +827,21 @@ Deno.serve(async (req) => {
           let candidateCampaignId: string | null = (customer as any).source_campaign_id || null;
           const campaignAlreadyPersisted = !!candidateCampaignId;
 
-          // 1.5) protocolo profissional no texto (FB-87321 etc.). Resolve mesmo
-          // com várias campanhas ativas e sem ad_id/ctwa_clid do Meta.
-          if (!candidateCampaignId && messageText) {
-            const byProtocol = await resolveCampaignByTrackingProtocol(
-              supabase,
-              (customer as any).consultant_id,
-              messageText,
-            );
-            if (byProtocol) {
-              candidateCampaignId = byProtocol;
-              rodizioMatchMethod = "protocol";
-            }
-          }
-
-          // 2) senão, resolve o mínimo pela mensagem atual (só sinais
-          //    determinísticos: AD ID e ctwa_clid; sem heurística cara).
-          if (!candidateCampaignId) {
+          // 2) Sinais fortes do Meta SEMPRE vencem protocolo/fallback.
+          //    Isso impede lead do ad de Jaraguá/Francisco cair no pool Horácio.
+          let currentSourceAdId: string | null = (customer as any).source_ad_id || null;
+          if (!campaignAlreadyPersisted) {
             const rawMsg: any = body?.messages?.[0] || {};
-            let referral = rawMsg.referral || rawMsg.context?.referred_product ||
-              rawMsg.context?.referral || rawMsg.ad_reply || null;
-            let ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
-            let sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
-            let sourceUrl = referral?.source_url || referral?.sourceUrl || null;
+            const fields = extractMetaReferralFields(rawMsg, body);
+            let referral = fields.referral;
+            let ctwaClid = fields.ctwaClid;
+            let sourceAdId = fields.sourceAdId;
+            let sourceUrl = fields.sourceUrl;
+            currentSourceAdId = sourceAdId || currentSourceAdId;
 
             // FALLBACK RECURSIVO: varre a árvore inteira do payload procurando
             // qualquer campo CTWA aninhado que os paths acima possam ter perdido.
-            if (!ctwaClid && !sourceAdId && !referral) {
+            if (!ctwaClid && !sourceAdId && !referral && !sourceUrl) {
               try {
                 const { findReferralPaths } = await import("../_shared/ctwa-referral-probe.ts");
                 const hit = findReferralPaths(body);
@@ -875,45 +868,20 @@ Deno.serve(async (req) => {
               }).catch(() => {});
             } catch { /* ignore */ }
 
-            if (sourceAdId) {
-              const { data: campByAd } = await supabase
-                .from("facebook_campaigns")
-                .select("id")
-                .eq("consultant_id", (customer as any).consultant_id)
-                .contains("fb_ad_ids", [String(sourceAdId)])
-                .maybeSingle();
-              if ((campByAd as any)?.id) {
-                candidateCampaignId = (campByAd as any).id;
+            try {
+              const strong = await resolveCampaignFromStrongMeta(
+                supabase,
+                (customer as any).consultant_id,
+                { referral, ctwaClid, sourceAdId, sourceUrl, fbCampaignId: fields.fbCampaignId },
+              );
+              if (strong) {
+                candidateCampaignId = strong.campaignId;
                 rodizioMatchMethod = "ad_id_or_ctwa_clid";
+                currentSourceAdId = strong.sourceAdId || currentSourceAdId;
+                sourceAdId = sourceAdId || strong.sourceAdId;
               }
-            }
-            if (!candidateCampaignId && ctwaClid) {
-              const { data: mapping } = await supabase
-                .from("ctwa_clid_mapping")
-                .select("campaign_id")
-                .eq("ctwa_clid", ctwaClid)
-                .maybeSingle();
-              if ((mapping as any)?.campaign_id) {
-                candidateCampaignId = (mapping as any).campaign_id;
-                rodizioMatchMethod = "ad_id_or_ctwa_clid";
-              }
-            }
-            // Rede de segurança: ad_id embutido em source_url.
-            if (!candidateCampaignId && sourceUrl) {
-              try {
-                const { resolveCampaignByAdIdInUrl } = await import("../_shared/ctwa-url-extractor.ts");
-                const hit = await resolveCampaignByAdIdInUrl(
-                  supabase,
-                  (customer as any).consultant_id,
-                  sourceUrl,
-                );
-                if (hit) {
-                  candidateCampaignId = hit.campaignId;
-                  rodizioMatchMethod = "ad_id_or_ctwa_clid";
-                }
-              } catch (e) {
-                console.warn("[lead-source whapi] ad_id-in-url falhou:", (e as Error).message);
-              }
+            } catch (e) {
+              console.warn("[lead-source whapi] strong-meta match falhou:", (e as Error).message);
             }
 
             // Persistir referral bruto quando algum sinal veio, mesmo sem match.
@@ -933,6 +901,19 @@ Deno.serve(async (req) => {
               } catch (e) {
                 console.warn("[lead-source whapi] persist referral falhou:", (e as Error).message);
               }
+            }
+          }
+
+          // 2.1) protocolo profissional no texto só roda DEPOIS dos sinais fortes.
+          if (!candidateCampaignId && messageText) {
+            const byProtocol = await resolveCampaignByProtocolOnly(
+              supabase,
+              (customer as any).consultant_id,
+              messageText,
+            );
+            if (byProtocol) {
+              candidateCampaignId = byProtocol.campaignId;
+              rodizioMatchMethod = "protocol";
             }
           }
 
@@ -1006,6 +987,22 @@ Deno.serve(async (req) => {
           // (protocolo / ad_id / ctwa / fuzzy). Antes só gravava se o rodízio
           // ganhasse o CAS — leads ficavam sem source_campaign_id e sumiam
           // do dialog "Ver leads do rodízio".
+          if (candidateCampaignId && currentSourceAdId) {
+            const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId);
+            if (!validAd) {
+              console.warn(`[rodizio] bloqueado: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
+              await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
+              await logRodizioOutcome(supabase, {
+                customerId: customer.id,
+                campaignId: candidateCampaignId,
+                method: "campaign_ad_id_mismatch",
+                outcome: "no_campaign_manual_review",
+                messageSample: messageText,
+              });
+              candidateCampaignId = null;
+            }
+          }
+
           if (candidateCampaignId && !campaignAlreadyPersisted) {
             try {
               const { error: tagErr } = await supabase
@@ -1028,6 +1025,17 @@ Deno.serve(async (req) => {
           }
 
           // 3) há pool de rodízio ATIVA para essa campanha? (dupla trava: pool.is_active + campanha viva)
+          if (candidateCampaignId) {
+            if (currentSourceAdId) {
+              const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId);
+              if (!validAd) {
+                console.warn(`[rodizio] pool bloqueada: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
+                await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
+                candidateCampaignId = null;
+              }
+            }
+          }
+
           if (candidateCampaignId) {
             const { data: pool } = await supabase
               .from("rodizio_pools")
@@ -1757,12 +1765,14 @@ Deno.serve(async (req) => {
       const alreadyTagged = !!(customer as any).source_campaign_id || !!(customer as any).lead_source;
       if (!alreadyTagged) {
         const rawMsg: any = body?.messages?.[0] || {};
-        const referral = rawMsg.referral || rawMsg.context?.referred_product || rawMsg.context?.referral || rawMsg.ad_reply || null;
-        const ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
+        const fields = extractMetaReferralFields(rawMsg, body);
+        const referral = fields.referral;
+        const ctwaClid = fields.ctwaClid;
         // source_id = AD ID que originou o clique (doc oficial Meta: referral.source_id).
-        const sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
-        const sourceType = referral?.source_type || referral?.sourceType || null;
-        const hasReferral = !!(referral || ctwaClid);
+        const sourceAdId = fields.sourceAdId;
+        const sourceUrl = fields.sourceUrl;
+        const sourceType = (referral as any)?.source_type || (referral as any)?.sourceType || null;
+        const hasReferral = !!(referral || ctwaClid || sourceAdId || sourceUrl);
 
         const referralPayload = referral
           ? { ...referral, source_id: sourceAdId, source_type: sourceType, ctwa_clid: ctwaClid }
@@ -1771,50 +1781,29 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
-        let matchMethod: "protocol" | "ad_id" | "ctwa_clid" | "exact_message" | "unmatched" = "unmatched";
+        let matchMethod: "protocol" | "ad_id" | "ad_id_in_url" | "fb_campaign_id" | "ctwa_clid" | "exact_message" | "unmatched" = "unmatched";
 
-        // 0) Match DETERMINÍSTICO por protocolo profissional no texto (FB-87321 etc.).
-        if (messageText) {
-          sourceCampaignId = await resolveCampaignByTrackingProtocol(
+        // 0) Match forte Meta primeiro: AD ID / URL com AD ID / FB Campaign / CTWA.
+        const strong = await resolveCampaignFromStrongMeta(
+          supabase,
+          (customer as any).consultant_id,
+          fields,
+        );
+        if (strong) {
+          sourceCampaignId = strong.campaignId;
+          matchMethod = strong.method;
+        }
+
+        // 1) Protocolo só depois dos sinais fortes.
+        if (!sourceCampaignId && messageText) {
+          const byProtocol = await resolveCampaignByProtocolOnly(
             supabase,
             (customer as any).consultant_id,
             messageText,
           );
-          if (sourceCampaignId) matchMethod = "protocol";
-        }
-
-        // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
-        if (!sourceCampaignId && sourceAdId) {
-          try {
-            const { data: campByAd } = await supabase
-              .from("facebook_campaigns")
-              .select("id")
-              .eq("consultant_id", (customer as any).consultant_id)
-              .contains("fb_ad_ids", [String(sourceAdId)])
-              .maybeSingle();
-            if ((campByAd as any)?.id) {
-              sourceCampaignId = (campByAd as any).id;
-              matchMethod = "ad_id";
-            }
-          } catch (e) {
-            console.warn("[lead-source] ad_id match falhou:", (e as Error).message);
-          }
-        }
-
-        // 2) Match via ctwa_clid_mapping (sinal forte).
-        if (ctwaClid && !sourceCampaignId) {
-          try {
-            const { data: mapping } = await supabase
-              .from("ctwa_clid_mapping")
-              .select("campaign_id")
-              .eq("ctwa_clid", ctwaClid)
-              .maybeSingle();
-            if ((mapping as any)?.campaign_id) {
-              sourceCampaignId = (mapping as any).campaign_id;
-              matchMethod = "ctwa_clid";
-            }
-          } catch (e) {
-            console.warn("[lead-source] ctwa_clid_mapping lookup falhou:", (e as Error).message);
+          if (byProtocol) {
+            sourceCampaignId = byProtocol.campaignId;
+            matchMethod = "protocol";
           }
         }
 
@@ -1868,6 +1857,16 @@ Deno.serve(async (req) => {
               const [k, v] = m.split("=");
               utmDetail[k.toLowerCase()] = decodeURIComponent(v || "");
             }
+          }
+        }
+
+        if (sourceCampaignId && sourceAdId) {
+          const validAd = await campaignContainsAdId(supabase, sourceCampaignId, sourceAdId);
+          if (!validAd) {
+            console.warn(`[lead-source] bloqueado: campaign=${sourceCampaignId} não contém ad_id=${sourceAdId}`);
+            await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
+            sourceCampaignId = null;
+            matchMethod = "unmatched";
           }
         }
 
