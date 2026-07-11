@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import AutomationTogglesPanel from "@/components/admin/AutomationTogglesPanel";
 
 type Job = { jobid: number; jobname: string; schedule: string; active: boolean; command: string };
 type Run = { jobid: number; jobname: string; status: string; return_message: string | null; start_time: string; end_time: string | null };
