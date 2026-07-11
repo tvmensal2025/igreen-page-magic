@@ -6,6 +6,41 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { extractAdIdFromSourceUrl } from "../_shared/ctwa-url-extractor.ts";
 
+function adIdsContain(list: unknown, adId: string | null | undefined): boolean {
+  if (!adId) return false;
+  const needle = String(adId).trim();
+  if (!needle) return false;
+  if (Array.isArray(list)) return list.some((v) => String(v).trim() === needle);
+  if (typeof list === "string") {
+    try {
+      const parsed = JSON.parse(list);
+      if (Array.isArray(parsed)) return parsed.some((v) => String(v).trim() === needle);
+    } catch { /* plain string fallback */ }
+    return list.split(/[\s,;|]+/).some((v) => v.trim() === needle);
+  }
+  return false;
+}
+
+async function campaignByAdId(supabase: any, consultantId: string, adId: string | null) {
+  if (!adId) return null;
+  const { data, error } = await supabase
+    .from("facebook_campaigns")
+    .select("id, fb_ad_ids, status, updated_at, created_at")
+    .eq("consultant_id", consultantId)
+    .not("fb_ad_ids", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1000);
+  if (error) throw error;
+  const matches = ((data || []) as any[]).filter((c) => adIdsContain(c.fb_ad_ids, adId));
+  matches.sort((a, b) => {
+    const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+    const r = rank(String(a.status || "")) - rank(String(b.status || ""));
+    if (r !== 0) return r;
+    return String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+  });
+  return matches[0]?.id ? String(matches[0].id) : null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -72,10 +107,8 @@ Deno.serve(async (req) => {
       const url = ref.source_url;
 
       if (adId) {
-        const { data } = await supabase.from("facebook_campaigns")
-          .select("id").eq("consultant_id", consultantId)
-          .contains("fb_ad_ids", [String(adId)]).maybeSingle();
-        if ((data as any)?.id) { campaignId = (data as any).id; method = "ad_id"; }
+        const found = await campaignByAdId(supabase, consultantId, String(adId));
+        if (found) { campaignId = found; method = "ad_id"; }
       }
       if (!campaignId && clid) {
         const { data } = await supabase.from("ctwa_clid_mapping")
@@ -85,10 +118,8 @@ Deno.serve(async (req) => {
       if (!campaignId && url) {
         const extractedAdId = extractAdIdFromSourceUrl(url);
         if (extractedAdId) {
-          const { data } = await supabase.from("facebook_campaigns")
-            .select("id").eq("consultant_id", consultantId)
-            .contains("fb_ad_ids", [extractedAdId]).maybeSingle();
-          if ((data as any)?.id) { campaignId = (data as any).id; method = "ad_id_in_url"; }
+          const found = await campaignByAdId(supabase, consultantId, extractedAdId);
+          if (found) { campaignId = found; method = "ad_id_in_url"; }
         }
       }
 
