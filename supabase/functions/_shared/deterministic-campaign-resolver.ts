@@ -84,15 +84,49 @@ export function extractMetaReferralFields(rawMessage: any, rootPayload?: unknown
   return { referral, ctwaClid, sourceAdId, sourceUrl, fbCampaignId };
 }
 
+function adIdsContain(list: unknown, adId: string | null | undefined): boolean {
+  if (!adId) return false;
+  const needle = String(adId).trim();
+  if (!needle) return false;
+  if (Array.isArray(list)) return list.some((v) => String(v).trim() === needle);
+  if (typeof list === "string") {
+    try {
+      const parsed = JSON.parse(list);
+      if (Array.isArray(parsed)) return parsed.some((v) => String(v).trim() === needle);
+    } catch { /* plain string fallback */ }
+    return list.split(/[\s,;|]+/).some((v) => v.trim() === needle);
+  }
+  return false;
+}
+
 async function campaignByAdId(supabase: any, consultantId: string, adId: string | null) {
   if (!adId) return null;
-  const { data } = await supabase
+
+  // Não usar `.contains("fb_ad_ids", [adId])` aqui: em produção vimos AD IDs
+  // numéricos-string do Meta passarem pela busca e caírem no fallback errado.
+  // A lista de campanhas por consultor é pequena; buscar e comparar em JS é
+  // mais previsível e mantém campanha 100% individual por AD ID.
+  const { data, error } = await supabase
     .from("facebook_campaigns")
-    .select("id")
+    .select("id, fb_ad_ids, status, updated_at, created_at")
     .eq("consultant_id", consultantId)
-    .contains("fb_ad_ids", [String(adId)])
-    .maybeSingle();
-  return (data as any)?.id ? String((data as any).id) : null;
+    .not("fb_ad_ids", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(200);
+  if (error) {
+    console.warn("[campaignByAdId] lookup falhou:", error.message);
+    return null;
+  }
+
+  const matches = ((data || []) as any[]).filter((c) => adIdsContain(c.fb_ad_ids, adId));
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => {
+    const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+    const r = rank(String(a.status || "")) - rank(String(b.status || ""));
+    if (r !== 0) return r;
+    return String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+  });
+  return matches[0]?.id ? String(matches[0].id) : null;
 }
 
 export async function campaignContainsAdId(
@@ -101,13 +135,16 @@ export async function campaignContainsAdId(
   adId: string | null | undefined,
 ): Promise<boolean> {
   if (!campaignId || !adId) return true;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("facebook_campaigns")
-    .select("id")
+    .select("id, fb_ad_ids")
     .eq("id", campaignId)
-    .contains("fb_ad_ids", [String(adId)])
     .maybeSingle();
-  return !!(data as any)?.id;
+  if (error) {
+    console.warn("[campaignContainsAdId] lookup falhou:", error.message);
+    return false;
+  }
+  return adIdsContain((data as any)?.fb_ad_ids, adId);
 }
 
 /** Sinais fortes do Meta têm prioridade absoluta sobre protocolo/fallback. */
