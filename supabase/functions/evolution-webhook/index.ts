@@ -1102,10 +1102,44 @@ Deno.serve(async (req) => {
             consultant_id: instanceData.consultant_id,
             campaign_id: resolved,
           });
+        } else {
+          // Escada de fallback (degraus 6→7→8): DDD/cidade → atividade recente → rodízio justo.
+          const { resolveCampaignAutoLadder } = await import(
+            "../_shared/single-pool-campaign-resolver.ts"
+          );
+          const ladder = await resolveCampaignAutoLadder(
+            supabase,
+            instanceData.consultant_id,
+            { phone: (customer as any).phone_whatsapp, messageText },
+          );
+          if (ladder) {
+            await supabase
+              .from("customers")
+              .update({ source_campaign_id: ladder.campaignId, lead_source: "meta_ads" })
+              .eq("id", customer.id)
+              .is("source_campaign_id", null);
+            (customer as any).source_campaign_id = ladder.campaignId;
+            (customer as any).lead_source = "meta_ads";
+            await logRodizioOutcome(supabase, {
+              customerId: customer.id,
+              campaignId: ladder.campaignId,
+              method: ladder.method,
+              outcome: "assigned",
+              messageSample: ladder.sample,
+            });
+            jsonLog("info", "lead_source_tagged_ladder", {
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              campaign_id: ladder.campaignId,
+              method: ladder.method,
+              sample: ladder.sample,
+            });
+          }
         }
       } catch (e) {
         console.warn("[single-pool-fuzzy] falhou:", (e as Error).message);
       }
+
     }
 
     const rodizioCampaignId = (customer as any)?.source_campaign_id || null;
