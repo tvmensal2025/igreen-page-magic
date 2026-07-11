@@ -270,6 +270,40 @@ export async function sendWelcomeHeader(
   }
 
   const jid = `${digits}@s.whatsapp.net`;
+
+  // ▶ Override — se o consultor personalizou a msg de "abrir chamado", envia ela
+  //   como mensagem única (protocolo/nome do consultor já são substituídos via {{var}}).
+  if (args.customTemplate && args.customTemplate.text?.trim()) {
+    const text = args.customTemplate.text;
+    const sendCtxOv = {
+      customerId,
+      consultantId: consultantId || "",
+      stepId: "manual:start_attendance:custom",
+      idempotencyKey: `welcome-custom:${customerId}:${Date.now()}`,
+      supabase,
+    };
+    const rr = await channel.adapter.sendText(jid, text, sendCtxOv as never);
+    if (!rr.ok) {
+      return { ok: false, code: "send_failed_greeting", detail: (rr as { detail?: string }).detail };
+    }
+    await registerSend(supabase, channel.instanceName).catch(() => {});
+    await supabase.from("conversations").insert({
+      customer_id: customerId,
+      message_direction: "outbound",
+      message_text: text,
+      message_type: "text",
+      conversation_step: "welcome",
+    }).then(() => {}, () => {});
+    const nowIso = new Date().toISOString();
+    await supabase.from("customers").update({
+      welcome_sent_at: nowIso,
+      name_ask_sent_at: nowIso,
+      conversation_step: "ask_name",
+      capture_mode: "manual",
+    }).eq("id", customerId).then(() => {}, () => {});
+    return { ok: true, protocol, channel: channel.kind, instance: channel.instanceName };
+  }
+
   const greeting = buildWelcomeHeaderGreeting(consultantName);
   const protoBlock = `${buildWelcomeHeaderProtocol(protocol, consultantName)}\n\n${NAME_ASK_TEXT}`;
 
