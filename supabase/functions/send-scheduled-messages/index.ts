@@ -37,6 +37,13 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (!(await isAutomationEnabled(supabase, "send_scheduled_messages"))) {
+      await logSkipped(supabase, "send_scheduled_messages");
+      return new Response(JSON.stringify({ skipped: "automation_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Em horário de silêncio: adia mensagens devidas para 08:00 BRT e sai.
     if (isQuietHourBRT()) {
       const nextRun = nextQuietWindowEndISO();
