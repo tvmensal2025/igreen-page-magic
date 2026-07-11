@@ -280,8 +280,8 @@ export function OpenAttendanceBatchDialog({
       toast.error("WhatsApp desconectado — reconecte para enviar mensagem");
       return;
     }
-    if (!startAttendance && !audioUrl && !imageUrl && !customText) {
-      toast.error("Escolha iniciar atendimento, áudio, imagem ou texto");
+    if (!startAttendance && !audioUrl && !imageUrl && !customText && !recordedAudioUrl && !fileUrl) {
+      toast.error("Escolha iniciar atendimento, áudio, imagem, arquivo ou texto");
       return;
     }
 
@@ -320,8 +320,13 @@ export function OpenAttendanceBatchDialog({
         startAttendance,
         audioUrl,
         imageUrl,
+        extraAudioUrl: recordedAudioUrl,
+        fileUrl,
+        fileType,
+        fileName,
         customText,
         delayMs: 5000,
+        autoCloseAfterMin: autoCloseMin,
 
 
         signal: ac.signal,
