@@ -14,7 +14,7 @@ const corsHeaders = {
 };
 
 const SELECT_FIELDS = PORTAL_FIELDS.map((f) => f.key).join(", ") +
-  ", portal2_celular_alt, phone_landline, phone_contact_confirmed, name_mismatch_flag, name_mismatch_acknowledged_at";
+  ", portal2_celular_alt, phone_landline, phone_contact_confirmed, name_mismatch_flag, name_mismatch_acknowledged_at, contaunica_answered, contaunica";
 
 const TERMINAL = new Set([
   "portal_submitting", "awaiting_otp", "validating_otp",
