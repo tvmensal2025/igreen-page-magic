@@ -11,7 +11,7 @@ import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
 import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 
-import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal } from "lucide-react";
+import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   DropdownMenu,
