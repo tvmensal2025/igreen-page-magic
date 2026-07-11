@@ -547,21 +547,20 @@ export function OpenAttendanceBatchDialog({
               <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-border px-3 py-2.5 bg-muted/20">
                 <div className="min-w-0">
                   <Label htmlFor="batch-start-att" className="text-xs font-medium">
-                    Registrar protocolo interno
+                    Enviar saudação + protocolo padrão
                   </Label>
                   <p className="text-[10px] text-muted-foreground">
-                    {customText
-                      ? "Desligado — sua mensagem substitui a frase padrão."
-                      : "Envia frase padrão de abertura (pula quem já iniciou)."}
+                    Envia a frase de abertura do sistema (pula quem já iniciou). Sua mensagem vai depois.
                   </p>
                 </div>
                 <Switch
                   id="batch-start-att"
-                  checked={startAttendance && !customText}
+                  checked={startAttendance}
                   onCheckedChange={setStartAttendance}
-                  disabled={running || !!customText}
+                  disabled={running}
                 />
               </div>
+
 
               {needsChannel && !instanceName && (
                 <p className="text-[11px] text-destructive">
