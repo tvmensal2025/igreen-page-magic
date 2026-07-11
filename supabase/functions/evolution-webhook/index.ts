@@ -867,30 +867,62 @@ Deno.serve(async (req) => {
           msgData?.videoMessage?.contextInfo ||
           msgData?.audioMessage?.contextInfo ||
           null;
-        const externalAdReply = ctxInfo?.externalAdReply || null;
-        const ctwaClid = body?.data?.ctwaClid || externalAdReply?.ctwaClid || null;
+        let externalAdReply: any = ctxInfo?.externalAdReply || null;
+        let ctwaClid: string | null = body?.data?.ctwaClid || externalAdReply?.ctwaClid || null;
         // source_id = AD ID que originou o clique (doc oficial Meta: referral.source_id).
         // No Evolution/Baileys vem em externalAdReply.sourceId; aceitamos variações.
-        const sourceAdId = externalAdReply?.sourceId
+        let sourceAdId: string | null = externalAdReply?.sourceId
           || externalAdReply?.source_id
           || body?.data?.sourceId
           || null;
         const sourceType = externalAdReply?.sourceType || externalAdReply?.source_type || null;
-        const hasReferral = !!(externalAdReply || ctwaClid);
+        let sourceUrl: string | null = externalAdReply?.sourceUrl || externalAdReply?.source_url || null;
 
-        // Payload completo do referral para auditoria
-        const referralPayload = externalAdReply
+        // FALLBACK RECURSIVO: se o parse direto não achou nada mas o Meta aninhou
+        // o referral em outro caminho (viewOnceMessage.*, ephemeralMessage.*, etc.),
+        // varre a árvore inteira do payload.
+        if (!ctwaClid && !sourceAdId && !externalAdReply) {
+          try {
+            const { findReferralPaths } = await import("../_shared/ctwa-referral-probe.ts");
+            const hit = findReferralPaths(body);
+            if (hit.matchedPaths.length > 0) {
+              ctwaClid = ctwaClid || hit.ctwaClid;
+              sourceAdId = sourceAdId || hit.sourceAdId;
+              sourceUrl = sourceUrl || hit.sourceUrl;
+              externalAdReply = externalAdReply || hit.raw;
+            }
+          } catch (e) {
+            console.warn("[lead-source] recursive referral scan falhou:", (e as Error).message);
+          }
+        }
+
+        // Probe diagnóstico (fire-and-forget): grava payload cru quando parece CTWA
+        // mas o parse não achou nada — para descobrirmos o shape real do Meta.
+        try {
+          const { logReferralProbe } = await import("../_shared/ctwa-referral-probe.ts");
+          logReferralProbe(supabase, {
+            source: "evolution",
+            payload: body,
+            messageText,
+            customerId: customer.id,
+            consultantId: instanceData.consultant_id,
+          }).catch(() => {});
+        } catch { /* ignore */ }
+
+        const hasReferral = !!(externalAdReply || ctwaClid || sourceAdId || sourceUrl);
+
+        // Payload completo do referral para auditoria (grava SEMPRE que veio sinal).
+        const referralPayload = hasReferral
           ? {
-              title: externalAdReply.title,
-              body: externalAdReply.body,
-              source_url: externalAdReply.sourceUrl,
-              media_url: externalAdReply.thumbnailUrl,
+              title: externalAdReply?.title,
+              body: externalAdReply?.body,
+              source_url: sourceUrl,
+              media_url: externalAdReply?.thumbnailUrl,
               source_id: sourceAdId,
               source_type: sourceType,
               ctwa_clid: ctwaClid,
+              raw: externalAdReply,
             }
-          : ctwaClid
-          ? { ctwa_clid: ctwaClid }
           : null;
 
         let sourceCampaignId: string | null = null;
