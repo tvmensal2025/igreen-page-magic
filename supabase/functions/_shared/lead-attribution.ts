@@ -17,36 +17,10 @@ export interface AttributionResult {
   source_campaign_id: string | null;
   source_ctwa_clid: string | null;
   source_referral: Record<string, unknown> | null;
-  method: "ctwa_referral" | "initial_message_match" | "regex_fallback" | "none";
+  method: "ctwa_referral" | "regex_fallback" | "none";
 }
 
 const ADS_REGEX = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
-
-/**
- * Normaliza texto para comparação: lowercase, sem acentos, sem pontuação extra.
- */
-function normalizeText(s: string): string {
-  return (s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Calcula similaridade simples entre dois textos normalizados.
- * Retorna 0..1. Usa Jaccard de bigramas de palavras.
- */
-function textSimilarity(a: string, b: string): number {
-  const words = (s: string) => new Set(s.split(/\s+/).filter(Boolean));
-  const wa = words(a), wb = words(b);
-  if (!wa.size || !wb.size) return 0;
-  let inter = 0;
-  wa.forEach((w) => { if (wb.has(w)) inter++; });
-  return inter / Math.max(wa.size, wb.size);
-}
 
 /**
  * Tenta atribuir o lead a uma campanha.
