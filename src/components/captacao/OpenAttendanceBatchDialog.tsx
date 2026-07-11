@@ -351,7 +351,8 @@ export function OpenAttendanceBatchDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         hideCloseButton={running}
-        className="max-w-md max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden"
+        className="max-w-lg max-h-[90dvh] flex flex-col gap-0 p-0 overflow-hidden"
+
         onPointerDownOutside={(e) => {
           if (running) e.preventDefault();
         }}
