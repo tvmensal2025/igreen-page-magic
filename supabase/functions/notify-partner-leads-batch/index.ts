@@ -54,10 +54,6 @@ Deno.serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
 
     const admin = createClient(supabaseUrl, serviceKey);
-    if (!(await isAutomationEnabled(admin, "notify_partner_leads_batch"))) {
-      await logSkipped(admin, "notify_partner_leads_batch");
-      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "notify_partner_leads_batch" }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
 
     let ownerConsultantId: string | null = null;
 
@@ -81,6 +77,12 @@ Deno.serve(async (req) => {
       });
     }
     const { customer_ids, force, dry_run, owner_consultant_id } = parsed.data;
+
+    // Kill switch: bloqueia envio real; dry_run passa para permitir preview.
+    if (!dry_run && !(await isAutomationEnabled(admin, "notify_partner_leads_batch"))) {
+      await logSkipped(admin, "notify_partner_leads_batch", { customer_ids });
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "notify_partner_leads_batch" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     if (!ownerConsultantId) ownerConsultantId = owner_consultant_id || null;
     if (!ownerConsultantId) {
       const { data: c0 } = await admin.from("customers").select("consultant_id").eq("id", customer_ids[0]).maybeSingle();
