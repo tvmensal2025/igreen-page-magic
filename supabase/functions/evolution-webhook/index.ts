@@ -1334,6 +1334,20 @@ Deno.serve(async (req) => {
     //     usado por QRs antigos e por leads que digitaram a keyword manualmente).
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
+        const leadSourceText = JSON.stringify((customer as any).lead_source || "").toLowerCase();
+        const blockKeywordForMetaLead =
+          !!(customer as any).source_campaign_id ||
+          !!(customer as any).source_ad_id ||
+          !!(customer as any).source_ctwa_clid ||
+          !!(customer as any).ctwa_clid ||
+          leadSourceText.includes("meta") ||
+          matchesMetaCtwaPhrase(messageText);
+
+        if (blockKeywordForMetaLead) {
+          await markManualReview(supabase, customer.id, "meta_lead_no_campaign_or_pool");
+          console.warn(`[partner-match] bloqueado para lead Meta sem rodízio customer=${customer.id}`);
+        }
+
         const { count: inboundCount } = await supabase
           .from("conversations")
           .select("id", { count: "exact", head: true })
@@ -1341,7 +1355,7 @@ Deno.serve(async (req) => {
           .eq("message_direction", "inbound");
 
         const DETECTION_WINDOW = 3;
-        if ((inboundCount ?? 0) < DETECTION_WINDOW) {
+        if (!blockKeywordForMetaLead && (inboundCount ?? 0) < DETECTION_WINDOW) {
           let matchedPartnerId: string | null = null;
           let matchedKeyword = "";
           let matchedScore = 1.0;
