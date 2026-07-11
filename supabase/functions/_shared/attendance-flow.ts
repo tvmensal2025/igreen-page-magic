@@ -199,6 +199,8 @@ export async function sendWelcomeHeader(
     env: ChannelEnv;
     consultantId?: string;
     superadminConsultantId?: string | null;
+    /** Override — se enviado, substitui greeting+protoBlock por 1 única mensagem. */
+    customTemplate?: { text: string; audio_url?: string | null; typing_delay_ms?: number } | null;
   },
 ): Promise<SendWelcomeResult> {
   const { customerId, env } = args;
