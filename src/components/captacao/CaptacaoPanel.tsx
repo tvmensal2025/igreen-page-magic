@@ -277,7 +277,42 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
               onSelect={setSelectedId}
               whatsappConnected={connected}
               onCollapseList={toggleList}
-              onOpenBatch={(leads, periodLabel) => {
+              onOpenBatch={async (leads, periodLabel) => {
+                // 1 lead → dispara direto o "Iniciar atendimento", sem modal.
+                // 2+ leads → abre o modal com opções (áudio/imagem/texto/timer).
+                if (leads.length === 1) {
+                  const lead = leads[0];
+                  if (lead.welcome_sent_at) {
+                    sonnerToast.info("Atendimento já iniciado para este lead.");
+                    setSelectedId(lead.id);
+                    return;
+                  }
+                  const tId = sonnerToast.loading("Iniciando atendimento...");
+                  try {
+                    const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
+                      body: { customerId: lead.id, consultantId },
+                    });
+                    if (error && !data) throw new Error(error.message || "Falha ao iniciar");
+                    const body = (data ?? {}) as { ok?: boolean; skipped?: string; protocol?: string; message?: string; detail?: string; error?: string; fallback?: boolean };
+                    if (body.ok === false) {
+                      if (body.fallback) {
+                        sonnerToast.warning(body.message || "Envie manualmente pelo chat.", { id: tId });
+                      } else {
+                        sonnerToast.error(body.message || body.detail || body.error || "Falha ao iniciar", { id: tId });
+                      }
+                    } else {
+                      sonnerToast.success(
+                        body.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
+                        { id: tId, description: body.protocol ? `Protocolo ${body.protocol}` : undefined },
+                      );
+                    }
+                    setSelectedId(lead.id);
+                    window.dispatchEvent(new Event("captacao:batch-finished"));
+                  } catch (e) {
+                    sonnerToast.error((e as Error).message || "Falha ao iniciar", { id: tId });
+                  }
+                  return;
+                }
                 setBatchLeads(leads);
                 setBatchPeriodLabel(periodLabel);
                 setBatchOpen(true);
