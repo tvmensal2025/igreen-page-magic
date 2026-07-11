@@ -6,16 +6,21 @@
  *
  * Prioridade:
  *   1) protocolo profissional dentro da mensagem (FB-87321, IG-87321...)
- *   2) se o consultor tem EXATAMENTE 1 pool ativa → usa essa campanha
- *      (seguro: não há ambiguidade de campanha)
- *   3) fallback por similaridade Jaccard ≥ threshold com initial_message
- *      (só se 1 match claro ou líder com margem)
+ *   2) sem protocolo/sinal forte → retorna null e vai para revisão manual.
  *
  * Se houver empate ou nenhum sinal, retorna null. Não escolhe por acaso.
+ *
+ * REGRA DE BLINDAGEM 2026-07-11:
+ * - `recent_strong_activity` e `fallback_rotation` NÃO podem mais atribuir
+ *   campanha em produção. Eles escolhiam a campanha "quente" do momento e
+ *   contaminaram leads de Jaraguá/Francisco para Horácio/Rodrigo.
+ * - Campanha individual só é automática por sinal determinístico: AD ID,
+ *   CTWA ou protocolo. Sem isso, não chuta.
+ * - DDD/cidade também fica fora da escada automática: ajuda em auditoria, mas
+ *   não prova campanha quando dois anúncios rodam em Minas ao mesmo tempo.
  */
 
 import {
-  jaccardSimilarity,
   resolveCampaignByTrackingProtocol,
 } from "./campaign-tracking.ts";
 import { ufFromPhone, ufsFromCampaignCities } from "./ddd-uf-map.ts";
@@ -50,15 +55,15 @@ async function listActivePoolCampaigns(
 }
 
 
-/**
- * Se o consultor tem exatamente 1 campanha com pool de rodízio ativa,
- * retorna esse campaign_id. Usado quando a frase-âncora do Meta chega
- * sem AD ID / ctwa_clid / FB-xxxxx — sem ambiguidade, o rodízio pode rodar.
- */
+/** @deprecated Única pool ativa não prova campanha. Sem protocolo/AD ID/CTWA, retorna null. */
 export async function resolveCampaignBySoleActivePool(
   supabase: any,
   consultantId: string,
 ): Promise<string | null> {
+  console.warn("[sole-active-pool] desativado: única pool ativa não prova origem do anúncio");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     // Dedup por campaign_id (pode haver 2 pools apontando pra mesma campanha)
@@ -82,25 +87,10 @@ export async function resolveCampaignBySinglePoolFuzzy(
     const byProtocol = await resolveCampaignByTrackingProtocol(supabase, consultantId, messageText);
     if (byProtocol) return byProtocol;
 
-    // 1 pool ativa = atribuição segura (mesmo sem similaridade de texto)
-    const sole = await resolveCampaignBySoleActivePool(supabase, consultantId);
-    if (sole) return sole;
-
-    const active = await listActivePoolCampaigns(supabase, consultantId);
-    const withMsg = active.filter((a) => a.initialMessage);
-
-    const matches = withMsg
-      .map((a) => ({
-        id: a.campaignId,
-        score: jaccardSimilarity(messageText, a.initialMessage || ""),
-      }))
-      .filter((m) => m.score >= threshold)
-      .sort((a, b) => b.score - a.score);
-
-    if (matches.length === 1) return matches[0].id;
-    if (matches.length > 1 && matches[0].score > matches[1].score + 0.15) {
-      return matches[0].id;
-    }
+    // Blindagem: não usar única pool ativa nem similaridade de texto para
+    // campanha individual. Mensagens de anúncios diferentes podem ser iguais,
+    // campanha pausada pode reaparecer no Meta e isso contaminava parceiros.
+    console.warn("[single-pool-resolver] sem protocolo determinístico; atribuição automática bloqueada");
     return null;
   } catch (e) {
     console.warn("[single-pool-resolver] falhou:", (e as Error)?.message);
@@ -143,11 +133,19 @@ export async function resolveByDddCity(
   }
 }
 
-/** Degrau 7 — única campanha com sinal forte (AD ID / ctwa_clid) nas últimas 24h. */
+/**
+ * @deprecated NÃO usar para atribuir campanha. Mantido só para compatibilidade
+ * de imports antigos. Atividade recente não prova que o próximo lead pertence
+ * à mesma campanha.
+ */
 export async function resolveByRecentActivity(
   supabase: any,
   consultantId: string,
 ): Promise<LadderResult> {
+  console.warn("[resolveByRecentActivity] desativado: fallback por campanha quente é inseguro");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     if (active.length < 2) return null;
@@ -199,6 +197,10 @@ export async function resolveByFallbackRotation(
   consultantId: string,
   phone?: string | null,
 ): Promise<LadderResult> {
+  console.warn("[resolveByFallbackRotation] desativado: fallback sem sinal determinístico é inseguro");
+  return null;
+
+  // Código legado preservado abaixo para referência, mas inacessível.
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     if (active.length === 0) return null;
@@ -282,18 +284,15 @@ export async function resolveByFallbackRotation(
   }
 }
 
-/** Roda a escada 6→7→8 na ordem. Devolve null se nenhum degrau tiver certeza. */
+/**
+ * Fallback desativado para campanha individual. Devolve null se não houver
+ * certeza determinística antes desta escada.
+ */
 export async function resolveCampaignAutoLadder(
   supabase: any,
   consultantId: string,
   ctx: { phone?: string | null; messageText?: string | null },
 ): Promise<LadderResult> {
-  const step6 = await resolveByDddCity(supabase, consultantId, ctx.phone);
-  if (step6) return step6;
-  const step7 = await resolveByRecentActivity(supabase, consultantId);
-  if (step7) return step7;
-  const step8 = await resolveByFallbackRotation(supabase, consultantId, ctx.phone);
-  if (step8) return step8;
   return null;
 }
 

@@ -9,8 +9,7 @@
  *
  * Estratégias (em ordem de confiança):
  *   1. ctwa_clid + referral do payload Whapi/Evolution (sinal forte do Meta)
- *   2. Match exato do texto da mensagem com facebook_campaigns.initial_message
- *   3. Regex de palavras-chave de anúncio (fallback fraco)
+ *   2. Regex de palavras-chave de anúncio marca Meta Ads, mas não escolhe campanha.
  */
 
 export interface AttributionResult {
@@ -18,36 +17,10 @@ export interface AttributionResult {
   source_campaign_id: string | null;
   source_ctwa_clid: string | null;
   source_referral: Record<string, unknown> | null;
-  method: "ctwa_referral" | "initial_message_match" | "regex_fallback" | "none";
+  method: "ctwa_referral" | "regex_fallback" | "none";
 }
 
 const ADS_REGEX = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
-
-/**
- * Normaliza texto para comparação: lowercase, sem acentos, sem pontuação extra.
- */
-function normalizeText(s: string): string {
-  return (s || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Calcula similaridade simples entre dois textos normalizados.
- * Retorna 0..1. Usa Jaccard de bigramas de palavras.
- */
-function textSimilarity(a: string, b: string): number {
-  const words = (s: string) => new Set(s.split(/\s+/).filter(Boolean));
-  const wa = words(a), wb = words(b);
-  if (!wa.size || !wb.size) return 0;
-  let inter = 0;
-  wa.forEach((w) => { if (wb.has(w)) inter++; });
-  return inter / Math.max(wa.size, wb.size);
-}
 
 /**
  * Tenta atribuir o lead a uma campanha.
@@ -100,7 +73,7 @@ export async function attributeLeadSource(
       result.source_referral = referral as Record<string, unknown> | null;
       result.method = "ctwa_referral";
 
-      // Tenta mapear para campanha específica via ad_id ou campaign_id do referral
+      // Tenta mapear para campanha específica via sinais fortes do Meta.
       const adId =
         (referral as any)?.ad_id ||
         (referral as any)?.source_id ||
@@ -112,35 +85,17 @@ export async function attributeLeadSource(
         (ctxAd as any)?.source?.url ||
         null;
 
-      if (adId || fbCampaignId) {
-        let q = supabase
-          .from("facebook_campaigns")
-          .select("id")
-          .eq("consultant_id", consultantId);
-        if (fbCampaignId) {
-          q = q.eq("fb_campaign_id", String(fbCampaignId));
-        } else if (adId) {
-          // fb_ad_ids é jsonb array
-          q = q.contains("fb_ad_ids", [String(adId)]);
-        }
-        const { data: camp } = await q.maybeSingle();
-        if (camp?.id) result.source_campaign_id = camp.id;
-      }
-
-      // Safety-net: se ainda não achou campanha, tenta extrair ad_id da source_url
-      if (!result.source_campaign_id && sourceUrl) {
+      if (adId || fbCampaignId || sourceUrl || ctwaClid) {
         try {
-          const { extractAdIdFromSourceUrl } = await import("./ctwa-url-extractor.ts");
-          const urlAdId = extractAdIdFromSourceUrl(String(sourceUrl));
-          if (urlAdId) {
-            const { data: camp } = await supabase
-              .from("facebook_campaigns")
-              .select("id")
-              .eq("consultant_id", consultantId)
-              .contains("fb_ad_ids", [urlAdId])
-              .maybeSingle();
-            if ((camp as any)?.id) result.source_campaign_id = (camp as any).id;
-          }
+          const { resolveCampaignFromStrongMeta } = await import("./deterministic-campaign-resolver.ts");
+          const strong = await resolveCampaignFromStrongMeta(supabase, consultantId, {
+            referral,
+            ctwaClid,
+            sourceAdId: adId ? String(adId) : null,
+            sourceUrl: sourceUrl ? String(sourceUrl) : null,
+            fbCampaignId: fbCampaignId ? String(fbCampaignId) : null,
+          });
+          if (strong?.campaignId) result.source_campaign_id = strong.campaignId;
         } catch { /* ignore */ }
       }
 
@@ -148,42 +103,10 @@ export async function attributeLeadSource(
       return result;
     }
 
-    // ── Estratégia 2: match com initial_message das campanhas ─────────
-    if (!isAudio && !isFile && messageText && messageText.trim().length >= 5) {
-      const normMsg = normalizeText(messageText);
+    // Não atribuir campanha por initial_message: várias campanhas podem usar o
+    // mesmo texto inicial. Só sinais fortes/protocolo definem campanha.
 
-      const { data: campaigns } = await supabase
-        .from("facebook_campaigns")
-        .select("id, initial_message")
-        .eq("consultant_id", consultantId)
-        .not("initial_message", "is", null)
-        .neq("initial_message", "");
-
-      let bestCampaignId: string | null = null;
-      let bestScore = 0;
-
-      for (const camp of (campaigns || []) as Array<{ id: string; initial_message: string }>) {
-        if (!camp.initial_message) continue;
-        const normInitial = normalizeText(camp.initial_message);
-        const score = textSimilarity(normMsg, normInitial);
-        // Threshold: 0.6 = 60% das palavras em comum (robusto a variações)
-        if (score > bestScore && score >= 0.6) {
-          bestScore = score;
-          bestCampaignId = camp.id;
-        }
-      }
-
-      if (bestCampaignId) {
-        result.lead_source = "meta_ads";
-        result.source_campaign_id = bestCampaignId;
-        result.method = "initial_message_match";
-        await _persist(supabase, customerId, result);
-        console.log(`[lead-attribution] customer ${customerId} → campanha ${bestCampaignId} (score=${bestScore.toFixed(2)} initial_message_match)`);
-        return result;
-      }
-    }
-
-    // ── Estratégia 3: regex de palavras-chave (fallback fraco) ────────
+    // ── Estratégia 2: regex de palavras-chave (origem Meta, sem campanha) ──
     if (!isAudio && !isFile && messageText && ADS_REGEX.test(messageText)) {
       result.lead_source = "meta_ads";
       result.method = "regex_fallback";

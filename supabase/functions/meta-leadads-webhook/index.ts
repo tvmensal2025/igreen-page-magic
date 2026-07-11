@@ -66,6 +66,21 @@ async function pageAccessToken(_supabase: any): Promise<string | null> {
   return null;
 }
 
+function adIdsContain(list: unknown, adId: string | null | undefined): boolean {
+  if (!adId) return false;
+  const needle = String(adId).trim();
+  if (!needle) return false;
+  if (Array.isArray(list)) return list.some((v) => String(v).trim() === needle);
+  if (typeof list === "string") {
+    try {
+      const parsed = JSON.parse(list);
+      if (Array.isArray(parsed)) return parsed.some((v) => String(v).trim() === needle);
+    } catch { /* plain string fallback */ }
+    return list.split(/[\s,;|]+/).some((v) => v.trim() === needle);
+  }
+  return false;
+}
+
 /** Mapeia os campos do Lead Ads (field_data) para o formato do lead-ingest. */
 function mapFields(fieldData: Array<{ name: string; values: string[] }>) {
   const get = (...keys: string[]) => {
@@ -93,10 +108,17 @@ async function resolveConsultant(
   if (adId) {
     const { data } = await supabase
       .from("facebook_campaigns")
-      .select("consultant_id")
-      .contains("fb_ad_ids", [String(adId)])
-      .maybeSingle();
-    if (data?.consultant_id) return data.consultant_id as string;
+      .select("consultant_id, fb_ad_ids, status, updated_at, created_at")
+      .not("fb_ad_ids", "is", null)
+      .limit(1000);
+    const matches = ((data || []) as any[]).filter((c) => adIdsContain(c.fb_ad_ids, String(adId)));
+    matches.sort((a, b) => {
+      const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+      const r = rank(String(a.status || "")) - rank(String(b.status || ""));
+      if (r !== 0) return r;
+      return String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+    });
+    if (matches[0]?.consultant_id) return matches[0].consultant_id as string;
   }
   // Fallback configurável (consultor único da plataforma).
   const fallback = Deno.env.get("META_LEADADS_FALLBACK_CONSULTANT");

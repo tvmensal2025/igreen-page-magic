@@ -1,7 +1,7 @@
 // Lead source tagging (Phase E Task 27 do whatsapp-flow-architecture-v3).
 //
-// Mantém os 3 métodos atuais (CTWA mapping, initial_message exata, regex
-// de "vi seu anúncio"). Roda fire-and-forget via `queueMicrotask` no
+// Marca origem Meta por sinais fortes (AD ID/CTWA) ou regex de anúncio.
+// Não atribui campanha por texto inicial. Roda fire-and-forget via `queueMicrotask` no
 // webhook — falha de tagging NUNCA trava o turno do bot.
 //
 // Move o bloco `5.5 Auto-tag lead source` que vivia inline em
@@ -10,6 +10,7 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jsonLog } from "../audit.ts";
+import { extractMetaReferralFields, resolveCampaignFromStrongMeta } from "../deterministic-campaign-resolver.ts";
 
 export interface TagLeadSourceInput {
   customer: {
@@ -52,14 +53,18 @@ export async function tagLeadSource(
       msgData?.audioMessage?.contextInfo ||
       null;
     const externalAdReply = ctxInfo?.externalAdReply || null;
-    const ctwaClid = body?.data?.ctwaClid || externalAdReply?.ctwaClid || null;
-    const hasReferral = !!(externalAdReply || ctwaClid);
+    const fields = extractMetaReferralFields(msgData, body);
+    const ctwaClid = fields.ctwaClid || body?.data?.ctwaClid || externalAdReply?.ctwaClid || null;
+    const sourceAdId = fields.sourceAdId || externalAdReply?.sourceId || externalAdReply?.source_id || null;
+    const sourceUrl = fields.sourceUrl || externalAdReply?.sourceUrl || externalAdReply?.source_url || null;
+    const hasReferral = !!(externalAdReply || ctwaClid || sourceAdId || sourceUrl);
 
     const referralPayload = externalAdReply
       ? {
           title: externalAdReply.title,
           body: externalAdReply.body,
-          source_url: externalAdReply.sourceUrl,
+          source_url: sourceUrl,
+          source_id: sourceAdId,
           media_url: externalAdReply.thumbnailUrl,
           ctwa_clid: ctwaClid,
         }
@@ -68,96 +73,28 @@ export async function tagLeadSource(
       : null;
 
     let sourceCampaignId: string | null = null;
-    let matchMethod: "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
+    let matchMethod = "unmatched";
 
-    // 1) Match por ctwa_clid (sinal forte do Meta)
-    if (ctwaClid) {
+    // 1) Match por sinais fortes do Meta. Não usa texto inicial nem similaridade.
+    if (hasReferral) {
       try {
-        const { data: mapping } = await supabase
-          .from("ctwa_clid_mapping")
-          .select("campaign_id")
-          .eq("ctwa_clid", ctwaClid)
-          .maybeSingle();
-        if ((mapping as any)?.campaign_id) {
-          sourceCampaignId = (mapping as any).campaign_id;
-          matchMethod = "ctwa_clid";
+        const strong = await resolveCampaignFromStrongMeta(supabase, input.customer.consultant_id, {
+          referral: fields.referral || externalAdReply || null,
+          ctwaClid,
+          sourceAdId,
+          sourceUrl,
+          fbCampaignId: fields.fbCampaignId,
+        });
+        if (strong?.campaignId) {
+          sourceCampaignId = strong.campaignId;
+          matchMethod = strong.method;
         }
       } catch (e: any) {
-        console.warn("[lead-source] ctwa_clid lookup falhou:", e?.message);
+        console.warn("[lead-source] strong meta lookup falhou:", e?.message);
       }
     }
 
-    // 2) Match por initial_message exata
-    if (!sourceCampaignId && input.messageText && input.messageText.trim().length > 5) {
-      try {
-        const normalizedMsg = input.messageText.trim().toLowerCase().replace(/\s+/g, " ");
-        const { data: campaigns } = await supabase
-          .from("facebook_campaigns")
-          .select("id, initial_message")
-          .eq("consultant_id", input.customer.consultant_id)
-          .not("initial_message", "is", null)
-          .limit(50);
-        if (campaigns && campaigns.length > 0) {
-          const matched = (campaigns as any[]).find((c) => {
-            const im = String(c.initial_message || "").trim().toLowerCase().replace(/\s+/g, " ");
-            return im.length > 5 && normalizedMsg.startsWith(im.slice(0, Math.min(im.length, 60)));
-          });
-          if (matched) {
-            sourceCampaignId = matched.id;
-            matchMethod = "exact_message";
-          }
-        }
-      } catch (e: any) {
-        console.warn("[lead-source] initial_message match falhou:", e?.message);
-      }
-    }
-
-    // 2.5) Match por busca textual (tsvector + ts_rank), Task 13 da spec
-    //      `captacao-fluxo-d-conversao` (Requirement 8.4).
-    //
-    // Quando o match exato falha mas a primeira mensagem do lead é longa o
-    // suficiente, executamos uma busca full-text sobre `initial_message`
-    // das campanhas do consultor. Aceitamos o resultado se o `ts_rank`
-    // normalizado for ≥ 0.7. Empate → campanha mais recente vence.
-    //
-    // Implementação: pedimos as top-5 campanhas por rank e filtramos
-    // por threshold no JS — assim aproveitamos o índice GIN
-    // `facebook_campaigns_initial_message_tsv_idx` sem precisar de RPC.
-    let similarityScore: number | null = null;
-    if (!sourceCampaignId && input.messageText && input.messageText.trim().length >= 10) {
-      try {
-        const queryText = input.messageText.trim().slice(0, 500);
-        const { data: tsRows, error: tsErr } = await supabase.rpc(
-          "match_campaigns_by_initial_message",
-          {
-            p_consultant: input.customer.consultant_id,
-            p_query: queryText,
-            p_limit: 5,
-          },
-        );
-        if (tsErr) {
-          // RPC ausente → degrada silenciosamente. Backend é fail-open.
-          if (!String(tsErr.message || "").includes("not exist")) {
-            console.warn("[lead-source] tsvector RPC falhou:", tsErr.message);
-          }
-        } else if (Array.isArray(tsRows) && tsRows.length > 0) {
-          // Cada row: { campaign_id, score, created_at }. Sort defensivo.
-          const sorted = [...(tsRows as Array<{ campaign_id: string; score: number; created_at: string }>)]
-            .sort((a, b) => {
-              if (b.score !== a.score) return b.score - a.score;
-              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-            });
-          const top = sorted[0];
-          if (top && top.score >= 0.7) {
-            sourceCampaignId = top.campaign_id;
-            similarityScore = top.score;
-            matchMethod = "tsvector";
-          }
-        }
-      } catch (e: any) {
-        console.warn("[lead-source] tsvector match exception:", e?.message);
-      }
-    }
+    // Não atribuir campanha por initial_message/tsvector: texto não prova campanha.
 
     // 3) Regex fallback de frases típicas de anúncio
     const textMatch = !input.isFile && input.messageText && ADS_REGEX.test(input.messageText);
@@ -166,6 +103,7 @@ export async function tagLeadSource(
       const patch: Record<string, unknown> = { lead_source: "meta_ads" };
       if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
       if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
+      if (sourceAdId) patch.source_ad_id = String(sourceAdId);
       if (referralPayload) patch.source_referral = referralPayload;
 
       try {
@@ -194,7 +132,7 @@ export async function tagLeadSource(
         customer_id: input.customer.id,
         campaign_id: sourceCampaignId,
         method: matchMethod,
-        similarity_score: similarityScore,
+        similarity_score: null,
         message_sample: input.messageText ? String(input.messageText).slice(0, 200) : null,
       });
     } catch (e: any) {

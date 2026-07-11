@@ -34,13 +34,34 @@ export async function resolveCampaignByAdIdInUrl(
   const adId = extractAdIdFromSourceUrl(sourceUrl);
   if (!adId) return null;
   try {
+    // Não usar `.contains("fb_ad_ids", [adId])`: em produção o jsonb pode vir
+    // como número ou string. Comparar em JS normaliza os dois formatos.
     const { data } = await supabase
       .from("facebook_campaigns")
-      .select("id")
+      .select("id, fb_ad_ids, status, updated_at, created_at")
       .eq("consultant_id", consultantId)
-      .contains("fb_ad_ids", [adId])
-      .maybeSingle();
-    if ((data as any)?.id) return { campaignId: (data as any).id, adId };
+      .not("fb_ad_ids", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(1000);
+    const matches = ((data || []) as any[]).filter((c) => {
+      const list = c.fb_ad_ids;
+      if (Array.isArray(list)) return list.some((v) => String(v).trim() === adId);
+      if (typeof list === "string") {
+        try {
+          const parsed = JSON.parse(list);
+          if (Array.isArray(parsed)) return parsed.some((v) => String(v).trim() === adId);
+        } catch { /* plain string fallback */ }
+        return list.split(/[\s,;|]+/).some((v) => v.trim() === adId);
+      }
+      return false;
+    });
+    matches.sort((a, b) => {
+      const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
+      const r = rank(String(a.status || "")) - rank(String(b.status || ""));
+      if (r !== 0) return r;
+      return String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || ""));
+    });
+    if (matches[0]?.id) return { campaignId: String(matches[0].id), adId };
   } catch (e) {
     console.warn("[ctwa-url-extractor] lookup falhou:", (e as Error).message);
   }
