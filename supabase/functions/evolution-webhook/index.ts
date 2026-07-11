@@ -929,6 +929,7 @@ Deno.serve(async (req) => {
         } catch { /* ignore */ }
 
         const hasReferral = !!(externalAdReply || ctwaClid || sourceAdId || sourceUrl);
+        const strongMetaSignalPresent = !!(sourceAdId || ctwaClid || sourceUrl);
 
         // Payload completo do referral para auditoria (grava SEMPRE que veio sinal).
         const referralPayload = hasReferral
@@ -964,7 +965,7 @@ Deno.serve(async (req) => {
         }
 
         // 1) Protocolo profissional só roda quando não existe sinal forte resolvido.
-        if (!sourceCampaignId && messageText) {
+        if (!sourceCampaignId && !strongMetaSignalPresent && messageText) {
           const byProtocol = await resolveCampaignByProtocolOnly(supabase, instanceData.consultant_id, messageText);
           if (byProtocol) {
             sourceCampaignId = byProtocol.campaignId;
@@ -973,7 +974,7 @@ Deno.serve(async (req) => {
         }
 
         // 3) Match por initial_message (heurística — texto pré-preenchido da campanha)
-        if (!sourceCampaignId && messageText && messageText.trim().length > 5) {
+        if (!sourceCampaignId && !strongMetaSignalPresent && messageText && messageText.trim().length > 5) {
           try {
             const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
             // Ordena por ativa primeiro e mais recente: na ambiguidade (várias
@@ -1037,6 +1038,22 @@ Deno.serve(async (req) => {
             sourceCampaignId = null;
             matchMethod = "unmatched";
           }
+        }
+
+        // Blindagem absoluta: se chegou AD ID/CTWA/source URL do Meta e isso
+        // não resolveu uma campanha, não pode usar texto/fallback para escolher
+        // outra campanha individual. Melhor revisão manual do que mandar para
+        // Rodrigo/Horácio quando o anúncio é de Francisco/Abel/Rafael.
+        if (!sourceCampaignId && strongMetaSignalPresent) {
+          await markManualReview(supabase, customer.id, "strong_meta_unmapped");
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: null,
+            method: "strong_meta_unmapped",
+            outcome: "no_campaign_manual_review",
+            messageSample: messageText,
+          });
+          console.warn(`[lead-source] customer=${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
         }
 
         if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
@@ -1113,6 +1130,9 @@ Deno.serve(async (req) => {
     if (
       customer &&
       !(customer as any).source_campaign_id &&
+      !(customer as any).source_ad_id &&
+      !(customer as any).source_ctwa_clid &&
+      !(customer as any).ctwa_clid &&
       !isFile &&
       messageText &&
       matchesMetaCtwaPhrase(messageText)
