@@ -88,12 +88,23 @@ export default function AdminAgendamentosCentral() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{jobs.length}</div><div className="text-xs text-muted-foreground">Total de jobs</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{jobs.filter(j => j.active).length}</div><div className="text-xs text-muted-foreground">Ativos</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-muted-foreground">{jobs.filter(j => !j.active).length}</div><div className="text-xs text-muted-foreground">Pausados</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className={`text-2xl font-bold ${failing ? "text-destructive" : "text-emerald-600"}`}>{failing}</div><div className="text-xs text-muted-foreground">Com falha na última execução</div></CardContent></Card>
-        </div>
+        <Tabs defaultValue="automacoes" className="w-full">
+          <TabsList>
+            <TabsTrigger value="automacoes">Automações (ligar/desligar)</TabsTrigger>
+            <TabsTrigger value="jobs">Cron jobs</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="automacoes" className="mt-4">
+            <AutomationTogglesPanel />
+          </TabsContent>
+
+          <TabsContent value="jobs" className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{jobs.length}</div><div className="text-xs text-muted-foreground">Total de jobs</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{jobs.filter(j => j.active).length}</div><div className="text-xs text-muted-foreground">Ativos</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-muted-foreground">{jobs.filter(j => !j.active).length}</div><div className="text-xs text-muted-foreground">Pausados</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className={`text-2xl font-bold ${failing ? "text-destructive" : "text-emerald-600"}`}>{failing}</div><div className="text-xs text-muted-foreground">Com falha na última execução</div></CardContent></Card>
+            </div>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
