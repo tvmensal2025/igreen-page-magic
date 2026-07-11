@@ -42,6 +42,7 @@ interface StageRow {
   message_text: string;
   media_url: string | null;
   media_type: string | null;
+  velip_audio_id: string | null;
 }
 
 interface Window {
