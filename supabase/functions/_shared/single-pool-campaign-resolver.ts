@@ -18,10 +18,12 @@ import {
   jaccardSimilarity,
   resolveCampaignByTrackingProtocol,
 } from "./campaign-tracking.ts";
+import { ufFromPhone, ufsFromCampaignCities } from "./ddd-uf-map.ts";
 
 type ActivePoolCamp = {
   campaignId: string;
   initialMessage: string | null;
+  cities: any;
 };
 
 async function listActivePoolCampaigns(
@@ -30,7 +32,7 @@ async function listActivePoolCampaigns(
 ): Promise<ActivePoolCamp[]> {
   const { data: pools } = await supabase
     .from("rodizio_pools")
-    .select("campaign_id, facebook_campaigns!inner(id, initial_message, status, tracking_protocol)")
+    .select("campaign_id, facebook_campaigns!inner(id, initial_message, status, tracking_protocol, cities)")
     .eq("consultant_id", consultantId)
     .eq("is_active", true)
     .not("campaign_id", "is", null);
@@ -43,8 +45,10 @@ async function listActivePoolCampaigns(
     .map((p) => ({
       campaignId: String(p.facebook_campaigns.id),
       initialMessage: p.facebook_campaigns.initial_message ?? null,
+      cities: p.facebook_campaigns.cities ?? null,
     }));
 }
+
 
 /**
  * Se o consultor tem exatamente 1 campanha com pool de rodízio ativa,
