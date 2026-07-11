@@ -32,6 +32,7 @@ const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
 const AdminMotorCadencia = lazy(() => import("./pages/AdminMotorCadencia"));
+const AdminAgendamentosCentral = lazy(() => import("./pages/AdminAgendamentosCentral"));
 
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -106,6 +107,7 @@ const App = () => (
               <Route path="/admin/meta-ads" element={<ProtectedRoute><AdminMetaAds /></ProtectedRoute>} />
               <Route path="/admin/protocolos" element={<ProtectedRoute><AdminProtocolsPage /></ProtectedRoute>} />
               <Route path="/admin/motor" element={<ProtectedRoute><AdminMotorCadencia /></ProtectedRoute>} />
+              <Route path="/admin/agendamentos-central" element={<ProtectedRoute><AdminAgendamentosCentral /></ProtectedRoute>} />
               
               <Route path="/admin/solar-design" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
               <Route path="/admin/solar-design/:snapshotId" element={<ProtectedRoute><SolarDesignDetailPage /></ProtectedRoute>} />
