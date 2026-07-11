@@ -257,25 +257,37 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           <CapturedLeadsPanel consultantId={consultantId} instanceName={instanceName} />
         </div>
       ) : (
-      <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "22rem" } as React.CSSProperties}>
+      <div data-resize-scope className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden" style={{ "--cap-list-w": "26rem" } as React.CSSProperties}>
         {/* Lista de clientes */}
-        <div className={`${selectedId ? "hidden md:flex" : "flex"} md:flex flex-col md:w-[var(--cap-list-w)] md:shrink-0 overflow-hidden`}>
-          <CaptureLeadList
-            consultantId={consultantId}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            whatsappConnected={connected}
-            onOpenBatch={(leads, periodLabel) => {
-              setBatchLeads(leads);
-              setBatchPeriodLabel(periodLabel);
-              setBatchOpen(true);
-            }}
-          />
-        </div>
-        <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={352} minPx={260} maxPx={640} />
+        {!listCollapsed && (
+          <div className={`${selectedId ? "hidden md:flex" : "flex"} md:flex flex-col md:w-[var(--cap-list-w)] md:shrink-0 overflow-hidden`}>
+            <CaptureLeadList
+              consultantId={consultantId}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+              whatsappConnected={connected}
+              onOpenBatch={(leads, periodLabel) => {
+                setBatchLeads(leads);
+                setBatchPeriodLabel(periodLabel);
+                setBatchOpen(true);
+              }}
+            />
+          </div>
+        )}
+        {!listCollapsed && (
+          <DragResizer storageKey="captacao-list" cssVar="cap-list-w" defaultPx={416} minPx={300} maxPx={720} />
+        )}
 
         {/* Área principal */}
-        <main className={`${!selectedId ? "hidden md:flex" : "flex"} flex-1 flex-col overflow-hidden min-w-0 min-h-0`}>
+        <main className={`${!selectedId ? "hidden md:flex" : "flex"} flex-1 flex-col overflow-hidden min-w-0 min-h-0 relative`}>
+          <button
+            type="button"
+            onClick={toggleList}
+            title={listCollapsed ? "Expandir lista" : "Recolher lista"}
+            className="hidden md:flex absolute top-2 left-2 z-30 h-7 w-7 items-center justify-center rounded-md border border-border bg-card/90 backdrop-blur text-muted-foreground hover:text-primary hover:border-primary/50 shadow-sm"
+          >
+            {listCollapsed ? <ChevronsRight className="h-3.5 w-3.5" /> : <ChevronsLeft className="h-3.5 w-3.5" />}
+          </button>
           {!selectedId ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <ClipboardList className="w-12 h-12 text-primary/30" strokeWidth={1} />
