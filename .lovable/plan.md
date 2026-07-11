@@ -1,76 +1,89 @@
-## Análise honesta do plano anterior
+## Descoberta
 
-O plano de "rodízio simples entre campanhas" funciona mas é **cego** — chuta com fairness, sem usar evidência que já temos no banco. Dá pra fazer melhor: usar sinais reais antes de cair no rodízio.
+Investiguei o código e os dados. A resposta unânime: **já existe no código o caminho 100% determinístico para diferenciar as campanhas** — mas ele está morto na prática.
 
-## Escada de decisão (do mais forte pro mais fraco — tudo automático, nada manual)
+### O que o código já sabe fazer (sem tocar em texto de anúncio)
 
-Cada degrau é uma tentativa deterministica. Só desce se o degrau acima não conclui. Todos gravam em `campaign_match_log` com `method` distinto — dá pra auditar cada lead depois.
+O Meta envia junto de cada mensagem CTWA um objeto `referral` com identificadores únicos por anúncio:
 
+- `referral.source_id` → o **AD ID do Meta** (ex.: `120246304492060645` = Brasilândia; `120246248099900645` etc. = Jaraguá)
+- `referral.ctwa_clid` → **click ID único por clique**
+- `referral.source_url` → URL do anúncio (contém o ad_id também)
 
-| #   | Regra                                            | Sinal usado                                               | Método logado            | Já existe? |
-| --- | ------------------------------------------------ | --------------------------------------------------------- | ------------------------ | ---------- |
-| 1   | AD ID exato                                      | `customers.source_ad_id` ↔ `facebook_campaigns.fb_ad_ids` | `ad_id`                  | ✅          |
-| 2   | ctwa_clid                                        | `ctwa_clid_mapping`                                       | `ctwa_clid`              | ✅          |
-| 3   | Protocolo FB-xxxxx no texto                      | regex + `tracking_protocol`                               | `tracking_protocol`      | ✅          |
-| 4   | Pool única ativa                                 | 1 campanha com pool = sem ambiguidade                     | `sole_active_pool`       | ✅          |
-| 5   | Similaridade Jaccard ≥ 0.4 com `initial_message` | texto de abertura do anúncio                              | `jaccard`                | ✅          |
-| 6   | **NOVO** Match de DDD/cidade                     | DDD do telefone → estado → só 1 campanha ativa mira lá    | `ddd_city_match`         | ❌          |
-| 7   | **NOVO** Campanha "quente"                       | única com lead atribuído por sinal forte nas últimas 24h  | `recent_strong_activity` | ❌          |
-| 8   | **NOVO** Rodízio justo entre ativas              | campanha com último lead mais antigo                      | `fallback_rotation`      | ❌          |
+E o banco já está pronto:
 
+- `facebook_campaigns.fb_ad_ids` (JSONB) — populado corretamente:
+  - Jaraguá: `[120246248099900645, 120246248100490645, 120246248100890645]`
+  - Brasilândia: `[120246304492060645]`
+- `facebook_campaigns.tracking_protocol` — populado
+- `customers.source_ad_id`, `source_ctwa_clid`, `source_referral` — colunas existem
+- Tabela `ctwa_clid_mapping` — pronta pra memoizar clid→campanha
 
-Só depois de **todos** os 8 degraus falharem (ex: consultor sem nenhuma pool ativa) o lead vira manual. Na prática, com 2+ campanhas ativas isso nunca acontece.
+Os webhooks (`evolution-webhook`, `whapi-webhook`) até tentam ler esses campos. **Mas os dados não estão chegando.**
 
-## Como cada degrau novo é rastreado
+### A prova do problema
 
-**Degrau 6 — DDD/cidade**
+Consulta em `customers` dos últimos 30 dias (1.188 leads):
 
-- Extrai DDD do `phone_whatsapp` → mapa DDD→UF (BR, 67 DDDs, tabela fixa no código).
-- Compara com `facebook_campaigns.cities` (JSON já tem nomes tipo "Belo Horizonte", "Uberlândia") — checa se alguma cidade da campanha pertence à UF do lead.
-- Grava `campaign_match_log.message_sample = "DDD 34 → MG · match apenas em [Jaraguá]"`.
+| Campo | Preenchidos |
+|---|---|
+| `source_ad_id` | **0** |
+| `source_ctwa_clid` | **0** |
+| `source_referral` | **0** |
+| `source_campaign_id` | 2 (só via match de texto) |
 
-**Degrau 7 — atividade recente**
+Zero. Nenhum lead em 30 dias teve o referral do Meta capturado. Por isso caímos sempre no Jaccard/rodízio/revisão manual — a estrada asfaltada existe, mas ninguém passa por ela.
 
-- Query: campanhas ativas do consultor + `MAX(customers.created_at)` onde `source_ad_id IS NOT NULL OR source_ctwa_clid IS NOT NULL` nas últimas 24h.
-- Se só uma teve sinal forte recente → é ela. Se duas → passa pro degrau 8.
-- Grava `message_sample = "última entrada forte: 12min atrás"`.
+## Hipóteses do porquê o referral não chega
 
-**Degrau 8 — rodízio justo**
+1. **Path errado de parse na Evolution** — hoje lê `contextInfo.externalAdReply.sourceId`. Versões recentes do Baileys colocam em `message.extendedTextMessage.contextInfo.externalAdReply` ou em `messages[0].message.viewOnceMessage.message.*.contextInfo.externalAdReply`. Se o payload real vier aninhado diferente, o parse retorna `undefined`.
+2. **Whapi shape diferente** — hoje lê `rawMsg.referral || rawMsg.context.referral || rawMsg.ad_reply`. Whapi documenta `context.referred_product` e às vezes `referral` só no primeiro evento (`messages.post`), não em eventos subsequentes do mesmo chat.
+3. **Referral só vem na PRIMEIRA mensagem do chat** — se o buffer/dedupe agrupa mensagens e a "primeira" processada não é a que contém o referral, perdemos.
+4. **Nunca logamos o payload cru** quando o parse falha, então não sabemos qual das três é.
 
-- `MIN(customers.created_at) OVER (source_campaign_id)` — pega a campanha com último lead mais antigo. Nunca recebeu → entra primeiro.
-- Empate → ordena por `campaign_id` (estável entre webhooks concorrentes).
-- Grava `message_sample = "rot: camp A(último=2h) vs camp B(último=8h) → B"`.
+## Plano
 
-## Painel de auditoria (opcional, mas recomendo)
+### Fase 1 — Diagnóstico (1 arquivo, log estruturado, sem mudar comportamento)
 
-Adiciono uma seção em `/admin/protocolos` (já existe) mostrando os leads dos degraus 6–8 dos últimos 7 dias com:
+Adicionar em `_shared/ctwa-referral-probe.ts` uma função `probeReferralShape(rawPayload, source)` que:
 
-- Regra que decidiu
-- Evidência (`message_sample`)
-- Parceiro que ganhou
-- Botão "reatribuir" caso você discorde
+- Percorre recursivamente o payload procurando por qualquer chave que contenha `referral`, `externalAd`, `ctwa`, `source_id`, `sourceId`, `ad_reply`, `ctwaClid`.
+- Se achar → grava em nova tabela `ctwa_referral_probe_log` (payload JSONB, source text, matched_paths text[], created_at) para inspeção.
+- Se NÃO achar mas o texto casa com `matchesMetaCtwaPhrase()` (frase-âncora do Meta) → também grava, porque isso confirma que era CTWA e perdemos o referral.
 
-Zero mudança de schema — `campaign_match_log` já tem tudo.
+Chamar essa função em 3 pontos: início do evolution-webhook, início do whapi-webhook, dentro do buffer antes do dedupe. Rodar por 24-48h e olhar os payloads reais.
 
-## Blindagens (o que **não** vai quebrar)
+### Fase 2 — Corrigir o parse com base no que o log mostrar
 
-- **Nenhum degrau novo é chamado se AD ID/ctwa_clid/protocolo já resolveu** — degraus fortes têm prioridade absoluta.
-- **CAS continua** — dois webhooks concorrentes não geram lead duplicado.
-- `**markManualReview` continua** como último recurso (só se consultor não tem pool ativa nenhuma).
-- **Notificação ao super-admin** (`notifySuperAdminUnmatchedLead`) dispara nos degraus 5–8, marcando qual regra decidiu. Você fica sabendo em tempo real.
-- `**rodizio_next` + CAS + protocolo `PPP-YYMMDD-####**` intocados — a única mudança é qual `source_campaign_id` grava antes de chamar.
+Depois que a probe revelar o shape real, ajustar os parsers em:
 
-## Arquivos tocados
+- `supabase/functions/evolution-webhook/index.ts` (linhas ~861-894): estender a busca de `externalAdReply` para os caminhos aninhados que o log mostrar. Adicionar fallback recursivo: se não achar no caminho direto, varre a árvore procurando o primeiro `externalAdReply`/`sourceId`.
+- `supabase/functions/whapi-webhook/index.ts` (linhas ~843-846): idem, incluindo `context.referred_product`, `ad_reply.source_id`, `referrer.ad_id`.
 
-- `supabase/functions/_shared/single-pool-campaign-resolver.ts` — adiciona `resolveByDddCity`, `resolveByRecentActivity`, `resolveByFallbackRotation`. Exporta um `resolveCampaignAutoLadder(supabase, consultantId, {phone, messageText})` que roda os degraus 6→8 e devolve `{campaignId, method, sample}`.
-- `supabase/functions/_shared/ddd-uf-map.ts` — tabela DDD→UF (arquivo novo, ~30 linhas).
-- `supabase/functions/evolution-webhook/index.ts` (L1082–1109) — depois do Jaccard, chama a escada nova; passa o resultado pro `logRodizioOutcome` com o `method` certo.
-- `supabase/functions/whapi-webhook/index.ts` (~L880–905) — mesmo patch.
-- `supabase/functions/_shared/meta-ctwa-fallback.ts` — atualiza o comentário do topo explicando a nova escada.
-- (opcional) `src/pages/AdminProtocolos.tsx` ou similar — aba "Atribuições fracas (auditoria)".
+### Fase 3 — Extrair ad_id da `source_url` como rede de segurança
 
-Sem migração de banco. Nenhuma tabela nova. Zero risco no fluxo de rodízio principal — só amplia o gate de qual campanha entra.
+Mesmo quando `source_id` não vem, o Meta frequentemente manda `source_url` tipo `https://fb.me/xxxxx` ou `https://l.facebook.com/l.php?u=...&ad_id=120246304492060645`. Adicionar em `_shared/campaign-tracking.ts` a função `extractAdIdFromSourceUrl(url)` que faz regex nos padrões conhecidos (`ad_id=`, `/ads/`, `fbclid=` com decode). Se achar, consulta `facebook_campaigns` via `.contains("fb_ad_ids", [id])` — match determinístico.
 
-## Sobre o lead (21) 97448-4291
+### Fase 4 — Persistir SEMPRE o payload cru do primeiro evento
 
-DDD 21 = RJ. Nenhuma das 2 campanhas ativas mira RJ → nos degraus novos ele cairia no **degrau 8 (rodízio justo)**. Se quiser, resolvo ele agora manualmente escolhendo pelo mesmo critério e disparando a notificação pro parceiro — me fala., seja justo 
+Independente de resolver a campanha, gravar `source_referral = payload_bruto` na PRIMEIRA mensagem de todo `customer` novo. Hoje só grava quando conseguimos parsear campos específicos. Assim, mesmo que o parse falhe agora, temos como voltar depois e reprocessar.
+
+### Fase 5 — Nova coluna `customers.source_ad_id` indexada + reprocesso
+
+Rodar um job pontual (edge function `admin-recompute-lead-attribution`) que:
+
+- Lê `customers` dos últimos 30 dias com `source_referral IS NOT NULL` e `source_campaign_id IS NULL`.
+- Re-aplica o parser corrigido + `extractAdIdFromSourceUrl`.
+- Atribui `source_campaign_id` retroativamente e loga em `campaign_match_log` com `method='retro_referral'`.
+
+### Fase 6 — Escada só é usada quando nenhum sinal Meta veio
+
+Depois que a Fase 2 estiver funcionando, o degrau 3 (protocolo) + os novos degraus 1-3 (source_id, ctwa_clid, ad_id da URL) devem resolver >95% dos leads reais de CTWA. A escada atual (Jaccard, DDD, atividade, rodízio) só roda como último recurso — sem risco de misturar pools, porque só é acionada quando **de fato** não veio nenhum sinal do Meta.
+
+## O que muda em relação ao plano anterior
+
+O plano anterior (fingerprint da frase-âncora) tratava o sintoma. Este trata a **causa**: o Meta já manda a identificação única por anúncio, o banco já está preparado, os parsers já existem — só não estão capturando. Consertar isso resolve **todas** as futuras campanhas do Rafael (e de qualquer consultor) automaticamente, sem depender de escrever textos diferentes nos anúncios.
+
+## Risco
+
+Zero risco de regressão nas Fases 1, 3, 4, 5 (só somam dados). Fase 2 mexe no parse existente — mas o parse atual retorna `undefined` para 100% dos leads, então qualquer coisa melhor do que isso é ganho puro.
