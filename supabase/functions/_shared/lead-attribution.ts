@@ -79,13 +79,19 @@ export async function attributeLeadSource(
 
   try {
     // ── Estratégia 1: referral/ctwa_clid do Meta ──────────────────────
+    // Whapi shape: messages[].context.ad = { ctwa, source: { id, type, url }, media_type, media_url, title, body }
+    // Evolution/Cloud API shape: rawMessage.referral / context.referred_product / context.referral
+    const ctxAd = (rawMessage.context as any)?.ad || null;
     const referral = (rawMessage.referral ||
       (rawMessage.context as any)?.referred_product ||
       (rawMessage.context as any)?.referral ||
       rawMessage.ad_reply ||
+      ctxAd ||
       null) as Record<string, unknown> | null;
     const ctwaClid = (rawMessage.ctwa_clid ||
       (referral as any)?.ctwa_clid ||
+      (ctxAd as any)?.ctwa ||
+      (ctxAd as any)?.ctwa_clid ||
       null) as string | null;
 
     if (referral || ctwaClid) {
@@ -95,8 +101,16 @@ export async function attributeLeadSource(
       result.method = "ctwa_referral";
 
       // Tenta mapear para campanha específica via ad_id ou campaign_id do referral
-      const adId = (referral as any)?.ad_id || (referral as any)?.source_id || null;
+      const adId =
+        (referral as any)?.ad_id ||
+        (referral as any)?.source_id ||
+        (ctxAd as any)?.source?.id ||
+        null;
       const fbCampaignId = (referral as any)?.campaign_id || null;
+      const sourceUrl =
+        (referral as any)?.source_url ||
+        (ctxAd as any)?.source?.url ||
+        null;
 
       if (adId || fbCampaignId) {
         let q = supabase
@@ -111,6 +125,23 @@ export async function attributeLeadSource(
         }
         const { data: camp } = await q.maybeSingle();
         if (camp?.id) result.source_campaign_id = camp.id;
+      }
+
+      // Safety-net: se ainda não achou campanha, tenta extrair ad_id da source_url
+      if (!result.source_campaign_id && sourceUrl) {
+        try {
+          const { extractAdIdFromSourceUrl } = await import("./ctwa-url-extractor.ts");
+          const urlAdId = extractAdIdFromSourceUrl(String(sourceUrl));
+          if (urlAdId) {
+            const { data: camp } = await supabase
+              .from("facebook_campaigns")
+              .select("id")
+              .eq("consultant_id", consultantId)
+              .contains("fb_ad_ids", [urlAdId])
+              .maybeSingle();
+            if ((camp as any)?.id) result.source_campaign_id = (camp as any).id;
+          }
+        } catch { /* ignore */ }
       }
 
       await _persist(supabase, customerId, result);

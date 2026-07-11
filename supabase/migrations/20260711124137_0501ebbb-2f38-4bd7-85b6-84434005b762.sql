@@ -1,0 +1,1 @@
+UPDATE public.automation_toggles SET enabled = false, updated_at = now() WHERE key = 'notify_partner_leads_batch';
