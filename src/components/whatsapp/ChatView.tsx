@@ -21,6 +21,9 @@ import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
+import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
+import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
+
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 
