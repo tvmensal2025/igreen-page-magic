@@ -107,3 +107,154 @@ export async function resolveCampaignBySinglePoolFuzzy(
     return null;
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ESCADA DE FALLBACK — degraus 6, 7, 8 (auto, sem manual)
+// Cada função devolve `{ campaignId, method, sample }` ou null.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type LadderResult = {
+  campaignId: string;
+  method: "ddd_city_match" | "recent_strong_activity" | "fallback_rotation";
+  sample: string;
+} | null;
+
+/** Degrau 6 — match de DDD/cidade. Só decide se APENAS 1 campanha mira a UF. */
+export async function resolveByDddCity(
+  supabase: any,
+  consultantId: string,
+  phone: string | null | undefined,
+): Promise<LadderResult> {
+  try {
+    const uf = ufFromPhone(phone);
+    if (!uf) return null;
+    const active = await listActivePoolCampaigns(supabase, consultantId);
+    if (active.length < 2) return null;
+    const matches = active.filter((c) => ufsFromCampaignCities(c.cities).has(uf));
+    if (matches.length !== 1) return null;
+    return {
+      campaignId: matches[0].campaignId,
+      method: "ddd_city_match",
+      sample: `DDD → ${uf} · única campanha mirando ${uf}`,
+    };
+  } catch (e) {
+    console.warn("[resolveByDddCity] falhou:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Degrau 7 — única campanha com sinal forte (AD ID / ctwa_clid) nas últimas 24h. */
+export async function resolveByRecentActivity(
+  supabase: any,
+  consultantId: string,
+): Promise<LadderResult> {
+  try {
+    const active = await listActivePoolCampaigns(supabase, consultantId);
+    if (active.length < 2) return null;
+    const ids = active.map((a) => a.campaignId);
+    const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+
+    const { data } = await supabase
+      .from("customers")
+      .select("source_campaign_id, created_at, source_ad_id, source_ctwa_clid")
+      .eq("consultant_id", consultantId)
+      .in("source_campaign_id", ids)
+      .gte("created_at", since)
+      .or("source_ad_id.not.is.null,source_ctwa_clid.not.is.null")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    const byCamp = new Map<string, { count: number; last: string }>();
+    for (const row of (data || []) as any[]) {
+      const cid = String(row.source_campaign_id);
+      const cur = byCamp.get(cid);
+      if (!cur) byCamp.set(cid, { count: 1, last: row.created_at });
+      else cur.count++;
+    }
+    if (byCamp.size !== 1) return null;
+    const [cid, info] = [...byCamp.entries()][0];
+    const minAgo = Math.round((Date.now() - new Date(info.last).getTime()) / 60000);
+    return {
+      campaignId: cid,
+      method: "recent_strong_activity",
+      sample: `única quente 24h: ${info.count} lead(s), último há ${minAgo}min`,
+    };
+  } catch (e) {
+    console.warn("[resolveByRecentActivity] falhou:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Degrau 8 — rodízio justo: campanha com último lead mais antigo. Nunca devolve null se há pool ativa. */
+export async function resolveByFallbackRotation(
+  supabase: any,
+  consultantId: string,
+): Promise<LadderResult> {
+  try {
+    const active = await listActivePoolCampaigns(supabase, consultantId);
+    if (active.length === 0) return null;
+    const ids = [...new Set(active.map((a) => a.campaignId))].sort();
+
+    // Último lead atribuído por campanha (qualquer sinal, últimos 30 dias)
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const { data } = await supabase
+      .from("customers")
+      .select("source_campaign_id, created_at")
+      .eq("consultant_id", consultantId)
+      .in("source_campaign_id", ids)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const lastByCamp = new Map<string, string>();
+    for (const row of (data || []) as any[]) {
+      const cid = String(row.source_campaign_id);
+      if (!lastByCamp.has(cid)) lastByCamp.set(cid, row.created_at);
+    }
+
+    // Ordena: campanha sem lead recente vem primeiro; empate por id estável.
+    const ranked = ids
+      .map((id) => ({ id, last: lastByCamp.get(id) || null }))
+      .sort((a, b) => {
+        if (a.last === null && b.last === null) return a.id.localeCompare(b.id);
+        if (a.last === null) return -1;
+        if (b.last === null) return 1;
+        const cmp = a.last.localeCompare(b.last); // mais antigo primeiro
+        return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
+      });
+
+    const winner = ranked[0];
+    const summary = ranked
+      .map((r) => {
+        if (!r.last) return `${r.id.slice(0, 8)}(nunca)`;
+        const h = Math.round((Date.now() - new Date(r.last).getTime()) / 3600000);
+        return `${r.id.slice(0, 8)}(${h}h)`;
+      })
+      .join(" vs ");
+
+    return {
+      campaignId: winner.id,
+      method: "fallback_rotation",
+      sample: `rot: ${summary} → ${winner.id.slice(0, 8)}`,
+    };
+  } catch (e) {
+    console.warn("[resolveByFallbackRotation] falhou:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Roda a escada 6→7→8 na ordem. Sempre devolve algo se houver ≥1 pool ativa. */
+export async function resolveCampaignAutoLadder(
+  supabase: any,
+  consultantId: string,
+  ctx: { phone?: string | null; messageText?: string | null },
+): Promise<LadderResult> {
+  const step6 = await resolveByDddCity(supabase, consultantId, ctx.phone);
+  if (step6) return step6;
+  const step7 = await resolveByRecentActivity(supabase, consultantId);
+  if (step7) return step7;
+  const step8 = await resolveByFallbackRotation(supabase, consultantId);
+  if (step8) return step8;
+  return null;
+}
+
