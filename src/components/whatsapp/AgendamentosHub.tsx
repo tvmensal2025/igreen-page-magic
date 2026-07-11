@@ -150,6 +150,8 @@ export function AgendamentosHub({
   const [editText, setEditText] = useState("");
   const [editAt, setEditAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  // Filtro visual dos "Próximos envios" (client-side, não altera dados)
+  const [timelineFilter, setTimelineFilter] = useState<"all" | AgendamentoTimelineItem["kind"]>("all");
 
   const {
     loading,
