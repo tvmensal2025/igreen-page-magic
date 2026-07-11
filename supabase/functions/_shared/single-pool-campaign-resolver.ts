@@ -21,7 +21,6 @@
  */
 
 import {
-  jaccardSimilarity,
   resolveCampaignByTrackingProtocol,
 } from "./campaign-tracking.ts";
 import { ufFromPhone, ufsFromCampaignCities } from "./ddd-uf-map.ts";

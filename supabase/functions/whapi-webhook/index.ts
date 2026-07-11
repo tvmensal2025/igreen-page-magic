@@ -967,7 +967,7 @@ Deno.serve(async (req) => {
                 );
                 if (fuzzy) {
                   candidateCampaignId = fuzzy;
-                  rodizioMatchMethod = "fallback_single_active_pool";
+                  rodizioMatchMethod = "protocol";
                   console.log(
                     `[lead-attribution] customer=${customer.id} single_pool_fuzzy resolveu campaign=${fuzzy}`,
                   );
