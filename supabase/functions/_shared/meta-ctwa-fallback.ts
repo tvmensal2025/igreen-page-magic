@@ -9,14 +9,15 @@
  * `matchesMetaCtwaPhrase(text)` — confere se a primeira mensagem do lead
  * bate com uma das frases-âncora típicas do CTWA.
  *
- * ⚠️ `resolveSingleActivePool` foi REMOVIDO propositalmente (blindagem do
- * rodízio — plano "blindagem-do-rodizio-de-parceiros"). Ele atribuía uma
- * campanha ao acaso quando o consultor tinha exatamente 1 pool ativa, o que
- * levou a leads irem para o parceiro errado. Hoje: se a frase-âncora bate
- * mas nenhum sinal determinístico (AD ID / ctwa_clid / initial_message) casa
- * uma campanha, o lead entra na **fila de revisão manual** (customers.
- * needs_manual_review = true) e o dono do anúncio é notificado por WhatsApp.
+ * ⚠️ `resolveSingleActivePool` foi removido — não escolher campanha "no chute"
+ * quando existe 1 pool única já é feito por `resolveCampaignBySoleActivePool`
+ * (que exige exatamente 1 ativa). Quando há **2+ pools ativas** e nenhum sinal
+ * forte, a escada `resolveCampaignAutoLadder` (degraus DDD/cidade → atividade
+ * recente → rodízio justo) decide de forma determinística e rastreável em
+ * `campaign_match_log`. `customers.needs_manual_review = true` só vira último
+ * recurso quando o consultor não tem nenhuma pool ativa.
  */
+
 
 export const META_CTWA_OPENING_PHRASES = [
   "ola posso ter mais informacoes sobre isso",
