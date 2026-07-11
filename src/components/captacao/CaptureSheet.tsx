@@ -391,6 +391,31 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
                 Nome
               </Button>
             )}
+            {phoneNumber && !/sem_celular/i.test(phoneNumber) && (
+              <ScheduleCallButton
+                phone={phoneNumber}
+                consultantId={consultantId}
+                contactName={customerName || phoneNumber}
+                customerId={customerId}
+                triggerLabel="Ligar"
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] gap-1 shrink-0 text-primary hover:bg-primary/10"
+              />
+            )}
+            {attendance.uiState === "not_started" && !isRegistered && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[10px] gap-1 shrink-0 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/10"
+                onClick={() => void attendance.startAttendance()}
+                disabled={attendance.starting}
+                title="Envia a saudação inicial e gera o protocolo"
+              >
+                {attendance.starting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+                Iniciar
+              </Button>
+            )}
             <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0 rounded-full hover:bg-destructive/10 hover:text-destructive" onClick={() => onOpenChange(false)} title="Fechar painel">
               <X className="w-3.5 h-3.5" />
             </Button>
