@@ -343,7 +343,21 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   rating={attendance.rating}
                   starting={attendance.starting}
                   ending={attendance.ending}
-                  onStart={() => void attendance.startAttendance()}
+                  onStart={() => {
+                    if (!selectedId) return;
+                    setBatchLeads([{
+                      id: selectedId,
+                      name: customerName,
+                      phone_whatsapp: phone,
+                      welcome_sent_at: null,
+                      last_message_at: null,
+                      unread_count: 0,
+                      capture_mode: "manual",
+                    } as CaptureBatchLead]);
+                    setBatchPeriodLabel("este cliente");
+                    setBatchOpen(true);
+                  }}
+
                   onRequestEnd={() => setEndAttendanceDialogOpen(true)}
                   compact
                 />
