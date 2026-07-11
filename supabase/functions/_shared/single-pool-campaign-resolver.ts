@@ -19,6 +19,8 @@
  *   contaminaram leads de Jaraguá/Francisco para Horácio/Rodrigo.
  * - Campanha individual só é automática por sinal determinístico: AD ID,
  *   CTWA, protocolo, única pool ativa sem ambiguidade, ou fuzzy claro.
+ * - DDD/cidade também fica fora da escada automática: ajuda em auditoria, mas
+ *   não prova campanha quando dois anúncios rodam em Minas ao mesmo tempo.
  */
 
 import {
@@ -302,16 +304,14 @@ export async function resolveByFallbackRotation(
 }
 
 /**
- * Roda apenas fallback seguro. Devolve null se não houver certeza.
- * Nunca usa "campanha quente" nem rotação para descobrir campanha.
+ * Fallback desativado para campanha individual. Devolve null se não houver
+ * certeza determinística antes desta escada.
  */
 export async function resolveCampaignAutoLadder(
   supabase: any,
   consultantId: string,
   ctx: { phone?: string | null; messageText?: string | null },
 ): Promise<LadderResult> {
-  const step6 = await resolveByDddCity(supabase, consultantId, ctx.phone);
-  if (step6) return step6;
   return null;
 }
 
