@@ -41,6 +41,7 @@ import {
   resolveCampaignFromStrongMeta,
   resolveCampaignByProtocolOnly,
 } from "../_shared/deterministic-campaign-resolver.ts";
+import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
