@@ -124,6 +124,7 @@ export default function AdminMotorCadencia() {
           message_text: row.message_text,
           media_url: row.media_url,
           media_type: row.media_type || "text",
+          velip_audio_id: row.velip_audio_id,
         };
         if (row.id) {
           const { error } = await supabase.from("cadence_stage_config").update(payload).eq("id", row.id);
