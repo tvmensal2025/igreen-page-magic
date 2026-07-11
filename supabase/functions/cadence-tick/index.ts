@@ -11,10 +11,10 @@ import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomer, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import {
-import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
   makeTTSCall, playAudioFile, makeSMS,
   toVelipBRDest, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

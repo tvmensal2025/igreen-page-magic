@@ -8,7 +8,6 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled, isPausedByPhone } from "../_shared/bot/paused.ts";
 import {
-import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
   resolveChannelForCustomer,
   isUnavailable,
   sendStageAutoMessages,
@@ -18,6 +17,7 @@ import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
   type ChannelEnv,
   type SendResult,
 } from "../_shared/channel-sender.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 
 
