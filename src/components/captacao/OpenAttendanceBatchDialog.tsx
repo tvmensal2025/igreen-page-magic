@@ -163,6 +163,12 @@ export function OpenAttendanceBatchDialog({
   const [imageId, setImageId] = useState<string>("__none__");
   const [textId, setTextId] = useState<string>("__none__");
   const [textBody, setTextBody] = useState<string>("");
+  const [recordedAudioUrl, setRecordedAudioUrl] = useState<string | null>(null);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<"image" | "video" | "document" | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [autoCloseMin, setAutoCloseMin] = useState<number>(0);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BatchLeadResult[]>([]);
   const [workLeads, setWorkLeads] = useState<CaptureBatchLead[]>(leads);
