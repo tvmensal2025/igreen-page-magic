@@ -36,7 +36,12 @@ import { captureError } from "../_shared/sentry.ts";
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, notifyOwnerManualReview } from "../_shared/notify-consultant.ts";
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
-import { resolveCampaignByTrackingProtocol } from "../_shared/campaign-tracking.ts";
+import {
+  campaignContainsAdId,
+  extractMetaReferralFields,
+  resolveCampaignByProtocolOnly,
+  resolveCampaignFromStrongMeta,
+} from "../_shared/deterministic-campaign-resolver.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
@@ -926,69 +931,30 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
-        let matchMethod: "protocol" | "ad_id" | "ad_id_in_url" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
+        let matchMethod: "protocol" | "ad_id" | "ad_id_in_url" | "fb_campaign_id" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
         let matchSimilarity: number | null = null;
 
-        // 0) Match DETERMINÍSTICO por protocolo profissional no texto (FB-87321 etc.).
-        // É o caminho autoritativo para múltiplas campanhas ativas quando o Meta
-        // não entrega ad_id/ctwa_clid no payload.
-        if (messageText) {
-          sourceCampaignId = await resolveCampaignByTrackingProtocol(
-            supabase,
-            instanceData.consultant_id,
-            messageText,
-          );
-          if (sourceCampaignId) matchMethod = "protocol";
+        // 0) Blindagem: sinais fortes do Meta vêm primeiro e nunca perdem para protocolo/texto.
+        const strongFields = extractMetaReferralFields(rawMsg, body);
+        const strong = await resolveCampaignFromStrongMeta(supabase, instanceData.consultant_id, {
+          ...strongFields,
+          referral: strongFields.referral || externalAdReply || null,
+          ctwaClid: strongFields.ctwaClid || ctwaClid,
+          sourceAdId: strongFields.sourceAdId || sourceAdId,
+          sourceUrl: strongFields.sourceUrl || sourceUrl,
+        });
+        if (strong) {
+          sourceCampaignId = strong.campaignId;
+          sourceAdId = sourceAdId || strong.sourceAdId;
+          matchMethod = strong.method;
         }
 
-        // 1) Match DETERMINÍSTICO por AD ID (source_id) → fb_ad_ids da campanha.
-        if (!sourceCampaignId && sourceAdId) {
-          try {
-            const { data: campByAd } = await supabase
-              .from("facebook_campaigns")
-              .select("id")
-              .eq("consultant_id", instanceData.consultant_id)
-              .contains("fb_ad_ids", [String(sourceAdId)])
-              .maybeSingle();
-            if ((campByAd as any)?.id) {
-              sourceCampaignId = (campByAd as any).id;
-              matchMethod = "ad_id";
-            }
-          } catch (e) {
-            console.warn("[lead-source] ad_id match falhou:", (e as Error).message);
-          }
-        }
-
-        // 2) Match via ctwa_clid_mapping (sinal forte) — populado na criação da campanha.
-        if (ctwaClid && !sourceCampaignId) {
-          try {
-            const { data: mapping } = await supabase
-              .from("ctwa_clid_mapping")
-              .select("campaign_id")
-              .eq("ctwa_clid", ctwaClid)
-              .maybeSingle();
-            if ((mapping as any)?.campaign_id) {
-              sourceCampaignId = (mapping as any).campaign_id;
-              matchMethod = "ctwa_clid";
-            }
-          } catch (e) {
-            console.warn("[lead-source] ctwa_clid_mapping lookup falhou:", (e as Error).message);
-          }
-        }
-
-        // 2.5) Rede de segurança: ad_id embutido em source_url (quando Meta não
-        //      manda referral.source_id direto mas manda a URL do anúncio).
-        if (!sourceCampaignId && sourceUrl) {
-          try {
-            const { resolveCampaignByAdIdInUrl } = await import("../_shared/ctwa-url-extractor.ts");
-            const hit = await resolveCampaignByAdIdInUrl(supabase, instanceData.consultant_id, sourceUrl);
-            if (hit) {
-              sourceCampaignId = hit.campaignId;
-              sourceAdId = sourceAdId || hit.adId;
-              matchMethod = "ad_id_in_url";
-            }
-          } catch (e) {
-            console.warn("[lead-source] ad_id-in-url match falhou:", (e as Error).message);
+        // 1) Protocolo profissional só roda quando não existe sinal forte resolvido.
+        if (!sourceCampaignId && messageText) {
+          const byProtocol = await resolveCampaignByProtocolOnly(supabase, instanceData.consultant_id, messageText);
+          if (byProtocol) {
+            sourceCampaignId = byProtocol.campaignId;
+            matchMethod = "protocol";
           }
         }
 
@@ -1048,6 +1014,16 @@ Deno.serve(async (req) => {
         //      de revisão manual acontece no bloco de rodízio abaixo.
         const ctwaPhraseMatch = !isFile && messageText && matchesMetaCtwaPhrase(messageText);
 
+
+        if (sourceCampaignId && sourceAdId) {
+          const validAd = await campaignContainsAdId(supabase, sourceCampaignId, sourceAdId);
+          if (!validAd) {
+            console.warn(`[lead-source] bloqueado: campaign=${sourceCampaignId} não contém ad_id=${sourceAdId}`);
+            await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
+            sourceCampaignId = null;
+            matchMethod = "unmatched";
+          }
+        }
 
         if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
@@ -1190,7 +1166,22 @@ Deno.serve(async (req) => {
 
     }
 
-    const rodizioCampaignId = (customer as any)?.source_campaign_id || null;
+    let rodizioCampaignId = (customer as any)?.source_campaign_id || null;
+    if (rodizioCampaignId && (customer as any)?.source_ad_id) {
+      const validAd = await campaignContainsAdId(supabase, rodizioCampaignId, (customer as any).source_ad_id);
+      if (!validAd) {
+        console.warn(`[rodizio] bloqueado: campaign=${rodizioCampaignId} não contém ad_id=${(customer as any).source_ad_id}`);
+        await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
+        await logRodizioOutcome(supabase, {
+          customerId: customer.id,
+          campaignId: rodizioCampaignId,
+          method: "campaign_ad_id_mismatch",
+          outcome: "no_campaign_manual_review",
+          messageSample: messageText,
+        });
+        rodizioCampaignId = null;
+      }
+    }
     const ctwaSignalNoCampaign =
       !rodizioCampaignId &&
       !isFile &&
