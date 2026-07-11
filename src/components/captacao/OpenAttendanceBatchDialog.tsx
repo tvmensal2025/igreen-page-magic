@@ -371,7 +371,7 @@ export function OpenAttendanceBatchDialog({
         </DialogHeader>
 
         <div className="px-5 flex-1 min-h-0 overflow-y-auto space-y-4 pb-2">
-          <ul className="rounded-lg border border-border divide-y divide-border/60 max-h-44 overflow-y-auto">
+          <ul className={`rounded-lg border border-border divide-y divide-border/60 overflow-y-auto ${workLeads.length <= 3 ? "max-h-32" : "max-h-44"}`}>
             {workLeads.map((l) => (
               <li key={l.id} className="flex items-center gap-2.5 px-2.5 py-2">
                 <div
@@ -389,6 +389,7 @@ export function OpenAttendanceBatchDialog({
               </li>
             ))}
           </ul>
+
 
           {showConfig && (
             <>
