@@ -10,10 +10,11 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  
+  PanelLeftClose,
   Clock,
   CheckCheck,
 } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
