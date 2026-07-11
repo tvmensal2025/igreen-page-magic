@@ -1,71 +1,69 @@
-## Diagnóstico — por que SANDRA foi para o Francisco em vez do Rodrigo
+# Atendimento em Lote na Captação + Fluxo Automático
 
-O lead **SANDRA (55 38 98447681)** entrou em `2026-07-11 08:37`, vindo do anúncio **"Aumento em cima de aumento? Ative seu benefício"**, `ad_id = 120246304492060645`.
+## O que muda pra você
 
-Esse `ad_id` pertence à campanha **"Brasilândia de Minas" (Rodrigo Horácio)** — confirmado no banco (`facebook_campaigns.fb_ad_ids`). Por isso o Meta contabilizou +1 conversa no anúncio do Rodrigo.
+Na tela **Captação** vai ter um botão único **"Abrir atendimento para todos"** que:
 
-**Mas o sistema atribuiu para o Francisco.** Motivo:
+1. Seleciona todos os leads do período que **ainda não têm atendimento aberto** (ignora quem já tem `welcome_sent_at`, quem já é cliente, quem não tem telefone).
+2. Abre o modal atual `**OpenAttendanceBatchDialog**` já com todo mundo pré-marcado.
+3. Deixa você escolher **como enviar** — agora com 4 opções (hoje só tem 3):
+  - Texto (template ou escrito na hora)
+  - Áudio de template
+  - **Gravar áudio na hora** (novo — mesmo gravador do chat)
+  - **Enviar arquivo do computador** (novo — imagem/PDF/áudio soltos, sem precisar virar template)
+4. Marca **"fechar atendimento automaticamente após X minutos"** (opcional, default desligado).
 
-1. O Whapi enviou o referral no caminho `**messages[0].context.ad.source.id**` e `**messages[0].context.ad.ctwa**` — formato Whapi.
-2. Nosso `_shared/lead-attribution.ts` só lê os formatos antigos: `rawMessage.referral`, `context.referred_product`, `context.referral`, `context.ad_reply`. **Nunca lê `context.ad`.**
-3. Resultado: `source_ad_id`, `source_ctwa_clid` e `source_referral` ficaram **NULL** em `customers`.
-4. Sem esses IDs, o resolver caiu na **estratégia 2 (Jaccard)** — texto "Olá! Posso ter mais informações sobre isso?" não bate com nenhum `initial_message` — e depois na **fallback rotation**, que escolheu a campanha Jaraguá (Francisco) porque tem mais atividade recente e mesmo UF (MG).
-5. `ctwa_referral_probe_log` confirma: `matched_paths: []` e `extracted: {source_ad_id: null, ctwa_clid: null}` — mas o payload cru mostra tudo lá dentro de `context.ad`.
+O sistema faz na fila: `start-customer-attendance` (só se ainda não iniciado) → áudio/arquivo → texto → intervalo 5s → próximo lead.
 
-## Correção proposta
+## Proteções (nunca abre em cima de atendimento ativo)
 
-### 1. Ensinar o parser a ler o shape do Whapi (`context.ad.*`)
+- Filtro na seleção: só entra lead com `welcome_sent_at IS NULL` **E** sem `outcome` **E** sem `igreen_code`.
+- Pill visual "Já iniciado" continua bloqueando envio duplicado (edge `start-customer-attendance` já devolve `skipped: already_sent`).
+- Toggle universal `automation_toggles.start_customer_attendance` continua valendo — se estiver OFF, o botão avisa e não dispara.
 
-Em `supabase/functions/_shared/lead-attribution.ts`, na Estratégia 1, adicionar leitura de:
+## Auto-fechar atendimento (opcional)
 
-- `rawMessage.context.ad.source.id` → `ad_id`
-- `rawMessage.context.ad.source.url` → `source_url` (também passa pelo `extractAdIdFromSourceUrl`)
-- `rawMessage.context.ad.ctwa` → `ctwa_clid`
-- `rawMessage.context.ad.source.type` → `source_type`
-- Preservar o objeto inteiro `context.ad` em `source_referral` quando for esse formato.
+Se marcar "fechar em X min":
 
-### 2. Atualizar o probe recursivo
+- Ao terminar o disparo de cada lead, agenda um registro em `scheduled_messages` do tipo `close_attendance` com `send_at = now() + X min`.
+- Nova edge `close-attendance-scheduled` (chamada pelo cron `send-scheduled-messages` que já existe) executa `end-customer-attendance` para cada agendamento vencido — respeitando o toggle `end_customer_attendance`.
+- Se o cliente responder no meio, o gatilho `trg_cadence_on_inbound` cancela o auto-fechamento (adiciona coluna `cancelled_at` em `scheduled_messages`).
 
-Em `supabase/functions/_shared/ctwa-referral-probe.ts`:
+## Auditoria dos agendamentos (Central de Agendamentos)
 
-- Detectar padrão contextual: quando a chave `ad` contém sub-objeto `source` com `id`, tratar esse `id` como `source_ad_id` e `url` como `source_url`.
-- Detectar chave `ctwa` (nome usado pelo Whapi, sem sufixo `_clid`) como `ctwa_clid`.
-- Assim o probe futuro registra `matched_paths` corretos e não perdemos mais leads.
+Vou verificar em `/admin/agendamentos-central` que estes jobs existem e estão listados (mesmo desligados por enquanto):
 
-### 3. Reatribuir SANDRA agora
 
-Rodar UPDATE manual:
+| Job                                 | Cron                    | Toggle                    | Status esperado |
+| ----------------------------------- | ----------------------- | ------------------------- | --------------- |
+| `cadence-tick`                      | */5 min                 | `cadence_engine_enabled`  | ✅ já existe     |
+| `send-scheduled-messages`           | */1 min                 | —                         | verificar       |
+| `close-attendance-scheduled` (novo) | roda dentro do anterior | `end_customer_attendance` | criar           |
+| `reactivation-cron`                 | horário                 | `reactivation_enabled`    | ✅               |
+| `process-followups`                 | */10 min                | `followups_enabled`       | ✅               |
+| `facebook-retarget-sync`            | 3x/dia                  | `retarget_enabled`        | ✅               |
+| `bulk-scheduler`                    | */5 min                 | `bulk_enabled`            | ✅               |
+| `pos-venda-auto-progress`           | horário                 | `pos_venda_enabled`       | ✅               |
 
-- `source_ad_id = '120246304492060645'`
-- `source_campaign_id = 'c2530550-…'` (Brasilândia)
-- `referral_partner_id = 4384080b-…` (Rodrigo Horácio)
-- `tracking_protocol` recalculado com prefixo do Rodrigo
-- Log em `campaign_match_log` com `method = 'retro_ad_id_fix'`
-- Reverter contador Francisco (`lead_count -= 1`) e incrementar Rodrigo (`lead_count += 1`)
-- **NÃO** notificar Rodrigo agora — kill switch ainda está OFF; ficar como registro. ( notifique o rodrigo sim )
 
-### 4. Rodar retro-atribuição nos últimos 30 dias
+Se algum estiver faltando na UI, adiciono na lista de `admin-cron-status`.
 
-Chamar `admin-recompute-lead-attribution` com `dry_run=false` — agora que o extrator lê `context.ad.source.id`, ele vai casar leads antigos que caíram no fallback errado. Retorno mostra quantos foram corrigidos e quais.
+## Arquivos que vou mexer
 
-### 5. Teste de regressão
+- `src/components/captacao/CaptureLeadList.tsx` — botão "Abrir para todos do período" + contador "N prontos / M já iniciados".
+- `src/components/captacao/OpenAttendanceBatchDialog.tsx` — abas Gravar/Arquivo + toggle auto-fechar.
+- `src/components/captacao/runAttendanceBatch.ts` — aceita `recordedAudioBlob`, `uploadedFile`, `autoCloseAfterMin` e agenda o fechamento.
+- **Nova edge** `supabase/functions/close-attendance-scheduled/index.ts` — consome fila.
+- **Migration**: coluna `scheduled_messages.kind` (se ainda não tiver `close_attendance`) + `cancelled_at`.
+- `src/pages/AdminAgendamentosCentral.tsx` — inclui o novo job na lista.
 
-Adicionar teste unitário com o payload real da SANDRA (arquivo fixture) validando que `attributeLeadSource` retorna:
+## Riscos e como evitar
 
-- `method: "ctwa_referral"`
-- `source_campaign_id: c2530550-…`
-- `source_ctwa_clid: AfiWA0LZ…`
+- **Duplo envio**: já protegido pelo `already_sent` + filtro na UI.
+- **Auto-fechar cliente que respondeu**: cancelado pelo trigger de inbound + verificação na edge antes de fechar.
+- **Upload de arquivo pesado**: limite 16 MB (padrão Whapi/Evolution), aviso no dialog.
+- **Automação global OFF**: nada dispara — só faz o `start-customer-attendance` que já é "ação manual do consultor" (fica fora do kill-switch de mensagens automáticas, conforme padrão atual).
 
-## Detalhes técnicos
+Confirma que posso implementar tudo isso num commit só? SIM, MAS ANALISE O CODIGO PARA NAO DUPLICAR E OCORRER ALGUM ERRO
 
-**Arquivos a editar:**
-
-- `supabase/functions/_shared/lead-attribution.ts` — nova leitura de `context.ad`
-- `supabase/functions/_shared/ctwa-referral-probe.ts` — reconhecer `ad.source.id` / `ad.ctwa`
-- `supabase/functions/_shared/__tests__/lead-attribution_test.ts` (novo) — fixture SANDRA
-
-**Migração:** nenhuma. Apenas UPDATE manual pontual em `customers`, `rodizio_pool_members`, `campaign_match_log` para consertar SANDRA e rodar a retro-atribuição.
-
-**Kill switch:** permanece OFF; nenhuma mensagem sai para clientes. O parceiro Rodrigo **não** será notificado agora — só passará a receber quando você ligar `notify_partner_leads_batch` no `/admin/agendamentos-central`.
-
-**Impacto no motor de cadência:** zero por enquanto (tudo desligado). Quando ligar, novos leads dessa campanha caem direto no pool do Rodrigo.
+&nbsp;
