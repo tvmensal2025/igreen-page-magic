@@ -1,95 +1,57 @@
-# Plano: blindar campanha/rodízio para não misturar Francisco, Horácio e outros parceiros
-
-## O que foi encontrado
-
-- Há duas campanhas ativas no consultor Rafael:
-  - `Horacio · Brasilândia de Minas` com pool ativo contendo só `Rodrigo Horácio`.
-  - `Jaraguá` com pool ativo contendo `Rafael Ferreira Dias`, `Francisco Melquiades` e `Abel Oliveira`.
-- O erro real apareceu em leads recentes: alguns leads chegaram com `source_ad_id = 120246248100890645`, que pertence à campanha `Jaraguá`, mas foram gravados como campanha `Horacio`.
-- Isso significa que o sinal forte do Meta (`source_ad_id`) não está vencendo o fallback/atribuição anterior em todos os caminhos.
-- Resultado: quando a campanha errada é salva no lead, o rodízio usa o pool errado e manda para Horácio.
 
 ## Objetivo
 
-Garantir que, quando o Meta enviar qualquer identificador confiável (`source_ad_id`, `ad_id`, `ctwa_clid`, `campaign_id` ou URL com `ad_id`), esse dado sempre tenha prioridade absoluta sobre qualquer fallback por frase, DDD, atividade recente ou pool ativo.
+Deixar o "Iniciar atendimento" **sempre visível no topo** do Chat (WhatsApp) e do Captação, com comportamento profissional e único:
 
-## Correções propostas
+- **1 lead selecionado / lead aberto** → dispara direto `start-customer-attendance` (sem modal, com toast de progresso).
+- **2+ leads selecionados** → abre o modal `OpenAttendanceBatchDialog` (áudio, imagem, texto, timer, intervalo).
+- **Já iniciado** → botão vira o pill do protocolo (comportamento atual do `AttendanceStatusBar`), sem mostrar "Iniciar" de novo.
 
-### 1. Criar uma função única de resolução determinística
-Centralizar em um helper compartilhado a regra:
+## Pontos que já achei que precisam arrumar (evitar erro)
 
-```text
-source_ad_id/ad_id/source_url com ad_id
-  > fb_campaign_id
-  > ctwa_clid mapeado
-  > protocolo da mensagem
-  > fallback controlado
-```
+1. **Chat (`ChatView.tsx` ~L628)** — hoje o `onStart` do `AttendanceStatusBar` chama `setStartBatchOpen(true)`, ou seja, sempre abre modal, mesmo para 1 cliente. Vai ficar direto.
+2. **Captação cockpit (`CaptacaoPanel.tsx` ~L375)** — mesmo problema: o topo do cockpit monta um "batch de 1" e abre o modal. Vai virar chamada direta à edge.
+3. **Lista de Captação (`CaptureLeadList.tsx` ~L685-702)** — o CTA só aparece **no rodapé** e apenas quando `selectMode` está ligado. Para o consultor é lento (precisa entrar em "Selecionar" → marcar → rolar). Vou:
+   - Manter a barra fixa no rodapé (padrão de multi-seleção).
+   - Adicionar **barra flutuante no topo da lista** quando `selectedIds.size >= 1` (com contador + CTA "Iniciar" ou "Abrir (N)").
+4. **Guarda "já iniciado"** — hoje o fast-path em `CaptacaoPanel` já checa `welcome_sent_at`, mas o chat não. Vai passar a checar `attendance.uiState !== "not_started"` antes de invocar.
+5. **Sem debounce** — clicar 2x dispara 2 chamadas. Vou desabilitar o botão enquanto `attendance.starting` estiver ligado (já existe no `AttendanceStatusBar`, só preciso propagar no fast-path do Chat/Cockpit também).
+6. **Erros silenciosos** — a edge devolve `{ok:false, fallback:true}` em vários casos (canal off, sem telefone). Vou padronizar o handler em um util só (`runFastStartAttendance`) usado por Chat, Cockpit e Lista, com toasts consistentes (`loading` → `success | warning fallback | error`).
 
-Essa função será usada tanto no `whapi-webhook` quanto no `evolution-webhook`, para os dois canais seguirem a mesma regra.
+## Mudanças
 
-### 2. Trava anti-contaminação no momento de salvar campanha
-Antes de salvar `source_campaign_id` em `customers`, validar:
+### 1) Novo util compartilhado
+`src/components/captacao/runFastStartAttendance.ts`
+- Recebe `{ customerId, consultantId }`.
+- Emite toast de loading, chama `supabase.functions.invoke("start-customer-attendance", …)`.
+- Trata `ok:false + fallback` como warning, resto como error, sucesso mostra protocolo.
+- Retorna `{ ok, protocol?, fallback? }` para o caller decidir foco/estado.
 
-```text
-Se existe source_ad_id e a campanha escolhida NÃO contém esse ad_id em facebook_campaigns.fb_ad_ids:
-  não salvar campanha errada
-  registrar auditoria
-  enviar para revisão/manual-safe em vez de rodízio errado
-```
+### 2) Chat (`src/components/whatsapp/ChatView.tsx`)
+- `AttendanceStatusBar.onStart` → chama `runFastStartAttendance` direto (sem `setStartBatchOpen`).
+- Remove/oculta o caminho antigo `startBatchOpen` para 1 lead (mantém `OpenAttendanceBatchDialog` só para caso de seleção em lote futuro, se houver).
+- Após sucesso, faz `attendance.refresh()` (se existir) ou dispara evento que o hook já escuta.
 
-Isso impede exatamente o erro visto: lead com ad de Jaraguá ser salvo como Horácio.
+### 3) Captação cockpit (`src/components/captacao/CaptacaoPanel.tsx`)
+- Substitui o `onStart` do `AttendanceStatusBar` do topo do cockpit (L375-394) pela chamada direta a `runFastStartAttendance` com o `selectedId`.
+- Fast-path da lista (`onOpenBatch` com 1 lead) passa a reusar o mesmo util (dedup do código atual L280-315).
 
-### 3. Reprocessar os leads recentes já contaminados
-Corrigir os leads dos últimos dias onde:
+### 4) Lista de Captação (`src/components/captacao/CaptureLeadList.tsx`)
+- Adiciona **barra sticky no topo da lista** (logo abaixo das abas "Em atendimento / Em espera") quando `selectedIds.size >= 1`:
+  - `1 selecionado` → botão primário "Iniciar atendimento" (fast-path).
+  - `2+ selecionados` → botão primário "Abrir atendimento (N)" (abre modal atual).
+  - Botão secundário "Limpar".
+- Mantém a barra do rodapé como está (redundância proposital em listas longas).
+- Bloqueio visual quando `!whatsappConnected` (badge "WhatsApp desconectado" no lugar do CTA).
 
-```text
-customers.source_ad_id existe
-E customers.source_campaign_id aponta para uma campanha que não contém esse source_ad_id
-```
+### 5) `AttendanceStatusBar`
+- Sem mudança de API. Só passa a receber `onStart` que já dispara a ação real (não abre mais modal).
 
-Para cada caso:
-- localizar a campanha correta via `facebook_campaigns.fb_ad_ids`;
-- atualizar `source_campaign_id`;
-- limpar ou recalcular `referral_partner_id` conforme o pool correto;
-- registrar em `campaign_match_log` com método de correção.
+## Fora de escopo
 
-### 4. Rodízio só roda depois de campanha validada
-Nos webhooks, o `rodizio_next` só poderá ser chamado quando:
+- Não mexo em `start-customer-attendance` (edge), `close-attendance-scheduled`, template de saudação, `OpenAttendanceBatchDialog` (só passa a ser chamado só quando N≥2).
+- Nada de refactor no `useCustomerAttendance` além de expor `refresh()` se ainda não estiver exposto.
 
-```text
-campaign_id validado
-campanha ativa/pending_review
-pool ativo da mesma campanha
-se source_ad_id existir, ele pertence à campanha
-```
+## Riscos
 
-Se falhar qualquer item, o lead não será enviado para parceiro errado; ficará para revisão segura.
-
-### 5. Corrigir o fallback por atividade recente
-O fallback atual pode escolher a campanha “mais quente” quando não encontra sinal forte. Ele deve ser mais conservador:
-
-- se houver qualquer sinal de Meta não resolvido, não usar atividade recente para escolher outra campanha;
-- se houver múltiplas campanhas ativas com a mesma frase genérica, só usar protocolo ou identificador Meta;
-- fallback por DDD/atividade só pode atuar quando não existe `source_ad_id`, `ctwa_clid` ou URL com ad.
-
-### 6. Ajustar pool solo da campanha Horácio
-Como a campanha Horácio tem pool com apenas Rodrigo Horácio, definir uma proteção no painel/criação:
-
-- avisar quando campanha ativa tem pool com 1 pessoa;
-- permitir destino exclusivo somente se estiver marcado explicitamente como “destino único”; caso contrário exigir 2+ participantes.
-
-Para agora, manter a configuração atual sem mexer automaticamente nos participantes até você confirmar se essa campanha deve ser exclusiva do Horácio ou entrar no rodízio geral.
-
-## Validação depois da implementação
-
-- Consultar todos os leads recentes com `source_ad_id` e confirmar que a campanha salva contém o ad em `fb_ad_ids`.
-- Testar caso Jaraguá/Francisco: `120246248100890645` precisa resolver para campanha Jaraguá, nunca Horácio.
-- Confirmar que o rodízio da campanha Jaraguá usa apenas o pool Jaraguá.
-- Confirmar que o rodízio da campanha Horácio só roda para ads realmente da campanha Horácio.
-
-## Resultado esperado
-
-- Lead da campanha Francisco/Jaraguá nunca vai para Horácio.
-- Lead da campanha Horácio só vai para Horácio se o anúncio realmente for da campanha Horácio.
-- Se o Meta vier sem identificador suficiente, o sistema não inventa campanha errada; manda para revisão segura.
+- Baixo: as chamadas já existem e estão testadas via lista. Ganho principal é consistência (mesmo caminho em 3 lugares) e velocidade (sem modal para 1 lead).
