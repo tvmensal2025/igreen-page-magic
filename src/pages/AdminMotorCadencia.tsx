@@ -19,8 +19,20 @@ import { toast } from "sonner";
  * - Mostra KPI: quantos leads em cada estágio + últimas 20 ações.
  */
 
-const STAGES = ["COLD_1", "COLD_2", "COLD_3", "COLD_4"] as const;
+const STAGES = ["COLD_1", "COLD_2", "CALL_1", "SMS_1", "COLD_3", "CALL_2", "SMS_2", "COLD_4", "CALL_3"] as const;
 type StageKey = (typeof STAGES)[number];
+
+const STAGE_META: Record<StageKey, { channel: "whatsapp" | "voice" | "sms"; label: string }> = {
+  COLD_1: { channel: "whatsapp", label: "WhatsApp reaquecimento 1" },
+  COLD_2: { channel: "whatsapp", label: "WhatsApp reaquecimento 2" },
+  CALL_1: { channel: "voice",    label: "Ligação Velip 1 (TTS ou áudio)" },
+  SMS_1:  { channel: "sms",      label: "SMS de resgate 1" },
+  COLD_3: { channel: "whatsapp", label: "WhatsApp reaquecimento 3" },
+  CALL_2: { channel: "voice",    label: "Ligação Velip 2" },
+  SMS_2:  { channel: "sms",      label: "SMS de resgate 2" },
+  COLD_4: { channel: "whatsapp", label: "WhatsApp reaquecimento 4" },
+  CALL_3: { channel: "voice",    label: "Ligação Velip 3 (última chance)" },
+};
 
 interface StageRow {
   id?: string;
@@ -30,6 +42,7 @@ interface StageRow {
   message_text: string;
   media_url: string | null;
   media_type: string | null;
+  velip_audio_id: string | null;
 }
 
 interface Window {
@@ -76,7 +89,7 @@ export default function AdminMotorCadencia() {
       const found = (cfgs || []).find((c: any) => c.stage === s);
       map[s] = found
         ? { ...found, stage: s, message_text: found.message_text || "" }
-        : { stage: s, enabled: true, delay_hours: 24, message_text: "", media_url: null, media_type: "text" };
+        : { stage: s, enabled: true, delay_hours: 24, message_text: "", media_url: null, media_type: "text", velip_audio_id: null };
     }
     setStages(map);
 
@@ -111,6 +124,7 @@ export default function AdminMotorCadencia() {
           message_text: row.message_text,
           media_url: row.media_url,
           media_type: row.media_type || "text",
+          velip_audio_id: row.velip_audio_id,
         };
         if (row.id) {
           const { error } = await supabase.from("cadence_stage_config").update(payload).eq("id", row.id);
@@ -181,16 +195,24 @@ export default function AdminMotorCadencia() {
 
         {/* Estágios */}
         <Card className="p-4">
-          <h2 className="text-sm font-semibold mb-3">Mensagens de reaquecimento (WhatsApp)</h2>
-          <p className="text-xs text-muted-foreground mb-4">Use <code className="text-primary">{"{{nome}}"}</code> para o primeiro nome do lead. Áudios/imagens são opcionais.</p>
+          <h2 className="text-sm font-semibold mb-3">Cadência multi-canal (WhatsApp → Ligação → SMS)</h2>
+          <p className="text-xs text-muted-foreground mb-4">
+            Variáveis: <code className="text-primary">{"{{nome}}"}</code>, <code className="text-primary">{"{{consultor}}"}</code>, <code className="text-primary">{"{{consultor_phone}}"}</code>.
+            Ligações usam TTS por padrão; informe um <b>Velip audio_id</b> para tocar um áudio pré-gravado do consultor.
+          </p>
           <div className="space-y-4">
             {STAGES.map(s => {
               const row = stages[s]; if (!row) return null;
+              const meta = STAGE_META[s];
+              const channelColor = meta.channel === "voice" ? "bg-blue-500/10 text-blue-600"
+                : meta.channel === "sms" ? "bg-amber-500/10 text-amber-600"
+                : "bg-green-500/10 text-green-600";
               return (
                 <div key={s} className="border rounded-lg p-3 space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <Badge>{s}</Badge>
+                      <span className={`text-xs px-2 py-0.5 rounded ${channelColor}`}>{meta.label}</span>
                       <Switch checked={row.enabled} onCheckedChange={v => setStages({ ...stages, [s]: { ...row, enabled: v } })} />
                       <Label className="text-xs">{row.enabled ? "Ativo" : "Pausado"}</Label>
                     </div>
@@ -201,24 +223,35 @@ export default function AdminMotorCadencia() {
                       <span className="text-xs text-muted-foreground">horas</span>
                     </div>
                   </div>
-                  <Textarea rows={3} placeholder="Texto da mensagem..." value={row.message_text}
+                  <Textarea rows={3}
+                    placeholder={meta.channel === "voice" ? "Texto que a locutora vai falar (TTS)..." : meta.channel === "sms" ? "Texto do SMS (até 160 caracteres)..." : "Texto da mensagem..."}
+                    value={row.message_text}
                     onChange={e => setStages({ ...stages, [s]: { ...row, message_text: e.target.value } })} />
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input placeholder="URL de mídia opcional (áudio/imagem/vídeo)" value={row.media_url || ""}
-                      onChange={e => setStages({ ...stages, [s]: { ...row, media_url: e.target.value || null } })} />
-                    <select className="h-10 rounded-md border bg-background px-3 text-sm"
-                      value={row.media_type || "text"}
-                      onChange={e => setStages({ ...stages, [s]: { ...row, media_type: e.target.value } })}>
-                      <option value="text">Somente texto</option>
-                      <option value="audio">Áudio</option>
-                      <option value="image">Imagem</option>
-                      <option value="video">Vídeo</option>
-                    </select>
-                  </div>
+
+                  {meta.channel === "whatsapp" && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input placeholder="URL de mídia opcional (áudio/imagem/vídeo)" value={row.media_url || ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, media_url: e.target.value || null } })} />
+                      <select className="h-10 rounded-md border bg-background px-3 text-sm"
+                        value={row.media_type || "text"}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, media_type: e.target.value } })}>
+                        <option value="text">Somente texto</option>
+                        <option value="audio">Áudio</option>
+                        <option value="image">Imagem</option>
+                        <option value="video">Vídeo</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {meta.channel === "voice" && (
+                    <Input placeholder="Velip audio_id (opcional — se vazio usa TTS acima)" value={row.velip_audio_id || ""}
+                      onChange={e => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })} />
+                  )}
                 </div>
               );
             })}
           </div>
+
           <div className="mt-4 flex justify-end">
             <Button onClick={saveAll} disabled={saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}

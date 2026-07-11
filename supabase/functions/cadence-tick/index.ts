@@ -1,15 +1,19 @@
-// cadence-tick — cron 5 min do motor "Zero Lead Perdido" (Fase 2).
+// cadence-tick — cron 5 min do motor "Zero Lead Perdido" (Fases 2 e 3).
 //
-// Varre lead_cadence_state onde next_action_at <= now() e stage pendente.
-// Para stages WhatsApp (COLD_*) faz o disparo real usando o canal do cliente
-// (evolution/whapi) + template configurável por consultor em cadence_stage_config.
-// Voice/SMS/Meta ficam registrados como "queued" para as fases 3-5.
+// COLD_*  → WhatsApp (Evolution/Whapi)
+// CALL_*  → Ligação Velip (TTS ou áudio pré-gravado)
+// SMS_*   → SMS Velip
+// META    → placeholder para Fase 5
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { STAGE_MAP, computeNextActionAt, shouldDispatch, type Stage } from "../_shared/cadence-engine.ts";
 import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomer, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import {
+  makeTTSCall, playAudioFile, makeSMS,
+  toVelipBRDest, toCtid, velipConfigured,
+} from "../_shared/voice-dialer/velip.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +26,7 @@ interface StageConfig {
   message_text: string | null;
   media_url: string | null;
   media_type: string | null;
+  velip_audio_id: string | null;
 }
 
 async function loadStageConfig(
@@ -29,20 +34,20 @@ async function loadStageConfig(
   consultantId: string | null,
   stage: string,
 ): Promise<StageConfig | null> {
-  // 1) consultor-específico
+  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id";
   if (consultantId) {
     const { data } = await supabase
       .from("cadence_stage_config")
-      .select("enabled, delay_hours, message_text, media_url, media_type")
+      .select(cols)
       .eq("consultant_id", consultantId)
       .eq("stage", stage)
       .maybeSingle();
     if (data) return data;
   }
-  // 2) global
   const { data: g } = await supabase
     .from("cadence_stage_config")
-    .select("enabled, delay_hours, message_text, media_url, media_type")
+    .select(cols)
+
     .is("consultant_id", null)
     .eq("stage", stage)
     .maybeSingle();
@@ -102,6 +107,79 @@ async function dispatchWhatsApp(
   }
 }
 
+/** Busca telefone + nome do consultor para merge nas variáveis do template. */
+async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
+  const { data: cust } = await supabase
+    .from("customers")
+    .select("id, name, phone_whatsapp")
+    .eq("id", customerId).maybeSingle();
+  let consultantName = "";
+  let consultantPhone = "";
+  if (consultantId) {
+    const { data: c } = await supabase
+      .from("consultants")
+      .select("name, whatsapp_number, phone")
+      .eq("id", consultantId).maybeSingle();
+    consultantName = (c?.name || "").split(" ")[0] || "";
+    consultantPhone = String(c?.whatsapp_number || c?.phone || "").replace(/\D/g, "");
+  }
+  return { cust, consultantName, consultantPhone };
+}
+
+async function dispatchVoiceCall(
+  supabase: any, row: any, stage: Stage, cfg: StageConfig,
+): Promise<{ ok: boolean; detail: string }> {
+  if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
+  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+  const dest = toVelipBRDest(cust.phone_whatsapp);
+  if (!dest) return { ok: false, detail: "invalid_phone" };
+
+  const firstName = (cust.name || "").split(" ")[0] || "";
+  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
+  const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${Date.now()}`);
+
+  try {
+    const r = cfg.velip_audio_id
+      ? await playAudioFile({ to: dest, audioId: cfg.velip_audio_id, ctid })
+      : await makeTTSCall({ to: dest, ttsText: text, ctid });
+    if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
+    return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
+  } catch (e) {
+    return { ok: false, detail: `exception:${(e as Error).message}` };
+  }
+}
+
+async function dispatchSMS(
+  supabase: any, row: any, stage: Stage, cfg: StageConfig,
+): Promise<{ ok: boolean; detail: string }> {
+  if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
+  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+  const dest = toVelipBRDest(cust.phone_whatsapp);
+  if (!dest) return { ok: false, detail: "invalid_phone" };
+
+  const firstName = (cust.name || "").split(" ")[0] || "";
+  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
+  if (!text.trim()) return { ok: false, detail: "empty_message" };
+
+  try {
+    const r = await makeSMS({ to: dest, text });
+    await supabase.from("voice_sms_log").insert({
+      consultant_id: row.consultant_id, phone: dest, message: text,
+      velip_sms_id: r.cdls_id ?? null, velip_ctid: r.ctid ?? null,
+      status: r.ok ? "sent" : "failed",
+      error: r.ok ? null : (r.error ?? "velip_error"),
+      raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
+    });
+    if (!r.ok) return { ok: false, detail: `velip:${r.error || "sms_failed"}` };
+    return { ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
+  } catch (e) {
+    return { ok: false, detail: `exception:${(e as Error).message}` };
+  }
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -158,20 +236,28 @@ Deno.serve(async (req) => {
     if (!shouldDispatch(stage, now)) { skipped++; continue; }
 
     let status: "queued" | "sent" | "failed" = "queued";
-    let detail: Record<string, unknown> = { note: "phase2_orchestrator", scheduled_next: def.next };
+    let detail: Record<string, unknown> = { note: "phase3_orchestrator", scheduled_next: def.next };
 
-    // Fase 2: WhatsApp real para COLD_*
-    if (def.channel === "whatsapp" && stage.startsWith("COLD_")) {
+    const needsDispatch =
+      (def.channel === "whatsapp" && stage.startsWith("COLD_")) ||
+      (def.channel === "voice"    && stage.startsWith("CALL_")) ||
+      (def.channel === "sms"      && stage.startsWith("SMS_"));
+
+    if (needsDispatch) {
       const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
       if (!cfg || !cfg.enabled) {
         detail = { ...detail, reason: "config_disabled_or_missing" };
       } else {
-        const res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+        let res: { ok: boolean; detail: string };
+        if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+        else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
+        else res = await dispatchSMS(supabase, row, stage, cfg);
         status = res.ok ? "sent" : "failed";
         detail = { ...detail, dispatch: res.detail };
         if (res.ok) sent++; else failed++;
       }
     }
+
 
     const insertRes = await supabase.from("cadence_action_log").insert({
       customer_id: row.customer_id,
