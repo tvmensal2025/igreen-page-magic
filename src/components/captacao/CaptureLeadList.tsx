@@ -10,7 +10,7 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  MessageCircle,
+  Clock as _Clock, // eslint-disable-line @typescript-eslint/no-unused-vars
   Clock,
   CheckCheck,
 } from "lucide-react";
