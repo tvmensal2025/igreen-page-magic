@@ -185,17 +185,26 @@ export async function resolveByRecentActivity(
   }
 }
 
-/** Degrau 8 — rodízio justo: campanha com último lead mais antigo. Nunca devolve null se há pool ativa. */
+/** Degrau 8 — rodízio justo, com salvaguardas anti-contaminação entre pools.
+ *  Regras (nesta ordem):
+ *   a) filtra campanhas com "prova de vida" (≥1 lead nos últimos 7 dias);
+ *   b) se o telefone tem UF conhecida, restringe às campanhas que miram essa UF;
+ *   c) se sobrar exatamente 1 candidata → escolhe;
+ *   d) se sobrar >1 → round-robin pela mais antiga (último lead há mais tempo);
+ *   e) se sobrar 0 → devolve null (NÃO cruza pools; vai pra revisão manual).
+ *  Nunca escolhe uma campanha fantasma (sem tráfego real).
+ */
 export async function resolveByFallbackRotation(
   supabase: any,
   consultantId: string,
+  phone?: string | null,
 ): Promise<LadderResult> {
   try {
     const active = await listActivePoolCampaigns(supabase, consultantId);
     if (active.length === 0) return null;
     const ids = [...new Set(active.map((a) => a.campaignId))].sort();
 
-    // Últimos 30 dias — usado para ordenar rodízio justo.
+    // (a) prova de vida — últimos 7 dias
     const since30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
     const { data } = await supabase
       .from("customers")
@@ -213,27 +222,45 @@ export async function resolveByFallbackRotation(
       if (!lastByCamp.has(cid)) lastByCamp.set(cid, row.created_at);
       countByCamp.set(cid, (countByCamp.get(cid) || 0) + 1);
     }
-
-    // "Prova de vida": campanha precisa ter ≥1 lead nos últimos 7 dias.
-    // Isso evita atribuir a campanhas fantasma (ativas no papel, sem tráfego).
     const cutoff7 = Date.now() - 7 * 24 * 3600 * 1000;
     const alive = ids.filter((id) => {
       const last = lastByCamp.get(id);
       return last ? new Date(last).getTime() >= cutoff7 : false;
     });
-    // Se nenhuma tem prova de vida, cai pra "todas ativas" (comportamento antigo)
-    const pool = alive.length > 0 ? alive : ids;
 
-    const ranked = pool
+    // Se nenhuma campanha teve tráfego real, NÃO cruza pools — manual.
+    if (alive.length === 0) {
+      console.warn("[fallback_rotation] nenhuma campanha viva; recusando para não contaminar pools");
+      return null;
+    }
+
+    // (b) filtra por UF do DDD, se disponível
+    const uf = ufFromPhone(phone);
+    let candidates = alive;
+    if (uf) {
+      const byUf = alive.filter((id) => {
+        const camp = active.find((a) => a.campaignId === id);
+        return camp ? ufsFromCampaignCities(camp.cities).has(uf) : false;
+      });
+      if (byUf.length > 0) {
+        candidates = byUf;
+      } else {
+        console.warn(`[fallback_rotation] DDD ${uf} sem campanha viva compatível; recusando`);
+        return null;
+      }
+    }
+
+    if (candidates.length === 0) return null;
+
+    const ranked = candidates
       .map((id) => ({ id, last: lastByCamp.get(id) || null, n: countByCamp.get(id) || 0 }))
       .sort((a, b) => {
         if (a.last === null && b.last === null) return a.id.localeCompare(b.id);
         if (a.last === null) return -1;
         if (b.last === null) return 1;
-        const cmp = a.last.localeCompare(b.last); // mais antigo primeiro
+        const cmp = a.last.localeCompare(b.last);
         return cmp !== 0 ? cmp : a.id.localeCompare(b.id);
       });
-
 
     const winner = ranked[0];
     const summary = ranked
@@ -247,7 +274,7 @@ export async function resolveByFallbackRotation(
     return {
       campaignId: winner.id,
       method: "fallback_rotation",
-      sample: `rot: ${summary} → ${winner.id.slice(0, 8)}`,
+      sample: `rot${uf ? `[${uf}]` : ""}: ${summary} → ${winner.id.slice(0, 8)}`,
     };
   } catch (e) {
     console.warn("[resolveByFallbackRotation] falhou:", (e as Error).message);
@@ -255,7 +282,7 @@ export async function resolveByFallbackRotation(
   }
 }
 
-/** Roda a escada 6→7→8 na ordem. Sempre devolve algo se houver ≥1 pool ativa. */
+/** Roda a escada 6→7→8 na ordem. Devolve null se nenhum degrau tiver certeza. */
 export async function resolveCampaignAutoLadder(
   supabase: any,
   consultantId: string,
@@ -265,8 +292,9 @@ export async function resolveCampaignAutoLadder(
   if (step6) return step6;
   const step7 = await resolveByRecentActivity(supabase, consultantId);
   if (step7) return step7;
-  const step8 = await resolveByFallbackRotation(supabase, consultantId);
+  const step8 = await resolveByFallbackRotation(supabase, consultantId, ctx.phone);
   if (step8) return step8;
   return null;
 }
+
 
