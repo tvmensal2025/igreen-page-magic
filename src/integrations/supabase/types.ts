@@ -3910,6 +3910,8 @@ export type Database = {
           assinatura_cliente_status: string | null
           assinatura_igreen: string | null
           assinatura_igreen_status: string | null
+          attendance_auto_close_at: string | null
+          attendance_auto_close_source: string | null
           attendance_ended_at: string | null
           attendance_rating: number | null
           attendance_rating_at: string | null
@@ -4157,6 +4159,8 @@ export type Database = {
           assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
           assinatura_igreen_status?: string | null
+          attendance_auto_close_at?: string | null
+          attendance_auto_close_source?: string | null
           attendance_ended_at?: string | null
           attendance_rating?: number | null
           attendance_rating_at?: string | null
@@ -4404,6 +4408,8 @@ export type Database = {
           assinatura_cliente_status?: string | null
           assinatura_igreen?: string | null
           assinatura_igreen_status?: string | null
+          attendance_auto_close_at?: string | null
+          attendance_auto_close_source?: string | null
           attendance_ended_at?: string | null
           attendance_rating?: number | null
           attendance_rating_at?: string | null
