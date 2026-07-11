@@ -393,7 +393,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                   )}
                 </div>
               )}
-              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "240px" } as React.CSSProperties}>
+              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "360px" } as React.CSSProperties}>
               {/* Layout compacto (<lg): lista OU chat; desktop: lado a lado */}
               {isCompactLayout ? (
                 selectedChatJid ? (
@@ -429,17 +429,29 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 )
               ) : (
                 <>
-                  <div className="w-[var(--wa-side-w)] shrink-0">
-                    <ChatSidebar
-                      chats={chats}
-                      isLoading={chatsLoading}
-                      selectedJid={selectedChatJid}
-                      onSelectChat={handleSelectChat}
-                      consultantId={userId}
-                    />
-                  </div>
-                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={240} minPx={200} maxPx={360} />
-                  <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                  {!sideCollapsed && (
+                    <>
+                      <div className="w-[var(--wa-side-w)] shrink-0">
+                        <ChatSidebar
+                          chats={chats}
+                          isLoading={chatsLoading}
+                          selectedJid={selectedChatJid}
+                          onSelectChat={handleSelectChat}
+                          consultantId={userId}
+                        />
+                      </div>
+                      <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={360} minPx={280} maxPx={560} />
+                    </>
+                  )}
+                  <div className="flex-1 min-w-0 min-h-0 flex flex-col relative">
+                    <button
+                      type="button"
+                      onClick={toggleSide}
+                      title={sideCollapsed ? "Expandir lista" : "Recolher lista"}
+                      className="absolute top-2 left-2 z-30 h-7 w-7 flex items-center justify-center rounded-md border border-border bg-card/90 backdrop-blur text-muted-foreground hover:text-primary hover:border-primary/50 shadow-sm"
+                    >
+                      {sideCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+                    </button>
                     <ChatView
                       instanceName={instanceName}
                       chat={selectedChat}
