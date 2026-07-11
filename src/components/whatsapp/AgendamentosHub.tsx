@@ -150,6 +150,8 @@ export function AgendamentosHub({
   const [editText, setEditText] = useState("");
   const [editAt, setEditAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  // Filtro visual dos "Próximos envios" (client-side, não altera dados)
+  const [timelineFilter, setTimelineFilter] = useState<"all" | AgendamentoTimelineItem["kind"]>("all");
 
   const {
     loading,
@@ -312,19 +314,28 @@ export function AgendamentosHub({
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-info/3 rounded-full blur-3xl" />
+    <div
+      className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10 font-[Manrope,ui-sans-serif,system-ui,sans-serif]"
+    >
+      <div className="absolute -top-20 -right-20 w-56 h-56 bg-info/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-24 -left-24 w-56 h-56 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative p-5 sm:p-7">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-info/20 to-info/10 flex items-center justify-center border border-info/20 shrink-0">
-              <CalendarClock className="w-5 h-5 text-info" />
+        {/* ── Cabeçalho ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-info/25 to-info/5 flex items-center justify-center border border-info/20 shrink-0 shadow-sm">
+              <CalendarClock className="w-6 h-6 text-info" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-heading font-bold text-foreground text-lg">Central de Agendamentos</h3>
-              <p className="text-xs text-muted-foreground">
-                Tudo que vai sair sozinho da sua conta — em um lugar só, em português claro.
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80 font-[Sora,ui-sans-serif] font-medium">
+                Painel iGreen
+              </p>
+              <h3 className="font-[Sora,ui-sans-serif,system-ui,sans-serif] font-bold text-foreground text-xl md:text-2xl leading-tight">
+                Central de Agendamentos
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Tudo que sai sozinho da sua conta — em um só lugar, em português claro.
               </p>
             </div>
           </div>
@@ -341,60 +352,92 @@ export function AgendamentosHub({
                 Abrir no menu
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={refresh} title="Atualizar">
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 rounded-xl text-xs"
+              onClick={refresh}
+              title="Atualizar"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Atualizar</span>
             </Button>
           </div>
         </div>
 
-        {/* Aviso fixo: regra de ouro da carteira. Sempre visível. */}
-        <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-3 flex gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-[12px] text-foreground leading-relaxed">
-            <strong>Clientes da carteira iGreen nunca recebem nada automático.</strong>{" "}
+        {/* ── Regra de ouro da carteira ── */}
+        <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 flex gap-3 relative overflow-hidden">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60" />
+          <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4.5 h-4.5 text-primary" />
+          </div>
+          <p className="text-[12.5px] text-foreground leading-relaxed">
+            <strong className="font-[Sora,ui-sans-serif] font-semibold">
+              Clientes da carteira iGreen nunca recebem nada automático.
+            </strong>{" "}
             Reaquecimento, resgate e cutucada só rodam para leads do WhatsApp e cadastros manuais.
             A esteira 30/60/90/120 dias do pós-venda só começa quando o consultor (ou admin) clica em <em>Aprovado</em>.
           </p>
         </div>
 
+        {/* ── CTA de validação pendente ── */}
         {stats.pendingValidation > 0 && (
           <button
             type="button"
             onClick={() => dispatchAgendamentosNav({ tab: "crm-clientes" })}
-            className="w-full text-left mb-5 rounded-xl border border-warning/40 bg-warning/10 p-3 flex items-start gap-3 hover:bg-warning/15 transition-colors"
+            className="group w-full text-left mb-5 rounded-2xl border border-warning/40 bg-gradient-to-r from-warning/15 via-warning/10 to-transparent p-4 flex items-center gap-4 hover:border-warning/60 hover:shadow-sm transition-all"
           >
-            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-foreground">
-                {stats.pendingValidation} {stats.pendingValidation === 1 ? "cliente aguardando" : "clientes aguardando"} sua validação
+            <div className="shrink-0 min-w-[64px] text-center">
+              <div className="font-[Sora,ui-sans-serif] font-bold text-3xl md:text-4xl text-warning leading-none tabular-nums">
+                {stats.pendingValidation}
+              </div>
+              <div className="text-[10px] uppercase tracking-wider text-warning/80 font-medium mt-1">
+                aguardando
+              </div>
+            </div>
+            <div className="flex-1 min-w-0 border-l border-warning/20 pl-4">
+              <p className="text-sm font-[Sora,ui-sans-serif] font-semibold text-foreground">
+                {stats.pendingValidation === 1
+                  ? "1 cliente aguardando sua validação"
+                  : `${stats.pendingValidation} clientes aguardando sua validação`}
               </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-[11.5px] text-muted-foreground mt-1 leading-relaxed">
                 Nenhuma mensagem sai para esses clientes até você abrir “Validar novos clientes” e confirmar aprovado ou reprovado.
               </p>
             </div>
-            <ExternalLink className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <ExternalLink className="w-4 h-4 text-warning shrink-0 transition-transform group-hover:translate-x-0.5" />
           </button>
         )}
 
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-          <div className="rounded-xl border border-border/50 bg-muted/20 p-2.5 text-center">
-            <p className="text-lg font-bold text-foreground">{stats.timelineUpcoming}</p>
-            <p className="text-[10px] text-muted-foreground font-medium">Próximos envios</p>
-          </div>
-          <div className="rounded-xl border border-warning/15 bg-warning/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-warning">{stats.pendingManual}</p>
-            <p className="text-[10px] text-warning/70 font-medium">Agenda manual</p>
-          </div>
-          <div className="rounded-xl border border-accent/20 bg-accent/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-accent">{stats.posVendaUpcoming}</p>
-            <p className="text-[10px] text-accent/80 font-medium">Pós-venda</p>
-          </div>
-          <div className="rounded-xl border border-primary/15 bg-primary/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-primary">{stats.bulkActive}</p>
-            <p className="text-[10px] text-primary/70 font-medium">Campanhas</p>
+        {/* ── KPI strip ── */}
+        <div className="mb-6 rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm overflow-hidden">
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/40">
+            {[
+              { n: stats.timelineUpcoming, label: "Próximos envios", icon: Clock, tone: "text-primary", bg: "bg-primary/10" },
+              { n: stats.pendingManual, label: "Agenda manual", icon: CalendarClock, tone: "text-warning", bg: "bg-warning/10" },
+              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-accent", bg: "bg-accent/10" },
+              { n: stats.bulkActive, label: "Campanhas", icon: Megaphone, tone: "text-info", bg: "bg-info/10" },
+            ].map((k) => {
+              const Icon = k.icon;
+              return (
+                <div key={k.label} className="flex items-center gap-3 p-4">
+                  <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-4.5 h-4.5 ${k.tone}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-[Sora,ui-sans-serif] font-bold text-2xl text-foreground leading-none tabular-nums">
+                      {k.n}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mt-1 truncate">
+                      {k.label}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AgendamentosHubTab)} className="space-y-4">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
@@ -409,138 +452,272 @@ export function AgendamentosHub({
           </TabsList>
 
           {/* ── Visão geral ── */}
-          <TabsContent value="overview" className="space-y-5 mt-0">
+          <TabsContent value="overview" className="space-y-6 mt-0">
             <section>
-              <h4 className="text-sm font-bold text-foreground mb-3">Próximos envios</h4>
-              {loading ? (
-                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
-                </div>
-              ) : timeline.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-border/60 bg-muted/20 px-4 py-6 text-center">
-                  <p className="text-sm text-muted-foreground">Nada agendado no momento</p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[360px]">
-                  <div className="space-y-2">
-                    {timeline.slice(0, 30).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setSelected(item);
-                          if (item.kind === "manual_scheduled") {
-                            setEditText(item.preview || "");
-                            // datetime-local precisa de yyyy-MM-ddTHH:mm no fuso local
-                            const d = item.at;
-                            const pad = (n: number) => String(n).padStart(2, "0");
-                            setEditAt(
-                              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
-                            );
-                          }
-                        }}
-                        className="w-full text-left rounded-xl border border-border/40 bg-secondary/10 px-4 py-3 hover:border-primary/40 hover:bg-secondary/20 transition-colors"
-                      >
-                        <div className="flex items-start gap-2">
-                          <div className="w-7 h-7 rounded-md bg-muted/50 flex items-center justify-center shrink-0 mt-0.5">
-                            {kindIcon(item.kind)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap mb-1">
-                              <span className="text-sm font-bold truncate">{item.title}</span>
-                              <Badge variant="secondary" className="text-[9px]">{item.badge}</Badge>
-                              {timelineStatusBadge(item.status)}
-                              <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para configurar</span>
-                            </div>
-                            {item.preview && (
-                              <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.preview}</p>
-                            )}
-                            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                              <Calendar className="w-3 h-3" />
-                              {formatScheduleDate(item.at)}
-                            </p>
+              {(() => {
+                const filtered = timelineFilter === "all" ? timeline : timeline.filter((i) => i.kind === timelineFilter);
+                const chips: Array<{ id: "all" | AgendamentoTimelineItem["kind"]; label: string }> = [
+                  { id: "all", label: "Todos" },
+                  { id: "manual_scheduled", label: "Manual" },
+                  { id: "pos_venda_auto", label: "Pós-venda" },
+                  { id: "bulk_campaign", label: "Campanha" },
+                  { id: "bot_followup", label: "Reaquecer" },
+                ];
+                return (
+                  <>
+                    <div className="flex items-end justify-between gap-3 flex-wrap mb-3">
+                      <div>
+                        <h4 className="font-[Sora,ui-sans-serif] font-semibold text-foreground text-base">
+                          Próximos envios
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {filtered.length === 0
+                            ? "Nada na fila com esse filtro"
+                            : `${filtered.length} ${filtered.length === 1 ? "envio programado" : "envios programados"}`}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {chips.map((c) => {
+                          const active = timelineFilter === c.id;
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setTimelineFilter(c.id)}
+                              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors font-medium ${
+                                active
+                                  ? "bg-primary/15 border-primary/40 text-primary"
+                                  : "bg-transparent border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
+                              }`}
+                            >
+                              {c.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {loading ? (
+                      <div className="flex items-center justify-center py-10 text-sm text-muted-foreground gap-2">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
+                      </div>
+                    ) : filtered.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 px-6 py-12 text-center flex flex-col items-center gap-3">
+                        <div className="w-14 h-14 rounded-2xl bg-muted/40 flex items-center justify-center">
+                          <CalendarClock className="w-7 h-7 text-muted-foreground/50" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-[Sora,ui-sans-serif] font-semibold text-foreground">
+                            Fila limpa por aqui
+                          </p>
+                          <p className="text-[11.5px] text-muted-foreground mt-1 max-w-xs mx-auto">
+                            Assim que algo for agendado — manual, pós-venda ou campanha — aparece nesta lista.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <ScrollArea className="max-h-[420px] pr-1">
+                        <div className="relative">
+                          {/* Linha vertical da timeline */}
+                          <div className="absolute left-[46px] top-2 bottom-2 w-px bg-gradient-to-b from-border/60 via-border/40 to-transparent" />
+                          <div className="space-y-1.5">
+                            {filtered.slice(0, 30).map((item) => {
+                              const d = item.at;
+                              const pad = (n: number) => String(n).padStart(2, "0");
+                              const dayLabel = format(d, "dd MMM", { locale: ptBR });
+                              const timeLabel = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                              const dotColor =
+                                item.kind === "pos_venda_auto"
+                                  ? "bg-accent"
+                                  : item.kind === "bot_followup"
+                                  ? "bg-info"
+                                  : item.kind === "bulk_campaign"
+                                  ? "bg-warning"
+                                  : "bg-primary";
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelected(item);
+                                    if (item.kind === "manual_scheduled") {
+                                      setEditText(item.preview || "");
+                                      setEditAt(
+                                        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                                      );
+                                    }
+                                  }}
+                                  className="group relative w-full text-left rounded-xl border border-transparent hover:border-border/60 hover:bg-secondary/15 px-3 py-2.5 transition-colors flex items-start gap-3"
+                                >
+                                  {/* Horário */}
+                                  <div className="w-[52px] shrink-0 text-right leading-tight pt-0.5">
+                                    <div className="font-[Sora,ui-sans-serif] font-semibold text-xs text-foreground tabular-nums">
+                                      {timeLabel}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide tabular-nums">
+                                      {dayLabel}
+                                    </div>
+                                  </div>
+                                  {/* Bolinha da timeline + ícone */}
+                                  <div className="relative z-10 shrink-0 mt-1">
+                                    <div className={`w-2.5 h-2.5 rounded-full ${dotColor} ring-4 ring-card`} />
+                                  </div>
+                                  {/* Conteúdo */}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-muted/40">
+                                        {kindIcon(item.kind)}
+                                      </span>
+                                      <span className="text-[13px] font-[Sora,ui-sans-serif] font-semibold text-foreground truncate">
+                                        {item.title}
+                                      </span>
+                                      <Badge variant="outline" className="text-[9px] border-border/60 text-muted-foreground">
+                                        {item.badge}
+                                      </Badge>
+                                      {timelineStatusBadge(item.status)}
+                                    </div>
+                                    {item.preview && (
+                                      <p className="text-[11.5px] text-muted-foreground line-clamp-2 mt-1 italic">
+                                        “{item.preview}”
+                                      </p>
+                                    )}
+                                  </div>
+                                  <span className="hidden sm:inline text-[10px] text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
+                                    configurar →
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
                         </div>
-                      </button>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
+                      </ScrollArea>
+                    )}
+                  </>
+                );
+              })()}
             </section>
 
             <section>
-              <h4 className="text-sm font-bold text-foreground mb-3">O que está ligado</h4>
+              <div className="flex items-end justify-between gap-2 mb-3">
+                <div>
+                  <h4 className="font-[Sora,ui-sans-serif] font-semibold text-foreground text-base">
+                    O que está ligado
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Cada motor que pode rodar sozinho. Clique para configurar ou ligar/desligar.
+                  </p>
+                </div>
+              </div>
               <div className="grid sm:grid-cols-2 gap-3">
                 {sistemasAgendados.map((sys) => {
                   const Icon = sys.icon;
+                  const hasCount = typeof sys.count === "number";
                   return (
-                    <div key={sys.id} className="rounded-xl border border-border/50 bg-card/50 p-4 flex flex-col gap-2">
+                    <button
+                      key={sys.id}
+                      type="button"
+                      onClick={sys.action}
+                      className="group text-left rounded-2xl border border-border/50 bg-card/60 backdrop-blur-sm p-4 flex flex-col gap-3 hover:border-primary/40 hover:bg-card/80 hover:shadow-sm transition-all"
+                    >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Icon className="w-4 h-4 text-primary shrink-0" />
-                          <span className="text-sm font-bold truncate">{sys.title}</span>
+                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+                          <Icon className="w-5 h-5 text-primary" />
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {sys.badge && (
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] ${sys.badgeOn ? "border-primary/40 text-primary" : "border-muted-foreground/30 text-muted-foreground"}`}
-                            >
-                              {sys.badge}
-                            </Badge>
-                          )}
-                          {typeof sys.count === "number" && (
-                            <Badge variant="outline" className="text-[10px]" title={sys.countLabel}>{sys.count}</Badge>
-                          )}
-                        </div>
+                        {sys.badge && (
+                          <span
+                            className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${
+                              sys.badgeOn
+                                ? "border-primary/40 bg-primary/10 text-primary"
+                                : "border-muted-foreground/30 bg-muted/30 text-muted-foreground"
+                            }`}
+                          >
+                            {sys.badge}
+                          </span>
+                        )}
                       </div>
-                      <p className="text-[11px] text-muted-foreground">{sys.desc}</p>
-                      {sys.countLabel && typeof sys.count === "number" && (
-                        <p className="text-[10px] text-muted-foreground/80 italic">{sys.count} {sys.countLabel}</p>
-                      )}
-                      <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={sys.action}>
+                      <div>
+                        <div className="flex items-baseline gap-2 mb-1">
+                          <span className="font-[Sora,ui-sans-serif] font-semibold text-sm text-foreground">
+                            {sys.title}
+                          </span>
+                          {hasCount && (
+                            <span className="font-[Sora,ui-sans-serif] font-bold text-xl text-foreground tabular-nums leading-none">
+                              {sys.count}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11.5px] text-muted-foreground leading-relaxed line-clamp-3">
+                          {sys.desc}
+                        </p>
+                        {sys.countLabel && hasCount && (
+                          <p className="text-[10px] text-muted-foreground/70 italic mt-1">
+                            {sys.count} {sys.countLabel}
+                          </p>
+                        )}
+                      </div>
+                      <span className="mt-auto text-[11px] font-medium text-primary inline-flex items-center gap-1 group-hover:gap-1.5 transition-all">
                         <Settings2 className="w-3.5 h-3.5" />
                         Abrir e configurar
-                      </Button>
-                    </div>
+                        <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                      </span>
+                    </button>
                   );
                 })}
               </div>
             </section>
 
             <section>
-              <h4 className="text-sm font-bold text-foreground mb-1">Dispara na hora (sem fila)</h4>
-              <p className="text-[11px] text-muted-foreground mb-3">
-                Estes envios não aparecem na contagem de "Próximos envios" porque não esperam horário marcado.
-                Eles aparecem no histórico depois que saem.
-              </p>
-              <div className="grid sm:grid-cols-2 gap-3">
+              <div className="mb-3">
+                <h4 className="font-[Sora,ui-sans-serif] font-semibold text-foreground text-base flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-info" />
+                  Dispara na hora
+                  <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-info/30 bg-info/10 text-info uppercase tracking-wider">
+                    sem fila
+                  </span>
+                </h4>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  Não entram em "Próximos envios" porque não esperam horário. Aparecem no histórico depois que saem.
+                </p>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-3">
                 {disparoNaHora.map((item) => {
                   const Icon = item.icon;
                   return (
-                    <div key={item.title} className="rounded-xl border border-border/40 bg-muted/15 p-4 flex flex-col gap-2">
+                    <button
+                      key={item.title}
+                      type="button"
+                      onClick={item.action}
+                      className="group text-left rounded-2xl border border-dashed border-border/50 bg-muted/10 p-4 flex flex-col gap-2 hover:border-info/40 hover:bg-info/5 transition-colors"
+                    >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Icon className="w-4 h-4 text-info shrink-0" />
-                          <span className="text-sm font-bold truncate">{item.title}</span>
+                        <div className="w-9 h-9 rounded-xl bg-info/10 flex items-center justify-center shrink-0">
+                          <Icon className="w-4.5 h-4.5 text-info" />
                         </div>
                         {item.badge && (
-                          <Badge variant="outline" className="text-[10px] border-info/40 text-info shrink-0">{item.badge}</Badge>
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border border-info/30 bg-info/5 text-info">
+                            {item.badge}
+                          </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-muted-foreground">{item.desc}</p>
+                      <div className="font-[Sora,ui-sans-serif] font-semibold text-[13px] text-foreground">
+                        {item.title}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-3">
+                        {item.desc}
+                      </p>
                       {item.action && (
-                        <Button variant="outline" size="sm" className="mt-auto gap-1.5 text-xs rounded-lg w-fit" onClick={item.action}>
-                          <Settings2 className="w-3.5 h-3.5" />
+                        <span className="mt-auto text-[11px] font-medium text-info inline-flex items-center gap-1 group-hover:gap-1.5 transition-all">
                           {item.actionLabel ?? "Abrir"}
-                        </Button>
+                          <span className="transition-transform group-hover:translate-x-0.5">→</span>
+                        </span>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
               </div>
             </section>
           </TabsContent>
+
 
           {/* ── Agenda manual ── */}
           <TabsContent value="manual" className="space-y-4 mt-0">

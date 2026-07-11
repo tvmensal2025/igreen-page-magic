@@ -1,69 +1,96 @@
-# Atendimento em Lote na Captação + Fluxo Automático
+# Redesign — Central de Agendamentos
 
-## O que muda pra você
+Objetivo: tornar a página mais bonita e fácil de entender, sem mudar comportamento nem estrutura de navegação. Cores da plataforma, sidebar e submenu de abas ficam exatamente como estão hoje.
 
-Na tela **Captação** vai ter um botão único **"Abrir atendimento para todos"** que:
+## Escopo (o que muda)
+Arquivo único: `src/components/whatsapp/AgendamentosHub.tsx` — apenas as áreas de **cabeçalho, KPIs, "Próximos envios", "O que está ligado" e "Dispara na hora"**. As 8 abas (`Visão geral`, `Agenda manual`, `Pós-venda`, `Reaquecimento`, `Campanhas`, `Rodízios`, `Automações iGreen`, `Histórico`) e o menu lateral do /admin permanecem intocados.
 
-1. Seleciona todos os leads do período que **ainda não têm atendimento aberto** (ignora quem já tem `welcome_sent_at`, quem já é cliente, quem não tem telefone).
-2. Abre o modal atual `**OpenAttendanceBatchDialog**` já com todo mundo pré-marcado.
-3. Deixa você escolher **como enviar** — agora com 4 opções (hoje só tem 3):
-  - Texto (template ou escrito na hora)
-  - Áudio de template
-  - **Gravar áudio na hora** (novo — mesmo gravador do chat)
-  - **Enviar arquivo do computador** (novo — imagem/PDF/áudio soltos, sem precisar virar template)
-4. Marca **"fechar atendimento automaticamente após X minutos"** (opcional, default desligado).
+## Fora de escopo
+- Menu lateral do /admin (mantido).
+- Estrutura/ordem das abas (mantida).
+- Lógica de dados (hooks, edge functions, toggles).
+- Paleta: continua usando `--primary`, `--warning`, `--accent`, `--info`, `--background`, `--muted` etc. Nada de hex novo.
 
-O sistema faz na fila: `start-customer-attendance` (só se ainda não iniciado) → áudio/arquivo → texto → intervalo 5s → próximo lead.
+## Tokens visuais
+- **Tipografia**: adicionar carregamento das Google Fonts `Sora` (títulos) e `Manrope` (corpo) em `index.html` e mapear no `tailwind.config.ts` como `font-display` (Sora) e `font-sans` (Manrope). Aplicar `font-display` nos títulos da Central; corpo herda Manrope global.
+- **Cores**: mantidas — só reorganiza uso (mais respiro, gradientes suaves usando `--primary/5` → `--primary/15`).
+- **Raio/sombra**: usar `rounded-2xl` nos blocos principais e sombra sutil `shadow-[0_1px_0_hsl(var(--border))]` para dar hierarquia sem peso.
 
-## Proteções (nunca abre em cima de atendimento ativo)
+## Redesign por seção
 
-- Filtro na seleção: só entra lead com `welcome_sent_at IS NULL` **E** sem `outcome` **E** sem `igreen_code`.
-- Pill visual "Já iniciado" continua bloqueando envio duplicado (edge `start-customer-attendance` já devolve `skipped: already_sent`).
-- Toggle universal `automation_toggles.start_customer_attendance` continua valendo — se estiver OFF, o botão avisa e não dispara.
+### 1. Cabeçalho
+- Título com Sora, tamanho maior (`text-xl md:text-2xl`), com um pequeno "eyebrow" acima ("Central de Agendamentos") e subtítulo em Manrope mais claro.
+- Ícone circular decorativo à esquerda com `bg-primary/10`.
+- Botão "Atualizar" ganha rótulo visível em desktop; ícone-only em mobile.
 
-## Auto-fechar atendimento (opcional)
+### 2. Avisos (regra da carteira + validação pendente)
+- Regra da carteira: converter em faixa com barra vertical de cor `--primary`, ícone destacado num quadrado `--primary/10`, texto mais respirado.
+- "N clientes aguardando validação": elevar para cartão-CTA com número gigante à esquerda (Sora 32px), descrição à direita e chevron animado no hover.
 
-Se marcar "fechar em X min":
+### 3. KPIs (4 números)
+- Trocar os 4 mini-cards por um **strip de KPIs** em grid `2×2` (mobile) / `4×1` (desktop) com:
+  - Número grande (Sora tabular),
+  - Rótulo em uppercase micro (Manrope 500),
+  - Ícone à direita com fundo tonal (`primary/warning/accent/info` — cores atuais),
+  - Divisórias verticais sutis entre eles em desktop.
+- Cada KPI vira botão que rola até a seção correspondente ("Próximos envios" → âncora da lista).
 
-- Ao terminar o disparo de cada lead, agenda um registro em `scheduled_messages` do tipo `close_attendance` com `send_at = now() + X min`.
-- Nova edge `close-attendance-scheduled` (chamada pelo cron `send-scheduled-messages` que já existe) executa `end-customer-attendance` para cada agendamento vencido — respeitando o toggle `end_customer_attendance`.
-- Se o cliente responder no meio, o gatilho `trg_cadence_on_inbound` cancela o auto-fechamento (adiciona coluna `cancelled_at` em `scheduled_messages`).
+### 4. "Próximos envios"
+- Cabeçalho da seção com contador ("30 próximos") e filtro rápido por tipo (chips: Todos · Manual · Pós-venda · Campanha · Rodízio) — só filtro visual client-side sobre `timeline`.
+- Itens da lista redesenhados:
+  - Coluna de horário fixa à esquerda ("07 out · 18:22" em duas linhas, Sora tabular),
+  - Timeline vertical com bolinha colorida por tipo,
+  - Título em Manrope 600, badge de tipo mais discreta,
+  - Preview de mensagem em itálico leve,
+  - Hover mostra o CTA "configurar →" à direita (some o texto atual "clique para configurar" no estado padrão para reduzir ruído).
+- Empty state ganha ilustração simples (ícone `CalendarCheck` grande em `text-muted-foreground/30`) + frase amigável.
 
-## Auditoria dos agendamentos (Central de Agendamentos)
+### 5. "O que está ligado"
+- Grid vira **bento leve** 2 colunas em desktop, cada card com:
+  - Ícone grande no topo esquerdo dentro de quadrado tonal,
+  - Toggle-status pill no canto superior direito (Ligado/Desligado/Configurável) usando cores atuais,
+  - Contador em Sora 24px,
+  - Descrição em Manrope,
+  - Botão "Abrir e configurar" como link com seta em vez de outline pesado.
 
-Vou verificar em `/admin/agendamentos-central` que estes jobs existem e estão listados (mesmo desligados por enquanto):
+### 6. "Dispara na hora"
+- Vira uma faixa horizontal de mini-cards com fundo `--muted/20` e borda tracejada sutil, deixando claro que é categoria diferente ("sem fila").
 
+## Diagrama estrutural
 
-| Job                                 | Cron                    | Toggle                    | Status esperado |
-| ----------------------------------- | ----------------------- | ------------------------- | --------------- |
-| `cadence-tick`                      | */5 min                 | `cadence_engine_enabled`  | ✅ já existe     |
-| `send-scheduled-messages`           | */1 min                 | —                         | verificar       |
-| `close-attendance-scheduled` (novo) | roda dentro do anterior | `end_customer_attendance` | criar           |
-| `reactivation-cron`                 | horário                 | `reactivation_enabled`    | ✅               |
-| `process-followups`                 | */10 min                | `followups_enabled`       | ✅               |
-| `facebook-retarget-sync`            | 3x/dia                  | `retarget_enabled`        | ✅               |
-| `bulk-scheduler`                    | */5 min                 | `bulk_enabled`            | ✅               |
-| `pos-venda-auto-progress`           | horário                 | `pos_venda_enabled`       | ✅               |
+```text
+┌─────────────────────────────────────────────────────┐
+│  Central de Agendamentos              [Atualizar ↻] │  ← header Sora
+│  Tudo que sai sozinho, em um lugar só               │
+├─────────────────────────────────────────────────────┤
+│  ▍ Regra de ouro da carteira iGreen                 │
+│  ▍ 713 clientes aguardando validação          [ → ] │
+├─────────────────────────────────────────────────────┤
+│  3           0            0            3            │  ← KPI strip
+│  Próximos    Manual       Pós-venda    Campanhas    │
+├─────────────────────────────────────────────────────┤
+│  [Visão geral][Manual][Pós-venda]…                  │  ← tabs (iguais)
+├─────────────────────────────────────────────────────┤
+│  Próximos envios · 30    [Todos][Manual][Campanha]  │
+│  ● 07 out 18:22 │ Áudio WhatsApp · Campanha  →      │
+│  ● 07 out 18:22 │ Áudio WhatsApp · Campanha  →      │
+│  …                                                  │
+├─────────────────────────────────────────────────────┤
+│  O que está ligado                                  │
+│  ┌────────────┐ ┌────────────┐                      │
+│  │ Manual   0 │ │ Pós-venda 0│                      │
+│  └────────────┘ └────────────┘                      │
+└─────────────────────────────────────────────────────┘
+```
 
+## Detalhes técnicos
+- `index.html`: adicionar `<link>` para `Sora:wght@500;600;700` e `Manrope:wght@400;500;600;700`.
+- `tailwind.config.ts`: `fontFamily.display = ["Sora", ...]`, `fontFamily.sans = ["Manrope", ...]`.
+- `AgendamentosHub.tsx`: refatorar apenas o JSX dessas 5 áreas; nada de mudança de estado, hooks ou props. Chips de filtro adicionam um `useState<string>("all")` local que filtra `timeline` antes do `.slice(0, 30)`.
+- Sem novos arquivos, sem novas dependências.
 
-Se algum estiver faltando na UI, adiciono na lista de `admin-cron-status`.
-
-## Arquivos que vou mexer
-
-- `src/components/captacao/CaptureLeadList.tsx` — botão "Abrir para todos do período" + contador "N prontos / M já iniciados".
-- `src/components/captacao/OpenAttendanceBatchDialog.tsx` — abas Gravar/Arquivo + toggle auto-fechar.
-- `src/components/captacao/runAttendanceBatch.ts` — aceita `recordedAudioBlob`, `uploadedFile`, `autoCloseAfterMin` e agenda o fechamento.
-- **Nova edge** `supabase/functions/close-attendance-scheduled/index.ts` — consome fila.
-- **Migration**: coluna `scheduled_messages.kind` (se ainda não tiver `close_attendance`) + `cancelled_at`.
-- `src/pages/AdminAgendamentosCentral.tsx` — inclui o novo job na lista.
-
-## Riscos e como evitar
-
-- **Duplo envio**: já protegido pelo `already_sent` + filtro na UI.
-- **Auto-fechar cliente que respondeu**: cancelado pelo trigger de inbound + verificação na edge antes de fechar.
-- **Upload de arquivo pesado**: limite 16 MB (padrão Whapi/Evolution), aviso no dialog.
-- **Automação global OFF**: nada dispara — só faz o `start-customer-attendance` que já é "ação manual do consultor" (fica fora do kill-switch de mensagens automáticas, conforme padrão atual).
-
-Confirma que posso implementar tudo isso num commit só? SIM, MAS ANALISE O CODIGO PARA NAO DUPLICAR E OCORRER ALGUM ERRO
-
-&nbsp;
+## Verificação
+- Build passa (typecheck do Vite).
+- Página `/admin` → aba Agendamentos abre sem quebrar.
+- Todas as 8 sub-abas continuam navegáveis; contadores e ações preservados.
+- Responsivo: 375px, 768px, 1280px.
