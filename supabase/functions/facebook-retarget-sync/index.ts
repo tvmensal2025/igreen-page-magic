@@ -3,6 +3,7 @@
 // para a Custom Audience configurada em facebook_connections.custom_audience_id.
 // Cron 3x/dia. Respeita opt-out via lead_consent_log (SAIR).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,11 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    if (!(await isAutomationEnabled(admin, "facebook_retarget_sync"))) {
+      await logSkipped(admin, "facebook_retarget_sync");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "facebook_retarget_sync" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
   const { data: flag } = await admin.from("app_settings").select("retarget_enabled").limit(1).maybeSingle();
   if (flag && flag.retarget_enabled === false) {

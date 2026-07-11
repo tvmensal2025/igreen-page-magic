@@ -1,14 +1,16 @@
 // start-customer-attendance
-// Botão "Iniciar atendimento" do consultor. Envia os 2 balões de abertura
-// (saudação + Atendimento iniciado + protocolo + pedido de nome) ao lead.
-// Idempotente: se `customers.welcome_sent_at` já existir, retorna 200 sem reenviar.
-//
-// Canal: Super Admin → Whapi (settings.whapi_token); demais → Evolution.
+// Botão "Iniciar atendimento" do consultor.
+// GATE: automation_toggles.start_customer_attendance precisa estar ON.
+// TEMPLATE: se o consultor personalizou 'start_attendance', envia essa msg
+//   (com {{saudacao}}, {{consultor}}, {{protocolo}}, {{nome}}) como única mensagem.
+//   Caso contrário, envia o cabeçalho padrão (greeting + protocolo + pedido de nome).
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { sendWelcomeHeader } from "../_shared/welcome-header.ts";
 import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { resolveConsultantMessage } from "../_shared/consultant-template.ts";
 
 interface Body { customerId: string; consultantId: string }
 
@@ -17,6 +19,13 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function greetingByHour(): string {
+  const h = new Date(Date.now() - 3 * 3600_000).getUTCHours(); // BRT
+  if (h < 12) return "Bom dia";
+  if (h < 18) return "Boa tarde";
+  return "Boa noite";
 }
 
 Deno.serve(async (req) => {
@@ -39,9 +48,20 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "missing_fields" }, 400);
     }
 
+    // 🚦 Kill switch universal
+    if (!(await isAutomationEnabled(supabase, "start_customer_attendance"))) {
+      await logSkipped(supabase, "start_customer_attendance", { customerId, consultantId });
+      return json({
+        ok: false,
+        error: "automation_disabled",
+        message: "Abrir chamado automático está DESLIGADO. Ative em Admin → Central de Agendamentos → Automações.",
+        fallback: true,
+      });
+    }
+
     const { data: customer, error } = await supabase
       .from("customers")
-      .select("id, consultant_id")
+      .select("id, consultant_id, name")
       .eq("id", customerId)
       .maybeSingle();
     if (error || !customer) return json({ ok: false, error: "customer_not_found" }, 404);
@@ -49,16 +69,43 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "forbidden" }, 403);
     }
 
+    const { data: consultant } = await supabase
+      .from("consultants")
+      .select("name, display_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const consultantName = (consultant as { display_name?: string; name?: string } | null)?.display_name
+      || (consultant as { name?: string } | null)?.name || "seu consultor";
+
+    // Resolve template do consultor (fallback = default do admin ou vazio → header padrão).
+    const tpl = await resolveConsultantMessage(supabase, consultantId, "start_attendance", {
+      saudacao: greetingByHour(),
+      consultor: consultantName,
+      nome: (customer as { name?: string }).name || "",
+      protocolo: "", // será preenchido pela sendWelcomeHeader após assignProtocol
+    }, "");
+
     const channelEnv = await loadChannelEnv(supabase);
+
+    // Se o texto tem {{protocolo}}, precisamos re-render após saber o protocolo.
+    // Simplificação: se template usa {{protocolo}}, deixa como marcador literal
+    // e a welcome-header o substitui? Não — melhor: primeiro peço um protocolo,
+    // depois envio. Mas welcome-header já faz assignProtocol internamente.
+    // Solução: passamos o texto AINDA com {{protocolo}} placeholder e a
+    // welcome-header substitui antes do envio (patch mínimo).
+    const customTemplate = tpl.text
+      ? { text: tpl.text, audio_url: tpl.audio_url, typing_delay_ms: tpl.typing_delay_ms }
+      : null;
+
     const result = await sendWelcomeHeader(supabase, {
       customerId,
       consultantId,
       env: channelEnv,
       superadminConsultantId: channelEnv.superadminConsultantId,
+      customTemplate,
     });
 
     if (!result.ok) {
-      // NUNCA 5xx para falha de envio — frontend trata como crash ("non-2xx").
       const soft = [
         "send_failed_greeting",
         "send_failed_protocol",
@@ -87,9 +134,9 @@ Deno.serve(async (req) => {
       channel: result.channel,
       instance: result.instance,
       skipped: result.skipped,
+      template_source: tpl.source,
     });
   } catch (e) {
-    // Mesmo em exception, 200 com ok:false — evita toast genérico "non-2xx"
     return json({ ok: false, error: "exception", message: (e as Error).message, fallback: true }, 200);
   }
 });

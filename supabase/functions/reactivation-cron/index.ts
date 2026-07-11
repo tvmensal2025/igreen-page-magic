@@ -29,6 +29,7 @@ import {
   humanJitterMs,
 } from "../_shared/anti-ban.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -174,6 +175,11 @@ async function handle(_req: Request): Promise<Response> {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+    if (!(await isAutomationEnabled(supabase, "reactivation_cron"))) {
+      await logSkipped(supabase, "reactivation_cron");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "reactivation_cron" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
   // ─── Step 1: classifica outcomes pendentes (R16) ─────────────────────────
   let outcomeRow: Record<string, number> = {};

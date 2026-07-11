@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import AutomationTogglesPanel from "@/components/admin/AutomationTogglesPanel";
 
 type Job = { jobid: number; jobname: string; schedule: string; active: boolean; command: string };
 type Run = { jobid: number; jobname: string; status: string; return_message: string | null; start_time: string; end_time: string | null };
@@ -86,12 +88,23 @@ export default function AdminAgendamentosCentral() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{jobs.length}</div><div className="text-xs text-muted-foreground">Total de jobs</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{jobs.filter(j => j.active).length}</div><div className="text-xs text-muted-foreground">Ativos</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-muted-foreground">{jobs.filter(j => !j.active).length}</div><div className="text-xs text-muted-foreground">Pausados</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className={`text-2xl font-bold ${failing ? "text-destructive" : "text-emerald-600"}`}>{failing}</div><div className="text-xs text-muted-foreground">Com falha na última execução</div></CardContent></Card>
-        </div>
+        <Tabs defaultValue="automacoes" className="w-full">
+          <TabsList>
+            <TabsTrigger value="automacoes">Automações (ligar/desligar)</TabsTrigger>
+            <TabsTrigger value="jobs">Cron jobs</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="automacoes" className="mt-4">
+            <AutomationTogglesPanel />
+          </TabsContent>
+
+          <TabsContent value="jobs" className="mt-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{jobs.length}</div><div className="text-xs text-muted-foreground">Total de jobs</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-emerald-600">{jobs.filter(j => j.active).length}</div><div className="text-xs text-muted-foreground">Ativos</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className="text-2xl font-bold text-muted-foreground">{jobs.filter(j => !j.active).length}</div><div className="text-xs text-muted-foreground">Pausados</div></CardContent></Card>
+              <Card><CardContent className="pt-6"><div className={`text-2xl font-bold ${failing ? "text-destructive" : "text-emerald-600"}`}>{failing}</div><div className="text-xs text-muted-foreground">Com falha na última execução</div></CardContent></Card>
+            </div>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
@@ -151,14 +164,16 @@ export default function AdminAgendamentosCentral() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Atalhos</CardTitle></CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" asChild><Link to="/admin/motor">Motor de Cadência</Link></Button>
-            <Button variant="outline" size="sm" asChild><Link to="/admin/reaquecimento">Reaquecimento</Link></Button>
-            <Button variant="outline" size="sm" asChild><Link to="/admin/voz">Voz / Velip</Link></Button>
-          </CardContent>
-        </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Atalhos</CardTitle></CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" asChild><Link to="/admin/motor">Motor de Cadência</Link></Button>
+                <Button variant="outline" size="sm" asChild><Link to="/admin/reaquecimento">Reaquecimento</Link></Button>
+                <Button variant="outline" size="sm" asChild><Link to="/admin/voz">Voz / Velip</Link></Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

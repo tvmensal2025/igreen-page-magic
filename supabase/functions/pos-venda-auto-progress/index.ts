@@ -17,6 +17,7 @@ import {
   type ChannelEnv,
   type SendResult,
 } from "../_shared/channel-sender.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 
 
@@ -211,6 +212,11 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if (!(await isAutomationEnabled(supabase, "pos_venda_auto_messages"))) {
+      await logSkipped(supabase, "pos_venda_auto_messages");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "pos_venda_auto_messages" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
     const { data: settingsRows } = await supabase.from("settings").select("key, value");
     const settings: Record<string, string> = {};

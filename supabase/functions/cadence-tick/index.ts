@@ -14,6 +14,7 @@ import {
   makeTTSCall, playAudioFile, makeSMS,
   toVelipBRDest, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -187,6 +188,11 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+    if (!(await isAutomationEnabled(supabase, "cadence_engine"))) {
+      await logSkipped(supabase, "cadence_engine");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "cadence_engine" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
   const env = {
     evolutionUrl: Deno.env.get("EVOLUTION_API_URL") ?? undefined,

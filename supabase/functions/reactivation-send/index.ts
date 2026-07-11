@@ -12,6 +12,7 @@ import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog, captureError } from "../_shared/audit.ts";
 import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 
 const corsHeaders = {
@@ -106,6 +107,11 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    if (!(await isAutomationEnabled(supabase, "reactivation_cron"))) {
+      await logSkipped(supabase, "reactivation_cron");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "reactivation_cron" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
 
     // ─── Auth ────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization") || "";

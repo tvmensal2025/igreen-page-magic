@@ -4,6 +4,7 @@ import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,6 +33,13 @@ Deno.serve(async (req) => {
 
     if (!(await isBotGloballyEnabled(supabase))) {
       return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!(await isAutomationEnabled(supabase, "send_scheduled_messages"))) {
+      await logSkipped(supabase, "send_scheduled_messages");
+      return new Response(JSON.stringify({ skipped: "automation_disabled" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

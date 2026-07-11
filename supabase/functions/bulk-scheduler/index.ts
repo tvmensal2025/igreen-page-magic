@@ -10,6 +10,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 
 const MAX_CAMPAIGNS_PER_TICK = 5;
@@ -154,6 +155,11 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
+    if (!(await isAutomationEnabled(supabase, "bulk_campaigns_runner"))) {
+      await logSkipped(supabase, "bulk_campaigns_runner");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bulk_campaigns_runner" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+
   const report: any[] = [];
 
   // 1) Promove campanhas agendadas cujo horário já chegou
