@@ -1533,6 +1533,7 @@ export type Database = {
           id: string
           minio_alert_threshold_pct: number
           resolver_strict_mode: boolean
+          retarget_enabled: boolean
           super_admin_instance_name: string | null
           super_admin_phone: string | null
           updated_at: string
@@ -1548,6 +1549,7 @@ export type Database = {
           id?: string
           minio_alert_threshold_pct?: number
           resolver_strict_mode?: boolean
+          retarget_enabled?: boolean
           super_admin_instance_name?: string | null
           super_admin_phone?: string | null
           updated_at?: string
@@ -1563,6 +1565,7 @@ export type Database = {
           id?: string
           minio_alert_threshold_pct?: number
           resolver_strict_mode?: boolean
+          retarget_enabled?: boolean
           super_admin_instance_name?: string | null
           super_admin_phone?: string | null
           updated_at?: string
