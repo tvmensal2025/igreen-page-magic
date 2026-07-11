@@ -349,14 +349,15 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                       id: selectedId,
                       name: customerName,
                       phone_whatsapp: phone,
+                      capture_started_at: null,
+                      created_at: new Date().toISOString(),
                       welcome_sent_at: null,
-                      last_message_at: null,
-                      unread_count: 0,
-                      capture_mode: "manual",
-                    } as CaptureBatchLead]);
+                      filled: 0,
+                    }]);
                     setBatchPeriodLabel("este cliente");
                     setBatchOpen(true);
                   }}
+
 
                   onRequestEnd={() => setEndAttendanceDialogOpen(true)}
                   compact
