@@ -263,6 +263,12 @@ export function OpenAttendanceBatchDialog({
       setImageId("__none__");
       setTextId("__none__");
       setTextBody("");
+      setRecordedAudioUrl(null);
+      setFileUrl(null);
+      setFileType(null);
+      setFileName(null);
+      setUploadingFile(false);
+      setAutoCloseMin(0);
       setRunning(false);
     }
     wasOpenRef.current = open;
