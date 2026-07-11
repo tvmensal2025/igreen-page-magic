@@ -258,8 +258,6 @@ Deno.serve(async (req) => {
       }
     }
 
-      }
-    }
 
     const insertRes = await supabase.from("cadence_action_log").insert({
       customer_id: row.customer_id,
