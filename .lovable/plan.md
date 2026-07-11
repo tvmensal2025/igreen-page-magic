@@ -1,51 +1,33 @@
-## Refinar Captação — parity com padrão WhatsApp Business
+## Alargar sidebars e adicionar botão de recolher (WhatsApp + Captação)
 
-### Diagnóstico
-1. Botão "Agendar ligação" no card é um ícone 24×24 ghost espremido ao lado da barra de progresso — some visualmente.
-2. Header do `CaptureSheet` (painel do lead aberto) NÃO tem botão Agendar — só existe no rodapé, embaixo de CADASTRAR/Encerrar. Por isso "aqui dentro não aparece".
-3. Nomes ficam estreitos porque a linha divide espaço com timestamp + badge unread + ícone telefone.
-4. "Em atendimento" e "Em espera" hoje são acordeões empilhados. Ferramentas do mercado (WhatsApp Business, Kommo, RD) usam abas no topo — o consultor troca entre visões sem rolar.
+Padrão Kommo/Watikit: lista lateral mais larga por padrão + botão dedicado para colapsar/expandir a lista quando o consultor quer mais espaço na conversa.
 
-### O que vou fazer
+### 1. WhatsApp — `src/components/whatsapp/WhatsAppTab.tsx`
+- Aumentar `--wa-side-w` inicial de **240px → 360px**.
+- `DragResizer`: `defaultPx=360`, `minPx=280`, `maxPx=560`.
+- Adicionar estado `waSideCollapsed` (persistido em `localStorage: igreen:wa-side-collapsed`).
+- Quando colapsado: sidebar recebe `md:w-0 overflow-hidden` e o `DragResizer` some.
+- Botão flutuante ("«" / "»") fixado na borda esquerda do painel de conversa (topo do header do chat), com `Tooltip` "Recolher lista" / "Expandir lista". Usar ícones `PanelLeftClose` / `PanelLeftOpen` do `lucide-react`.
 
-**1. Abas no topo da lista** — em `CaptureLeadList.tsx`, substituir os 5 acordeões por 2 abas:
-- `Em atendimento (N)` — lista plana ordenada por atividade
-- `Em espera (N •)` — mantém sub-headers Hoje / Ontem / 7d / Antigos
-- Cada aba mostra sua própria bolinha de não-lidas
-- Aba selecionada persiste em `localStorage`
+### 2. Captação — `src/components/captacao/CaptacaoPanel.tsx`
+- Aumentar `--cap-list-w` inicial de **22rem (352px) → 26rem (416px)**.
+- `DragResizer`: `defaultPx=416`, `minPx=300`, `maxPx=720`.
+- Mesmo mecanismo de colapso (`igreen:cap-list-collapsed`) com botão gêmeo posicionado no topo do `CaptureSheet` (quando um lead está aberto) ou no header da lista quando nada está selecionado.
 
-```text
-Conversas · 165
-[buscar…]
-┌─────────────┬─────────────────┐
-│ Em atend 16 │ Em espera 149 • │
-└─────────────┴─────────────────┘
-[48h 7d 30d 60d 90d Todos]
-```
-
-**2. Botão "Ligar" visível no card** — trocar ícone-only 24×24 por botão pequeno com ícone + texto "Ligar" (`h-6 px-2 text-[10px]`), reposicionado pra linha do timestamp (canto superior direito). Libera a linha da barra de progresso e fica clicável sem hover.
-
-**3. Nome com mais espaço** — remover contador numérico `filled/total` (barra já é o feedback), reduzir gaps internos, subir nome pra `text-[13px] leading-tight`.
-
-**4. Header do `CaptureSheet` ganha atalhos** — ao lado do X de fechar:
-- 📞 Ligar → abre dialog de `ScheduleCallButton`
-- ▶ Iniciar atendimento → dispara `start-customer-attendance` (só quando `!welcome_sent_at`)
-- Botões `h-6 px-2 text-[10px]` variant ghost, sem competir com o CADASTRAR do rodapé.
-
-**5. Não-lidas por aba** — dividir `unreadTotal` global em `unreadEmAtendimento` / `unreadEmEspera` pra pintar a bolinha da aba certa.
+### 3. Consistência visual
+- Ambos os botões usam o mesmo componente inline (não precisa novo arquivo): `Button variant="ghost" size="icon-sm"` com `PanelLeftClose/Open`, ancorado com `absolute` na borda interna esquerda do painel direito.
+- Quando `locked` (LayoutLock global) estiver ON, o `DragResizer` já se esconde — o botão de colapso permanece funcional (é feature de UX, não de resize).
 
 ### Fora do escopo
-- Edge functions, bot, fluxo de mensagens.
-- Persistir aba/unread no banco (segue client-side).
-- Redesenhar o feed de mensagens (`CaptureConversationFeed`).
+- Backend, edge functions, lógica de mensagens/rodízio.
+- Redesenhar cards de lead ou feed de conversa.
 
 ### Arquivos afetados
-- `src/components/captacao/CaptureLeadList.tsx`
-- `src/components/captacao/CaptureSheet.tsx`
+- `src/components/whatsapp/WhatsAppTab.tsx`
+- `src/components/captacao/CaptacaoPanel.tsx`
 
 ### Critérios de aceite
-- Header da lista tem 2 abas ("Em atendimento N" / "Em espera N") — clicar troca a view sem misturar.
-- Cada aba mostra sua própria contagem de não-lidas.
-- Botão "Ligar" visível no canto superior direito de todo card sem depender de hover.
-- Nome do lead ocupa pelo menos 60% da largura do card antes de truncar.
-- Header do painel do lead aberto (inline) tem "📞 Ligar" e (quando aplicável) "▶ Iniciar atendimento".
+- Lista do WhatsApp inicia com 360px (arrastável até 560px).
+- Lista da Captação inicia com 416px (arrastável até 720px).
+- Cada painel tem um botão que colapsa/expande a lista lateral com estado persistido entre reloads.
+- Nenhuma alteração em lógica de dados, seleção ou envio.

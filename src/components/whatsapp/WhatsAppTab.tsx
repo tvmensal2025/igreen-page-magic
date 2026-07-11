@@ -11,7 +11,7 @@ import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
 import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 
-import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal } from "lucide-react";
+import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   DropdownMenu,
@@ -66,6 +66,16 @@ const MOBILE_MORE_TABS: SubTab[] = ["templates", "agendamentos", "historico"];
 
 export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab, onSubTabConsumed }: WhatsAppTabProps) {
   const isCompactLayout = useIsLgDown();
+  const [sideCollapsed, setSideCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem("igreen:wa-side-collapsed") === "1"; } catch { return false; }
+  });
+  const toggleSide = useCallback(() => {
+    setSideCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem("igreen:wa-side-collapsed", next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
   const {
     connectionStatus,
     instanceName,
@@ -383,7 +393,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                   )}
                 </div>
               )}
-              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "240px" } as React.CSSProperties}>
+              <div data-resize-scope className="flex flex-1 min-h-0 min-w-0" style={{ "--wa-side-w": "360px" } as React.CSSProperties}>
               {/* Layout compacto (<lg): lista OU chat; desktop: lado a lado */}
               {isCompactLayout ? (
                 selectedChatJid ? (
@@ -419,17 +429,29 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 )
               ) : (
                 <>
-                  <div className="w-[var(--wa-side-w)] shrink-0">
-                    <ChatSidebar
-                      chats={chats}
-                      isLoading={chatsLoading}
-                      selectedJid={selectedChatJid}
-                      onSelectChat={handleSelectChat}
-                      consultantId={userId}
-                    />
-                  </div>
-                  <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={240} minPx={200} maxPx={360} />
-                  <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+                  {!sideCollapsed && (
+                    <>
+                      <div className="w-[var(--wa-side-w)] shrink-0">
+                        <ChatSidebar
+                          chats={chats}
+                          isLoading={chatsLoading}
+                          selectedJid={selectedChatJid}
+                          onSelectChat={handleSelectChat}
+                          consultantId={userId}
+                        />
+                      </div>
+                      <DragResizer storageKey="whatsapp-side" cssVar="wa-side-w" defaultPx={360} minPx={280} maxPx={560} />
+                    </>
+                  )}
+                  <div className="flex-1 min-w-0 min-h-0 flex flex-col relative">
+                    <button
+                      type="button"
+                      onClick={toggleSide}
+                      title={sideCollapsed ? "Expandir lista" : "Recolher lista"}
+                      className="absolute top-2 left-2 z-30 h-7 w-7 flex items-center justify-center rounded-md border border-border bg-card/90 backdrop-blur text-muted-foreground hover:text-primary hover:border-primary/50 shadow-sm"
+                    >
+                      {sideCollapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
+                    </button>
                     <ChatView
                       instanceName={instanceName}
                       chat={selectedChat}
