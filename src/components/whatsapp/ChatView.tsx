@@ -21,8 +21,6 @@ import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
-import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
-import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
@@ -105,7 +103,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [togglingBot, setTogglingBot] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
-  const [startBatchOpen, setStartBatchOpen] = useState(false);
+  
 
   const [closingCapture, setClosingCapture] = useState(false);
   const [captureClosedAt, setCaptureClosedAt] = useState<string | null>(null);
