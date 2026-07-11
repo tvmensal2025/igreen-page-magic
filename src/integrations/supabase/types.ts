@@ -10886,6 +10886,36 @@ export type Database = {
         Args: { p_instance: string; p_reason: string }
         Returns: undefined
       }
+      admin_cron_last_runs: {
+        Args: never
+        Returns: {
+          end_time: string
+          jobid: number
+          jobname: string
+          return_message: string
+          start_time: string
+          status: string
+        }[]
+      }
+      admin_cron_list: {
+        Args: never
+        Returns: {
+          active: boolean
+          command: string
+          jobid: number
+          jobname: string
+          schedule: string
+        }[]
+      }
+      admin_cron_reschedule: {
+        Args: { p_job_name: string; p_schedule: string }
+        Returns: undefined
+      }
+      admin_cron_run_now: { Args: { p_job_name: string }; Returns: string }
+      admin_cron_toggle: {
+        Args: { p_active: boolean; p_job_name: string }
+        Returns: undefined
+      }
       admin_hard_reset_phone: { Args: { _phone: string }; Returns: Json }
       admin_hard_reset_phone_trace_counts: {
         Args: { _phone: string }
