@@ -68,9 +68,18 @@ export default function AdminMotorCadencia() {
   const [stages, setStages] = useState<Record<StageKey, StageRow>>({} as any);
   const [stats, setStats] = useState<{ stage: string; count: number }[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [dueLeads, setDueLeads] = useState<any[]>([]);
+  const [slaCount, setSlaCount] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [ticking, setTicking] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15000);
+    const t2 = setInterval(() => void loadDue(), 30000);
+    return () => { clearInterval(t); clearInterval(t2); };
+  }, []);
 
   async function load() {
     setLoading(true);
