@@ -892,10 +892,35 @@ Deno.serve(async (req) => {
                     `[lead-attribution] customer=${customer.id} single_pool_fuzzy resolveu campaign=${fuzzy}`,
                   );
                 } else {
-                  console.log(
-                    `[lead-attribution] customer=${customer.id} meta_ctwa_phrase — sem campanha única identificada, indo para fila manual`,
+                  // Escada de fallback (degraus 6→7→8): DDD → atividade recente → rodízio justo.
+                  const { resolveCampaignAutoLadder } = await import(
+                    "../_shared/single-pool-campaign-resolver.ts"
                   );
+                  const ladder = await resolveCampaignAutoLadder(
+                    supabase,
+                    (customer as any).consultant_id,
+                    { phone: (customer as any).phone_whatsapp, messageText },
+                  );
+                  if (ladder) {
+                    candidateCampaignId = ladder.campaignId;
+                    rodizioMatchMethod = ladder.method;
+                    await logRodizioOutcome(supabase, {
+                      customerId: customer.id,
+                      campaignId: ladder.campaignId,
+                      method: ladder.method,
+                      outcome: "assigned",
+                      messageSample: ladder.sample,
+                    });
+                    console.log(
+                      `[lead-attribution] customer=${customer.id} ladder(${ladder.method}) resolveu campaign=${ladder.campaignId} — ${ladder.sample}`,
+                    );
+                  } else {
+                    console.log(
+                      `[lead-attribution] customer=${customer.id} meta_ctwa_phrase — nenhuma pool ativa, indo para fila manual`,
+                    );
+                  }
                 }
+
               } catch (e) {
                 console.warn("[single-pool-fuzzy] falhou:", (e as Error).message);
               }
