@@ -19,8 +19,20 @@ import { toast } from "sonner";
  * - Mostra KPI: quantos leads em cada estágio + últimas 20 ações.
  */
 
-const STAGES = ["COLD_1", "COLD_2", "COLD_3", "COLD_4"] as const;
+const STAGES = ["COLD_1", "COLD_2", "CALL_1", "SMS_1", "COLD_3", "CALL_2", "SMS_2", "COLD_4", "CALL_3"] as const;
 type StageKey = (typeof STAGES)[number];
+
+const STAGE_META: Record<StageKey, { channel: "whatsapp" | "voice" | "sms"; label: string }> = {
+  COLD_1: { channel: "whatsapp", label: "WhatsApp reaquecimento 1" },
+  COLD_2: { channel: "whatsapp", label: "WhatsApp reaquecimento 2" },
+  CALL_1: { channel: "voice",    label: "Ligação Velip 1 (TTS ou áudio)" },
+  SMS_1:  { channel: "sms",      label: "SMS de resgate 1" },
+  COLD_3: { channel: "whatsapp", label: "WhatsApp reaquecimento 3" },
+  CALL_2: { channel: "voice",    label: "Ligação Velip 2" },
+  SMS_2:  { channel: "sms",      label: "SMS de resgate 2" },
+  COLD_4: { channel: "whatsapp", label: "WhatsApp reaquecimento 4" },
+  CALL_3: { channel: "voice",    label: "Ligação Velip 3 (última chance)" },
+};
 
 interface StageRow {
   id?: string;
