@@ -1161,7 +1161,7 @@ Deno.serve(async (req) => {
             campaign_id: resolved,
           });
         } else {
-          // Escada de fallback (degraus 6→7→8): DDD/cidade → atividade recente → rodízio justo.
+          // Sem protocolo/AD ID/CTWA não atribui campanha: revisão manual.
           const { resolveCampaignAutoLadder } = await import(
             "../_shared/single-pool-campaign-resolver.ts"
           );

@@ -100,7 +100,7 @@ export async function attributeLeadSource(
       result.source_referral = referral as Record<string, unknown> | null;
       result.method = "ctwa_referral";
 
-      // Tenta mapear para campanha específica via ad_id ou campaign_id do referral
+      // Tenta mapear para campanha específica via sinais fortes do Meta.
       const adId =
         (referral as any)?.ad_id ||
         (referral as any)?.source_id ||
@@ -112,35 +112,17 @@ export async function attributeLeadSource(
         (ctxAd as any)?.source?.url ||
         null;
 
-      if (adId || fbCampaignId) {
-        let q = supabase
-          .from("facebook_campaigns")
-          .select("id")
-          .eq("consultant_id", consultantId);
-        if (fbCampaignId) {
-          q = q.eq("fb_campaign_id", String(fbCampaignId));
-        } else if (adId) {
-          // fb_ad_ids é jsonb array
-          q = q.contains("fb_ad_ids", [String(adId)]);
-        }
-        const { data: camp } = await q.maybeSingle();
-        if (camp?.id) result.source_campaign_id = camp.id;
-      }
-
-      // Safety-net: se ainda não achou campanha, tenta extrair ad_id da source_url
-      if (!result.source_campaign_id && sourceUrl) {
+      if (adId || fbCampaignId || sourceUrl || ctwaClid) {
         try {
-          const { extractAdIdFromSourceUrl } = await import("./ctwa-url-extractor.ts");
-          const urlAdId = extractAdIdFromSourceUrl(String(sourceUrl));
-          if (urlAdId) {
-            const { data: camp } = await supabase
-              .from("facebook_campaigns")
-              .select("id")
-              .eq("consultant_id", consultantId)
-              .contains("fb_ad_ids", [urlAdId])
-              .maybeSingle();
-            if ((camp as any)?.id) result.source_campaign_id = (camp as any).id;
-          }
+          const { resolveCampaignFromStrongMeta } = await import("./deterministic-campaign-resolver.ts");
+          const strong = await resolveCampaignFromStrongMeta(supabase, consultantId, {
+            referral,
+            ctwaClid,
+            sourceAdId: adId ? String(adId) : null,
+            sourceUrl: sourceUrl ? String(sourceUrl) : null,
+            fbCampaignId: fbCampaignId ? String(fbCampaignId) : null,
+          });
+          if (strong?.campaignId) result.source_campaign_id = strong.campaignId;
         } catch { /* ignore */ }
       }
 

@@ -6,10 +6,7 @@
  *
  * Prioridade:
  *   1) protocolo profissional dentro da mensagem (FB-87321, IG-87321...)
- *   2) se o consultor tem EXATAMENTE 1 pool ativa → usa essa campanha
- *      (seguro: não há ambiguidade de campanha)
- *   3) fallback por similaridade Jaccard ≥ threshold com initial_message
- *      (só se 1 match claro ou líder com margem)
+ *   2) sem protocolo/sinal forte → retorna null e vai para revisão manual.
  *
  * Se houver empate ou nenhum sinal, retorna null. Não escolhe por acaso.
  *
@@ -18,7 +15,7 @@
  *   campanha em produção. Eles escolhiam a campanha "quente" do momento e
  *   contaminaram leads de Jaraguá/Francisco para Horácio/Rodrigo.
  * - Campanha individual só é automática por sinal determinístico: AD ID,
- *   CTWA, protocolo, única pool ativa sem ambiguidade, ou fuzzy claro.
+ *   CTWA ou protocolo. Sem isso, não chuta.
  * - DDD/cidade também fica fora da escada automática: ajuda em auditoria, mas
  *   não prova campanha quando dois anúncios rodam em Minas ao mesmo tempo.
  */
@@ -91,25 +88,10 @@ export async function resolveCampaignBySinglePoolFuzzy(
     const byProtocol = await resolveCampaignByTrackingProtocol(supabase, consultantId, messageText);
     if (byProtocol) return byProtocol;
 
-    // 1 pool ativa = atribuição segura (mesmo sem similaridade de texto)
-    const sole = await resolveCampaignBySoleActivePool(supabase, consultantId);
-    if (sole) return sole;
-
-    const active = await listActivePoolCampaigns(supabase, consultantId);
-    const withMsg = active.filter((a) => a.initialMessage);
-
-    const matches = withMsg
-      .map((a) => ({
-        id: a.campaignId,
-        score: jaccardSimilarity(messageText, a.initialMessage || ""),
-      }))
-      .filter((m) => m.score >= threshold)
-      .sort((a, b) => b.score - a.score);
-
-    if (matches.length === 1) return matches[0].id;
-    if (matches.length > 1 && matches[0].score > matches[1].score + 0.15) {
-      return matches[0].id;
-    }
+    // Blindagem: não usar única pool ativa nem similaridade de texto para
+    // campanha individual. Mensagens de anúncios diferentes podem ser iguais,
+    // campanha pausada pode reaparecer no Meta e isso contaminava parceiros.
+    console.warn("[single-pool-resolver] sem protocolo determinístico; atribuição automática bloqueada");
     return null;
   } catch (e) {
     console.warn("[single-pool-resolver] falhou:", (e as Error)?.message);

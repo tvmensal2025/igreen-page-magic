@@ -972,7 +972,7 @@ Deno.serve(async (req) => {
                     `[lead-attribution] customer=${customer.id} single_pool_fuzzy resolveu campaign=${fuzzy}`,
                   );
                 } else {
-                  // Escada de fallback (degraus 6→7→8): DDD → atividade recente → rodízio justo.
+                  // Sem protocolo/AD ID/CTWA não atribui campanha: revisão manual.
                   const { resolveCampaignAutoLadder } = await import(
                     "../_shared/single-pool-campaign-resolver.ts"
                   );
@@ -996,7 +996,7 @@ Deno.serve(async (req) => {
                     );
                   } else {
                     console.log(
-                      `[lead-attribution] customer=${customer.id} meta_ctwa_phrase — nenhuma pool ativa, indo para fila manual`,
+                      `[lead-attribution] customer=${customer.id} meta_ctwa_phrase — sem sinal determinístico, indo para fila manual`,
                     );
                   }
                 }
