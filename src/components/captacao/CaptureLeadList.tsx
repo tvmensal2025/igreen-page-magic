@@ -487,56 +487,57 @@ export function CaptureLeadList({
   return (
     <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 min-h-0 overflow-hidden">
       <div className="p-2.5 border-b border-border space-y-2 shrink-0 bg-card">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <h3 className="text-sm font-semibold">Conversas</h3>
-            <span className="text-xs tabular-nums font-medium text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">
-              {filtered.length}
+        <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+          <h3 className="text-sm font-semibold">Conversas</h3>
+          <span className="text-[11px] tabular-nums font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded-full">
+            {filtered.length}
+          </span>
+          {unreadTotal > 0 && (
+            <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary px-1.5 py-0.5 rounded-full">
+              {unreadTotal}
             </span>
-            {unreadTotal > 0 && (
-              <span className="text-[10px] tabular-nums font-bold text-primary-foreground bg-primary px-1.5 py-0.5 rounded-full">
-                {unreadTotal} não lidas
-              </span>
-            )}
-            {activeToday > 0 && (
-              <span
-                className="text-[10px] tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full"
-                title="Leads com mensagem hoje"
-              >
-                {activeToday} hoje
-              </span>
-            )}
+          )}
+          {activeToday > 0 && (
+            <span
+              className="text-[10px] tabular-nums font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full"
+              title="Leads com mensagem hoje"
+            >
+              {activeToday} hoje
+            </span>
+          )}
+        </div>
 
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            {unreadTotal > 0 && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2 text-[11px] gap-1"
-                onClick={markAllRead}
-                title="Marcar todas como lidas"
-              >
-                <CheckCheck className="w-3 h-3" /> Ler tudo
-              </Button>
-            )}
+        <div className="flex items-center gap-1">
+          {unreadTotal > 0 && (
             <Button
               size="sm"
-              variant={selectMode ? "secondary" : "outline"}
-              className="h-7 px-2 text-[11px] gap-1"
-              onClick={toggleSelectMode}
+              variant="ghost"
+              className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0"
+              onClick={markAllRead}
+              title="Marcar todas como lidas"
             >
-              {selectMode ? (
-                <>
-                  <X className="w-3 h-3" /> Cancelar
-                </>
-              ) : (
-                <>
-                  <CheckSquare className="w-3 h-3" /> Selecionar
-                </>
-              )}
+              <CheckCheck className="w-3 h-3 shrink-0" />
+              <span className="truncate">Ler tudo</span>
             </Button>
-          </div>
+          )}
+          <Button
+            size="sm"
+            variant={selectMode ? "secondary" : "outline"}
+            className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0"
+            onClick={toggleSelectMode}
+          >
+            {selectMode ? (
+              <>
+                <X className="w-3 h-3 shrink-0" />
+                <span className="truncate">Cancelar</span>
+              </>
+            ) : (
+              <>
+                <CheckSquare className="w-3 h-3 shrink-0" />
+                <span className="truncate">Selecionar</span>
+              </>
+            )}
+          </Button>
         </div>
 
         <div className="flex flex-wrap gap-1">
@@ -555,6 +556,7 @@ export function CaptureLeadList({
             </button>
           ))}
         </div>
+
 
         {selectMode && (
           <div className="flex flex-wrap gap-1">
