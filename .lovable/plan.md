@@ -1,86 +1,71 @@
-## Objetivo
+## Diagnóstico — por que SANDRA foi para o Francisco em vez do Rodrigo
 
-Fechar as Partes D + E do motor "Zero Lead Perdido", colocar **toggle ON/OFF em toda função automática** (nada envia até você ligar), e dar ao consultor controle total sobre **todas as mensagens** — incluindo a de "Abrir chamado / Iniciar atendimento", que hoje está fixa no código.
+O lead **SANDRA (55 38 98447681)** entrou em `2026-07-11 08:37`, vindo do anúncio **"Aumento em cima de aumento? Ative seu benefício"**, `ad_id = 120246304492060645`.
 
-Tudo começa **desligado por padrão**. Você ativa quando quiser.
+Esse `ad_id` pertence à campanha **"Brasilândia de Minas" (Rodrigo Horácio)** — confirmado no banco (`facebook_campaigns.fb_ad_ids`). Por isso o Meta contabilizou +1 conversa no anúncio do Rodrigo.
 
----
+**Mas o sistema atribuiu para o Francisco.** Motivo:
 
-## Parte 1 — Kill switch universal (nada envia sem você mandar)
+1. O Whapi enviou o referral no caminho `**messages[0].context.ad.source.id**` e `**messages[0].context.ad.ctwa**` — formato Whapi.
+2. Nosso `_shared/lead-attribution.ts` só lê os formatos antigos: `rawMessage.referral`, `context.referred_product`, `context.referral`, `context.ad_reply`. **Nunca lê `context.ad`.**
+3. Resultado: `source_ad_id`, `source_ctwa_clid` e `source_referral` ficaram **NULL** em `customers`.
+4. Sem esses IDs, o resolver caiu na **estratégia 2 (Jaccard)** — texto "Olá! Posso ter mais informações sobre isso?" não bate com nenhum `initial_message` — e depois na **fallback rotation**, que escolheu a campanha Jaraguá (Francisco) porque tem mais atividade recente e mesmo UF (MG).
+5. `ctwa_referral_probe_log` confirma: `matched_paths: []` e `extracted: {source_ad_id: null, ctwa_clid: null}` — mas o payload cru mostra tudo lá dentro de `context.ad`.
 
-Criar uma tabela `automation_toggles` (nome, descrição, ativo, categoria, atualizado_por, atualizado_em) e semeá-la com todas as automações que hoje mandam mensagem/ligação/SMS:
+## Correção proposta
 
-- `cadence_engine` (motor de cadência)
-- `cadence_cold_1` … `cadence_cold_4` (WhatsApp de re-engajamento)
-- `cadence_call_1/2/3` (chamadas Velip)
-- `cadence_sms_1/2` (SMS Velip)
-- `facebook_retarget_sync` (Meta Custom Audience)
-- `send_scheduled_messages` (agendadas manuais)
-- `process_followups` (follow-ups IA)
-- `reactivation_cron` (reaquecimento)
-- `bulk_campaigns_runner`
-- `pos_venda_auto_messages`
-- `notify_partner_leads_batch`
-- `start_customer_attendance` (abrir chamado)
+### 1. Ensinar o parser a ler o shape do Whapi (`context.ad.*`)
 
-Cada edge function que envia algo consulta `automation_toggles` antes de disparar. Se `ativo=false` → loga em `cadence_action_log` como `skipped_toggle_off` e sai. Nenhum cron precisa ser pausado — o gate está no código.
+Em `supabase/functions/_shared/lead-attribution.ts`, na Estratégia 1, adicionar leitura de:
 
-Toggle global "PAUSAR TUDO" continua no `app_settings.bot_global_enabled` já existente (regra do projeto).
+- `rawMessage.context.ad.source.id` → `ad_id`
+- `rawMessage.context.ad.source.url` → `source_url` (também passa pelo `extractAdIdFromSourceUrl`)
+- `rawMessage.context.ad.ctwa` → `ctwa_clid`
+- `rawMessage.context.ad.source.type` → `source_type`
+- Preservar o objeto inteiro `context.ad` em `source_referral` quando for esse formato.
 
-## Parte 2 — Central de Automações (nova aba na `/admin/agendamentos-central`)
+### 2. Atualizar o probe recursivo
 
-Adicionar aba **"Automações"** ao lado da lista de crons:
+Em `supabase/functions/_shared/ctwa-referral-probe.ts`:
 
-- Grid de cards, um por toggle, agrupados por categoria (Cadência / Voz / SMS / Meta / Pós-venda / Manual).
-- Switch grande ON/OFF por card.
-- Badge "DESLIGADO" bem visível quando `false`.
-- Botão "Ligar todas" / "Desligar todas" no topo (com confirmação).
-- Última alteração: quem mudou e quando.
+- Detectar padrão contextual: quando a chave `ad` contém sub-objeto `source` com `id`, tratar esse `id` como `source_ad_id` e `url` como `source_url`.
+- Detectar chave `ctwa` (nome usado pelo Whapi, sem sufixo `_clid`) como `ctwa_clid`.
+- Assim o probe futuro registra `matched_paths` corretos e não perdemos mais leads.
 
-## Parte 3 — Editor universal de mensagens do consultor
+### 3. Reatribuir SANDRA agora
 
-Hoje cada consultor tem várias fontes de texto espalhadas. Vou centralizar em uma tela nova **`/consultor/mensagens`** que lista **todas as mensagens que o consultor pode personalizar**, com preview, variáveis suportadas (`{{nome}}`, `{{consultor}}`, `{{protocolo}}`, `{{valor_conta}}`) e botão "Restaurar padrão":
+Rodar UPDATE manual:
 
-1. **Abrir chamado / Iniciar atendimento** — hoje fixa em `start-customer-attendance/index.ts`. Vira `consultant_message_templates` com chave `start_attendance` (texto + áudio opcional + delay de digitação).
-2. **Saudação Bom dia / Boa tarde / Boa noite** — configurável.
-3. **Cadência COLD_1 a COLD_4** (WhatsApp) — já existe em `cadence_stage_config`, adicionar ao painel do consultor (hoje só admin edita).
-4. **CALL_1/2/3** (script TTS Velip) — idem.
-5. **SMS_1/2** — idem.
-6. **Pós-venda D+0/D+30/D+60/D+90/D+120** — já existe em `pos_venda_default_media`, expor edição per-consultor.
-7. **Notificação de novo lead ao parceiro** — texto fixo hoje no `notify-partner-leads-batch`, vira template editável.
+- `source_ad_id = '120246304492060645'`
+- `source_campaign_id = 'c2530550-…'` (Brasilândia)
+- `referral_partner_id = 4384080b-…` (Rodrigo Horácio)
+- `tracking_protocol` recalculado com prefixo do Rodrigo
+- Log em `campaign_match_log` com `method = 'retro_ad_id_fix'`
+- Reverter contador Francisco (`lead_count -= 1`) e incrementar Rodrigo (`lead_count += 1`)
+- **NÃO** notificar Rodrigo agora — kill switch ainda está OFF; ficar como registro. ( notifique o rodrigo sim )
 
-Regra: se o consultor não personalizou → usa o padrão do admin. Se personalizou → prevalece o dele. Nunca sobrescreve silenciosamente.
+### 4. Rodar retro-atribuição nos últimos 30 dias
 
-## Parte 4 — Configuração da mensagem "Abrir chamado" (destaque)
+Chamar `admin-recompute-lead-attribution` com `dry_run=false` — agora que o extrator lê `context.ad.source.id`, ele vai casar leads antigos que caíram no fallback errado. Retorno mostra quantos foram corrigidos e quais.
 
-Onde fica: **`/consultor/mensagens` → cartão "Abrir chamado"** e também atalho direto no botão "Iniciar atendimento" do chat (ícone de engrenagem ao lado abre o editor).
+### 5. Teste de regressão
 
-Campos:
-- Texto da saudação (com variáveis).
-- Áudio opcional (upload ou biblioteca).
-- Delay de "digitando…" antes de enviar (segundos).
-- Pré-visualização com nome fake.
-- Toggle "Usar padrão do admin" vs. "Personalizar".
+Adicionar teste unitário com o payload real da SANDRA (arquivo fixture) validando que `attributeLeadSource` retorna:
 
-## Parte 5 — Timeline por lead + alerta SLA (Parte E do plano anterior)
-
-- Nova view **"Linha do tempo"** dentro do card do lead no `/captacao` e no chat: mostra cada ação da cadência (COLD_1 enviada, CALL_1 tocou X seg, SMS_2 entregue, retarget adicionado à audiência) com status e horário.
-- Alerta visual (badge vermelho pulsante) quando ação está atrasada > 30 min no `/admin/motor` e `/admin/agendamentos-central`.
-- Som opcional (toggle por usuário) quando novo SLA violado aparece.
-
----
+- `method: "ctwa_referral"`
+- `source_campaign_id: c2530550-…`
+- `source_ctwa_clid: AfiWA0LZ…`
 
 ## Detalhes técnicos
 
-- **Migração 1**: `automation_toggles` (id, key unique, label, description, category, enabled default false, updated_by, updated_at) + `consultant_message_templates` (consultant_id, template_key, text, audio_url, typing_delay_ms, is_active, updated_at, PK composta). GRANTs para authenticated + service_role. RLS: consultor lê/escreve o próprio; admin lê tudo.
-- **Migração 2**: seed dos 12 toggles todos com `enabled=false`; seed dos templates padrão (`start_attendance`, `greeting_morning/afternoon/evening`, `partner_new_lead_notification`).
-- **Helper**: `supabase/functions/_shared/automation-gate.ts` com `isAutomationEnabled(supabase, key)` — usado por **toda** edge function de envio antes de disparar.
-- **Helper**: `supabase/functions/_shared/consultant-template.ts` com `resolveConsultantMessage(supabase, consultantId, key, vars)` que faz merge consultor → admin → hardcoded fallback, e aplica variáveis.
-- **Edge refactor**: `start-customer-attendance`, `cadence-tick`, `send-scheduled-messages`, `facebook-retarget-sync`, `notify-partner-leads-batch`, `reactivation-cron`, `process-followups` — todos passam a chamar `isAutomationEnabled(...)` no topo e `resolveConsultantMessage(...)` para pegar o texto.
-- **Frontend novo**: 
-  - `src/pages/AdminAutomationToggles.tsx` (aba nova na Central) 
-  - `src/pages/ConsultantMessages.tsx` (rota `/consultor/mensagens`) 
-  - `src/components/lead/LeadCadenceTimeline.tsx` (usada no chat e captação)
-- **Frontend editado**: `AdminAgendamentosCentral.tsx` (adicionar aba), `AdminMotorCadencia.tsx` (badges DESLIGADO), `ChatView.tsx` (engrenagem ao lado de "Iniciar atendimento"), `App.tsx` (nova rota consultor).
+**Arquivos a editar:**
 
-Nada vai enviar mensagem enquanto os toggles estiverem em `false` — que é o estado inicial de todos. Você liga um a um quando validar.
+- `supabase/functions/_shared/lead-attribution.ts` — nova leitura de `context.ad`
+- `supabase/functions/_shared/ctwa-referral-probe.ts` — reconhecer `ad.source.id` / `ad.ctwa`
+- `supabase/functions/_shared/__tests__/lead-attribution_test.ts` (novo) — fixture SANDRA
+
+**Migração:** nenhuma. Apenas UPDATE manual pontual em `customers`, `rodizio_pool_members`, `campaign_match_log` para consertar SANDRA e rodar a retro-atribuição.
+
+**Kill switch:** permanece OFF; nenhuma mensagem sai para clientes. O parceiro Rodrigo **não** será notificado agora — só passará a receber quando você ligar `notify_partner_leads_batch` no `/admin/agendamentos-central`.
+
+**Impacto no motor de cadência:** zero por enquanto (tudo desligado). Quando ligar, novos leads dessa campanha caem direto no pool do Rodrigo.
