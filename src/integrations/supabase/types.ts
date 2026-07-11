@@ -1526,6 +1526,7 @@ export type Database = {
         Row: {
           bot_engine_production_mode: boolean
           bot_global_enabled: boolean
+          cadence_engine_enabled: boolean
           devtools_blocked: boolean
           fluxo_b_persona: string | null
           id: string
@@ -1539,6 +1540,7 @@ export type Database = {
         Insert: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          cadence_engine_enabled?: boolean
           devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
@@ -1552,6 +1554,7 @@ export type Database = {
         Update: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          cadence_engine_enabled?: boolean
           devtools_blocked?: boolean
           fluxo_b_persona?: string | null
           id?: string
@@ -2272,6 +2275,45 @@ export type Database = {
           status?: string
           total?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      cadence_action_log: {
+        Row: {
+          channel: Database["public"]["Enums"]["cadence_channel"]
+          consultant_id: string | null
+          cost_cents: number
+          created_at: string
+          customer_id: string
+          detail: Json
+          id: string
+          provider_ref: string | null
+          stage: Database["public"]["Enums"]["cadence_stage"]
+          status: string
+        }
+        Insert: {
+          channel: Database["public"]["Enums"]["cadence_channel"]
+          consultant_id?: string | null
+          cost_cents?: number
+          created_at?: string
+          customer_id: string
+          detail?: Json
+          id?: string
+          provider_ref?: string | null
+          stage: Database["public"]["Enums"]["cadence_stage"]
+          status?: string
+        }
+        Update: {
+          channel?: Database["public"]["Enums"]["cadence_channel"]
+          consultant_id?: string | null
+          cost_cents?: number
+          created_at?: string
+          customer_id?: string
+          detail?: Json
+          id?: string
+          provider_ref?: string | null
+          stage?: Database["public"]["Enums"]["cadence_stage"]
+          status?: string
         }
         Relationships: []
       }
@@ -6859,6 +6901,57 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_cadence_state: {
+        Row: {
+          attempts_by_channel: Json
+          consultant_id: string | null
+          created_at: string
+          customer_id: string
+          id: string
+          last_action_at: string | null
+          last_response_at: string | null
+          next_action_at: string | null
+          paused_reason: string | null
+          paused_until: string | null
+          retarget_enabled: boolean
+          stage: Database["public"]["Enums"]["cadence_stage"]
+          temperature: string
+          updated_at: string
+        }
+        Insert: {
+          attempts_by_channel?: Json
+          consultant_id?: string | null
+          created_at?: string
+          customer_id: string
+          id?: string
+          last_action_at?: string | null
+          last_response_at?: string | null
+          next_action_at?: string | null
+          paused_reason?: string | null
+          paused_until?: string | null
+          retarget_enabled?: boolean
+          stage?: Database["public"]["Enums"]["cadence_stage"]
+          temperature?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts_by_channel?: Json
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string
+          id?: string
+          last_action_at?: string | null
+          last_response_at?: string | null
+          next_action_at?: string | null
+          paused_reason?: string | null
+          paused_until?: string | null
+          retarget_enabled?: boolean
+          stage?: Database["public"]["Enums"]["cadence_stage"]
+          temperature?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       lead_consent_log: {
         Row: {
           channel: string
@@ -11305,6 +11398,24 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user" | "super_admin"
+      cadence_channel: "whatsapp" | "voice" | "sms" | "meta_audience" | "system"
+      cadence_stage:
+        | "NEW"
+        | "GREETED"
+        | "AI_QUALIFYING"
+        | "COLD_1"
+        | "COLD_2"
+        | "CALL_1"
+        | "SMS_1"
+        | "COLD_3"
+        | "CALL_2"
+        | "SMS_2"
+        | "COLD_4"
+        | "CALL_3"
+        | "CLOSE_LOST"
+        | "RETARGET_META"
+        | "PAUSED"
+        | "WON"
       lead_temperature:
         | "hot"
         | "warm"
@@ -11466,6 +11577,25 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user", "super_admin"],
+      cadence_channel: ["whatsapp", "voice", "sms", "meta_audience", "system"],
+      cadence_stage: [
+        "NEW",
+        "GREETED",
+        "AI_QUALIFYING",
+        "COLD_1",
+        "COLD_2",
+        "CALL_1",
+        "SMS_1",
+        "COLD_3",
+        "CALL_2",
+        "SMS_2",
+        "COLD_4",
+        "CALL_3",
+        "CLOSE_LOST",
+        "RETARGET_META",
+        "PAUSED",
+        "WON",
+      ],
       lead_temperature: ["hot", "warm", "cold", "dead", "objection", "rescue"],
       product_family: [
         "energia",
