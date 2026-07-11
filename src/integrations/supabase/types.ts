@@ -3459,6 +3459,42 @@ export type Database = {
           },
         ]
       }
+      ctwa_referral_probe_log: {
+        Row: {
+          consultant_id: string | null
+          created_at: string
+          customer_id: string | null
+          extracted: Json | null
+          had_ctwa_phrase: boolean
+          id: string
+          matched_paths: string[]
+          payload: Json
+          source: string
+        }
+        Insert: {
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          extracted?: Json | null
+          had_ctwa_phrase?: boolean
+          id?: string
+          matched_paths?: string[]
+          payload: Json
+          source: string
+        }
+        Update: {
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          extracted?: Json | null
+          had_ctwa_phrase?: boolean
+          id?: string
+          matched_paths?: string[]
+          payload?: Json
+          source?: string
+        }
+        Relationships: []
+      }
       customer_auto_message_log: {
         Row: {
           consultant_id: string
