@@ -840,10 +840,40 @@ Deno.serve(async (req) => {
           //    determinísticos: AD ID e ctwa_clid; sem heurística cara).
           if (!candidateCampaignId) {
             const rawMsg: any = body?.messages?.[0] || {};
-            const referral = rawMsg.referral || rawMsg.context?.referred_product ||
+            let referral = rawMsg.referral || rawMsg.context?.referred_product ||
               rawMsg.context?.referral || rawMsg.ad_reply || null;
-            const ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
-            const sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
+            let ctwaClid = rawMsg.ctwa_clid || referral?.ctwa_clid || null;
+            let sourceAdId = referral?.source_id || referral?.sourceId || rawMsg.source_id || null;
+            let sourceUrl = referral?.source_url || referral?.sourceUrl || null;
+
+            // FALLBACK RECURSIVO: varre a árvore inteira do payload procurando
+            // qualquer campo CTWA aninhado que os paths acima possam ter perdido.
+            if (!ctwaClid && !sourceAdId && !referral) {
+              try {
+                const { findReferralPaths } = await import("../_shared/ctwa-referral-probe.ts");
+                const hit = findReferralPaths(body);
+                if (hit.matchedPaths.length > 0) {
+                  ctwaClid = ctwaClid || hit.ctwaClid;
+                  sourceAdId = sourceAdId || hit.sourceAdId;
+                  sourceUrl = sourceUrl || hit.sourceUrl;
+                  referral = referral || hit.raw;
+                }
+              } catch (e) {
+                console.warn("[lead-source whapi] recursive scan falhou:", (e as Error).message);
+              }
+            }
+
+            // Probe diagnóstico (fire-and-forget).
+            try {
+              const { logReferralProbe } = await import("../_shared/ctwa-referral-probe.ts");
+              logReferralProbe(supabase, {
+                source: "whapi",
+                payload: body,
+                messageText,
+                customerId: (customer as any).id,
+                consultantId: (customer as any).consultant_id,
+              }).catch(() => {});
+            } catch { /* ignore */ }
 
             if (sourceAdId) {
               const { data: campByAd } = await supabase
@@ -866,6 +896,42 @@ Deno.serve(async (req) => {
               if ((mapping as any)?.campaign_id) {
                 candidateCampaignId = (mapping as any).campaign_id;
                 rodizioMatchMethod = "ad_id_or_ctwa_clid";
+              }
+            }
+            // Rede de segurança: ad_id embutido em source_url.
+            if (!candidateCampaignId && sourceUrl) {
+              try {
+                const { resolveCampaignByAdIdInUrl } = await import("../_shared/ctwa-url-extractor.ts");
+                const hit = await resolveCampaignByAdIdInUrl(
+                  supabase,
+                  (customer as any).consultant_id,
+                  sourceUrl,
+                );
+                if (hit) {
+                  candidateCampaignId = hit.campaignId;
+                  rodizioMatchMethod = "ad_id_or_ctwa_clid";
+                }
+              } catch (e) {
+                console.warn("[lead-source whapi] ad_id-in-url falhou:", (e as Error).message);
+              }
+            }
+
+            // Persistir referral bruto quando algum sinal veio, mesmo sem match.
+            if ((referral || ctwaClid || sourceAdId || sourceUrl) && (customer as any).id) {
+              try {
+                const patch: Record<string, any> = { lead_source: "meta_ads" };
+                if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
+                if (sourceAdId) patch.source_ad_id = String(sourceAdId);
+                patch.source_referral = {
+                  source_id: sourceAdId,
+                  ctwa_clid: ctwaClid,
+                  source_url: sourceUrl,
+                  raw: referral,
+                };
+                await supabase.from("customers").update(patch).eq("id", (customer as any).id);
+                Object.assign(customer as any, patch);
+              } catch (e) {
+                console.warn("[lead-source whapi] persist referral falhou:", (e as Error).message);
               }
             }
           }
