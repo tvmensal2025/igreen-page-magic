@@ -33,8 +33,8 @@ Deno.serve(async (req) => {
 
   const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-  const { data: flag } = await admin.from("app_settings").select("value").eq("key", "retarget_enabled").maybeSingle();
-  if (flag && flag.value === false) {
+  const { data: flag } = await admin.from("app_settings").select("retarget_enabled").limit(1).maybeSingle();
+  if (flag && flag.retarget_enabled === false) {
     return new Response(JSON.stringify({ ok: true, skipped: "disabled" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 
