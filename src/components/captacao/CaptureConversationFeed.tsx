@@ -372,6 +372,30 @@ function MessageBody({ row }: { row: ConvRow }) {
     );
   }
 
+  const downloadName = (() => {
+    const ext = type === "audio" ? "ogg" : type === "video" ? "mp4" : type === "image" || type === "sticker" ? "jpg" : "bin";
+    const stamp = new Date(row.created_at || Date.now()).toISOString().replace(/[:.]/g, "-");
+    return `${type}-${stamp}.${ext}`;
+  })();
+
+  const handleDownload = useCallback(async () => {
+    if (!dataUrl) return;
+    try {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      window.open(dataUrl, "_blank");
+    }
+  }, [dataUrl, downloadName]);
+
   return (
     <div className="space-y-1.5">
       {/* Mídia carregada */}
@@ -385,19 +409,35 @@ function MessageBody({ row }: { row: ConvRow }) {
         </a>
       )}
       {dataUrl && type === "audio" && (
-        <audio controls preload="metadata" src={dataUrl} className="w-full h-9" />
+        <audio
+          controls
+          preload="metadata"
+          src={dataUrl}
+          className="w-full h-9"
+          controlsList="nofullscreen noremoteplayback"
+        />
       )}
       {dataUrl && type === "video" && (
         <video controls preload="metadata" src={dataUrl} className="rounded-md max-h-64 w-auto border border-white/10" />
       )}
       {dataUrl && type === "document" && (
-        <a
-          href={dataUrl}
-          download
+        <button
+          type="button"
+          onClick={handleDownload}
           className="inline-flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-md px-2 py-1"
         >
           <Download className="w-3.5 h-3.5" /> Baixar documento
-        </a>
+        </button>
+      )}
+      {dataUrl && (type === "audio" || type === "video" || type === "image" || type === "sticker") && (
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="inline-flex items-center gap-1.5 text-[11px] bg-white/10 hover:bg-white/20 rounded-md px-2 py-1 transition"
+          title={`Baixar ${MEDIA_LABEL[type]}`}
+        >
+          <Download className="w-3 h-3" /> Baixar {MEDIA_LABEL[type]?.toLowerCase()}
+        </button>
       )}
 
       {/* Fallback / botão de abrir para tipos não pré-carregados */}
