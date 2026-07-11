@@ -10,10 +10,11 @@ import {
   X,
   ChevronDown,
   ChevronRight,
-  
+  PanelLeftClose,
   Clock,
   CheckCheck,
 } from "lucide-react";
+
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
@@ -41,7 +42,9 @@ interface Props {
   gameOn?: boolean;
   whatsappConnected?: boolean;
   onOpenBatch?: (leads: CaptureBatchLead[], periodLabel: string) => void;
+  onCollapseList?: () => void;
 }
+
 
 const PERIOD_OPTIONS: { key: CapturePeriodKey; label: string; ms: number | null }[] = [
   { key: "48h", label: "48h", ms: 48 * 60 * 60 * 1000 },
@@ -139,7 +142,9 @@ export function CaptureLeadList({
   onSelect,
   whatsappConnected = false,
   onOpenBatch,
+  onCollapseList,
 }: Props) {
+
   const prompt = usePrompt();
   const [leads, setLeads] = useState<CaptureBatchLead[]>([]);
   const [q, setQ] = useState("");
@@ -505,7 +510,19 @@ export function CaptureLeadList({
               {activeToday} hoje
             </span>
           )}
+          {onCollapseList && (
+            <button
+              type="button"
+              onClick={onCollapseList}
+              title="Recolher lista"
+              aria-label="Recolher lista"
+              className="ml-auto hidden md:inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50"
+            >
+              <PanelLeftClose className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
+
 
         <div className="flex items-center gap-1">
           {unreadTotal > 0 && (

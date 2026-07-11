@@ -276,12 +276,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
               selectedId={selectedId}
               onSelect={setSelectedId}
               whatsappConnected={connected}
+              onCollapseList={toggleList}
               onOpenBatch={(leads, periodLabel) => {
                 setBatchLeads(leads);
                 setBatchPeriodLabel(periodLabel);
                 setBatchOpen(true);
               }}
             />
+
           </div>
         )}
         {!listCollapsed && (
