@@ -4,6 +4,7 @@ import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
