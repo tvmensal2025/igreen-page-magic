@@ -302,7 +302,7 @@ export function OpenAttendanceBatchDialog({
           phone_whatsapp: l.phone_whatsapp,
           welcome_sent_at: l.welcome_sent_at,
         })),
-        startAttendance,
+        startAttendance: startAttendance && !customText,
         audioUrl,
         imageUrl,
         customText,
