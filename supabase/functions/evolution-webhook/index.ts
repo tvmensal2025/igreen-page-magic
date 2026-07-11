@@ -849,6 +849,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── 5.4) Reconciliação de sinal forte do Meta em mensagem subsequente ─
+    // Se uma mensagem POSTERIOR trouxer ad_id/ctwa_clid apontando para uma
+    // campanha diferente da persistida, sobrescreve. Evita lead ficar preso
+    // na campanha errada escolhida por fallback (bug Jaraguá → Horácio).
+    if (customer) {
+      try {
+        const rawMsgForReconcile: any = body?.data?.message || {};
+        await reconcileStrongMetaCampaign(supabase, customer, rawMsgForReconcile, body);
+      } catch (e) {
+        console.warn("[reconcile-strong-meta evolution] falhou:", (e as Error).message);
+      }
+    }
+
     // ─── 5.5) Auto-tag lead source (Meta Ads / CTWA) ─────────────────────
     // Detecta a origem do lead na PRIMEIRA mensagem (source_campaign_id ainda null).
     // Ordem de prioridade (da mais precisa para a mais fraca), confirmada pela
