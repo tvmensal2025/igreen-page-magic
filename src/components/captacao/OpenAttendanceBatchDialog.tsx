@@ -302,11 +302,12 @@ export function OpenAttendanceBatchDialog({
           phone_whatsapp: l.phone_whatsapp,
           welcome_sent_at: l.welcome_sent_at,
         })),
-        startAttendance: startAttendance && !customText,
+        startAttendance,
         audioUrl,
         imageUrl,
         customText,
         delayMs: 5000,
+
 
         signal: ac.signal,
         onProgress: (batchResults) => {
