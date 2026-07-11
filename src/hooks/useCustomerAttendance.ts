@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { AttendanceUiState } from "@/components/whatsapp/AttendanceStatusBar";
@@ -12,6 +12,11 @@ export function useCustomerAttendance(
   consultantId: string,
 ) {
   const { toast } = useToast();
+  const mountIdRef = useRef(
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   const [welcomeSentAt, setWelcomeSentAt] = useState<string | null>(null);
   const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
   const [attendanceRatingRequestedAt, setAttendanceRatingRequestedAt] = useState<string | null>(null);
@@ -75,45 +80,56 @@ export function useCustomerAttendance(
 
   useEffect(() => {
     if (!customerId) return;
-    // Nome único por mount evita erro "cannot add postgres_changes callbacks
-    // after subscribe()" quando StrictMode/remount reaproveita um channel já
-    // subscribed com o mesmo nome.
-    const channel = supabase.channel(
-      `attendance-${customerId}-${Math.random().toString(36).slice(2, 10)}`,
-    );
-    channel.on(
-      "postgres_changes",
-      {
-        event: "UPDATE",
-        schema: "public",
-        table: "customers",
-        filter: `id=eq.${customerId}`,
-      },
-      (payload) => {
-        const row = payload.new as Record<string, unknown> | null;
-        if (!row) return;
-        if ("welcome_sent_at" in row) {
-          setWelcomeSentAt((row.welcome_sent_at as string | null) ?? null);
+    const topic = `attendance:${customerId}:${mountIdRef.current}:${Date.now()}:${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    try {
+      channel = supabase
+        .channel(topic)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "customers",
+            filter: `id=eq.${customerId}`,
+          },
+          (payload) => {
+            const row = payload.new as Record<string, unknown> | null;
+            if (!row) return;
+            if ("welcome_sent_at" in row) {
+              setWelcomeSentAt((row.welcome_sent_at as string | null) ?? null);
+            }
+            if ("tracking_protocol" in row) {
+              setTrackingProtocol((row.tracking_protocol as string | null) ?? null);
+            }
+            if ("attendance_rating_requested_at" in row) {
+              setAttendanceRatingRequestedAt(
+                (row.attendance_rating_requested_at as string | null) ?? null,
+              );
+            }
+            if ("attendance_rating" in row) {
+              const r = row.attendance_rating;
+              setAttendanceRating(typeof r === "number" ? r : null);
+            }
+          },
+        );
+      channel.subscribe((status) => {
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          void refresh();
         }
-        if ("tracking_protocol" in row) {
-          setTrackingProtocol((row.tracking_protocol as string | null) ?? null);
-        }
-        if ("attendance_rating_requested_at" in row) {
-          setAttendanceRatingRequestedAt(
-            (row.attendance_rating_requested_at as string | null) ?? null,
-          );
-        }
-        if ("attendance_rating" in row) {
-          const r = row.attendance_rating;
-          setAttendanceRating(typeof r === "number" ? r : null);
-        }
-      },
-    );
-    channel.subscribe();
+      });
+    } catch (error) {
+      // Realtime é melhoria de UX; nunca pode derrubar a tela do WhatsApp.
+      console.warn("[attendance] realtime subscription skipped", error);
+    }
+
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
-  }, [customerId]);
+  }, [customerId, refresh]);
 
   const startAttendance = useCallback(async () => {
     if (!customerId || starting) return;
