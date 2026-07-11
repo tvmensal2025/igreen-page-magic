@@ -1,89 +1,100 @@
-## Descoberta
 
-Investiguei o código e os dados. A resposta unânime: **já existe no código o caminho 100% determinístico para diferenciar as campanhas** — mas ele está morto na prática.
+# Motor "Zero Lead Perdido" — Automação Total 2026
 
-### O que o código já sabe fazer (sem tocar em texto de anúncio)
+Objetivo: nenhum lead sai do funil sem, no mínimo, 5 toques em canais diferentes dentro de 30 dias, e mesmo depois disso continua sendo trabalhado por retargeting Meta indefinidamente.
 
-O Meta envia junto de cada mensagem CTWA um objeto `referral` com identificadores únicos por anúncio:
+## Janela de operação (regra global)
 
-- `referral.source_id` → o **AD ID do Meta** (ex.: `120246304492060645` = Brasilândia; `120246248099900645` etc. = Jaraguá)
-- `referral.ctwa_clid` → **click ID único por clique**
-- `referral.source_url` → URL do anúncio (contém o ad_id também)
+- **WhatsApp / IA**: 24/7 (respondendo). Follow-up ativo respeita janela.
+- **Ligação Velip + SMS + WhatsApp de reengajamento ativo**: seg–sex 08:00–20:00 · sáb 08:00–14:00 · dom off.
+- Fora da janela, tudo agenda para o próximo slot útil (helper único `nextBusinessSlot()` compartilhado por todos os edges).
 
-E o banco já está pronto:
+## Máquina de estados do lead (nova tabela `lead_cadence_state`)
 
-- `facebook_campaigns.fb_ad_ids` (JSONB) — populado corretamente:
-  - Jaraguá: `[120246248099900645, 120246248100490645, 120246248100890645]`
-  - Brasilândia: `[120246304492060645]`
-- `facebook_campaigns.tracking_protocol` — populado
-- `customers.source_ad_id`, `source_ctwa_clid`, `source_referral` — colunas existem
-- Tabela `ctwa_clid_mapping` — pronta pra memoizar clid→campanha
+Cada lead ativo tem 1 linha com: `customer_id`, `stage`, `next_action_at`, `attempts_by_channel jsonb`, `last_response_at`, `temperature`, `paused_reason`.
 
-Os webhooks (`evolution-webhook`, `whapi-webhook`) até tentam ler esses campos. **Mas os dados não estão chegando.**
+Stages (mudam por eventos do webhook / cron / consultor):
 
-### A prova do problema
+```text
+NEW → GREETED → AI_QUALIFYING → COLD_1 (24h) → COLD_2 (48h)
+   → CALL_1 (72h Velip TTS+áudio) → SMS_1 (fallback se NA)
+   → COLD_3 (5d) → CALL_2 (7d áudio humanizado) → SMS_2
+   → COLD_4 (14d) → CALL_3 (21d) → CLOSE_LOST (30d)
+                                     ↓
+                              RETARGET_META (indefinido, custom audience)
+```
 
-Consulta em `customers` dos últimos 30 dias (1.188 leads):
+Qualquer resposta do lead → `stage = AI_QUALIFYING`, zera contadores, pausa cadência automática por 24h.
+Takeover humano → pausa toda cadência automática enquanto `bot_paused = true`.
 
-| Campo | Preenchidos |
-|---|---|
-| `source_ad_id` | **0** |
-| `source_ctwa_clid` | **0** |
-| `source_referral` | **0** |
-| `source_campaign_id` | 2 (só via match de texto) |
+## Fase 1 — Base (semana 1)
 
-Zero. Nenhum lead em 30 dias teve o referral do Meta capturado. Por isso caímos sempre no Jaccard/rodízio/revisão manual — a estrada asfaltada existe, mas ninguém passa por ela.
+1. **Migration**: `lead_cadence_state` + `cadence_action_log` (auditoria de todo disparo). RLS por consultor.
+2. **Helper `_shared/business-window.ts`**: `isBusinessHour(now)`, `nextBusinessSlot(now)` — usado por scheduled-messages, voice-dialer-cron, reactivation, retargeting.
+3. **Edge `cadence-tick`** (cron a cada 5 min): varre `lead_cadence_state` onde `next_action_at <= now()` e `stage != CLOSED`, dispatch por stage.
+4. **Trigger de resposta**: no `evolution-webhook` e `whapi-webhook`, ao receber inbound → atualiza `last_response_at`, reseta stage para `AI_QUALIFYING`.
 
-## Hipóteses do porquê o referral não chega
+## Fase 2 — WhatsApp reengajamento (semana 1-2)
 
-1. **Path errado de parse na Evolution** — hoje lê `contextInfo.externalAdReply.sourceId`. Versões recentes do Baileys colocam em `message.extendedTextMessage.contextInfo.externalAdReply` ou em `messages[0].message.viewOnceMessage.message.*.contextInfo.externalAdReply`. Se o payload real vier aninhado diferente, o parse retorna `undefined`.
-2. **Whapi shape diferente** — hoje lê `rawMsg.referral || rawMsg.context.referral || rawMsg.ad_reply`. Whapi documenta `context.referred_product` e às vezes `referral` só no primeiro evento (`messages.post`), não em eventos subsequentes do mesmo chat.
-3. **Referral só vem na PRIMEIRA mensagem do chat** — se o buffer/dedupe agrupa mensagens e a "primeira" processada não é a que contém o referral, perdemos.
-4. **Nunca logamos o payload cru** quando o parse falha, então não sabemos qual das três é.
+5. **3 templates de reaquecimento** editáveis por consultor (áudio + texto), stages COLD_1/2/3/4, com merge de `{{nome}}`, `{{valor_conta}}`, `{{cidade}}`, `{{protocolo}}`.
+6. **Dispatcher** dentro de `cadence-tick` respeitando anti-ban existente (`checkSendQuota`, `humanJitterMs`, `simulateTyping`).
 
-## Plano
+## Fase 3 — Ligação Velip (semana 2)
 
-### Fase 1 — Diagnóstico (1 arquivo, log estruturado, sem mudar comportamento)
+7. **CALL_1** dispara `voice-dialer-enqueue` single com áudio TTS "Ainda quer economizar? Aperte 1 pra falar com {{consultor}}".
+8. **CALL_2** áudio pré-gravado do consultor (do `voice_name_clips` + `audio_library`).
+9. **CALL_3** última chance, TTS curto + CTA.
+10. Callback do `voice-dialer-webhook`:
+    - `OK`/atendida com DTMF 1 → notifica consultor imediatamente + pausa cadência.
+    - `NA`/não atendida → aciona SMS_1 automático (já existente `sms_on_no_answer_text`).
+    - `blocked/DND` → auto-DNC (já existente) + move para CLOSE_LOST antecipado.
 
-Adicionar em `_shared/ctwa-referral-probe.ts` uma função `probeReferralShape(rawPayload, source)` que:
+## Fase 4 — SMS Velip fallback (semana 2)
 
-- Percorre recursivamente o payload procurando por qualquer chave que contenha `referral`, `externalAd`, `ctwa`, `source_id`, `sourceId`, `ad_reply`, `ctwaClid`.
-- Se achar → grava em nova tabela `ctwa_referral_probe_log` (payload JSONB, source text, matched_paths text[], created_at) para inspeção.
-- Se NÃO achar mas o texto casa com `matchesMetaCtwaPhrase()` (frase-âncora do Meta) → também grava, porque isso confirma que era CTWA e perdemos o referral.
+11. SMS_1 e SMS_2 mensagens curtas com link `wa.me/<consultor>?text=Protocolo%20{{protocolo}}` — mantém rastreio.
+12. Registrar em `voice_sms_log` já existente + `cadence_action_log`.
 
-Chamar essa função em 3 pontos: início do evolution-webhook, início do whapi-webhook, dentro do buffer antes do dedupe. Rodar por 24-48h e olhar os payloads reais.
+## Fase 5 — Retargeting Meta automático (semana 3)
 
-### Fase 2 — Corrigir o parse com base no que o log mostrar
+13. **Custom Audience "Leads Frios 30d"** por consultor: cron diário sobe hash de telefone/email dos leads em `CLOSE_LOST` para Facebook via `POST /{audience_id}/users` (Marketing API já autenticada via `facebook_connections`).
+14. **Custom Audience "Quentes sem fechar"**: leads com ≥3 respostas mas sem venda → audience separada para lookalike.
+15. **Novo edge `facebook-retarget-sync`** roda 3x ao dia, adiciona/remove usuários conforme mudança de stage.
+16. Consultor pode ligar/desligar retargeting por lead (opt-out LGPD respeitado via `lead_consent_log`).
 
-Depois que a probe revelar o shape real, ajustar os parsers em:
+## Fase 6 — Dashboard "Zero Lead Perdido" (semana 3)
 
-- `supabase/functions/evolution-webhook/index.ts` (linhas ~861-894): estender a busca de `externalAdReply` para os caminhos aninhados que o log mostrar. Adicionar fallback recursivo: se não achar no caminho direto, varre a árvore procurando o primeiro `externalAdReply`/`sourceId`.
-- `supabase/functions/whapi-webhook/index.ts` (linhas ~843-846): idem, incluindo `context.referred_product`, `ad_reply.source_id`, `referrer.ad_id`.
+17. Nova aba **Admin → Motor**:
+    - KPI: leads em cada stage · próxima ação em X min · SLA violado (leads que passaram do `next_action_at` há >30min).
+    - Timeline por lead (todas ações de todos canais).
+    - Botão manual "Forçar próxima ação agora" e "Pausar cadência 24h".
+    - Alerta sonoro + push web quando SLA violado.
+18. Widget no perfil do cliente mostra próxima ação prevista (canal + hora) e histórico completo.
 
-### Fase 3 — Extrair ad_id da `source_url` como rede de segurança
+## Fase 7 — Inteligência (semana 4)
 
-Mesmo quando `source_id` não vem, o Meta frequentemente manda `source_url` tipo `https://fb.me/xxxxx` ou `https://l.facebook.com/l.php?u=...&ad_id=120246304492060645`. Adicionar em `_shared/campaign-tracking.ts` a função `extractAdIdFromSourceUrl(url)` que faz regex nos padrões conhecidos (`ad_id=`, `/ads/`, `fbclid=` com decode). Se achar, consulta `facebook_campaigns` via `.contains("fb_ad_ids", [id])` — match determinístico.
+19. **Temperatura dinâmica**: recalcula quente/morno/frio a cada resposta usando Gemini (já disponível), muda o ritmo (quente = intervalo menor entre toques).
+20. **A/B automático** de áudio vs texto no COLD_1 (já temos infra `bot_message_ab_results`).
+21. **Best-time-to-call**: usa heatmap 24h já existente por consultor para escolher hora ideal do CALL_1.
 
-### Fase 4 — Persistir SEMPRE o payload cru do primeiro evento
+## Detalhes técnicos
 
-Independente de resolver a campanha, gravar `source_referral = payload_bruto` na PRIMEIRA mensagem de todo `customer` novo. Hoje só grava quando conseguimos parsear campos específicos. Assim, mesmo que o parse falhe agora, temos como voltar depois e reprocessar.
+- **Idempotência**: `cadence_action_log` tem UNIQUE(`customer_id`, `stage`, `channel`) — reprocessos não duplicam.
+- **Bloqueios**: reaproveita `customer_processing_lock` e `try_acquire_rate_limit` já existentes.
+- **Quiet hours**: helper único `_shared/business-window.ts` substitui os checks espalhados.
+- **Consentimento LGPD**: cadência só roda se `lead_consent_log` mais recente = concedido; opt-out via palavra "SAIR" no WhatsApp/SMS pausa tudo e adiciona a `voice_dnc_list` + retira da custom audience.
+- **Custos**: cada ação registra custo estimado em `cadence_action_log.cost_cents` → dashboard soma por consultor/mês.
+- **Rollback**: feature flag `app_settings.cadence_engine_enabled` — desliga tudo em 1 clique.
 
-### Fase 5 — Nova coluna `customers.source_ad_id` indexada + reprocesso
+## Entregáveis por fase
 
-Rodar um job pontual (edge function `admin-recompute-lead-attribution`) que:
+| Fase | Semana | O que entra em produção |
+|------|--------|------------------------|
+| 1 | 1 | Máquina de estados + tick cron + helper janela |
+| 2 | 1-2 | Reaquecimento WhatsApp 4 toques |
+| 3 | 2 | 3 chamadas Velip programadas |
+| 4 | 2 | SMS fallback automático |
+| 5 | 3 | Retargeting Meta sincronizado |
+| 6 | 3 | Dashboard + SLA alerts |
+| 7 | 4 | IA de temperatura + best-time + A/B |
 
-- Lê `customers` dos últimos 30 dias com `source_referral IS NOT NULL` e `source_campaign_id IS NULL`.
-- Re-aplica o parser corrigido + `extractAdIdFromSourceUrl`.
-- Atribui `source_campaign_id` retroativamente e loga em `campaign_match_log` com `method='retro_referral'`.
-
-### Fase 6 — Escada só é usada quando nenhum sinal Meta veio
-
-Depois que a Fase 2 estiver funcionando, o degrau 3 (protocolo) + os novos degraus 1-3 (source_id, ctwa_clid, ad_id da URL) devem resolver >95% dos leads reais de CTWA. A escada atual (Jaccard, DDD, atividade, rodízio) só roda como último recurso — sem risco de misturar pools, porque só é acionada quando **de fato** não veio nenhum sinal do Meta.
-
-## O que muda em relação ao plano anterior
-
-O plano anterior (fingerprint da frase-âncora) tratava o sintoma. Este trata a **causa**: o Meta já manda a identificação única por anúncio, o banco já está preparado, os parsers já existem — só não estão capturando. Consertar isso resolve **todas** as futuras campanhas do Rafael (e de qualquer consultor) automaticamente, sem depender de escrever textos diferentes nos anúncios.
-
-## Risco
-
-Zero risco de regressão nas Fases 1, 3, 4, 5 (só somam dados). Fase 2 mexe no parse existente — mas o parse atual retorna `undefined` para 100% dos leads, então qualquer coisa melhor do que isso é ganho puro.
+Pronto para começar pela Fase 1 (máquina de estados + tick). Posso abrir a migration assim que você aprovar.
