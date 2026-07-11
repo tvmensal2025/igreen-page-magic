@@ -98,7 +98,7 @@ export default function AdminMotorCadencia() {
   async function saveAll() {
     setSaving(true);
     try {
-      const { error: e1 } = await supabase.from("app_settings").update({ cadence_window: window }).eq("id", "global");
+      const { error: e1 } = await supabase.from("app_settings").update({ cadence_window: window as any }).eq("id", "global");
       if (e1) throw e1;
 
       for (const s of STAGES) {
