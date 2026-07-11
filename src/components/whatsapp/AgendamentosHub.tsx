@@ -314,19 +314,28 @@ export function AgendamentosHub({
   ];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10">
-      <div className="absolute -top-20 -right-20 w-40 h-40 bg-info/3 rounded-full blur-3xl" />
+    <div
+      className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-card via-card to-info/10 font-[Manrope,ui-sans-serif,system-ui,sans-serif]"
+    >
+      <div className="absolute -top-20 -right-20 w-56 h-56 bg-info/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-24 -left-24 w-56 h-56 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative p-5 sm:p-7">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
-          <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-info/20 to-info/10 flex items-center justify-center border border-info/20 shrink-0">
-              <CalendarClock className="w-5 h-5 text-info" />
+        {/* ── Cabeçalho ── */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-info/25 to-info/5 flex items-center justify-center border border-info/20 shrink-0 shadow-sm">
+              <CalendarClock className="w-6 h-6 text-info" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-heading font-bold text-foreground text-lg">Central de Agendamentos</h3>
-              <p className="text-xs text-muted-foreground">
-                Tudo que vai sair sozinho da sua conta — em um lugar só, em português claro.
+              <p className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80 font-[Sora,ui-sans-serif] font-medium">
+                Painel iGreen
+              </p>
+              <h3 className="font-[Sora,ui-sans-serif,system-ui,sans-serif] font-bold text-foreground text-xl md:text-2xl leading-tight">
+                Central de Agendamentos
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Tudo que sai sozinho da sua conta — em um só lugar, em português claro.
               </p>
             </div>
           </div>
@@ -343,60 +352,92 @@ export function AgendamentosHub({
                 Abrir no menu
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="h-9 w-9" onClick={refresh} title="Atualizar">
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 rounded-xl text-xs"
+              onClick={refresh}
+              title="Atualizar"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Atualizar</span>
             </Button>
           </div>
         </div>
 
-        {/* Aviso fixo: regra de ouro da carteira. Sempre visível. */}
-        <div className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-3 flex gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-          <p className="text-[12px] text-foreground leading-relaxed">
-            <strong>Clientes da carteira iGreen nunca recebem nada automático.</strong>{" "}
+        {/* ── Regra de ouro da carteira ── */}
+        <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 flex gap-3 relative overflow-hidden">
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary/60" />
+          <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-4.5 h-4.5 text-primary" />
+          </div>
+          <p className="text-[12.5px] text-foreground leading-relaxed">
+            <strong className="font-[Sora,ui-sans-serif] font-semibold">
+              Clientes da carteira iGreen nunca recebem nada automático.
+            </strong>{" "}
             Reaquecimento, resgate e cutucada só rodam para leads do WhatsApp e cadastros manuais.
             A esteira 30/60/90/120 dias do pós-venda só começa quando o consultor (ou admin) clica em <em>Aprovado</em>.
           </p>
         </div>
 
+        {/* ── CTA de validação pendente ── */}
         {stats.pendingValidation > 0 && (
           <button
             type="button"
             onClick={() => dispatchAgendamentosNav({ tab: "crm-clientes" })}
-            className="w-full text-left mb-5 rounded-xl border border-warning/40 bg-warning/10 p-3 flex items-start gap-3 hover:bg-warning/15 transition-colors"
+            className="group w-full text-left mb-5 rounded-2xl border border-warning/40 bg-gradient-to-r from-warning/15 via-warning/10 to-transparent p-4 flex items-center gap-4 hover:border-warning/60 hover:shadow-sm transition-all"
           >
-            <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-foreground">
-                {stats.pendingValidation} {stats.pendingValidation === 1 ? "cliente aguardando" : "clientes aguardando"} sua validação
+            <div className="shrink-0 min-w-[64px] text-center">
+              <div className="font-[Sora,ui-sans-serif] font-bold text-3xl md:text-4xl text-warning leading-none tabular-nums">
+                {stats.pendingValidation}
+              </div>
+              <div className="text-[10px] uppercase tracking-wider text-warning/80 font-medium mt-1">
+                aguardando
+              </div>
+            </div>
+            <div className="flex-1 min-w-0 border-l border-warning/20 pl-4">
+              <p className="text-sm font-[Sora,ui-sans-serif] font-semibold text-foreground">
+                {stats.pendingValidation === 1
+                  ? "1 cliente aguardando sua validação"
+                  : `${stats.pendingValidation} clientes aguardando sua validação`}
               </p>
-              <p className="text-[11px] text-muted-foreground mt-0.5">
+              <p className="text-[11.5px] text-muted-foreground mt-1 leading-relaxed">
                 Nenhuma mensagem sai para esses clientes até você abrir “Validar novos clientes” e confirmar aprovado ou reprovado.
               </p>
             </div>
-            <ExternalLink className="w-4 h-4 text-warning shrink-0 mt-0.5" />
+            <ExternalLink className="w-4 h-4 text-warning shrink-0 transition-transform group-hover:translate-x-0.5" />
           </button>
         )}
 
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
-          <div className="rounded-xl border border-border/50 bg-muted/20 p-2.5 text-center">
-            <p className="text-lg font-bold text-foreground">{stats.timelineUpcoming}</p>
-            <p className="text-[10px] text-muted-foreground font-medium">Próximos envios</p>
-          </div>
-          <div className="rounded-xl border border-warning/15 bg-warning/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-warning">{stats.pendingManual}</p>
-            <p className="text-[10px] text-warning/70 font-medium">Agenda manual</p>
-          </div>
-          <div className="rounded-xl border border-accent/20 bg-accent/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-accent">{stats.posVendaUpcoming}</p>
-            <p className="text-[10px] text-accent/80 font-medium">Pós-venda</p>
-          </div>
-          <div className="rounded-xl border border-primary/15 bg-primary/5 p-2.5 text-center">
-            <p className="text-lg font-bold text-primary">{stats.bulkActive}</p>
-            <p className="text-[10px] text-primary/70 font-medium">Campanhas</p>
+        {/* ── KPI strip ── */}
+        <div className="mb-6 rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm overflow-hidden">
+          <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/40">
+            {[
+              { n: stats.timelineUpcoming, label: "Próximos envios", icon: Clock, tone: "text-primary", bg: "bg-primary/10" },
+              { n: stats.pendingManual, label: "Agenda manual", icon: CalendarClock, tone: "text-warning", bg: "bg-warning/10" },
+              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-accent", bg: "bg-accent/10" },
+              { n: stats.bulkActive, label: "Campanhas", icon: Megaphone, tone: "text-info", bg: "bg-info/10" },
+            ].map((k) => {
+              const Icon = k.icon;
+              return (
+                <div key={k.label} className="flex items-center gap-3 p-4">
+                  <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
+                    <Icon className={`w-4.5 h-4.5 ${k.tone}`} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-[Sora,ui-sans-serif] font-bold text-2xl text-foreground leading-none tabular-nums">
+                      {k.n}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mt-1 truncate">
+                      {k.label}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
+
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AgendamentosHubTab)} className="space-y-4">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
