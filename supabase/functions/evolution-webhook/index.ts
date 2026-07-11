@@ -42,6 +42,7 @@ import {
   resolveCampaignByProtocolOnly,
   resolveCampaignFromStrongMeta,
 } from "../_shared/deterministic-campaign-resolver.ts";
+import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
@@ -845,6 +846,19 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         console.warn("[notify-new-lead reentry] check falhou:", (e as Error).message);
+      }
+    }
+
+    // ─── 5.4) Reconciliação de sinal forte do Meta em mensagem subsequente ─
+    // Se uma mensagem POSTERIOR trouxer ad_id/ctwa_clid apontando para uma
+    // campanha diferente da persistida, sobrescreve. Evita lead ficar preso
+    // na campanha errada escolhida por fallback (bug Jaraguá → Horácio).
+    if (customer) {
+      try {
+        const rawMsgForReconcile: any = body?.data?.message || {};
+        await reconcileStrongMetaCampaign(supabase, customer, rawMsgForReconcile, body);
+      } catch (e) {
+        console.warn("[reconcile-strong-meta evolution] falhou:", (e as Error).message);
       }
     }
 

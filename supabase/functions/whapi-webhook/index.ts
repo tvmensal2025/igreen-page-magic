@@ -41,6 +41,7 @@ import {
   resolveCampaignFromStrongMeta,
   resolveCampaignByProtocolOnly,
 } from "../_shared/deterministic-campaign-resolver.ts";
+import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
@@ -805,6 +806,20 @@ Deno.serve(async (req) => {
     // ─── Partner Attribution (Detection Window: primeiras 3 mensagens) ───
     // 1º) Marcador determinístico `#R{short_code}` (inserido pelo qr-redirect).
     // 2º) Fallback: `matchKeyword` por substring (legado).
+    // ─── Reconciliação de sinal forte do Meta ──────────────────────────────
+    // Antes de qualquer decisão de rodízio, se ESTA mensagem trouxe ad_id /
+    // ctwa_clid / URL com ad_id que resolve para uma campanha DIFERENTE da
+    // atualmente persistida, sobrescreve. Impede que a primeira mensagem sem
+    // referral prenda o lead na campanha errada (bug Jaraguá → Horácio).
+    if (customer) {
+      try {
+        const rawMsgForReconcile: any = body?.messages?.[0] || {};
+        await reconcileStrongMetaCampaign(supabase, customer, rawMsgForReconcile, body);
+      } catch (e) {
+        console.warn("[reconcile-strong-meta whapi] falhou:", (e as Error).message);
+      }
+    }
+
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
         // ─── Rodízio de leads de anúncio (round-robin) — paridade com evolution ──
