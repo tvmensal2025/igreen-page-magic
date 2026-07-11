@@ -1,15 +1,19 @@
-// cadence-tick — cron 5 min do motor "Zero Lead Perdido" (Fase 2).
+// cadence-tick — cron 5 min do motor "Zero Lead Perdido" (Fases 2 e 3).
 //
-// Varre lead_cadence_state onde next_action_at <= now() e stage pendente.
-// Para stages WhatsApp (COLD_*) faz o disparo real usando o canal do cliente
-// (evolution/whapi) + template configurável por consultor em cadence_stage_config.
-// Voice/SMS/Meta ficam registrados como "queued" para as fases 3-5.
+// COLD_*  → WhatsApp (Evolution/Whapi)
+// CALL_*  → Ligação Velip (TTS ou áudio pré-gravado)
+// SMS_*   → SMS Velip
+// META    → placeholder para Fase 5
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { STAGE_MAP, computeNextActionAt, shouldDispatch, type Stage } from "../_shared/cadence-engine.ts";
 import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomer, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import {
+  makeTTSCall, playAudioFile, makeSMS,
+  toVelipBRDest, toCtid, velipConfigured,
+} from "../_shared/voice-dialer/velip.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,6 +26,7 @@ interface StageConfig {
   message_text: string | null;
   media_url: string | null;
   media_type: string | null;
+  velip_audio_id: string | null;
 }
 
 async function loadStageConfig(
@@ -29,20 +34,20 @@ async function loadStageConfig(
   consultantId: string | null,
   stage: string,
 ): Promise<StageConfig | null> {
-  // 1) consultor-específico
+  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id";
   if (consultantId) {
     const { data } = await supabase
       .from("cadence_stage_config")
-      .select("enabled, delay_hours, message_text, media_url, media_type")
+      .select(cols)
       .eq("consultant_id", consultantId)
       .eq("stage", stage)
       .maybeSingle();
     if (data) return data;
   }
-  // 2) global
   const { data: g } = await supabase
     .from("cadence_stage_config")
-    .select("enabled, delay_hours, message_text, media_url, media_type")
+    .select(cols)
+
     .is("consultant_id", null)
     .eq("stage", stage)
     .maybeSingle();
