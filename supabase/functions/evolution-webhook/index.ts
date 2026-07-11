@@ -926,7 +926,7 @@ Deno.serve(async (req) => {
           : null;
 
         let sourceCampaignId: string | null = null;
-        let matchMethod: "protocol" | "ad_id" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
+        let matchMethod: "protocol" | "ad_id" | "ad_id_in_url" | "ctwa_clid" | "exact_message" | "tsvector" | "unmatched" = "unmatched";
         let matchSimilarity: number | null = null;
 
         // 0) Match DETERMINÍSTICO por protocolo profissional no texto (FB-87321 etc.).
