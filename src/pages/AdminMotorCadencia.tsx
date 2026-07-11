@@ -107,7 +107,52 @@ export default function AdminMotorCadencia() {
     setStats(Object.entries(grouped).map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count));
 
     setLogs(recentLogs || []);
+    await loadDue();
     setLoading(false);
+  }
+
+  async function loadDue() {
+    const soon = new Date(Date.now() + 60 * 60_000).toISOString(); // próxima 1h
+    const { data } = await supabase
+      .from("lead_cadence_state")
+      .select("id, stage, next_action_at, customer_id, consultant_id, paused_until, customers:customer_id(name, phone_whatsapp), consultants:consultant_id(name)")
+      .lte("next_action_at", soon)
+      .not("stage", "in", "(WON,PAUSED,RETARGET_META)")
+      .order("next_action_at", { ascending: true })
+      .limit(50);
+    const list = data || [];
+    setDueLeads(list);
+    const nowMs = Date.now();
+    setSlaCount(list.filter((l: any) => l.next_action_at && new Date(l.next_action_at).getTime() < nowMs - 30 * 60_000).length);
+  }
+
+  async function forceNow(id: string) {
+    const { error } = await supabase.from("lead_cadence_state").update({ next_action_at: new Date().toISOString(), paused_until: null, paused_reason: null }).eq("id", id);
+    if (error) { toast.error("Falha ao forçar"); return; }
+    toast.success("Próxima ação agendada agora");
+    await loadDue();
+  }
+
+  async function pause24h(id: string) {
+    const until = new Date(Date.now() + 24 * 3600_000).toISOString();
+    const { error } = await supabase.from("lead_cadence_state").update({ paused_until: until, paused_reason: "manual_admin", next_action_at: until }).eq("id", id);
+    if (error) { toast.error("Falha ao pausar"); return; }
+    toast.success("Pausado por 24h");
+    await loadDue();
+  }
+
+  async function runTickNow() {
+    setTicking(true);
+    try {
+      const { error } = await supabase.functions.invoke("cadence-tick", { body: { manual: true } });
+      if (error) throw error;
+      toast.success("Tick executado");
+      await loadDue();
+    } catch (e: any) {
+      toast.error("Falha no tick: " + (e?.message || e));
+    } finally {
+      setTicking(false);
+    }
   }
 
   async function toggleEngine(v: boolean) {
