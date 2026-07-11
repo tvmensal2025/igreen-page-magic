@@ -32,6 +32,7 @@ const SaudeProducao = lazy(() => import("./pages/SaudeProducao"));
 const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
 const AdminMotorCadencia = lazy(() => import("./pages/AdminMotorCadencia"));
+const AdminAgendamentosCentral = lazy(() => import("./pages/AdminAgendamentosCentral"));
 
 const NotFound = lazy(() => import("./pages/NotFound"));
 
