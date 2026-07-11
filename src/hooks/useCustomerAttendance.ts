@@ -75,37 +75,41 @@ export function useCustomerAttendance(
 
   useEffect(() => {
     if (!customerId) return;
-    const channel = supabase
-      .channel(`attendance-${customerId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "customers",
-          filter: `id=eq.${customerId}`,
-        },
-        (payload) => {
-          const row = payload.new as Record<string, unknown> | null;
-          if (!row) return;
-          if ("welcome_sent_at" in row) {
-            setWelcomeSentAt((row.welcome_sent_at as string | null) ?? null);
-          }
-          if ("tracking_protocol" in row) {
-            setTrackingProtocol((row.tracking_protocol as string | null) ?? null);
-          }
-          if ("attendance_rating_requested_at" in row) {
-            setAttendanceRatingRequestedAt(
-              (row.attendance_rating_requested_at as string | null) ?? null,
-            );
-          }
-          if ("attendance_rating" in row) {
-            const r = row.attendance_rating;
-            setAttendanceRating(typeof r === "number" ? r : null);
-          }
-        },
-      )
-      .subscribe();
+    // Nome único por mount evita erro "cannot add postgres_changes callbacks
+    // after subscribe()" quando StrictMode/remount reaproveita um channel já
+    // subscribed com o mesmo nome.
+    const channel = supabase.channel(
+      `attendance-${customerId}-${Math.random().toString(36).slice(2, 10)}`,
+    );
+    channel.on(
+      "postgres_changes",
+      {
+        event: "UPDATE",
+        schema: "public",
+        table: "customers",
+        filter: `id=eq.${customerId}`,
+      },
+      (payload) => {
+        const row = payload.new as Record<string, unknown> | null;
+        if (!row) return;
+        if ("welcome_sent_at" in row) {
+          setWelcomeSentAt((row.welcome_sent_at as string | null) ?? null);
+        }
+        if ("tracking_protocol" in row) {
+          setTrackingProtocol((row.tracking_protocol as string | null) ?? null);
+        }
+        if ("attendance_rating_requested_at" in row) {
+          setAttendanceRatingRequestedAt(
+            (row.attendance_rating_requested_at as string | null) ?? null,
+          );
+        }
+        if ("attendance_rating" in row) {
+          const r = row.attendance_rating;
+          setAttendanceRating(typeof r === "number" ? r : null);
+        }
+      },
+    );
+    channel.subscribe();
     return () => {
       void supabase.removeChannel(channel);
     };
