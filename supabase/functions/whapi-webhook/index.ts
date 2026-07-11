@@ -1791,8 +1791,7 @@ Deno.serve(async (req) => {
     // Ordem de prioridade (mais precisa → mais fraca), conforme doc oficial Meta:
     //   1. source_id (AD ID do clique) → casa com facebook_campaigns.fb_ad_ids (determinístico)
     //   2. ctwa_clid → ctwa_clid_mapping (populado na criação da campanha)
-    //   3. initial_message → texto pré-preenchido (heurística)
-    //   4. regex → frases típicas de anúncio (último recurso)
+    //   3. regex/frase CTWA → marca origem Meta, mas NÃO escolhe campanha.
     // Só roda quando source_campaign_id ainda não está preenchido.
     try {
       const alreadyTagged = !!(customer as any).source_campaign_id || !!(customer as any).lead_source;
@@ -1841,41 +1840,8 @@ Deno.serve(async (req) => {
           }
         }
 
-        // 3) Match por initial_message (heurística)
-        if (!sourceCampaignId && !strongMetaSignalPresent && messageText && messageText.trim().length > 5) {
-          try {
-            const normalizedMsg = messageText.trim().toLowerCase().replace(/\s+/g, " ");
-            // Na ambiguidade (várias campanhas com a MESMA initial_message),
-            // prioriza ativa + mais recente em vez de chutar a primeira.
-            const { data: campaigns } = await supabase
-              .from("facebook_campaigns")
-              .select("id, initial_message, status, created_at")
-              .eq("consultant_id", (customer as any).consultant_id)
-              .not("initial_message", "is", null)
-              .in("status", ["active", "pending_review"])
-              .order("created_at", { ascending: false })
-              .limit(50);
-            if (campaigns && campaigns.length > 0) {
-              const matches = (campaigns as any[]).filter((c) => {
-                const im = String(c.initial_message || "").trim().toLowerCase().replace(/\s+/g, " ");
-                return im.length > 5 && normalizedMsg.startsWith(im.slice(0, Math.min(im.length, 60)));
-              });
-              if (matches.length > 0) {
-                const rank = (s: string) => (s === "active" ? 0 : s === "pending_review" ? 1 : s === "paused" ? 2 : 3);
-                matches.sort((a, b) => {
-                  const r = rank(a.status) - rank(b.status);
-                  if (r !== 0) return r;
-                  return String(b.created_at).localeCompare(String(a.created_at));
-                });
-                sourceCampaignId = matches[0].id;
-                matchMethod = "exact_message";
-                console.log(`[lead-source] customer ${customer.id} matched campaign ${matches[0].id} via initial_message (ambiguous=${matches.length > 1})`);
-              }
-            }
-          } catch (e) {
-            console.warn("[lead-source] initial_message match falhou:", (e as Error).message);
-          }
-        }
+        // Não atribuir campanha por initial_message: anúncios diferentes podem
+        // começar com o mesmo texto. Só protocolo/AD ID/CTWA escolhem campanha.
 
         // 4) Regex fallback para frases típicas de anúncio (último recurso)
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;

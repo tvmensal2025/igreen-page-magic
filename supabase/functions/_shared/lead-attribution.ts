@@ -9,8 +9,7 @@
  *
  * Estratégias (em ordem de confiança):
  *   1. ctwa_clid + referral do payload Whapi/Evolution (sinal forte do Meta)
- *   2. Match exato do texto da mensagem com facebook_campaigns.initial_message
- *   3. Regex de palavras-chave de anúncio (fallback fraco)
+ *   2. Regex de palavras-chave de anúncio marca Meta Ads, mas não escolhe campanha.
  */
 
 export interface AttributionResult {
@@ -130,42 +129,10 @@ export async function attributeLeadSource(
       return result;
     }
 
-    // ── Estratégia 2: match com initial_message das campanhas ─────────
-    if (!isAudio && !isFile && messageText && messageText.trim().length >= 5) {
-      const normMsg = normalizeText(messageText);
+    // Não atribuir campanha por initial_message: várias campanhas podem usar o
+    // mesmo texto inicial. Só sinais fortes/protocolo definem campanha.
 
-      const { data: campaigns } = await supabase
-        .from("facebook_campaigns")
-        .select("id, initial_message")
-        .eq("consultant_id", consultantId)
-        .not("initial_message", "is", null)
-        .neq("initial_message", "");
-
-      let bestCampaignId: string | null = null;
-      let bestScore = 0;
-
-      for (const camp of (campaigns || []) as Array<{ id: string; initial_message: string }>) {
-        if (!camp.initial_message) continue;
-        const normInitial = normalizeText(camp.initial_message);
-        const score = textSimilarity(normMsg, normInitial);
-        // Threshold: 0.6 = 60% das palavras em comum (robusto a variações)
-        if (score > bestScore && score >= 0.6) {
-          bestScore = score;
-          bestCampaignId = camp.id;
-        }
-      }
-
-      if (bestCampaignId) {
-        result.lead_source = "meta_ads";
-        result.source_campaign_id = bestCampaignId;
-        result.method = "initial_message_match";
-        await _persist(supabase, customerId, result);
-        console.log(`[lead-attribution] customer ${customerId} → campanha ${bestCampaignId} (score=${bestScore.toFixed(2)} initial_message_match)`);
-        return result;
-      }
-    }
-
-    // ── Estratégia 3: regex de palavras-chave (fallback fraco) ────────
+    // ── Estratégia 2: regex de palavras-chave (origem Meta, sem campanha) ──
     if (!isAudio && !isFile && messageText && ADS_REGEX.test(messageText)) {
       result.lead_source = "meta_ads";
       result.method = "regex_fallback";
