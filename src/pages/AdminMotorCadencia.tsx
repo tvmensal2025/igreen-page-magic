@@ -75,7 +75,7 @@ export default function AdminMotorCadencia() {
     for (const s of STAGES) {
       const found = (cfgs || []).find((c: any) => c.stage === s);
       map[s] = found
-        ? { ...found, message_text: found.message_text || "" }
+        ? { ...found, stage: s, message_text: found.message_text || "" }
         : { stage: s, enabled: true, delay_hours: 24, message_text: "", media_url: null, media_type: "text" };
     }
     setStages(map);
