@@ -17,6 +17,7 @@ import { sendWhatsAppMessage } from "@/services/messageSender";
 import { useCaptureSession } from "@/hooks/useCaptureSession";
 import { FinalizeButton } from "@/components/captacao/FinalizeButton";
 import { CloseCaptureButton } from "@/components/captacao/CloseCaptureButton";
+import { runFastStartAttendance } from "@/components/captacao/runFastStartAttendance";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
@@ -278,39 +279,16 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
               whatsappConnected={connected}
               onCollapseList={toggleList}
               onOpenBatch={async (leads, periodLabel) => {
-                // 1 lead → dispara direto o "Iniciar atendimento", sem modal.
-                // 2+ leads → abre o modal com opções (áudio/imagem/texto/timer).
+                // 1 lead → fast-path (sem modal). 2+ → modal com áudio/imagem/texto.
                 if (leads.length === 1) {
                   const lead = leads[0];
-                  if (lead.welcome_sent_at) {
-                    sonnerToast.info("Atendimento já iniciado para este lead.");
-                    setSelectedId(lead.id);
-                    return;
-                  }
-                  const tId = sonnerToast.loading("Iniciando atendimento...");
-                  try {
-                    const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
-                      body: { customerId: lead.id, consultantId },
-                    });
-                    if (error && !data) throw new Error(error.message || "Falha ao iniciar");
-                    const body = (data ?? {}) as { ok?: boolean; skipped?: string; protocol?: string; message?: string; detail?: string; error?: string; fallback?: boolean };
-                    if (body.ok === false) {
-                      if (body.fallback) {
-                        sonnerToast.warning(body.message || "Envie manualmente pelo chat.", { id: tId });
-                      } else {
-                        sonnerToast.error(body.message || body.detail || body.error || "Falha ao iniciar", { id: tId });
-                      }
-                    } else {
-                      sonnerToast.success(
-                        body.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
-                        { id: tId, description: body.protocol ? `Protocolo ${body.protocol}` : undefined },
-                      );
-                    }
-                    setSelectedId(lead.id);
-                    window.dispatchEvent(new Event("captacao:batch-finished"));
-                  } catch (e) {
-                    sonnerToast.error((e as Error).message || "Falha ao iniciar", { id: tId });
-                  }
+                  await runFastStartAttendance({
+                    customerId: lead.id,
+                    consultantId,
+                    alreadyStarted: !!lead.welcome_sent_at,
+                  });
+                  setSelectedId(lead.id);
+                  window.dispatchEvent(new Event("captacao:batch-finished"));
                   return;
                 }
                 setBatchLeads(leads);
@@ -378,20 +356,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   rating={attendance.rating}
                   starting={attendance.starting}
                   ending={attendance.ending}
-                  onStart={() => {
-                    if (!selectedId) return;
-                    setBatchLeads([{
-                      id: selectedId,
-                      name: customerName,
-                      phone_whatsapp: phone,
-                      capture_started_at: null,
-                      created_at: new Date().toISOString(),
-                      welcome_sent_at: null,
-                      filled: 0,
-                    }]);
-                    setBatchPeriodLabel("este cliente");
-                    setBatchOpen(true);
-                  }}
+                  onStart={() => void attendance.startAttendance()}
 
 
                   onRequestEnd={() => setEndAttendanceDialogOpen(true)}

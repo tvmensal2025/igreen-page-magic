@@ -651,7 +651,40 @@ export function CaptureLeadList({
         </div>
       </div>
 
+      {/* Barra sticky no TOPO da lista quando há seleção — CTA principal para
+          disparar rápido (1 lead) ou abrir o modal (2+). Espelha o rodapé, mas
+          fica acessível sem rolar. */}
+      {selectMode && selectedVisibleCount > 0 && (
+        <div className="sticky top-0 z-10 px-2 py-1.5 border-b border-border bg-primary/5 backdrop-blur flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-semibold tabular-nums text-primary shrink-0 px-1">
+            {selectedVisibleCount} sel.
+          </span>
+          <Button
+            size="sm"
+            variant="default"
+            className="flex-1 h-8 text-[11px] rounded-lg"
+            disabled={!whatsappConnected}
+            title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
+            onClick={openBatch}
+          >
+            {selectedVisibleCount === 1
+              ? "Iniciar atendimento"
+              : `Abrir atendimento (${selectedVisibleCount})`}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 px-2 text-[11px]"
+            onClick={clearSelection}
+            title="Limpar seleção"
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
+
         {loading && <p className="p-6 text-center text-xs text-muted-foreground">Carregando...</p>}
         {!loading && filtered.length === 0 && (
           <div className="p-6 text-center space-y-2">

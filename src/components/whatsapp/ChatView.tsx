@@ -21,8 +21,6 @@ import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
-import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
-import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
@@ -105,7 +103,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [togglingBot, setTogglingBot] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
-  const [startBatchOpen, setStartBatchOpen] = useState(false);
+  
 
   const [closingCapture, setClosingCapture] = useState(false);
   const [captureClosedAt, setCaptureClosedAt] = useState<string | null>(null);
@@ -625,7 +623,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             rating={attendance.rating}
             starting={attendance.starting}
             ending={attendance.ending}
-            onStart={() => setStartBatchOpen(true)}
+            onStart={() => void attendance.startAttendance()}
             onRequestEnd={() => setEndAttendanceDialogOpen(true)}
             compact={isCompactLayout}
           />
@@ -868,27 +866,6 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         />
       )}
 
-      {customerId && consultantId && (
-        <OpenAttendanceBatchDialog
-          open={startBatchOpen}
-          onOpenChange={setStartBatchOpen}
-          consultantId={consultantId}
-          instanceName={instanceName || ""}
-          isWhapi={isWhapi}
-          leads={[{
-            id: customerId,
-            name: chat?.name || null,
-            phone_whatsapp: phoneNumber,
-            capture_started_at: null,
-            created_at: new Date().toISOString(),
-            welcome_sent_at: null,
-            filled: 0,
-          } as CaptureBatchLead]}
-          periodLabel="este cliente"
-          templates={templates}
-          onFinished={() => attendance.refresh()}
-        />
-      )}
 
 
 
