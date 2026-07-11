@@ -42,6 +42,7 @@ import {
   resolveCampaignByProtocolOnly,
   resolveCampaignFromStrongMeta,
 } from "../_shared/deterministic-campaign-resolver.ts";
+import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
