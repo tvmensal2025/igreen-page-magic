@@ -169,14 +169,16 @@ export function CaptureLeadList({
       const cols =
         "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, igreen_code, assinatura_cliente, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
+      // Traz manual (Captação) + auto sem welcome (leads novos "Em espera"),
+      // sempre respeitando: não fechado, não virou cliente iGreen.
       const { data, error } = await supabase
         .from("customers")
         .select(cols)
         .eq("consultant_id", consultantId)
-        .eq("capture_mode", "manual")
         .is("capture_closed_at", null)
         .is("igreen_code", null)
         .is("assinatura_cliente", null)
+        .or("capture_mode.eq.manual,welcome_sent_at.is.null")
         .order("created_at", { ascending: false })
         .limit(400);
       if (seq !== loadSeqRef.current) return;
@@ -447,12 +449,9 @@ export function CaptureLeadList({
 
   const toggleSelectMode = () => {
     setSelectMode((v) => {
-      if (v) {
-        setSelectedIds(new Set());
-        return false;
-      }
-      setSelectedIds(new Set(filtered.map((l) => l.id)));
-      return true;
+      // Entra e sai sempre com seleção vazia — usuário marca 1 a 1.
+      setSelectedIds(new Set());
+      return !v;
     });
   };
 
@@ -1033,6 +1032,7 @@ function LeadCard({
               checked={checked}
               onCheckedChange={() => toggleId(l.id)}
               aria-label={`Selecionar ${l.name || l.id}`}
+              className="h-5 w-5 border-2 border-primary/60 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:text-primary-foreground shadow-sm"
             />
           </div>
         )}
