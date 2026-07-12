@@ -21,6 +21,7 @@ export type FieldKey =
   | "distribuidora" | "numero_instalacao"
   | "electricity_bill_value" | "media_consumo"
   | "document_front_url" | "document_back_url" | "electricity_bill_photo_url"
+  | "electricity_boleto_photo_url"
   | "boleto_preference";
 
 export interface PortalCustomer {
@@ -51,6 +52,7 @@ export interface PortalCustomer {
   document_front_url?: string | null;
   document_back_url?: string | null;
   electricity_bill_photo_url?: string | null;
+  electricity_boleto_photo_url?: string | null;
   name_mismatch_flag?: boolean | null;
   name_mismatch_acknowledged_at?: string | null;
 }
@@ -301,10 +303,19 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     });
   }
 
-  // 6) Preferência de boleto (unificado ⇔ transferir titularidade) — mesma régua do bot
+  // 6) Preferência de boleto — mesma régua do bot (ask_contaunica).
+  // Quando "boleto único" (contaunica=true) o portal iGreen exige o COMPROVANTE
+  // BANCÁRIO no slot do anexo. Sem isso a IA reprova ("é fatura, não é comprovante").
   const boletoAnswered = c.contaunica_answered === true;
   if (!boletoAnswered) {
     missing.push(BOLETO_PREFERENCE_FIELD);
+  } else if (c.contaunica === true) {
+    const boletoUrl = (c as any).electricity_boleto_photo_url;
+    const filled = typeof boletoUrl === "string" && boletoUrl.trim().length > 0
+      && boletoUrl !== "evolution-media:pending" && boletoUrl !== "collected";
+    if (!filled) {
+      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário", group: "docs" });
+    }
   }
 
   const totalFields = PORTAL_FIELDS.length + 1; // + boleto

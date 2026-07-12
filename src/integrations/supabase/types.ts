@@ -3984,6 +3984,7 @@ export type Database = {
           document_verify_status: string | null
           electricity_bill_photo_url: string | null
           electricity_bill_value: number | null
+          electricity_boleto_photo_url: string | null
           email: string | null
           error_message: string | null
           facial_confirmed_at: string | null
@@ -4233,6 +4234,7 @@ export type Database = {
           document_verify_status?: string | null
           electricity_bill_photo_url?: string | null
           electricity_bill_value?: number | null
+          electricity_boleto_photo_url?: string | null
           email?: string | null
           error_message?: string | null
           facial_confirmed_at?: string | null
@@ -4482,6 +4484,7 @@ export type Database = {
           document_verify_status?: string | null
           electricity_bill_photo_url?: string | null
           electricity_bill_value?: number | null
+          electricity_boleto_photo_url?: string | null
           email?: string | null
           error_message?: string | null
           facial_confirmed_at?: string | null

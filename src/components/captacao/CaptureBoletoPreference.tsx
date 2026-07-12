@@ -12,13 +12,13 @@ interface Props {
 const OPTIONS = [
   {
     id: "unificado" as const,
-    title: "Unificado",
-    detail: "Um boleto — energia + iGreen juntos",
+    title: "Boleto único",
+    detail: "Já recebe UM boleto bancário — anexar o comprovante",
   },
   {
     id: "separado" as const,
-    title: "Separado",
-    detail: "Dois boletos — distribuidora e iGreen",
+    title: "Boletos separados",
+    detail: "Fatura da distribuidora + iGreen em cobranças distintas",
   },
 ];
 

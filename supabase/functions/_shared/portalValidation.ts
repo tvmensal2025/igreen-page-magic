@@ -14,6 +14,7 @@ export type FieldKey =
   | "distribuidora" | "numero_instalacao"
   | "electricity_bill_value" | "media_consumo"
   | "document_front_url" | "document_back_url" | "electricity_bill_photo_url"
+  | "electricity_boleto_photo_url"
   | "boleto_preference";
 
 export interface FieldDef { key: FieldKey; label: string; }
@@ -215,9 +216,16 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
     invalid.push({ field: "name_mismatch", label: "Titularidade", reason: "Nome do documento difere da conta — confirme antes de enviar" });
   }
 
-  // Preferência de boleto (unificado ⇔ transferir titularidade) — mesma régua do bot
+  // Preferência de boleto — mesma régua do bot (ask_contaunica).
+  // Quando o cliente marcou "boleto único", o portal iGreen exige o COMPROVANTE
+  // BANCÁRIO no lugar da fatura da distribuidora. Sem isso a IA reprova ("é uma
+  // fatura CPFL, não é comprovante de pagamento bancário").
   if (c.contaunica_answered !== true) {
     missing.push(BOLETO_PREFERENCE_FIELD);
+  } else if (c.contaunica === true) {
+    if (!isFileReady(c.electricity_boleto_photo_url)) {
+      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário" });
+    }
   }
 
   return { ok: missing.length === 0 && invalid.length === 0, missing, invalid };
