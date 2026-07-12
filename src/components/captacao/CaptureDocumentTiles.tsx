@@ -45,7 +45,12 @@ export function CaptureDocumentTiles({ customerId, customer, onUploaded, compact
     document_front_url: null,
     document_back_url: null,
     electricity_bill_photo_url: null,
+    electricity_boleto_photo_url: null,
   });
+
+  const wantsBoletoUnico = customer?.contaunica_answered === true && customer?.contaunica === true;
+  const slots = wantsBoletoUnico ? [...BASE_SLOTS, BOLETO_SLOT] : BASE_SLOTS;
+  const gridCols = slots.length === 4 ? "grid-cols-4" : "grid-cols-3";
 
   const triggerOcr = async (key: DocKey) => {
     // bill OU doc — reprocessa OCR sobre a URL já salva e preenche campos do customer.
@@ -89,8 +94,8 @@ export function CaptureDocumentTiles({ customerId, customer, onUploaded, compact
       <h4 className={`font-bold uppercase tracking-wider text-muted-foreground ${compact ? "text-[8px] mb-0.5" : "text-[9px] mb-1"}`}>
         Documentos
       </h4>
-      <div className="grid grid-cols-3 gap-1">
-        {SLOTS.map((s) => {
+      <div className={`grid ${gridCols} gap-1`}>
+        {slots.map((s) => {
           const url = customer?.[s.key] as string | null;
           const isBusy = busy === s.key;
           return (
