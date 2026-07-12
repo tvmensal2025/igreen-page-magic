@@ -932,7 +932,7 @@ async function fetchDadosFromSupabase(customerId) {
       portal_idconsultor_override,
       distribuidora, debitos_aberto, possui_procurador,
       document_type,
-      bill_base64, electricity_bill_photo_url,
+      bill_base64, electricity_bill_photo_url, electricity_boleto_photo_url,
       document_front_base64, document_front_url,
       document_back_base64, document_back_url,
       orgao_expedidor, fornecedora, contaunica, contaunica_answered, possui_placas,
@@ -979,7 +979,13 @@ async function fetchDadosFromSupabase(customerId) {
   // CNH dispensa verso. O gate de obrigatoriedade roda em
   // ensureDocumentsAttachedAndGate antes de enfileirar.
   const isCnh = _isCnhCustomer(c);
-  const billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+  // Quando o cliente marcou boleto único (contaunica=true + transferir_titularidade=true),
+  // o portal iGreen valida o slot `energy-bill` esperando um COMPROVANTE BANCÁRIO,
+  // não a fatura da distribuidora. Usa o slot separado `electricity_boleto_photo_url`.
+  const wantsBoletoUnico = c?.contaunica_answered === true && c?.contaunica === true;
+  const billFile = wantsBoletoUnico
+    ? await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto')
+    : await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
   const docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
   const docBackFile = isCnh ? null : await _resolveCustomerFile(c.document_back_base64, c.document_back_url, 'doc-verso');
 
