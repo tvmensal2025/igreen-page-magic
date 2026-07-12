@@ -879,7 +879,8 @@ async function ensureDocumentsAttachedAndGate(dados, customerId) {
     .from('customers')
     .select(`
       document_type,
-      electricity_bill_photo_url, bill_base64,
+      contaunica, contaunica_answered,
+      electricity_bill_photo_url, electricity_boleto_photo_url, bill_base64,
       document_front_url, document_front_base64,
       document_back_url, document_back_base64
     `)
@@ -891,8 +892,12 @@ async function ensureDocumentsAttachedAndGate(dados, customerId) {
   const isCnh = _isCnhCustomer(c);
   dados.isCnh = isCnh;
 
+  // Boleto único → portal exige comprovante bancário no slot energy-bill.
+  const wantsBoletoUnico = c?.contaunica_answered === true && c?.contaunica === true;
   if (!dados.billFile) {
-    dados.billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+    dados.billFile = wantsBoletoUnico
+      ? await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto')
+      : await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
   }
   if (!dados.docFile) {
     dados.docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
@@ -902,7 +907,7 @@ async function ensureDocumentsAttachedAndGate(dados, customerId) {
   }
 
   const missing = [];
-  if (!dados.billFile) missing.push('conta de energia');
+  if (!dados.billFile) missing.push(wantsBoletoUnico ? 'boleto bancário' : 'conta de energia');
   if (!dados.docFile) missing.push('documento (frente)');
   if (!isCnh && !dados.docBackFile) missing.push('documento (verso)');
   if (missing.length) {
