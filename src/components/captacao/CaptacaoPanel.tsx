@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { CaptureLeadList, type CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
