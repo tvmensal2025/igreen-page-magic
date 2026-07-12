@@ -54,8 +54,9 @@ Deno.serve(async (req) => {
       return json({
         ok: false,
         error: "automation_disabled",
-        message: "Abrir chamado automático está DESLIGADO. Ative em Admin → Central de Agendamentos → Automações.",
+        message: "Abrir chamado automático está DESLIGADO. Ative em Automações.",
         fallback: true,
+        fixHint: "toggle",
       });
     }
 
@@ -97,7 +98,7 @@ Deno.serve(async (req) => {
       ? { text: tpl.text, audio_url: tpl.audio_url, typing_delay_ms: tpl.typing_delay_ms }
       : null;
 
-    const result = await sendWelcomeHeader(supabase, {
+    let result = await sendWelcomeHeader(supabase, {
       customerId,
       consultantId,
       env: channelEnv,
@@ -105,27 +106,54 @@ Deno.serve(async (req) => {
       customTemplate,
     });
 
+    // Retry 1x em falha transiente de envio (rede/timeout).
+    if (!result.ok && (result.code === "send_failed_greeting" || result.code === "send_failed_protocol")) {
+      await new Promise((r) => setTimeout(r, 800));
+      result = await sendWelcomeHeader(supabase, {
+        customerId,
+        consultantId,
+        env: channelEnv,
+        superadminConsultantId: channelEnv.superadminConsultantId,
+        customTemplate,
+      });
+    }
+
     if (!result.ok) {
-      const soft = [
-        "send_failed_greeting",
-        "send_failed_protocol",
-        "channel_unavailable",
-        "rate_limited",
-        "no_phone",
-        "protocol_generation_failed",
-      ];
-      if (soft.includes(String(result.code))) {
-        return json({
-          ok: false,
-          error: result.code,
-          detail: result.detail,
-          fallback: true,
-          message: result.code === "channel_unavailable"
-            ? "Canal WhatsApp indisponível. Verifique Whapi (super admin) ou Evolution (consultor)."
-            : "Não foi possível enviar automaticamente. Envie a saudação manualmente pelo chat.",
-        }, 200);
+      const code = String(result.code);
+      const detail = String(result.detail || "");
+      // Mapa código→hint para o front escolher o CTA correto.
+      let fixHint: string | null = null;
+      let message = "Não foi possível iniciar automaticamente.";
+      if (code === "channel_unavailable") {
+        if (detail === "whapi_token_missing") {
+          fixHint = "whapi_token";
+          message = "Whapi do super admin sem token. Configure para enviar automático.";
+        } else {
+          fixHint = "evolution_instance";
+          message = "Sem instância WhatsApp conectada. Conecte para enviar automático.";
+        }
+      } else if (code === "send_failed_greeting" || code === "send_failed_protocol") {
+        fixHint = "instance_offline";
+        message = "Instância respondeu offline. Reconecte para reenviar.";
+      } else if (code === "no_phone") {
+        fixHint = "phone";
+        message = "Telefone do cliente inválido. Corrija para enviar.";
+      } else if (code === "rate_limited") {
+        fixHint = "rate_limit";
+        message = "Anti-ban pausou envios agora. Tente em alguns minutos.";
+      } else if (code === "protocol_generation_failed") {
+        fixHint = "retry";
+        message = "Falha ao gerar protocolo. Tente de novo.";
       }
-      return json({ ok: false, error: result.code, detail: result.detail }, 200);
+      return json({
+        ok: false,
+        error: code,
+        detail,
+        fallback: true,
+        fixHint,
+        message,
+        instance: (result as { instance?: string }).instance,
+      }, 200);
     }
 
     return json({

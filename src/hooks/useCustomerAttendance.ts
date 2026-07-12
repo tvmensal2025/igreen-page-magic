@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { notifyAttendanceOutcome } from "@/lib/attendanceShortcut";
 import type { AttendanceUiState } from "@/components/whatsapp/AttendanceStatusBar";
 
 /**
@@ -12,6 +14,8 @@ export function useCustomerAttendance(
   consultantId: string,
 ) {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const go = useCallback((path: string) => { if (path) navigate(path); }, [navigate]);
   const mountIdRef = useRef(
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -134,66 +138,55 @@ export function useCustomerAttendance(
   const startAttendance = useCallback(async () => {
     if (!customerId || starting) return;
     setStarting(true);
+    const doInvoke = () => supabase.functions.invoke("start-customer-attendance", {
+      body: { customerId, consultantId },
+    });
     try {
-      const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
-        body: { customerId, consultantId },
+      const { data, error } = await doInvoke();
+      if (error && !data) throw error;
+      const body = (data ?? {}) as Parameters<typeof notifyAttendanceOutcome>[0];
+      notifyAttendanceOutcome(body, {
+        kind: "start",
+        navigate: go,
+        onRetry: () => { void startAttendance(); },
       });
-      if (error) throw error;
-      if (data?.ok === false) {
-        toast({
-          title: data?.fallback ? "Envie manualmente" : "Não deu pra iniciar",
-          description: data?.message || data?.detail || data?.error || "Tente de novo.",
-          variant: "destructive",
-        });
-        return;
+      if (body.ok !== false) {
+        setWelcomeSentAt(new Date().toISOString());
+        if (body.protocol) setTrackingProtocol(String(body.protocol));
+        await refresh();
       }
-      setWelcomeSentAt(new Date().toISOString());
-      if (data?.protocol) setTrackingProtocol(String(data.protocol));
-      await refresh();
-      toast({
-        title: data?.skipped === "already_sent" ? "Atendimento já iniciado" : "Atendimento iniciado",
-        description: data?.protocol ? `Protocolo ${data.protocol}` : undefined,
-      });
     } catch (e) {
       toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
     } finally {
       setStarting(false);
     }
-  }, [customerId, consultantId, starting, toast, refresh]);
+  }, [customerId, consultantId, starting, toast, refresh, go]);
 
   const endAttendance = useCallback(async () => {
     if (!customerId || ending) return;
     setEnding(true);
+    const doInvoke = () => supabase.functions.invoke("end-customer-attendance", {
+      body: { customerId, consultantId },
+    });
     try {
-      const { data, error } = await supabase.functions.invoke("end-customer-attendance", {
-        body: { customerId, consultantId },
+      const { data, error } = await doInvoke();
+      if (error && !data) throw error;
+      const body = (data ?? {}) as Parameters<typeof notifyAttendanceOutcome>[0];
+      notifyAttendanceOutcome(body, {
+        kind: "end",
+        navigate: go,
+        onRetry: () => { void endAttendance(); },
       });
-      if (error) throw error;
-      if (data?.ok === false) {
-        toast({
-          title: data?.fallback ? "Envie manualmente" : "Não deu pra finalizar",
-          description: data?.message || data?.detail || data?.error || "Tente de novo.",
-          variant: "destructive",
-        });
-        return;
+      if (body.ok !== false) {
+        setAttendanceRatingRequestedAt(new Date().toISOString());
+        await refresh();
       }
-      setAttendanceRatingRequestedAt(new Date().toISOString());
-      await refresh();
-      toast({
-        title:
-          data?.skipped === "already_rated"
-            ? "Avaliação já registrada"
-            : data?.skipped === "rating_pending"
-            ? "Pesquisa já enviada"
-            : "Atendimento finalizado",
-        description: data?.skipped ? undefined : "Pesquisa de 1 a 5 enviada ao cliente.",
-      });
     } catch (e) {
       toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });
     } finally {
       setEnding(false);
     }
-  }, [customerId, consultantId, ending, toast, refresh]);
+  }, [customerId, consultantId, ending, toast, refresh, go]);
 
   return {
     uiState,

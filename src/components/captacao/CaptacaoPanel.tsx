@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { CaptureLeadList, type CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
 import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
@@ -31,6 +32,7 @@ import {
 interface Props { consultantId: string; onOpenChat?: (phone: string) => void; instanceName?: string | null; isWhapi?: boolean; }
 
 export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, isWhapi = false }: Props) {
+  const navigate = useNavigate();
   // Sub-aba: "cockpit" (captação manual de um lead) | "captados" (leads
   // multicanal: Meta/TikTok/landing/pesquisa B2B + disparo em massa).
   const [view, setView] = useState<"cockpit" | "captados">("cockpit");
@@ -286,6 +288,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                     customerId: lead.id,
                     consultantId,
                     alreadyStarted: !!lead.welcome_sent_at,
+                    navigate,
                   });
                   setSelectedId(lead.id);
                   window.dispatchEvent(new Event("captacao:batch-finished"));

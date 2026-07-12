@@ -1,81 +1,57 @@
-## Onde erramos no mapeamento (validação profunda)
+## Diagnóstico
 
-Caso José Gonçalves (`92b1e988…`) — o operador **não** anexou errado. O bot manda o cliente para uma rota que exige um documento diferente do que a UI e o slot conseguem entregar.
+"Envie manualmente" é o **fallback** de `start-customer-attendance` / `end-customer-attendance`. Ele só aparece quando `sendWelcomeHeader` retorna um dos códigos:
 
-### Cadeia do bug (confirmada no código)
+| código | causa real | fix real |
+|---|---|---|
+| `automation_disabled` | toggle `start_customer_attendance` OFF em Admin → Automações | ligar o toggle |
+| `channel_unavailable` (`whapi_token_missing`) | super admin sem `whapi_token` em `settings` | atalho → Config Whapi |
+| `channel_unavailable` (`no_instance_for_consultant`) | consultor sem `whatsapp_instances` conectada | atalho → Config Evolution |
+| `send_failed_greeting` / `send_failed_protocol` | Evolution respondeu `false` (instância `disconnected`/`close`) | atalho → status da instância + reconectar |
+| `no_phone` | `phone_whatsapp` inválido/sem DDI | atalho → editar telefone do cliente |
+| `rate_limited` | anti-ban bloqueou envio | mostrar quando libera; não é erro |
+| `protocol_generation_failed` | RPC de protocolo caiu | já tem fallback local; não deveria mais aparecer |
 
-1. **Bot** (`supabase/functions/whapi-webhook/handlers/bot-flow.ts:5786-5790`)
-   `ask_contaunica` grava simultaneamente `contaunica = <escolha>` e `transferir_titularidade = <mesma escolha>`.
+Hoje o toast joga tudo no mesmo balaio ("Envie manualmente") sem dizer **qual** e sem link para resolver. Por isso parece "manual toda hora".
 
-2. **Worker** (`worker-portal-2/server.mjs:1183-1186`) — comentário literal:
-   ```
-   // UX bot = boleto; portal = titularidade. Mesma escolha: unificado ⇔ transferir.
-   contaUnica: c?.contaunica_answered === true ? !!c?.contaunica : false,
-   transferirTitularidade: c?.contaunica_answered === true ? !!c?.contaunica : false,
-   ```
-   Ou seja: escolher "unificado" no bot vira `contaUnica=true + transferirTitularidade=true` no POST /customers.
+## Objetivo
 
-3. **Extractor iGreen** (`server.mjs:720-772`) trata BOLETO e FATURA como estruturas diferentes. Quando o portal recebe `contaUnica=true + transferir_titularidade=true`, ele avalia o anexo do slot `energy-bill` esperando comprovante bancário e a IA reprova com:
-   > *"é uma fatura/conta de energia elétrica da CPFL, não um comprovante de pagamento bancário"*
+1. **Automático de verdade** quando dá pra ser automático (toggle ON + canal OK).
+2. Quando não dá, mensagem específica + **atalho clicável** para a configuração exata.
+3. Nunca mais mostrar "envie manualmente" genérico.
 
-4. **Slot único de anexo** (`src/components/captacao/CaptureDocumentTiles.tsx:15-19`) — só existe `electricity_bill_photo_url`. Não há como o operador subir um boleto separado. `worker-portal-2/portal2-api-client.mjs:947` só usa esse slot, embora o portal iGreen aceite também `payment-proof` e `energy-bill-2` (`portal2-api-client.mjs:779-780`).
+## Escopo
 
-5. **Rótulo da UI mente o oposto do portal** (`CaptureBoletoPreference.tsx:14-25`): "Unificado — Um boleto (energia + iGreen juntos)". Isso vende **benefício futuro**, mas o portal usa a mesma flag como **comprovante atual**. Cliente e operador respondem "unificado" pensando em outra coisa.
+### A. Frontend — `useCustomerAttendance` (start + end)
+- Trocar `useToast` genérico por sonner com `action`:
+  - `automation_disabled` → botão **"Ativar automação"** → `/admin?tab=agendamentos&section=automacoes&flag=start_customer_attendance`.
+  - `channel_unavailable` + detail `whapi_token_missing` → **"Configurar Whapi"** → `/admin?tab=config&section=whapi`.
+  - `channel_unavailable` + detail `no_instance_for_consultant` / `no_consultant` → **"Conectar WhatsApp"** → `/admin?tab=whatsapp-config`.
+  - `send_failed_greeting` / `send_failed_protocol` → **"Ver instância"** → `/admin?tab=whatsapp-config&instance=<name>` + botão secundário **"Tentar de novo"** que reinvoca a edge.
+  - `no_phone` → **"Editar telefone"** → abre chat do cliente com sheet de edição.
+  - `rate_limited` → sem ação (info), reagenda automaticamente.
+- Descrição mostra o `detail` real (não mais só "tente de novo").
 
-6. **Sem gate cruzado** (`supabase/functions/_shared/portalValidation.ts`) — só valida presença de campo (`contaunica_answered=true`), não valida coerência entre resposta e tipo de arquivo. A reprovação só aparece depois do worker consumir o job.
+### B. Frontend — `runFastStartAttendance.ts` e `runAttendanceBatch.ts`
+- Mesmo helper de toast; no batch, cada linha "skipped" ganha botão **"Abrir chat"** e **"Reprocessar"** no relatório final (`LeadsBatchReport`).
 
-### Correção (mantém o trace canônico intacto)
+### C. Edge — endurecer o "automático"
+- `start-customer-attendance/index.ts`:
+  - devolver `detail` sempre (hoje só devolve pra alguns códigos) + `fixHint: "whapi_token"|"evolution_instance"|"phone"|"toggle"` para o front escolher o CTA sem parse frágil.
+  - antes de retornar `send_failed_*`, tentar **1 retry** com 800ms de backoff (rede/timeout momentâneo é o que mais gera manual falso).
+  - se `origin_channel` gravado mas instância **offline**, resolver de novo pelo papel (super → whapi, resto → evolution) em vez de assumir o origin morto — já existe `resolveAttendanceChannel`, só falta o "revive" quando `send_failed_*`.
+- `end-customer-attendance/index.ts`: mesmo tratamento (retorna `fixHint`).
 
-**A. Bot — `bot-flow.ts` step `ask_contaunica`**
-- Trocar a pergunta para o que o portal realmente quer saber:
-  "Hoje você recebe **um único boleto bancário** que já inclui energia + iGreen? 1-Sim / 2-Não / 3-Ainda não sei"
-- Se 1-Sim → gravar `contaunica=true` **e** pedir explicitamente a foto do boleto no próximo passo.
-- Se 2-Não ou 3 → `contaunica=false` (mantém o trace canônico já validado).
-- **Desacoplar** `transferir_titularidade` — vira pergunta separada só quando aplicável, não mais casada 1:1.
+### D. Helper novo — `src/lib/attendanceShortcut.ts`
+- Mapa `fixHint → { label, href, secondaryLabel?, secondaryAction? }`.
+- Exporta `notifyAttendanceOutcome(result, { navigate, retry })` — 1 função usada pelos 3 chamadores (hook, fast-start, batch).
 
-**B. UI ficha — `CaptureBoletoPreference.tsx`**
-- Reescrever os labels: "Boleto único (comprovante bancário)" e "Boletos separados (fatura da distribuidora)". Sem prometer "benefício futuro" no rótulo.
+### E. Fora de escopo
+- Motor de cadência, worker portal-2, atribuição de campanha, RLS, migração de banco.
 
-**C. Novo slot — `CaptureDocumentTiles.tsx`**
-- Quando `customer.contaunica === true`, mostrar um segundo tile **obrigatório**: "Boleto bancário".
-- Persistir em nova coluna `electricity_boleto_photo_url` (nullable).
+## Verificação
 
-**D. Worker — `worker-portal-2/server.mjs` + `portal2-api-client.mjs`**
-- Quando `contaUnica=true`, resolver `billFile` a partir de `electricity_boleto_photo_url`.
-- Se `contaUnica=false`, manter comportamento canônico (fatura no slot `energy-bill`).
-- Opcional (não obrigatório para o fix): subir também o comprovante no slot `payment-proof` do portal quando disponível.
-
-**E. Gate cedo — `supabase/functions/_shared/portalValidation.ts` + `finalize-capture`**
-- Nova regra: `contaunica=true && !electricity_boleto_photo_url` → `missing: ["Boleto bancário"]` no `finalize-capture`, antes de enfileirar o worker.
-- Botão "Finalizar" no `FinalizeButton.tsx` continua funcionando (ele já reage a `missing`).
-
-**F. Admin monitor — `AdminPortalMonitor.tsx`**
-- Quando `portal2_error_kind = 'ia_reprovada'` e a `rejection_reason` mencionar "comprovante de pagamento", exibir chip "Anexo x modo divergente — cliente marcou boleto único, portal exige comprovante bancário" + atalho "Trocar anexo/rota".
-
-**G. Migração**
-```sql
-ALTER TABLE public.customers
-  ADD COLUMN IF NOT EXISTS electricity_boleto_photo_url text;
-```
-Sem novos GRANTs — herda as políticas atuais de `customers`. Sem trigger novo.
-
-### Ação imediata pro José Gonçalves (sem esperar o deploy acima)
-
-Escolher **uma** conforme o caso real:
-
-1. Ele **não** recebe boleto único hoje → corrigir na ficha `contaunica=false, transferir_titularidade=false`, manter a fatura CPFL já anexada, reenviar. Trace canônico → passa.
-2. Ele **recebe** boleto único hoje → pedir foto do boleto bancário, substituir `electricity_bill_photo_url` por essa nova imagem, reenviar. Passa também.
-
-### Verificação depois do deploy
-
-- Cadastro `contaunica=false` + fatura CPFL → gate IA passa (trace canônico preservado).
-- Cadastro `contaunica=true` + boleto no novo slot → gate IA passa.
-- Cadastro `contaunica=true` sem boleto → `finalize-capture` retorna `missing: ["Boleto bancário"]` sem chamar worker.
-- Cadastro antigo com `contaunica=true` + fatura no slot antigo → UI bloqueia antes; se passar via API direta, gate IA continua reprovando (rede de segurança).
-
-### O que NÃO mexer
-
-- Não afrouxar `evaluateIaGate` (`portal-errors.mjs:259-263`) — a reprovação é correta.
-- Não alterar o trace oficial `e923a09c-abba-4ae1-a256-80e97094f686` nem mexer em `PORTAL2_AI_AUDIT_LIMIT`.
-- Não mexer nas atribuições/campanha/rodízio — não tem relação com esse bug.
-- Não mudar `resolveConcessionariaByCep`, `formatPhone`, `formatCep`, bonus rule — preservados.
+- Toggle OFF → toast "Automação desligada" + botão leva à aba Automações com o flag destacado.
+- Consultor sem instância → toast "Conecte o WhatsApp" + botão abre config da instância.
+- Instância `close`/`disconnected` → retry automático; se falhar, toast "Instância X offline" + botão "Reconectar".
+- Fluxo feliz (toggle ON + instância `connected`) → **sem toast de "envie manualmente"**, atendimento vai automático.
