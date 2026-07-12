@@ -47,20 +47,49 @@ Deno.serve(async (req) => {
     }
 
     const channelEnv = await loadChannelEnv(supabase);
-    const result = await sendAttendanceRatingRequest(supabase, {
+    let result = await sendAttendanceRatingRequest(supabase, {
       customerId,
       consultantId,
       env: channelEnv,
       superadminConsultantId: channelEnv.superadminConsultantId,
     });
 
+    // Retry 1x em falha transiente de envio.
+    if (!result.ok && (result.code === "send_failed_closing" || result.code === "send_failed_rating")) {
+      await new Promise((r) => setTimeout(r, 800));
+      result = await sendAttendanceRatingRequest(supabase, {
+        customerId,
+        consultantId,
+        env: channelEnv,
+        superadminConsultantId: channelEnv.superadminConsultantId,
+      });
+    }
+
     if (!result.ok) {
+      const code = String(result.code);
+      const detail = String(result.detail || "");
+      let fixHint: string | null = null;
+      let message = "Não foi possível finalizar automaticamente.";
+      if (code === "channel_unavailable") {
+        fixHint = detail === "whapi_token_missing" ? "whapi_token" : "evolution_instance";
+        message = "Canal WhatsApp indisponível. Configure para enviar a pesquisa.";
+      } else if (code === "send_failed_closing" || code === "send_failed_rating") {
+        fixHint = "instance_offline";
+        message = "Instância respondeu offline. Reconecte para reenviar a pesquisa.";
+      } else if (code === "no_phone") {
+        fixHint = "phone";
+        message = "Telefone do cliente inválido. Corrija para enviar a pesquisa.";
+      } else if (code === "attendance_not_started") {
+        fixHint = "start_first";
+        message = "Atendimento ainda não foi iniciado. Clique em Iniciar antes.";
+      }
       return json({
         ok: false,
-        error: result.code,
-        detail: result.detail,
+        error: code,
+        detail,
         fallback: true,
-        message: "Não foi possível enviar a pesquisa automaticamente. Envie manualmente pelo chat.",
+        fixHint,
+        message,
       }, 200);
     }
 
