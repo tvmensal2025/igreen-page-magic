@@ -14,6 +14,8 @@ export function useCustomerAttendance(
   consultantId: string,
 ) {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const go = useCallback((path: string) => { if (path) navigate(path); }, [navigate]);
   const mountIdRef = useRef(
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
