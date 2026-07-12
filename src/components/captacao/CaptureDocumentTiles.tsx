@@ -4,7 +4,11 @@ import { useToast } from "@/hooks/use-toast";
 import { Camera, Loader2, RefreshCw, FileImage } from "lucide-react";
 import { fireRandomCelebration } from "@/lib/captureGame";
 
-type DocKey = "document_front_url" | "document_back_url" | "electricity_bill_photo_url";
+type DocKey =
+  | "document_front_url"
+  | "document_back_url"
+  | "electricity_bill_photo_url"
+  | "electricity_boleto_photo_url";
 
 interface DocSlot {
   key: DocKey;
@@ -12,11 +16,20 @@ interface DocSlot {
   hint: string;
 }
 
-const SLOTS: DocSlot[] = [
+const BASE_SLOTS: DocSlot[] = [
   { key: "document_front_url", label: "RG/CNH Frente", hint: "Foto nítida da frente" },
   { key: "document_back_url", label: "RG/CNH Verso", hint: "Foto nítida do verso" },
   { key: "electricity_bill_photo_url", label: "Conta de Energia", hint: "Foto ou PDF da fatura" },
 ];
+
+// Slot extra obrigatório quando o cliente marcou "boleto único" no bot/ficha
+// (contaunica=true). O portal iGreen valida esse anexo esperando comprovante
+// bancário, não a fatura da distribuidora.
+const BOLETO_SLOT: DocSlot = {
+  key: "electricity_boleto_photo_url",
+  label: "Boleto Bancário",
+  hint: "Comprovante do boleto único",
+};
 
 interface Props {
   customerId: string;
