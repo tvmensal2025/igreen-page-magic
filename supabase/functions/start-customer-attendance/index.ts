@@ -54,8 +54,9 @@ Deno.serve(async (req) => {
       return json({
         ok: false,
         error: "automation_disabled",
-        message: "Abrir chamado automático está DESLIGADO. Ative em Admin → Central de Agendamentos → Automações.",
+        message: "Abrir chamado automático está DESLIGADO. Ative em Automações.",
         fallback: true,
+        fixHint: "toggle",
       });
     }
 
