@@ -314,7 +314,7 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     const filled = typeof boletoUrl === "string" && boletoUrl.trim().length > 0
       && boletoUrl !== "evolution-media:pending" && boletoUrl !== "collected";
     if (!filled) {
-      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário" });
+      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário", group: "docs" });
     }
   }
 
