@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { notifyAttendanceOutcome } from "@/lib/attendanceShortcut";
 import type { AttendanceUiState } from "@/components/whatsapp/AttendanceStatusBar";
 
 /**
