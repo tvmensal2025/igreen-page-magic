@@ -288,6 +288,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                     customerId: lead.id,
                     consultantId,
                     alreadyStarted: !!lead.welcome_sent_at,
+                    navigate,
                   });
                   setSelectedId(lead.id);
                   window.dispatchEvent(new Event("captacao:batch-finished"));
