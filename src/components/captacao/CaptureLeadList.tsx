@@ -388,7 +388,7 @@ export function CaptureLeadList({
     for (const l of filtered) {
       const n = unread[l.id] || 0;
       if (n <= 0) continue;
-      if (l.welcome_sent_at) atend += n; else esp += n;
+      if (l.welcome_sent_at && !l.attendance_rating_requested_at) atend += n; else esp += n;
     }
     return { atend, esp };
   }, [filtered, unread]);
