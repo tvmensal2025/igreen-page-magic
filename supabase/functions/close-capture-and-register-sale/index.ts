@@ -213,6 +213,24 @@ Deno.serve(async (req) => {
         .update({ stage: "perdido", updated_at: nowIso, rejection_reason: lostReason })
         .eq("customer_id", customerId)
         .eq("consultant_id", consultantId);
+
+      // Aviso opcional ao parceiro que indicou este lead
+      if (body.notifyPartner && customer.referral_partner_id && body.partnerMessage) {
+        try {
+          const { data: partner } = await supabase
+            .from("referral_partners")
+            .select("nome, notification_phone")
+            .eq("id", customer.referral_partner_id)
+            .maybeSingle();
+          const phone = (partner as any)?.notification_phone || "";
+          if (phone) {
+            const sent = await sendRawToNumber(consultantId, phone, body.partnerMessage);
+            if (!sent) console.warn("[close-capture] aviso parceiro falhou");
+          }
+        } catch (e) {
+          console.warn("[close-capture] aviso parceiro erro:", (e as Error).message);
+        }
+      }
     }
 
     // 2) Encerra captação
