@@ -144,7 +144,10 @@ export function buildAgendamentosTimeline(input: {
       preview: `${c.sent}/${c.total} enviados`,
       at,
       status: c.status === "running" ? "running" : "pending",
-      badge: c.status === "scheduled" ? "Campanha agendada" : "Campanha em andamento",
+      badge:
+        c.status === "scheduled" ? "Campanha agendada"
+        : c.status === "paused" ? "Campanha pausada — precisa de atenção"
+        : "Campanha em andamento",
     });
   }
 

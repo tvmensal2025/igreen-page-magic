@@ -9,7 +9,11 @@
 //
 // NÃO usar em evolution-webhook (respostas a clientes ativos).
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+// Tipo estrutural relaxado (padrão do automation-gate): chamadores criam o
+// client com versões diferentes do supabase-js (esm.sh 2.x / npm 2.49) e a
+// tipagem nominal do SupabaseClient conflita entre elas em deno check.
+// deno-lint-ignore no-explicit-any
+type SupabaseClient = any;
 
 export type ProactiveSendGuardResult =
   | { allowed: true; reason: "verified" | "match" }
@@ -75,7 +79,8 @@ export async function canSendProactive(
       return { allowed: false, reason: "not_verified", detail: "Nenhuma instância conectada" };
     }
     const consultantTail = tail11(consultant.phone);
-    const matchInstance = instances.find((i) => tail11(i.connected_phone) === consultantTail);
+    const rows = instances as Array<{ instance_name: string; connected_phone: string | null }>;
+    const matchInstance = rows.find((i) => tail11(i.connected_phone) === consultantTail);
     if (matchInstance) {
       // Atualiza marca de verificado para próximas chamadas
       void supabase.from("consultants").update({ phone_verified_at: new Date().toISOString() }).eq("id", opts.consultantId);
@@ -84,7 +89,7 @@ export async function canSendProactive(
     return {
       allowed: false,
       reason: "phone_mismatch",
-      detail: `phone=${consultantTail} vs connected=${instances.map((i) => tail11(i.connected_phone)).join(",")}`,
+      detail: `phone=${consultantTail} vs connected=${rows.map((i) => tail11(i.connected_phone)).join(",")}`,
     };
   } catch (e) {
     return { allowed: false, reason: "lookup_failed", detail: (e as Error).message };

@@ -84,18 +84,13 @@ export function getNextMissingStep(
     /^sem_email/i.test(emailNormalized) ||
     (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
   ) return "ask_email";
-  if (!c.cep) return "ask_cep";
-  // CEP genérico (termina em 000) → pedir manualmente, EXCETO se o endereço
-  // já está completo (OCR confiável). Nesse caso aceitamos o CEP da cidade
-  // pra não travar o cadastro com pergunta extra (regra do produto: "Cadastro
-  // Rápido" Flow D nunca pede CEP).
-  if (
-    c.cep &&
-    /000$/.test(c.cep.replace(/\D/g, "")) &&
-    !(c.address_city && c.address_state && c.address_street)
-  ) return "ask_cep";
+  // F03: NUNCA devolver ask_cep ao lead (regra de produto).
+  // CEP ausente/genérico é resolvido por autoResolveCepIfNeeded (ViaCEP/mock).
+  // Mantemos os checks abaixo para documentação — sem return "ask_cep".
+  // if (!c.cep) → segue para número
+  // if (cep /000$/ sem endereço completo) → segue; autoResolve cobre
   if (!c.address_number) return "ask_number";
-  // complemento é opcional, mas perguntar uma vez
+  // complemento é opcional, mas perguntar uma vez — nunca gravar e-mail aqui
   if (c.address_complement === null || c.address_complement === undefined) return "ask_complement";
   // Distribuidora e Nº de instalação normalmente vêm da conta de luz (OCR).
   // Quando o OCR falha em lê-los, o lead ficava "completo" pro bot mas TRAVADO

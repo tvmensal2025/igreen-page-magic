@@ -34,14 +34,17 @@ export async function logSkipped(
   key: string,
   meta: Record<string, unknown> = {},
 ): Promise<void> {
+  // Log estruturado sempre sai (visível em Logs da função).
   try {
-    await supabase.from("cadence_action_log").insert({
-      stage: key,
-      action: "skipped_toggle_off",
-      status: "skipped",
-      meta,
-    });
+    console.log(JSON.stringify({ level: "info", event: "automation_skipped_toggle_off", key, ...meta }));
+  } catch { /* noop */ }
+  // Persistência: tabela própria automation_skip_log. (A versão anterior
+  // inseria em cadence_action_log com colunas inexistentes/enum inválido e
+  // falhava silenciosamente em todas as chamadas.)
+  try {
+    const { error } = await supabase.from("automation_skip_log").insert({ key, meta });
+    if (error) console.warn(`[automation-gate] skip log falhou: ${error.message}`);
   } catch {
-    /* no-op */
+    /* best-effort: nunca bloqueia o fluxo principal */
   }
 }

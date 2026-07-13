@@ -364,20 +364,13 @@ function MessageBody({ row }: { row: ConvRow }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [type, row.media_id]);
 
-  if (!hasMedia) {
-    return (
-      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-        {row.message_text || ""}
-      </p>
-    );
-  }
-
   const downloadName = (() => {
     const ext = type === "audio" ? "ogg" : type === "video" ? "mp4" : type === "image" || type === "sticker" ? "jpg" : "bin";
     const stamp = new Date(row.created_at || Date.now()).toISOString().replace(/[:.]/g, "-");
     return `${type}-${stamp}.${ext}`;
   })();
 
+  // Hooks precisam vir antes de qualquer return condicional (rules-of-hooks).
   const handleDownload = useCallback(async () => {
     if (!dataUrl) return;
     try {
@@ -395,6 +388,14 @@ function MessageBody({ row }: { row: ConvRow }) {
       window.open(dataUrl, "_blank");
     }
   }, [dataUrl, downloadName]);
+
+  if (!hasMedia) {
+    return (
+      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+        {row.message_text || ""}
+      </p>
+    );
+  }
 
   return (
     <div className="space-y-1.5">

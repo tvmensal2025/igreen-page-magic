@@ -33,8 +33,13 @@ function parseValor(v: number | string | null | undefined): number | null {
 
 function fmtValor(v: number | string | null | undefined): string {
   const n = parseValor(v);
-  if (n === null) return typeof v === "string" ? v : "";
-  return `R$ ${n.toFixed(2).replace(".", ",")}`;
+  if (n === null) {
+    // Se já veio formatado com R$, devolve só o número p/ o template dono do "R$"
+    if (typeof v === "string") return v.replace(/^R\$\s*/i, "").trim();
+    return "";
+  }
+  // Sem prefixo R$ — templates DB já usam "R$ {{valor_conta}}" (F08)
+  return n.toFixed(2).replace(".", ",");
 }
 
 const DESCONTO_PCT = 0.20;
@@ -77,6 +82,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "economia_mensal", econMensal);
   out = replaceVar(out, "economia_anual", econAnual);
   out = replaceVar(out, "economia_range", econRange);
+  // F08: template "R$ {{valor_conta}}" + fmtValor com "R$" → "R$ R$"
+  out = out.replace(/R\$\s*R\$/gi, "R$");
   out = replaceVar(out, "economia_faixa", econRange);
   out = replaceVar(out, "telefone", tel);
   out = replaceVar(out, "cpf", cpf);

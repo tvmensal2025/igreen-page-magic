@@ -207,6 +207,12 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
       if (!isFileReady(v)) missing.push(f);
       continue;
     }
+    // F09: bairro fraco + rua longa do OCR → não bloqueia portal
+    if (f.key === "address_neighborhood") {
+      const street = String(c.address_street || "").trim();
+      if (!isStrFilled(v) && street.length < 12) missing.push(f);
+      continue;
+    }
     if (!isStrFilled(v)) missing.push(f);
   }
 

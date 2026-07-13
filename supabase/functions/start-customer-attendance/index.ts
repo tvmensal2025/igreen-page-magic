@@ -1,6 +1,10 @@
 // start-customer-attendance
 // Botão "Iniciar atendimento" do consultor.
-// GATE: automation_toggles.start_customer_attendance precisa estar ON.
+// CLASSIFICAÇÃO: envio MANUAL — o consultor abriu o cliente e clicou.
+//   Chamadas com JWT de usuário válido NÃO passam pelo kill switch de
+//   automação (manual não é automático). O toggle
+//   automation_toggles.start_customer_attendance segue bloqueando chamadas
+//   sem usuário autenticado (integrações internas/batch sem operador).
 // TEMPLATE: se o consultor personalizou 'start_attendance', envia essa msg
 //   (com {{saudacao}}, {{consultor}}, {{protocolo}}, {{nome}}) como única mensagem.
 //   Caso contrário, envia o cabeçalho padrão (greeting + protocolo + pedido de nome).
@@ -22,7 +26,10 @@ function json(body: unknown, status = 200) {
 }
 
 function greetingByHour(): string {
-  const h = new Date(Date.now() - 3 * 3600_000).getUTCHours(); // BRT
+  // Horário de Brasília via Intl (não assume offset fixo).
+  const h = Number(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo", hour: "2-digit", hour12: false,
+  }).format(new Date())) % 24;
   if (h < 12) return "Bom dia";
   if (h < 18) return "Boa tarde";
   return "Boa noite";
@@ -48,13 +55,19 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "missing_fields" }, 400);
     }
 
-    // 🚦 Kill switch universal
-    if (!(await isAutomationEnabled(supabase, "start_customer_attendance"))) {
+    // Manual não é automático: se o JWT pertence a um usuário real (consultor
+    // clicou em "Iniciar atendimento"), o envio é manual e NÃO passa pelo kill
+    // switch de automação. O toggle continua valendo para chamadas sem usuário
+    // (ex.: integrações internas usando anon/service key).
+    const { data: authData } = await supabase.auth.getUser(jwt);
+    const isManualClick = !!authData?.user?.id;
+
+    if (!isManualClick && !(await isAutomationEnabled(supabase, "start_customer_attendance"))) {
       await logSkipped(supabase, "start_customer_attendance", { customerId, consultantId });
       return json({
         ok: false,
         error: "automation_disabled",
-        message: "Abrir chamado automático está DESLIGADO. Ative em Automações.",
+        message: "Abertura de chamado sem operador está DESLIGADA. Ative em Automações.",
         fallback: true,
         fixHint: "toggle",
       });

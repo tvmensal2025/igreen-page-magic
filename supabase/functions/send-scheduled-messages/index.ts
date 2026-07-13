@@ -1,7 +1,16 @@
+// send-scheduled-messages — cron (1/min) que executa a agenda manual
+// (tabela scheduled_messages, criada pelo consultor no Hub de Agendamentos).
+//
+// Concorrência: usa a RPC claim_scheduled_messages (FOR UPDATE SKIP LOCKED)
+// para reivindicar mensagens atomicamente — dois ticks simultâneos nunca
+// enviam a mesma mensagem. Linhas presas em 'processing' (worker morreu no
+// meio) são destravadas pela RPC reconcile_stuck_scheduled_messages.
+//
+// Retry: falha de envio consome uma tentativa (attempt_count) e reagenda
+// +10min; na 3ª falha vira 'failed' definitivo com last_error preenchido.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { captureError } from "../_shared/sentry.ts";
 import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/quiet-hours.ts";
-import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -10,6 +19,9 @@ const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 10 * 60_000;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -31,17 +43,22 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!(await isBotGloballyEnabled(supabase))) {
-      return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
+    // Agenda manual (Hub): NÃO depende de bot_global_enabled — consultor agenda
+    // mensagem própria; kill switch do bot não deve bloquear execução da agenda.
     if (!(await isAutomationEnabled(supabase, "send_scheduled_messages"))) {
       await logSkipped(supabase, "send_scheduled_messages");
       return new Response(JSON.stringify({ skipped: "automation_disabled" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Destrava mensagens presas em 'processing' (worker anterior morreu).
+    const { data: reconciled, error: reconcileError } = await supabase
+      .rpc("reconcile_stuck_scheduled_messages");
+    if (reconcileError) {
+      console.warn("[scheduled] reconcile falhou:", reconcileError.message);
+    } else if (reconciled) {
+      console.log(`[scheduled] ${reconciled} mensagem(ns) destravada(s) de processing`);
     }
 
     // Em horário de silêncio: adia mensagens devidas para 08:00 BRT e sai.
@@ -61,14 +78,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch pending messages where scheduled_at <= now
+    // Claim atômico: marca como 'processing' e retorna as linhas reivindicadas.
+    // Outro worker rodando em paralelo recebe um conjunto disjunto (SKIP LOCKED).
     const { data: messages, error: fetchError } = await supabase
-      .from("scheduled_messages")
-      .select("*")
-      .eq("status", "pending")
-      .lte("scheduled_at", new Date().toISOString())
-      .order("scheduled_at", { ascending: true })
-      .limit(50);
+      .rpc("claim_scheduled_messages", { p_limit: 50 });
 
     if (fetchError) throw fetchError;
     if (!messages || messages.length === 0) {
@@ -79,7 +92,26 @@ Deno.serve(async (req) => {
 
     let sentCount = 0;
     let failedCount = 0;
+    let retriedCount = 0;
     let skippedPaused = 0;
+
+    // Falha consome tentativa; até MAX_ATTEMPTS reagenda +10min, depois 'failed'.
+    const failOrRetry = async (msg: { id: string; attempt_count?: number }, errText: string) => {
+      const attempts = Number(msg.attempt_count ?? 0) + 1;
+      const isFinal = attempts >= MAX_ATTEMPTS;
+      await supabase
+        .from("scheduled_messages")
+        .update({
+          status: isFinal ? "failed" : "pending",
+          attempt_count: attempts,
+          last_error: errText.slice(0, 500),
+          processing_started_at: null,
+          ...(isFinal ? {} : { scheduled_at: new Date(Date.now() + RETRY_DELAY_MS).toISOString() }),
+        })
+        .eq("id", msg.id);
+      if (isFinal) failedCount++;
+      else retriedCount++;
+    };
 
     for (const msg of messages) {
       try {
@@ -90,10 +122,17 @@ Deno.serve(async (req) => {
         let billValue: number | null = null;
         let representante: string | null = null;
         if (phone) {
-          const { data: cust } = await supabase
+          // Prioriza customer do consultor que criou o agendamento (evita colisão multi-tenant).
+          let custQuery = supabase
             .from("customers")
             .select("name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until")
-            .eq("phone_whatsapp", phone)
+            .eq("phone_whatsapp", phone);
+          if (msg.consultant_id) {
+            custQuery = custQuery.or(
+              `consultant_id.eq.${msg.consultant_id},assigned_consultant_id.eq.${msg.consultant_id}`,
+            );
+          }
+          const { data: cust } = await custQuery
             .order("updated_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -104,7 +143,7 @@ Deno.serve(async (req) => {
           if (paused) {
             await supabase
               .from("scheduled_messages")
-              .update({ status: "skipped" })
+              .update({ status: "skipped", processing_started_at: null })
               .eq("id", msg.id);
             console.log(`⏭️ [scheduled] msg ${msg.id} pulada — humano assumiu (phone=${phone})`);
             skippedPaused++;
@@ -130,14 +169,13 @@ Deno.serve(async (req) => {
           valor_conta: billValue,
         });
 
-        // 🛡️ Anti-ban guard
+        // 🛡️ Anti-ban guard — não é falha: devolve para pending com novo horário.
         const quota = await checkSendQuota(supabase, msg.instance_name);
         if (!quota.allowed) {
-          // Reagendar para depois (não falhar — só pausar)
           const retryAt = quota.until || quota.next_allowed_at
             || new Date(Date.now() + 30 * 60_000).toISOString();
           await supabase.from("scheduled_messages")
-            .update({ scheduled_at: retryAt })
+            .update({ status: "pending", scheduled_at: retryAt, processing_started_at: null })
             .eq("id", msg.id);
           console.log(`⏸️ [scheduled] msg ${msg.id} adiada (anti-ban): ${quota.reason} → ${retryAt}`);
           continue;
@@ -159,26 +197,18 @@ Deno.serve(async (req) => {
         if (res.ok) {
           await supabase
             .from("scheduled_messages")
-            .update({ status: "sent", sent_at: new Date().toISOString() })
+            .update({ status: "sent", sent_at: new Date().toISOString(), processing_started_at: null })
             .eq("id", msg.id);
           await registerSend(supabase, msg.instance_name);
           sentCount++;
         } else {
           const errText = await res.text();
           console.error(`Failed to send scheduled message ${msg.id}:`, errText);
-          await supabase
-            .from("scheduled_messages")
-            .update({ status: "failed" })
-            .eq("id", msg.id);
-          failedCount++;
+          await failOrRetry(msg, errText || `http_${res.status}`);
         }
       } catch (err) {
         console.error(`Error sending message ${msg.id}:`, err);
-        await supabase
-          .from("scheduled_messages")
-          .update({ status: "failed" })
-          .eq("id", msg.id);
-        failedCount++;
+        await failOrRetry(msg, String((err as Error)?.message || err));
       }
 
       // Intervalo mínimo do warmup + jitter humano
@@ -188,7 +218,14 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ sent: sentCount, failed: failedCount, skipped_paused: skippedPaused, total: messages.length }),
+      JSON.stringify({
+        sent: sentCount,
+        failed: failedCount,
+        retried: retriedCount,
+        skipped_paused: skippedPaused,
+        reconciled: reconciled ?? 0,
+        total: messages.length,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

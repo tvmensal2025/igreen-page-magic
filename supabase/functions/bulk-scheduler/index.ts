@@ -63,21 +63,21 @@ function renderText(tpl: string, vars: { name?: string; bill?: number | null; ci
   return out;
 }
 
-function inWindow(cfg: any): boolean {
+function inWindow(cfg: any, at: Date = new Date()): boolean {
   if (!cfg) return true;
-  // Considera America/Sao_Paulo (UTC-3) sem DST atualmente
-  const now = new Date(Date.now() - 3 * 3600_000);
-  if (cfg.weekdaysOnly) {
-    const d = now.getUTCDay();
-    if (d === 0 || d === 6) return false;
-  }
+  // Horário oficial de Brasília via Intl (não assume offset fixo).
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(at).reduce<Record<string, string>>((a, p) => ((a[p.type] = p.value), a), {});
+  if (cfg.weekdaysOnly && (parts.weekday === "Sat" || parts.weekday === "Sun")) return false;
   const start = cfg.windowStart || "00:00";
   const end = cfg.windowEnd || "23:59";
   const [sH, sM] = String(start).split(":").map(Number);
   const [eH, eM] = String(end).split(":").map(Number);
   const startMin = sH * 60 + sM;
   const endMin = eH * 60 + eM;
-  const cur = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const cur = (Number(parts.hour) % 24) * 60 + Number(parts.minute);
   if (endMin < startMin) return cur >= startMin || cur <= endMin;
   return cur >= startMin && cur <= endMin;
 }
@@ -161,6 +161,12 @@ Deno.serve(async (req) => {
     }
 
   const report: any[] = [];
+
+  // 0) Destrava alvos presos em 'sending' (worker anterior morreu no meio).
+  const { data: reconciled, error: reconcileError } = await supabase
+    .rpc("reconcile_stuck_bulk_targets");
+  if (reconcileError) console.warn("[bulk] reconcile falhou:", reconcileError.message);
+  else if (reconciled) console.log(`[bulk] ${reconciled} alvo(s) destravado(s) de sending`);
 
   // 1) Promove campanhas agendadas cujo horário já chegou
   const nowIso = new Date().toISOString();
@@ -267,8 +273,17 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // Marca sending
-      await supabase.from("bulk_campaign_targets").update({ status: "sending" }).eq("id", t.id);
+      // Claim atômico: só prossegue se ESTE worker mudou queued→sending.
+      // Se outro tick concorrente já reivindicou o alvo, data volta vazio.
+      const { data: claimed, error: claimError } = await supabase
+        .from("bulk_campaign_targets")
+        .update({ status: "sending", claimed_at: new Date().toISOString() })
+        .eq("id", t.id)
+        .eq("status", "queued")
+        .select("id");
+      if (claimError || !claimed || claimed.length === 0) {
+        continue;
+      }
       const finalMsg = renderText(camp.message_text || "", {
         name: t.name || undefined,
         bill: t.vars?.bill ?? null,

@@ -165,10 +165,11 @@ async function dispatchSMS(
   if (!text.trim()) return { ok: false, detail: "empty_message" };
 
   try {
-    const r = await makeSMS({ to: dest, text });
+    // MakeSMSOpts espera `message` — com `text` o SMS sairia "undefined".
+    const r = await makeSMS({ to: dest, message: text });
     await supabase.from("voice_sms_log").insert({
       consultant_id: row.consultant_id, phone: dest, message: text,
-      velip_sms_id: r.cdls_id ?? null, velip_ctid: r.ctid ?? null,
+      velip_sms_id: r.cdls_id ?? null, velip_ctid: (r.raw as { ctid?: string } | undefined)?.ctid ?? null,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
       raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
@@ -223,12 +224,34 @@ Deno.serve(async (req) => {
   if (error) return json({ error: error.message }, 500);
   if (!due || due.length === 0) return json({ processed: 0 });
 
+  // Batch: leads com bot pausado (fixo/temporário) ou em mão humana não
+  // recebem cadência — a state machine só volta a olhar em 6h.
+  const customerIds = due.map((r) => r.customer_id).filter(Boolean);
+  const { data: custRows } = await supabase
+    .from("customers")
+    .select("id, bot_paused, bot_paused_until, assigned_human_id")
+    .in("id", customerIds);
+  const blockedCustomers = new Set(
+    (custRows || [])
+      .filter((c: any) =>
+        !!c.bot_paused ||
+        !!c.assigned_human_id ||
+        (c.bot_paused_until && new Date(c.bot_paused_until) > now))
+      .map((c: any) => c.id),
+  );
+
   let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0;
 
   for (const row of due) {
     const stage = row.stage as Stage;
     if (row.paused_until && new Date(row.paused_until) > now) {
       await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
+      deferred++; continue;
+    }
+    if (blockedCustomers.has(row.customer_id)) {
+      await supabase.from("lead_cadence_state")
+        .update({ next_action_at: new Date(now.getTime() + 6 * 3600_000).toISOString() })
+        .eq("id", row.id);
       deferred++; continue;
     }
     const def = STAGE_MAP[stage];
@@ -272,6 +295,16 @@ Deno.serve(async (req) => {
     });
     if (insertRes.error && !String(insertRes.error.message).includes("duplicate")) {
       console.error("cadence log insert failed", insertRes.error);
+    }
+
+    // Falha de disparo NÃO avança a state machine: reagenda o MESMO stage
+    // em 30min. (Antes o lead pulava para o próximo stage sem ter recebido
+    // nada — etapas inteiras da cadência sumiam em caso de erro.)
+    if (status === "failed") {
+      await supabase.from("lead_cadence_state").update({
+        next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+      }).eq("id", row.id);
+      continue;
     }
 
     const nextAt = computeNextActionAt(def.next, now);

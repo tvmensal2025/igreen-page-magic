@@ -71,6 +71,15 @@ import {
 import { matchQA } from "./conversational/index.ts";
 import { getTemplate } from "./conversational/templates.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
+import {
+  looksLikeEmail,
+  looksLikeCepOnly,
+  sanitizeComplement,
+  isNonNameReply,
+  resumeAfterAddressEdit,
+  looksLikeSpamBlast,
+} from "../../_shared/bot/cadastro-fixes.ts";
+
 import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
@@ -2017,6 +2026,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   let reply = "";
   const updates: Record<string, any> = {};
 
+  // F11: spam/blast no início — pausa sem engajar (não auto-envia em massa)
+  if (
+    !isFile && !isButton && messageText && looksLikeSpamBlast(messageText) &&
+    /^(welcome|d_welcome|qualificacao|menu_inicial)$/i.test(String(step).replace(/^flow:/, ""))
+  ) {
+    console.warn(`[spam] lead=${customer.id} step=${step} — pausando`);
+    return {
+      reply: "",
+      updates: {
+        bot_paused: true,
+        bot_paused_reason: "spam_blast",
+        bot_paused_at: new Date().toISOString(),
+        conversation_step: "aguardando_humano",
+        __inline_sent: true,
+      } as any,
+    };
+  }
+
   // ═══════════════════════════════════════════════════════════════════
   // 🔁 persistAndRedispatch — Portal 2 correction loop (Req 9.3/9.4, 7.4).
   // Espelha o caso de auto-correção de consumo do step `portal_submitting`:
@@ -3523,6 +3550,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         reply = `${_v}me manda uma *foto* (ou PDF) da sua conta de luz, por favor 📸\n\nSe estiver sem a conta agora, é só me dizer o valor médio que você paga.`;
         break;
       }
+      // F07: diagnóstico OCR → engine_logs (não poluir customers.error_message)
+      try {
+        await supabase.from("engine_logs").insert({
+          customer_id: customer.id,
+          event: "aguard_conta_debug",
+          payload: {
+            isFile,
+            hasImage,
+            fileBase64Len: fileBase64?.length ?? 0,
+            sandbox: isCustomerSandbox(customer),
+          },
+        } as any);
+      } catch (_) { /* noop */ }
       if (!isFile) {
         const txt = String(messageText || "").trim();
         const first = ((customer as any).name || "").split(/\s+/)[0];
@@ -4883,8 +4923,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const v = messageText.trim();
       if (v.length < 3) { reply = "❌ Endereço muito curto. Digite novamente:"; break; }
       updates.address_street = v;
-      updates.conversation_step = "confirmando_dados_conta";
+      const resumeTo = resumeAfterAddressEdit(customer as any);
+      updates.conversation_step = resumeTo;
       const merged = { ...customer, ...updates };
+      if (resumeTo === "ask_finalizar") {
+        reply = "✅ Endereço atualizado!\n\n" + getReplyForStep("ask_finalizar", merged);
+        break;
+      }
       await sendOptions(remoteJid, `✅ Endereço atualizado.\n\n` + buildConfirmacaoConta(merged), [
         { id: "sim_conta", title: "✅ SIM" }, { id: "nao_conta", title: "❌ NÃO" }, { id: "editar_conta", title: "✏️ EDITAR" },
       ]);
@@ -5031,8 +5076,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // ─── 9. PERGUNTAS MANUAIS ─────────
     case "ask_name": {
-      if (messageText.length < 3) { reply = "Por favor, digite seu *nome completo*."; break; }
-      updates.name = messageText.trim();
+      const nameRaw = String(messageText || "").trim();
+      if (nameRaw.length < 3 || isNonNameReply(nameRaw)) {
+        reply = "Por favor, digite seu *nome completo* (nome e sobrenome).";
+        break;
+      }
+      updates.name = nameRaw;
       updates.name_source = "user_confirmed";
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
@@ -5281,8 +5330,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
 
     case "ask_cep": {
+      // F03: nunca martelar CEP. E-mail neste step → captura e-mail.
+      if (looksLikeEmail(messageText) && !(customer as any).email) {
+        const em = String(messageText || "").trim().split(/\s+/)[0].replace(/[.,;]+$/, "").toLowerCase();
+        updates.email = em;
+        const mergedEm = { ...customer, ...updates };
+        let nextEm = await autoResolveCepIfNeeded(mergedEm, updates);
+        if (nextEm === "ask_cep") nextEm = "ask_number";
+        updates.conversation_step = nextEm;
+        reply = getReplyForStep(nextEm, mergedEm);
+        break;
+      }
       const cepClean = messageText.replace(/\D/g, "");
-      if (cepClean.length !== 8) { reply = "❌ CEP inválido. Informe os *8 números*:"; break; }
+      if (cepClean.length !== 8) {
+        const mergedSkip = { ...customer, ...updates };
+        let nextSkip = await autoResolveCepIfNeeded(mergedSkip, updates);
+        if (nextSkip === "ask_cep") nextSkip = "ask_number";
+        updates.conversation_step = nextSkip;
+        reply = getReplyForStep(nextSkip, mergedSkip);
+        break;
+      }
       try {
         const viaCep = await buscarEnderecoPorCep(cepClean);
         if (!viaCep) { reply = "❌ CEP não encontrado. Verifique e tente novamente:"; break; }
@@ -5300,6 +5367,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "ask_number": {
+      // F03: 8 dígitos puros = CEP, não número da casa (Julia)
+      if (looksLikeCepOnly(messageText)) {
+        const cepOnly = messageText.replace(/\D/g, "");
+        updates.cep = cepOnly;
+        const mergedCep = { ...customer, ...updates };
+        let nextCep = await autoResolveCepIfNeeded(mergedCep, updates);
+        if (nextCep === "ask_number" || nextCep === "ask_cep") {
+          updates.conversation_step = "ask_number";
+          reply = "📍 Anotei o CEP. Agora qual o *número* da residência? (ex: 105)";
+        } else {
+          updates.conversation_step = nextCep;
+          reply = getReplyForStep(nextCep, mergedCep);
+        }
+        break;
+      }
       updates.address_number = messageText.trim();
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
@@ -5323,7 +5405,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (resp === "skip_complement" || resp === "no_complement" || skipWords.includes(String(resp).toLowerCase())) {
         updates.address_complement = "";
       } else if (messageText && messageText.trim().length > 0) {
-        updates.address_complement = messageText.trim();
+        if (looksLikeEmail(messageText)) {
+          if (!(customer as any).email) updates.email = String(messageText).trim().toLowerCase();
+          updates.address_complement = "";
+        } else {
+          updates.address_complement = sanitizeComplement(messageText.trim()) ?? messageText.trim();
+        }
       } else {
         // Sem texto válido nem botão → reenvia pergunta com 3 botões
         const sent = await sendOptions(
@@ -5781,6 +5868,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "cadastro_em_analise": {
+      // F15: áudio/texto livre enquanto espera portal — ack curto
+      {
+        const rawIn = String(messageText || "").trim();
+        const otpLike = /^\d{4,8}$/.test(rawIn.replace(/\s/g, ""));
+        if (!otpLike && (rawIn || isFile)) {
+          reply = "Recebi sim ✅ Estou finalizando seu cadastro no portal — assim que sair o código ou o link, eu te aviso por aqui.";
+          break;
+        }
+      }
+
       // Guarda: nunca fingir "em análise" se OTP ainda pendente (caso Osmar).
       {
         const st = String(customer.status || "");
@@ -5978,9 +6075,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (err.includes("CPF")) { updates.conversation_step = "ask_cpf"; reply = `⚠️ ${err}\n\nQual o seu *CPF*? (apenas números)`; redirected = true; break; }
         if (err.includes("RG")) { updates.conversation_step = "ask_rg"; reply = `⚠️ ${err}\n\nQual o seu *RG*?`; redirected = true; break; }
         if (err.includes("CEP")) { console.warn(`[validate] ignorando erro CEP (regra: nunca pedir): ${err}`); continue; }
-        if (err.includes("rua") || err.includes("Endereço")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo*:`; redirected = true; break; }
+        if (err.includes("rua") || err.includes("Endereço")) { updates.previous_conversation_step = "finalizando"; updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo*:`; redirected = true; break; }
         if (err.includes("Número")) { updates.conversation_step = "ask_number"; reply = `⚠️ ${err}\n\nQual o *número* da residência?`; redirected = true; break; }
-        if (err.includes("Bairro")) { updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo* (rua, número, bairro):`; redirected = true; break; }
+        if (err.includes("Bairro")) { updates.previous_conversation_step = "finalizando"; updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo* (rua, número, bairro):`; redirected = true; break; }
         if (err.includes("Cidade")) { console.warn(`[validate] ignorando erro Cidade (regra: nunca pedir CEP): ${err}`); continue; }
         if (err.includes("Estado")) { console.warn(`[validate] ignorando erro Estado (regra: nunca pedir CEP): ${err}`); continue; }
         if (err.includes("Valor")) { updates.conversation_step = "ask_bill_value"; reply = `⚠️ ${err}\n\nQual o *valor* da sua conta de luz?`; redirected = true; break; }

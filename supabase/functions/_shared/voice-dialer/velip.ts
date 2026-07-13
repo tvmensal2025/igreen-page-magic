@@ -143,7 +143,9 @@ export async function uploadAudioFile(
   contentType = "audio/mpeg",
 ): Promise<UploadAudioResp> {
   const fd = new FormData();
-  const blob = new Blob([bytes], { type: contentType });
+  // Cast: TS 5.7+ exige ArrayBuffer não-compartilhado em BlobPart; os bytes
+  // aqui sempre vêm de ArrayBuffer comum (fetch/File), nunca SharedArrayBuffer.
+  const blob = new Blob([bytes as unknown as BlobPart], { type: contentType });
   const safeName = (name || "clipe").replace(/[^\w.-]+/g, "_").slice(0, 60) || "clipe";
   // Velip aceita `arquivo` OU `file`; enviamos ambos para robustez.
   fd.append("arquivo", blob, `${safeName}.mp3`);

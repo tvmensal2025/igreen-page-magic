@@ -57,9 +57,11 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   useEffect(() => { fetchStages(); fetchDeals().then(() => resolveNames(deals)); }, [fetchStages, fetchDeals]);
   useEffect(() => { resolveNames(deals); }, [deals.length]);
 
-  // Send auto-messages when deal moves to a stage
+  // Mensagens da coluna, enviadas quando o usuário move o card E confirma no
+  // diálogo — classificação: envio manual assistido (há clique + confirmação),
+  // não automação. Os textos abaixo evitam o termo "automática".
   const sendAutoMessages = async (stage: KanbanStageRow, deal: CrmDealRow, rejectionReason?: string) => {
-    if (!stage.auto_message_enabled) { toast({ title: "⚠️ Msg automática desativada para esta coluna", description: stage.label }); return; }
+    if (!stage.auto_message_enabled) { toast({ title: "⚠️ Mensagem desta coluna está desativada", description: stage.label }); return; }
     if (!instanceName) { toast({ title: "⚠️ WhatsApp não conectado", variant: "destructive" }); return; }
     if (!deal.remote_jid) { toast({ title: "⚠️ Cliente interessado sem número de WhatsApp", variant: "destructive" }); return; }
 
@@ -125,9 +127,9 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
         await supabase.from("crm_auto_message_log").insert({ deal_id: deal.id, consultant_id: consultantId, stage_key: stage.stage_key, remote_jid: deal.remote_jid, customer_name: customerName || null, message_preview: previewText ? previewText.slice(0, 200) : null, status: failedCount > 0 ? "partial" : "sent" });
       }
       if (failedCount > 0) toast({ title: `⚠️ ${sentCount} enviada(s), ${failedCount} falha(s)`, variant: "destructive" });
-      else toast({ title: `✅ ${sentCount} msg(s) automática(s) enviada(s) (${stage.label})` });
+      else toast({ title: `✅ ${sentCount} msg(s) da coluna "${stage.label}" enviada(s)` });
     } catch (err) {
-      toast({ title: "❌ Erro ao enviar msg automática", description: err instanceof Error ? err.message : "Falha desconhecida", variant: "destructive" });
+      toast({ title: "❌ Erro ao enviar mensagem da coluna", description: err instanceof Error ? err.message : "Falha desconhecida", variant: "destructive" });
     }
   };
 

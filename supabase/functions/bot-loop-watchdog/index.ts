@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifyHandoff } from "../_shared/notify-consultant.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isLeadEligible } from "../_shared/origin-guard.ts";
+import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -119,6 +120,57 @@ Deno.serve(async (req) => {
             bot_paused_at: new Date().toISOString(),
           })
           .eq("id", customer.id);
+
+        // F12: avisa o lead (best-effort Evolution) — sem isso o chat fica no vácuo.
+        // Em quiet hours (21:30–08:00 BRT) a pausa/alerta acontecem normalmente,
+        // mas a mensagem ao lead NÃO sai de madrugada.
+        try {
+          if (isQuietHourBRT()) throw new Error("quiet_hours_skip_lead_notice");
+          const tip =
+            reason === "auto_orphan_step_detected"
+              ? "Estou te encaminhando para um consultor humano para continuar seu atendimento. Em breve alguém te responde por aqui 👍"
+              : "Vou te passar para um consultor humano para te atender melhor. Em breve alguém te responde por aqui 👍";
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "outbound",
+            message_text: tip,
+            message_type: "text",
+            conversation_step: customer.conversation_step,
+            delivery_status: "queued",
+            origin: "automation:bot-loop-watchdog",
+          });
+          const evolutionUrl = Deno.env.get("EVOLUTION_API_URL");
+          const evolutionKey = Deno.env.get("EVOLUTION_API_KEY");
+          const phone = String(customer.phone_whatsapp || "").replace(/\D/g, "");
+          const number = phone.startsWith("55") ? phone : phone ? `55${phone}` : "";
+          if (evolutionUrl && evolutionKey && number && customer.consultant_id) {
+            const { data: inst } = await supabase
+              .from("whatsapp_instances")
+              .select("instance_name")
+              .eq("consultant_id", customer.consultant_id)
+              .maybeSingle();
+            if (inst?.instance_name) {
+              const res = await fetch(
+                `${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", apikey: evolutionKey },
+                  body: JSON.stringify({ number, text: tip }),
+                },
+              );
+              if (res.ok) {
+                await supabase
+                  .from("conversations")
+                  .update({ delivery_status: "sent" })
+                  .eq("customer_id", customer.id)
+                  .eq("message_text", tip)
+                  .eq("delivery_status", "queued");
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[watchdog] aviso ao lead falhou:", (e as Error).message);
+        }
 
         // Cria alerta visível no painel
         await supabase.from("bot_handoff_alerts").insert({

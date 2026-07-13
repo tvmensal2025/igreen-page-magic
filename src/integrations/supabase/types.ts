@@ -2216,6 +2216,8 @@ export type Database = {
       bulk_campaign_targets: {
         Row: {
           campaign_id: string
+          claim_attempts: number
+          claimed_at: string | null
           created_at: string
           error: string | null
           final_message: string | null
@@ -2228,6 +2230,8 @@ export type Database = {
         }
         Insert: {
           campaign_id: string
+          claim_attempts?: number
+          claimed_at?: string | null
           created_at?: string
           error?: string | null
           final_message?: string | null
@@ -2240,6 +2244,8 @@ export type Database = {
         }
         Update: {
           campaign_id?: string
+          claim_attempts?: number
+          claimed_at?: string | null
           created_at?: string
           error?: string | null
           final_message?: string | null
@@ -3387,6 +3393,8 @@ export type Database = {
           message_text: string | null
           message_text_hash: string | null
           message_type: string | null
+          origin: string | null
+          sent_by: string | null
           slot_key: string | null
         }
         Insert: {
@@ -3403,6 +3411,8 @@ export type Database = {
           message_text?: string | null
           message_text_hash?: string | null
           message_type?: string | null
+          origin?: string | null
+          sent_by?: string | null
           slot_key?: string | null
         }
         Update: {
@@ -3419,6 +3429,8 @@ export type Database = {
           message_text?: string | null
           message_text_hash?: string | null
           message_type?: string | null
+          origin?: string | null
+          sent_by?: string | null
           slot_key?: string | null
         }
         Relationships: [
@@ -9202,11 +9214,17 @@ export type Database = {
       }
       scheduled_messages: {
         Row: {
+          attempt_count: number
+          canceled_at: string | null
+          canceled_by: string | null
           consultant_id: string
           created_at: string
+          created_by: string | null
           id: string
           instance_name: string
+          last_error: string | null
           message_text: string
+          processing_started_at: string | null
           remote_jid: string
           scheduled_at: string
           sent_at: string | null
@@ -9214,11 +9232,17 @@ export type Database = {
           status: string
         }
         Insert: {
+          attempt_count?: number
+          canceled_at?: string | null
+          canceled_by?: string | null
           consultant_id: string
           created_at?: string
+          created_by?: string | null
           id?: string
           instance_name: string
+          last_error?: string | null
           message_text: string
+          processing_started_at?: string | null
           remote_jid: string
           scheduled_at: string
           sent_at?: string | null
@@ -9226,11 +9250,17 @@ export type Database = {
           status?: string
         }
         Update: {
+          attempt_count?: number
+          canceled_at?: string | null
+          canceled_by?: string | null
           consultant_id?: string
           created_at?: string
+          created_by?: string | null
           id?: string
           instance_name?: string
+          last_error?: string | null
           message_text?: string
+          processing_started_at?: string | null
           remote_jid?: string
           scheduled_at?: string
           sent_at?: string | null

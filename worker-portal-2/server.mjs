@@ -464,6 +464,8 @@ async function processLead(job) {
         updates.bot_paused = true;
         updates.bot_paused_reason = 'portal_ia_reprovada';
         updates.bot_paused_at = new Date().toISOString();
+        // F05: limpa lixo legado Playwright se ainda estiver em error_message
+        updates.error_message = String(e.message || '').slice(0, 500);
         await supabase.from('customers').update(updates).eq('id', customer_id).then(() => {}, () => {});
         await _sendMessageToCustomer(customer_id, ({ firstName }) =>
           `${firstName}, recebi seus documentos aqui ✅\n\n` +

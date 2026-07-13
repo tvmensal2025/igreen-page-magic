@@ -77,7 +77,9 @@ export function useAgendamentosHub(consultantId: string) {
           .from("bulk_campaigns")
           .select("id, name, status, total, sent, failed, scheduled_at, started_at")
           .eq("consultant_id", consultantId)
-          .in("status", ["scheduled", "running"])
+          // "paused" incluída: campanha pausada pelo guard anti-ban/telefone
+          // sumia da lista e o consultor não sabia que precisava agir.
+          .in("status", ["scheduled", "running", "paused"])
           .order("scheduled_at", { ascending: true, nullsFirst: false }),
         (supabase as any)
           .from("reactivation_settings")

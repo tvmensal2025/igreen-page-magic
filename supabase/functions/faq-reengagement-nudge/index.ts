@@ -22,6 +22,8 @@ import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAttendanceTerminalStep } from "../_shared/attendance-flow.ts";
+import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
 const NUDGE_COOLDOWN_HOURS = 4;
@@ -36,6 +38,17 @@ serve(async (_req: Request) => {
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
 
+  // Antes este cron enviava SEM nenhum kill switch — nem o global nem um
+  // toggle próprio. Agora respeita os dois (toggle novo nasce OFF; ligar na
+  // Central de Agendamentos).
+  if (!(await isBotGloballyEnabled(supabase))) {
+    return new Response(JSON.stringify({ ok: true, skipped: "bot_globally_disabled" }), { status: 200 });
+  }
+  if (!(await isAutomationEnabled(supabase, "faq_reengagement_nudge"))) {
+    await logSkipped(supabase, "faq_reengagement_nudge");
+    return new Response(JSON.stringify({ ok: true, skipped: "automation_disabled", key: "faq_reengagement_nudge" }), { status: 200 });
+  }
+
   const cutoff = new Date(Date.now() - NUDGE_DELAY_MINUTES * 60 * 1000).toISOString();
   const cooldown = new Date(Date.now() - NUDGE_COOLDOWN_HOURS * 60 * 60 * 1000).toISOString();
 
@@ -48,6 +61,10 @@ serve(async (_req: Request) => {
     .from("customers")
     .select("id, name, phone_whatsapp, consultant_id, conversation_step")
     .eq("bot_paused", false)
+    // Lead em pausa temporária ("me chama amanhã") ou em mão humana não
+    // recebe nudge — mesmos filtros dos demais crons proativos.
+    .or(`bot_paused_until.is.null,bot_paused_until.lte.${new Date().toISOString()}`)
+    .is("assigned_human_id", null)
     .eq("is_converted", false)
     .eq("do_not_contact", false)
     .eq("is_test_lead", false)
@@ -133,6 +150,7 @@ serve(async (_req: Request) => {
         message_text: nudgeText,
         message_type: "text",
         conversation_step: lead.conversation_step || "nudge",
+        origin: "automation:faq-reengagement-nudge",
       });
 
       // Marca nudge enviado

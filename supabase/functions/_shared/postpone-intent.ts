@@ -44,24 +44,73 @@ const RX_HARD_REFUSE = rx(
   "n[ãa]o quero|desisto|n[ãa]o tenho interesse|cancela|para de me mandar|me tira (?:do|dessa|da)|n[ãa]o me (?:chama|envia) mais",
 );
 
-function startOfTomorrow9am(): Date {
-  // 09:00 BRT (UTC-3) = 12:00 UTC
-  const now = new Date();
-  const brtNow = new Date(now.getTime() - 3 * 60 * 60 * 1000);
-  const brtTomorrow = new Date(Date.UTC(
-    brtNow.getUTCFullYear(),
-    brtNow.getUTCMonth(),
-    brtNow.getUTCDate() + 1,
-    9, 0, 0,
-  ));
-  return new Date(brtTomorrow.getTime() + 3 * 60 * 60 * 1000);
+// Base "agora" injetável para testes determinísticos.
+function brtParts(at: Date): { y: number; m: number; d: number; hour: number; min: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+    weekday: "short",
+  }).formatToParts(at).reduce<Record<string, string>>((a, p) => ((a[p.type] = p.value), a), {});
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    y: Number(parts.year), m: Number(parts.month), d: Number(parts.day),
+    hour: Number(parts.hour) % 24, min: Number(parts.minute),
+    weekday: weekdayMap[parts.weekday] ?? 0,
+  };
 }
 
-function inHours(h: number): Date {
-  return new Date(Date.now() + h * 60 * 60 * 1000);
+/** Data absoluta para `daysAhead` dias à frente às hh:00 BRT. */
+function brtAt(base: Date, daysAhead: number, hourBRT: number): Date {
+  const p = brtParts(base);
+  const utcMidnight = Date.UTC(p.y, p.m - 1, p.d + daysAhead, hourBRT, 0, 0);
+  // BRT = UTC-3 (sem DST desde 2019). Somar 3h converte a "parede" BRT em UTC.
+  return new Date(utcMidnight + 3 * 60 * 60 * 1000);
 }
 
-export function detectPostponeIntent(rawText: string | null | undefined): PostponeIntent | null {
+function startOfTomorrow9am(base: Date = new Date()): Date {
+  return brtAt(base, 1, 9);
+}
+
+/** Próxima segunda-feira 09:00 BRT (se hoje é segunda, vai para a próxima). */
+function nextMonday9am(base: Date = new Date()): Date {
+  const p = brtParts(base);
+  const daysUntilMonday = ((1 - p.weekday) + 7) % 7 || 7;
+  return brtAt(base, daysUntilMonday, 9);
+}
+
+/**
+ * "Hoje à noite" → 19:00 BRT de hoje (mínimo agora+1h). Se já passou de 20h,
+ * cai para amanhã 09:00 — cutucar às 23h não é o que o cliente pediu.
+ */
+function tonightAnchor(base: Date = new Date()): Date {
+  const p = brtParts(base);
+  if (p.hour >= 20) return startOfTomorrow9am(base);
+  const anchor = brtAt(base, 0, 19);
+  const minimum = new Date(base.getTime() + 60 * 60 * 1000);
+  return anchor > minimum ? anchor : minimum;
+}
+
+/**
+ * "Hoje à tarde" → 14:00 BRT de hoje (mínimo agora+1h). Depois das 17h,
+ * comporta-se como "à noite".
+ */
+function afternoonAnchor(base: Date = new Date()): Date {
+  const p = brtParts(base);
+  if (p.hour >= 17) return tonightAnchor(base);
+  const anchor = brtAt(base, 0, 14);
+  const minimum = new Date(base.getTime() + 60 * 60 * 1000);
+  return anchor > minimum ? anchor : minimum;
+}
+
+function inHours(h: number, base: Date = new Date()): Date {
+  return new Date(base.getTime() + h * 60 * 60 * 1000);
+}
+
+export function detectPostponeIntent(
+  rawText: string | null | undefined,
+  now: Date = new Date(),
+): PostponeIntent | null {
   if (!rawText) return null;
   const text = String(rawText).trim();
   if (!text) return null;
@@ -70,43 +119,45 @@ export function detectPostponeIntent(rawText: string | null | undefined): Postpo
   if (RX_HARD_REFUSE.test(text)) return null;
 
   if (RX_NO_LIGHT.test(text) && (RX_TOMORROW.test(text) || RX_LATER.test(text) || /mando/i.test(text))) {
-    return { when: "amanhã cedo", pauseUntil: startOfTomorrow9am().toISOString() };
+    return { when: "amanhã cedo", pauseUntil: startOfTomorrow9am(now).toISOString() };
   }
 
   if (RX_TOMORROW.test(text)) {
     const early = RX_EARLY.test(text);
     return {
       when: early ? "amanhã cedo" : "amanhã",
-      pauseUntil: startOfTomorrow9am().toISOString(),
+      pauseUntil: startOfTomorrow9am(now).toISOString(),
     };
   }
 
+  // "segunda" agenda para a PRÓXIMA segunda-feira 09:00 BRT.
+  // (Antes devolvia "amanhã cedo" — num sábado o bot cobrava no domingo.)
   if (RX_WEEKEND_LATER.test(text)) {
-    return { when: "amanhã cedo", pauseUntil: startOfTomorrow9am().toISOString() };
+    return { when: "segunda-feira", pauseUntil: nextMonday9am(now).toISOString() };
   }
 
   if (RX_TONIGHT.test(text)) {
-    return { when: "hoje à noite", pauseUntil: inHours(4).toISOString() };
+    return { when: "hoje à noite", pauseUntil: tonightAnchor(now).toISOString() };
   }
 
   if (RX_AFTERNOON.test(text)) {
-    return { when: "hoje à tarde", pauseUntil: inHours(3).toISOString() };
+    return { when: "hoje à tarde", pauseUntil: afternoonAnchor(now).toISOString() };
   }
 
   if (RX_NO_BILL.test(text)) {
-    return { when: "quando achar a conta", pauseUntil: inHours(3).toISOString() };
+    return { when: "quando achar a conta", pauseUntil: inHours(3, now).toISOString() };
   }
 
   if (RX_NO_LIGHT.test(text)) {
-    return { when: "quando a luz voltar", pauseUntil: inHours(2).toISOString() };
+    return { when: "quando a luz voltar", pauseUntil: inHours(2, now).toISOString() };
   }
 
   if (RX_BUSY.test(text) || RX_NOT_NOW.test(text)) {
-    return { when: "quando puder", pauseUntil: inHours(3).toISOString() };
+    return { when: "quando puder", pauseUntil: inHours(3, now).toISOString() };
   }
 
   if (RX_LATER.test(text)) {
-    return { when: "mais tarde", pauseUntil: inHours(3).toISOString() };
+    return { when: "mais tarde", pauseUntil: inHours(3, now).toISOString() };
   }
 
   return null;

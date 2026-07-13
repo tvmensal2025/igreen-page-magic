@@ -106,7 +106,14 @@ export function classifyPortalError(message) {
 
   // ── 1) Não-recuperáveis (precedência, Req 6.10) ──
   // duplicate_document — CPF/documento já cadastrado (não se troca CPF). Req 6.5
-  if (has('duplicatedocument') || (hasAny('cpf', 'documento') && dup())) {
+  // F10: "Cliente já cadastrado: mesmo consultor" caía em unknown.
+  // NÃO usar "já cadastrado" sozinho — isso engolia e-mail/celular recuperáveis.
+  if (
+    has('duplicatedocument') ||
+    (hasAny('cpf', 'documento') && dup()) ||
+    (has('cliente já cadastrado') || has('cliente ja cadastrado')) ||
+    (dup() && hasAny('mesmo consultor', 'mesmo_consultor'))
+  ) {
     kind = 'duplicate_document';
   // no_coverage — sem cobertura ativa / UF/região não atendida. Req 6.6
   } else if (hasAny('nenhuma cobertura ativa', 'sem cobertura', 'não atendid', 'nao atendid', 'sem regra ativa', 'cobertura ativa')) {

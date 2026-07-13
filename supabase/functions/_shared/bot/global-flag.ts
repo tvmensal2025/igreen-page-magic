@@ -2,12 +2,16 @@
 // Lido por webhooks e crons antes de qualquer ação automática.
 // Cache 5s para evitar query em cada inbound.
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+// Tipo estrutural relaxado (padrão do automation-gate): os chamadores criam
+// o client com versões diferentes do supabase-js (esm.sh 2.x / npm 2.49) e a
+// tipagem nominal do SupabaseClient conflita entre elas em deno check.
+// deno-lint-ignore no-explicit-any
+type SB = any;
 
 let _cache: { enabled: boolean; t: number } | null = null;
 const TTL_MS = 5_000;
 
-export async function isBotGloballyEnabled(supabase: SupabaseClient): Promise<boolean> {
+export async function isBotGloballyEnabled(supabase: SB): Promise<boolean> {
   if (_cache && Date.now() - _cache.t < TTL_MS) return _cache.enabled;
   try {
     const { data } = await supabase
@@ -32,7 +36,7 @@ export function clearBotGlobalFlagCache() {
 // resolver NÃO reseta para aguardando_conta quando custom step não bate.
 let _strictCache: { enabled: boolean; t: number } | null = null;
 
-export async function isResolverStrictMode(supabase: SupabaseClient): Promise<boolean> {
+export async function isResolverStrictMode(supabase: SB): Promise<boolean> {
   if (_strictCache && Date.now() - _strictCache.t < TTL_MS) return _strictCache.enabled;
   try {
     const { data } = await supabase

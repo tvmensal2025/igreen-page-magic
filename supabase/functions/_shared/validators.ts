@@ -110,9 +110,14 @@ export function validateCustomerForPortal(customer: any): ValidationResult {
   if (!customer.rg || customer.rg.trim().length < 4) errors.push("RG inválido");
   const cepClean = (customer.cep || "").replace(/\D/g, "");
   if (cepClean.length !== 8) errors.push("CEP inválido (deve ter 8 dígitos)");
-  if (!customer.address_street || customer.address_street.trim().length < 3) errors.push("Endereço (rua) inválido");
+  if (!customer.address_street || customer.address_street.trim().length < 3) {
+    errors.push("Endereço (rua) inválido");
+  } else if (!customer.address_neighborhood || customer.address_neighborhood.trim().length < 2) {
+    // F09/F04: rua longa do OCR basta — bairro vazio não manda lead de volta pro editing
+    if (customer.address_street.trim().length < 12) errors.push("Bairro inválido");
+    else warnings.push("Bairro ausente — seguindo com rua completa do OCR");
+  }
   if (!customer.address_number || customer.address_number.trim().length === 0) errors.push("Número do endereço é obrigatório");
-  if (!customer.address_neighborhood || customer.address_neighborhood.trim().length < 2) errors.push("Bairro inválido");
   if (!customer.address_city || customer.address_city.trim().length < 2) errors.push("Cidade inválida");
   if (!customer.address_state || customer.address_state.trim().length !== 2) errors.push("Estado (UF) inválido");
   // ── Telefone: deve estar confirmado pelo cliente no chat ──

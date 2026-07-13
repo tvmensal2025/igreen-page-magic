@@ -78,9 +78,12 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     const { data: due, error } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
+      .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
       .lte("next_followup_at", now)
       .eq("bot_paused", false)
+      // Pausa temporária ("me chama amanhã" → bot_paused_until) também bloqueia
+      // follow-up. Antes só o booleano bot_paused era respeitado.
+      .or(`bot_paused_until.is.null,bot_paused_until.lte.${now}`)
       .is("assigned_human_id", null)
       // Regra de ouro: carteira iGreen nunca recebe automação. Helper
       // compartilhado em _shared/origin-guard.ts.
@@ -91,7 +94,11 @@ Deno.serve(async (req) => {
     // Defesa em profundidade: mesmo que um agendamento órfão sobreviva, um lead
     // em passo terminal (portal/OTP/assinatura/completo) já concluiu o fluxo e
     // não deve receber nudge. Espelha TERMINAL_STEPS do bot-followup-checker.
-    const rows = (due || []).filter((c: any) => !TERMINAL_STEPS.has(c.conversation_step || ""));
+    // A checagem de bot_paused_until é repetida aqui caso a query mude no futuro.
+    const rows = (due || []).filter((c: any) =>
+      !TERMINAL_STEPS.has(c.conversation_step || "") &&
+      !(c.bot_paused_until && new Date(c.bot_paused_until).getTime() > Date.now())
+    );
     if (rows.length === 0) return json({ ok: true, processed: 0 });
 
     // Carrega credenciais Whapi global (fallback)
@@ -215,6 +222,7 @@ Deno.serve(async (req) => {
           message_text: reply,
           message_type: "text",
           conversation_step: aiResult?.conversationStepUpdate || c.conversation_step || "fluxo_b_ai",
+          origin: "automation:process-followups",
         });
         await supabase.from("customers").update({
           next_followup_at: null,

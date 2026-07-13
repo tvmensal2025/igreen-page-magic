@@ -411,6 +411,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
             message_text: finalText,
             message_type: "text",
             conversation_step: customer.conversation_step,
+            origin: "automation:reactivation-cron",
           });
         } catch { /* não crítico */ }
         totalSent++;
@@ -456,6 +457,11 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: Rea
     .eq("consultant_id", tpl.consultant_id)
     .eq("conversation_step", tpl.conversation_step)
     .not("status", "in", "(approved,cancelled)")
+    // Lead pausado (fixo ou temporário) ou em mão humana não recebe
+    // reativação — mesmos filtros dos demais crons proativos.
+    .eq("bot_paused", false)
+    .or(`bot_paused_until.is.null,bot_paused_until.lte.${new Date().toISOString()}`)
+    .is("assigned_human_id", null)
     // Regra de ouro: carteira iGreen nunca recebe reativação automática.
     // Helper compartilhado em _shared/origin-guard.ts.
     .or(LEAD_ORIGIN_FILTER)

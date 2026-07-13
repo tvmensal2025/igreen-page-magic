@@ -72,3 +72,14 @@ test('classifyPortalError reconhece ia_reprovada', () => {
   assert.equal(r.kind, 'ia_reprovada');
   assert.equal(r.recoverable, false);
 });
+
+test('F10 classifyPortalError duplicate_document mesmo consultor', () => {
+  const r = classifyPortalError('Cliente já cadastrado: mesmo consultor');
+  assert.equal(r.kind, 'duplicate_document');
+  assert.equal(r.recoverable, false);
+});
+
+test('F10 NÃO engole e-mail/celular recuperáveis', () => {
+  assert.equal(classifyPortalError('E-mail já cadastrado').kind, 'duplicate_email');
+  assert.equal(classifyPortalError('Celular já cadastrado no sistema').kind, 'duplicate_phone');
+});

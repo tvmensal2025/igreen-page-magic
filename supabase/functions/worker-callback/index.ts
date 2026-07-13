@@ -164,13 +164,39 @@ Deno.serve(async (req) => {
       }
 
       case "error": {
-        updates.status = "automation_failed";
-        updates.error_message = error_message || "Erro desconhecido na automação";
+        // F05: não sobrescrever handoff Portal2 (needs_human / ia_reprovada) com automation_failed
+        const { data: cur } = await supabase
+          .from("customers")
+          .select("status, portal2_status, portal2_error_kind, bot_paused, bot_paused_reason")
+          .eq("id", customer_id)
+          .maybeSingle();
+        const portalHuman =
+          cur?.portal2_status === "needs_human" ||
+          cur?.portal2_error_kind === "ia_reprovada" ||
+          cur?.status === "needs_human";
+        if (portalHuman) {
+          updates.status = "needs_human";
+          updates.conversation_step = "aguardando_humano";
+          updates.bot_paused = true;
+          updates.bot_paused_reason = cur?.bot_paused_reason || "portal_ia_reprovada";
+          // F05: nunca regravar lixo legado Playwright (fase1-cep) no error_message
+          if (error_message) {
+            const msg = String(error_message);
+            if (!/fase1[-_]?cep/i.test(msg)) {
+              updates.error_message = msg.slice(0, 500);
+            }
+          }
+        } else {
+          updates.status = "automation_failed";
+          updates.error_message = error_message || "Erro desconhecido na automação";
+        }
         await supabase.from("customers").update(updates).eq("id", customer_id);
         await sendWhatsApp(
-          "⚠️ Tivemos um problema técnico ao processar seu cadastro.\n\n" +
-          "Não se preocupe! Um consultor vai entrar em contato para concluir manualmente.\n\n" +
-          "Obrigado pela paciência! 🙏"
+          portalHuman
+            ? "Recebi seus dados ✅\n\nA validação pediu uma revisão humana antes de concluir. Um consultor vai te chamar por aqui em breve 👍"
+            : "⚠️ Tivemos um problema técnico ao processar seu cadastro.\n\n" +
+              "Não se preocupe! Um consultor vai entrar em contato para concluir manualmente.\n\n" +
+              "Obrigado pela paciência! 🙏"
         );
         break;
       }

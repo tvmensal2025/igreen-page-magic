@@ -163,7 +163,9 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
           />
         )}
         <p className="text-[11px] text-muted-foreground">
-          Mantenha esta aba aberta na hora marcada — o envio começa automaticamente.
+          {config.scheduleAt
+            ? "Envio agendado: o robô do servidor dispara no horário marcado, sem precisar da aba aberta — desde que a automação \"Campanhas em massa\" esteja ligada na Central de Agendamentos. Com a aba aberta o envio também continua daqui."
+            : "Envio imediato: começa agora e roda enquanto esta aba estiver aberta. Se fechar, o robô do servidor retoma de onde parou (automação \"Campanhas em massa\" ligada)."}
         </p>
       </div>
 

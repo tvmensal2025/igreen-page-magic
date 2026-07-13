@@ -83,12 +83,17 @@ export async function logPlatformOutbound(params: {
 }): Promise<void> {
   if (!params.customerId || !params.text.trim()) return;
   try {
+    // Rastreabilidade: quem clicou (sent_by) e a origem manual — este caminho
+    // só é percorrido em envios iniciados pelo operador na plataforma.
+    const { data: auth } = await supabase.auth.getUser();
     await supabase.from("conversations").insert({
       customer_id: params.customerId,
       message_direction: "outbound",
       message_text: params.text.slice(0, 2000),
       message_type: params.messageType || "text",
       conversation_step: params.conversationStep || "platform_send",
+      origin: "manual",
+      sent_by: auth?.user?.id ?? null,
     });
   } catch {
     // non-critical — o polling de 6s ainda cobre

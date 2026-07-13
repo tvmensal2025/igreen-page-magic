@@ -49,6 +49,8 @@ const REAL_MESSAGE_TABLE = [
   ['{"documento":"duplicateDocument"}',                      'duplicate_document',     false],
   ['CPF já cadastrado no iGreen',                            'duplicate_document',     false],
   ['documento já existe',                                    'duplicate_document',     false],
+  ['Cliente já cadastrado: mesmo consultor',                 'duplicate_document',     false],
+  ['Cliente ja cadastrado no portal',                        'duplicate_document',     false],
 
   ['nenhuma cobertura ativa',                                'no_coverage',            false],
   ['Não há nenhuma cobertura ativa para o estado',           'no_coverage',            false],

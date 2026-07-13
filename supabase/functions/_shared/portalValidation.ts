@@ -132,6 +132,12 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
       if (!isFileReady(v)) missing.push({ key: f.key, label: f.label });
       continue;
     }
+    // F09: bairro fraco + rua longa do OCR → não bloqueia portal
+    if (f.key === "address_neighborhood") {
+      const street = String(c.address_street || "").trim();
+      if (!isStrFilled(v) && street.length < 12) missing.push({ key: f.key, label: f.label });
+      continue;
+    }
     if (!isStrFilled(v)) missing.push({ key: f.key, label: f.label });
   }
 

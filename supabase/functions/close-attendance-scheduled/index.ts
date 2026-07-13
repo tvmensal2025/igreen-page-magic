@@ -86,7 +86,18 @@ Deno.serve(async (req) => {
         if (res.ok) closed++;
         else failed++;
       } catch (e) {
+        // Exceção (rede/timeout): antes a flag ficava intocada e o registro
+        // era reprocessado a cada tick, para sempre. Agora: retry em 30min;
+        // se a flag já venceu há mais de 24h, desiste e limpa (sem loop).
         console.error("[close-attendance-scheduled] fail", customerId, e);
+        const dueAt = row.attendance_auto_close_at ? new Date(String(row.attendance_auto_close_at)).getTime() : 0;
+        const expired = dueAt > 0 && Date.now() - dueAt > 24 * 3600_000;
+        await supabase
+          .from("customers")
+          .update(expired
+            ? { attendance_auto_close_at: null, attendance_auto_close_source: null }
+            : { attendance_auto_close_at: new Date(Date.now() + 30 * 60_000).toISOString() })
+          .eq("id", customerId);
         failed++;
       }
     }

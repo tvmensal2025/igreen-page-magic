@@ -48,9 +48,11 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    if (!(await isAutomationEnabled(supabase, "process_followups"))) {
-      await logSkipped(supabase, "process_followups");
-      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "process_followups" }), { status: 200, headers: { "Content-Type": "application/json" } });
+    // Toggle próprio (antes pegava carona em process_followups — impossível
+    // desligar um sem o outro). Nasce OFF; ligar na Central de Agendamentos.
+    if (!(await isAutomationEnabled(supabase, "bot_followup_checker"))) {
+      await logSkipped(supabase, "bot_followup_checker");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bot_followup_checker" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
 
@@ -108,6 +110,7 @@ Deno.serve(async (req) => {
           message_text: msg,
           message_type: "text",
           conversation_step: c.conversation_step,
+          origin: "automation:bot-followup-checker",
         });
         sent++;
       } catch (e) {

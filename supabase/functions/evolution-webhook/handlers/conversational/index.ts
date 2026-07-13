@@ -2575,9 +2575,39 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             message_text: aiText,
             message_type: "text",
             conversation_step: currentStep.step_key,
+            delivery_status: "sent",
           });
         } catch (e) {
           console.warn("[ai_answer] sendText falhou:", (e as any)?.message);
+        }
+        // F02: CTA pós-IA (Whapi=botões; Evolution=lista numerada via sendButtons)
+        try {
+          const stepButtons = extractStepButtons(currentStep);
+          if (stepButtons.length > 0) {
+            const prompt = "👇 É só escolher uma opção:";
+            await ctx.sender.sendButtons(ctx.remoteJid, prompt, stepButtons);
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: prompt,
+              message_type: "text",
+              conversation_step: currentStep.step_key,
+              delivery_status: "sent",
+            });
+          } else {
+            const nudge = "Posso te ajudar com:\n1) Simular economia\n2) Como funciona\n3) Ativar o benefício\n\nÉ só responder com o *número* 🙂";
+            await ctx.sender.sendText(ctx.remoteJid, nudge);
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: nudge,
+              message_type: "text",
+              conversation_step: currentStep.step_key,
+              delivery_status: "sent",
+            });
+          }
+        } catch (e) {
+          console.warn("[ai_answer] sendButtons pós-IA falhou:", (e as any)?.message);
         }
         return _finalize(stepKey, {
           reply: "",

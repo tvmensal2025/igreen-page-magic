@@ -2738,6 +2738,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             message_text: aiText,
             message_type: "text",
             conversation_step: currentStep.step_key,
+            delivery_status: "sent",
           });
         } catch (e) {
           console.warn("[ai_answer] sendText falhou:", (e as any)?.message);
@@ -2756,6 +2757,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
               message_text: prompt,
               message_type: "text",
               conversation_step: currentStep.step_key,
+              delivery_status: "sent",
+            });
+          } else {
+            // F02: sem botões configurados — CTA textual para não ficar parado após áudio/dúvida
+            const nudge = "Posso te ajudar com:
+1) Simular economia
+2) Como funciona
+3) Ativar o benefício
+
+É só responder com o *número* 🙂";
+            await ctx.sender.sendText(ctx.remoteJid, nudge);
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: nudge,
+              message_type: "text",
+              conversation_step: currentStep.step_key,
+              delivery_status: "sent",
             });
           }
         } catch (e) {

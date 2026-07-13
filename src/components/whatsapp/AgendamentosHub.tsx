@@ -21,7 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Calendar, Clock, Trash2, Plus, Send, CalendarClock, MessageSquare, Phone,
+  Calendar, Clock, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
   Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell,
 } from "lucide-react";
@@ -46,7 +46,7 @@ function describeSource(item: AgendamentoTimelineItem): {
     case "manual_scheduled":
       return {
         where: "Agenda manual",
-        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou apagar aqui mesmo.",
+        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou cancelar aqui mesmo (cancelado fica no histórico).",
         targetTab: "manual",
         ctaLabel: "Abrir Agenda manual",
       };
@@ -84,6 +84,16 @@ function formatScheduleDate(dateStr: string | Date) {
   } catch {
     return String(dateStr);
   }
+}
+
+/**
+ * Valor "agora" para o atributo min de <input type="datetime-local">, no fuso
+ * LOCAL do usuário. (toISOString().slice(0,16) puro devolvia UTC → o min
+ * ficava 3h no futuro para quem está em Brasília.)
+ */
+function nowLocalInputValue(): string {
+  const d = new Date();
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
 /** Selo de status com linguagem do consultor, não do sistema. */
@@ -172,15 +182,22 @@ export function AgendamentosHub({
       toast({ title: "Conecte o WhatsApp para agendar envios manuais", variant: "destructive" });
       return;
     }
+    if (new Date(scheduledAt).getTime() <= Date.now()) {
+      toast({ title: "Escolha um horário no futuro", description: "A data informada já passou.", variant: "destructive" });
+      return;
+    }
     setSaving(true);
     try {
       const remoteJid = phone.includes("@") ? phone : `${phone.replace(/\D/g, "")}@s.whatsapp.net`;
+      const { data: auth } = await supabase.auth.getUser();
       const { error } = await supabase.from("scheduled_messages").insert({
         consultant_id: consultantId,
         instance_name: instanceName,
         remote_jid: remoteJid,
         message_text: text,
         scheduled_at: new Date(scheduledAt).toISOString(),
+        // Autoria: quem criou o agendamento (a execução futura é automática).
+        created_by: auth?.user?.id ?? consultantId,
       });
       if (error) throw error;
       toast({ title: "Mensagem agendada com sucesso!" });
@@ -196,8 +213,28 @@ export function AgendamentosHub({
     }
   };
 
-  const handleDeleteManual = async (id: string) => {
-    await supabase.from("scheduled_messages").delete().eq("id", id);
+  // Cancelamento com trilha de auditoria: marca cancelled em vez de DELETE.
+  // Só cancela se ainda estiver pending — se o robô já reivindicou (processing)
+  // ou já enviou, o update não afeta nenhuma linha e avisamos o usuário.
+  const handleCancelManual = async (id: string) => {
+    const { data: auth } = await supabase.auth.getUser();
+    const { data, error } = await supabase
+      .from("scheduled_messages")
+      .update({
+        status: "cancelled",
+        canceled_at: new Date().toISOString(),
+        canceled_by: auth?.user?.id ?? consultantId,
+      })
+      .eq("id", id)
+      .eq("status", "pending")
+      .select("id");
+    if (error) {
+      toast({ title: "Erro ao cancelar", description: error.message, variant: "destructive" });
+    } else if (!data || data.length === 0) {
+      toast({ title: "Não foi possível cancelar", description: "Esta mensagem já foi enviada ou está saindo agora.", variant: "destructive" });
+    } else {
+      toast({ title: "Agendamento cancelado" });
+    }
     refresh();
   };
 
@@ -214,8 +251,14 @@ export function AgendamentosHub({
       }
       case "sent":
         return { icon: <CheckCircle2 className="w-3 h-3" />, label: "Enviada", cls: "bg-primary/15 text-primary border-primary/25" };
+      case "processing":
+        return { icon: <Loader2 className="w-3 h-3 animate-spin" />, label: "Saindo agora", cls: "bg-info/15 text-info border-info/25" };
       case "failed":
         return { icon: <XCircle className="w-3 h-3" />, label: "Erro — clique para ver", cls: "bg-destructive/15 text-destructive border-destructive/25" };
+      case "cancelled":
+        return { icon: <XCircle className="w-3 h-3" />, label: "Cancelada", cls: "bg-secondary text-muted-foreground border-border" };
+      case "skipped":
+        return { icon: <AlertCircle className="w-3 h-3" />, label: "Pulada (humano assumiu)", cls: "bg-secondary text-muted-foreground border-border" };
       default:
         return { icon: <AlertCircle className="w-3 h-3" />, label: status, cls: "bg-secondary text-muted-foreground border-border" };
     }
@@ -756,7 +799,8 @@ export function AgendamentosHub({
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> Data e hora</Label>
-                  <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} min={new Date().toISOString().slice(0, 16)} disabled={saving} className="rounded-xl" />
+                  <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} min={nowLocalInputValue()} disabled={saving} className="rounded-xl" />
+                  <p className="text-[10px] text-muted-foreground">Horário local (Brasília). O robô do servidor envia no horário mesmo com a aba fechada.</p>
                 </div>
                 <div className="flex gap-2">
                   <Button onClick={handleCreateManual} disabled={!phone.trim() || !text.trim() || !scheduledAt || saving} className="gap-2 rounded-xl">
@@ -771,7 +815,7 @@ export function AgendamentosHub({
             {manual.length === 0 ? (
               <EmptyState text="Nada agendado manualmente ainda" />
             ) : (
-              <MessageList messages={manual} onDelete={handleDeleteManual} statusConfig={statusConfig} />
+              <MessageList messages={manual} onCancel={handleCancelManual} statusConfig={statusConfig} />
             )}
           </TabsContent>
 
@@ -925,18 +969,31 @@ export function AgendamentosHub({
         savingEdit={savingEdit}
         onSaveManual={async () => {
           if (!selected || selected.kind !== "manual_scheduled") return;
+          if (new Date(editAt).getTime() <= Date.now()) {
+            toast({ title: "Escolha um horário no futuro", description: "A data informada já passou.", variant: "destructive" });
+            return;
+          }
           setSavingEdit(true);
           try {
             const id = selected.id.replace(/^manual-/, "");
-            const { error } = await supabase
+            // Guarda contra corrida edição × execução: só salva se ainda
+            // estiver pending. Se o robô já reivindicou (processing) ou já
+            // enviou, nenhuma linha é afetada e avisamos.
+            const { data, error } = await supabase
               .from("scheduled_messages")
               .update({
                 message_text: editText,
                 scheduled_at: new Date(editAt).toISOString(),
               })
-              .eq("id", id);
+              .eq("id", id)
+              .eq("status", "pending")
+              .select("id");
             if (error) throw error;
-            toast({ title: "Agendamento atualizado" });
+            if (!data || data.length === 0) {
+              toast({ title: "Não foi possível editar", description: "Esta mensagem já foi enviada ou está saindo agora.", variant: "destructive" });
+            } else {
+              toast({ title: "Agendamento atualizado" });
+            }
             setSelected(null);
             refresh();
           } catch {
@@ -945,10 +1002,10 @@ export function AgendamentosHub({
             setSavingEdit(false);
           }
         }}
-        onDeleteManual={async () => {
+        onCancelManual={async () => {
           if (!selected || selected.kind !== "manual_scheduled") return;
           const id = selected.id.replace(/^manual-/, "");
-          await handleDeleteManual(id);
+          await handleCancelManual(id);
           setSelected(null);
         }}
       />
@@ -958,7 +1015,7 @@ export function AgendamentosHub({
 
 function TimelineItemDialog({
   item, onClose, onGoToConfig,
-  editText, setEditText, editAt, setEditAt, savingEdit, onSaveManual, onDeleteManual,
+  editText, setEditText, editAt, setEditAt, savingEdit, onSaveManual, onCancelManual,
 }: {
   item: AgendamentoTimelineItem | null;
   onClose: () => void;
@@ -969,7 +1026,7 @@ function TimelineItemDialog({
   setEditAt: (v: string) => void;
   savingEdit: boolean;
   onSaveManual: () => void;
-  onDeleteManual: () => void;
+  onCancelManual: () => void;
 }) {
   if (!item) return null;
   const src = describeSource(item);
@@ -1010,8 +1067,10 @@ function TimelineItemDialog({
                 <Input
                   type="datetime-local"
                   value={editAt}
+                  min={nowLocalInputValue()}
                   onChange={(e) => setEditAt(e.target.value)}
                 />
+                <p className="text-[10px] text-muted-foreground">Horário local (Brasília).</p>
               </div>
             </div>
           ) : item.preview ? (
@@ -1025,9 +1084,9 @@ function TimelineItemDialog({
         <DialogFooter className="gap-2 flex-wrap">
           {isManual && (
             <>
-              <Button variant="ghost" className="text-destructive gap-1.5" onClick={onDeleteManual}>
-                <Trash2 className="w-3.5 h-3.5" />
-                Apagar
+              <Button variant="ghost" className="text-destructive gap-1.5" onClick={onCancelManual}>
+                <XCircle className="w-3.5 h-3.5" />
+                Cancelar envio
               </Button>
               <Button onClick={onSaveManual} disabled={savingEdit || !editText.trim() || !editAt} className="gap-1.5">
                 {savingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
@@ -1239,11 +1298,11 @@ function PosVendaList({
 
 function MessageList({
   messages,
-  onDelete,
+  onCancel,
   statusConfig,
 }: {
   messages: import("@/lib/agendamentosHub").ScheduledMessageRow[];
-  onDelete: (id: string) => void;
+  onCancel: (id: string) => void;
   statusConfig: (s: string, scheduledAtISO?: string) => { icon: React.ReactNode; label: string; cls: string };
 }) {
   return (
@@ -1266,8 +1325,8 @@ function MessageList({
                   <p className="text-[11px] text-muted-foreground">{formatScheduleDate(msg.scheduled_at)}</p>
                 </div>
                 {isPending && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/60 hover:text-destructive shrink-0" onClick={() => onDelete(msg.id)}>
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <Button variant="ghost" size="icon" title="Cancelar envio (fica no histórico como Cancelada)" className="h-8 w-8 text-destructive/60 hover:text-destructive shrink-0" onClick={() => onCancel(msg.id)}>
+                    <XCircle className="w-3.5 h-3.5" />
                   </Button>
                 )}
               </div>
