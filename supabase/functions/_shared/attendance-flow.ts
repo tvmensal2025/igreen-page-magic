@@ -309,14 +309,21 @@ export async function sendWelcomeHeader(
       conversation_step: "welcome",
     }).then(() => {}, () => {});
     const nowIso = new Date().toISOString();
+    // HANDOFF por padrão: bot NÃO segue pra cadastro CPF/RG sozinho.
+    // Consultor decide na hora quando reativar a IA (botão IA OFF→ON no header do chat).
     await supabase.from("customers").update({
       welcome_sent_at: nowIso,
       name_ask_sent_at: nowIso,
-      conversation_step: "ask_name",
+      conversation_step: "aguardando_humano",
       capture_mode: "manual",
+      bot_paused: true,
+      bot_paused_reason: "manual_start_attendance",
+      bot_paused_at: nowIso,
+      assigned_human_id: consultantId,
     }).eq("id", customerId).then(() => {}, () => {});
     return { ok: true, protocol, channel: channel.kind, instance: channel.instanceName };
   }
+
 
   const greeting = buildWelcomeHeaderGreeting(consultantName);
   const askName = await resolveAttendanceTpl(
