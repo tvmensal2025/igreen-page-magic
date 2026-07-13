@@ -31,6 +31,7 @@ export interface CaptureBatchLead {
   capture_started_at: string | null;
   created_at: string;
   welcome_sent_at: string | null;
+  attendance_rating_requested_at: string | null;
   filled: number;
   lastMsg?: string | null;
   lastMsgAt?: string | null;
