@@ -42,6 +42,7 @@ export function AttendanceStatusBar({
   ending,
   onStart,
   onRequestEnd,
+  onRestart,
   compact,
 }: AttendanceStatusBarProps) {
   const { toast } = useToast();
