@@ -8,6 +8,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 
 type Attribution =
   | { kind: "campaign"; id: string }
@@ -26,6 +27,9 @@ interface Body {
   // lost
   lostReason?: string;
   notes?: string;
+  // partner notification (lost)
+  notifyPartner?: boolean;
+  partnerMessage?: string;
 }
 
 function json(body: unknown, status = 200) {
