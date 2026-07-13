@@ -119,14 +119,15 @@ const EXTRACTOR_TIMEOUT_MS = 30000;
 // fora dessa cobertura retornam null e devem ser tratadas como não-elegíveis
 // pelo caller.
 //
-// Cobertura iGreen (verificado em 2026-05-29 via API):
-//   SP: CPFL, CPFL PIRATININGA, CPFL SANTA CRUZ, ELEKTRO, ENERGISA SUL SUDESTE
+// Cobertura iGreen (revalidada 2026-07-13 via /bonus/distributors):
+//   SP: CPFL, CPFL SANTA CRUZ, ELEKTRO, ENERGISA SUL SUDESTE
+//        (API unificou ex-Piratininga/Paulista em "CPFL")
 //        (NÃO atende ENEL SP capital, NÃO atende EDP Vale)
 //   RJ: ENEL, ENERGISA MINAS RIO
 //        (NÃO atende LIGHT — capital+baixada não elegíveis)
 //   MG: CEMIG-D, CPFL SANTA CRUZ, ENERGISA MINAS RIO, ENERGISA SUL SUDESTE
-//   RS: CEEE, RGE          PR: COPEL, CPFL SANTA CRUZ
-//   SC: CELESC             BA: COELBA          CE: ENEL
+//   RS: CEEE, RGE          PR: COPEL, CELESC, CPFL SANTA CRUZ, ENERGISA SUL SUDESTE
+//   SC: CELESC, COPEL      BA: COELBA          CE: ENEL
 //   PE: NEO ENERGIA        GO: EQUATORIAL      MT: ENERGISA
 //   MS: ELEKTRO, ENERGISA  ES: EDP             PA: EQUATORIAL PA
 //   MA/AL/PI: EQUATORIAL   PB: ENERGISA PB     RN: COSERN
@@ -134,23 +135,6 @@ const EXTRACTOR_TIMEOUT_MS = 30000;
 //   Sem cobertura: DF, AM, AP, AC, RO, RR
 const CITY_HINT = {
   SP: {
-    // Áreas urbanas conurbadas + interior litoral norte/oeste
-    'CPFL PIRATININGA': new Set([
-      // Sorocaba e região
-      'SOROCABA', 'SALTO', 'ITU', 'BOITUVA', 'PORTO FELIZ', 'TIETÊ', 'TIETE',
-      'CAPELA DO ALTO', 'ARAÇOIABA DA SERRA', 'ARACOIABA DA SERRA',
-      'ALUMÍNIO', 'ALUMINIO', 'MAIRINQUE', 'IPERÓ', 'IPERO',
-      // Jundiaí/Indaiatuba
-      'JUNDIAI', 'JUNDIAÍ', 'INDAIATUBA', 'CABREÚVA', 'CABREUVA',
-      'ITUPEVA', 'CAJAMAR', 'CAIEIRAS',
-      // Baixada Santista
-      'SANTOS', 'SAO VICENTE', 'SÃO VICENTE', 'GUARUJA', 'GUARUJÁ',
-      'CUBATAO', 'CUBATÃO', 'PRAIA GRANDE', 'BERTIOGA', 'PERUIBE', 'PERUÍBE',
-      'ITANHAEM', 'ITANHAÉM', 'MONGAGUA', 'MONGAGUÁ',
-      // Sul
-      'ITAPETININGA', 'ITAPEVA', 'TATUI', 'TATUÍ', 'CERQUILHO',
-      'CESARIO LANGE', 'CESÁRIO LANGE', 'PORANGABA',
-    ]),
     'CPFL SANTA CRUZ': new Set([
       'SANTA CRUZ DO RIO PARDO', 'OURINHOS', 'AVARE', 'AVARÉ',
       'SAO MANUEL', 'SÃO MANUEL', 'BOTUCATU', 'AGUDOS',
@@ -167,14 +151,28 @@ const CITY_HINT = {
       'MARILIA', 'MARÍLIA', 'PRESIDENTE PRUDENTE', 'ASSIS',
       'ARARAQUARA', 'SAO CARLOS', 'SÃO CARLOS', 'RIO CLARO',
     ]),
-    // CPFL Paulista (Campinas-leste/Ribeirão Preto/Franca/Mogi-Guaçu)
+    // CPFL = ex-Paulista + ex-Piratininga (API unificou em 2026)
     'CPFL': new Set([
+      // Ex-Paulista
       'RIBEIRAO PRETO', 'RIBEIRÃO PRETO', 'FRANCA', 'BATATAIS',
       'SERTAOZINHO', 'SERTÃOZINHO', 'CRAVINHOS', 'BRODOWSKI',
       'BEBEDOURO',
       'ARARAS', 'MOGI MIRIM', 'MOGI GUACU', 'MOGI GUAÇU',
       'LEME', 'PIRASSUNUNGA', 'SAO JOAO DA BOA VISTA',
       'SÃO JOÃO DA BOA VISTA',
+      // Ex-Piratininga (Sorocaba / Jundiaí / Baixada / Sul)
+      'SOROCABA', 'SALTO', 'ITU', 'BOITUVA', 'PORTO FELIZ', 'TIETÊ', 'TIETE',
+      'CAPELA DO ALTO', 'ARAÇOIABA DA SERRA', 'ARACOIABA DA SERRA',
+      'ALUMÍNIO', 'ALUMINIO', 'MAIRINQUE', 'IPERÓ', 'IPERO',
+      'JUNDIAI', 'JUNDIAÍ', 'INDAIATUBA', 'CABREÚVA', 'CABREUVA',
+      'ITUPEVA', 'CAJAMAR', 'CAIEIRAS',
+      'SANTOS', 'SAO VICENTE', 'SÃO VICENTE', 'GUARUJA', 'GUARUJÁ',
+      'CUBATAO', 'CUBATÃO', 'PRAIA GRANDE', 'BERTIOGA', 'PERUIBE', 'PERUÍBE',
+      'ITANHAEM', 'ITANHAÉM', 'MONGAGUA', 'MONGAGUÁ',
+      'ITAPETININGA', 'ITAPEVA', 'TATUI', 'TATUÍ', 'CERQUILHO',
+      'CESARIO LANGE', 'CESÁRIO LANGE', 'PORANGABA',
+      'VOTORANTIM', 'VARZEA PAULISTA', 'VÁRZEA PAULISTA',
+      'CAMPO LIMPO PAULISTA',
     ]),
     // ⚠ NÃO ATENDIDOS pela iGreen (caem em null, lead não-elegível):
     //   - ENEL SP capital + Grande SP (São Paulo, Guarulhos, Osasco etc.)
@@ -275,11 +273,13 @@ const UF_NAO_ATENDIDA = new Set(['DF', 'AM', 'AP', 'AC', 'RO', 'RR']);
 
 // Aliases por nome comercial: regex no nome digitado/OCR → token oficial.
 const COMMERCIAL_TO_TOKEN = [
-  // CPFL: "Energia"/"Paulista" caem em "CPFL"; Piratininga e Santa Cruz têm
-  // nomes próprios. Tolerância pra OCR quebrada: "PRA TININGA"/"PIR TININGA".
-  { match: /^CPFL.*PIRA?\s*TININGA/, token: 'CPFL PIRATININGA' },
-  { match: /^CPFL.*SANTA\s*CRUZ/,   token: 'CPFL SANTA CRUZ' },
-  { match: /PIRA?\s*TININGA/,        token: 'CPFL PIRATININGA' },
+  // CPFL: API unificou Paulista+Piratininga em "CPFL". Santa Cruz permanece.
+  { match: /^CPFL.*PIRA?\s*TININGA/, token: 'CPFL' },
+  { match: /^CPFL.*PAULISTA/,        token: 'CPFL' },
+  { match: /^CPFL.*SANTA\s*CRUZ/,    token: 'CPFL SANTA CRUZ' },
+  { match: /^CPFL.*STA\s*CRUZ/,      token: 'CPFL SANTA CRUZ' },
+  { match: /PIRA?\s*TININGA/,        token: 'CPFL' },
+  { match: /^PAULISTA$/,             token: 'CPFL' },
   { match: /^CPFL/,                  token: 'CPFL' },
   // Cemig (MG)
   { match: /^CEMIG/,                 token: 'CEMIG-D' },
@@ -319,7 +319,7 @@ const COMMERCIAL_TO_TOKEN = [
   // CEEE / RGE (RS)
   { match: /^CEEE/,                  token: 'CEEE' },
   { match: /^RGE/,                   token: 'RGE' },
-  // Elektro (SP/MS)
+  // Elektro
   { match: /^ELEKTRO/,               token: 'ELEKTRO' },
   // Amazonas Energia (AM), Roraima Energia (RR)
   { match: /^AMAZONAS/,              token: 'AMAZONAS' },
@@ -526,8 +526,7 @@ export class Portal2Client {
    * Normaliza nome de concessionária local pra o nome oficial aceito pela iGreen.
    *
    * Exemplos cobertos (nome comercial na fatura → enum iGreen):
-   *   "CPFL Energia" / "CPFL Paulista" → "CPFL"
-   *   "CPFL Piratininga" → "CPFL PIRATININGA"
+   *   "CPFL Energia" / "CPFL Paulista" / "CPFL Piratininga" → "CPFL"
    *   "Cemig Distribuição" / "Cemig D" → "CEMIG-D"
    *   "Enel Distribuição São Paulo" → "ENEL"
    *   "Coelba" → "COELBA"
@@ -535,7 +534,7 @@ export class Portal2Client {
    *   "Energisa Mato Grosso" → "ENERGISA"
    *
    * Quando passado `cidade`, desambigua casos como "CPFL ENERGIA" em SP
-   * (Salto/Sorocaba/Itu → Piratininga; Campinas/Ribeirão Preto → CPFL).
+   * (Salto/Sorocaba/Itu → CPFL; Campinas → ELEKTRO; Ribeirão → CPFL).
    *
    * Estratégia:
    *   1. Hint por cidade (resolve antes do alias genérico)
@@ -731,6 +730,27 @@ export class Portal2Client {
 
   // ──── Validação / OCR ──────────────────────────────────────────────────────
   initValidation() { return this._fetch('POST', '/extractor/init-validation'); }
+
+  /**
+   * Gate de qualidade do portal oficial (Passo 1 — antes do OCR).
+   * context: 'document' | 'invoice' | 'receipt' | 'section'
+   * Observacional no worker: loga score/is_valid; NÃO chama manual-fallback.
+   */
+  validateUpload({ fileBuffer, filename, mime = 'image/jpeg', context = 'document', idsolcontratovalidacao }) {
+    return this._fetchMultipart('POST', '/extractor/validate/upload', {
+      fields: {
+        context: String(context || 'document'),
+        ...(idsolcontratovalidacao && { idsolcontratovalidacao: String(idsolcontratovalidacao) }),
+      },
+      file: {
+        buffer: fileBuffer,
+        filename: filename || `validate.${mime.includes('png') ? 'png' : 'jpg'}`,
+        mime,
+      },
+      fileField: 'file',
+    });
+  }
+
   extractDocument({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword }) {
     return this._fetchMultipart('POST', '/extractor/extract-document', {
       fields: {
@@ -743,13 +763,46 @@ export class Portal2Client {
       fileField: 'files',
     });
   }
-  extractReceipt({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword }) {
+  /**
+   * OCR de COMPROVANTE DE PAGAMENTO (boleto/PIX/transferência).
+   * ⚠️ NÃO é o OCR da fatura! No portal oficial este endpoint só roda no passo
+   * de débitos em aberto (slot `payment-proof`), com `invoice_context` +
+   * `debt_mes_ano`. Retorna `is_authentic`/`rejection_reason` (gate de
+   * autenticidade vale SÓ para comprovantes). Mandar fatura aqui gera
+   * `NAO_COMPROVANTE`/`is_authentic=false` — foi a causa do IA_REPROVADA_CONTA
+   * indevido (mapeado no bundle oficial index-CmAOjN-p.js, 2026-07-13).
+   */
+  extractReceipt({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword, invoiceContext, debtMesAno }) {
     return this._fetchMultipart('POST', '/extractor/extract-receipt', {
       fields: {
         ...(idsolcontratovalidacao && { idsolcontratovalidacao: String(idsolcontratovalidacao) }),
         ...(pdfPassword && { pdf_password: pdfPassword }),
+        ...(invoiceContext && { invoice_context: typeof invoiceContext === 'string' ? invoiceContext : JSON.stringify(invoiceContext) }),
+        ...(debtMesAno && { debt_mes_ano: String(debtMesAno) }),
       },
       file: { buffer: fileBuffer, filename, mime },
+    });
+  }
+  /**
+   * OCR da FATURA de energia — endpoint que o portal oficial usa no passo 2
+   * ("Envie sua conta de luz"): POST /extractor/extract com campo `files`.
+   * Retorna { success, data: { nome_cliente, num_instalacao, lista_consumo,
+   * valor_fatura, mes_referencia, concessionaria, debitos_em_aberto, ... },
+   * detected_concessionaria_id, name_validation, sections_to_recapture }.
+   * NÃO tem `is_authentic` — o gate de fatura no oficial é só legibilidade
+   * (≥2 campos entre nome/instalação/mês/valor).
+   */
+  extractInvoice({ fileBuffer, filename, mime = 'image/jpeg', idsolcontratovalidacao, pdfPassword, personalDocName, concessionariaId }) {
+    return this._fetchMultipart('POST', '/extractor/extract', {
+      fields: {
+        concessionaria_id: concessionariaId || '',
+        ...(idsolcontratovalidacao && { idsolcontratovalidacao: String(idsolcontratovalidacao) }),
+        ...(personalDocName && { personal_doc_name: String(personalDocName) }),
+        file_type: String(mime).includes('pdf') ? 'pdf' : 'image',
+        ...(pdfPassword && { pdf_password: pdfPassword }),
+      },
+      file: { buffer: fileBuffer, filename, mime },
+      fileField: 'files',
     });
   }
   manualFallback({ idsolcontratovalidacao, originStep, lastError }) {
@@ -859,12 +912,46 @@ export class Portal2Client {
     // ─── Extração (OBSERVACIONAL — nunca bloqueia o cadastro) ────────────────
     // Capturamos o retorno dos extractors em vez de descartá-lo, pra derivar o
     // Modo_Extração (auto/manual). Erro de transporte/HTTP/timeout 30s → marca
-    // __transport_error e dispara manualFallback (Req 1.4/2.4).
+    // __transport_error e SEGUE (upload físico ainda anexa o dossiê).
+    //
+    // ⚠ NÃO chamar manual-fallback em timeout/transporte: no portal oficial
+    // isso só acontece quando o usuário escolhe "Continuar manualmente" e
+    // manda o contrato pra fila humana (até 5 dias). Chamar aqui impedia
+    // validação na hora mesmo com anexos OK.
     let docResp = null;
     let docBackResp = null;
     let billResp = null;
 
+    // Gate de qualidade oficial (validate/upload) — observacional.
+    // PDFs pulam (igual ao oficial: valida só imagem; o endpoint responde 500
+    // pra PDF — visto ao vivo na UI oficial em 2026-07-13).
+    const runValidate = async (file, context, label) => {
+      if (!file?.buffer || !idsolcontratovalidacao) return null;
+      if (String(file.mime || '').includes('pdf')) return null;
+      try {
+        const v = await withTimeout(this.validateUpload({
+          fileBuffer: file.buffer,
+          filename: file.filename || `validate-${label}.jpg`,
+          mime: file.mime || 'image/jpeg',
+          context,
+          idsolcontratovalidacao,
+        }), EXTRACTOR_TIMEOUT_MS, `validate-upload(${label})`);
+        const ok = v?.is_valid === true;
+        console.log(`  🔎 validate/${context} (${label}): is_valid=${ok} score=${v?.score ?? '?'}`);
+        if (!ok) {
+          const fails = (v?.checks || []).filter((c) => c.status === 'fail' || c.status === 'warning')
+            .map((c) => c.detail || c.label).slice(0, 4);
+          if (fails.length) console.warn(`     ↳ ${fails.join(' | ')}`);
+        }
+        return v;
+      } catch (e) {
+        console.warn(`  ⚠ validate/${context} (${label}) falhou (segue OCR): ${e.message}`);
+        return { __transport_error: e.message };
+      }
+    };
+
     if (dados.docFile) {
+      await runValidate(dados.docFile, 'document', 'doc-frente');
       try {
         docResp = await withTimeout(this.extractDocument({
           fileBuffer: dados.docFile.buffer,
@@ -874,13 +961,12 @@ export class Portal2Client {
         }), EXTRACTOR_TIMEOUT_MS, 'extract-document');
       } catch (e) {
         docResp = { __transport_error: e.message };
-        if (idsolcontratovalidacao) {
-          await this.manualFallback({ idsolcontratovalidacao, originStep: 'document', lastError: e.message }).catch(() => {});
-        }
+        console.warn(`  ⚠ extract-document transporte: ${e.message}`);
       }
     }
     // Verso do RG — segundo extractDocument no mesmo idsol. CNH não tem verso.
     if (dados.docBackFile) {
+      await runValidate(dados.docBackFile, 'document', 'doc-verso');
       try {
         docBackResp = await withTimeout(this.extractDocument({
           fileBuffer: dados.docBackFile.buffer,
@@ -890,28 +976,28 @@ export class Portal2Client {
         }), EXTRACTOR_TIMEOUT_MS, 'extract-document(verso)');
       } catch (e) {
         docBackResp = { __transport_error: e.message };
-        if (idsolcontratovalidacao) {
-          await this.manualFallback({ idsolcontratovalidacao, originStep: 'document_back', lastError: e.message }).catch(() => {});
-        }
+        console.warn(`  ⚠ extract-document(verso) transporte: ${e.message}`);
       }
     }
-    // extractReceipt só se ainda não rodou (billAlreadyExtracted=true significa
-    // que o server.mjs já fez o OCR da fatura pra extrair consumo — não repete,
+    // OCR da fatura só se ainda não rodou (billAlreadyExtracted=true significa
+    // que o server.mjs já fez o OCR pra extrair consumo — não repete,
     // preserva o resultado já registrado — Req 2.5).
+    // ⚠️ Fatura vai no /extractor/extract (extractInvoice) — o extract-receipt
+    // é validador de COMPROVANTE e reprovava fatura legítima (IA_REPROVADA_CONTA).
     if (dados.billFile && !dados.billAlreadyExtracted) {
+      await runValidate(dados.billFile, 'invoice', 'conta');
       try {
-        billResp = await withTimeout(this.extractReceipt({
+        billResp = await withTimeout(this.extractInvoice({
           fileBuffer: dados.billFile.buffer,
           filename: dados.billFile.filename || 'conta.jpg',
           mime: dados.billFile.mime || 'image/jpeg',
           idsolcontratovalidacao,
           pdfPassword: dados.billPdfPassword,
-        }), EXTRACTOR_TIMEOUT_MS, 'extract-receipt');
+          personalDocName: docResp?.data?.nome || dados.nome || undefined,
+        }), EXTRACTOR_TIMEOUT_MS, 'extract-invoice');
       } catch (e) {
         billResp = { __transport_error: e.message };
-        if (idsolcontratovalidacao) {
-          await this.manualFallback({ idsolcontratovalidacao, originStep: 'invoice', lastError: e.message }).catch(() => {});
-        }
+        console.warn(`  ⚠ extract-invoice transporte: ${e.message}`);
       }
     } else if (dados.billAlreadyExtracted) {
       // Preserva o resultado já registrado externamente (server.mjs); pode vir
@@ -1054,9 +1140,10 @@ export class Portal2Client {
 
     // ─── Gate IA iGreen (reprovação explícita) ───────────────────────────────
     // Espelha o portal manual: se a IA reprova conta/doc ou titular diverge,
-    // NÃO cria o cliente — encaminha para needs_human. OCR incompleto/transporte
-    // NÃO bloqueia (só is_authentic===false, doc success===false, validade
-    // vencida, mismatch claro de nomes).
+    // NÃO cria o cliente — encaminha para needs_human. Timeout/transporte
+    // NÃO bloqueia; bloqueiam: is_authentic===false (comprovante), fatura
+    // ilegível (<2 campos-chave, regra fz do oficial), doc success===false,
+    // validade vencida, mismatch claro de nomes.
     {
       const gate = evaluateIaGate({ docResp, billResp, dados });
       if (!gate.ok) {
@@ -1081,7 +1168,7 @@ export class Portal2Client {
 
     // Resolve concessionária via /bonus/distributors quando o nome do customer
     // não bate com a nomenclatura oficial da iGreen. Ex: "CPFL ENERGIA" → "CPFL".
-    // Cidade ajuda a desambiguar (ex: Salto/SP → CPFL PIRATININGA).
+        // Cidade ajuda a desambiguar (ex: Salto/SP → CPFL).
     if (concessionaria && dados.uf) {
       try {
         const official = await this.resolveConcessionaria(dados.uf, concessionaria, dados.cidade);

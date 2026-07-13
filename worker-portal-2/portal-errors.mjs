@@ -81,6 +81,29 @@ function extractCorrections(resp) {
   return c ? [c] : [];
 }
 
+// ─── Legibilidade da fatura — espelho EXATO do gate oficial ──────────────────
+// Bundle oficial (index-CmAOjN-p.js): uz=[nome_cliente,num_instalacao,
+// mes_referencia,valor_fatura], dz=2, fz(data) → count(campos preenchidos)>=2.
+// Se fz falha, o portal oficial marca "conta ilegível" e BLOQUEIA o avanço.
+export const INVOICE_KEY_FIELDS = Object.freeze([
+  'nome_cliente', 'num_instalacao', 'mes_referencia', 'valor_fatura',
+]);
+export const INVOICE_MIN_LEGIBLE_FIELDS = 2;
+
+/** Conta quantos campos-chave da fatura vieram preenchidos no OCR. */
+export function countInvoiceLegibleFields(data) {
+  if (!isObject(data)) return 0;
+  return INVOICE_KEY_FIELDS.filter((k) => data[k] != null && data[k] !== '').length;
+}
+
+/**
+ * Shape de FATURA (/extractor/extract) vs COMPROVANTE (extract-receipt):
+ * o comprovante sempre traz o veredito `is_authentic`; a fatura nunca.
+ */
+function isInvoiceShape(resp) {
+  return isObject(resp) && !('is_authentic' in resp);
+}
+
 // ─── Classificação de erro (Req 6) ───────────────────────────────────────────
 /**
  * Classifica a mensagem de detalhe de uma rejeição do Portal 2 em EXATAMENTE
@@ -174,23 +197,30 @@ function isDocAuto(resp) {
 }
 
 /**
- * Avalia o retorno do extractor de CONTA. Auto somente quando
- * `success===true && is_authentic===true && !error` (Req 2.2); qualquer outra
- * combinação (success/is_authentic ausente, error preenchido, nulo/vazio,
- * erro de transporte) → manual (Req 2.3).
+ * Avalia o retorno do OCR da CONTA (Req 2.2 revisado 2026-07-13).
+ *
+ * Dois shapes possíveis:
+ *   - FATURA (/extractor/extract, shape oficial, sem `is_authentic`):
+ *     auto quando `success===true && !error` E legível em ≥2 campos-chave
+ *     (regra fz do portal oficial — mesma régua do gate IA_CONTA_ILEGIVEL).
+ *   - COMPROVANTE (extract-receipt, traz `is_authentic`): auto exige
+ *     `success===true && is_authentic===true && !error` (regra original).
+ * Nulo/vazio/transporte → manual.
  */
 function evaluateBill(resp) {
-  const auto = isObject(resp)
+  const base = isObject(resp)
     && !resp.__transport_error
     && resp.success === true
-    && resp.is_authentic === true
     && !resp.error;
+  const auto = base && (isInvoiceShape(resp)
+    ? countInvoiceLegibleFields(resp.data) >= INVOICE_MIN_LEGIBLE_FIELDS
+    : resp.is_authentic === true);
   return {
     success: isObject(resp) && resp.success === true,
     mode: auto ? 'auto' : 'manual',
     error: extractError(resp),
     corrections: extractCorrections(resp),
-    is_authentic: isObject(resp) && resp.is_authentic === true,
+    is_authentic: isObject(resp) ? (resp.is_authentic ?? null) : null,
     rejection_reason: isObject(resp) ? (resp.rejection_reason ?? null) : null,
   };
 }
@@ -250,13 +280,15 @@ export function buildExtractionResult({ docResp, docBackResp, billResp, isCnh, b
  * Gate da IA iGreen — só bloqueia reprovação EXPLÍCITA (não OCR incompleto).
  *
  * Bloqueia POST /customers quando:
- *   1) conta com `is_authentic === false` (reprovada)
- *   2) documento com `success === false` ou `error` (sem ser só transporte)
- *   3) validade do documento vencida
- *   4) titular doc × conta claramente divergente (ambos nomes presentes)
+ *   1)  comprovante com `is_authentic === false` (reprovado)
+ *   1b) fatura (/extractor/extract) com `success===false`/`error`, ou legível
+ *       em menos de 2 campos-chave — espelho do gate fz() do portal oficial
+ *       (conta ilegível/arquivo errado NÃO pode passar)
+ *   2)  documento com `success === false` ou `error` (sem ser só transporte)
+ *   3)  validade do documento vencida
+ *   4)  titular doc × conta claramente divergente (ambos nomes presentes)
  *
- * NÃO bloqueia quando OCR falhou por timeout/transporte ou quando
- * `is_authentic` está ausente (modo manual observacional).
+ * NÃO bloqueia quando OCR falhou por timeout/transporte (observacional).
  *
  * @returns {{ ok: true } | { ok: false, reason: string, code: string, details?: object }}
  */
@@ -274,6 +306,34 @@ export function evaluateIaGate({ docResp, billResp, dados } = {}) {
       reason: `PORTAL_IA_REPROVADA: ${reason}`,
       details: { rejection_reason: billResp.rejection_reason ?? null },
     };
+  }
+
+  // 1b) Fatura (/extractor/extract) reprovada ou ilegível — espelho do gate
+  // oficial fz(): sem `success` ou com menos de 2 campos-chave legíveis
+  // (nome_cliente/num_instalacao/mes_referencia/valor_fatura), o portal
+  // oficial BLOQUEIA e pede nova foto. Sem isso, conta ilegível/arquivo
+  // errado no slot da conta passaria direto pro POST /customers.
+  // Erro de transporte continua NÃO bloqueando (observacional).
+  if (isInvoiceShape(billResp) && !billResp.__transport_error) {
+    if (billResp.success === false || (billResp.error && billResp.success !== true)) {
+      return {
+        ok: false,
+        code: 'IA_CONTA_ILEGIVEL',
+        reason: `PORTAL_IA_REPROVADA: Conta reprovada pela IA: ${extractError(billResp) || 'success=false'}`,
+        details: { error: extractError(billResp) },
+      };
+    }
+    if (billResp.success === true) {
+      const legible = countInvoiceLegibleFields(billResp.data);
+      if (legible < INVOICE_MIN_LEGIBLE_FIELDS) {
+        return {
+          ok: false,
+          code: 'IA_CONTA_ILEGIVEL',
+          reason: `PORTAL_IA_REPROVADA: Conta reprovada pela IA: fatura ilegível — só ${legible}/${INVOICE_KEY_FIELDS.length} campos-chave legíveis (mínimo ${INVOICE_MIN_LEGIBLE_FIELDS}; regra fz do portal oficial)`,
+          details: { legible_fields: legible, data_keys: isObject(billResp.data) ? Object.keys(billResp.data) : [] },
+        };
+      }
+    }
   }
 
   // 2) Documento explicitamente falhou (não transporte)
@@ -313,8 +373,10 @@ export function evaluateIaGate({ docResp, billResp, dados } = {}) {
     .replace(/\s+/g, ' ')
     .trim();
   const tokens = (s) => normName(s).split(' ').filter((t) => t.length >= 3);
+  // `nome` = shape do extract-receipt (comprovante); `nome_cliente` = shape do
+  // /extractor/extract (fatura oficial).
   const docName = docResp?.data?.nome || docResp?.nome || dados?.nome || '';
-  const billName = billResp?.data?.nome || billResp?.nome || '';
+  const billName = billResp?.data?.nome || billResp?.data?.nome_cliente || billResp?.nome || '';
   const docTok = tokens(docName);
   const billTok = tokens(billName);
   if (docTok.length >= 2 && billTok.length >= 2) {

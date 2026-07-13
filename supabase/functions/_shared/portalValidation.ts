@@ -179,9 +179,10 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
     invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação precisa ter ao menos 7 dígitos" });
   }
 
-  // Distribuidora — bloqueia holding genérica + nome fora da allow-list por UF
+  // Distribuidora — holding ambígua sem resolução por cidade, ou fora da allow-list oficial
   if (isStrFilled(c.distribuidora)) {
-    if (isHoldingName(c.distribuidora)) {
+    const resolvedOk = isValidDistribuidora(c.distribuidora, c.address_state, c.address_city);
+    if (!resolvedOk && isHoldingName(c.distribuidora)) {
       const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
       invalid.push({
         field: "distribuidora",
@@ -189,7 +190,7 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
         reason: `"${c.distribuidora}" é o grupo holding, não a concessionária. Use a regional${opts ? `: ${opts}` : ""}.`,
         suggestion: opts || undefined,
       });
-    } else if (!isValidDistribuidora(c.distribuidora, c.address_state)) {
+    } else if (!resolvedOk) {
       const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
       if (opts) {
         invalid.push({
@@ -223,15 +224,12 @@ export function validateForPortal(c: Record<string, any> | null | undefined): Va
   }
 
   // Preferência de boleto — mesma régua do bot (ask_contaunica).
-  // Quando o cliente marcou "boleto único", o portal iGreen exige o COMPROVANTE
-  // BANCÁRIO no lugar da fatura da distribuidora. Sem isso a IA reprova ("é uma
-  // fatura CPFL, não é comprovante de pagamento bancário").
+  // "Boleto único" (contaunica=true) é APENAS a forma de cobrança no payload —
+  // o portal oficial NÃO pede comprovante bancário no cadastro (bundle oficial
+  // 2026-07-13; o slot de anexo continua sendo a fatura). Upload de boleto é
+  // opcional (relevante só p/ débitos em aberto).
   if (c.contaunica_answered !== true) {
     missing.push(BOLETO_PREFERENCE_FIELD);
-  } else if (c.contaunica === true) {
-    if (!isFileReady(c.electricity_boleto_photo_url)) {
-      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário" });
-    }
   }
 
   return { ok: missing.length === 0 && invalid.length === 0, missing, invalid };

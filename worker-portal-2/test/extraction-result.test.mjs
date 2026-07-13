@@ -49,12 +49,18 @@ const BILL_VARIANTS = [
   { label: 'undefined', value: undefined },
   { label: 'empty-object', value: {} },
   { label: 'success-false', value: { success: false } },
-  { label: 'success-true-no-auth', value: { success: true } }, // is_authentic ausente
+  { label: 'success-true-no-auth', value: { success: true } }, // fatura sem data → ilegível
   { label: 'success-true-auth-true', value: { success: true, is_authentic: true } },
   { label: 'success-true-auth-false', value: { success: true, is_authentic: false } },
   { label: 'success-true-auth-true-error', value: { success: true, is_authentic: true, error: 'x' } },
   { label: 'auth-true-success-missing', value: { is_authentic: true } },
   { label: 'transport-error', value: { __transport_error: 'timeout' } },
+  // Shapes do /extractor/extract (fatura oficial — sem is_authentic):
+  { label: 'invoice-legible-2-fields', value: { success: true, data: { nome_cliente: 'A B', num_instalacao: '123' } } },
+  { label: 'invoice-legible-4-fields', value: { success: true, data: { nome_cliente: 'A B', num_instalacao: '123', mes_referencia: '06/2026', valor_fatura: 100 } } },
+  { label: 'invoice-illegible-1-field', value: { success: true, data: { nome_cliente: 'A B' } } },
+  { label: 'invoice-empty-data', value: { success: true, data: {} } },
+  { label: 'invoice-error', value: { success: false, error: 'não é fatura' } },
 ];
 
 // ─── Oráculo independente (expressa as cláusulas dos requisitos) ──────────────
@@ -75,13 +81,22 @@ function expectedDocAuto(docResp, docBackResp, isCnh) {
   return frontAuto && backAuto;
 }
 
-// Req 2.2/2.3: conta é auto quando success===true && is_authentic===true && !error.
+// Req 2.2 (revisado 2026-07-13): dois shapes.
+//   FATURA (/extractor/extract, sem is_authentic): auto = success && !error &&
+//     ≥2 campos-chave legíveis (nome_cliente/num_instalacao/mes_referencia/
+//     valor_fatura — regra fz do portal oficial).
+//   COMPROVANTE (com is_authentic): auto = success && is_authentic===true && !error.
+const INVOICE_KEYS = ['nome_cliente', 'num_instalacao', 'mes_referencia', 'valor_fatura'];
 function expectedBillAuto(billResp) {
-  return isObj(billResp)
+  const base = isObj(billResp)
     && !billResp.__transport_error
     && billResp.success === true
-    && billResp.is_authentic === true
     && !billResp.error;
+  if (!base) return false;
+  if ('is_authentic' in billResp) return billResp.is_authentic === true;
+  const data = billResp.data;
+  const legible = isObj(data) ? INVOICE_KEYS.filter(k => data[k] != null && data[k] !== '').length : 0;
+  return legible >= 2;
 }
 
 // Req 3.1/3.2: cadastro auto somente quando doc E conta são auto.
@@ -225,6 +240,21 @@ test('RG com frente e verso auto → auto', () => {
     billResp: { success: true, is_authentic: true },
   });
   assert.equal(r.doc.mode, 'auto');
+  assert.equal(r.mode, 'auto');
+});
+
+test('fatura via /extractor/extract (sem is_authentic) com success → auto', () => {
+  // Shape real do endpoint oficial de fatura: não retorna is_authentic.
+  const r = buildExtractionResult({
+    docResp: { success: true },
+    isCnh: true,
+    billResp: {
+      success: true,
+      data: { nome_cliente: 'JOSE GONCALVES', num_instalacao: '13290207', lista_consumo: [{ consumo: 128 }] },
+      name_validation: { match: true },
+    },
+  });
+  assert.equal(r.bill.mode, 'auto');
   assert.equal(r.mode, 'auto');
 });
 

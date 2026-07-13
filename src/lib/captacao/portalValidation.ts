@@ -259,11 +259,11 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
     invalid.push({ field: "numero_instalacao", label: "Nº instalação", reason: "Número de instalação precisa ter ao menos 7 dígitos" });
   }
 
-  // 3) Distribuidora — bloqueia holding genérica ("CPFL ENERGIA", "ENEL BRASIL"
-  //    etc) e nome fora da allow-list da UF. É a causa #1 de lead "voltar"
-  //    silencioso do Portal 2 (404 em /bonus/rules).
+  // 3) Distribuidora — bloqueia holding genérica ("CPFL ENERGIA" etc) sem
+  //    resolução por cidade, e nome fora da allow-list oficial da UF.
   if (isStrFilled(c.distribuidora)) {
-    if (isHoldingName(c.distribuidora)) {
+    const resolvedOk = isValidDistribuidora(c.distribuidora, c.address_state, c.address_city);
+    if (!resolvedOk && isHoldingName(c.distribuidora)) {
       const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
       invalid.push({
         field: "distribuidora",
@@ -271,7 +271,7 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
         reason: `"${c.distribuidora}" é o grupo holding, não a concessionária. Use a regional${opts ? `: ${opts}` : ""}.`,
         suggestion: opts || undefined,
       });
-    } else if (!isValidDistribuidora(c.distribuidora, c.address_state)) {
+    } else if (!resolvedOk) {
       const opts = suggestDistribuidoras(c.address_state).slice(0, 5).join(", ");
       if (opts) {
         invalid.push({
@@ -310,18 +310,13 @@ export function validateForPortal(c: PortalCustomer | null | undefined): Validat
   }
 
   // 6) Preferência de boleto — mesma régua do bot (ask_contaunica).
-  // Quando "boleto único" (contaunica=true) o portal iGreen exige o COMPROVANTE
-  // BANCÁRIO no slot do anexo. Sem isso a IA reprova ("é fatura, não é comprovante").
+  // "Boleto único" (contaunica=true) é APENAS a forma de cobrança no payload —
+  // o portal oficial NÃO pede comprovante bancário no cadastro (confirmado no
+  // bundle oficial 2026-07-13; o slot de anexo continua sendo a fatura).
+  // O upload de boleto/comprovante ficou opcional (só p/ débitos em aberto).
   const boletoAnswered = c.contaunica_answered === true;
   if (!boletoAnswered) {
     missing.push(BOLETO_PREFERENCE_FIELD);
-  } else if (c.contaunica === true) {
-    const boletoUrl = (c as any).electricity_boleto_photo_url;
-    const filled = typeof boletoUrl === "string" && boletoUrl.trim().length > 0
-      && boletoUrl !== "evolution-media:pending" && boletoUrl !== "collected";
-    if (!filled) {
-      missing.push({ key: "electricity_boleto_photo_url", label: "Boleto bancário", group: "docs" });
-    }
   }
 
   const totalFields = PORTAL_FIELDS.length + 1; // + boleto

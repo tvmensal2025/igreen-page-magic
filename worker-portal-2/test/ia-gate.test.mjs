@@ -6,10 +6,47 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateIaGate, classifyPortalError } from '../portal-errors.mjs';
 
-test('gate OK quando OCR incompleto (sem is_authentic)', () => {
+test('gate OK fatura legível (shape /extractor/extract, sem is_authentic, ≥2 campos)', () => {
   const r = evaluateIaGate({
     docResp: { success: true, data: { nome: 'JOAO SILVA' } },
-    billResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: { success: true, data: { nome_cliente: 'JOAO SILVA', num_instalacao: '13290207' } },
+  });
+  assert.equal(r.ok, true);
+});
+
+test('gate BLOQUEIA fatura ilegível (<2 campos-chave — regra fz do oficial)', () => {
+  const r = evaluateIaGate({
+    docResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: { success: true, data: { nome_cliente: 'JOAO SILVA' } }, // só 1 campo
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'IA_CONTA_ILEGIVEL');
+  assert.match(r.reason, /PORTAL_IA_REPROVADA/);
+  assert.equal(classifyPortalError(r.reason).kind, 'ia_reprovada');
+});
+
+test('gate BLOQUEIA fatura com success=false (arquivo errado/não reconhecido)', () => {
+  const r = evaluateIaGate({
+    docResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: { success: false, error: 'não foi possível identificar uma fatura de energia' },
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'IA_CONTA_ILEGIVEL');
+});
+
+test('gate BLOQUEIA fatura success=true mas data vazio', () => {
+  const r = evaluateIaGate({
+    docResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: { success: true, data: {} },
+  });
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'IA_CONTA_ILEGIVEL');
+});
+
+test('gate OK fatura com exatamente 2 campos (limiar do oficial)', () => {
+  const r = evaluateIaGate({
+    docResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: { success: true, data: { mes_referencia: '06/2026', valor_fatura: 254.31 } },
   });
   assert.equal(r.ok, true);
 });
@@ -18,6 +55,14 @@ test('gate OK em erro de transporte', () => {
   const r = evaluateIaGate({
     docResp: { __transport_error: 'timeout' },
     billResp: { __transport_error: 'timeout' },
+  });
+  assert.equal(r.ok, true);
+});
+
+test('gate OK billResp nulo (OCR não rodou — observacional)', () => {
+  const r = evaluateIaGate({
+    docResp: { success: true, data: { nome: 'JOAO SILVA' } },
+    billResp: null,
   });
   assert.equal(r.ok, true);
 });

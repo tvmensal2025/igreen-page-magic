@@ -753,6 +753,18 @@ function _kwhFromReceiptResponse(resp) {
   return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
+// Consumo médio a partir da resposta do /extractor/extract (fatura oficial):
+// média da `lista_consumo` (mesma conta que o front oficial faz no payload).
+// Ignora meses zerados; exige ≥1 mês válido.
+function _kwhFromInvoiceResponse(resp) {
+  const lista = resp?.data?.lista_consumo;
+  if (Array.isArray(lista)) {
+    const vals = lista.map(x => Number(x?.consumo)).filter(n => Number.isFinite(n) && n > 0);
+    if (vals.length) return Math.round(vals.reduce((s, n) => s + n, 0) / vals.length);
+  }
+  return _kwhFromReceiptResponse(resp);
+}
+
 // Distribuidora/concessionária. A iGreen pode retornar em vários campos:
 //   - `beneficiario` (BOLETO): nome do destinatário do pagamento (ex: "CPFL
 //     PIRATININGA")
@@ -774,7 +786,7 @@ function _distribuidoraFromReceiptResponse(resp) {
 // consumomedio (caso BOLETO).
 function _valorFromReceiptResponse(resp) {
   const raw = _findInResponse(resp, [
-    'valor_pago', 'valorPago', 'valor_total', 'valorTotal',
+    'valor_pago', 'valorPago', 'valor_fatura', 'valor_total', 'valorTotal',
     'valor', 'total', 'amount',
   ]);
   if (raw == null) return null;
@@ -894,12 +906,13 @@ async function ensureDocumentsAttachedAndGate(dados, customerId) {
   const isCnh = _isCnhCustomer(c);
   dados.isCnh = isCnh;
 
-  // Boleto único → portal exige comprovante bancário no slot energy-bill.
-  const wantsBoletoUnico = c?.contaunica_answered === true && c?.contaunica === true;
+  // Slot energy-bill = FATURA sempre (confirmado no bundle oficial 2026-07-13:
+  // "Boleto Único" é só preferência de cobrança → contaunica no payload;
+  // comprovante bancário é outro slot, `payment-proof`, só p/ débitos em aberto).
+  // Boleto anexado fica como fallback quando a fatura não existe.
   if (!dados.billFile) {
-    dados.billFile = wantsBoletoUnico
-      ? await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto')
-      : await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+    dados.billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta')
+      || await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto');
   }
   if (!dados.docFile) {
     dados.docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
@@ -909,7 +922,7 @@ async function ensureDocumentsAttachedAndGate(dados, customerId) {
   }
 
   const missing = [];
-  if (!dados.billFile) missing.push(wantsBoletoUnico ? 'boleto bancário' : 'conta de energia');
+  if (!dados.billFile) missing.push('conta de energia');
   if (!dados.docFile) missing.push('documento (frente)');
   if (!isCnh && !dados.docBackFile) missing.push('documento (verso)');
   if (missing.length) {
@@ -986,13 +999,11 @@ async function fetchDadosFromSupabase(customerId) {
   // CNH dispensa verso. O gate de obrigatoriedade roda em
   // ensureDocumentsAttachedAndGate antes de enfileirar.
   const isCnh = _isCnhCustomer(c);
-  // Quando o cliente marcou boleto único (contaunica=true + transferir_titularidade=true),
-  // o portal iGreen valida o slot `energy-bill` esperando um COMPROVANTE BANCÁRIO,
-  // não a fatura da distribuidora. Usa o slot separado `electricity_boleto_photo_url`.
-  const wantsBoletoUnico = c?.contaunica_answered === true && c?.contaunica === true;
-  const billFile = wantsBoletoUnico
-    ? await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto')
-    : await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta');
+  // Slot energy-bill = FATURA sempre. "Boleto único" (contaunica) é apenas a
+  // forma de cobrança no payload/contrato — o portal oficial NÃO troca o anexo
+  // (mapeado no bundle 2026-07-13). Boleto anexado só como fallback sem fatura.
+  const billFile = await _resolveCustomerFile(c.bill_base64, c.electricity_bill_photo_url, 'conta')
+    || await _resolveCustomerFile(null, c.electricity_boleto_photo_url, 'boleto');
   const docFile = await _resolveCustomerFile(c.document_front_base64, c.document_front_url, 'doc-frente');
   const docBackFile = isCnh ? null : await _resolveCustomerFile(c.document_back_base64, c.document_back_url, 'doc-verso');
 
@@ -1036,24 +1047,36 @@ async function fetchDadosFromSupabase(customerId) {
   let consumoMedio = Number(c.media_consumo || 0);
   let ocrIdsol = null;
   let ocrBillExtracted = false;
-  // Resposta bruta do extract-receipt — repassada ao cadastrarCliente para o
-  // gate IA (is_authentic / mismatch) quando billAlreadyExtracted=true.
+  // Resposta bruta do OCR da fatura (/extractor/extract) — repassada ao
+  // cadastrarCliente para gate/extração quando billAlreadyExtracted=true.
   let billExtractionResult = null;
 
   if (billFile) {
-    console.log(`  📄 OCR fatura: chamando /extractor/extract-receipt (${billFile.mime}, ${billFile.buffer.length}B)`);
+    console.log(`  📄 OCR fatura: chamando /extractor/extract (${billFile.mime}, ${billFile.buffer.length}B)`);
     try {
       const tmpClient = new Portal2Client({ idconsultor: igreenId });
       const init = await tmpClient.initValidation().catch(() => null);
       ocrIdsol = init?.idsolcontratovalidacao || null;
-      const resp = await tmpClient.extractReceipt({
+      // Endpoint oficial de fatura (passo 2 do portal). Sem is_authentic —
+      // gate de autenticidade é só para comprovantes (extract-receipt).
+      const resp = await tmpClient.extractInvoice({
         fileBuffer: billFile.buffer,
         filename: billFile.filename,
         mime: billFile.mime,
         idsolcontratovalidacao: ocrIdsol,
+        personalDocName: c.doc_holder_name || c.name || undefined,
       });
       ocrBillExtracted = true;
       billExtractionResult = resp;
+
+      // Nº da instalação — o oficial preenche do OCR; nós também (se faltar).
+      const ocrInstal = String(resp?.data?.num_instalacao ?? '').replace(/\D/g, '');
+      if (!c.numero_instalacao && ocrInstal.length >= 5) {
+        c.numero_instalacao = ocrInstal;
+        console.log(`  ↳ OCR num_instalacao=${ocrInstal}`);
+        await supabase.from('customers').update({ numero_instalacao: ocrInstal }).eq('id', customerId)
+          .then(() => {}, () => {});
+      }
 
       // 1. Distribuidora — só sobrescreve se CEP não resolveu (CEP é a
       //    fonte mais confiável). Caso contrário, OCR é só corroboração.
@@ -1076,11 +1099,12 @@ async function fetchDadosFromSupabase(customerId) {
         }
       }
 
-      // 2. Consumo médio — fatura traz `consumomedio`; boleto não.
-      const kwh = _kwhFromReceiptResponse(resp);
+      // 2. Consumo médio — média da lista_consumo (12-13 meses) da fatura,
+      //    mesma conta do front oficial.
+      const kwh = _kwhFromInvoiceResponse(resp);
       if (kwh) {
         consumoMedio = kwh;
-        console.log(`  ↳ OCR consumomedio=${kwh} kWh (idsol=${ocrIdsol})`);
+        console.log(`  ↳ OCR consumo médio=${kwh} kWh (lista_consumo; idsol=${ocrIdsol})`);
         await supabase.from('customers').update({ media_consumo: kwh }).eq('id', customerId)
           .then(() => {}, () => {});
       } else if (!consumoMedio) {
@@ -1178,7 +1202,7 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     concessionaria: distribuidora || '',
     // Anexos pra reaproveitar dentro de cadastrarCliente. Mantemos o billFile
     // SEMPRE presente (prova pro gate de documentos); a flag billAlreadyExtracted
-    // sinaliza ao client que extractReceipt já rodou (evita OCR redundante).
+    // sinaliza ao client que o OCR da fatura (extractInvoice) já rodou.
     billFile: billFile || undefined,
     billAlreadyExtracted: !!billAlreadyExtracted,
     // Veredito bruto do OCR da conta (is_authentic etc.) — gate IA no client.

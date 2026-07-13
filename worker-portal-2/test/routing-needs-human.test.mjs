@@ -75,9 +75,11 @@ const NON_RECOVERABLE_KINDS = Object.keys(ERROR_KINDS).filter(k => !ERROR_KINDS[
 const RECOVERABLE_KINDS = Object.keys(ERROR_KINDS).filter(k => ERROR_KINDS[k].recoverable);
 
 // As classes que o Property 7 exige que vão SEMPRE a needs_human.
+// `ia_reprovada` entrou no mapa em 2026-07 (gate IA explícito: is_authentic
+// false em comprovante, doc reprovado/vencido, titular divergente).
 assert.deepEqual(
   [...NON_RECOVERABLE_KINDS].sort(),
-  ['attachment_not_confirmed', 'duplicate_document', 'no_coverage', 'unknown', 'validation_error'],
+  ['attachment_not_confirmed', 'duplicate_document', 'ia_reprovada', 'no_coverage', 'unknown', 'validation_error'],
   'pré-condição: o conjunto não-recuperável do mapa real deve corresponder ao esperado',
 );
 
@@ -109,6 +111,12 @@ const NON_RECOVERABLE_MESSAGES = {
     'erro genérico não mapeado',
     'xyzzy plugh',
     '',
+  ],
+  ia_reprovada: [
+    'PORTAL_IA_REPROVADA: Conta reprovada pela IA: documento adulterado',
+    'Documento reprovado pela IA: ilegível',
+    'Titular divergente (doc="A B" × conta="C D")',
+    'Documento vencido (01/01/2020)',
   ],
 };
 
