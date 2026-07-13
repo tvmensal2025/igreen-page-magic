@@ -203,6 +203,27 @@ export function CaptureLeadList({
         closedElsewhere = new Set((closedSales || []).map((s: any) => s.customer_id));
       }
       const filtered = (data || []).filter((c: any) => !closedElsewhere.has(c.id));
+
+      // Enriquecimento com nomes de parceiro/campanha (bulk)
+      const partnerIds = Array.from(
+        new Set(filtered.map((c: any) => c.referral_partner_id).filter(Boolean)),
+      ) as string[];
+      const campaignIds = Array.from(
+        new Set(filtered.map((c: any) => c.source_campaign_id).filter(Boolean)),
+      ) as string[];
+      const [partnersRes, campaignsRes] = await Promise.all([
+        partnerIds.length
+          ? supabase.from("referral_partners").select("id, nome").in("id", partnerIds)
+          : Promise.resolve({ data: [] as any[] }),
+        campaignIds.length
+          ? supabase.from("facebook_campaigns").select("id, name").in("id", campaignIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      const partnerMap = new Map<string, string>();
+      for (const p of ((partnersRes as any).data || []) as any[]) partnerMap.set(p.id, p.nome);
+      const campaignMap = new Map<string, string>();
+      for (const c of ((campaignsRes as any).data || []) as any[]) campaignMap.set(c.id, c.name);
+
       const rows: CaptureBatchLead[] = filtered.map((c: any) => ({
         id: c.id,
         name: c.name,
@@ -218,6 +239,8 @@ export function CaptureLeadList({
           if (f.key === "electricity_bill_value" && Number(v) <= 0) return false;
           return true;
         }).length,
+        partnerName: c.referral_partner_id ? partnerMap.get(c.referral_partner_id) ?? null : null,
+        campaignName: c.source_campaign_id ? campaignMap.get(c.source_campaign_id) ?? null : null,
       }));
       setLeads(sortByActivity(rows));
       setLoading(false);
