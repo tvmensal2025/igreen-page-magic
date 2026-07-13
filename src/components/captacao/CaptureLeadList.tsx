@@ -35,6 +35,8 @@ export interface CaptureBatchLead {
   filled: number;
   lastMsg?: string | null;
   lastMsgAt?: string | null;
+  partnerName?: string | null;
+  campaignName?: string | null;
 }
 
 interface Props {
