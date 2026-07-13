@@ -201,6 +201,7 @@ export function useCustomerAttendance(
     starting,
     ending,
     startAttendance,
+    restartAttendance,
     endAttendance,
     refresh,
   };
