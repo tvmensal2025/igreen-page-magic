@@ -369,8 +369,9 @@ export function CaptureLeadList({
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
-  const emAtendimento = useMemo(() => filtered.filter((l) => !!l.welcome_sent_at), [filtered]);
-  const emEspera = useMemo(() => filtered.filter((l) => !l.welcome_sent_at), [filtered]);
+  const emAtendimento = useMemo(() => filtered.filter((l) => !!l.welcome_sent_at && !l.attendance_rating_requested_at), [filtered]);
+  const emEspera = useMemo(() => filtered.filter((l) => !l.welcome_sent_at || !!l.attendance_rating_requested_at), [filtered]);
+
 
   const [activeTab, setActiveTab] = useState<"atendimento" | "espera">(() => {
     try {
