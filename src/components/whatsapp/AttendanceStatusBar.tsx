@@ -17,6 +17,7 @@ interface AttendanceStatusBarProps {
   ending?: boolean;
   onStart: () => void;
   onRequestEnd: () => void;
+  onRestart?: () => void;
   compact?: boolean;
 }
 
