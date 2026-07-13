@@ -84,6 +84,22 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "forbidden" }, 403);
     }
 
+    // Reiniciar atendimento: limpa marcadores para permitir novo welcome+protocolo,
+    // mesmo que o cliente não tenha dado nota. Usado pelo botão "Reiniciar".
+    if (restart) {
+      await supabase
+        .from("customers")
+        .update({
+          welcome_sent_at: null,
+          tracking_protocol: null,
+          attendance_rating: null,
+          attendance_rating_requested_at: null,
+          attendance_rating_at: null,
+          attendance_auto_close_at: null,
+        })
+        .eq("id", customerId);
+    }
+
     const { data: consultant } = await supabase
       .from("consultants")
       .select("name, display_name")
