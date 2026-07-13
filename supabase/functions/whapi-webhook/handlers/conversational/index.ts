@@ -2761,12 +2761,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             });
           } else {
             // F02: sem botões configurados — CTA textual para não ficar parado após áudio/dúvida
-            const nudge = "Posso te ajudar com:
-1) Simular economia
-2) Como funciona
-3) Ativar o benefício
-
-É só responder com o *número* 🙂";
+            const nudge = "Posso te ajudar com:\n1) Simular economia\n2) Como funciona\n3) Ativar o benefício\n\nÉ só responder com o *número* 🙂";
             await ctx.sender.sendText(ctx.remoteJid, nudge);
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
