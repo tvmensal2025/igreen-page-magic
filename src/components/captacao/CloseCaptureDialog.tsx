@@ -251,6 +251,9 @@ export function CloseCaptureDialog({
       } else {
         payload.lostReason = lostReason;
         payload.notes = lostNotes || undefined;
+        const shouldNotify = notifyPartner && !!leadInfo.partnerId && !!partnerMessage.trim();
+        payload.notifyPartner = shouldNotify;
+        if (shouldNotify) payload.partnerMessage = partnerMessage.trim();
       }
 
       const { data, error } = await supabase.functions.invoke(
