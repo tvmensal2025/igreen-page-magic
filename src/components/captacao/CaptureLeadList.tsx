@@ -171,7 +171,7 @@ export function CaptureLeadList({
     setLoading(true);
     try {
       const cols =
-        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, " +
+        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, referral_partner_id, source_campaign_id, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
       // Traz manual (Captação) + auto sem welcome (leads novos "Em espera"),
       // sempre respeitando: não fechado, não virou cliente iGreen.
