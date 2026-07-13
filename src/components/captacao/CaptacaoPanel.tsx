@@ -241,7 +241,15 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
         <CloseCaptureButton
           customerId={selectedId}
           consultantId={consultantId}
-          onClosed={() => setSelectedId(null)}
+          onClosed={() => {
+            const closedId = selectedId;
+            if (closedId) {
+              window.dispatchEvent(
+                new CustomEvent("captacao:lead-closed", { detail: { id: closedId } }),
+              );
+            }
+            setSelectedId(null);
+          }}
         />
       </div>
     </div>

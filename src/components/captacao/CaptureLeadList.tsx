@@ -308,6 +308,23 @@ export function CaptureLeadList({
     };
   }, [consultantId, load]);
 
+  // Remoção otimista: quando "Encerrar captação" fecha um lead, some da lista na hora
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (!id) return;
+      setLeads((prev) => prev.filter((l) => l.id !== id));
+      setUnread((prev) => {
+        if (!(id in prev)) return prev;
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    };
+    window.addEventListener("captacao:lead-closed", handler as EventListener);
+    return () => window.removeEventListener("captacao:lead-closed", handler as EventListener);
+  }, []);
+
   // Realtime — mensagens do consultor (bubbles leads para o topo + unread)
   useEffect(() => {
     const ch = supabase
