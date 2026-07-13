@@ -1106,20 +1106,31 @@ function LeadCard({
 
   const borderClass =
     selectMode && checked
-      ? "bg-primary/10 border-l-2 border-primary"
+      ? "bg-primary/20 border-l-4 border-primary ring-1 ring-inset ring-primary/40"
       : active
-        ? "bg-primary/10 border-l-2 border-primary"
+        ? "bg-primary/10 border-l-4 border-primary"
         : flashOn
-          ? "bg-emerald-500/10 border-l-2 border-emerald-500"
+          ? "bg-emerald-500/10 border-l-4 border-emerald-500"
           : hasUnread
-            ? "bg-primary/[0.04] border-l-2 border-primary/60"
-            : "border-l-2 border-transparent hover:bg-secondary/50";
+            ? "bg-primary/[0.04] border-l-4 border-primary/60"
+            : "border-l-4 border-transparent hover:bg-secondary/50";
+
+  const enterSelectAndToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!selectMode) {
+      // Entra em modo seleção já marcando este item
+      toggleId(l.id);
+    } else {
+      toggleId(l.id);
+    }
+  };
 
   return (
     <li>
       <div
         role="button"
         tabIndex={0}
+        aria-pressed={selectMode ? checked : undefined}
         onClick={() => {
           if (selectMode) toggleId(l.id);
           else onSelect(l.id);
@@ -1133,9 +1144,9 @@ function LeadCard({
         }}
         className={`group w-full text-left px-2.5 py-2.5 flex gap-2.5 transition-colors cursor-pointer ${borderClass}`}
       >
-        {selectMode && (
+        {selectMode ? (
           <div
-            className="shrink-0 pt-2.5"
+            className="shrink-0 pt-2 pl-0.5"
             onClick={(e) => {
               e.stopPropagation();
               toggleId(l.id);
@@ -1145,14 +1156,20 @@ function LeadCard({
               checked={checked}
               onCheckedChange={() => toggleId(l.id)}
               aria-label={`Selecionar ${l.name || l.id}`}
-              className="h-5 w-5 border-2 border-primary/60 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:text-primary-foreground shadow-sm"
+              className="h-6 w-6 border-2 border-primary/70 bg-background data-[state=checked]:bg-primary data-[state=checked]:border-primary data-[state=checked]:text-primary-foreground shadow"
             />
           </div>
-        )}
+        ) : null}
         <div
-          className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)}`}
+          className={`relative shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold ${toneFor(l.id)} ${!selectMode ? "cursor-pointer" : ""}`}
+          onClick={!selectMode ? enterSelectAndToggle : undefined}
+          title={!selectMode ? "Clique no avatar para selecionar" : undefined}
         >
-          {initialsFrom(l.name, l.phone_whatsapp)}
+          {selectMode && checked ? (
+            <span className="text-primary-foreground bg-primary w-full h-full rounded-full flex items-center justify-center">✓</span>
+          ) : (
+            initialsFrom(l.name, l.phone_whatsapp)
+          )}
           {ready && (
             <span
               className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-primary border-2 border-card"
