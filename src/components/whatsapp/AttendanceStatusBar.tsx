@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, Loader2, PlayCircle, Settings, Star } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, PlayCircle, RotateCcw, Settings, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
