@@ -371,6 +371,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
 
 
                   onRequestEnd={() => setEndAttendanceDialogOpen(true)}
+                  onRestart={() => void attendance.restartAttendance()}
                   compact
                 />
                 {/* Atalho de fluxos reais do consultor (variante + nome) */}
