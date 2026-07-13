@@ -10,7 +10,6 @@ export interface BatchLeadTarget {
   name: string | null;
   phone_whatsapp: string | null;
   welcome_sent_at: string | null;
-  attendance_ended_at?: string | null;
 }
 
 export interface BatchLeadResult {
@@ -186,14 +185,12 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
     try {
       assertNotAborted();
 
-      const attendanceActive = !!lead.welcome_sent_at && !lead.attendance_ended_at;
-      if (startAttendance && !attendanceActive) {
+      if (startAttendance && !lead.welcome_sent_at) {
         const outcome = await startAttendanceForLead(lead.id, consultantId);
         assertNotAborted();
         if (outcome === "already") {
           parts.push("já iniciado");
           lead.welcome_sent_at = lead.welcome_sent_at || new Date().toISOString();
-          lead.attendance_ended_at = null;
         } else if (typeof outcome === "object" && "fallback" in outcome) {
           // Envio automático não rolou (canal/rate/etc). Marca skipped legível
           // em vez de "Falhou" e pula os próximos envios deste lead.
@@ -203,10 +200,9 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
         } else {
           parts.push("protocolo");
           lead.welcome_sent_at = new Date().toISOString();
-          lead.attendance_ended_at = null;
           anythingSent = true;
         }
-      } else if (startAttendance && attendanceActive) {
+      } else if (startAttendance && lead.welcome_sent_at) {
         onlySkippedProtocol = true;
         parts.push("protocolo pulado");
       }

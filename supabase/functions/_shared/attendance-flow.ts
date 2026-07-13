@@ -220,15 +220,13 @@ export async function sendWelcomeHeader(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, welcome_sent_at, attendance_ended_at, tracking_protocol, referral_partner_id",
+      "id, name, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, referral_partner_id",
     )
     .eq("id", customerId)
     .maybeSingle();
 
   if (!customer) return { ok: false, code: "customer_not_found" };
-  // Já em atendimento ativo — não reenvia. Após finalizar (attendance_ended_at),
-  // permite reabrir e manda welcome de novo.
-  if (customer.welcome_sent_at && !customer.attendance_ended_at) {
+  if (customer.welcome_sent_at) {
     return { ok: true, skipped: "already_sent", protocol: customer.tracking_protocol || undefined };
   }
   // Sempre 55+DDD+número no JID — phone sem DDI (11 dígitos) gerava destino inválido.
@@ -316,11 +314,6 @@ export async function sendWelcomeHeader(
       name_ask_sent_at: nowIso,
       conversation_step: "ask_name",
       capture_mode: "manual",
-      // Reabertura após finalizar: limpa ciclo anterior de nota.
-      attendance_ended_at: null,
-      attendance_rating_requested_at: null,
-      attendance_rating: null,
-      attendance_rating_at: null,
     }).eq("id", customerId).then(() => {}, () => {});
     return { ok: true, protocol, channel: channel.kind, instance: channel.instanceName };
   }
@@ -391,11 +384,6 @@ export async function sendWelcomeHeader(
       capture_mode: "manual",
       capture_started_at: now,
       tracking_protocol: protocol,
-      // Reabertura após finalizar: limpa ciclo anterior de nota.
-      attendance_ended_at: null,
-      attendance_rating_requested_at: null,
-      attendance_rating: null,
-      attendance_rating_at: null,
     })
     .eq("id", customerId)
     .then(() => {}, () => {});

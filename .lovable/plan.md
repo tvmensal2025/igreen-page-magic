@@ -1,40 +1,44 @@
-## Análise das mudanças
+## Problema
 
-Commit `be7aa4a88 "Added retry & hint flow"` está no repositório com as 6 alterações do turno anterior:
+Hoje, na lista de Captação, um lead entra em **"Em atendimento"** assim que `welcome_sent_at` é preenchido — e nunca mais sai, mesmo depois de o consultor clicar em **"Finalizar atendimento"**. Como o cliente raramente responde à pesquisa 1–5, dezenas de leads ficam presos em "Em atendimento", impedindo o consultor de selecioná-los novamente para disparar um novo atendimento em lote.
 
-**Backend (edge — precisa deploy):**
-- `supabase/functions/start-customer-attendance/index.ts` — retry 1× + `fixHint` + mensagens específicas
-- `supabase/functions/end-customer-attendance/index.ts` — mesmo tratamento
+## Regra desejada
 
-**Frontend (auto-publica no próximo update):**
-- `src/lib/attendanceShortcut.ts` (novo)
-- `src/hooks/useCustomerAttendance.ts`
-- `src/components/captacao/runFastStartAttendance.ts`
-- `src/components/captacao/CaptacaoPanel.tsx`
+Um lead deve aparecer em **"Em espera"** quando:
+- ainda não recebeu boas-vindas (`welcome_sent_at IS NULL`), **OU**
+- já teve o atendimento **finalizado** pelo consultor (`attendance_rating_requested_at IS NOT NULL`), independente do cliente ter respondido a pesquisa.
 
-## Status do deploy
+Assim, ao clicar em "Finalizar", o lead volta para "Em espera" e pode ser incluído em uma nova seleção em massa para iniciar outro atendimento.
 
-- Busca em logs de `start-customer-attendance` por `fixHint` → **0 ocorrências**. Confirma que a versão nova das edges **ainda NÃO está em produção**.
-- Segundo `.kiro/steering/deploy.md`, edge functions só sobem via workflow_dispatch do GitHub Actions (`deploy-edge-functions.yml`). Não há trigger automático em push.
-- Working tree limpo, então nada perdido — só falta disparar o deploy.
+Continua em **"Em atendimento"** apenas quem tem `welcome_sent_at` preenchido **e** `attendance_rating_requested_at IS NULL` (atendimento em curso, ainda não encerrado).
 
-## O que fazer
+## Mudanças
 
-1. Disparar deploy só das 2 funções alteradas (evita rebuild geral):
-   - `start-customer-attendance`
-   - `end-customer-attendance`
-   
-   Usando o caminho já documentado em `.kiro/steering/deploy.md` (curl no workflow_dispatch com token do git credential helper), 1 chamada por função.
+### 1. `src/components/captacao/CaptureLeadList.tsx`
+- Adicionar `attendance_rating_requested_at: string | null` na interface `CaptureBatchLead`.
+- Incluir a coluna no `select` do `load()` e no mapeamento das linhas.
+- Ajustar o agrupamento (linhas 370–371):
+  ```ts
+  const emAtendimento = filtered.filter(l => !!l.welcome_sent_at && !l.attendance_rating_requested_at);
+  const emEspera      = filtered.filter(l => !l.welcome_sent_at ||  !!l.attendance_rating_requested_at);
+  ```
+- Ajustar `unreadByTab` (linha 388) e `selectWithoutAttendance` (linha 478) com a mesma condição, para que "Só sem atendimento" também inclua os finalizados.
 
-2. Acompanhar os 2 runs até `conclusion=success`.
+### 2. `src/hooks/useCustomerAttendance.ts` (leitura já existente)
+Sem mudanças — o hook já lê `attendance_rating_requested_at`. A lista faz sua própria query e realtime, então basta atualizar `CaptureLeadList`.
 
-3. Validar no Supabase:
-   - `edge_function_logs` de cada função procurando `fixHint` após 1 clique real em Iniciar/Finalizar atendimento, OU
-   - Chamar via `supabase--curl_edge_functions` com payload inválido e conferir que a resposta traz `fixHint` no JSON (prova que a versão nova está viva).
-
-4. Frontend não precisa de ação extra — publica junto no próximo Update do preview.
+### 3. Realtime
+O canal atual já recarrega em `UPDATE` de `customers`. Como `end-customer-attendance` grava `attendance_rating_requested_at`, o lead migra automaticamente de aba assim que o botão "Finalizar" é clicado.
 
 ## Fora de escopo
 
-- Nenhuma mudança de código nesta rodada. Só deploy + verificação.
-- Se algum dos 2 deploys falhar, aí sim abro plano de correção com o log específico.
+- Não mexer em `start-customer-attendance` / `end-customer-attendance` — o comportamento server-side (protocolo, envio, kill-switch) continua igual.
+- Não alterar `CloseCaptureButton` / `CloseCaptureDialog` (Ganho/Perdido continua removendo o lead da lista via `capture_closed_at`).
+- Sem migração de banco — a coluna `attendance_rating_requested_at` já existe.
+
+## Como validar
+
+1. Abrir Captação, escolher um lead em "Em atendimento", clicar **Finalizar atendimento**.
+2. Confirmar que o lead sai de "Em atendimento" e aparece em "Em espera" em segundos (via realtime).
+3. Ativar seleção múltipla, usar **"Só sem atendimento"** — o lead finalizado deve ser selecionado junto.
+4. Disparar batch: o modal reabre atendimento normalmente para esses leads.
