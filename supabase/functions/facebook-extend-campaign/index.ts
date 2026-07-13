@@ -97,6 +97,14 @@ Deno.serve(async (req) => {
     if (reactivate && !metaError) {
       updatePayload.status = "active";
       updatePayload.rejection_reason = null;
+      try {
+        await admin
+          .from("rodizio_pools")
+          .update({ paused_notified_at: null, last_pause_reason: null })
+          .eq("campaign_id", c.id);
+      } catch (e) {
+        console.error("[fb-extend] reset paused_notified_at falhou:", (e as Error).message);
+      }
     }
     if (Object.keys(updatePayload).length > 0) {
       const { error: updErr } = await admin.from("facebook_campaigns").update(updatePayload).eq("id", c.id);

@@ -254,58 +254,87 @@ export type CampaignPausedReason =
  */
 export function formatCampaignPausedMessage(campaignName: string, reason: CampaignPausedReason | string): string {
   const name = shortCampaignName(campaignName || "Sua campanha");
+  const footer = [
+    ``,
+    `💚 Os leads que já chegaram *seguem sendo trabalhados*`,
+    `pela equipe — ninguém fica parado.`,
+    ``,
+    `✨ _iGreen Ads_`,
+  ];
+
   switch (reason) {
     case "manual":
       return [
-        `⏸️ *Campanha em ajuste*`,
+        `🌿 *Pausa estratégica*`,
         `🎯 *${name}*`,
         ``,
-        `Pausamos temporariamente para *otimizar o desempenho*`,
-        `e trazer leads de mais qualidade.`,
+        `A campanha foi pausada por um momento`,
+        `para *ajustar e melhorar a entrega*.`,
         ``,
-        `Fique tranquilo(a) — voltamos em breve! 💪`,
+        `É só um respiro — em breve voltamos`,
+        `com leads ainda melhores. 🚀`,
+        ...footer,
       ].join("\n");
     case "low_balance":
       return [
-        `⏸️ *Pausa rápida para recarga*`,
+        `🔋 *Recarregando energia*`,
         `🎯 *${name}*`,
         ``,
-        `Estamos *recarregando o saldo* da campanha.`,
-        `Assim que entrar, os leads voltam automaticamente. 🚀`,
+        `Pausamos rapidinho para *repor o saldo*`,
+        `da campanha.`,
+        ``,
+        `Assim que o crédito entrar,`,
+        `os anúncios voltam sozinhos. ⚡`,
+        ...footer,
       ].join("\n");
     case "ended":
       return [
-        `🏁 *Campanha concluída*`,
+        `✨ *Missão cumprida!*`,
         `🎯 *${name}*`,
         ``,
-        `Essa fase acabou! Obrigado pela parceria —`,
-        `em breve começamos uma nova rodada. 🙌`,
+        `A campanha encerrou — e o melhor começa agora.`,
+        ``,
+        `Cada lead que chegou *continua no funil*,`,
+        `com atendimento e acompanhamento`,
+        `até o fechamento. ✅`,
+        ``,
+        `Obrigado pela parceria.`,
+        `Quando quiser, partimos para a próxima! 🚀`,
+        ``,
+        `✨ _iGreen Ads_`,
       ].join("\n");
     case "rejected":
       return [
-        `⏸️ *Ajuste de criativo*`,
+        `🎨 *Ajuste fino no criativo*`,
         `🎯 *${name}*`,
         ``,
         `A Meta pediu um pequeno ajuste no anúncio.`,
-        `Já estamos *revisando e reenviando* — em algumas horas`,
-        `voltamos ao ar. ✅`,
+        `Já estamos *revisando e reenviando* —`,
+        `em algumas horas voltamos ao ar. ✅`,
+        ...footer,
       ].join("\n");
     case "auto_performance":
       return [
-        `🧪 *Fase de aquecimento/teste*`,
+        `🧪 *Otimização em andamento*`,
         `🎯 *${name}*`,
         ``,
-        `O sistema pausou para *testar novas variações*`,
-        `e melhorar o custo por lead. É rotina de otimização —`,
-        `os leads voltam em breve! 🔥`,
+        `Pausamos para *testar novas variações*`,
+        `e melhorar o custo por lead.`,
+        ``,
+        `Faz parte da rotina — os leads`,
+        `voltam em breve, com mais qualidade. 🔥`,
+        ...footer,
       ].join("\n");
     default:
       return [
-        `⏸️ *Pausa temporária*`,
+        `🌿 *Pausa temporária*`,
         `🎯 *${name}*`,
         ``,
-        `Estamos *otimizando a campanha* para melhorar os resultados.`,
-        `Voltamos logo com mais leads! 💚`,
+        `Estamos *cuidando da campanha*`,
+        `para melhorar os resultados.`,
+        ``,
+        `Voltamos logo. 💚`,
+        ...footer,
       ].join("\n");
   }
 }

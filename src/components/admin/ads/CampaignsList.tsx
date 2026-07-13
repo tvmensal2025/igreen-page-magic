@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2 } from "lucide-react";
+import { Pause, Play, Square, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2 } from "lucide-react";
 import { EditCampaignDialog } from "./EditCampaignDialog";
 import { CampaignRodizioLeadsDialog } from "./CampaignRodizioLeadsDialog";
 
@@ -64,10 +64,17 @@ const STATUS_COLOR: Record<string, string> = {
   draft: "bg-info/20 text-info",
   pending_review: "bg-primary/20 text-primary",
   rejected: "bg-destructive/20 text-destructive",
+  completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
 };
 const STATUS_LABEL: Record<string, string> = {
   active: "Ativa", paused: "Pausada", draft: "Rascunho", pending_review: "Em revisão", rejected: "Rejeitada",
+  completed: "Concluída",
 };
+
+function isManualStopReason(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  return reason.startsWith("MANUAL_STOP:") || /encerrad[ao] pelo consultor/i.test(reason);
+}
 
 // Mapeia mensagem crua do Meta pra explicação + sugestão amigável.
 // kind="session" sinaliza pro UI esconder "Tentar reativar" e mostrar "Reconectar Facebook".
@@ -117,6 +124,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [deleting, setDeleting] = useState<string | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Campaign | null>(null);
+  const [confirmStop, setConfirmStop] = useState<Campaign | null>(null);
   const [extending, setExtending] = useState<Campaign | null>(null);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [rodizioCampaign, setRodizioCampaign] = useState<Campaign | null>(null);
@@ -304,6 +312,14 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   }
 
   async function handleToggle(c: Campaign) {
+    if (c.status === "completed") {
+      toast({
+        title: "Campanha encerrada",
+        description: "Use Estender para voltar a rodar — Play não reativa.",
+        variant: "destructive",
+      });
+      return;
+    }
     const action = c.status === "active" ? "pause" : "activate";
     setToggling(c.id);
     try {
@@ -332,6 +348,42 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       toast({ title: "Falha ao alterar status", description: e?.message || "Erro", variant: "destructive" });
     } finally {
       setToggling(null);
+    }
+  }
+
+  async function handleStop(c: Campaign) {
+    setToggling(c.id);
+    try {
+      const { data, error } = await supabase.functions.invoke("facebook-toggle-campaign", {
+        body: { campaign_id: c.id, action: "stop" },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      const metaWarn = (data as any)?.meta_error;
+      if (metaWarn || (data as any)?.ok === false) {
+        toast({
+          title: "Não encerrou na Meta",
+          description: metaWarn || (data as any)?.error || "Status local preservado.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const endedAt = (data as any)?.ended_at || new Date().toISOString();
+      setItems((prev) => prev.map((x) => x.id === c.id ? {
+        ...x,
+        status: "completed",
+        rejection_reason: "MANUAL_STOP: Encerrada pelo consultor — só reativa com Estender",
+        ended_at: x.ended_at && new Date(x.ended_at).getTime() <= Date.now() ? x.ended_at : endedAt,
+      } : x));
+      toast({
+        title: "Campanha encerrada",
+        description: "Parceiros avisados. Leads seguem sendo trabalhados. Para voltar, use Estender.",
+      });
+    } catch (e: any) {
+      toast({ title: "Falha ao encerrar", description: e?.message || "Erro", variant: "destructive" });
+    } finally {
+      setToggling(null);
+      setConfirmStop(null);
     }
   }
 
@@ -415,7 +467,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </div>
                   );
                 })()}
-                {c.rejection_reason && (() => {
+                {c.rejection_reason && !isManualStopReason(c.rejection_reason) && c.status !== "completed" && (() => {
                   const exp = explainRejection(c.rejection_reason);
                   const isSession = exp?.kind === "session";
                   return (
@@ -449,12 +501,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     </div>
                   );
                 })()}
-                {!c.rejection_reason && c.ended_at && new Date(c.ended_at).getTime() < Date.now() && c.fb_campaign_id && (
-                  <div className="mt-2 rounded-lg border border-warning/30 bg-warning/10 p-2.5 text-xs space-y-1.5">
-                    <div className="font-bold text-warning flex items-center gap-1.5">
-                      <CalendarClock className="w-3.5 h-3.5" /> Campanha encerrou em {new Date(c.ended_at).toLocaleDateString("pt-BR")}
+                {(c.status === "completed" || (!c.rejection_reason && c.ended_at && new Date(c.ended_at).getTime() < Date.now())) && c.fb_campaign_id && (
+                  <div className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-xs space-y-1.5">
+                    <div className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                      <CalendarClock className="w-3.5 h-3.5" />
+                      {c.status === "completed"
+                        ? "Campanha concluída"
+                        : `Campanha encerrou em ${new Date(c.ended_at!).toLocaleDateString("pt-BR")}`}
                     </div>
-                    <div className="text-muted-foreground">Adicione mais dias e/ou ajuste o orçamento para continuar rodando.</div>
+                    <div className="text-muted-foreground">
+                      Leads que chegaram seguem sendo trabalhados. Para voltar a anunciar, estenda o prazo.
+                    </div>
                     <Button size="sm" onClick={() => setExtending(c)} className="h-7 text-xs gap-1">
                       <CalendarClock className="w-3 h-3" /> Estender campanha
                     </Button>
@@ -464,19 +521,32 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8"
-                    onClick={() => handleToggle(c)}
-                    disabled={toggling === c.id}
-                    aria-label={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
-                    title={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
-                  >
-                    {toggling === c.id
-                      ? <Loader2 className="w-4 h-4 animate-spin" />
-                      : c.status === "active" ? <Pause className="w-4 h-4 text-warning" /> : <Play className="w-4 h-4 text-primary" />}
-                  </Button>
+                  <>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => handleToggle(c)}
+                      disabled={toggling === c.id}
+                      aria-label={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
+                      title={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
+                    >
+                      {toggling === c.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : c.status === "active" ? <Pause className="w-4 h-4 text-warning" /> : <Play className="w-4 h-4 text-primary" />}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => setConfirmStop(c)}
+                      disabled={toggling === c.id}
+                      aria-label="Encerrar campanha"
+                      title="Encerrar campanha (Stop)"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current text-destructive" />
+                    </Button>
+                  </>
                 )}
                 {c.fb_campaign_id && (
                   <Button
@@ -620,6 +690,28 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Apagar definitivamente
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!confirmStop} onOpenChange={(o) => !o && setConfirmStop(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Encerrar campanha?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmStop?.name}
+              <br />
+              Encerra de vez (status Concluída). Os anúncios param na Meta e os parceiros do rodízio recebem a mensagem “Missão cumprida”. Os leads que já chegaram continuam sendo trabalhados. Para voltar a anunciar, use Estender — o Play não reativa.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => confirmStop && void handleStop(confirmStop)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Encerrar agora
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -8,7 +8,7 @@
 //   - via cron horário (sem body) → varre pending_review + recoverable
 //   - via cliente com { campaign_id } → tenta UMA específica (botão "tentar reativar")
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
-import { isManualPause, isRecoverableAutoPause } from "../_shared/campaign-pause.ts";
+import { isManualPause, isManualStop, isConsultantLocked, isRecoverableAutoPause } from "../_shared/campaign-pause.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -37,8 +37,8 @@ Deno.serve(async (req) => {
 
     const results: any[] = [];
     for (const c of stuck || []) {
-      // Pausa manual do consultor: cron NUNCA mexe.
-      if (c.status === "paused" && isManualPause(c.rejection_reason)) {
+      // Pausa/stop manual do consultor: cron NUNCA mexe.
+      if (c.status === "paused" && isConsultantLocked(c.rejection_reason)) {
         results.push({ id: c.id, activated: false, reason: "skipped_manual_pause" });
         continue;
       }
@@ -70,6 +70,10 @@ async function reactivateOne(
     .maybeSingle();
   if (!c?.fb_campaign_id) return { activated: false, reason: "Campanha sem ID Meta" };
   if (c.status === "active") return { activated: true };
+  // Stop (completed): nunca reativa via healthcheck — só via Estender.
+  if (c.status === "completed" || isManualStop(c.rejection_reason)) {
+    return { activated: false, reason: "skipped_manual_stop" };
+  }
 
   // Mesmo no clique manual, se for MANUAL_PAUSE e allowManual=true, o consultor
   // pediu reativar — ok. No cron, allowManual=false e já filtramos acima.
@@ -118,8 +122,8 @@ async function reactivateOne(
     ) {
       reason = "SESSION_INVALIDATED: O token do Facebook foi invalidado (senha alterada ou sessão encerrada por segurança). Reconecte a conta Facebook no painel. | " + raw;
     }
-    // Não sobrescreve MANUAL_PAUSE com erro de token — preserva a intenção do consultor.
-    if (!isManualPause(c.rejection_reason)) {
+    // Não sobrescreve MANUAL_PAUSE/STOP com erro de token — preserva a intenção do consultor.
+    if (!isConsultantLocked(c.rejection_reason)) {
       await admin.from("facebook_campaigns").update({ rejection_reason: reason }).eq("id", campaignDbId);
     }
     return { activated: false, reason };

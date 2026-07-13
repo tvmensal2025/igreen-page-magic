@@ -8,7 +8,7 @@
 // Reativação após recarga: SÓ campanhas auto-pausadas por saldo/teto.
 // Pausa MANUAL do consultor (MANUAL_PAUSE) NUNCA é reativada aqui.
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
-import { isManualPause, isAutoBalancePause } from "../_shared/campaign-pause.ts";
+import { isConsultantLocked, isAutoBalancePause } from "../_shared/campaign-pause.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -110,10 +110,10 @@ Deno.serve(async (req) => {
           c.status === "paused" &&
           balance > 0 &&
           debt === 0 &&
-          !isManualPause(c.rejection_reason) &&
+          !isConsultantLocked(c.rejection_reason) &&
           isAutoBalancePause(c.rejection_reason);
 
-        if (reactivate && c.status === "paused" && isManualPause(c.rejection_reason)) {
+        if (reactivate && c.status === "paused" && isConsultantLocked(c.rejection_reason)) {
           skippedManual.push(c.id);
         } else if (canReactivate) {
           try {
