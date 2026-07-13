@@ -51,6 +51,7 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;
     const customerId = String(body.customerId || "").trim();
     const consultantId = String(body.consultantId || "").trim();
+    const restart = body.restart === true;
     if (!customerId || !consultantId) {
       return json({ ok: false, error: "missing_fields" }, 400);
     }
