@@ -1,192 +1,307 @@
 /**
- * Conteúdo do mapa operacional — usado no botão "?" da Central e no Hub.
- * Não liga nada: só explica o que existe e o que melhorar.
+ * Guia do sistema em linguagem de consultor.
+ * Chaves técnicas (toggle) ficam só para o código ligar/desligar — nunca na cara do usuário.
  */
+
+export type CapacidadeGrupo = "sempre" | "automatico" | "ajuste";
+export type CapacidadeRisco = "seguro" | "cuidado" | "avancado";
 
 export type CapacidadeItem = {
   id: string;
   nome: string;
+  /** Em uma frase: o que isso faz no dia a dia */
   oQueFaz: string;
+  /** Onde a pessoa encontra isso no painel */
   onde: string;
-  status: "pronto_off" | "pronto_on" | "parcial" | "pendente";
+  grupo: CapacidadeGrupo;
+  /** Dica curta ("como usar") */
+  dica?: string;
+  /** Chave interna — não mostrar na UI */
   toggle?: string;
+  risco?: CapacidadeRisco;
+  /** Ordem sugerida para ligar (1 = primeiro) */
+  ordemSugerida?: number;
 };
 
-export type SugestaoMelhoria = {
-  prioridade: "alta" | "media" | "baixa";
+export type PassoSugerido = {
+  passo: number;
   titulo: string;
   porque: string;
   como: string;
+  /** Se tiver toggle, o botão "Ligar" aparece neste passo */
+  toggle?: string;
 };
 
-export const STATUS_LABEL: Record<CapacidadeItem["status"], string> = {
-  pronto_off: "Pronto · DESLIGADO",
-  pronto_on: "Pronto · em uso",
-  parcial: "Parcial",
-  pendente: "Ainda falta",
+export type EnvioAutomatico = {
+  id: string;
+  nome: string;
+  quando: string;
+  oQueFaz: string;
+  toggle?: string;
+};
+
+export const GRUPO_LABEL: Record<CapacidadeGrupo, string> = {
+  sempre: "Já funciona (você usa no dia a dia)",
+  automatico: "Pode ligar ou desligar",
+  ajuste: "Ainda em preparação",
+};
+
+export const RISCO_LABEL: Record<CapacidadeRisco, string> = {
+  seguro: "Mais seguro para começar",
+  cuidado: "Comece com poucos leads",
+  avancado: "Só com cuidado / admin",
 };
 
 export const CAPACIDADES: CapacidadeItem[] = [
   {
     id: "inbound",
-    nome: "Receber WhatsApp",
-    oQueFaz: "Grava lead e mensagem mesmo com bot/kill switch off (não some).",
-    onde: "Whapi + Evolution",
-    status: "pronto_on",
+    nome: "Receber mensagens do cliente",
+    oQueFaz: "Toda mensagem que chega no WhatsApp fica salva no sistema. Nada some.",
+    onde: "Chat e Captação",
+    grupo: "sempre",
+    dica: "Mesmo com o robô desligado, a conversa continua sendo gravada.",
   },
   {
     id: "bot",
-    nome: "Bot conversacional / cadastro",
-    oQueFaz: "Responde, guia FAQ e coleta dados até o portal.",
-    onde: "Chat + FluxoCamila",
-    status: "pronto_on",
+    nome: "Robô que responde e cadastra",
+    oQueFaz: "Conversa com o lead, tira dúvidas e pede os dados até o cadastro no portal.",
+    onde: "Chat (botão da IA)",
+    grupo: "sempre",
+    dica: "Se você Assumir o lead, o robô para até você Religar.",
   },
   {
     id: "captacao",
     nome: "Modo Captação",
-    oQueFaz: "Consultor vê feed AO VIVO, completa ficha e manda pro portal.",
-    onde: "Painel Captação",
-    status: "pronto_on",
+    oQueFaz: "Mostra os leads novos ao vivo para você completar a ficha e enviar ao portal.",
+    onde: "Menu Captação",
+    grupo: "sempre",
+    dica: "Bom hábito: abrir a fila de 48h / 7 dias toda manhã.",
   },
   {
     id: "assumir",
-    nome: "Assumir lead",
-    oQueFaz: "Bot para até Religar. Envio manual NÃO religa sozinho. Avisa no chat e no WhatsApp do consultor.",
-    onde: "Chat (botão IA)",
-    status: "pronto_on",
+    nome: "Assumir o atendimento",
+    oQueFaz: "Você pega o lead na mão. O robô para. Enviar mensagem manual NÃO religa o robô sozinho.",
+    onde: "Chat → botão Assumir / Religar",
+    grupo: "sempre",
+    dica: "Quando terminar, use Religar se quiser o robô de novo.",
   },
   {
     id: "kill",
-    nome: "Kill switch global",
-    oQueFaz: "Para de falar; continua recebendo; avisa o consultor responsável.",
-    onde: "Super Admin → Assistente Global",
-    status: "pronto_on",
+    nome: "Pausa geral do robô (emergência)",
+    oQueFaz: "Para o sistema de responder em massa. Continua recebendo e avisa o consultor.",
+    onde: "Só administrador (Assistente Global)",
+    grupo: "sempre",
+    dica: "Use se algo estiver mandando mensagem demais.",
+    risco: "avancado",
   },
   {
     id: "agenda",
-    nome: "Agenda manual (1 msg)",
-    oQueFaz: "Consultor agenda mensagem futura. Claim atômico evita duplicar.",
-    onde: "Hub Agendamentos",
-    status: "pronto_off",
+    nome: "Mensagem agendada por você",
+    oQueFaz: "Você escolhe o texto e a hora. O sistema manda sozinho na hora marcada.",
+    onde: "Agendamentos → Agenda",
+    grupo: "automatico",
     toggle: "send_scheduled_messages",
+    risco: "seguro",
+    ordemSugerida: 0,
+    dica: "Ideal para “te chamo amanhã às 10”.",
   },
   {
     id: "checker6h",
-    nome: "Follow-up sumido 6–48h",
-    oQueFaz: "Cutuca lead que parou de responder (mensagem simples).",
-    onde: "Central → Automações",
-    status: "pronto_off",
+    nome: "Lembrar quem sumiu (6 a 48h)",
+    oQueFaz: "Se o lead parou de responder, o sistema manda um toque simples pedindo retorno.",
+    onde: "Este guia ou Central → Automações",
+    grupo: "automatico",
     toggle: "bot_followup_checker",
+    risco: "seguro",
+    ordemSugerida: 1,
+    dica: "Melhor primeiro passo automático: pouco risco, boa recuperação.",
   },
   {
     id: "nudge",
-    nome: "Nudge pós-FAQ (20 min)",
-    oQueFaz: "Cutuca quem tirou dúvida e ficou em silêncio.",
-    onde: "Central → Automações",
-    status: "pronto_off",
+    nome: "Toque após tirar dúvida (±20 min)",
+    oQueFaz: "Lead perguntou, você (ou o robô) respondeu, e ele ficou quieto — o sistema cutuca de leve.",
+    onde: "Este guia ou Central → Automações",
+    grupo: "automatico",
     toggle: "faq_reengagement_nudge",
+    risco: "cuidado",
+    ordemSugerida: 2,
+    dica: "Ligue depois que o “quem sumiu” estiver ok.",
   },
   {
     id: "followup",
-    nome: "Follow-up completo (postpone)",
-    oQueFaz: "Respeita “amanhã / segunda” e dispara no horário.",
-    onde: "Central → Automações",
-    status: "pronto_off",
+    nome: "Lembrete no dia combinado",
+    oQueFaz: "Se o lead pediu “me chama segunda” ou “amanhã”, o sistema respeita e avisa na hora certa.",
+    onde: "Este guia ou Central → Automações",
+    grupo: "automatico",
     toggle: "process_followups",
+    risco: "cuidado",
+    ordemSugerida: 3,
+    dica: "Poderoso, mas ligue por último na sequência de retenção.",
   },
   {
     id: "bulk",
-    nome: "Disparo em lote (Bulk PRO)",
-    oQueFaz: "Campanhas agendadas no servidor (cron).",
-    onde: "WhatsApp → Bulk PRO",
-    status: "pronto_off",
+    nome: "Campanha para vários números",
+    oQueFaz: "Disparo em lote de mensagens / campanhas já montadas.",
+    onde: "WhatsApp → envio em massa",
+    grupo: "automatico",
     toggle: "bulk_campaigns_runner",
+    risco: "avancado",
+    dica: "Só ligue com lista revisada — risco de spam.",
   },
   {
     id: "reativacao",
-    nome: "Reativação automática",
-    oQueFaz: "Templates auto_reactivate para leads frios.",
-    onde: "Admin Reaquecimento + Central",
-    status: "pronto_off",
+    nome: "Reativar leads frios",
+    oQueFaz: "Manda mensagens prontas para quem sumiu há mais tempo.",
+    onde: "Reaquecimento + Automações",
+    grupo: "automatico",
+    toggle: "reactivation_cron",
+    risco: "avancado",
+    dica: "Não misture com várias cutucadas ao mesmo tempo.",
+  },
+  {
+    id: "cadencia",
+    nome: "Sequência automática de etapas",
+    oQueFaz: "Motor que manda uma sequência de mensagens conforme o estágio do lead.",
+    onde: "Motor de cadência + Automações",
+    grupo: "automatico",
+    toggle: "cadence_engine",
+    risco: "avancado",
+    dica: "Só com quem já entende o fluxo — pode falar demais.",
+  },
+  {
+    id: "posvenda",
+    nome: "Mensagens pós-venda (30 / 60 / 90 dias)",
+    oQueFaz: "Acompanha cliente da carteira iGreen em datas programadas.",
+    onde: "Agendamentos / pós-venda",
+    grupo: "ajuste",
+    risco: "cuidado",
+    dica: "Parte já existe; ainda estamos afinando o controle fino.",
+  },
+  {
+    id: "canal",
+    nome: "WhatsApp único em todos os envios",
+    oQueFaz: "Garantir que todo envio automático use o mesmo tipo de conexão do consultor.",
+    onde: "Ajuste técnico da equipe",
+    grupo: "ajuste",
+    risco: "avancado",
+    dica: "Antes de ligar retenção em massa, a equipe deve fechar isso.",
+  },
+];
+
+/** Passos em português claro — sem jargão. */
+export const PASSOS_SUGERIDOS: PassoSugerido[] = [
+  {
+    passo: 1,
+    titulo: "Abra a Captação todo dia",
+    porque: "Com os envios automáticos desligados, o humano precisa olhar a fila quente.",
+    como: "Captação → ver lote de 48h e 7 dias → abrir atendimento dos quentes.",
+  },
+  {
+    passo: 2,
+    titulo: "Ligue só “lembrar quem sumiu”",
+    porque: "Recupera lead parado com mensagem simples — bom primeiro teste.",
+    como: "Use o interruptor ao lado da capacidade (ou o botão Ligar abaixo). Comece com 1 pessoa / poucos dias.",
+    toggle: "bot_followup_checker",
+  },
+  {
+    passo: 3,
+    titulo: "Depois: toque pós-dúvida",
+    porque: "Pega quem travou logo depois de perguntar.",
+    como: "Só depois que o passo 2 estiver estável.",
+    toggle: "faq_reengagement_nudge",
+  },
+  {
+    passo: 4,
+    titulo: "Por último: lembrete no dia combinado",
+    porque: "Respeita “me chama segunda” — mais forte e mais sensível.",
+    como: "Ligue quando os passos anteriores estiverem ok.",
+    toggle: "process_followups",
+  },
+  {
+    passo: 5,
+    titulo: "Campanha em massa e cadência: com calma",
+    porque: "Falam com muita gente de uma vez.",
+    como: "Só com lista revisada e alinhamento com o admin.",
+  },
+];
+
+/** “Envios no horário” — o que o consultor precisa saber, sem nome de job. */
+export const ENVIOS_AUTOMATICOS: EnvioAutomatico[] = [
+  {
+    id: "agenda",
+    nome: "Mensagens que você agendou",
+    quando: "Na hora que você marcou",
+    oQueFaz: "Envia o texto que você escreveu.",
+    toggle: "send_scheduled_messages",
+  },
+  {
+    id: "sumiu",
+    nome: "Lembrar quem sumiu",
+    quando: "Checagem diária (leads parados 6–48h)",
+    oQueFaz: "Manda um toque pedindo retorno.",
+    toggle: "bot_followup_checker",
+  },
+  {
+    id: "faq",
+    nome: "Toque após dúvida",
+    quando: "Cerca de 20 minutos sem resposta",
+    oQueFaz: "Cutuca quem ficou em silêncio depois da resposta.",
+    toggle: "faq_reengagement_nudge",
+  },
+  {
+    id: "dia",
+    nome: "Lembrete no dia combinado",
+    quando: "Várias vezes ao dia (só quem pediu retorno)",
+    oQueFaz: "Avisa no dia/hora combinados com o lead.",
+    toggle: "process_followups",
+  },
+  {
+    id: "lote",
+    nome: "Campanha em lote",
+    quando: "Conforme a campanha",
+    oQueFaz: "Dispara para a lista da campanha.",
+    toggle: "bulk_campaigns_runner",
+  },
+  {
+    id: "frio",
+    nome: "Reativar lead frio",
+    quando: "De hora em hora (quando ligado)",
+    oQueFaz: "Mensagens de reaquecimento.",
     toggle: "reactivation_cron",
   },
   {
     id: "cadencia",
-    nome: "Motor de cadência",
-    oQueFaz: "Sequência frio / estágios (cuidado ao ligar).",
-    onde: "Admin Motor + Central",
-    status: "pronto_off",
+    nome: "Sequência de etapas",
+    quando: "A cada poucos minutos (quando ligado)",
+    oQueFaz: "Segue a cadência configurada.",
     toggle: "cadence_engine",
   },
   {
-    id: "posvenda",
-    nome: "Pós-venda D+30/60/90",
-    oQueFaz: "Mensagens da carteira iGreen em datas programadas.",
-    onde: "Hub + cron diário",
-    status: "parcial",
-  },
-  {
-    id: "canal",
-    nome: "Canal único Whapi + Evolution",
-    oQueFaz: "Alguns crons ainda preferem um canal só.",
-    onde: "Crons de retenção / agenda",
-    status: "pendente",
+    id: "pos",
+    nome: "Pós-venda 30/60/90",
+    quando: "1 vez por dia",
+    oQueFaz: "Mensagens da carteira iGreen.",
   },
 ];
 
-export const SUGESTOES: SugestaoMelhoria[] = [
-  {
-    prioridade: "alta",
-    titulo: "Piloto: ligar só o checker 6h",
-    porque: "Recupera lead que some sem risco alto (texto fixo).",
-    como: "Central → Automações → Follow-up 6h · 1 consultor · 2–3 dias · depois avaliar.",
-  },
-  {
-    prioridade: "alta",
-    titulo: "Unificar canal nos crons",
-    porque: "Hoje parte do follow-up/agenda pode falhar se o consultor for só Whapi ou só Evolution.",
-    como: "Pedir ajuste de canal único (próximo pacote técnico) antes de ligar retenção em massa.",
-  },
-  {
-    prioridade: "alta",
-    titulo: "Rotina diária de Captação",
-    porque: "Com retenção OFF, o humano precisa abrir a fila quente.",
-    como: "Toda manhã: Captação → lote 48h/7d → abrir atendimento.",
-  },
-  {
-    prioridade: "media",
-    titulo: "Depois: nudge FAQ",
-    porque: "Pega quem travou na dúvida (20 min).",
-    como: "Só depois do checker 6h estável.",
-  },
-  {
-    prioridade: "media",
-    titulo: "Depois: follow-up completo",
-    porque: "Respeita “me chama segunda” — mais poderoso, mais sensível.",
-    como: "Último da fila de retenção; validar token interno.",
-  },
-  {
-    prioridade: "media",
-    titulo: "Limpar crons duplicados",
-    porque: "Há jobs com nomes parecidos (ex. follow-ups 5min e 10min).",
-    como: "Quando for ligar retenção, unificar para não mandar 2x.",
-  },
-  {
-    prioridade: "baixa",
-    titulo: "Trocar senhas expostas no chat",
-    porque: "Service role / senha de conta passaram na conversa.",
-    como: "Dashboard Supabase → reset senha conta + regenerate service_role.",
-  },
-];
+/** @deprecated use PASSOS_SUGERIDOS — mantido para imports antigos */
+export const SUGESTOES = PASSOS_SUGERIDOS.map((p) => ({
+  prioridade: (p.passo <= 2 ? "alta" : p.passo <= 4 ? "media" : "baixa") as "alta" | "media" | "baixa",
+  titulo: p.titulo,
+  porque: p.porque,
+  como: p.como,
+}));
 
-export const CRONS_ESPERADOS: { job: string; paraQue: string; toggle: string }[] = [
-  { job: "process-followups-tick", paraQue: "Follow-up postpone", toggle: "process_followups" },
-  { job: "bot-followup-checker (diário)", paraQue: "Sumido 6–48h", toggle: "bot_followup_checker" },
-  { job: "faq / nudge", paraQue: "Nudge pós-FAQ", toggle: "faq_reengagement_nudge" },
-  { job: "send-scheduled-messages", paraQue: "Agenda manual", toggle: "send_scheduled_messages" },
-  { job: "bulk-scheduler", paraQue: "Campanhas lote", toggle: "bulk_campaigns_runner" },
-  { job: "reactivation-cron-hourly", paraQue: "Reativação", toggle: "reactivation_cron" },
-  { job: "cadence-tick-5min", paraQue: "Cadência", toggle: "cadence_engine" },
-  { job: "pos-venda-auto-progress-daily", paraQue: "Pós-venda", toggle: "(próprio / central)" },
-  { job: "close-attendance-scheduled-5min", paraQue: "Fecha atendimento agendado", toggle: "(função)" },
-];
+/** @deprecated use ENVIOS_AUTOMATICOS */
+export const CRONS_ESPERADOS = ENVIOS_AUTOMATICOS.map((e) => ({
+  job: e.nome,
+  paraQue: e.oQueFaz,
+  toggle: e.toggle ?? "—",
+}));
+
+export const STATUS_LABEL = {
+  pronto_off: "Desligado",
+  pronto_on: "Ligado",
+  parcial: "Parcial",
+  pendente: "Em preparação",
+} as const;
