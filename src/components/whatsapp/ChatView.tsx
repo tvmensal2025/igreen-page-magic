@@ -136,7 +136,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const handleCaptureClosed = useCallback(() => {
     setCaptureClosedAt(new Date().toISOString());
     setCloseCaptureOpen(false);
-  }, []);
+    // Some da lista de Captação imediatamente (remoção otimista).
+    if (customerId && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("captacao:lead-closed", { detail: { id: customerId } }),
+      );
+    }
+  }, [customerId]);
 
   // Ao trocar de conversa, fecha a ficha para não bloquear o composer do novo chat.
   useEffect(() => {
