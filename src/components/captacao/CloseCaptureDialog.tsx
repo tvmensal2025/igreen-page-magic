@@ -506,6 +506,56 @@ export function CloseCaptureDialog({
                 placeholder="O que aconteceu?"
               />
             </div>
+
+            {leadInfo.partnerId && (
+              <div className="rounded-lg border border-rose-500/25 bg-gradient-to-br from-rose-500/[0.06] to-rose-500/[0.02] p-3 space-y-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold text-rose-800 dark:text-rose-300">
+                      💬 Avisar parceiro no WhatsApp
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground mt-0.5 truncate">
+                      Para <strong className="text-foreground">{leadInfo.partnerName || "parceiro"}</strong>
+                      {leadInfo.campaignName ? ` · Campanha: ${leadInfo.campaignName}` : ""}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={notifyPartner}
+                    onCheckedChange={setNotifyPartner}
+                    aria-label="Notificar parceiro"
+                  />
+                </div>
+
+                {notifyPartner && (
+                  <>
+                    <Textarea
+                      rows={9}
+                      value={partnerMessage}
+                      onChange={(e) => {
+                        setPartnerMessage(e.target.value);
+                        setPartnerMessageEdited(true);
+                      }}
+                      className="font-mono text-[11.5px] leading-relaxed bg-background/80"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>Prévia formatada · {partnerMessage.length} caracteres</span>
+                      {partnerMessageEdited && (
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => {
+                            setPartnerMessageEdited(false);
+                            setPartnerMessage(generatedLostMessage);
+                          }}
+                        >
+                          Restaurar modelo
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
