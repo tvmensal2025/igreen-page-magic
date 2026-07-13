@@ -64,7 +64,7 @@ export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: num
     case "foto_conta":  return `${nome && tentativa === 0 ? `Perfeito${n}! ` : ""}${pick(VARIANTES_FOTO_CONTA, tentativa)}`;
     case "doc":         return pick(VARIANTES_DOC, tentativa);
     case "email":       return pick(VARIANTES_EMAIL, tentativa);
-    case "finalizando": return `${nome ? `${nome}, ` : ""}tá tudo certo pra finalizar seu cadastro. Posso seguir?`;
+    case "finalizando": return `${nome ? `${nome}, ` : ""}seus dados estão prontos. Vamos ao próximo passo?`;
     case "pos_cadastro":return `Cadastro feito${n}! Em breve te mando os próximos passos ✅`;
   }
 }

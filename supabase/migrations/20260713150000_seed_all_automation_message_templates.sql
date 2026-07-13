@@ -80,7 +80,7 @@ VALUES
   (NULL, 'cross_sell_hint', 'Cross-sell — hint energia→telecom/seguro',
    'Sugestão de outros produtos (só se cross_sell_bot ligado e sombra OFF).',
    'pos-venda',
-   E'Além da energia, você também pode ter *Telefonia* e *Seguro Auto* com condições especiais. Quer que eu te explique rapidinho?',
+   E'Além da energia, você também pode ter *Telefonia* e *Seguro Auto* com condições especiais da iGreen. Se quiser, posso detalhar.',
    '["nome"]'::jsonb)
 
 ON CONFLICT (consultant_id, template_key) DO NOTHING;
@@ -91,11 +91,11 @@ INSERT INTO public.consultant_message_templates
 VALUES
   (NULL, 'bot_followup_sumiu', 'Follow-up quem sumiu (6–48h)',
    'Cron bot-followup-checker.', 'ia',
-   E'Oi {{nome}}! Aqui é da iGreen. Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?',
+   E'Oi {{nome}}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.',
    '["nome"]'::jsonb),
   (NULL, 'faq_reengagement_nudge', 'Nudge pós-FAQ (±20 min)',
    'Cron faq-reengagement-nudge.', 'ia',
-   E'{{nome}}, posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro?',
+   E'{{nome}}, qualquer outra dúvida, é só perguntar. Estou por aqui.',
    '["nome"]'::jsonb),
   (NULL, 'speed_to_lead_alert', 'Alerta interno SLA speed-to-lead',
    'Só painel — não vai ao cliente.', 'ia',

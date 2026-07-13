@@ -122,8 +122,8 @@ serve(async (_req: Request) => {
 
       const firstName = String(lead.name || "").trim().split(/\s+/)[0] || "";
       const fallback = firstName
-        ? `${firstName}, posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro?`
-        : `Oi! Posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro?`;
+        ? `${firstName}, qualquer outra dúvida, é só perguntar. Estou por aqui.`
+        : `Qualquer outra dúvida, é só perguntar. Estou por aqui.`;
       const nudgeText = await loadAutomationTemplate(
         supabase,
         "faq_reengagement_nudge",

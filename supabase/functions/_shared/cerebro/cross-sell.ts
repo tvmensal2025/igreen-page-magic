@@ -47,6 +47,6 @@ export function avaliarCrossSell(input: CrossSellEvalInput): CrossSellEvalResult
     shadow,
     hint: shadow
       ? undefined
-      : `Além da energia, você também pode ter ${labels.join(" e ")} com condições especiais iGreen. Quer que eu te mostre?`,
+      : `Além da energia, você também pode ter ${labels.join(" e ")} com condições especiais da iGreen. Se quiser, posso detalhar.`,
   };
 }

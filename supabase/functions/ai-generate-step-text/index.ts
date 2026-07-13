@@ -125,7 +125,8 @@ ${variantBrief}
 REGRAS:
 - Sem saudação ("Oi", "Bom dia") a menos que seja o primeiro passo.
 - Máximo 3 linhas curtas. Quebra de linha entre frases.
-- Termine com pergunta ou call-to-action de fechamento (ex: "Bora?", "Posso seguir?", "Te mando agora?").
+- Termine com pergunta clara e profissional (ex.: "Posso seguir?", "Qual o próximo passo?", "Ficou claro?"). Evite gíria ("Bora?") e pressão de cadastro.
+- Tom brasileiro, direto e profissional — sem urgência artificial.
 - NÃO use markdown, NÃO use **negrito**.
 - Retorne APENAS o texto final, nada mais.`;
 

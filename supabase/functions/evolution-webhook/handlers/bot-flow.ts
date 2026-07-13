@@ -1783,7 +1783,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       case "coleta_doc":
       case "ask_email":
       case "ask_cep":
-        return `\n\nBora finalizar seu cadastro? Continua respondendo aqui que eu te guio. ✅`;
+        return `\n\nPara finalizar, continue respondendo por aqui que eu te guio.`;
       default:
         return "";
     }
@@ -3153,7 +3153,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               if (sp === "humano" && _flowDQuickCadastroIntent) {
                 const docStep = await _loadStepByKey("d_pedir_documento");
                 if (docStep) nextCustom = docStep;
-                else return { reply: "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: emittedCurrent || undefined } as any };
+                else return { reply: "Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.", updates: { conversation_step: "aguardando_doc_auto", __inline_sent: emittedCurrent || undefined } as any };
               } else
               if (sp === "humano") {
                 return { reply: `Tudo bem! Vou chamar ${nomeRepresentante || "um consultor"} para te ajudar por aqui 🙌`, updates: { conversation_step: "aguardando_humano", bot_paused: true, bot_paused_reason: "flow_button_humano", bot_paused_at: new Date().toISOString(), __inline_sent: emittedCurrent || undefined } as any };
@@ -4144,8 +4144,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             } catch (_) { /* best-effort */ }
           }
         }
-        const DOC_FALLBACK = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
-        const FINAL_FALLBACK_TEXT = `✅ *Tudo pronto!*\n\nSeus dados foram preenchidos. Vamos finalizar seu cadastro no portal iGreen?`;
+        const DOC_FALLBACK = `Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+        const FINAL_FALLBACK_TEXT = `✅ *Tudo pronto!*\n\nSeus dados foram preenchidos. Podemos concluir no portal iGreen?`;
         const sendFallback = async (text: string, stepStr: string) => {
           await sendText(remoteJid, text);
           await supabase.from("conversations").insert({
@@ -4181,7 +4181,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 await dispatchStepFromFlow(nextCustom.step_key, _vars);
               } catch (e) {
                 console.warn(`[post-confirm-conta] dispatch direto capture_documento falhou:`, (e as Error).message);
-                await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+                await sendText(remoteJid, "Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
               }
               updates.conversation_step = "aguardando_doc_auto";
             }
@@ -4295,7 +4295,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         /^(sim|s|ok|pode|pode seguir|bora|vamos|partiu|segue|seguir|tudo certo|sem d[uú]vida|nenhuma|nao tenho|n[ãa]o tenho|n[ãa]o|t[ãa]|fechou|beleza|blz)\b/.test(txt) ||
         /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(messageText || "");
       if (segueAgora) {
-        const ctaMsg = `Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
+        const ctaMsg = `Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
         await sendText(remoteJid, ctaMsg);
         await supabase.from("conversations").insert({
           customer_id: customer.id, message_direction: "outbound",
@@ -5614,7 +5614,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             if (_docStep?.step_key) {
               await dispatchStepFromFlow(_docStep.step_key);
             } else {
-              await sendText(remoteJid, "Show! Pra finalizar seu cadastro, me manda só uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
+              await sendText(remoteJid, "Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.");
             }
           }
         } catch (e) {
@@ -5623,7 +5623,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.conversation_step = "aguardando_doc_auto";
         reply = "";
       } else {
-        const ctaText = "Pra continuar seu cadastro e garantir essa economia, é só tocar no botão abaixo 👇";
+        const ctaText = "Para continuar, é só tocar no botão abaixo 👇";
         const sent = await sendOptions(remoteJid, ctaText, [
           { id: "btn_quero_cadastrar", title: "✅ Quero me cadastrar" },
         ]);

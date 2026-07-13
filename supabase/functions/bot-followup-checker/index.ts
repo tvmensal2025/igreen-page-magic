@@ -100,8 +100,8 @@ Deno.serve(async (req) => {
 
       const firstName = (c.name || "").split(" ")[0] || "";
       const fallback = firstName
-        ? `Oi ${firstName}! Aqui é da iGreen. Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`
-        : `Oi! Aqui é da iGreen. Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`;
+        ? `Oi ${firstName}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`
+        : `Oi, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`;
       const msg = await loadAutomationTemplate(
         supabase,
         "bot_followup_sumiu",
