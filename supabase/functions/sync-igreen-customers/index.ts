@@ -1911,34 +1911,87 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   }
   if (placeholderReused > 0) console.log(`[persistCustomers] ${placeholderReused} placeholders 'sem_celular_*' substituídos por telefone real do banco`);
 
-  // Proteção mid-conversation + detecção de leads que viram carteira
+  // Proteção mid-conversation + detecção de leads que viram carteira.
+  //
+  // Bug (jul/2026): steps pós-cadastro (ex.: cadastro_em_analise) eram tratados
+  // como "mid-convo", o que apagava customer_origin do upsert e impedia o flip
+  // lead → igreen_sync. Resultado: cliente já no portal (com igreen_code /
+  // validado) continuava no Kanban de leads (Lucineia, Osmar, etc.).
+  //
+  // Regra:
+  // - Apareceu no batch do portal + origem lead → SEMPRE vira carteira (flip + limpa deals).
+  // - midConvo só protege overwrite de `status` em passos reais do funil do bot
+  //   (ainda pedindo conta/doc). Nunca bloqueia customer_origin.
+  const POST_CADASTRO_STEPS = new Set([
+    "cadastro_em_analise",
+    "aguardando_assinatura",
+    "aguardando_facial",
+    "complete",
+    "portal_submitting",
+    "aguardando_otp",
+    "validando_otp",
+  ]);
+  const POST_CADASTRO_STATUSES = new Set([
+    "registered_igreen",
+    "cadastro_concluido",
+    "complete",
+    "approved",
+    "active",
+    "awaiting_signature",
+    "awaiting_facial",
+    "portal_submitted",
+    "data_complete",
+  ]);
+  const isPostCadastro = (step: string | null | undefined, status: string | null | undefined) => {
+    if (status && POST_CADASTRO_STATUSES.has(status)) return true;
+    if (!step) return false;
+    const raw = step.startsWith("flow:") ? step.slice(5) : step;
+    return POST_CADASTRO_STEPS.has(raw);
+  };
+  const isMidConversation = (step: string | null | undefined, status: string | null | undefined) => {
+    if (isPostCadastro(step, status)) return false;
+    if (!step || step === "complete") return false;
+    return true;
+  };
+
   const allPhones = records.map((r) => String(r.phone_whatsapp));
   const midConvoPhones = new Set<string>();
   const flippingToWalletIds: string[] = [];
+  const flipCompleteStepIds: string[] = [];
   for (let i = 0; i < allPhones.length; i += 200) {
     const chunk = allPhones.slice(i, i + 200);
     let q = supabase
       .from("customers")
-      .select("id, phone_whatsapp, conversation_step, customer_origin")
+      .select("id, phone_whatsapp, conversation_step, customer_origin, status")
       .in("phone_whatsapp", chunk);
     if (consultantId) q = q.eq("consultant_id", consultantId);
     const { data: existing } = await q;
     if (existing) {
-      for (const e of existing as Array<{ id: string; phone_whatsapp: string; conversation_step: string | null; customer_origin: string | null }>) {
-        const midConvo = !!e.conversation_step && e.conversation_step !== "complete";
+      for (const e of existing as Array<{
+        id: string;
+        phone_whatsapp: string;
+        conversation_step: string | null;
+        customer_origin: string | null;
+        status: string | null;
+      }>) {
+        const midConvo = isMidConversation(e.conversation_step, e.status);
         if (midConvo) midConvoPhones.add(e.phone_whatsapp);
         const isLeadOrigin = !e.customer_origin || e.customer_origin === "whatsapp_lead" || e.customer_origin === "manual";
-        if (consultantId && isLeadOrigin && !midConvo) flippingToWalletIds.push(e.id);
+        // Lead no batch do portal → sai do funil de leads (Kanban), independente do step.
+        if (consultantId && isLeadOrigin) {
+          flippingToWalletIds.push(e.id);
+          if (isPostCadastro(e.conversation_step, e.status)) flipCompleteStepIds.push(e.id);
+        }
       }
     }
   }
   if (midConvoPhones.size > 0) {
-    console.log(`⚠️ Protecting ${midConvoPhones.size} mid-conversation leads`);
+    console.log(`⚠️ Protecting status of ${midConvoPhones.size} mid-conversation leads (origin still flips to wallet)`);
   }
   for (const rec of records) {
     if (midConvoPhones.has(String(rec.phone_whatsapp))) {
+      // Preserva status do bot no meio do funil; NÃO apaga customer_origin.
       delete rec.status;
-      delete rec.customer_origin;
     }
   }
 
@@ -1983,6 +2036,7 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   // Cleanup de resíduo: leads que viraram carteira
   let cleanedInsights = 0;
   let cleanedDeals = 0;
+  let completedSteps = 0;
   if (consultantId && flippingToWalletIds.length > 0) {
     for (let i = 0; i < flippingToWalletIds.length; i += 100) {
       const idChunk = flippingToWalletIds.slice(i, i + 100);
@@ -2001,8 +2055,21 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
       if (cdErr) console.error(`crm_deals cleanup error at ${i}:`, cdErr);
       else cleanedDeals += cdCount || 0;
     }
-    if (cleanedInsights > 0 || cleanedDeals > 0) {
-      console.log(`🧹 Cleanup leads→carteira: ${cleanedInsights} insights, ${cleanedDeals} deals removidos`);
+    // Fecha o step do bot nos que já passaram do funil (evita badge 26/28 no chat).
+    if (flipCompleteStepIds.length > 0) {
+      for (let i = 0; i < flipCompleteStepIds.length; i += 100) {
+        const idChunk = flipCompleteStepIds.slice(i, i + 100);
+        const { error: stepErr, count: stepCount } = await supabase
+          .from("customers")
+          .update({ conversation_step: "complete" }, { count: "exact" })
+          .in("id", idChunk)
+          .neq("conversation_step", "complete");
+        if (stepErr) console.error(`conversation_step complete error at ${i}:`, stepErr);
+        else completedSteps += stepCount || 0;
+      }
+    }
+    if (cleanedInsights > 0 || cleanedDeals > 0 || completedSteps > 0) {
+      console.log(`🧹 Cleanup leads→carteira: ${cleanedInsights} insights, ${cleanedDeals} deals removidos, ${completedSteps} steps→complete (flips=${flippingToWalletIds.length})`);
     }
   }
 
@@ -2019,6 +2086,8 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     failed_samples: failedSamples,
     cleaned_insights: cleanedInsights,
     cleaned_deals: cleanedDeals,
+    completed_steps: completedSteps,
+    flipped_to_wallet: flippingToWalletIds.length,
   };
 }
 

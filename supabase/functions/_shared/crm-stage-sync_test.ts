@@ -81,6 +81,12 @@ Deno.test("step desconhecido → noop", async () => {
   assertEquals(sb._lastUpdate(), null);
 });
 
+Deno.test("legacy step cadastro_em_analise + deal doc_enviado → finalizando", async () => {
+  const sb = makeFakeSupabase({ dealStage: "doc_enviado" });
+  await syncDealStageFromStep(sb as any, "cust-1", "cadastro_em_analise");
+  assertEquals(sb._lastUpdate()?.payload?.stage, "finalizando");
+});
+
 Deno.test("sem customerId → noop", async () => {
   const sb = makeFakeSupabase({ dealStage: "novo_lead" });
   await syncDealStageFromStep(sb as any, null, "aguardando_valor_conta");

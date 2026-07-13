@@ -24,11 +24,16 @@ const LEGACY_STEP_TO_STAGE: Record<string, string> = {
   confirmando_dados_conta: "doc_enviado",
   confirmando_dados: "doc_enviado",
 
-  // finalizando (envio final ao portal)
+  // finalizando (envio final ao portal / pós-cadastro aguardando análise)
   finalizando: "finalizando",
   finalizando_cadastro: "finalizando",
   portal_submitting: "finalizando",
   aguardando_otp: "finalizando",
+  validando_otp: "finalizando",
+  cadastro_em_analise: "finalizando",
+  aguardando_assinatura: "finalizando",
+  aguardando_facial: "finalizando",
+  complete: "finalizando",
 };
 
 // Mapa para step_type de bot_flow_steps (passos custom flow:UUID).
