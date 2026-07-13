@@ -73,6 +73,25 @@ export function CloseCaptureDialog({
   // lost state
   const [lostReason, setLostReason] = useState<string>("sem_interesse");
   const [lostNotes, setLostNotes] = useState<string>("");
+  const [notifyPartner, setNotifyPartner] = useState<boolean>(true);
+  const [partnerMessage, setPartnerMessage] = useState<string>("");
+  const [partnerMessageEdited, setPartnerMessageEdited] = useState<boolean>(false);
+  const [leadInfo, setLeadInfo] = useState<{
+    name: string | null;
+    phone: string | null;
+    protocol: string | null;
+    partnerId: string | null;
+    partnerName: string | null;
+    campaignId: string | null;
+    campaignName: string | null;
+    city: string | null;
+    uf: string | null;
+  }>({
+    name: null, phone: null, protocol: null,
+    partnerId: null, partnerName: null,
+    campaignId: null, campaignName: null,
+    city: null, uf: null,
+  });
 
   // Load data on open
   useEffect(() => {
