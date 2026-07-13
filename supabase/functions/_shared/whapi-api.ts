@@ -10,6 +10,7 @@ import { fetchWithTimeout, logStructured, TIMEOUT_WHAPI } from "./utils.ts";
 import { captureError } from "./sentry.ts";
 import { shouldUseFastClock } from "./test-mode.ts";
 import { isFlowInstantMode } from "./flow-pace.ts";
+import { awaitWhapiSendSlot } from "./whapi-throttle.ts";
 import {
   acquireOutboundSlot,
   recordOutboundResult,
@@ -158,6 +159,9 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     return withIdempotency("send_text", opts?.idempotency, async () => {
       // Whapi usa chatId no formato "5511999990001@s.whatsapp.net"
       const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+      // Anti-ban: aguarda o slot da fila espaçadora ANTES do envio real
+      // (fica após o pre-check de idempotência — replays não esperam fila).
+      await awaitWhapiSendSlot(to, { kind: "send_text", supabase: opts?.idempotency?.supabase });
       const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
       const typing = opts?.typingSec ?? typingTimeFor(text);
       console.log(`📤 [whapi:sendText] -> ${to} (typing ${typing}s) | "${preview}${text.length > 60 ? "..." : ""}"`);
@@ -182,6 +186,8 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
   ): Promise<boolean> {
     return withIdempotency("send_buttons", idempotency, async () => {
       const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+      // Anti-ban: fila espaçadora (mesma regra do sendText).
+      await awaitWhapiSendSlot(to, { kind: "send_buttons", supabase: idempotency?.supabase });
       const safeButtons = buttons.slice(0, 3).map((b) => ({
         type: "quick_reply" as const,
         title: (b.title || "").substring(0, 25),
@@ -367,6 +373,9 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         return false;
       }
     };
+
+    // Anti-ban: fila espaçadora ANTES da presence/upload (slot cobre a mensagem toda).
+    await awaitWhapiSendSlot(to, { kind: `send_media_${mediatype}` });
 
     // Presence realista antes do upload:
     // - Áudio: "gravando" pelo tempo real do arquivo (+1s buffer), entre 4s e 25s.

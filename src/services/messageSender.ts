@@ -37,6 +37,11 @@ export interface SendPayload {
   /** Quando informado, grava outbound em `conversations` para o chat atualizar via realtime */
   customerId?: string | null;
   conversationStep?: string;
+  /**
+   * Ritmo anti-ban Whapi: "bulk" (~18s entre contatos) | "reply" (conversa 1:1).
+   * Default no servidor = bulk. Chat manual deve passar "reply".
+   */
+  intent?: "bulk" | "reply";
 }
 
 function isTimeoutResponse(result: unknown): boolean {
@@ -142,6 +147,7 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
     isWhapi,
     customerId,
     conversationStep,
+    intent,
   } = payload;
 
   // Normaliza telefone BR (DDI 55) — mesmo critério do bot (manual-step-send).
@@ -160,31 +166,32 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
     let result: unknown;
 
     if (isWhapi) {
+      const whapiOpts = intent ? { intent } : undefined;
       switch (mediaCategory) {
         case "text":
           if (!text?.trim()) return { status: "failed", error: "Texto vazio" };
-          await whapiSendText(phone, text);
+          await whapiSendText(phone, text, whapiOpts);
           notifyChatOutbound(payload, mediaCategory, text);
           return { status: "sent" };
         case "audio":
           if (!mediaUrl) return { status: "failed", error: "URL de áudio ausente" };
-          await whapiSendMedia(phone, mediaUrl, "audio");
+          await whapiSendMedia(phone, mediaUrl, "audio", undefined, undefined, whapiOpts);
           notifyChatOutbound(payload, mediaCategory);
           return { status: "sent" };
         case "document":
           if (!mediaUrl) return { status: "failed", error: "URL do documento ausente" };
-          await whapiSendMedia(phone, mediaUrl, "document", undefined, fileName || "documento");
+          await whapiSendMedia(phone, mediaUrl, "document", undefined, fileName || "documento", whapiOpts);
           notifyChatOutbound(payload, mediaCategory, text, fileName);
           return { status: "sent" };
         case "image":
         case "video":
           if (!mediaUrl) return { status: "failed", error: "URL da mídia ausente" };
-          await whapiSendMedia(phone, mediaUrl, mediaCategory, text || undefined);
+          await whapiSendMedia(phone, mediaUrl, mediaCategory, text || undefined, undefined, whapiOpts);
           notifyChatOutbound(payload, mediaCategory, text);
           return { status: "sent" };
         case "sticker":
           if (!mediaUrl) return { status: "failed", error: "URL do sticker ausente" };
-          await whapiSendMedia(phone, mediaUrl, "sticker");
+          await whapiSendMedia(phone, mediaUrl, "sticker", undefined, undefined, whapiOpts);
           notifyChatOutbound(payload, mediaCategory);
           return { status: "sent" };
         default:

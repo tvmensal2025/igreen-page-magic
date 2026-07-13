@@ -110,8 +110,16 @@ export async function whapiGetProfilePicture(chatId: string): Promise<string | n
   }
 }
 
-export async function whapiSendText(to: string, text: string): Promise<{ key: { id: string } }> {
-  return call<{ key: { id: string } }>("send_text", { to: normalizeJid(to), text });
+export async function whapiSendText(
+  to: string,
+  text: string,
+  opts?: { intent?: "bulk" | "reply" },
+): Promise<{ key: { id: string } }> {
+  return call<{ key: { id: string } }>("send_text", {
+    to: normalizeJid(to),
+    text,
+    ...(opts?.intent ? { intent: opts.intent } : {}),
+  });
 }
 
 export async function whapiSendMedia(
@@ -120,6 +128,7 @@ export async function whapiSendMedia(
   mediatype: "image" | "video" | "document" | "audio" | "sticker",
   caption?: string,
   fileName?: string,
+  opts?: { intent?: "bulk" | "reply" },
 ): Promise<{ key: { id: string } }> {
   return call<{ key: { id: string } }>("send_media", {
     to: normalizeJid(to),
@@ -127,6 +136,7 @@ export async function whapiSendMedia(
     mediatype,
     caption,
     fileName,
+    ...(opts?.intent ? { intent: opts.intent } : {}),
   });
 }
 

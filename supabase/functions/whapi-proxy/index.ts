@@ -5,6 +5,7 @@
  * Body: { action: "list_chats" | "list_messages" | "send_text" | "send_media" | "send_audio" | "get_profile_pic", payload: any }
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { awaitWhapiSendSlot } from "../_shared/whapi-throttle.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -606,6 +607,14 @@ Deno.serve(async (req) => {
         const to = normalizeChatId(String(payload.to || ""));
         const text = String(payload.text || "");
         if (!to || !text) return json(400, { error: "to e text obrigatórios" });
+        // Anti-ban: fila espaçadora (nunca recusa). Default bulk (~18s entre
+        // contatos). Chat 1:1 pode mandar payload.intent="reply" (intervalo curto).
+        const textIntent = payload.intent === "reply" ? "reply" as const : "bulk" as const;
+        await awaitWhapiSendSlot(to, {
+          kind: "proxy_send_text",
+          intent: textIntent,
+          supabase: admin,
+        });
         const r = await whapiFetch(whapiToken, `/messages/text`, {
           method: "POST",
           body: JSON.stringify({ to, body: text }),
@@ -642,6 +651,14 @@ Deno.serve(async (req) => {
         // Sticker Whapi não aceita caption/file_name
         if (caption && !isSticker) baseBody.caption = caption;
         if (fileName && !isSticker) baseBody.file_name = fileName;
+
+        // Anti-ban: fila espaçadora (nunca recusa). Default bulk; reply opcional.
+        const mediaIntent = payload.intent === "reply" ? "reply" as const : "bulk" as const;
+        await awaitWhapiSendSlot(to, {
+          kind: `proxy_send_media_${mediatype}`,
+          intent: mediaIntent,
+          supabase: admin,
+        });
 
         // 1) JSON com URL
         let r = await whapiFetchWithRetry(whapiToken, path, {

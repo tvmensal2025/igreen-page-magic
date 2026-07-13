@@ -710,7 +710,7 @@ export function OpenAttendanceBatchDialog({
               )}
 
               <p className="text-[11px] text-muted-foreground">
-                Envio com intervalo de 5s entre cada cliente.
+                Envio espaçado automaticamente entre clientes (anti-ban, ~18s por contato).
               </p>
             </>
           )}

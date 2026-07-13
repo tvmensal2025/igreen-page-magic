@@ -717,6 +717,7 @@ export function useMessages(
           isWhapi,
           customerId,
           conversationStep: "consultor_manual",
+          intent: isWhapi ? "reply" : undefined,
         });
 
         if (result.status === "failed") {
