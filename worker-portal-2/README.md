@@ -125,5 +125,12 @@ Migração consultor por consultor, sem risco no Portal 1.
 
 ## Documentação técnica
 
-`docs/portal-api/PORTAL2_API_COMPLETO.md` — mapeamento completo da API,
-schema do payload, HMAC, descobertas técnicas.
+**`PORTAL-OFICIAL.md` (nesta pasta) — FONTE DA VERDADE** do portal oficial:
+endpoints, shapes, gates (regra `fz` de legibilidade, `is_authentic`),
+semântica de `contaunica`, armadilhas históricas e como revalidar.
+**Ler antes de mexer no fluxo de cadastro.**
+
+Docs complementares (históricos, com avisos de atualização no topo):
+- `docs/portal-api/PORTAL2_API_COMPLETO.md` — API completa, HMAC, payload
+- `docs/portal-api/PORTAL2_FLUXO_CANONICO.md` — trace canônico do worker
+- `docs/portal-api/PORTAL2_EXTRACTOR_VEREDITO.md` — shapes dos extractors

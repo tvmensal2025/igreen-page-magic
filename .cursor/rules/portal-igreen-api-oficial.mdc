@@ -1,0 +1,39 @@
+---
+description: API oficial do portal iGreen (autoconexão) — endpoints, gates e semântica corretos do cadastro. Aplicar ao mexer em worker-portal-2, OCR de fatura/documento, contaunica ou validação do portal.
+globs: worker-portal-2/**,supabase/functions/_shared/portalValidation.ts,src/lib/captacao/portalValidation.ts,supabase/functions/_shared/portal-worker.ts
+alwaysApply: false
+---
+
+# Portal iGreen — fatos oficiais (NÃO re-mapear do zero)
+
+**Fonte da verdade: `worker-portal-2/PORTAL-OFICIAL.md`** (mapeado do bundle
+oficial + probes ao vivo em 2026-07-13). Leia antes de mudar o fluxo de cadastro.
+
+## Fatos de ouro (violar = quebrar cadastro em produção)
+
+1. **Fatura de energia → `POST /extractor/extract`** (campo `files`).
+   NUNCA `extract-receipt` — esse é SÓ para comprovante bancário de débitos
+   em aberto e devolve `is_authentic=false` pra qualquer fatura (causou o
+   `IA_REPROVADA_CONTA` em contas legítimas).
+2. **`is_authentic` só existe em comprovante.** Fatura não tem — o gate dela
+   é legibilidade: **≥2 de 4 campos** (`nome_cliente`, `num_instalacao`,
+   `mes_referencia`, `valor_fatura`) — regra `fz` do oficial, espelhada em
+   `evaluateIaGate`/`IA_CONTA_ILEGIVEL` (`portal-errors.mjs`).
+3. **"Boleto Único" (`contaunica`) é só forma de cobrança** no payload/contrato.
+   NÃO muda anexos: o slot `energy-bill` recebe SEMPRE a fatura. Não exigir
+   foto de boleto bancário na ficha nem no bot.
+4. `name_validation.match=false` no oficial não bloqueia — força
+   `transferir_titularidade=true`.
+5. Consumo médio = média da `lista_consumo` da fatura; `num_instalacao` vem
+   do OCR quando faltar.
+6. `validate/upload` só aceita FOTO (PDF → 500; oficial nem chama).
+7. `manual-fallback` só quando humano escolhe — NUNCA em timeout/transporte.
+   Timeout de OCR não bloqueia cadastro (modo manual observacional).
+8. `POST /verification-codes/generate` **manda OTP no WhatsApp do cliente** —
+   não disparar em teste. Probes seguros: `_truth-real-cadastro.mjs <id> --no-post`
+   e `_probe-gate-conta-ilegivel.mjs <id>`.
+
+## Antes de mudar gates/endpoints
+
+- Rode `node --test worker-portal-2/test/` (propriedades dos gates).
+- Confirme no bundle oficial (instruções de re-download no PORTAL-OFICIAL.md §8).

@@ -1,6 +1,26 @@
 # Portal 2 — Fluxo de Cadastro Canônico (validado em produção)
 
-**Versão:** v1
+> ## ⚠️ ATUALIZAÇÃO 2026-07-13 (v2) — OCR da fatura mudou de endpoint
+>
+> O passo 2 abaixo (`extract-receipt` para OCR da fatura) estava **errado** e
+> causava `IA_REPROVADA_CONTA` em contas legítimas. Correções vigentes:
+>
+> - **Fatura → `POST /extractor/extract`** (shape: `nome_cliente`,
+>   `num_instalacao`, `lista_consumo`, `valor_fatura`, `mes_referencia`,
+>   `detected_concessionaria_id`, `name_validation`). `extract-receipt` é SÓ
+>   comprovante bancário de débitos.
+> - **Consumo médio**: 1) `media_consumo`, 2) **média da `lista_consumo`**,
+>   3) estimativa por tarifa (inalterada).
+> - **Distribuidora por OCR**: campo `concessionaria`/`detected_concessionaria_id`
+>   da resposta do `extract` (não mais `beneficiario`).
+> - **Gate pré-POST**: fatura ilegível (<2 de 4 campos-chave — regra `fz` do
+>   oficial) bloqueia com `IA_CONTA_ILEGIVEL` → `needs_human`.
+> - **`contaunica` ("Boleto Único")**: só preferência de cobrança no payload —
+>   NÃO troca o anexo do slot `energy-bill` (sempre a fatura).
+>
+> Fonte da verdade completa: **`worker-portal-2/PORTAL-OFICIAL.md`**.
+
+**Versão:** v2 (v1 abaixo mantida como histórico)
 **Data validação:** 2026-05-29
 **Trace ID oficial:** `e923a09c-abba-4ae1-a256-80e97094f686`
 **Customer de referência:** `482c0262-e5e0-4716-82f1-f3f4528b2e79` (PAULO ROBERTO FIGUEIREDO / Salto-SP)

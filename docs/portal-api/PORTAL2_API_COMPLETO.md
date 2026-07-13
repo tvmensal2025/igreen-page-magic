@@ -1,5 +1,10 @@
 # Portal 2 (autoconexao) — API completa, mapeada e testada
 
+> **⚠️ 2026-07-13**: para semântica dos extractors (qual endpoint para fatura ×
+> comprovante, gate de legibilidade `fz`, `contaunica`), a fonte da verdade é
+> **`worker-portal-2/PORTAL-OFICIAL.md`**. Este doc segue válido para HMAC,
+> Cloudflare e inventário de endpoints.
+
 **Status: ✅ Funcional. Cadastro real criado em 2026-05-26 (`idcliente=1501853`).**
 
 > **Origem dos dados**: bundle `https://green.igreenenergy.com.br/assets/index-COBs1pai.js`

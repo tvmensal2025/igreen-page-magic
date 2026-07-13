@@ -1,5 +1,18 @@
 # Portal 2 — Veredito dos Extractors (IA de validação de documento + conta)
 
+> ## ⚠️ ATUALIZAÇÃO 2026-07-13 — correção importante
+>
+> Este doc (2026-05-31) mapeou o `extract-receipt` achando que era o OCR da
+> conta de energia. **ERRADO**: o bundle oficial provou que `extract-receipt`
+> é SÓ para **comprovante bancário de débitos em aberto** — fatura legítima
+> enviada nele retorna `is_authentic=false` ("é fatura, não comprovante"),
+> o que causou o bug `IA_REPROVADA_CONTA` em produção (caso José, jobs 69–72).
+>
+> **A fatura usa `POST /extractor/extract`** (sem `is_authentic`; gate de
+> legibilidade `fz` = ≥2 de 4 campos). Fonte da verdade atualizada:
+> **`worker-portal-2/PORTAL-OFICIAL.md`**. As seções abaixo permanecem como
+> histórico — ler com essa correção em mente.
+
 **Status:** ✅ Schema capturado de chamadas REAIS em 2026-05-31 (Task 1 da investigação "aviso de aprovação/reprovação").
 **Como foi descoberto:** `worker-portal-2/probe-extractor.mjs` + `probe-doc-field.mjs` (scripts de sondagem; não criam cliente, só rodam OCR/validação).
 
