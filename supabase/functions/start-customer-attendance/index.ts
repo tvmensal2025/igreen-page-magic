@@ -16,7 +16,7 @@ import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { resolveConsultantMessage } from "../_shared/consultant-template.ts";
 
-interface Body { customerId: string; consultantId: string }
+interface Body { customerId: string; consultantId: string; restart?: boolean }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
