@@ -1627,6 +1627,27 @@ export type Database = {
         }
         Relationships: []
       }
+      automation_skip_log: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          meta: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          meta?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          meta?: Json
+        }
+        Relationships: []
+      }
       automation_toggles: {
         Row: {
           category: string
@@ -7971,6 +7992,38 @@ export type Database = {
         }
         Relationships: []
       }
+      proactive_touch_log: {
+        Row: {
+          created_at: string
+          customer_id: string
+          id: number
+          meta: Json
+          source_key: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          id?: number
+          meta?: Json
+          source_key: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          id?: number
+          meta?: Json
+          source_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "proactive_touch_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       production_health_snapshot: {
         Row: {
           active_variants: string[] | null
@@ -8604,6 +8657,36 @@ export type Database = {
           requester_id?: string
           started_at?: string | null
           status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      retention_settings: {
+        Row: {
+          call_answered_pause_hours: number
+          id: string
+          orchestrator_cooldown_hours: number
+          portal_abandon_hours: number
+          priority_order: Json
+          speed_to_lead_minutes: number
+          updated_at: string
+        }
+        Insert: {
+          call_answered_pause_hours?: number
+          id?: string
+          orchestrator_cooldown_hours?: number
+          portal_abandon_hours?: number
+          priority_order?: Json
+          speed_to_lead_minutes?: number
+          updated_at?: string
+        }
+        Update: {
+          call_answered_pause_hours?: number
+          id?: string
+          orchestrator_cooldown_hours?: number
+          portal_abandon_hours?: number
+          priority_order?: Json
+          speed_to_lead_minutes?: number
           updated_at?: string
         }
         Relationships: []
@@ -11061,6 +11144,18 @@ export type Database = {
         Args: { _id: string }
         Returns: undefined
       }
+      audit_flow_activate_rules: {
+        Args: { _flow_id?: string }
+        Returns: {
+          dest_step_key: string
+          flow_id: string
+          flow_name: string
+          problem: string
+          rule: string
+          step_id: string
+          step_key: string
+        }[]
+      }
       bump_ai_cost: {
         Args: {
           p_consultant_id: string
@@ -11099,6 +11194,33 @@ export type Database = {
           params: Json
           target: string
         }[]
+      }
+      claim_scheduled_messages: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempt_count: number
+          canceled_at: string | null
+          canceled_by: string | null
+          consultant_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          instance_name: string
+          last_error: string | null
+          message_text: string
+          processing_started_at: string | null
+          remote_jid: string
+          scheduled_at: string
+          sent_at: string | null
+          source_step_id: string | null
+          status: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "scheduled_messages"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
@@ -11437,6 +11559,8 @@ export type Database = {
         }[]
       }
       recompute_pos_venda_stages: { Args: never; Returns: number }
+      reconcile_stuck_bulk_targets: { Args: never; Returns: number }
+      reconcile_stuck_scheduled_messages: { Args: never; Returns: number }
       record_risk_signal: {
         Args: {
           p_instance: string
@@ -11505,18 +11629,18 @@ export type Database = {
         Args: { _approve: boolean; _note?: string; _submission_id: string }
         Returns: undefined
       }
-      rodizio_next: {
-        Args: { p_campaign_id: string }
+      rodizio_assign_lead: {
+        Args: { p_campaign_id: string; p_customer_id: string }
         Returns: {
+          outcome: string
           partner_id: string
           pool_id: string
           position: number
         }[]
       }
-      rodizio_assign_lead: {
-        Args: { p_customer_id: string; p_campaign_id: string }
+      rodizio_next: {
+        Args: { p_campaign_id: string }
         Returns: {
-          outcome: string
           partner_id: string
           pool_id: string
           position: number
