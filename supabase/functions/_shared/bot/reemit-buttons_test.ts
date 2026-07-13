@@ -119,6 +119,20 @@ Deno.test("reemitStepButtons: >3 opções usa sendText numerado", async () => {
   assertEquals(textLog[0].includes("*4.* D"), true);
 });
 
+Deno.test("reemitStepButtons: buttons[] direto (pós-FAQ conversational)", async () => {
+  const { opts, sendLog, buttonsLog } = baseOpts({
+    stepCaptures: undefined,
+    buttons: [
+      { id: "ativar", title: "Ativar" },
+      { id: "simular", title: "Simular" },
+    ],
+  });
+  const ok = await reemitStepButtons(opts as any);
+  assertEquals(ok, true);
+  assertEquals(sendLog, ["buttons"]);
+  assertEquals(buttonsLog[0].count, 2);
+});
+
 Deno.test("reemitStepButtons: sendButtons false não loga conversations", async () => {
   const { opts, fake } = baseOpts({
     sendButtons: async () => false,

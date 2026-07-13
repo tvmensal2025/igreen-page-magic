@@ -33,6 +33,7 @@ import {
 } from "../../../_shared/bot/flow-activate-routing.ts";
 import { nextSeparatedCadastroStep } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
+import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -1319,12 +1320,23 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // mesmo whatsapp_profile/freeform_multi anteriores — o nome digitado é mais confiável.
     const currentNameSource = String((ctx.customer as any).name_source || "");
     const weakNameSource = currentNameSource === "" || currentNameSource === "whatsapp_profile" || currentNameSource === "freeform_multi";
-    if (extracted.name && !nameLocked && (stepIsAskName || !ctx.customer.name || weakNameSource)) {
+    // Clique/texto de botão NUNCA é nome (paridade Whapi).
+    const isButtonClick = !!ctx.buttonId;
+    const stepButtonsForCapture = extractStepButtons(currentStep);
+    const msgNorm = String(ctx.messageText || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const matchesButtonText = stepButtonsForCapture.some((b) => {
+      const t = String(b.title || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const i = String(b.id || "").toLowerCase().trim();
+      return (!!t && (msgNorm === t || msgNorm.includes(t) || t.includes(msgNorm))) || (!!i && msgNorm === i);
+    });
+    if (extracted.name && !nameLocked && !isButtonClick && !matchesButtonText && (stepIsAskName || !ctx.customer.name || weakNameSource)) {
       captureUpdates.name = extracted.name;
       captureUpdates.name_source = "self_introduced";
       if (stepIsAskName) {
         console.log(`[name-capture] override "${ctx.customer.name || ""}"(${currentNameSource}) → "${extracted.name}" (askName via ${lastOutboundWasNameQuestion ? "last-outbound" : "current-step"})`);
       }
+    } else if (extracted.name && (isButtonClick || matchesButtonText)) {
+      console.log(`[name-capture] ignorado (botão): "${extracted.name}"`);
     }
 
     if (Object.keys(captureUpdates).length > 0 && ctx.customer.id) {
@@ -1447,6 +1459,27 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         await ctx.sender.sendMedia(ctx.remoteJid, m.url, "", item.kind, Number((m as any).duration_sec || 0) || undefined);
         anyEmitted = true;
       } catch (_) {}
+    }
+
+    // Reapresenta opções do passo (Evolution=lista numerada via sendButtons).
+    if (anyEmitted) {
+      try {
+        await reemitStepButtons({
+          supabase: ctx.supabase,
+          customerId: ctx.customer.id,
+          consultantId: consultantId || ctx.customer.consultant_id,
+          flowVariant: flowVariant,
+          stepKey: currentStep.id || stepKey,
+          remoteJid: ctx.remoteJid,
+          sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
+          sendText: (jid, text) => ctx.sender.sendText(jid, text),
+          buttons: extractStepButtons(currentStep),
+          followups: Number((ctx.customer as any).ai_followups_count || 0),
+          delayMs: 500,
+        });
+      } catch (e) {
+        console.warn("[conversational/evo] reemit pós-QA falhou:", (e as Error)?.message || e);
+      }
     }
 
     return _finalize(stepKey, {
@@ -1632,19 +1665,52 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       });
       if (ai.source === "ai" && ai.text && ai.confidence >= 0.6 && !ai.shouldHandoff) {
         console.log(`[ai-faq] hit step="${stepKey}" conf=${ai.confidence.toFixed(2)}`);
+        const renderedFaq = renderTemplate(ai.text, {
+          nome: ctx.customer.name,
+          representante: ctx.nomeRepresentante,
+          valor_conta: (ctx.customer as any).electricity_bill_value,
+          telefone: ctx.customer.phone_whatsapp,
+          cpf: (ctx.customer as any).cpf,
+        });
+        try {
+          await ctx.sender.sendText(ctx.remoteJid, renderedFaq);
+          if (ctx.customer?.id) {
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: renderedFaq,
+              message_type: "text",
+              conversation_step: stepKey,
+            });
+          }
+        } catch (e) {
+          console.warn("[ai-faq] sendText falhou:", (e as Error)?.message || e);
+        }
+        try {
+          await reemitStepButtons({
+            supabase: ctx.supabase,
+            customerId: ctx.customer.id,
+            consultantId: consultantId || ctx.customer.consultant_id,
+            flowVariant: flowVariant,
+            stepKey: currentStep.id || stepKey,
+            remoteJid: ctx.remoteJid,
+            sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
+            sendText: (jid, text) => ctx.sender.sendText(jid, text),
+            buttons: extractStepButtons(currentStep),
+            followups: Number((ctx.customer as any).ai_followups_count || 0),
+            delayMs: 500,
+          });
+        } catch (e) {
+          console.warn("[ai-faq] reemit falhou:", (e as Error)?.message || e);
+        }
         return _finalize(stepKey, {
-          reply: renderTemplate(ai.text, {
-            nome: ctx.customer.name,
-            representante: ctx.nomeRepresentante,
-            valor_conta: (ctx.customer as any).electricity_bill_value,
-            telefone: ctx.customer.phone_whatsapp,
-            cpf: (ctx.customer as any).cpf,
-          }),
+          reply: "",
           updates: {
             conversation_step: stepKey,
             __intent: cls.intent,
             __confidence: cls.confidence,
             __ai_faq: true,
+            __inline_sent: true,
             ...restoreDetourUpdates,
           },
         });

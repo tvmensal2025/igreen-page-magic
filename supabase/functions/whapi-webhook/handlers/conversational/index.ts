@@ -35,6 +35,7 @@ import {
 } from "../../../_shared/bot/flow-activate-routing.ts";
 import { nextSeparatedCadastroStep } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
+import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -1520,6 +1521,28 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       } catch (_) {}
     }
 
+    // Reapresenta opções do passo (Whapi=botão; Evolution=número) — sem isso
+    // o lead fica com a FAQ e sem CTA para avançar.
+    if (anyEmitted) {
+      try {
+        await reemitStepButtons({
+          supabase: ctx.supabase,
+          customerId: ctx.customer.id,
+          consultantId: consultantId || ctx.customer.consultant_id,
+          flowVariant: flowVariant,
+          stepKey: currentStep.id || stepKey,
+          remoteJid: ctx.remoteJid,
+          sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
+          sendText: (jid, text) => ctx.sender.sendText(jid, text),
+          buttons: extractStepButtons(currentStep),
+          followups: Number((ctx.customer as any).ai_followups_count || 0),
+          delayMs: 500,
+        });
+      } catch (e) {
+        console.warn("[conversational] reemit pós-QA falhou:", (e as Error)?.message || e);
+      }
+    }
+
     return _finalize(stepKey, {
       reply: "",
       updates: { conversation_step: stepKey, __inline_sent: anyEmitted || undefined, ...restoreDetourUpdates },
@@ -1784,19 +1807,58 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           } catch (_) { /* best-effort */ }
         }
 
+        const renderedFaq = renderTemplate(answerText, {
+          nome: ctx.customer.name,
+          representante: ctx.nomeRepresentante,
+          valor_conta: (ctx.customer as any).electricity_bill_value,
+          telefone: ctx.customer.phone_whatsapp,
+          cpf: (ctx.customer as any).cpf,
+        });
+
+        // Envia inline + reemit para o lead não ficar sem opções após a dúvida.
+        try {
+          await ctx.sender.sendText(ctx.remoteJid, renderedFaq);
+          if (ctx.customer?.id) {
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: renderedFaq,
+              message_type: "text",
+              conversation_step: stepKey,
+            });
+          }
+        } catch (e) {
+          console.warn("[conversational-orch] sendText falhou:", (e as Error)?.message || e);
+        }
+
+        if (!orch.shouldHandoff) {
+          try {
+            await reemitStepButtons({
+              supabase: ctx.supabase,
+              customerId: ctx.customer.id,
+              consultantId: consultantId || ctx.customer.consultant_id,
+              flowVariant: flowVariant,
+              stepKey: currentStep.id || stepKey,
+              remoteJid: ctx.remoteJid,
+              sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
+              sendText: (jid, text) => ctx.sender.sendText(jid, text),
+              buttons: extractStepButtons(currentStep),
+              followups: Number((ctx.customer as any).ai_followups_count || 0),
+              delayMs: 500,
+            });
+          } catch (e) {
+            console.warn("[conversational-orch] reemit falhou:", (e as Error)?.message || e);
+          }
+        }
+
         return _finalize(stepKey, {
-          reply: renderTemplate(answerText, {
-            nome: ctx.customer.name,
-            representante: ctx.nomeRepresentante,
-            valor_conta: (ctx.customer as any).electricity_bill_value,
-            telefone: ctx.customer.phone_whatsapp,
-            cpf: (ctx.customer as any).cpf,
-          }),
+          reply: "",
           updates: {
             conversation_step: stepKey,
             __intent: cls.intent,
             __confidence: cls.confidence,
             __ai_orch: true,
+            __inline_sent: true,
             ...handoffUpdates,
             ...restoreDetourUpdates,
           },

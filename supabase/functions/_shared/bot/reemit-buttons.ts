@@ -36,6 +36,11 @@ export interface ReemitOpts {
   followups?: number;
   /** Se fornecido, usa captures desse stepRow ao invés de consultar o banco */
   stepCaptures?: any[];
+  /**
+   * Botões já resolvidos (ex.: extractStepButtons). Preferido no conversational
+   * pós-FAQ — evita lookup falhar e fecha o buraco “respondeu dúvida sem opções”.
+   */
+  buttons?: Array<{ id: string; title: string }>;
   /** Delay antes do envio (ms). Default 600. Use 0 em testes. */
   delayMs?: number;
 }
@@ -57,6 +62,7 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
     skipIfHandoff = false,
     followups = 0,
     stepCaptures,
+    buttons,
     delayMs = 600,
   } = opts;
 
@@ -70,70 +76,81 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
   if (!ref) return false;
 
   try {
-    let captures: any[] = [];
+    let renderedButtons: Array<{ id: string; title: string }> = [];
 
-    if (stepCaptures && Array.isArray(stepCaptures)) {
-      captures = stepCaptures;
+    if (Array.isArray(buttons) && buttons.length > 0) {
+      renderedButtons = buttons
+        .map((b) => ({
+          id: String(b?.id || "").trim(),
+          title: String(b?.title || "").trim().slice(0, 20),
+        }))
+        .filter((b) => b.id && b.title);
     } else {
-      // Resolve flow e busca step
-      let flowId: string | null = null;
-      const { data: flowRow } = await supabase
-        .from("bot_flows")
-        .select("id")
-        .eq("consultant_id", consultantId)
-        .eq("variant", flowVariant)
-        .eq("is_active", true)
-        .maybeSingle();
-      flowId = (flowRow as any)?.id || null;
+      let captures: any[] = [];
 
-      // Fallback: qualquer flow ativo do consultor (variant M/D/A)
-      if (!flowId) {
-        const { data: anyFlow } = await supabase
+      if (stepCaptures && Array.isArray(stepCaptures)) {
+        captures = stepCaptures;
+      } else {
+        // Resolve flow e busca step
+        let flowId: string | null = null;
+        const { data: flowRow } = await supabase
           .from("bot_flows")
           .select("id")
           .eq("consultant_id", consultantId)
+          .eq("variant", flowVariant)
           .eq("is_active", true)
-          .order("updated_at", { ascending: false })
-          .limit(1)
           .maybeSingle();
-        flowId = (anyFlow as any)?.id || null;
+        flowId = (flowRow as any)?.id || null;
+
+        // Fallback: qualquer flow ativo do consultor (variant M/D/A)
+        if (!flowId) {
+          const { data: anyFlow } = await supabase
+            .from("bot_flows")
+            .select("id")
+            .eq("consultant_id", consultantId)
+            .eq("is_active", true)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          flowId = (anyFlow as any)?.id || null;
+        }
+
+        let stepRow: any = null;
+        if (flowId) {
+          const { data } = await supabase
+            .from("bot_flow_steps")
+            .select("captures, step_key, id")
+            .eq("flow_id", flowId)
+            .or(`step_key.eq.${ref},id.eq.${ref}`)
+            .maybeSingle();
+          stepRow = data;
+        }
+
+        // Último recurso: UUID direto (step pode ser de flow público clonado)
+        if (!stepRow && /^[0-9a-f-]{36}$/i.test(ref)) {
+          const { data } = await supabase
+            .from("bot_flow_steps")
+            .select("captures, step_key, id")
+            .eq("id", ref)
+            .maybeSingle();
+          stepRow = data;
+        }
+
+        captures = Array.isArray(stepRow?.captures) ? stepRow.captures : [];
       }
 
-      let stepRow: any = null;
-      if (flowId) {
-        const { data } = await supabase
-          .from("bot_flow_steps")
-          .select("captures, step_key, id")
-          .eq("flow_id", flowId)
-          .or(`step_key.eq.${ref},id.eq.${ref}`)
-          .maybeSingle();
-        stepRow = data;
-      }
-
-      // Último recurso: UUID direto (step pode ser de flow público clonado)
-      if (!stepRow && /^[0-9a-f-]{36}$/i.test(ref)) {
-        const { data } = await supabase
-          .from("bot_flow_steps")
-          .select("captures, step_key, id")
-          .eq("id", ref)
-          .maybeSingle();
-        stepRow = data;
-      }
-
-      captures = Array.isArray(stepRow?.captures) ? stepRow.captures : [];
+      // Extrai _buttons das captures
+      const btnCap = captures.find(
+        (c: any) => c?.field === "_buttons" && c?.enabled !== false,
+      );
+      const rawButtons = Array.isArray(btnCap?.value) ? btnCap.value : [];
+      renderedButtons = rawButtons
+        .map((b: any) => ({
+          id: String(b?.id || "").trim(),
+          title: String(b?.title || "").trim().slice(0, 20),
+        }))
+        .filter((b: any) => b.id && b.title);
     }
-
-    // Extrai _buttons das captures
-    const btnCap = captures.find(
-      (c: any) => c?.field === "_buttons" && c?.enabled !== false,
-    );
-    const rawButtons = Array.isArray(btnCap?.value) ? btnCap.value : [];
-    const renderedButtons = rawButtons
-      .map((b: any) => ({
-        id: String(b?.id || "").trim(),
-        title: String(b?.title || "").trim().slice(0, 20),
-      }))
-      .filter((b: any) => b.id && b.title);
 
     if (renderedButtons.length === 0) return false;
 
