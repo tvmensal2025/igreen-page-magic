@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     // Reiniciar atendimento: limpa marcadores para permitir novo welcome+protocolo,
     // mesmo que o cliente não tenha dado nota. Usado pelo botão "Reiniciar".
     if (restart) {
-      await supabase
+      const full = await supabase
         .from("customers")
         .update({
           welcome_sent_at: null,
@@ -98,6 +98,13 @@ Deno.serve(async (req) => {
           attendance_auto_close_at: null,
         })
         .eq("id", customerId);
+      if (full.error) {
+        // Fallback quando colunas opcionais ainda não existem no schema.
+        await supabase
+          .from("customers")
+          .update({ welcome_sent_at: null, tracking_protocol: null })
+          .eq("id", customerId);
+      }
     }
 
     const { data: consultant } = await supabase
