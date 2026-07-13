@@ -196,7 +196,7 @@ Extraia:
 5. CEP do endereço de instalação — 8 dígitos no formato XXXXX-XXX. Fica junto/abaixo do endereço de instalação ou da cidade/UF da instalação. NÃO use CEP da agência/distribuidora/correspondência. Devolva sempre os 8 dígitos quando visível na fatura.
 6. CIDADE do endereço de instalação
 7. ESTADO (sigla UF, ex: SP, MG, RJ) do endereço de instalação
-8. DISTRIBUIDORA (nome REGIONAL da concessionária — NUNCA o grupo holding. Use: CPFL PIRATININGA, CPFL PAULISTA, CPFL SANTA CRUZ, RGE, ENEL SP, ENEL RJ, EDP SP, EDP ES, LIGHT, CEMIG, COPEL, CELESC, COELBA, CELPE, COSERN, COELCE, EQUATORIAL GO/PA/MA/PI/AL, CEB, ENERGISA <UF>, AMAZONAS ENERGIA, RORAIMA ENERGIA, ELEKTRO etc. NÃO escreva apenas "CPFL ENERGIA", "ENEL", "EDP", "ENERGISA" ou "EQUATORIAL" sozinhos)
+8. DISTRIBUIDORA (nome OFICIAL iGreen — NUNCA holding. Use exatamente: CPFL, CPFL SANTA CRUZ, ELEKTRO, ENERGISA SUL SUDESTE, CEMIG-D, ENERGISA MINAS RIO, COPEL, CELESC, ENEL, COELBA, NEO ENERGIA, COSERN, EQUATORIAL, EQUATORIAL PA, ENERGISA, ENERGISA PB, ENERGISA TOCANTINS, EDP, CEEE, RGE. Em SP, "CPFL Paulista"/"CPFL Piratininga" → "CPFL". NÃO use LIGHT (RJ capital sem cobertura), ENEL SP capital, EDP Vale, CEB/DF. NÃO escreva "CPFL ENERGIA" sozinho.)
 9. NÚMERO DA INSTALAÇÃO (campo "Seu Código" na CPFL, "Nº do Cliente" na Enel, geralmente 7-12 dígitos)
 10. VALOR TOTAL A PAGAR (em reais)
 11. CONSUMO MÉDIO em kWh — procure por "Consumo medido (kWh)", "Consumo do mês (kWh)", "Média kWh", "Histórico de Consumo - Média", "Consumo Faturado kWh". Quando houver histórico mensal, calcule a média dos últimos 12 meses. Se só houver o consumo do mês atual, devolva esse valor. Retorne APENAS o número inteiro em kWh (sem unidade).
@@ -318,7 +318,7 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
     }
 
 
-    // Normaliza distribuidora — resolve holdings (CPFL ENERGIA → CPFL PIRATININGA via cidade)
+    // Normaliza distribuidora — resolve holdings/aliases (CPFL ENERGIA/Paulista/Piratininga → CPFL via cidade)
     if (dados.distribuidora) {
       const original = String(dados.distribuidora);
       const normalized = normalizeDistribuidora(original, dados.estado, dados.cidade);

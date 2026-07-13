@@ -38,8 +38,8 @@ export function tariffForUF(uf?: string | null): number {
  * (maiúsculas, sem acento) e o match aceita prefixo de grupo (ex.: "CPFL").
  */
 export const TARIFF_BY_DISTRIBUIDORA: Record<string, number> = {
-  "CPFL PAULISTA": 0.86,
-  "CPFL PIRATININGA": 0.84,
+  "CPFL PAULISTA": 0.86, // alias legado → mesmo grupo CPFL
+  "CPFL PIRATININGA": 0.84, // alias legado → mesmo grupo CPFL
   "CPFL SANTA CRUZ": 0.88,
   "CPFL": 0.85,
   "ENEL SP": 0.83,
