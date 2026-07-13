@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Play, RefreshCw, Clock, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import AutomationTogglesPanel from "@/components/admin/AutomationTogglesPanel";
+import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
 
 type Job = { jobid: number; jobname: string; schedule: string; active: boolean; command: string };
 type Run = { jobid: number; jobname: string; status: string; return_message: string | null; start_time: string; end_time: string | null };
@@ -82,10 +83,11 @@ export default function AdminAgendamentosCentral() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" asChild><Link to="/admin"><ArrowLeft className="h-4 w-4" /></Link></Button>
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-bold">Central de Agendamentos</h1>
             <p className="text-sm text-muted-foreground">Todas as tarefas automáticas da plataforma em um só lugar.</p>
           </div>
+          <SistemaCapacidadesHelp />
         </div>
 
         <Tabs defaultValue="automacoes" className="w-full">

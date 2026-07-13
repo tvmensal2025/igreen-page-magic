@@ -26,6 +26,7 @@ import {
   Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell,
 } from "lucide-react";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
+import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
 const AutomacaoIgreenCard = lazy(() =>
@@ -383,6 +384,7 @@ export function AgendamentosHub({
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <SistemaCapacidadesHelp className="rounded-xl" />
             <AutomacoesAtivasBadge consultantId={consultantId} variant="chips" />
             {showAdminShortcut && (
               <Button
