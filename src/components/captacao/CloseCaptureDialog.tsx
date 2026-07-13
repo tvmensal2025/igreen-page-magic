@@ -192,6 +192,43 @@ export function CloseCaptureDialog({
     return 0;
   }, [pointsKwh, billValue]);
 
+  function fmtPhone(raw: string | null): string {
+    if (!raw) return "(sem número)";
+    const d = String(raw).replace(/\D/g, "").replace(/^55/, "");
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return raw;
+  }
+
+  const generatedLostMessage = useMemo(() => {
+    const partnerFirst = (leadInfo.partnerName || "parceiro").split(" ")[0];
+    const reasonLabel = LOST_REASONS.find((r) => r.v === lostReason)?.l ?? lostReason;
+    const local = [leadInfo.city, leadInfo.uf].filter(Boolean).join("/");
+    const lines: string[] = [];
+    lines.push(`Olá, ${partnerFirst}! 👋`);
+    lines.push("");
+    lines.push("🔴 *Lead encerrado como Perdido*");
+    lines.push("━━━━━━━━━━━━━━━━━━");
+    lines.push(`👤 *Lead:* ${leadInfo.name || "Sem nome"}`);
+    lines.push(`📱 ${fmtPhone(leadInfo.phone)}`);
+    if (local) lines.push(`📍 ${local}`);
+    if (leadInfo.campaignName) lines.push(`🎯 *Campanha:* ${leadInfo.campaignName}`);
+    if (leadInfo.protocol) lines.push(`🔖 *Protocolo:* ${leadInfo.protocol}`);
+    lines.push("");
+    lines.push(`❌ *Motivo:* ${reasonLabel}`);
+    if (lostNotes.trim()) lines.push(`📝 *Detalhes:* ${lostNotes.trim()}`);
+    lines.push("");
+    lines.push("Obrigado pela indicação! Seguimos juntos — continue enviando novos leads 💪");
+    return lines.join("\n");
+  }, [leadInfo, lostReason, lostNotes]);
+
+  // Mantém a mensagem sincronizada com os campos, a menos que o usuário edite manualmente.
+  useEffect(() => {
+    if (partnerMessageEdited) return;
+    setPartnerMessage(generatedLostMessage);
+  }, [generatedLostMessage, partnerMessageEdited]);
+
+
   async function run() {
     if (busy) return;
     setBusy(true);
