@@ -646,6 +646,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             ending={attendance.ending}
             onStart={() => void attendance.startAttendance()}
             onRequestEnd={() => setEndAttendanceDialogOpen(true)}
+            onRestart={() => void attendance.restartAttendance()}
             compact={isCompactLayout}
           />
         )}
