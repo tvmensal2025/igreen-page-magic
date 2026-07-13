@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 import { Trophy, XCircle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -72,6 +73,25 @@ export function CloseCaptureDialog({
   // lost state
   const [lostReason, setLostReason] = useState<string>("sem_interesse");
   const [lostNotes, setLostNotes] = useState<string>("");
+  const [notifyPartner, setNotifyPartner] = useState<boolean>(true);
+  const [partnerMessage, setPartnerMessage] = useState<string>("");
+  const [partnerMessageEdited, setPartnerMessageEdited] = useState<boolean>(false);
+  const [leadInfo, setLeadInfo] = useState<{
+    name: string | null;
+    phone: string | null;
+    protocol: string | null;
+    partnerId: string | null;
+    partnerName: string | null;
+    campaignId: string | null;
+    campaignName: string | null;
+    city: string | null;
+    uf: string | null;
+  }>({
+    name: null, phone: null, protocol: null,
+    partnerId: null, partnerName: null,
+    campaignId: null, campaignName: null,
+    city: null, uf: null,
+  });
 
   // Load data on open
   useEffect(() => {
@@ -99,18 +119,16 @@ export function CloseCaptureDialog({
         supabase
           .from("customers")
           .select(
-            "source_campaign_id, referral_partner_id, media_consumo, electricity_bill_value",
+            "name, phone_whatsapp, tracking_protocol, address_city, address_state, source_campaign_id, referral_partner_id, media_consumo, electricity_bill_value",
           )
           .eq("id", customerId)
           .maybeSingle(),
       ]);
       if (cancelled) return;
-      setCampaigns(
-        ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) })),
-      );
-      setPartners(
-        ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) })),
-      );
+      const campaignList = ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) }));
+      const partnerList = ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) }));
+      setCampaigns(campaignList);
+      setPartners(partnerList);
       const prods = ((prod.data as any[]) || []).map((r) => ({ id: r.id, label: r.name }));
       setProducts(prods);
       if (prods[0]) setProductId(prods[0].id);
@@ -125,6 +143,41 @@ export function CloseCaptureDialog({
       }
       if (cu?.media_consumo) setPointsKwh(String(cu.media_consumo));
       if (cu?.electricity_bill_value) setBillValue(String(cu.electricity_bill_value));
+
+      // Enrich lead info with partner + campaign names
+      let partnerName: string | null = null;
+      if (cu?.referral_partner_id) {
+        const found = partnerList.find((x) => x.id === cu.referral_partner_id);
+        if (found) partnerName = found.label;
+        else {
+          const { data: pr } = await supabase
+            .from("referral_partners").select("nome").eq("id", cu.referral_partner_id).maybeSingle();
+          partnerName = (pr as any)?.nome || null;
+        }
+      }
+      let campaignName: string | null = null;
+      if (cu?.source_campaign_id) {
+        const found = campaignList.find((x) => x.id === cu.source_campaign_id);
+        if (found) campaignName = found.label;
+        else {
+          const { data: ca } = await supabase
+            .from("facebook_campaigns").select("name").eq("id", cu.source_campaign_id).maybeSingle();
+          campaignName = (ca as any)?.name || null;
+        }
+      }
+      if (cancelled) return;
+      setLeadInfo({
+        name: cu?.name ?? null,
+        phone: cu?.phone_whatsapp ?? null,
+        protocol: cu?.tracking_protocol ?? null,
+        partnerId: cu?.referral_partner_id ?? null,
+        partnerName,
+        campaignId: cu?.source_campaign_id ?? null,
+        campaignName,
+        city: cu?.address_city ?? null,
+        uf: cu?.address_state ?? null,
+      });
+      setNotifyPartner(!!cu?.referral_partner_id);
     })();
     return () => {
       cancelled = true;
@@ -138,6 +191,43 @@ export function CloseCaptureDialog({
     if (b > 0) return Math.round(b / 0.85);
     return 0;
   }, [pointsKwh, billValue]);
+
+  function fmtPhone(raw: string | null): string {
+    if (!raw) return "(sem número)";
+    const d = String(raw).replace(/\D/g, "").replace(/^55/, "");
+    if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+    if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+    return raw;
+  }
+
+  const generatedLostMessage = useMemo(() => {
+    const partnerFirst = (leadInfo.partnerName || "parceiro").split(" ")[0];
+    const reasonLabel = LOST_REASONS.find((r) => r.v === lostReason)?.l ?? lostReason;
+    const local = [leadInfo.city, leadInfo.uf].filter(Boolean).join("/");
+    const lines: string[] = [];
+    lines.push(`Olá, ${partnerFirst}! 👋`);
+    lines.push("");
+    lines.push("🔴 *Lead encerrado como Perdido*");
+    lines.push("━━━━━━━━━━━━━━━━━━");
+    lines.push(`👤 *Lead:* ${leadInfo.name || "Sem nome"}`);
+    lines.push(`📱 ${fmtPhone(leadInfo.phone)}`);
+    if (local) lines.push(`📍 ${local}`);
+    if (leadInfo.campaignName) lines.push(`🎯 *Campanha:* ${leadInfo.campaignName}`);
+    if (leadInfo.protocol) lines.push(`🔖 *Protocolo:* ${leadInfo.protocol}`);
+    lines.push("");
+    lines.push(`❌ *Motivo:* ${reasonLabel}`);
+    if (lostNotes.trim()) lines.push(`📝 *Detalhes:* ${lostNotes.trim()}`);
+    lines.push("");
+    lines.push("Obrigado pela indicação! Seguimos juntos — continue enviando novos leads 💪");
+    return lines.join("\n");
+  }, [leadInfo, lostReason, lostNotes]);
+
+  // Mantém a mensagem sincronizada com os campos, a menos que o usuário edite manualmente.
+  useEffect(() => {
+    if (partnerMessageEdited) return;
+    setPartnerMessage(generatedLostMessage);
+  }, [generatedLostMessage, partnerMessageEdited]);
+
 
   async function run() {
     if (busy) return;
@@ -161,6 +251,9 @@ export function CloseCaptureDialog({
       } else {
         payload.lostReason = lostReason;
         payload.notes = lostNotes || undefined;
+        const shouldNotify = notifyPartner && !!leadInfo.partnerId && !!partnerMessage.trim();
+        payload.notifyPartner = shouldNotify;
+        if (shouldNotify) payload.partnerMessage = partnerMessage.trim();
       }
 
       const { data, error } = await supabase.functions.invoke(
@@ -413,6 +506,56 @@ export function CloseCaptureDialog({
                 placeholder="O que aconteceu?"
               />
             </div>
+
+            {leadInfo.partnerId && (
+              <div className="rounded-lg border border-rose-500/25 bg-gradient-to-br from-rose-500/[0.06] to-rose-500/[0.02] p-3 space-y-2.5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[12px] font-semibold text-rose-800 dark:text-rose-300">
+                      💬 Avisar parceiro no WhatsApp
+                    </div>
+                    <div className="text-[10.5px] text-muted-foreground mt-0.5 truncate">
+                      Para <strong className="text-foreground">{leadInfo.partnerName || "parceiro"}</strong>
+                      {leadInfo.campaignName ? ` · Campanha: ${leadInfo.campaignName}` : ""}
+                    </div>
+                  </div>
+                  <Switch
+                    checked={notifyPartner}
+                    onCheckedChange={setNotifyPartner}
+                    aria-label="Notificar parceiro"
+                  />
+                </div>
+
+                {notifyPartner && (
+                  <>
+                    <Textarea
+                      rows={9}
+                      value={partnerMessage}
+                      onChange={(e) => {
+                        setPartnerMessage(e.target.value);
+                        setPartnerMessageEdited(true);
+                      }}
+                      className="font-mono text-[11.5px] leading-relaxed bg-background/80"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>Prévia formatada · {partnerMessage.length} caracteres</span>
+                      {partnerMessageEdited && (
+                        <button
+                          type="button"
+                          className="text-primary hover:underline"
+                          onClick={() => {
+                            setPartnerMessageEdited(false);
+                            setPartnerMessage(generatedLostMessage);
+                          }}
+                        >
+                          Restaurar modelo
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 

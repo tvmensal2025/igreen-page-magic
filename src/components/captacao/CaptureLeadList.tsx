@@ -35,6 +35,8 @@ export interface CaptureBatchLead {
   filled: number;
   lastMsg?: string | null;
   lastMsgAt?: string | null;
+  partnerName?: string | null;
+  campaignName?: string | null;
 }
 
 interface Props {
@@ -169,7 +171,7 @@ export function CaptureLeadList({
     setLoading(true);
     try {
       const cols =
-        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, " +
+        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, referral_partner_id, source_campaign_id, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
       // Traz manual (Captação) + auto sem welcome (leads novos "Em espera"),
       // sempre respeitando: não fechado, não virou cliente iGreen.
@@ -201,6 +203,27 @@ export function CaptureLeadList({
         closedElsewhere = new Set((closedSales || []).map((s: any) => s.customer_id));
       }
       const filtered = (data || []).filter((c: any) => !closedElsewhere.has(c.id));
+
+      // Enriquecimento com nomes de parceiro/campanha (bulk)
+      const partnerIds = Array.from(
+        new Set(filtered.map((c: any) => c.referral_partner_id).filter(Boolean)),
+      ) as string[];
+      const campaignIds = Array.from(
+        new Set(filtered.map((c: any) => c.source_campaign_id).filter(Boolean)),
+      ) as string[];
+      const [partnersRes, campaignsRes] = await Promise.all([
+        partnerIds.length
+          ? supabase.from("referral_partners").select("id, nome").in("id", partnerIds)
+          : Promise.resolve({ data: [] as any[] }),
+        campaignIds.length
+          ? supabase.from("facebook_campaigns").select("id, name").in("id", campaignIds)
+          : Promise.resolve({ data: [] as any[] }),
+      ]);
+      const partnerMap = new Map<string, string>();
+      for (const p of ((partnersRes as any).data || []) as any[]) partnerMap.set(p.id, p.nome);
+      const campaignMap = new Map<string, string>();
+      for (const c of ((campaignsRes as any).data || []) as any[]) campaignMap.set(c.id, c.name);
+
       const rows: CaptureBatchLead[] = filtered.map((c: any) => ({
         id: c.id,
         name: c.name,
@@ -216,6 +239,8 @@ export function CaptureLeadList({
           if (f.key === "electricity_bill_value" && Number(v) <= 0) return false;
           return true;
         }).length,
+        partnerName: c.referral_partner_id ? partnerMap.get(c.referral_partner_id) ?? null : null,
+        campaignName: c.source_campaign_id ? campaignMap.get(c.source_campaign_id) ?? null : null,
       }));
       setLeads(sortByActivity(rows));
       setLoading(false);
@@ -1153,6 +1178,26 @@ function LeadCard({
           >
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
+          {(l.partnerName || l.campaignName) && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {l.partnerName && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-amber-700 dark:text-amber-300 max-w-[140px] truncate"
+                  title={`Indicação: ${l.partnerName}`}
+                >
+                  🤝 {l.partnerName}
+                </span>
+              )}
+              {l.campaignName && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-sky-700 dark:text-sky-300 max-w-[140px] truncate"
+                  title={`Campanha: ${l.campaignName}`}
+                >
+                  🎯 {l.campaignName}
+                </span>
+              )}
+            </div>
+          )}
           <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
