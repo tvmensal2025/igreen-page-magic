@@ -22,23 +22,27 @@ export function useCustomerAttendance(
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   const [welcomeSentAt, setWelcomeSentAt] = useState<string | null>(null);
+  const [attendanceEndedAt, setAttendanceEndedAt] = useState<string | null>(null);
   const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
   const [attendanceRatingRequestedAt, setAttendanceRatingRequestedAt] = useState<string | null>(null);
   const [attendanceRating, setAttendanceRating] = useState<number | null>(null);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
 
+  // Após finalizar (attendance_ended_at), lead volta a poder iniciar — exceto
+  // enquanto a nota 1–5 ainda está pendente.
   const uiState: AttendanceUiState = !welcomeSentAt
     ? "not_started"
-    : attendanceRating != null
-    ? "rated"
-    : attendanceRatingRequestedAt
+    : attendanceRatingRequestedAt && attendanceRating == null
     ? "awaiting_rating"
+    : attendanceEndedAt || attendanceRating != null
+    ? "not_started"
     : "in_progress";
 
   const refresh = useCallback(async () => {
     if (!customerId) {
       setWelcomeSentAt(null);
+      setAttendanceEndedAt(null);
       setTrackingProtocol(null);
       setAttendanceRatingRequestedAt(null);
       setAttendanceRating(null);
@@ -49,7 +53,7 @@ export function useCustomerAttendance(
     let data: Record<string, unknown> | null = null;
     const full = await supabase
       .from("customers")
-      .select("welcome_sent_at, tracking_protocol, attendance_rating_requested_at, attendance_rating")
+      .select("welcome_sent_at, attendance_ended_at, tracking_protocol, attendance_rating_requested_at, attendance_rating")
       .eq("id", customerId)
       .maybeSingle();
     if (full.error) {
@@ -63,6 +67,7 @@ export function useCustomerAttendance(
       data = (full.data as Record<string, unknown> | null) ?? null;
     }
     setWelcomeSentAt((data?.welcome_sent_at as string | null | undefined) ?? null);
+    setAttendanceEndedAt((data?.attendance_ended_at as string | null | undefined) ?? null);
     setTrackingProtocol((data?.tracking_protocol as string | null | undefined) ?? null);
     setAttendanceRatingRequestedAt(
       (data?.attendance_rating_requested_at as string | null | undefined) ?? null,
@@ -105,6 +110,9 @@ export function useCustomerAttendance(
             if (!row) return;
             if ("welcome_sent_at" in row) {
               setWelcomeSentAt((row.welcome_sent_at as string | null) ?? null);
+            }
+            if ("attendance_ended_at" in row) {
+              setAttendanceEndedAt((row.attendance_ended_at as string | null) ?? null);
             }
             if ("tracking_protocol" in row) {
               setTrackingProtocol((row.tracking_protocol as string | null) ?? null);
@@ -152,6 +160,9 @@ export function useCustomerAttendance(
       });
       if (body.ok !== false) {
         setWelcomeSentAt(new Date().toISOString());
+        setAttendanceEndedAt(null);
+        setAttendanceRatingRequestedAt(null);
+        setAttendanceRating(null);
         if (body.protocol) setTrackingProtocol(String(body.protocol));
         await refresh();
       }
@@ -178,8 +189,12 @@ export function useCustomerAttendance(
         onRetry: () => { void endAttendance(); },
       });
       if (body.ok !== false) {
+        setAttendanceEndedAt(new Date().toISOString());
         setAttendanceRatingRequestedAt(new Date().toISOString());
         await refresh();
+        try {
+          window.dispatchEvent(new CustomEvent("captacao:batch-finished"));
+        } catch { /* ignore */ }
       }
     } catch (e) {
       toast({ title: "Erro", description: (e as Error).message, variant: "destructive" });

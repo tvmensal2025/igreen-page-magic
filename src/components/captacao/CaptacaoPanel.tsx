@@ -287,7 +287,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   await runFastStartAttendance({
                     customerId: lead.id,
                     consultantId,
-                    alreadyStarted: !!lead.welcome_sent_at,
+                    alreadyStarted: !!lead.welcome_sent_at && !lead.attendance_ended_at,
                     navigate,
                   });
                   setSelectedId(lead.id);

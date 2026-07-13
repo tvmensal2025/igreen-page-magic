@@ -122,7 +122,7 @@ function leadPill(lead: CaptureBatchLead, result?: BatchLeadResult) {
       </span>
     );
   }
-  if (lead.welcome_sent_at) {
+  if (lead.welcome_sent_at && !lead.attendance_ended_at) {
     return (
       <span className="text-[10px] font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
         Já iniciado
@@ -316,6 +316,7 @@ export function OpenAttendanceBatchDialog({
           name: l.name,
           phone_whatsapp: l.phone_whatsapp,
           welcome_sent_at: l.welcome_sent_at,
+          attendance_ended_at: l.attendance_ended_at ?? null,
         })),
         startAttendance,
         audioUrl,
@@ -338,8 +339,8 @@ export function OpenAttendanceBatchDialog({
             prev.map((l) => {
               const r = batchResults.find((x) => x.id === l.id);
               if (!r || (r.status !== "ok" && r.status !== "skipped")) return l;
-              if (r.detail && /protocolo|já iniciado/i.test(r.detail) && !l.welcome_sent_at) {
-                return { ...l, welcome_sent_at: new Date().toISOString() };
+              if (r.detail && /protocolo|já iniciado/i.test(r.detail) && (!l.welcome_sent_at || l.attendance_ended_at)) {
+                return { ...l, welcome_sent_at: new Date().toISOString(), attendance_ended_at: null };
               }
               return l;
             }),

@@ -31,9 +31,16 @@ export interface CaptureBatchLead {
   capture_started_at: string | null;
   created_at: string;
   welcome_sent_at: string | null;
+  /** Preenchido ao finalizar atendimento — lead volta pra "Em espera". */
+  attendance_ended_at: string | null;
   filled: number;
   lastMsg?: string | null;
   lastMsgAt?: string | null;
+}
+
+/** Atendimento ativo = welcome enviado e ainda não finalizado. */
+function isInAttendance(l: Pick<CaptureBatchLead, "welcome_sent_at" | "attendance_ended_at">): boolean {
+  return !!l.welcome_sent_at && !l.attendance_ended_at;
 }
 
 interface Props {
@@ -168,7 +175,7 @@ export function CaptureLeadList({
     setLoading(true);
     try {
       const cols =
-        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, igreen_code, assinatura_cliente, " +
+        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_ended_at, igreen_code, assinatura_cliente, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
       // Traz manual (Captação) + auto sem welcome (leads novos "Em espera"),
       // sempre respeitando: não fechado, não virou cliente iGreen.
@@ -207,6 +214,7 @@ export function CaptureLeadList({
         capture_started_at: c.capture_started_at,
         created_at: c.created_at,
         welcome_sent_at: c.welcome_sent_at ?? null,
+        attendance_ended_at: c.attendance_ended_at ?? null,
         filled: CAPTURE_FIELDS.filter((f) => {
           const v = c[f.key];
           if (v === null || v === undefined) return false;
@@ -367,8 +375,8 @@ export function CaptureLeadList({
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
-  const emAtendimento = useMemo(() => filtered.filter((l) => !!l.welcome_sent_at), [filtered]);
-  const emEspera = useMemo(() => filtered.filter((l) => !l.welcome_sent_at), [filtered]);
+  const emAtendimento = useMemo(() => filtered.filter((l) => isInAttendance(l)), [filtered]);
+  const emEspera = useMemo(() => filtered.filter((l) => !isInAttendance(l)), [filtered]);
 
   const [activeTab, setActiveTab] = useState<"atendimento" | "espera">(() => {
     try {
@@ -385,7 +393,7 @@ export function CaptureLeadList({
     for (const l of filtered) {
       const n = unread[l.id] || 0;
       if (n <= 0) continue;
-      if (l.welcome_sent_at) atend += n; else esp += n;
+      if (isInAttendance(l)) atend += n; else esp += n;
     }
     return { atend, esp };
   }, [filtered, unread]);
@@ -475,7 +483,7 @@ export function CaptureLeadList({
   };
 
   const selectWithoutAttendance = () => {
-    setSelectedIds(new Set(filtered.filter((l) => !l.welcome_sent_at).map((l) => l.id)));
+    setSelectedIds(new Set(filtered.filter((l) => !isInAttendance(l)).map((l) => l.id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
@@ -805,7 +813,7 @@ export function CaptureLeadList({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Agrupamento: "Em atendimento" (welcome_sent_at != null) e "Em espera"
+// Agrupamento: "Em atendimento" (welcome ativo, sem attendance_ended_at) e "Em espera"
 // subdividido em Hoje / Ontem / Semana / Antigos (padrão Intercom / HubSpot).
 // ─────────────────────────────────────────────────────────────────────────────
 interface GroupedLeadsProps {
