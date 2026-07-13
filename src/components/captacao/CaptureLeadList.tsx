@@ -478,7 +478,7 @@ export function CaptureLeadList({
   };
 
   const selectWithoutAttendance = () => {
-    setSelectedIds(new Set(filtered.filter((l) => !l.welcome_sent_at).map((l) => l.id)));
+    setSelectedIds(new Set(filtered.filter((l) => !l.welcome_sent_at || !!l.attendance_rating_requested_at).map((l) => l.id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
