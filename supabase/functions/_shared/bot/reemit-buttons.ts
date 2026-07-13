@@ -7,6 +7,7 @@
  */
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { normalizeFlowStepRef } from "./post-bill-capture.ts";
 
 export type SendButtonsFn = (
   remoteJid: string,
@@ -63,6 +64,11 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
   if (followups >= 2) return false;
   if (!stepKey) return false;
 
+  // conversation_step pode vir como "flow:<uuid>" — sem strip o lookup falha
+  // e o bot manda "clique nas opções" sem reemitir botão (Jefferson 13/jul).
+  const ref = normalizeFlowStepRef(stepKey);
+  if (!ref) return false;
+
   try {
     let captures: any[] = [];
 
@@ -70,6 +76,7 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
       captures = stepCaptures;
     } else {
       // Resolve flow e busca step
+      let flowId: string | null = null;
       const { data: flowRow } = await supabase
         .from("bot_flows")
         .select("id")
@@ -77,18 +84,43 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
         .eq("variant", flowVariant)
         .eq("is_active", true)
         .maybeSingle();
+      flowId = (flowRow as any)?.id || null;
 
-      if (!flowRow?.id) return false;
+      // Fallback: qualquer flow ativo do consultor (variant M/D/A)
+      if (!flowId) {
+        const { data: anyFlow } = await supabase
+          .from("bot_flows")
+          .select("id")
+          .eq("consultant_id", consultantId)
+          .eq("is_active", true)
+          .order("updated_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        flowId = (anyFlow as any)?.id || null;
+      }
 
-      // conversation_step costuma ser UUID; aceita id ou step_key.
-      const { data: stepRow } = await supabase
-        .from("bot_flow_steps")
-        .select("captures, step_key")
-        .eq("flow_id", flowRow.id)
-        .or(`step_key.eq.${stepKey},id.eq.${stepKey}`)
-        .maybeSingle();
+      let stepRow: any = null;
+      if (flowId) {
+        const { data } = await supabase
+          .from("bot_flow_steps")
+          .select("captures, step_key, id")
+          .eq("flow_id", flowId)
+          .or(`step_key.eq.${ref},id.eq.${ref}`)
+          .maybeSingle();
+        stepRow = data;
+      }
 
-      captures = Array.isArray((stepRow as any)?.captures) ? (stepRow as any).captures : [];
+      // Último recurso: UUID direto (step pode ser de flow público clonado)
+      if (!stepRow && /^[0-9a-f-]{36}$/i.test(ref)) {
+        const { data } = await supabase
+          .from("bot_flow_steps")
+          .select("captures, step_key, id")
+          .eq("id", ref)
+          .maybeSingle();
+        stepRow = data;
+      }
+
+      captures = Array.isArray(stepRow?.captures) ? stepRow.captures : [];
     }
 
     // Extrai _buttons das captures
@@ -108,7 +140,7 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
     // Delay curto para separar mensagens (600ms)
     await new Promise((r) => setTimeout(r, delayMs));
 
-    const promptText = "👇 *Escolha uma opção:*";
+    const promptText = "Quando quiser, escolha uma opção:";
     // WhatsApp limita botões interativos a 3. Se houver mais e tivermos um
     // sendText, mandamos TODAS as opções como texto numerado (senão o Whapi
     // truncaria silenciosamente a 4ª+ opção). Sem sendText, caímos no
@@ -134,7 +166,7 @@ export async function reemitStepButtons(opts: ReemitOpts): Promise<boolean> {
       message_direction: "outbound",
       message_text: promptText,
       message_type: "buttons",
-      conversation_step: stepKey,
+      conversation_step: ref,
     });
 
     return true;

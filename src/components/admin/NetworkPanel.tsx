@@ -883,6 +883,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
   const [notConfigured, setNotConfigured] = useState(false);
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"tree" | "table">("tree");
+  const [tableVisibleCount, setTableVisibleCount] = useState(200);
   const [zoom, setZoom] = useState(0.85);
   const [zoomTouched, setZoomTouched] = useState(false);
   const [contentSize, setContentSize] = useState({ w: 0, h: 0 });
@@ -986,20 +987,39 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     try {
       while (attempt < 3) {
         if (controller.signal.aborted) return;
-        const { data, error } = await supabase
-          .from("network_members" as any)
-          .select("*")
-          .eq("consultant_id", consultantId)
-          .order("nivel", { ascending: true })
-          .order("igreen_id", { ascending: true });
-        if (controller.signal.aborted) return;
-        if (!error) {
-          const list = (data as unknown as NetworkMember[]) || [];
-          setMembers(list);
-          try { sessionStorage.setItem(`network_cache_${consultantId}`, JSON.stringify(list)); } catch { /* quota */ }
+        // Colunas explícitas (evita select *) + paginação de rede até esgotar
+        const NETWORK_PAGE = 1000;
+        const allRows: NetworkMember[] = [];
+        let page = 0;
+        let pageError: unknown = null;
+        while (true) {
+          const from = page * NETWORK_PAGE;
+          const to = from + NETWORK_PAGE - 1;
+          const { data, error } = await supabase
+            .from("network_members" as any)
+            .select(
+              "id,igreen_id,name,phone,sponsor_id,sponsor_override_id,nivel,data_ativo,cidade,uf,clientes_ativos,gp,gi,qtde_diretos,total_pontos,updated_at,graduacao,graduacao_expansao,data_nascimento,gp_total,gi_total,bonificavel,green_points,gp_mes,gi_mes,green_points_mes,diretos_ativos,pro,inicio_rapido,diretos_inicio_rapido,diretos_mes",
+            )
+            .eq("consultant_id", consultantId)
+            .order("nivel", { ascending: true })
+            .order("igreen_id", { ascending: true })
+            .range(from, to);
+          if (controller.signal.aborted) return;
+          if (error) {
+            pageError = error;
+            break;
+          }
+          const batch = (data as unknown as NetworkMember[]) || [];
+          allRows.push(...batch);
+          if (batch.length < NETWORK_PAGE) break;
+          page++;
+        }
+        if (!pageError) {
+          setMembers(allRows);
+          try { sessionStorage.setItem(`network_cache_${consultantId}`, JSON.stringify(allRows)); } catch { /* quota */ }
           return;
         }
-        lastError = error;
+        lastError = pageError;
         attempt++;
         if (attempt < 3) await sleep(1000 * 2 ** (attempt - 1));
       }
@@ -1312,7 +1332,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((m, i) => {
+                {filtered.slice(0, tableVisibleCount).map((m) => {
                   const p = getPalette(m.nivel);
                   return (
                     <tr key={m.id}
@@ -1359,6 +1379,17 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
                 })}
               </tbody>
             </table>
+            {filtered.length > tableVisibleCount && (
+              <div className="flex justify-center py-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTableVisibleCount((n) => n + 200)}
+                >
+                  Carregar mais ({tableVisibleCount} de {filtered.length})
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

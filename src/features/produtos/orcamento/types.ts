@@ -46,7 +46,7 @@ export interface ProposalLineItem {
   label: string;
   value: string;
   /** Marca este item como uma forma de pagamento (renderiza em bloco próprio). */
-  kind?: "payment" | "solar_design";
+  kind?: "payment" | "solar_design" | "scoring_input";
   /** Tipo da forma de pagamento. */
   method?: PaymentMethod;
   /** Banco/financeira (apenas financiamento). */
@@ -59,6 +59,16 @@ export interface ProposalLineItem {
   interest?: string | null;
   /** Marca a opção como recomendada/destaque. */
   highlight?: boolean;
+  /** Input de pontuação (kind: scoring_input) — kWh contratado/proposta. */
+  kwh?: number | null;
+  /** Unidades (telecom: chips). */
+  units?: number | null;
+  /** Telecom: portabilidade. */
+  portabilidade?: boolean | null;
+  /** Plano comercial selecionado. */
+  plano?: string | null;
+  /** Placas: consumo médio kWh/mês. */
+  consumo_kwh?: number | null;
 }
 
 // Forma de pagamento de uma proposta com financiamento (Placas).

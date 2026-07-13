@@ -7,14 +7,18 @@
 
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Search } from "lucide-react";
-import { useProducts } from "./hooks";
+import { useProducts, useUpdateProductActive } from "./hooks";
 import {
   PRODUCT_FAMILY_LABEL,
   type CommissionRule,
   type ProductFamily,
   type ScoringRule,
 } from "./types";
+import { isQuotableProduct } from "../orcamento/catalog";
+import { useUserRole } from "@/hooks/useUserRole";
+import { useToast } from "@/hooks/use-toast";
 import { pvSerif } from "../theme";
 
 const FAMILY_COLOR: Record<ProductFamily, string> = {
@@ -64,10 +68,14 @@ function maxCommissionPct(rule: CommissionRule): number {
   return 0;
 }
 
-export function ProductCatalogTable() {
+export function ProductCatalogTable({ consultantId }: { consultantId?: string }) {
   const { data: products = [], isLoading } = useProducts({ includeInactive: true });
   const [search, setSearch] = useState("");
   const [familyFilter, setFamilyFilter] = useState<ProductFamily | "all">("all");
+  const { isAdmin, isSuperAdmin } = useUserRole(consultantId ?? null);
+  const canManage = isAdmin || isSuperAdmin;
+  const updateActive = useUpdateProductActive();
+  const { toast } = useToast();
 
   const filtered = useMemo(() => {
     return products.filter((p) => {
@@ -206,11 +214,22 @@ export function ProductCatalogTable() {
                           {p.brandName}
                         </p>
                       </div>
-                      {!p.isActive && (
-                        <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-pv-bg border border-pv-surface text-pv-ink/50">
-                          inativo
-                        </span>
-                      )}
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        {isQuotableProduct(p.slug) ? (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-pv-accent/15 text-pv-accent border border-pv-accent/30">
+                            orçável
+                          </span>
+                        ) : (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-pv-bg border border-pv-surface text-pv-ink/50">
+                            manual
+                          </span>
+                        )}
+                        {!p.isActive && (
+                          <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-pv-bg border border-pv-surface text-pv-ink/50">
+                            inativo
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-3 pt-3 border-t border-pv-bg">
                       <div>
@@ -226,6 +245,32 @@ export function ProductCatalogTable() {
                         <p className="text-xs text-pv-ink mt-1">{describeCommission(p.commissionRule)}</p>
                       </div>
                     </div>
+                    {canManage && (
+                      <div className="mt-3 pt-3 border-t border-pv-bg flex items-center justify-between gap-2">
+                        <span className="text-[10px] text-pv-ink/60">Visível no catálogo</span>
+                        <Switch
+                          checked={p.isActive}
+                          disabled={updateActive.isPending}
+                          onCheckedChange={(v) => {
+                            updateActive.mutate(
+                              { productId: p.id, isActive: v },
+                              {
+                                onSuccess: () =>
+                                  toast({
+                                    title: v ? "Produto ativado" : "Produto desativado",
+                                  }),
+                                onError: (e) =>
+                                  toast({
+                                    title: "Não foi possível alterar",
+                                    description: e instanceof Error ? e.message : "",
+                                    variant: "destructive",
+                                  }),
+                              },
+                            );
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

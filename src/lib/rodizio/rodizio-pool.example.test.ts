@@ -21,6 +21,7 @@ import {
   buildRodizioPoolMembers,
   shouldCreateRodizioPool,
   normalizeRodizioPartnerIds,
+  filterRodizioPartnerIds,
 } from "../../../supabase/functions/facebook-create-campaign/rodizio-pool";
 
 const CAMPAIGN_ID = "11111111-1111-1111-1111-111111111111";
@@ -159,5 +160,22 @@ describe("Tarefa 5.3 — normalização defensiva da lista de participantes", ()
     // Simula corpo malformado vindo da requisição.
     const malformed = { rodizio_enabled: true, rodizio_partner_ids: "x" as unknown as string[] };
     expect(normalizeRodizioPartnerIds(malformed)).toEqual([]);
+  });
+
+  it("remove duplicatas e strings vazias preservando a ordem", () => {
+    expect(
+      normalizeRodizioPartnerIds({
+        rodizio_partner_ids: [PARTNER_A, "  ", PARTNER_A, PARTNER_B, PARTNER_B],
+      }),
+    ).toEqual([PARTNER_A, PARTNER_B]);
+  });
+});
+
+describe("filterRodizioPartnerIds", () => {
+  it("mantém só ids permitidos na ordem original", () => {
+    const allowed = new Set([PARTNER_A, PARTNER_C]);
+    expect(
+      filterRodizioPartnerIds([PARTNER_B, PARTNER_A, PARTNER_C, PARTNER_B], allowed),
+    ).toEqual([PARTNER_A, PARTNER_C]);
   });
 });

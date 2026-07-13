@@ -20,20 +20,20 @@ import type { ProductFamily } from "../catalogo/types";
 // ---------------------------------------------------------------------------
 // Allowlist de produtos vendáveis por orçamento (por slug).
 // ---------------------------------------------------------------------------
-// O orçamento é gerado só para estas 5 frentes de venda. Os demais produtos
-// (Green, Club, Club PJ, Expansão) continuam no catálogo/banco com landing,
-// pontuação e venda intactos — apenas não aparecem no seletor do builder,
-// porque hoje seu fechamento é manual.
+// Frentes orçáveis no builder. Expansão fica de fora (licenciamento — pricing
+// mode `none`). Green e Club entram com economia estimada / mensalidade.
 //
-// A filtragem é por SLUG (não por família) de propósito: Solar, Livre e Green
-// compartilham a família `energia`, então filtrar por família removeria os três
-// juntos. O slug é a granularidade correta.
+// A filtragem é por SLUG (não por família): Solar, Livre e Green compartilham
+// a família `energia`.
 export const QUOTABLE_PRODUCT_SLUGS = [
-  "conexao-solar", // placa no modelo assinatura (desconto, sem instalar)
+  "conexao-green", // energia por assinatura (economia na conta)
+  "conexao-solar", // energia solar por assinatura (fazenda)
   "conexao-placas", // venda do sistema fotovoltaico (compra + instalação)
   "conexao-telecom", // telefonia/chip
   "conexao-seguros", // proteção veicular
   "conexao-livre", // mercado livre de energia
+  "conexao-club", // clube de benefícios PF
+  "conexao-club-pj", // clube de benefícios PJ
 ] as const;
 
 const QUOTABLE_SET = new Set<string>(QUOTABLE_PRODUCT_SLUGS);

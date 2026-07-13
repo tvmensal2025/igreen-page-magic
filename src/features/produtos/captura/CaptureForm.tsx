@@ -5,10 +5,11 @@
 // Energia (Green/Solar/Livre) NÃO usa este formulário: reaproveita o pipeline
 // de OCR/portal/OTP já existente em customers.* — aqui só exibimos um aviso.
 //
-// Os dados validados (Zod) são entregues via onSubmit para gravar em
-// sales.capture_data. A validação de cada família vive em schemas.ts.
+// Modo embedded: sem botão próprio; sincroniza valores via onChange para o pai
+// (ex.: RegistrarVendaDialog) gravar em sales.capture_data no mesmo submit.
 // =============================================================================
 
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
@@ -46,16 +47,49 @@ interface CaptureFormProps {
   defaultValues?: CaptureData;
   onSubmit: (data: CaptureData) => void;
   submitting?: boolean;
+  embedded?: boolean;
+  onChange?: (data: CaptureData) => void;
 }
 
-export function CaptureForm({ family, defaultValues, onSubmit, submitting }: CaptureFormProps) {
+export function CaptureForm({
+  family,
+  defaultValues,
+  onSubmit,
+  submitting,
+  embedded,
+  onChange,
+}: CaptureFormProps) {
   switch (family) {
     case "telecom":
-      return <TelecomForm defaultValues={defaultValues} onSubmit={onSubmit} submitting={submitting} />;
+      return (
+        <TelecomForm
+          defaultValues={defaultValues}
+          onSubmit={onSubmit}
+          submitting={submitting}
+          embedded={embedded}
+          onChange={onChange}
+        />
+      );
     case "seguros":
-      return <SegurosForm defaultValues={defaultValues} onSubmit={onSubmit} submitting={submitting} />;
+      return (
+        <SegurosForm
+          defaultValues={defaultValues}
+          onSubmit={onSubmit}
+          submitting={submitting}
+          embedded={embedded}
+          onChange={onChange}
+        />
+      );
     case "placas":
-      return <PlacasForm defaultValues={defaultValues} onSubmit={onSubmit} submitting={submitting} />;
+      return (
+        <PlacasForm
+          defaultValues={defaultValues}
+          onSubmit={onSubmit}
+          submitting={submitting}
+          embedded={embedded}
+          onChange={onChange}
+        />
+      );
     case "energia":
       return (
         <p className="text-sm text-muted-foreground">
@@ -72,14 +106,17 @@ export function CaptureForm({ family, defaultValues, onSubmit, submitting }: Cap
   }
 }
 
-// ─── Telecom ────────────────────────────────────────────────────────────────
+type FormShellProps = Omit<CaptureFormProps, "family">;
+
 const TELECOM_PLANS = ["Start", "Mega", "Giga", "Ultra", "Infinity"];
 
 function TelecomForm({
   defaultValues,
   onSubmit,
   submitting,
-}: Omit<CaptureFormProps, "family">) {
+  embedded,
+  onChange,
+}: FormShellProps) {
   const form = useForm<TelecomCaptureInput>({
     resolver: zodResolver(telecomCaptureSchema),
     defaultValues: {
@@ -92,6 +129,12 @@ function TelecomForm({
   });
 
   const portabilidade = form.watch("portabilidade");
+
+  useEffect(() => {
+    if (!embedded || !onChange) return;
+    const sub = form.watch((values) => onChange(values as CaptureData));
+    return () => sub.unsubscribe();
+  }, [embedded, onChange, form]);
 
   return (
     <Form {...form}>
@@ -172,18 +215,19 @@ function TelecomForm({
           />
         )}
 
-        <SubmitButton submitting={submitting} />
+        {!embedded && <SubmitButton submitting={submitting} />}
       </form>
     </Form>
   );
 }
 
-// ─── Seguros ──────────────────────────────────────────────────────────────
 function SegurosForm({
   defaultValues,
   onSubmit,
   submitting,
-}: Omit<CaptureFormProps, "family">) {
+  embedded,
+  onChange,
+}: FormShellProps) {
   const form = useForm<SegurosCaptureInput>({
     resolver: zodResolver(segurosCaptureSchema),
     defaultValues: {
@@ -194,6 +238,12 @@ function SegurosForm({
       ...(defaultValues as Partial<SegurosCaptureInput>),
     },
   });
+
+  useEffect(() => {
+    if (!embedded || !onChange) return;
+    const sub = form.watch((values) => onChange(values as CaptureData));
+    return () => sub.unsubscribe();
+  }, [embedded, onChange, form]);
 
   return (
     <Form {...form}>
@@ -268,18 +318,19 @@ function SegurosForm({
           )}
         />
 
-        <SubmitButton submitting={submitting} />
+        {!embedded && <SubmitButton submitting={submitting} />}
       </form>
     </Form>
   );
 }
 
-// ─── Placas ───────────────────────────────────────────────────────────────
 function PlacasForm({
   defaultValues,
   onSubmit,
   submitting,
-}: Omit<CaptureFormProps, "family">) {
+  embedded,
+  onChange,
+}: FormShellProps) {
   const form = useForm<PlacasCaptureInput>({
     resolver: zodResolver(placasCaptureSchema),
     defaultValues: {
@@ -289,6 +340,12 @@ function PlacasForm({
       ...(defaultValues as Partial<PlacasCaptureInput>),
     },
   });
+
+  useEffect(() => {
+    if (!embedded || !onChange) return;
+    const sub = form.watch((values) => onChange(values as CaptureData));
+    return () => sub.unsubscribe();
+  }, [embedded, onChange, form]);
 
   return (
     <Form {...form}>
@@ -351,7 +408,7 @@ function PlacasForm({
           )}
         />
 
-        <SubmitButton submitting={submitting} />
+        {!embedded && <SubmitButton submitting={submitting} />}
       </form>
     </Form>
   );

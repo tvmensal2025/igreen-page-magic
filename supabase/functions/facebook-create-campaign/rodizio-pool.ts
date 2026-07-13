@@ -50,10 +50,31 @@ export interface RodizioPoolPlan {
 
 /**
  * Normaliza a lista de ids de participantes do corpo da requisição,
- * garantindo um array (mesmo quando o campo vem ausente ou inválido).
+ * garantindo um array (mesmo quando o campo vem ausente ou inválido),
+ * sem duplicatas e preservando a ordem.
  */
 export function normalizeRodizioPartnerIds(input: RodizioInput): string[] {
-  return Array.isArray(input.rodizio_partner_ids) ? input.rodizio_partner_ids : [];
+  const raw = Array.isArray(input.rodizio_partner_ids) ? input.rodizio_partner_ids : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of raw) {
+    if (typeof id !== "string") continue;
+    const trimmed = id.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+/**
+ * Mantém só os ids permitidos (ex.: ativos + do dono), na ordem original.
+ */
+export function filterRodizioPartnerIds(
+  orderedIds: string[],
+  allowed: Set<string>,
+): string[] {
+  return orderedIds.filter((id) => allowed.has(id));
 }
 
 /**

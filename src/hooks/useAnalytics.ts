@@ -97,28 +97,52 @@ export function useAnalytics(
       const applyScope = <T extends { in: any; eq: any }>(q: T): T =>
         useTeam ? q.in("consultant_id", teamIds!) : q.eq("consultant_id", consultantId!);
 
-      const [viewsRes, eventsRes, dealsRes, campsRes] = await Promise.all([
-        applyScope(
-          supabase
-            .from("page_views")
-            .select("page_type, created_at, device_type, utm_source") as any,
-        ).gte("created_at", since),
-        applyScope(
-          supabase
-            .from("page_events")
-            .select("event_type, event_target, page_type, created_at, device_type, utm_source") as any,
-        ).gte("created_at", since),
-        applyScope(
-          supabase.from("crm_deals").select("customer_id") as any,
+      // Pagina views/events (PostgREST corta em 1000 sem .range). Teto evita
+      // baixar dezenas de milhares de linhas e travar PCs fracos — métricas
+      // típicas ficam iguais; contas gigantes já vinham truncadas em 1k.
+      const ANALYTICS_PAGE = 1000;
+      const ANALYTICS_MAX_ROWS = 10_000;
+      const fetchScopedRows = async <T,>(
+        build: () => any,
+      ): Promise<T[]> => {
+        const rows: T[] = [];
+        let page = 0;
+        while (rows.length < ANALYTICS_MAX_ROWS) {
+          const from = page * ANALYTICS_PAGE;
+          const to = from + ANALYTICS_PAGE - 1;
+          const { data, error } = await applyScope(build()).gte("created_at", since).range(from, to);
+          if (error) throw error;
+          const batch = (data ?? []) as T[];
+          rows.push(...batch);
+          if (batch.length < ANALYTICS_PAGE) break;
+          page++;
+        }
+        return rows;
+      };
+
+      const [views, events, campsRes] = await Promise.all([
+        fetchScopedRows<{ page_type: string; created_at: string; device_type: string | null; utm_source: string | null }>(
+          () => supabase.from("page_views").select("page_type, created_at, device_type, utm_source") as any,
+        ),
+        fetchScopedRows<{
+          event_type: string;
+          event_target: string | null;
+          page_type: string;
+          created_at: string;
+          device_type: string | null;
+          utm_source: string | null;
+        }>(
+          () =>
+            supabase
+              .from("page_events")
+              .select("event_type, event_target, page_type, created_at, device_type, utm_source") as any,
         ),
         applyScope(
           supabase.from("facebook_campaigns").select("id") as any,
         ),
       ]);
 
-      if (viewsRes.error) throw viewsRes.error;
-      if (eventsRes.error) throw eventsRes.error;
-      if (dealsRes.error) throw dealsRes.error;
+      if (campsRes.error) throw campsRes.error;
 
       const scopeConsultantId = consultantId!;
 
@@ -153,9 +177,6 @@ export function useAnalytics(
           ? dbCadastroIds.map(normalizeIgreenId).filter((v): v is string => !!v)
           : localGreen?.cadastroIgreenIds?.map(normalizeIgreenId).filter((v): v is string => !!v) ?? [],
       };
-
-      const views = viewsRes.data;
-      const events = eventsRes.data;
 
       // Gasto real de anúncio no período (para CPC blended do painel "Custo por clique")
       const campaignIds = ((campsRes.data ?? []) as any[]).map((c) => c.id as string);

@@ -37,9 +37,12 @@ Deno.test("pickVariant('B') não lança e delega para variantA (fluxo B comandad
 });
 
 Deno.test("pickVariant continua válido para A e D (sem regressão)", () => {
-  assertEquals(pickVariant("A"), variantA);
-  // D tem estratégia própria (delega A + botões) — só garantimos que existe.
+  // A é ALIAS de D desde o rótulo "CEMIG": roda exatamente como D (mesmos
+  // passos/botões; ver comentário em engine/helpers.ts e .lovable/plan.md).
+  const a = pickVariant("A");
   const d = pickVariant("D");
+  assertEquals(a, d, "variant A deve reusar a estratégia de D (alias)");
+  assert(typeof a.buildStepOutbound === "function");
   assert(typeof d.buildStepOutbound === "function");
 });
 

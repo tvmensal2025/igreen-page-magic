@@ -285,7 +285,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
           <CheckCircle2 className="w-6 h-6 text-primary animate-pulse" />
           <div className="flex-1">
             <p className="text-sm font-black text-primary tracking-wide leading-tight">🎉 Cadastro aprovado pela iGreen!</p>
-            <p className="text-[11px] text-primary/90 leading-tight">Cliente interessado já está ativo no portal oficial.</p>
+            <p className="text-[11px] text-primary/90 leading-tight">Cadastro concluído no portal. Após a sincronização da carteira, ele aparece em Clientes ativos.</p>
           </div>
         </div>
         {row?.igreen_code && (

@@ -131,7 +131,7 @@ export function CaptureDocumentTiles({ customerId, customer, onUploaded, compact
                   url.toLowerCase().endsWith(".pdf") ? (
                     <FileImage className="w-4 h-4 text-primary" />
                   ) : (
-                    <img src={url} alt={s.label} className="w-full h-full object-cover" />
+                    <img src={url} alt={s.label} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                   )
                 ) : (
                   <Camera className="w-4 h-4 text-muted-foreground/60" />

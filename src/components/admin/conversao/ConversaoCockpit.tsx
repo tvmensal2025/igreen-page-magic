@@ -137,8 +137,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
                         loss_reason, next_action, next_msg_draft, classified_at, classification_source )
       `)
       .eq("consultant_id", consultantId)
-      .neq("customer_origin", "igreen_sync")
-      .or("customer_origin.in.(whatsapp_lead,manual),origin_channel.in.(whapi,evolution)")
+      .not("customer_origin", "in", "(igreen_sync,igreen_extension)")
+      .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null,origin_channel.in.(whapi,evolution)")
       .is("data_ativo", null)
       .is("data_validado", null)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
@@ -522,8 +522,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           <EmptyState unclassified={metrics.unclassified} onClassifyAll={classifyAll} />
         ) : (
           <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
-            <AnimatePresence mode="popLayout">
-              {filtered.map((r, idx) => (
+            {filtered.length > 50 ? (
+              filtered.map((r, idx) => (
                 <LeadCard
                   key={r.customer_id}
                   lead={r}
@@ -535,9 +535,27 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
                   onToggleSelect={() => toggleSelect(r.customer_id)}
                   onOpen={() => setSelected(r)}
                   onClassify={() => classifyOne(r.customer_id)}
+                  lite
                 />
-              ))}
-            </AnimatePresence>
+              ))
+            ) : (
+              <AnimatePresence mode="popLayout">
+                {filtered.map((r, idx) => (
+                  <LeadCard
+                    key={r.customer_id}
+                    lead={r}
+                    rank={idx + 1}
+                    stepLabelText={stepLabel(r.conversation_step, flowTitles)}
+                    classifying={classifying === r.customer_id}
+                    selectMode={selectMode}
+                    selected={selectedIds.has(r.customer_id)}
+                    onToggleSelect={() => toggleSelect(r.customer_id)}
+                    onOpen={() => setSelected(r)}
+                    onClassify={() => classifyOne(r.customer_id)}
+                  />
+                ))}
+              </AnimatePresence>
+            )}
           </div>
         )}
       </TabsContent>
@@ -727,10 +745,11 @@ function FilterBar({
   );
 }
 
-function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify }: {
+function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify, lite }: {
   lead: LeadRow; rank: number; stepLabelText: string; classifying: boolean;
   selectMode: boolean; selected: boolean; onToggleSelect: () => void;
   onOpen: () => void; onClassify: () => void;
+  lite?: boolean;
 }) {
   const tier = priorityTier(lead.score);
   const TM = TIER_META[tier];
@@ -738,14 +757,19 @@ function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected
   const TempIcon = temp?.icon;
   const isClassified = !!lead.classified_at;
 
+  const Wrapper: any = lite ? "div" : motion.div;
+  const wrapperProps = lite
+    ? {}
+    : {
+        layout: true,
+        initial: { opacity: 0, y: 8 },
+        animate: { opacity: 1, y: 0 },
+        exit: { opacity: 0, scale: 0.98 },
+        transition: { duration: 0.18 },
+      };
+
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.98 }}
-      transition={{ duration: 0.18 }}
-    >
+    <Wrapper {...wrapperProps}>
       <Card
         className={`group relative cursor-pointer overflow-hidden p-3 transition hover:border-primary/40 hover:shadow-sm ${selected ? "border-primary/60 ring-1 ring-primary/40" : ""}`}
         onClick={selectMode ? onToggleSelect : onOpen}
@@ -831,7 +855,7 @@ function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected
           </Button>
         )}
       </Card>
-    </motion.div>
+    </Wrapper>
   );
 }
 

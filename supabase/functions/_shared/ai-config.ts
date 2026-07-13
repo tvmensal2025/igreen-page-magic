@@ -8,7 +8,7 @@
 // de pontos a tocar.
 //
 // Aqui definimos:
-//   - perfis (`accuracy` / `balanced` / `fast`) que mapeiam para par
+//   - perfis (`auto` / `accuracy` / `balanced` / `fast`) que mapeiam para par
 //     {primary, fallback} via provider (Google ou OpenAI)
 //   - tasks bem-definidas (intent_classify, faq_answer, sales_decide,
 //     button_intent, fallback_decide, ocr_validate, etc.)
@@ -16,14 +16,25 @@
 //     modelo a usar
 //
 // Override por consultor: `consultants.ai_profile` aceita
-// 'accuracy' | 'balanced' | 'fast' (default 'balanced'). Tarefas
+// 'auto' | 'accuracy' | 'balanced' | 'fast' (default 'auto'). Tarefas
 // individuais podem ser sobrescritas via env `AI_PROFILE_OVERRIDE_<TASK>`.
+//
+// `auto` = roteamento por tarefa: classificação/routing barato; respostas
+// e decisões críticas com precisão alta (custo baixo + qualidade).
 //
 // Política de evolução: quando sair Gemini 4 ou GPT-6, atualizamos só
 // este arquivo. Toda Edge Function passa pelas funções aqui.
 
 export type AiProvider = "google" | "openai";
-export type AiProfile = "accuracy" | "balanced" | "fast";
+export type AiProfile = "auto" | "accuracy" | "balanced" | "fast";
+export type AiProfileConcrete = Exclude<AiProfile, "auto">;
+
+const VALID_PROFILES = new Set<AiProfile>(["auto", "accuracy", "balanced", "fast"]);
+
+function parseAiProfile(raw: string | null | undefined, fallback: AiProfile): AiProfile {
+  const p = String(raw || "").toLowerCase();
+  return VALID_PROFILES.has(p as AiProfile) ? (p as AiProfile) : fallback;
+}
 
 /**
  * Tarefas bem-definidas onde o sistema chama IA.
@@ -52,6 +63,35 @@ export type AiTask =
   | "captacao_intel";        // análise de captação
 
 /**
+ * Resolve `auto` → perfil concreto por tarefa.
+ * Latência crítica / classificação → fast; respostas e decisões → accuracy;
+ * resto → balanced.
+ */
+export function resolveConcreteProfile(profile: AiProfile, task: AiTask): AiProfileConcrete {
+  if (profile !== "auto") return profile;
+  switch (task) {
+    case "intent_classify":
+    case "button_intent":
+    case "fallback_decide":
+    case "ocr_validate":
+    case "captacao_intel":
+      return "fast";
+    case "faq_answer":
+    case "duvida_handler":
+    case "knowledge_synthesis":
+    case "sales_decide":
+    case "step_text_generate":
+    case "ad_copy_generate":
+    case "ocr_extract":
+    case "image_qa":
+    case "health_intel":
+      return "accuracy";
+    default:
+      return "balanced";
+  }
+}
+
+/**
  * Tabela de modelos por (perfil × provider × tarefa).
  *
  * Convenção:
@@ -62,7 +102,7 @@ export type AiTask =
  * Quando o modelo primário falha (429, timeout, indisponível), o caller
  * cai pro fallback do mesmo perfil (ou um nível abaixo).
  */
-const MODEL_MATRIX: Record<AiProfile, Record<AiProvider, Record<string, { primary: string; fallback: string }>>> = {
+const MODEL_MATRIX: Record<AiProfileConcrete, Record<AiProvider, Record<string, { primary: string; fallback: string }>>> = {
   accuracy: {
     google: {
       // Roteamento — accuracy usa Pro mas com latência aceitável
@@ -190,7 +230,7 @@ const MODEL_MATRIX: Record<AiProfile, Record<AiProvider, Record<string, { primar
  */
 export function pickModel(
   task: AiTask,
-  profile: AiProfile = "balanced",
+  profile: AiProfile = "auto",
   provider: AiProvider = "google",
 ): { primary: string; fallback: string } {
   // Env override (mitigação de incidente)
@@ -200,7 +240,8 @@ export function pickModel(
   if (override && override.trim()) {
     return { primary: override.trim(), fallback: override.trim() };
   }
-  const tableEntry = MODEL_MATRIX[profile]?.[provider]?.[task];
+  const concrete = resolveConcreteProfile(profile, task);
+  const tableEntry = MODEL_MATRIX[concrete]?.[provider]?.[task];
   if (tableEntry) return tableEntry;
   // Defensivo: tarefa não mapeada → cai pro balanced/google flash
   return { primary: "gemini-3.5-flash", fallback: "gemini-2.5-flash" };
@@ -258,7 +299,7 @@ export async function getGlobalAiSettings(
     const rawP = String(map.ai_profile_global || "").toLowerCase();
     const rawPr = String(map.ai_provider_global || "").toLowerCase();
     const value: GlobalAiSettings = {
-      profile: rawP === "accuracy" || rawP === "fast" || rawP === "balanced" ? (rawP as AiProfile) : null,
+      profile: VALID_PROFILES.has(rawP as AiProfile) ? (rawP as AiProfile) : null,
       provider: rawPr === "openai" ? "openai" : rawPr === "google" ? "google" : null,
       kbOnly: parseBool(map.ai_kb_only_mode),
       audioTranscribe: parseBool(map.ai_audio_transcribe),
@@ -276,7 +317,7 @@ export function clearGlobalAiSettingsCache() {
 
 /**
  * Lê o perfil de IA a aplicar. PRECEDÊNCIA: global do Superadmin
- * (`settings.ai_profile_global`) > `consultants.ai_profile` > default 'balanced'.
+ * (`settings.ai_profile_global`) > `consultants.ai_profile` > default 'auto'.
  * Cache de 60s em memória — leituras consecutivas evitam round-trip.
  */
 const _profileCache = new Map<string, { profile: AiProfile; t: number }>();
@@ -302,13 +343,11 @@ export async function getConsultantAiProfile(
       .select("ai_profile")
       .eq("id", consultantId)
       .maybeSingle();
-    const raw = String((data as any)?.ai_profile || "balanced").toLowerCase();
-    const profile: AiProfile =
-      raw === "accuracy" || raw === "fast" ? raw : "balanced";
+    const profile = parseAiProfile((data as any)?.ai_profile, "auto");
     _profileCache.set(consultantId, { profile, t: Date.now() });
     return profile;
   } catch (_) {
-    return "balanced";
+    return "auto";
   }
 }
 

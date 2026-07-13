@@ -20,6 +20,7 @@ import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { toast } from "sonner";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
+import { VirtualList } from "@/components/ui/VirtualList";
 
 export type CapturePeriodKey = "48h" | "7d" | "30d" | "60d" | "90d" | "all";
 
@@ -260,17 +261,22 @@ export function CaptureLeadList({
     return () => window.removeEventListener("captacao:batch-finished", onBatchDone);
   }, [consultantId, load]);
 
-  // Realtime — customers do consultor
+  // Realtime — customers do consultor (debounce: evita reload completo a cada UPDATE)
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
     const ch = supabase
       .channel(`capture-list-${consultantId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "customers", filter: `consultant_id=eq.${consultantId}` },
-        () => void load(),
+        () => {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(() => { void load(); }, 1500);
+        },
       )
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       void supabase.removeChannel(ch);
     };
   }, [consultantId, load]);
@@ -961,24 +967,51 @@ function LeadSection({
       </button>
 
       {open && (
-        <ul className="divide-y divide-border/60">
-          {leads.map((l) => (
-            <LeadCard
-              key={l.id}
-              lead={l}
-              consultantId={consultantId}
-              selectedId={selectedId}
-              selectMode={selectMode}
-              selectedIds={selectedIds}
-              onSelect={onSelect}
-              toggleId={toggleId}
-              fmtTime={fmtTime}
-              fmtPhone={fmtPhone}
-              unreadCount={unread[l.id] || 0}
-              flashAt={flash[l.id] || 0}
+        leads.length > 50 ? (
+          <div className="h-[min(420px,50vh)]">
+            <VirtualList
+              items={leads}
+              estimateSize={72}
+              overscan={8}
+              height="100%"
+              getItemKey={(l) => l.id}
+              renderItem={(l) => (
+                <LeadCard
+                  lead={l}
+                  consultantId={consultantId}
+                  selectedId={selectedId}
+                  selectMode={selectMode}
+                  selectedIds={selectedIds}
+                  onSelect={onSelect}
+                  toggleId={toggleId}
+                  fmtTime={fmtTime}
+                  fmtPhone={fmtPhone}
+                  unreadCount={unread[l.id] || 0}
+                  flashAt={flash[l.id] || 0}
+                />
+              )}
             />
-          ))}
-        </ul>
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {leads.map((l) => (
+              <LeadCard
+                key={l.id}
+                lead={l}
+                consultantId={consultantId}
+                selectedId={selectedId}
+                selectMode={selectMode}
+                selectedIds={selectedIds}
+                onSelect={onSelect}
+                toggleId={toggleId}
+                fmtTime={fmtTime}
+                fmtPhone={fmtPhone}
+                unreadCount={unread[l.id] || 0}
+                flashAt={flash[l.id] || 0}
+              />
+            ))}
+          </ul>
+        )
       )}
     </section>
   );

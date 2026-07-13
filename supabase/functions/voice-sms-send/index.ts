@@ -33,7 +33,23 @@ Deno.serve(async (req) => {
   for (const raw of phones) {
     const dest = toVelipBRDest(raw);
     if (!dest) { failed++; continue; }
-    const r = await makeSMS({ to: dest, text: message });
+    // DNC — não envia SMS para números na lista Não Perturbe do consultor
+    const destDigits = dest.replace(/\D/g, "");
+    const { data: dncRows } = await admin
+      .from("voice_dnc_list")
+      .select("phone")
+      .eq("consultant_id", caller.consultantId);
+    const blocked = (dncRows ?? []).some((r: { phone: string }) => {
+      const b = String(r.phone || "").replace(/\D/g, "");
+      return b && (b === destDigits || destDigits.endsWith(b) || b.endsWith(destDigits));
+    });
+    if (blocked) {
+      failed++;
+      results.push({ dest, ok: false, id: null, error: "dnc_blocked" });
+      continue;
+    }
+
+    const r = await makeSMS({ to: dest, message });
     const row = {
       consultant_id: caller.consultantId,
       phone: dest,

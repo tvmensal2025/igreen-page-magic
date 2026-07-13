@@ -87,3 +87,25 @@ export function resumeAfterAddressEdit(customer: {
   }
   return "confirmando_dados_conta";
 }
+
+/**
+ * Passos finais SEPARADOS (regra D/M + sys):
+ *   1) ask_contaunica  — boleto unificado vs separado
+ *   2) ask_finalizar   — confirmação explícita do lead
+ *   3) finalizando     — só depois do "Finalizar" (portal)
+ *
+ * Nunca pular 1→3 nem 2→3 automaticamente a partir de email/telefone/ativar.
+ * Testes devem validar a ordem sem chamar o portal.
+ */
+export function nextSeparatedCadastroStep(customer: {
+  contaunica_answered?: boolean | null;
+} | null | undefined): "ask_contaunica" | "ask_finalizar" {
+  if (!customer || customer.contaunica_answered !== true) return "ask_contaunica";
+  return "ask_finalizar";
+}
+
+/** true se o step ainda é coleta/confirmação (não processa portal). */
+export function isPrePortalCadastroStep(step: string | null | undefined): boolean {
+  const s = String(step || "");
+  return s === "ask_contaunica" || s === "ask_transferir_titularidade" || s === "ask_finalizar";
+}

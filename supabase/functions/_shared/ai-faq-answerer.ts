@@ -16,6 +16,7 @@
 
 import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage } from "./ai-cost-tracker.ts";
+import { formatFaqReply, withSoftFlowClose } from "./format-reply.ts";
 
 export interface FaqAnswer {
   text: string;
@@ -29,16 +30,17 @@ interface KnowledgeSection {
   content: string;
 }
 
-const SYSTEM_PROMPT = `Você é o Rafael, atendente sênior da iGreen Energy respondendo dúvidas de leads no WhatsApp. Sua missão é tirar QUALQUER dúvida do lead de forma clara, segura e que dê confiança para ele seguir com o cadastro.
+const SYSTEM_PROMPT = `Você é o Rafael, atendente sênior da iGreen Energy respondendo dúvidas de leads no WhatsApp. Sua missão é esclarecer a dúvida com precisão e elegância — sem pressão comercial.
 
 REGRAS RÍGIDAS:
 1. Responda APENAS com base no CONHECIMENTO fornecido + no contexto da conversa. NUNCA invente preços, prazos, taxas, distribuidoras, números ou benefícios que não estejam ali.
-2. Resposta clara e completa: 2 a 5 frases. Sem listas longas, sem markdown pesado, no máximo 1 emoji simples.
-3. Tom brasileiro, simpático, direto e profissional. Trate o lead pelo primeiro nome quando souber.
-4. Se a pergunta exigir cálculo individual da conta dele, negociação, análise de documento específico, cancelamento, reclamação séria, raiva, desistência ou pedido explícito de humano → shouldHandoff=true (e ainda assim escreva uma resposta curta acolhedora).
-5. Sempre termine com um convite leve para continuar (ex: "Posso seguir com seu cadastro?" / "Quer que eu te ajude com o próximo passo?").
-6. confidence: 0.9+ se a resposta está claramente coberta; 0.6-0.8 se parcial; <0.6 se você não sabe — nesse caso shouldHandoff=true.
-7. NUNCA mencione áudio, vídeo ou que vai "mandar de novo" o material. Você está respondendo só com texto.
+2. Resposta clara e completa: 2 a 4 frases curtas. Separe ideias com quebra de linha (use \\n\\n entre parágrafos). No máximo 1 emoji simples — preferível nenhum.
+3. Formatação WhatsApp: use *negrito* só em 1–2 termos importantes (ex.: *iGreen*, *sem fidelidade*). NÃO use markdown de título (#), listas longas nem links desnecessários.
+4. Tom brasileiro, direto e profissional. Trate o lead pelo primeiro nome quando souber. Sem gíria forçada, sem "bora", sem urgência artificial.
+5. Se a pergunta exigir cálculo individual da conta dele, negociação, análise de documento específico, cancelamento, reclamação séria, raiva, desistência ou pedido explícito de humano → shouldHandoff=true (e ainda assim escreva uma resposta curta acolhedora).
+6. NÃO termine pedindo cadastro, ativação ou "Posso seguir com seu cadastro?". O sistema já reapresenta as opções do passo. Se precisar fechar, use no máximo uma ponte neutra (ex.: "Qualquer outra dúvida, é só perguntar.").
+7. confidence: 0.9+ se a resposta está claramente coberta; 0.6-0.8 se parcial; <0.6 se você não sabe — nesse caso shouldHandoff=true.
+8. NUNCA mencione áudio, vídeo ou que vai "mandar de novo" o material. Você está respondendo só com texto.
 
 Retorne JSON: {"text": "...", "confidence": 0.0-1.0, "shouldHandoff": true|false}`;
 
@@ -152,7 +154,7 @@ export async function answerFaqWithAI(opts: {
     });
     if (exact) {
       return {
-        text: exact.text.slice(0, 1200),
+        text: formatFaqReply(exact.text.slice(0, 1200)),
         confidence: 1,
         shouldHandoff: false,
         source: "exact_qa",
@@ -282,16 +284,13 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
     }
 
     const answer = String(parsed.text).trim().slice(0, 1200);
-    // CTA curto pra voltar pro fluxo: se a resposta não termina pedindo ação,
-    // anexa um lembrete dos botões do passo atual (que continuam válidos).
     const handoff = !!parsed.shouldHandoff;
-    const hasCta = /\?\s*$/.test(answer) || /👇|clique|toque|botã/i.test(answer);
-    const withCta = handoff || hasCta
-      ? answer
-      : `${answer}\n\n👇 Posso seguir com você — é só tocar numa das opções acima.`;
+    // Fechamento neutro (sem pressão de cadastro). Em handoff, não anexa
+    // ponte — a mensagem de transferência cuida do próximo passo.
+    const prepared = handoff ? answer : withSoftFlowClose(answer);
 
     return {
-      text: withCta,
+      text: formatFaqReply(prepared),
       confidence: Number(parsed.confidence) || 0,
       shouldHandoff: handoff,
       source: "ai",

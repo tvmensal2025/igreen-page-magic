@@ -7906,6 +7906,7 @@
         "npm:@supabase/supabase-js@^2.108.2",
         "npm:@tailwindcss/typography@~0.5.16",
         "npm:@tanstack/react-query@^5.83.0",
+        "npm:@tanstack/react-virtual@^3.14.6",
         "npm:@testing-library/jest-dom@^6.6.0",
         "npm:@testing-library/react@16",
         "npm:@types/canvas-confetti@^1.9.0",

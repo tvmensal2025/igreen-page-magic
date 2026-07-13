@@ -59,6 +59,8 @@ const WARN_VOZ: Record<FlowWarning["kind"], { titulo: string; cta?: string }> = 
   ai_no_buttons: { titulo: "IA livre sem botões: o cliente fica em loop. Coloque 'Simular' e 'Falar com humano'.", cta: "Adicionar botões de saída" },
   ai_no_humano_exit: { titulo: "Falta uma saída de emergência 'Falar com humano' nessa IA.", cta: "Adicionar saída humano" },
   conversion_step_no_cta: { titulo: "Esse passo de conversão não tem CTA. O lead recebe e não sabe o que fazer.", cta: "Adicionar 'Quero finalizar'" },
+  activate_to_sim_path: { titulo: "Ativar/cadastrar está indo para simulação. Tem que ir para documento ou conta de cadastro.", cta: "Corrigir destino" },
+  activate_skips_conta: { titulo: "Ativar/cadastrar está pulando a conta de luz. Aponte para a conta de cadastro — o robô pula sozinho se o cliente já tiver conta.", cta: "Apontar para a conta de cadastro" },
 };
 
 export function falarDiagnostico(w: FlowWarning): { titulo: string; detalhe: string; cta?: string } {

@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { enqueueProactiveWaCandidates } from "../_shared/igreen-automation.ts";
 
 // =====================================================
 // sync-igreen-customers
@@ -378,9 +379,11 @@ const DEFAULT_IGREEN_TOGGLES: Record<string, boolean> = {
   alert_devolutivas: true,
   alert_licencas_expirando: true,
   rotinas_tarefas: true,
-  auto_wa_boleto_vencendo: true,
+  // Envio proativo WA e cross-sell: OFF por padrão (alinha com a UI e com a
+  // regra de produção — sem mensagem automática até validação explícita).
+  auto_wa_boleto_vencendo: false,
   auto_wa_aniversariante: false,
-  cross_sell_bot: true,
+  cross_sell_bot: false,
 };
 
 // deno-lint-ignore no-explicit-any
@@ -550,6 +553,18 @@ async function runSyncAllBackgroundPhase(
     }
     augmentProductGaps(out, r.data);
     out.alerts = await generateAlerts(supabase, consultantId, toggles, r.data);
+    // Enfileira candidatos de WA proativo (sem enviar). Só cria alertas dry_run
+    // quando o consultor ligou auto_wa_* — envio real fica para cron futuro + gate.
+    if (consultantId) {
+      try {
+        out.wa_queue = await enqueueProactiveWaCandidates(supabase, consultantId, toggles, {
+          boletos: r.data?.boletos || [],
+          metrics: r.data?.metrics,
+        });
+      } catch (e) {
+        out.wa_queue_error = e instanceof Error ? e.message : String(e);
+      }
+    }
 
     const started = Date.now();
     let detailsApplied = 0;

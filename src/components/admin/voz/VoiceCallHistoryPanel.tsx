@@ -24,7 +24,6 @@ interface CallLogRow {
   id: string;
   campaign_id: string | null;
   target_id: string | null;
-  twilio_sid: string | null;
   velip_call_id: string | null;
   velip_status: string | null;
   velip_time_sec: number | null;
@@ -119,7 +118,7 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
     setLoading(true);
     const { data, error } = await (supabase as any)
       .from("voice_call_logs")
-      .select("id, campaign_id, target_id, twilio_sid, velip_call_id, velip_status, velip_time_sec, velip_cost, velip_saldo_after, velip_dtmf, velip_raw, to_phone, from_phone, status, answered_by, duration_sec, price, error, raw, created_at")
+      .select("id, campaign_id, target_id, velip_call_id, velip_status, velip_time_sec, velip_cost, velip_saldo_after, velip_dtmf, velip_raw, to_phone, from_phone, status, answered_by, duration_sec, price, error, raw, created_at")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false })
       .limit(200);
@@ -176,7 +175,7 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
       r.to_phone?.toLowerCase().includes(needle) ||
       (r.target_name || "").toLowerCase().includes(needle) ||
       (r.campaign_name || "").toLowerCase().includes(needle) ||
-      (r.twilio_sid || "").toLowerCase().includes(needle) ||
+      (r.velip_call_id || "").toLowerCase().includes(needle) ||
       (r.status || "").toLowerCase().includes(needle)
     );
   });
@@ -328,7 +327,6 @@ export function VoiceCallHistoryPanel({ consultantId }: Props) {
               <Detail label="Campanha" value={selected.campaign_name || "—"} />
               <Detail label="ID Velip" value={selected.velip_call_id || "—"} mono />
               <Detail label="Status Velip" value={selected.velip_status || "—"} mono />
-              {selected.twilio_sid && <Detail label="Twilio SID (legado)" value={selected.twilio_sid} mono />}
               {selected.velip_dtmf && Object.keys(selected.velip_dtmf).length > 0 && (
                 <Detail label="DTMF" value={Object.entries(selected.velip_dtmf).map(([k,v]) => `${k}=${v}`).join(" · ")} mono />
               )}

@@ -54,6 +54,65 @@ function asScoringRule(value: unknown): ScoringRule {
   return { mode: "none" };
 }
 
+/** Espelha src/features/produtos/orcamento/scoringInput.ts (edge sem import de src/). */
+function extractScoringInputFromLineItems(lineItems: unknown): {
+  kwh?: number;
+  units?: number;
+  portabilidade?: boolean;
+} {
+  const items = Array.isArray(lineItems) ? lineItems : [];
+  const scored = items.find(
+    (it) => it && typeof it === "object" && (it as { kind?: string }).kind === "scoring_input",
+  ) as {
+    kwh?: number | null;
+    units?: number | null;
+    portabilidade?: boolean | null;
+    consumo_kwh?: number | null;
+  } | undefined;
+
+  if (scored) {
+    const kwh =
+      typeof scored.kwh === "number" && Number.isFinite(scored.kwh)
+        ? scored.kwh
+        : typeof scored.consumo_kwh === "number" && Number.isFinite(scored.consumo_kwh)
+          ? scored.consumo_kwh
+          : undefined;
+    return {
+      kwh,
+      units:
+        typeof scored.units === "number" && Number.isFinite(scored.units)
+          ? scored.units
+          : undefined,
+      portabilidade:
+        typeof scored.portabilidade === "boolean" ? scored.portabilidade : undefined,
+    };
+  }
+
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const it = raw as { kind?: string; value?: string };
+    if (it.kind !== "solar_design" || typeof it.value !== "string") continue;
+    const m = it.value.match(/([\d.]+)\s*kWh\/ano/i);
+    if (m) {
+      const yearly = Number(String(m[1]).replace(/\./g, "").replace(",", "."));
+      if (Number.isFinite(yearly) && yearly > 0) {
+        return { kwh: Math.round(yearly / 12) };
+      }
+    }
+  }
+
+  let portabilidade: boolean | undefined;
+  for (const raw of items) {
+    if (!raw || typeof raw !== "object") continue;
+    const it = raw as { label?: string; value?: string };
+    if (it.label === "Portabilidade" && typeof it.value === "string") {
+      portabilidade = /com portabilidade/i.test(it.value);
+    }
+  }
+  if (portabilidade !== undefined) return { units: 1, portabilidade };
+  return {};
+}
+
 type Action = "accept" | "reject" | "counter";
 
 Deno.serve(async (req) => {
@@ -90,7 +149,7 @@ Deno.serve(async (req) => {
     const { data: proposal, error } = await supabase
       .from("proposals")
       .select(
-        "id, consultant_id, product_id, customer_id, status, amount_cents, amount_period, valid_until, sale_id, recipient_name, recipient_phone, products(scoring_rule, name)",
+        "id, consultant_id, product_id, customer_id, status, amount_cents, amount_period, valid_until, sale_id, recipient_name, recipient_phone, line_items, products(scoring_rule, name)",
       )
       .eq("public_token", token)
       .maybeSingle();
@@ -140,10 +199,20 @@ Deno.serve(async (req) => {
         const scoringRule = asScoringRule(
           (proposal as { products?: { scoring_rule?: unknown } }).products?.scoring_rule,
         );
-        // Base de pontos: para energia/placas usa o valor como proxy de kWh só
-        // quando não há dado melhor; telecom conta 1 unidade. O consultor ajusta
-        // os pontos reais depois, na venda (capture_data).
-        const points = computePointsKwh(scoringRule, { units: 1 });
+        const scoringInput = extractScoringInputFromLineItems(
+          (proposal as { line_items?: unknown }).line_items,
+        );
+        const captureData =
+          scoringInput.portabilidade !== undefined
+            ? { portabilidade: scoringInput.portabilidade }
+            : scoringInput.kwh != null
+              ? { consumo_kwh: scoringInput.kwh }
+              : {};
+        const points = computePointsKwh(scoringRule, {
+          kwh: scoringInput.kwh,
+          units: scoringInput.units ?? 1,
+          portabilidade: scoringInput.portabilidade,
+        });
 
         const { data: sale, error: saleErr } = await supabase
           .from("sales")
@@ -154,6 +223,7 @@ Deno.serve(async (req) => {
             status: "fechado",
             amount_cents: proposal.amount_cents,
             points_kwh: points,
+            capture_data: captureData,
             notes: "Criada a partir de proposta aceita pelo cliente.",
           })
           .select("id")

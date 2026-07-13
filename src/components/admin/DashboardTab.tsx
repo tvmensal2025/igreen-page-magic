@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, lazy, Suspense } from "react";
 import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,6 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
 import { runIgreenSync, waitIgreenSyncFinished } from "@/lib/igreenSync";
 import { StatCard } from "./StatCard";
-import { CustomerCharts } from "./CustomerCharts";
 import { TopConsumersCard } from "./TopConsumersCard";
 import { GeographyCard } from "./GeographyCard";
 import { RetentionCard } from "./RetentionCard";
@@ -27,8 +26,14 @@ import { careerBonusPercent, graduacaoDisplay, graduacaoRank } from "@/features/
 
 
 import { TeamRankingTab } from "./TeamRankingTab";
-import { TeamDashboard } from "./team-dashboard/TeamDashboard";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
+
+const CustomerCharts = lazy(() =>
+  import("./CustomerCharts").then((m) => ({ default: m.CustomerCharts })),
+);
+const TeamDashboard = lazy(() =>
+  import("./team-dashboard/TeamDashboard").then((m) => ({ default: m.TeamDashboard })),
+);
 
 
 // Formata moeda BRL de forma compacta em telas pequenas (R$ 50,4 mil / R$ 1,2 mi)
@@ -456,7 +461,9 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
 
-      <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} />
+      <Suspense fallback={<div className="h-40 rounded-xl bg-muted/40 animate-pulse" />}>
+        <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} />
+      </Suspense>
 
       <TopConsumersCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} onOpenChat={onOpenChat} />
       <GeographyCard customers={filteredMetrics?.filteredCustomers} />
@@ -464,11 +471,13 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
       {/* Cadastros da Equipe — no final, após aniversariantes */}
       {analytics?.allCustomers && (
-        <TeamDashboard
-          leaderConsultantId={userId}
-          customers={analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin))}
-          periodDays={periodDays}
-        />
+        <Suspense fallback={<div className="h-32 rounded-xl bg-muted/40 animate-pulse" />}>
+          <TeamDashboard
+            leaderConsultantId={userId}
+            customers={analytics.allCustomers.filter((c: any) => isIgreenWalletOrigin(c.customer_origin))}
+            periodDays={periodDays}
+          />
+        </Suspense>
       )}
 
 

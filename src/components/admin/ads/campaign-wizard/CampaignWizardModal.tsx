@@ -112,6 +112,13 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
       if (state.quality && !state.quality.recommendedPublish) return patch({ lowScoreConfirm: true });
       goTo(4);
     } else if (step === 4) {
+      if (state.rodizioEnabled && state.rodizioPartners.length < 1) {
+        return toast({
+          title: "Participante faltando",
+          description: "Com o destino/rodízio ligado, adicione pelo menos 1 pessoa (você ou outra) antes de continuar.",
+          variant: "destructive",
+        });
+      }
       goTo(5);
     } else if (step === 5) {
       // Pré-checagem CTWA: super admin pula; demais precisam estar prontos.

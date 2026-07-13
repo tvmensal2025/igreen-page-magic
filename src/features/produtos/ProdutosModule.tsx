@@ -128,7 +128,7 @@ export function ProdutosModule({
             />
           )}
           {tab === "pipeline" && <SalesPipelineBoard consultantId={consultantId} />}
-          {tab === "catalogo" && <ProductCatalogTable />}
+          {tab === "catalogo" && <ProductCatalogTable consultantId={consultantId} />}
         </div>
       </div>
 

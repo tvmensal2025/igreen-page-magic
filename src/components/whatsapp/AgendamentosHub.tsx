@@ -23,10 +23,11 @@ import {
 import {
   Calendar, Clock, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
-  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell,
+  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell, FileText,
 } from "lucide-react";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
+import { AgendamentosTextosDialog } from "@/components/whatsapp/AgendamentosTextosDialog";
 
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
 const AutomacaoIgreenCard = lazy(() =>
@@ -149,6 +150,7 @@ export function AgendamentosHub({
   showAdminShortcut = false,
 }: AgendamentosHubProps) {
   const [activeTab, setActiveTab] = useState<AgendamentosHubTab>(defaultTab);
+  const [textosOpen, setTextosOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [phone, setPhone] = useState("");
   const [text, setText] = useState("");
@@ -384,6 +386,15 @@ export function AgendamentosHub({
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1.5 rounded-xl text-xs"
+              onClick={() => setTextosOpen(true)}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Ajustar todos os textos
+            </Button>
             <SistemaCapacidadesHelp className="rounded-xl" />
             <AutomacoesAtivasBadge consultantId={consultantId} variant="chips" />
             {showAdminShortcut && (
@@ -409,6 +420,12 @@ export function AgendamentosHub({
             </Button>
           </div>
         </div>
+
+        <AgendamentosTextosDialog
+          open={textosOpen}
+          onOpenChange={setTextosOpen}
+          consultantId={consultantId}
+        />
 
         {/* ── Regra de ouro da carteira ── */}
         <div className="mb-4 rounded-2xl border border-primary/20 bg-primary/5 p-4 flex gap-3 relative overflow-hidden">

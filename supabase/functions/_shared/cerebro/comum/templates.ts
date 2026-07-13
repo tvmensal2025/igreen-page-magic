@@ -6,7 +6,7 @@ export const TRAVA_POR_ETAPA: Record<Etapa, string> = {
   nome: "Pergunte o NOME do lead. 1 pergunta. PROIBIDO pedir outra coisa.",
   valor: "Pergunte o VALOR MÉDIO DA CONTA EM R$. PROIBIDO pedir foto/doc/e-mail nem dar simulação ainda.",
   simulacao: "Apresente faixa *8% a 20%* + número (valor × 0,20) + pergunta consultiva tipo 'faz sentido?'. PROIBIDO pedir foto/doc/e-mail.",
-  consideracao: "O lead JÁ viu a simulação. RESPONDA DIRETAMENTE a dúvida/objeção específica que ele acabou de fazer (use a FAQ/contexto), em 1-2 linhas, com informação concreta — NÃO responda de forma genérica nem repita a mesma frase do turno anterior. Depois faça UMA pergunta que aproxime do cadastro, VARIANDO a forma. PROIBIDO pedir foto/conta/doc/e-mail — só peça quando o lead disser claramente que quer cadastrar/fechar.",
+  consideracao: "O lead JÁ viu a simulação. RESPONDA DIRETAMENTE a dúvida/objeção específica que ele acabou de fazer (use a FAQ/contexto), em 1-2 linhas, com informação concreta — NÃO responda de forma genérica nem repita a mesma frase do turno anterior. Feche com ponte NEUTRA (ex.: 'Qualquer outra dúvida, é só perguntar.'). PROIBIDO pedir cadastro/ativar em toda resposta. PROIBIDO pedir foto/conta/doc/e-mail — só peça quando o lead disser claramente que quer cadastrar/fechar.",
   foto_conta: "Peça a foto da conta de luz 📷. PROIBIDO pedir doc/e-mail.",
   doc: "Peça a foto da frente do RG ou CNH 📄. PROIBIDO pedir e-mail.",
   email: "Peça o e-mail do lead 📧. PROIBIDO pedir outras coisas.",
@@ -59,7 +59,7 @@ export function fallbackPorEtapa(etapa: Etapa, nome?: string | null, valor?: num
     }
     case "consideracao": {
       const eco = valor ? `*R$ ${(valor * 0.2).toFixed(0)}/mês*` : "uma boa economia";
-      return `${nome ? `${nome}, ` : ""}é tudo *sem obra* e regulamentado pela *ANEEL* — a mesma conta, só com ${eco} a menos ⚡\nQuer que eu já deixe tudo pronto pra você começar a economizar?`;
+      return `${nome ? `${nome}, ` : ""}é tudo *sem obra* e regulamentado pela *ANEEL* — a mesma conta, só com ${eco} a menos.\n\nQualquer outra dúvida, é só perguntar.`;
     }
     case "foto_conta":  return `${nome && tentativa === 0 ? `Perfeito${n}! ` : ""}${pick(VARIANTES_FOTO_CONTA, tentativa)}`;
     case "doc":         return pick(VARIANTES_DOC, tentativa);
@@ -379,21 +379,28 @@ const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
   ],
 };
 
-// Convites ao cadastro, variados por índice de tentativa (anti-repetição).
-const CONVITES = [
-  "Quer que eu já comece seu cadastro pra garantir essa economia?",
-  "Posso seguir com seu cadastro agora? Leva 2 minutos.",
-  "Bora deixar tudo pronto pra você começar a economizar?",
-  "Faz sentido pra você seguir com o cadastro?",
-  "Quer que eu adiante seu cadastro pra travar o desconto?",
+// Fechamentos profissionais após tirar dúvida (anti-insistência).
+// Padrão: ponte neutra. Só a partir da 3ª tentativa oferece convite leve
+// ao próximo passo — nunca "quer cadastrar?" em toda resposta.
+const FECHAMENTOS_NEUTROS = [
+  "Qualquer outra dúvida, é só perguntar.",
+  "Se quiser seguir, é só escolher uma das opções.",
+  "Ficou claro? Quando quiser, seguimos no próximo passo.",
+  "Posso esclarecer mais algum ponto.",
+];
+
+const CONVITES_LEVES = [
+  "Se fizer sentido pra você, posso te guiar no próximo passo.",
+  "Quando quiser avançar, é só me dizer.",
 ];
 
 /**
  * Resposta determinística para a etapa CONSIDERAÇÃO. Responde a dúvida
- * específica + convida ao cadastro. Anti-repetição em 2 níveis:
+ * específica + fechamento profissional. Anti-repetição em 2 níveis:
  *  - escolhe a VARIANTE da resposta conforme quantas vezes essa objeção já foi
  *    tratada (vira → 2ª/3ª forma de dizer)
- *  - varia o convite final por `tentativa`
+ *  - varia o fechamento por `tentativa` (neutro nas primeiras; convite leve
+ *    só depois — sem pressão de cadastro a cada turno)
  * Quando a objeção JÁ foi tratada antes, adiciona um reconhecimento curto
  * ("como te falei") pra soar humano e não robótico.
  *
@@ -417,14 +424,18 @@ export function respostaConsideracao(
     resp = prefixos[(jaVista - 1) % prefixos.length] + resp;
   }
 
-  const convite = CONVITES[Math.max(0, tentativa) % CONVITES.length];
+  const t = Math.max(0, tentativa);
+  // Tentativas 0 e 1: só fechamento neutro. A partir da 3ª, convite leve (sem "cadastrar").
+  const fechamento = t >= 2
+    ? CONVITES_LEVES[t % CONVITES_LEVES.length]
+    : FECHAMENTOS_NEUTROS[t % FECHAMENTOS_NEUTROS.length];
   let corpo: string;
   if (nome) {
     corpo = `${nome}, ${resp}`;
   } else {
     corpo = resp.charAt(0).toUpperCase() + resp.slice(1);
   }
-  return { texto: `${corpo}\n${convite}`, tipo };
+  return { texto: `${corpo}\n\n${fechamento}`, tipo };
 }
 
 // Palavras-chave que comprovam que a resposta tocou no tema da dúvida.

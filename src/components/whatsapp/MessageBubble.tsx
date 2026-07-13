@@ -141,6 +141,7 @@ function ImageViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
           alt={message.mediaCaption || "imagem"}
           className="rounded max-w-full max-h-60 mb-1 cursor-pointer hover:opacity-90 transition-opacity"
           loading="lazy"
+          decoding="async"
           onClick={() => setExpanded(true)}
         />
         {expanded && (
@@ -283,7 +284,7 @@ function StickerViewer({ message, onLoadMedia }: { message: ChatMessage; onLoadM
   }, []);
 
   if (src) {
-    return <img src={src} alt="sticker" className="max-w-[150px] max-h-[150px]" />;
+    return <img src={src} alt="sticker" className="max-w-[150px] max-h-[150px]" loading="lazy" decoding="async" />;
   }
 
   return (

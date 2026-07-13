@@ -6,6 +6,10 @@
 // testável (sem I/O) e é aplicado na saída do `generateAiAnswer` e do RAG.
 //
 // Convenção de negrito do WhatsApp: *texto* (asteriscos simples).
+//
+// Precisão comercial: NÃO empurrar "quer cadastrar?" em toda resposta.
+// FAQ responde a dúvida; o retorno ao fluxo fica nos botões do passo
+// (reemit) ou num fechamento neutro — nunca pressão de cadastro.
 
 /** Limite padrão de tamanho para respostas de IA no WhatsApp. */
 export const DEFAULT_MAX_LEN = 600;
@@ -115,24 +119,152 @@ export function emphasizeKeyTerms(text: string): string {
   return out;
 }
 
+/**
+ * Remove CTAs agressivos de cadastro E CTAs fantasma de botão
+ * ("clique nas opções acima" quando não há botão reemitido).
+ */
+const PUSHY_CADASTRO_RX =
+  /(?:\n+\s*)?(?:👇\s*)?(?:Posso seguir com (?:o )?seu cadastro(?: agora)?(?:\??(?:\s*Leva \d+ minutos?\.)?)?|Posso seguir com o cadastro(?: agora)?\??|Posso seguir com você[^.?\n]*|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)(?: o)?(?: seu)? cadastro[^.?\n]*\??|Bora (?:deixar tudo pronto|cadastrar|ativar)[^.?\n]*\??|Faz sentido pra você seguir com o cadastro\??|Quer (?:ativar|cadastrar)(?: o benefício)?(?: agora)?\??|Vamos seguir com seu cadastro!?|(?:[ée] s[oó] tocar (?:numa|em uma) das op[cç][oõ]es acima)|(?:escolher uma das op[cç][oõ]es abaixo))\.?(?:\s*)?$/iu;
+
+export function stripPushyCadastroCta(text: string): string {
+  const original = String(text || "").trim();
+  if (!original) return "";
+  let t = original;
+  // Pode haver 2 CTAs empilhados — limpa em loop curto
+  for (let i = 0; i < 4; i++) {
+    const next = t.replace(PUSHY_CADASTRO_RX, "").trim();
+    if (next === t) break;
+    t = next;
+  }
+  // Nunca silencia o lead: se a mensagem era SÓ o CTA, mantém o original.
+  return t || original;
+}
+
+/**
+ * Fechamento neutro — NÃO menciona botões/opções (podem não ter sido reemitidos).
+ * O reemitStepButtons cuida do CTA clicável em mensagem separada.
+ */
+export const SOFT_FLOW_CLOSE =
+  "Qualquer outra dúvida, é só perguntar.";
+
+/**
+ * True se o texto já fecha com pergunta / ponte de retorno (não precisa anexar).
+ */
+export function hasSoftClose(text: string): boolean {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/\?\s*$/.test(t)) return true;
+  if (/qualquer outra d[uú]vida|quando quiser|ficou claro|posso esclarecer/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Quebra "parede de texto" em parágrafos curtos e arejados para WhatsApp.
+ * Não apaga conteúdo — só insere \n\n entre ideias.
+ */
+export function prettifyFaqLayout(text: string): string {
+  let t = String(text || "").trim();
+  if (!t) return "";
+
+  // Separadores de lista já legíveis → preserva e só limpa espaços
+  if (/^\s*[-•*]/.test(t) || /\n\s*[-•*]/.test(t)) {
+    return normalizeSpacing(
+      t
+        .replace(/\n\s*[-•*]\s*/g, "\n• ")
+        .replace(/^\s*[-*]\s*/gm, "• "),
+    );
+  }
+
+  // Já tem parágrafo → só normaliza (mantém ar entre blocos)
+  if (t.includes("\n")) return normalizeSpacing(t);
+
+  // Curto: uma ideia só — não força quebra
+  if (t.length < 120) return t;
+
+  const parts = t.split(/(?<=[.!?…])\s+/).filter(Boolean);
+  if (parts.length < 2) return t;
+
+  // 1 frase por parágrafo quando o texto é médio/longo — mais ar, mais elegante
+  const maxCharsPerPara = t.length > 280 ? 110 : 150;
+  const paras: string[] = [];
+  let buf = "";
+  for (const p of parts) {
+    const next = buf ? `${buf} ${p}` : p;
+    if (buf && (next.length > maxCharsPerPara || buf.split(/(?<=[.!?])/).filter(Boolean).length >= 2)) {
+      paras.push(buf.trim());
+      buf = p;
+    } else {
+      buf = next;
+    }
+  }
+  if (buf.trim()) paras.push(buf.trim());
+
+  // Última frase-pergunta / soft close → parágrafo próprio
+  if (paras.length >= 2) {
+    const last = paras[paras.length - 1];
+    if (/\?\s*$/.test(last) || /abaixo|quando quiser|outra dúvida/i.test(last)) {
+      // já separado
+    }
+  }
+
+  return paras.join("\n\n");
+}
+
 export interface FormatReplyOptions {
   maxLen?: number;
   /** Aplica negrito em termos-chave. Default true. */
   emphasize?: boolean;
+  /** Layout FAQ (parágrafos). Default false — ative nas respostas a dúvidas. */
+  faqLayout?: boolean;
+  /**
+   * Remove CTAs agressivos de cadastro. Default: true quando faqLayout.
+   * FAQ responde; botões do passo trazem o lead de volta.
+   */
+  stripCadastroPush?: boolean;
 }
 
 /**
  * Pipeline completo de embelezamento para respostas de IA enviadas ao lead.
- * Ordem: normaliza espaços → trunca por frase → capitaliza → negrito.
+ * Ordem: remove pressão de cadastro → layout FAQ → normaliza → trunca → capitaliza → negrito.
  */
 export function formatReply(text: string | null | undefined, opts: FormatReplyOptions = {}): string {
   const maxLen = opts.maxLen ?? DEFAULT_MAX_LEN;
   const emphasize = opts.emphasize ?? true;
+  const stripPush = opts.stripCadastroPush ?? !!opts.faqLayout;
 
-  let out = normalizeSpacing(String(text ?? ""));
+  let out = String(text ?? "");
+  if (stripPush) out = stripPushyCadastroCta(out);
+  if (opts.faqLayout) out = prettifyFaqLayout(out);
+  out = normalizeSpacing(out);
   if (!out) return "";
   out = truncateAtSentence(out, maxLen);
   out = capitalizeSentences(out);
   if (emphasize) out = emphasizeKeyTerms(out);
   return out;
+}
+
+/**
+ * Atalho para respostas de dúvida/FAQ (match QA + IA).
+ * Layout arejado, sem empurrão de cadastro.
+ */
+export function formatFaqReply(text: string | null | undefined): string {
+  return formatReply(text, {
+    maxLen: 900,
+    emphasize: true,
+    faqLayout: true,
+    stripCadastroPush: true,
+  });
+}
+
+/**
+ * Anexa fechamento neutro de retorno ao fluxo — só se a resposta ainda
+ * não tiver pergunta/ponte. Nunca pede cadastro.
+ */
+export function withSoftFlowClose(text: string): string {
+  const base = stripPushyCadastroCta(String(text || "").trim());
+  if (!base) return "";
+  if (hasSoftClose(base)) return base;
+  return `${base}\n\n${SOFT_FLOW_CLOSE}`;
 }

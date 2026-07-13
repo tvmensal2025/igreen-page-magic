@@ -29,6 +29,12 @@ describe("validateCaptureForFamily", () => {
     expect(validateCaptureForFamily("telecom", {}).ok).toBe(true);
   });
 
+  it("exige captura quando requireCapture=true (fechamento)", () => {
+    const result = validateCaptureForFamily("telecom", {}, { requireCapture: true });
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/captura/i);
+  });
+
   it("aceita captura nula para família com schema (telecom)", () => {
     expect(validateCaptureForFamily("telecom", null).ok).toBe(true);
   });

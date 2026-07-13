@@ -227,3 +227,6 @@ verify_jwt = false
 [functions.voice-dialer-health]
 verify_jwt = false
 
+[functions.speed-to-lead-check]
+verify_jwt = false
+

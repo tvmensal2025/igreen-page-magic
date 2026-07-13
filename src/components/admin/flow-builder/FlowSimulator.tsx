@@ -336,7 +336,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                     <div key={ev.key} className="flex justify-end">
                       <div className="max-w-[75%] rounded-2xl rounded-tr-sm bg-primary/90 px-3 py-1.5 text-sm text-white shadow">
                         {ev.attach?.kind === "image" ? (
-                          <img src={ev.attach.url} className="max-h-40 rounded-lg" />
+                          <img src={ev.attach.url} className="max-h-40 rounded-lg" loading="lazy" decoding="async" />
                         ) : ev.attach ? (
                           <a href={ev.attach.url} target="_blank" rel="noreferrer" className="underline">
                             {ev.text}
@@ -386,7 +386,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
                   return (
                     <div key={ev.key} className="flex justify-start">
                       <div className="rounded-2xl rounded-tl-sm bg-card p-1 shadow">
-                        <img src={ev.url} alt={ev.caption || ""} className="max-h-64 max-w-xs cursor-zoom-in rounded-xl" onClick={() => window.open(ev.url, "_blank")} />
+                        <img src={ev.url} alt={ev.caption || ""} className="max-h-64 max-w-xs cursor-zoom-in rounded-xl" loading="lazy" decoding="async" onClick={() => window.open(ev.url, "_blank")} />
                         {ev.caption && <p className="px-2 py-1 text-xs">{ev.caption}</p>}
                       </div>
                     </div>
@@ -505,7 +505,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
 
               {state?.electricity_bill_photo_url && (
                 <div className="mb-2 overflow-hidden rounded-md border bg-card">
-                  <img src={state.electricity_bill_photo_url} alt="conta" className="max-h-32 w-full object-contain" />
+                  <img src={state.electricity_bill_photo_url} alt="conta" className="max-h-32 w-full object-contain" loading="lazy" decoding="async" />
                 </div>
               )}
 
@@ -548,7 +548,7 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
 
               {state?.document_front_url && state.document_front_url !== "evolution-media:pending" && (
                 <div className="mb-2 overflow-hidden rounded-md border bg-card">
-                  <img src={state.document_front_url} alt="doc" className="max-h-32 w-full object-contain" />
+                  <img src={state.document_front_url} alt="doc" className="max-h-32 w-full object-contain" loading="lazy" decoding="async" />
                 </div>
               )}
 

@@ -9,4 +9,4 @@ Templates de voz no /admin WhatsApp > Templates > aba "Voz personalizada".
 - Match de nome: name_normalized (NFD, sem acento, lowercase, _) — tenta nome completo, depois primeiro pedaço.
 - Resposta 409 com `error:"name_not_recorded"` → UI mostra gravador inline pro consultor gravar o nome faltante.
 - Toda mudança de bloco/nome invalida cache (delete em voice_template_renders).
-- Integração de envio no chat via shortcut /voz-* ainda PENDENTE — atualmente só preview no editor.
+- Envio no chat: `VoiceTemplatePicker` em `MessageComposer` (e bot via `channel-sender` quando o passo tem `voice_template_id`). Não é PSTN — áudio WhatsApp (OGG), separado do módulo Ligação/Velip.

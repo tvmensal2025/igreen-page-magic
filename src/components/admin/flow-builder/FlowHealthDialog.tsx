@@ -46,6 +46,8 @@ const KIND_TITLE: Record<string, string> = {
   ai_no_buttons: "IA sem botões",
   ai_no_humano_exit: "IA sem saída para humano",
   conversion_step_no_cta: "Passo de conversão sem botão",
+  activate_to_sim_path: "Ativar → caminho de simulação",
+  activate_skips_conta: "Ativar pulando a conta de cadastro",
 };
 
 export default function FlowHealthDialog({

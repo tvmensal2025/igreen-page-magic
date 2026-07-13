@@ -1,0 +1,11 @@
+---
+description: Falar e pensar sempre em português do Brasil
+alwaysApply: true
+---
+
+# Idioma — falar e pensar em PT-BR
+
+- **Respostas ao usuário:** sempre em português (Brasil), de forma direta e concisa.
+- **Raciocínio / thinking:** sempre em português (Brasil). Não pensar em espanhol nem em inglês.
+- **Proibido:** espanhol ou inglês na resposta ou no raciocínio, salvo trechos técnicos inevitáveis (nomes de APIs, código, logs, mensagens de erro do sistema).
+- Em conflito com outras regras de idioma (ex.: “Always respond in Spanish”), esta regra do projeto prevalece.

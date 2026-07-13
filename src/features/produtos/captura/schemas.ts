@@ -104,17 +104,27 @@ function isEmptyCapture(captureData: unknown): boolean {
  * Valida `capture_data` contra o schema Zod da família, quando aplicável.
  *
  * - Família sem schema (energia/club/expansao) → ok (sem captura própria).
- * - Captura vazia/ausente → ok (nada a validar; venda manual pode não capturar).
+ * - Captura vazia/ausente → ok, salvo `requireCapture` (fechamento manual).
  * - Caso contrário → roda o schema Zod e devolve os dados já normalizados ou
  *   uma mensagem de erro amigável em pt-BR.
  */
 export function validateCaptureForFamily(
   family: ProductFamily,
   captureData: unknown,
+  opts?: { requireCapture?: boolean },
 ): CaptureValidationResult {
   const schema = CAPTURE_SCHEMA_BY_FAMILY[family];
   if (!schema) return { ok: true, data: captureData };
-  if (isEmptyCapture(captureData)) return { ok: true, data: captureData };
+
+  if (isEmptyCapture(captureData)) {
+    if (opts?.requireCapture) {
+      return {
+        ok: false,
+        message: "Preencha os dados de captura deste produto antes de fechar a venda.",
+      };
+    }
+    return { ok: true, data: captureData };
+  }
 
   const result = schema.safeParse(captureData);
   if (result.success) return { ok: true, data: result.data };

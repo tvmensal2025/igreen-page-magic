@@ -24,6 +24,8 @@ import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAttendanceTerminalStep } from "../_shared/attendance-flow.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
 const NUDGE_COOLDOWN_HOURS = 4;
@@ -102,6 +104,8 @@ serve(async (_req: Request) => {
         continue;
       }
 
+      if (!(await gateProactiveTouch(supabase, lead.id, "faq_reengagement_nudge"))) continue;
+
       const channel = await resolveChannelForCustomer(supabase, lead.id, env);
       if (isUnavailable(channel)) {
         console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);
@@ -117,9 +121,16 @@ serve(async (_req: Request) => {
       }
 
       const firstName = String(lead.name || "").trim().split(/\s+/)[0] || "";
-      const nudgeText = firstName
-        ? `${firstName}, posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro? 😊`
-        : `Oi! Posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro? 😊`;
+      const fallback = firstName
+        ? `${firstName}, posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro?`
+        : `Oi! Posso te ajudar com mais alguma dúvida? Ou seguimos com o seu cadastro?`;
+      const nudgeText = await loadAutomationTemplate(
+        supabase,
+        "faq_reengagement_nudge",
+        fallback,
+        { nome: firstName },
+        lead.consultant_id,
+      );
 
       const digits = normalizePhone(lead.phone_whatsapp).replace(/\D/g, "");
       if (!digits) {
@@ -142,6 +153,7 @@ serve(async (_req: Request) => {
       }
 
       await registerSend(supabase, channel.instanceName);
+      await recordProactiveTouch(supabase, lead.id, "faq_reengagement_nudge");
 
       // Log no conversations
       await supabase.from("conversations").insert({

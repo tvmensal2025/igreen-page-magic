@@ -26,6 +26,15 @@ import { matchTransition as matchTransitionShared, CADASTRO_STEPS as CADASTRO_ST
 import { matchButtonIntent, extractStepButtons } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
 import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
+import {
+  ACTIVATE_CTA_NUDGE,
+  pickActivateDestination,
+  rewriteActivateAwayFromSimPath,
+  resolveCanonicalNudgeChoice,
+  isActivateIntent,
+} from "../../../_shared/bot/flow-activate-routing.ts";
+import { nextSeparatedCadastroStep } from "../../../_shared/bot/cadastro-fixes.ts";
+import { formatFaqReply } from "../../../_shared/format-reply.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -1422,13 +1431,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const qaHit = hasCapture ? null : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
-    const qaText = renderTemplate(qaHit.text || "", {
+    const qaText = formatFaqReply(renderTemplate(qaHit.text || "", {
       nome: ctx.customer.name,
       representante: ctx.nomeRepresentante,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
       cpf: (ctx.customer as any).cpf,
-    });
+    }));
     // 🔁 Honra `flow_step_media_order` para o slot virtual __qa__. Se o
     // consultor configurou ordem (ex.: text→audio), respeita; caso contrário,
     // mantém o legado (mídia primeiro, texto depois).
@@ -1840,7 +1849,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     if (st === "capture_documento") return "aguardando_doc_auto";
     if (st === "capture_email") return "ask_email";
     if (st === "confirm_phone") return "ask_phone_confirm";
-    if (st === "finalizar_cadastro") return "ask_finalizar";
+    // SEPARADO: boleto → confirmar (nunca finalizando direto)
+    if (st === "finalizar_cadastro") return nextSeparatedCadastroStep(ctx.customer as any);
     return null;
   };
 
@@ -2127,6 +2137,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         replyText = "📧 Me passa seu *e-mail* (pode ser de qualquer provedor — Gmail, Outlook, iCloud, Yahoo...).";
       } else if (cadastroStep === "ask_phone_confirm") {
         replyText = "📞 Esse número é seu telefone de contato?\n\n1️⃣ ✅ Sim\n2️⃣ 📱 Outro número";
+      } else if (cadastroStep === "ask_contaunica") {
+        replyText = "📄 *Como você prefere receber a fatura?*\n\n1️⃣ *Boleto unificado* — um boleto só\n2️⃣ *Boleto separado* — dois boletos\n\n_Toque ou digite *1* / *2*:_";
       } else if (cadastroStep === "ask_finalizar") {
         replyText = "✅ Tudo pronto! Toque no botão *Finalizar* ou responda *FINALIZAR* para concluir.";
       }
@@ -2301,9 +2313,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // configurada para esse input no passo atual. (Movido para depois de goToStep
   // por causa de TDZ — antes disso a função ainda não está inicializada.)
   if (!transition && cls.intent === "quer_cadastrar") {
-    const docStep = dbSteps.find((s) => s.is_active && s.step_type === "capture_documento");
-    if (docStep) {
-      return _finalize(stepKey, await goToStep(docStep, restoreDetourUpdates));
+    const dest = pickActivateDestination(dbSteps as any[], ctx.customer as any);
+    if (dest) {
+      return _finalize(stepKey, await goToStep(dest as DbStep, restoreDetourUpdates));
     }
     return _finalize(stepKey, {
       reply: await getTemplate(ctx.supabase, "checkin_pos_video", "pedir_conta", {
@@ -2444,11 +2456,25 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // Resolve a transition (special or step) — sempre propaga restoreDetourUpdates
   // para limpar flags de detour quando o lead seguir o fluxo normal.
   const resolveTransition = async (t: DbTransition): Promise<BotResult> => {
+    // F16: nudge "3) Ativar" (passo SEM botões) vs transition "3"=humano.
+    // Com botões reais, "3" continua sendo o 3º botão (ex.: Falar com Rafael).
+    const nudgeChoice = resolveCanonicalNudgeChoice(ctx.messageText);
+    const stepHasButtons = extractStepButtons(currentStep).length > 0;
+    if (
+      t.goto_special === "humano" &&
+      !stepHasButtons &&
+      (nudgeChoice === "ativar" || isActivateIntent(ctx.messageText, ctx.buttonId))
+    ) {
+      const dest = pickActivateDestination(dbSteps as any[], ctx.customer as any);
+      if (dest) {
+        console.log(`[activate-routing] override humano→ativar step=${dest.step_key}`);
+        return goToStep(dest as DbStep, restoreDetourUpdates);
+      }
+    }
+
     if (t.goto_special === "cadastro") {
-      const docStep = findActiveByType("capture_documento");
-      if (docStep) return goToStep(docStep, restoreDetourUpdates);
-      const contaStep = findActiveByType("capture_conta");
-      if (contaStep) return goToStep(contaStep, restoreDetourUpdates);
+      const dest = pickActivateDestination(dbSteps as any[], ctx.customer as any);
+      if (dest) return goToStep(dest as DbStep, restoreDetourUpdates);
       return {
         reply: await getTemplate(ctx.supabase, "checkin_pos_video", "pedir_conta", vars),
         updates: { conversation_step: "aguardando_conta", sales_phase: "fechamento", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
@@ -2461,7 +2487,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       };
     }
     if (t.goto_special === "repeat" || (!t.goto_step_id && !t.goto_special)) return repeatCurrent();
-    const nextStep = dbSteps.find((s) => s.id === t.goto_step_id);
+    let nextStep = dbSteps.find((s) => s.id === t.goto_step_id);
+    // F16: cadastrar/ativar NÃO pode cair na conta de simulação (→ resultado).
+    if (nextStep) {
+      const rewritten = rewriteActivateAwayFromSimPath(
+        nextStep as any,
+        dbSteps as any[],
+        ctx.customer as any,
+        { messageText: ctx.messageText, buttonId: ctx.buttonId },
+      );
+      if (rewritten) {
+        console.log(
+          `[activate-routing] rewrite ${nextStep.step_key}→${rewritten.step_key} (ativar≠simular)`,
+        );
+        nextStep = rewritten as DbStep;
+      }
+    }
     if (!nextStep || !nextStep.is_active) {
       // 🩹 AUTO-CURA: quando o consultor configurou goto_step_id órfão (step
       // deletado/duplicado/movido entre variantes), em vez de fazer
@@ -2523,6 +2564,19 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
   // 1) A regular rule matched
   if (transition) return _finalize(stepKey, await resolveTransition(transition));
+
+  // 1.25) Nudge canônico sem transition (passo sem botões / texto "ativar")
+  {
+    const choice = resolveCanonicalNudgeChoice(ctx.messageText);
+    const wantActivate = choice === "ativar" || isActivateIntent(ctx.messageText, ctx.buttonId);
+    if (wantActivate && extractStepButtons(currentStep).length === 0) {
+      const dest = pickActivateDestination(dbSteps as any[], ctx.customer as any);
+      if (dest) {
+        console.log(`[activate-routing] nudge/texto→${dest.step_key}`);
+        return _finalize(stepKey, await goToStep(dest as DbStep, restoreDetourUpdates));
+      }
+    }
+  }
 
 
   // 1.5) Captura sem transição configurada → segue o Plano B configurado
@@ -2761,7 +2815,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             });
           } else {
             // F02: sem botões configurados — CTA textual para não ficar parado após áudio/dúvida
-            const nudge = "Posso te ajudar com:\n1) Simular economia\n2) Como funciona\n3) Ativar o benefício\n\nÉ só responder com o *número* 🙂";
+            const nudge = ACTIVATE_CTA_NUDGE;
             await ctx.sender.sendText(ctx.remoteJid, nudge);
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,

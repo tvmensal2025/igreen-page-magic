@@ -5,8 +5,8 @@
 // dados sempre via React Query, nunca fetch solto em componente.
 // =============================================================================
 
-import { useQuery } from "@tanstack/react-query";
-import { fetchProductBySlug, fetchProducts } from "./api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchProductBySlug, fetchProducts, updateProductActive } from "./api";
 import type { Product, ProductFamily } from "./types";
 
 const PRODUCTS_KEY = "products";
@@ -30,5 +30,17 @@ export function useProduct(slug: string | undefined) {
     queryFn: () => fetchProductBySlug(slug as string),
     enabled: !!slug,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Ativa/desativa produto no catálogo (admin). */
+export function useUpdateProductActive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ productId, isActive }: { productId: string; isActive: boolean }) =>
+      updateProductActive(productId, isActive),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [PRODUCTS_KEY] });
+    },
   });
 }

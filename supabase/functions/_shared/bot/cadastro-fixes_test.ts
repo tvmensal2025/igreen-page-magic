@@ -7,6 +7,8 @@ import {
   isNonNameReply,
   resumeAfterAddressEdit,
   looksLikeSpamBlast,
+  nextSeparatedCadastroStep,
+  isPrePortalCadastroStep,
 } from "./cadastro-fixes.ts";
 
 Deno.test("looksLikeEmail", () => {
@@ -38,6 +40,17 @@ Deno.test("resumeAfterAddressEdit F04", () => {
   assertEquals(resumeAfterAddressEdit({ rescue_attempts: 2 }), "ask_finalizar");
   assertEquals(resumeAfterAddressEdit({ previous_conversation_step: "finalizando" }), "ask_finalizar");
   assertEquals(resumeAfterAddressEdit({ rescue_attempts: 0 }), "confirmando_dados_conta");
+});
+
+Deno.test("nextSeparatedCadastroStep — boleto separado de finalizar", () => {
+  assertEquals(nextSeparatedCadastroStep({}), "ask_contaunica");
+  assertEquals(nextSeparatedCadastroStep({ contaunica_answered: true }), "ask_finalizar");
+});
+
+Deno.test("isPrePortalCadastroStep", () => {
+  assertEquals(isPrePortalCadastroStep("ask_contaunica"), true);
+  assertEquals(isPrePortalCadastroStep("ask_finalizar"), true);
+  assertEquals(isPrePortalCadastroStep("finalizando"), false);
 });
 
 Deno.test("looksLikeSpamBlast", () => {

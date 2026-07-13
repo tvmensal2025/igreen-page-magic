@@ -15,6 +15,8 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { isAutomationEnabled } from "../_shared/automation-gate.ts";
+import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -317,8 +319,19 @@ Deno.serve(async (req) => {
     } catch (_e) { /* ignore */ }
   }
 
-  // SMS de fallback para NA terminal
+  // Ligação atendida → pausa cadência (só se toggle ON)
+  if (outcome === "answered") {
+    try {
+      const customerId = (target as { customer_id?: string | null }).customer_id ?? null;
+      await onCallAnsweredPauseCadence(admin, customerId);
+    } catch (_e) { /* ignore */ }
+  }
+
+  // SMS de fallback para NA terminal — exige toggle call_outcome_sms_branch
   if (!shouldRetry && newStatus === "no_answer" && target.campaign_id && velipConfigured()) {
+    if (!(await isAutomationEnabled(admin, "call_outcome_sms_branch"))) {
+      return json(200, { ok: true, matched: true, outcome, retry: shouldRetry, sms_skipped: "toggle_off" });
+    }
     const { data: campFull } = await admin
       .from("voice_campaigns")
       .select("sms_on_no_answer_text")

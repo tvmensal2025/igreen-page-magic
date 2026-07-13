@@ -1,8 +1,8 @@
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Zap } from "lucide-react";
 import { KanbanDealCard } from "./KanbanDealCard";
 import { resolveStep, type CustomStepMap } from "@/lib/flowStepResolver";
+import { VirtualList } from "@/components/ui/VirtualList";
 import type { Tables } from "@/integrations/supabase/types";
 
 type KanbanStageRow = Tables<"kanban_stages">;
@@ -68,28 +68,50 @@ export function KanbanColumn({ stage, deals, searchQuery, stepFilter = "all", cu
         </span>
       </div>
 
-      {/* Cards */}
-      <ScrollArea className="kanban-safe-scroll flex-1 min-h-0 min-w-0 max-w-full overflow-hidden">
-        <div className="w-full min-w-0 max-w-full overflow-hidden p-2 space-y-1.5">
-          {stageDeals.map((deal) => (
-            <KanbanDealCard
-              key={deal.id}
-              deal={deal}
-              stepInfo={resolveStep((deal as any).conversation_step, customStepMap)}
-              onDragStart={onDragStart}
-              onEdit={onEditDeal}
-              onDelete={onDeleteDeal}
-              onReclassify={onReclassify}
-              onView={onView}
-            />
-          ))}
-          {stageDeals.length === 0 && (
-            <div className="text-center py-8">
-              <p className="text-[11px] text-muted-foreground/60">Vazio</p>
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+      {/* Cards — virtualiza quando a coluna fica grande */}
+      <div className="kanban-safe-scroll flex-1 min-h-0 min-w-0 max-w-full overflow-hidden p-2">
+        {stageDeals.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-[11px] text-muted-foreground/60">Vazio</p>
+          </div>
+        ) : stageDeals.length > 40 ? (
+          <VirtualList
+            items={stageDeals}
+            estimateSize={92}
+            overscan={6}
+            height="100%"
+            getItemKey={(deal) => deal.id}
+            renderItem={(deal) => (
+              <div className="pb-1.5">
+                <KanbanDealCard
+                  deal={deal}
+                  stepInfo={resolveStep((deal as any).conversation_step, customStepMap)}
+                  onDragStart={onDragStart}
+                  onEdit={onEditDeal}
+                  onDelete={onDeleteDeal}
+                  onReclassify={onReclassify}
+                  onView={onView}
+                />
+              </div>
+            )}
+          />
+        ) : (
+          <div className="w-full min-w-0 max-w-full overflow-hidden space-y-1.5 overflow-y-auto h-full">
+            {stageDeals.map((deal) => (
+              <KanbanDealCard
+                key={deal.id}
+                deal={deal}
+                stepInfo={resolveStep((deal as any).conversation_step, customStepMap)}
+                onDragStart={onDragStart}
+                onEdit={onEditDeal}
+                onDelete={onDeleteDeal}
+                onReclassify={onReclassify}
+                onView={onView}
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

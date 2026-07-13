@@ -19,6 +19,8 @@ import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 
 
 const corsHeaders = {
@@ -94,12 +96,22 @@ Deno.serve(async (req) => {
     for (const c of (candidates || []).filter((c: any) => candidateAllowed.has(c.id))) {
       if (TERMINAL_STEPS.has(c.conversation_step || "")) continue;
       if (!c.phone_whatsapp) continue;
+      if (!(await gateProactiveTouch(supabase, c.id, "bot_followup_checker"))) continue;
+
       const firstName = (c.name || "").split(" ")[0] || "";
-      const msg = firstName
-        ? `Oi ${firstName}! Aqui é da iGreen 🌱 Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`
-        : `Oi! Aqui é da iGreen 🌱 Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`;
+      const fallback = firstName
+        ? `Oi ${firstName}! Aqui é da iGreen. Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`
+        : `Oi! Aqui é da iGreen. Vi que você começou a simular sua economia na conta de luz e ficou pela metade. Consigo retomar de onde paramos agora — quer que eu mostre quanto você pode economizar todo mês?`;
+      const msg = await loadAutomationTemplate(
+        supabase,
+        "bot_followup_sumiu",
+        fallback,
+        { nome: firstName },
+        c.consultant_id,
+      );
       try {
         await sender.sendText(`${c.phone_whatsapp}@s.whatsapp.net`, msg);
+        await recordProactiveTouch(supabase, c.id, "bot_followup_checker");
         await supabase.from("customers").update({
           followup_count: 1,
           last_followup_at: new Date().toISOString(),

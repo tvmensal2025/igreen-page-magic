@@ -18,10 +18,13 @@ import {
   CalendarClock,
   Settings2,
   BookOpen,
+  FileText,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CentralAutomacoesControle } from "@/components/admin/CentralAutomacoesControle";
+import { RetentionSettingsCard } from "@/components/admin/RetentionSettingsCard";
 import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
+import { AgendamentosTextosDialog } from "@/components/whatsapp/AgendamentosTextosDialog";
 import { cn } from "@/lib/utils";
 
 type Job = { jobid: number; jobname: string; schedule: string; active: boolean; command: string };
@@ -122,6 +125,12 @@ export default function AdminAgendamentosCentral() {
   const [filter, setFilter] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [tab, setTab] = useState("controle");
+  const [textosOpen, setTextosOpen] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -204,6 +213,17 @@ export default function AdminAgendamentosCentral() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 sm:justify-end shrink-0">
+              {userId && (
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="rounded-xl gap-1.5"
+                  onClick={() => setTextosOpen(true)}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Ajustar todos os textos
+                </Button>
+              )}
               <SistemaCapacidadesHelp label="Guia" />
               <Button
                 variant="outline"
@@ -218,6 +238,14 @@ export default function AdminAgendamentosCentral() {
             </div>
           </div>
         </header>
+
+        {userId && (
+          <AgendamentosTextosDialog
+            open={textosOpen}
+            onOpenChange={setTextosOpen}
+            consultantId={userId}
+          />
+        )}
 
         <Tabs value={tab} onValueChange={setTab} className="w-full space-y-6">
           <TabsList className="h-auto w-full sm:w-auto flex flex-wrap justify-start gap-1 rounded-2xl border bg-muted/40 p-1.5">
@@ -249,7 +277,8 @@ export default function AdminAgendamentosCentral() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="controle" className="mt-0 focus-visible:outline-none">
+          <TabsContent value="controle" className="mt-0 focus-visible:outline-none space-y-4">
+            <RetentionSettingsCard canEdit />
             <CentralAutomacoesControle canToggle />
           </TabsContent>
 

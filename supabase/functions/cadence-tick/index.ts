@@ -15,10 +15,24 @@ import {
   toVelipBRDest, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+/** Maps cadence stage → automation_toggles.key (per-stage kill switches). */
+const STAGE_TOGGLE_KEY: Partial<Record<Stage, string>> = {
+  COLD_1: "cadence_cold_1",
+  COLD_2: "cadence_cold_2",
+  COLD_3: "cadence_cold_3",
+  COLD_4: "cadence_cold_4",
+  CALL_1: "cadence_call_1",
+  CALL_2: "cadence_call_2",
+  CALL_3: "cadence_call_3",
+  SMS_1: "cadence_sms_1",
+  SMS_2: "cadence_sms_2",
 };
 
 interface StageConfig {
@@ -254,6 +268,9 @@ Deno.serve(async (req) => {
         .eq("id", row.id);
       deferred++; continue;
     }
+    if (!(await gateProactiveTouch(supabase, row.customer_id, "cadence_engine"))) {
+      deferred++; continue;
+    }
     const def = STAGE_MAP[stage];
     if (!def) { skipped++; continue; }
 
@@ -273,17 +290,26 @@ Deno.serve(async (req) => {
       (def.channel === "sms"      && stage.startsWith("SMS_"));
 
     if (needsDispatch) {
-      const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
-      if (!cfg || !cfg.enabled) {
-        detail = { ...detail, reason: "config_disabled_or_missing" };
+      const stageToggle = STAGE_TOGGLE_KEY[stage];
+      if (stageToggle && !(await isAutomationEnabled(supabase, stageToggle))) {
+        await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
+        detail = { ...detail, reason: "stage_toggle_off", key: stageToggle };
       } else {
-        let res: { ok: boolean; detail: string };
-        if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
-        else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
-        else res = await dispatchSMS(supabase, row, stage, cfg);
-        status = res.ok ? "sent" : "failed";
-        detail = { ...detail, dispatch: res.detail };
-        if (res.ok) sent++; else failed++;
+        const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
+        if (!cfg || !cfg.enabled) {
+          detail = { ...detail, reason: "config_disabled_or_missing" };
+        } else {
+          let res: { ok: boolean; detail: string };
+          if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+          else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
+          else res = await dispatchSMS(supabase, row, stage, cfg);
+          status = res.ok ? "sent" : "failed";
+          detail = { ...detail, dispatch: res.detail };
+          if (res.ok) {
+            sent++;
+            await recordProactiveTouch(supabase, row.customer_id, "cadence_engine", { stage, channel: def.channel });
+          } else failed++;
+        }
       }
     }
 

@@ -15,6 +15,7 @@ import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -123,6 +124,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (!(await gateProactiveTouch(supabase, c.id, "process_followups"))) {
+          skipCount++;
+          continue;
+        }
+
         const attempts = Number(c.followup_count || 0);
         if (attempts >= MAX_FOLLOWUP_ATTEMPTS) {
           await cancelFollowup(supabase, c.id, "max_attempts");
@@ -214,6 +220,8 @@ Deno.serve(async (req) => {
           await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
           continue;
         }
+
+        await recordProactiveTouch(supabase, c.id, "process_followups");
 
         // SUCESSO: persiste conversa + zera schedule
         await supabase.from("conversations").insert({

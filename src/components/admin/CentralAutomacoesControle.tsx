@@ -42,6 +42,8 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 /** Chaves que merecem destaque no painel principal (ordem). */
 const ESSENCIAIS_KEYS = [
+  "speed_to_lead_sla",
+  "retention_orchestrator",
   "send_scheduled_messages",
   "bot_followup_checker",
   "faq_reengagement_nudge",
@@ -49,6 +51,8 @@ const ESSENCIAIS_KEYS = [
   "bulk_campaigns_runner",
   "reactivation_cron",
   "cadence_engine",
+  "bot_stuck_recovery",
+  "call_outcome_sms_branch",
 ] as const;
 
 function riscoClass(risco?: CapacidadeRisco) {

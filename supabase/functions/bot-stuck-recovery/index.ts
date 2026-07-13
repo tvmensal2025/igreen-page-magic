@@ -14,6 +14,8 @@ import { captureError } from "../_shared/sentry.ts";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 
 const corsHeaders = {
@@ -81,6 +83,14 @@ Deno.serve(async (req) => {
 
     if (!(await isBotGloballyEnabled(supabase))) {
       return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Toggle granular (nasce OFF). Antes só o kill switch global bloqueava.
+    if (!(await isAutomationEnabled(supabase, "bot_stuck_recovery"))) {
+      await logSkipped(supabase, "bot_stuck_recovery");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bot_stuck_recovery" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -259,6 +269,9 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (!(await gateProactiveTouch(supabase, lead.id, "bot_stuck_recovery"))) {
+          continue;
+        }
 
         const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
@@ -275,6 +288,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        await recordProactiveTouch(supabase, lead.id, "bot_stuck_recovery");
         stats.rescued++;
         await supabase.from("customers").update({
           last_bot_reply_at: nowIso,

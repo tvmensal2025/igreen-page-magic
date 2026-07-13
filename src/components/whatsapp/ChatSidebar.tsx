@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Search, MessageCirclePlus, X, Users, Handshake } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import type { ChatItem } from "@/hooks/useChats";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 import { stripWhatsAppMarkup } from "@/lib/whatsapp/formatWhatsAppText";
 import { normalizePhone } from "./customerUtils";
+import { VirtualList } from "@/components/ui/VirtualList";
 
 interface CustomerResult {
   name: string | null;
@@ -291,8 +291,8 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
         </div>
       )}
 
-      {/* Chat list */}
-      <ScrollArea className="flex-1 min-h-0">
+      {/* Chat list — virtualizada (só DOM dos itens visíveis) */}
+      <div className="flex-1 min-h-0">
         {isLoading && chats.length === 0 && (
           <div className="p-4 text-center text-xs text-muted-foreground">
             Carregando conversas...
@@ -303,75 +303,82 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
             Nenhuma conversa encontrada
           </div>
         )}
-        {filtered.map((chat) => {
-          const isSelected = selectedJid === chat.remoteJid;
-          const hasUnread = chat.unreadCount > 0;
-          const partnerNome = partnerByJid[chat.remoteJid];
-          return (
-            <button
-              key={chat.remoteJid}
-              onClick={() => onSelectChat(chat.remoteJid)}
-              className={`relative w-full flex items-center gap-2.5 px-2.5 py-2.5 text-left transition-all ${
-                isSelected
-                  ? "bg-primary/8 hover:bg-primary/10"
-                  : "hover:bg-muted/50"
-              }`}
-            >
-              {isSelected && (
-                <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
-              )}
-              <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : partnerNome ? "ring-2 ring-amber-500/35 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
-                <AvatarImage
-                  src={chat.profilePicUrl}
-                  onError={(e) => {
-                    // URL do CDN expirou — some a img quebrada e deixa o fallback
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
-                  }}
-                />
-                <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/5 text-primary text-[10px] font-bold">
-                  {chat.name.slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className={`text-[13px] truncate sensitive-name flex items-center gap-1 min-w-0 ${hasUnread ? "font-bold text-foreground" : "font-medium text-foreground/90"}`}>
-                    <span className="truncate">{chat.name}</span>
-                    {partnerNome && (
-                      <Handshake
-                        className="h-3 w-3 shrink-0 text-amber-800"
-                        aria-label={`Parceiro: ${partnerNome}`}
-                      />
-                    )}
-                  </span>
-                  <span className={`text-[10px] shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
-                    {formatTime(chat.lastMessageTimestamp)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-2 mt-0.5">
-                  <span className={`text-[11px] truncate ${hasUnread ? "text-foreground/80" : "text-muted-foreground"}`}>
-                    {stripWhatsAppMarkup(chat.lastMessage || "") || "..."}
-                  </span>
-                  <span className="flex items-center gap-1 shrink-0">
-                    {partnerNome && (
-                      <span
-                        className="text-[9px] font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-600/35 rounded px-1 py-px"
-                        title={`Indicação de ${partnerNome} — acompanha as etapas do cadastro`}
-                      >
-                        Indicação
+        {filtered.length > 0 && (
+          <VirtualList
+            items={filtered}
+            estimateSize={68}
+            overscan={10}
+            height="100%"
+            getItemKey={(chat) => chat.remoteJid}
+            renderItem={(chat) => {
+              const isSelected = selectedJid === chat.remoteJid;
+              const hasUnread = chat.unreadCount > 0;
+              const partnerNome = partnerByJid[chat.remoteJid];
+              return (
+                <button
+                  onClick={() => onSelectChat(chat.remoteJid)}
+                  className={`relative w-full flex items-center gap-2.5 px-2.5 py-2.5 text-left transition-all ${
+                    isSelected
+                      ? "bg-primary/8 hover:bg-primary/10"
+                      : "hover:bg-muted/50"
+                  }`}
+                >
+                  {isSelected && (
+                    <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
+                  )}
+                  <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : partnerNome ? "ring-2 ring-amber-500/35 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
+                    <AvatarImage
+                      src={chat.profilePicUrl}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                    <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/5 text-primary text-[10px] font-bold">
+                      {chat.name.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`text-[13px] truncate sensitive-name flex items-center gap-1 min-w-0 ${hasUnread ? "font-bold text-foreground" : "font-medium text-foreground/90"}`}>
+                        <span className="truncate">{chat.name}</span>
+                        {partnerNome && (
+                          <Handshake
+                            className="h-3 w-3 shrink-0 text-amber-800"
+                            aria-label={`Parceiro: ${partnerNome}`}
+                          />
+                        )}
                       </span>
-                    )}
-                    {hasUnread && (
-                      <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">
-                        {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
+                      <span className={`text-[10px] shrink-0 ${hasUnread ? "text-primary font-semibold" : "text-muted-foreground"}`}>
+                        {formatTime(chat.lastMessageTimestamp)}
                       </span>
-                    )}
-                  </span>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </ScrollArea>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <span className={`text-[11px] truncate ${hasUnread ? "text-foreground/80" : "text-muted-foreground"}`}>
+                        {stripWhatsAppMarkup(chat.lastMessage || "") || "..."}
+                      </span>
+                      <span className="flex items-center gap-1 shrink-0">
+                        {partnerNome && (
+                          <span
+                            className="text-[9px] font-bold uppercase tracking-wide text-amber-950 bg-amber-100 border border-amber-600/35 rounded px-1 py-px"
+                            title={`Indicação de ${partnerNome} — acompanha as etapas do cadastro`}
+                          >
+                            Indicação
+                          </span>
+                        )}
+                        {hasUnread && (
+                          <span className="bg-primary text-primary-foreground text-[10px] rounded-full h-[18px] min-w-[18px] flex items-center justify-center px-1.5 shrink-0 font-bold shadow-sm shadow-primary/30">
+                            {chat.unreadCount > 99 ? "99+" : chat.unreadCount}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                </button>
+              );
+            }}
+          />
+        )}
+      </div>
     </div>
   );
 }

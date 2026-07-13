@@ -215,7 +215,7 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
                   <audio src={m.url} controls className="w-full h-8" />
                 )}
                 {kind === "image" && m.url && (
-                  <img src={m.url} alt={m.label || "preview"} className="w-full rounded-md max-h-40 object-contain bg-muted" />
+                  <img src={m.url} alt={m.label || "preview"} className="w-full rounded-md max-h-40 object-contain bg-muted" loading="lazy" decoding="async" />
                 )}
                 {kind === "video" && m.url && (
                   <video src={m.url} controls className="w-full rounded-md max-h-40 bg-muted" preload="metadata" />

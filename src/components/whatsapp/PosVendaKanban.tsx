@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -105,9 +105,19 @@ export default function PosVendaKanban({
   const [billPrompt, setBillPrompt] = useState<PosVendaCustomer | null>(null);
   // "mine" = registered_by_igreen_id = meu | "assigned" | "all" | <igreen_id específico>
   const [ownerFilter, setOwnerFilter] = useState<string>("mine");
+  const [hasMoreCustomers, setHasMoreCustomers] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const customersOffsetRef = useRef(0);
+  const POS_VENDA_PAGE = 400;
 
-  async function load() {
-    setLoading(true);
+  async function load(opts?: { append?: boolean }) {
+    const append = !!opts?.append;
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+
+    const from = append ? customersOffsetRef.current : 0;
+    const to = from + POS_VENDA_PAGE - 1;
+
     let q = supabase
       .from("customers")
       .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
@@ -116,7 +126,7 @@ export default function PosVendaKanban({
 
     if (ownerFilter === "mine") {
       if (myIgreenId) q = q.eq("registered_by_igreen_id", myIgreenId);
-      else { setCustomers([]); setLoading(false); return; }
+      else { setCustomers([]); setLoading(false); setLoadingMore(false); return; }
     } else if (ownerFilter === "assigned") {
       q = q.eq("assigned_consultant_id", consultantId);
     } else if (ownerFilter !== "all") {
@@ -124,13 +134,19 @@ export default function PosVendaKanban({
       q = q.eq("registered_by_igreen_id", ownerFilter);
     }
 
-    const { data, error } = await q.order("portal_submitted_at", { ascending: false, nullsFirst: false });
+    const { data, error } = await q
+      .order("portal_submitted_at", { ascending: false, nullsFirst: false })
+      .range(from, to);
     if (error) {
       toast.error("Erro ao carregar: " + error.message);
     } else {
-      setCustomers((data as any) || []);
+      const rows = ((data as any) || []) as PosVendaCustomer[];
+      customersOffsetRef.current = from + rows.length;
+      setHasMoreCustomers(rows.length >= POS_VENDA_PAGE);
+      setCustomers((prev) => (append ? [...prev, ...rows] : rows));
     }
     setLoading(false);
+    setLoadingMore(false);
   }
 
   async function loadConsultants() {
@@ -157,7 +173,10 @@ export default function PosVendaKanban({
     setRegistrants(Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name)));
   }
 
-  useEffect(() => { load(); }, [consultantId, ownerFilter, myIgreenId]);
+  useEffect(() => {
+    customersOffsetRef.current = 0;
+    void load();
+  }, [consultantId, ownerFilter, myIgreenId]);
   useEffect(() => { loadConsultants(); loadRegistrants(); }, [consultantId]);
   useEffect(() => {
     if (!initialCustomerId) return;
@@ -511,6 +530,20 @@ export default function PosVendaKanban({
               </ScrollArea>
             </div>
           ))}
+        </div>
+      )}
+
+      {!loading && hasMoreCustomers && (
+        <div className="flex justify-center py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-xl"
+            disabled={loadingMore}
+            onClick={() => void load({ append: true })}
+          >
+            {loadingMore ? "Carregando…" : "Carregar mais clientes"}
+          </Button>
         </div>
       )}
 

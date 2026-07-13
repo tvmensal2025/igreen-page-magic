@@ -54,6 +54,7 @@
     "@sentry/react": "^8.45.0",
     "@supabase/supabase-js": "^2.108.2",
     "@tanstack/react-query": "^5.83.0",
+    "@tanstack/react-virtual": "^3.14.6",
     "@xyflow/react": "^12.3.0",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",

@@ -11,7 +11,7 @@
 import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage, logAIDecision, type AIPhase } from "./ai-cost-tracker.ts";
 import { answerFaqWithAI } from "./ai-faq-answerer.ts";
-import { formatReply } from "./format-reply.ts";
+import { formatReply, formatFaqReply } from "./format-reply.ts";
 
 export type OrchestratorRoute =
   | "deterministic"  // botão/mídia — fluxo determinístico cuida
@@ -293,10 +293,11 @@ export async function runOrchestrator(input: OrchestratorInput): Promise<Orchest
     }
   }
 
-  // Embeleza a resposta final (negrito em termos-chave, espaçamento limpo,
-  // capitalização de frases, corte por frase sem truncar no meio). Cobre tanto
-  // a reply do cérebro quanto a do RAG.
-  const prettyReply = formatReply(finalReply);
+  // Embeleza a resposta final. FAQ/RAG → layout arejado + sem push de cadastro
+  // nem "clique nas opções" fantasma. Demais rotas → formatReply padrão.
+  const prettyReply = (tool === "answer_faq_rag" || brain.action === "answer_faq")
+    ? formatFaqReply(finalReply)
+    : formatReply(finalReply, { stripCadastroPush: true });
 
   void logAIDecision({
     supabase: input.supabase,

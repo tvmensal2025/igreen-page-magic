@@ -16,7 +16,7 @@ import {
   ensureCampaignTrackingProtocol,
   normalizeTrackingProtocol,
 } from "../_shared/campaign-tracking.ts";
-import { buildRodizioPoolPlan } from "./rodizio-pool.ts";
+import { buildRodizioPoolPlan, filterRodizioPartnerIds, normalizeRodizioPartnerIds } from "./rodizio-pool.ts";
 
 async function safeNotifyConsultant(
   consultantId: string,
@@ -1224,7 +1224,7 @@ Deno.serve(async (req) => {
     // é a chave usada pela pool de rodízio (rodizio_pools.campaign_id) e pela
     // telemetria de template. Antes era refeito um SELECT por fb_campaign_id;
     // agora o insert já devolve o id, evitando uma ida extra ao banco.
-    const { data: insertedCampaign } = await admin
+    const { data: insertedCampaign, error: insertCampaignError } = await admin
       .from("facebook_campaigns")
       .insert({
         consultant_id: auth.id,
@@ -1251,33 +1251,66 @@ Deno.serve(async (req) => {
       })
       .select("id")
       .maybeSingle();
+    if (insertCampaignError) {
+      console.error("[fb-create] persist facebook_campaigns falhou:", insertCampaignError.message);
+      throw new Error(
+        `Campanha criada na Meta, mas falhou ao salvar no portal: ${insertCampaignError.message}`,
+      );
+    }
     const campaignRowId = (insertedCampaign as { id?: string } | null)?.id ?? null;
+    if (!campaignRowId) {
+      throw new Error("Campanha criada na Meta, mas o portal não retornou o id interno.");
+    }
 
     // ─── Rodízio: cria a pool e os membros ligados a esta campanha ──────────
-    // Só cria quando o toggle de rodízio veio ligado E há pelo menos 1
-    // participante (1 = destino exclusivo + métricas; 2+ = rodízio circular).
-    // Quando desligado, nada acontece aqui — o anúncio segue com destino único
-    // (whatsapp_destination_number), exatamente como antes.
-    //
-    // Fail-open (Requisito 6.4): a campanha CTWA já foi criada na Meta e
-    // persistida acima. Se a criação da pool falhar, NÃO revertemos a campanha;
-    // apenas logamos e avisamos o consultor dono via notifyConsultant. O dono é
-    // o consultor logado (auth.id), o mesmo que a RLS de referral_partners usa.
-    // O plano (pool + construtor de membros) e a regra "criar ou não" vivem no
-    // helper puro `rodizio-pool.ts` (testável sob Vitest). Retorna null quando o
-    // rodízio está desligado ou há 0 participantes — nesse caso nada é criado.
-    const rodizioPlan = buildRodizioPoolPlan({
-      input: body,
-      campaignId: campaignRowId ?? "",
-      consultantId: auth.id,
-      label: campaignName,
-    });
-    if (rodizioPlan) {
+    // Só cria quando o toggle veio ligado E há ≥1 participante válido/ativo.
+    // Fail-open: se a pool falhar, a campanha CTWA permanece; avisamos o dono.
+    let rodizioConfigured = false;
+    let rodizioPoolId: string | null = null;
+    let rodizioMembersCount = 0;
+    let rodizioWarning: string | null = null;
+
+    const rodizioRequested =
+      !!body.rodizio_enabled && normalizeRodizioPartnerIds(body).length >= 1;
+
+    if (rodizioRequested) {
       try {
-        if (!campaignRowId) {
-          throw new Error("não foi possível obter o id da campanha recém-criada");
+        const requestedIds = normalizeRodizioPartnerIds(body);
+        const { data: partners, error: partnersError } = await admin
+          .from("referral_partners")
+          .select("id, consultant_id, is_active")
+          .in("id", requestedIds);
+        if (partnersError) {
+          throw new Error(partnersError.message);
         }
-        // 1) Cria a pool ligada ao campaign_id, com o consultor dono.
+        const allowed = new Set(
+          ((partners as any[]) || [])
+            .filter((p) => p.consultant_id === auth.id && p.is_active !== false)
+            .map((p) => p.id as string),
+        );
+        const validIds = filterRodizioPartnerIds(requestedIds, allowed);
+        const skipped = requestedIds.filter((id) => !allowed.has(id));
+        if (skipped.length) {
+          rodizioWarning =
+            `Ignorados ${skipped.length} participante(s) inválido(s)/inativo(s).`;
+          console.warn("[fb-create] rodízio: partners ignorados:", skipped.join(", "));
+        }
+        if (validIds.length < 1) {
+          throw new Error(
+            "nenhum participante válido/ativo restante para montar a pool",
+          );
+        }
+
+        const rodizioPlan = buildRodizioPoolPlan({
+          input: { rodizio_enabled: true, rodizio_partner_ids: validIds },
+          campaignId: campaignRowId,
+          consultantId: auth.id,
+          label: campaignName,
+        });
+        if (!rodizioPlan) {
+          throw new Error("plano de pool nulo após validação");
+        }
+
         const { data: pool, error: poolError } = await admin
           .from("rodizio_pools")
           .insert(rodizioPlan.pool)
@@ -1286,24 +1319,38 @@ Deno.serve(async (req) => {
         if (poolError || !pool?.id) {
           throw new Error(poolError?.message || "falha ao criar rodizio_pools");
         }
-        // 2) Insere os membros na ordem recebida: position 0..n, lead_count=0.
         const members = rodizioPlan.buildMembers(pool.id);
         const { error: membersError } = await admin
           .from("rodizio_pool_members")
           .insert(members);
         if (membersError) {
+          await admin.from("rodizio_pools").update({ is_active: false }).eq("id", pool.id);
           throw new Error(membersError.message);
         }
-        console.log(`[fb-create] rodízio: pool ${pool.id} criada com ${members.length} membros para campanha ${campaignRowId}`);
+
+        rodizioConfigured = true;
+        rodizioPoolId = pool.id as string;
+        rodizioMembersCount = members.length;
+        console.log(
+          `[fb-create] rodízio: pool ${pool.id} criada com ${members.length} membros para campanha ${campaignRowId}`,
+        );
+        if (rodizioWarning) {
+          await safeNotifyConsultant(
+            auth.id,
+            "warning",
+            "Rodízio parcial",
+            `Campanha "${campaignName}" publicada. ${rodizioWarning} A pool ficou com ${members.length} participante(s).`,
+          );
+        }
       } catch (e) {
-        // Fail-open: campanha permanece válida; só logamos e avisamos o dono.
         const msg = (e as Error).message;
+        rodizioWarning = msg;
         console.error("[fb-create] falha ao criar pool de rodízio (campanha mantida):", msg);
         await safeNotifyConsultant(
           auth.id,
           "warning",
           "Rodízio não configurado",
-          `Sua campanha foi criada normalmente, mas não conseguimos ligar o rodízio de leads desta vez (${msg}). Os leads vão para o número padrão. Tente editar a campanha mais tarde ou avise o suporte.`,
+          `Sua campanha foi criada normalmente, mas não conseguimos ligar o rodízio de leads desta vez (${msg}). Os leads vão para o número padrão. Edite a campanha depois ou avise o suporte.`,
         );
       }
     }
@@ -1405,7 +1452,21 @@ Deno.serve(async (req) => {
       if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(realignJob);
     } catch { /* ambiente sem waitUntil — deixa promise soltar */ }
 
-    return new Response(JSON.stringify({ ok: true, campaign_id: campaignId, adset_id: adsetId, ad_ids: adIds, ads_count: adIds.length, tracking_protocol: trackingProtocol, activated, activation_error: activationError }), {
+    return new Response(JSON.stringify({
+      ok: true,
+      campaign_id: campaignId,
+      portal_campaign_id: campaignRowId,
+      adset_id: adsetId,
+      ad_ids: adIds,
+      ads_count: adIds.length,
+      tracking_protocol: trackingProtocol,
+      activated,
+      activation_error: activationError,
+      rodizio_configured: rodizioConfigured,
+      rodizio_pool_id: rodizioPoolId,
+      rodizio_members: rodizioMembersCount,
+      rodizio_warning: rodizioWarning,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 

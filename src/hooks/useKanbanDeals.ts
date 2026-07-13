@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { Tables, TablesUpdate } from "@/integrations/supabase/types";
@@ -6,18 +6,29 @@ import type { Tables, TablesUpdate } from "@/integrations/supabase/types";
 type CrmDealRow = Tables<"crm_deals">;
 type CrmDealUpdate = TablesUpdate<"crm_deals">;
 
+const DEALS_PAGE = 400;
+
 export function useKanbanDeals(consultantId: string, options?: { includeTests?: boolean }) {
   const includeTests = !!options?.includeTests;
   const [deals, setDeals] = useState<CrmDealRow[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const offsetRef = useRef(0);
   const { toast } = useToast();
 
-  const fetchDeals = useCallback(async () => {
+  const fetchDeals = useCallback(async (opts?: { append?: boolean }) => {
+    const append = !!opts?.append;
+    if (append) setLoadingMore(true);
+    const from = append ? offsetRef.current : 0;
+    const to = from + DEALS_PAGE - 1;
+
     const { data } = await supabase
       .from("crm_deals")
       .select("*, customers!inner(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null", { foreignTable: "customers" })
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .range(from, to);
     const enriched: any[] = (data || []).map((d: any) => ({
       ...d,
       customer_name: d.customers?.name || null,
@@ -29,14 +40,15 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
       is_sandbox: d.customers?.is_sandbox || false,
     }));
 
-    if (includeTests) {
-      // Pega customers de teste/sandbox SEM deal e cria entradas sintéticas
+    // Testes sintéticos só na primeira página (evita duplicar ao carregar mais)
+    if (!append && includeTests) {
       const existingCustomerIds = new Set(enriched.map((d) => d.customer_id).filter(Boolean));
       const { data: testCustomers } = await supabase
         .from("customers")
         .select("id, name, phone_whatsapp, customer_origin, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox, created_at")
         .eq("consultant_id", consultantId)
-        .or("is_test_lead.eq.true,is_sandbox.eq.true");
+        .or("is_test_lead.eq.true,is_sandbox.eq.true")
+        .limit(200);
       for (const c of testCustomers || []) {
         if (existingCustomerIds.has(c.id)) continue;
         if (!["whatsapp_lead", "manual", null].includes((c as any).customer_origin)) continue;
@@ -64,8 +76,14 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
       }
     }
 
-    setDeals(enriched as CrmDealRow[]);
+    const pageLen = (data || []).length;
+    offsetRef.current = from + pageLen;
+    setHasMore(pageLen >= DEALS_PAGE);
+    setDeals((prev) => (append ? [...prev, ...(enriched as CrmDealRow[])] : (enriched as CrmDealRow[])));
+    if (append) setLoadingMore(false);
   }, [consultantId, includeTests]);
+
+  const loadMore = useCallback(() => fetchDeals({ append: true }), [fetchDeals]);
 
   // Also try to resolve names by phone for deals without customer_id
   const resolveNames = useCallback(async (rawDeals: CrmDealRow[]) => {
@@ -175,5 +193,5 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     fetchDeals();
   };
 
-  return { deals, setDeals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal };
+  return { deals, setDeals, fetchDeals, loadMore, hasMore, loadingMore, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal };
 }

@@ -30,6 +30,7 @@ import {
 } from "../_shared/anti-ban.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -349,6 +350,10 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         continue;
       }
 
+      if (!(await gateProactiveTouch(supabase, customer.id, "reactivation_cron"))) {
+        continue;
+      }
+
       const finalText = renderMessage(tpl.message_text, customer, consultantName);
       const remoteJid = customer.phone_whatsapp.includes("@")
         ? customer.phone_whatsapp
@@ -385,6 +390,8 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
       }
 
       if (ok) await registerSend(supabase, instanceName);
+
+      if (ok) await recordProactiveTouch(supabase, customer.id, "reactivation_cron", { template_id: tpl.id });
 
       // Registra envio.
       try {

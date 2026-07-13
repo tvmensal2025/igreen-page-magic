@@ -5,6 +5,12 @@ import {
   capitalizeSentences,
   emphasizeKeyTerms,
   formatReply,
+  prettifyFaqLayout,
+  formatFaqReply,
+  stripPushyCadastroCta,
+  withSoftFlowClose,
+  hasSoftClose,
+  SOFT_FLOW_CLOSE,
 } from "./format-reply.ts";
 
 // ─── truncateAtSentence ─────────────────────────────────────────────────
@@ -98,4 +104,55 @@ Deno.test("formatReply vazio retorna string vazia", () => {
 Deno.test("formatReply respeita maxLen sem cortar palavra", () => {
   const out = formatReply("Primeira frase completa. " + "y".repeat(600), { maxLen: 30 });
   assertEquals(out, "Primeira frase completa.");
+});
+
+Deno.test("prettifyFaqLayout quebra parede longa em parágrafos", () => {
+  const wall =
+    "A iGreen funciona com energia compartilhada de fazendas solares. Você continua com a mesma distribuidora e recebe desconto na fatura. Não precisa instalar nada no telhado. Qualquer outra dúvida, é só perguntar.";
+  const out = prettifyFaqLayout(wall);
+  assertEquals(out.includes("\n\n"), true);
+  assertEquals(out.includes("iGreen"), true);
+});
+
+Deno.test("formatFaqReply aplica negrito e layout, SEM empurrar cadastro", () => {
+  const wall =
+    "a igreen oferece desconto real na sua conta de luz sem fidelidade e sem multa. voce nao precisa instalar painel. posso seguir com seu cadastro?";
+  const out = formatFaqReply(wall);
+  assertEquals(out.includes("*"), true);
+  assertEquals(/\n\n/.test(out) || out.length < 160, true);
+  // Precisão: FAQ não deve insistir em cadastro
+  assertEquals(/cadastro\s*\?/i.test(out), false);
+  assertEquals(/posso seguir com seu cadastro/i.test(out), false);
+});
+
+Deno.test("stripPushyCadastroCta remove CTAs agressivos no final", () => {
+  assertEquals(
+    stripPushyCadastroCta("A iGreen dá desconto na fatura.\n\nPosso seguir com seu cadastro?"),
+    "A iGreen dá desconto na fatura.",
+  );
+  assertEquals(
+    stripPushyCadastroCta("Tudo sem fidelidade.\nQuer que eu já comece seu cadastro pra garantir essa economia?"),
+    "Tudo sem fidelidade.",
+  );
+  // Corpo sem CTA permanece
+  assertEquals(stripPushyCadastroCta("Sem fidelidade e sem multa."), "Sem fidelidade e sem multa.");
+});
+
+Deno.test("withSoftFlowClose anexa ponte neutra, nunca cadastro nem botão fantasma", () => {
+  const out = withSoftFlowClose("A iGreen aplica desconto direto na fatura.");
+  assertEquals(out.includes(SOFT_FLOW_CLOSE), true);
+  assertEquals(/cadastro/i.test(out), false);
+  assertEquals(/op[cç][oõ]es/i.test(out), false);
+  // Já tem pergunta → não duplica
+  assertEquals(withSoftFlowClose("Ficou claro?"), "Ficou claro?");
+  assertEquals(hasSoftClose("Qualquer outra dúvida, é só perguntar."), true);
+});
+
+Deno.test("stripPushyCadastroCta remove CTA fantasma de botão", () => {
+  const raw =
+    "A primeira fatura chega em até 90 dias.\n\nPosso seguir com o seu cadastro?\n\n👇 Posso seguir com você — é só tocar numa das opções acima.";
+  const out = stripPushyCadastroCta(raw);
+  assertEquals(/cadastro/i.test(out), false);
+  assertEquals(/op[cç][oõ]es acima/i.test(out), false);
+  assertEquals(out.includes("90 dias"), true);
 });

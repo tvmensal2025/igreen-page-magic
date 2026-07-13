@@ -143,12 +143,33 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
         } else throw err;
       }
       const activated = result?.activated === true;
-      toast({
-        title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
-        description: activated
-          ? "Rodízio e dados da campanha foram salvos. A Meta pode levar alguns minutos para entregar os primeiros leads."
-          : "A campanha foi salva e enviada para análise da Meta. Se precisar, aparecerá como revisão no painel.",
-      });
+      const rodizioConfigured = result?.rodizio_configured === true;
+      const rodizioWarning = typeof result?.rodizio_warning === "string" ? result.rodizio_warning : null;
+      const wantedRodizio = state.rodizioEnabled && state.rodizioPartners.length >= 1;
+
+      if (wantedRodizio && !rodizioConfigured) {
+        toast({
+          title: activated ? "Campanha no ar — rodízio pendente" : "Campanha salva — rodízio pendente",
+          description: rodizioWarning
+            ? `A Meta recebeu a campanha, mas o rodízio não ligou: ${rodizioWarning}. Edite a campanha e configure de novo.`
+            : "A campanha foi criada, mas a pool de rodízio não foi configurada. Edite a campanha para ligar os participantes.",
+          variant: "destructive",
+        });
+      } else if (wantedRodizio && rodizioWarning) {
+        toast({
+          title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
+          description: `Rodízio ativo com aviso: ${rodizioWarning}`,
+        });
+      } else {
+        toast({
+          title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
+          description: activated
+            ? wantedRodizio
+              ? "Rodízio e dados da campanha foram salvos. A Meta pode levar alguns minutos para entregar os primeiros leads."
+              : "Campanha no ar. A Meta pode levar alguns minutos para entregar os primeiros leads."
+            : "A campanha foi salva e enviada para análise da Meta. Se precisar, aparecerá como revisão no painel.",
+        });
+      }
       try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
       onCreated?.();
       onClose();

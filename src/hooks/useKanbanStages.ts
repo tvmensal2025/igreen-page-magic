@@ -6,9 +6,9 @@ import type { Tables, TablesInsert } from "@/integrations/supabase/types";
 type KanbanStageRow = Tables<"kanban_stages">;
 type KanbanStageInsert = TablesInsert<"kanban_stages">;
 
-// Lead CRM termina em "Finalizando cadastro". A partir daí o cliente passa
-// para o CRM de Pós-Venda (aprovado / reprovado / 30-60-90-120 dias) quando
-// a extensão sincroniza com o iGreen.
+// Funil de clientes interessados: cadastro até "Finalizando".
+// "Ganho" / "Perdido" são desfechos manuais (close-capture). Sync iGreen
+// remove o deal e o cliente vai para o CRM Pós-Venda (Clientes ativos).
 const DEFAULT_STAGES: Omit<KanbanStageInsert, "consultant_id">[] = [
   { stage_key: "novo_lead", label: "Novo Lead", color: "bg-primary/15 text-primary", position: 0, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: true },
   { stage_key: "qualificando", label: "Em qualificação", color: "bg-info/15 text-info", position: 1, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
@@ -16,7 +16,12 @@ const DEFAULT_STAGES: Omit<KanbanStageInsert, "consultant_id">[] = [
   { stage_key: "conta_enviada", label: "Conta enviada", color: "bg-info/15 text-info", position: 3, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
   { stage_key: "doc_enviado", label: "Documento enviado", color: "bg-warning/15 text-warning", position: 4, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
   { stage_key: "finalizando", label: "Finalizando cadastro", color: "bg-primary/15 text-primary", position: 5, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
+  { stage_key: "ganho", label: "Ganho", color: "bg-primary/15 text-primary", position: 6, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
+  { stage_key: "perdido", label: "Perdido", color: "bg-destructive/15 text-destructive", position: 7, auto_message_text: null, auto_message_type: "text", auto_message_media_url: null, auto_message_enabled: false },
 ];
+
+/** Desfechos manuais que precisam existir mesmo em consultores já seedados. */
+const TERMINAL_STAGES = DEFAULT_STAGES.filter((s) => s.stage_key === "ganho" || s.stage_key === "perdido");
 
 export const COLOR_OPTIONS = [
   { value: "bg-primary/15 text-primary", label: "Verde" },
@@ -39,7 +44,25 @@ export function useKanbanStages(consultantId: string) {
       .order("position", { ascending: true });
 
     if (data && data.length > 0) {
-      setStages(data);
+      const existingKeys = new Set(data.map((s) => s.stage_key));
+      const missingTerminals = TERMINAL_STAGES.filter((s) => !existingKeys.has(s.stage_key!));
+      if (missingTerminals.length > 0) {
+        const maxPos = Math.max(...data.map((s) => s.position ?? 0), 5);
+        const inserts: KanbanStageInsert[] = missingTerminals.map((s, i) => ({
+          ...s,
+          position: maxPos + 1 + i,
+          consultant_id: consultantId,
+          stage_scope: "lead",
+        }));
+        const { data: inserted } = await supabase
+          .from("kanban_stages")
+          .insert(inserts)
+          .select();
+        setStages([...(data as KanbanStageRow[]), ...((inserted as KanbanStageRow[]) || [])]
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0)));
+      } else {
+        setStages(data);
+      }
     } else {
       const inserts: KanbanStageInsert[] = DEFAULT_STAGES.map((s) => ({
         ...s,

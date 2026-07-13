@@ -1,8 +1,7 @@
 // =============================================================================
-// Pós-Venda — Valor da conta obrigatório na aprovação
+// Pós-Venda — Valor da conta opcional na aprovação (CRM)
 // =============================================================================
-// Quando o sync iGreen não traz electricity_bill_value, o consultor informa
-// o valor da fatura no momento de aprovar/validar o cliente no CRM.
+// O consultor pode informar a fatura ao aprovar/validar, mas NÃO é obrigatório.
 // =============================================================================
 
 import { useEffect, useState } from "react";
@@ -36,14 +35,15 @@ interface Props {
 }
 
 
-/** Cliente aprovado (ou que assinou e vai validar) precisa de fatura quando o sync não trouxe valor. */
+/**
+ * Valor da conta NÃO é obrigatório para validar/aprovar no CRM.
+ * O diálogo continua disponível se o consultor quiser informar, mas não bloqueia.
+ */
 export function needsBillValueForApproval(
-  pendingStage: string | null | undefined,
-  bill: number | null | undefined,
+  _pendingStage: string | null | undefined,
+  _bill: number | null | undefined,
 ): boolean {
-  const stage = pendingStage || "aprovado";
-  if (stage !== "aprovado" && stage !== "falta_assinatura") return false;
-  return bill == null || Number(bill) <= 0;
+  return false;
 }
 
 function parseBillInput(raw: string): number | null {

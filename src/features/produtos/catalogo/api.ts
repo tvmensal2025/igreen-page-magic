@@ -91,3 +91,18 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
   if (error) throw error;
   return data ? mapProductRow(data as unknown as ProductRow) : null;
 }
+
+/** Ativa/desativa um produto (somente admin — RLS). */
+export async function updateProductActive(
+  productId: string,
+  isActive: boolean,
+): Promise<Product> {
+  const { data, error } = await supabase
+    .from("products" as never)
+    .update({ is_active: isActive } as never)
+    .eq("id", productId)
+    .select(SELECT_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapProductRow(data as unknown as ProductRow);
+}

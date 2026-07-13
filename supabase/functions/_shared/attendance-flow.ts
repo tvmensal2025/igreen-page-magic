@@ -22,6 +22,7 @@ import { getAdapter } from "./channels/index.ts";
 import { registerSend, checkSendQuota } from "./anti-ban.ts";
 import { isSuperAdminConsultant } from "./attendance-channel-env.ts";
 import { normalizePhone } from "./utils.ts";
+import { resolveConsultantMessage } from "./consultant-template.ts";
 
 export const ATTENDANCE_RATING_STEP = "aguardando_avaliacao_atendimento";
 /** Step terminal após nota registrada — bots/crons devem ignorar. */
@@ -33,7 +34,7 @@ export const ATTENDANCE_TERMINAL_STEPS = new Set<string>([
   ATTENDANCE_DONE_STEP,
 ]);
 
-const NAME_ASK_TEXT = "Para começarmos, me conta seu *nome completo*? 🙂";
+const NAME_ASK_TEXT = "Para começarmos, me conta seu *nome completo*?";
 
 export interface SendWelcomeResult {
   ok: boolean;
@@ -59,8 +60,8 @@ export function buildAttendanceClosingText(): string {
   return [
     "✅ *Atendimento finalizado*",
     "",
-    "Foi um prazer te atender! 💚",
-    "Se precisar de algo, estamos por aqui. 😊",
+    "Foi um prazer te atender!",
+    "Se precisar de algo, estamos por aqui.",
   ].join("\n");
 }
 
@@ -71,12 +72,23 @@ export function buildAttendanceRatingPrompt(): string {
     "",
     "Responda com um número de *1* a *5*:",
     "",
-    "*1* — Muito ruim 😞",
-    "*2* — Ruim 😕",
-    "*3* — Regular 😐",
-    "*4* — Bom 🙂",
-    "*5* — Excelente 🤩",
+    "*1* — Muito ruim",
+    "*2* — Ruim",
+    "*3* — Regular",
+    "*4* — Bom",
+    "*5* — Excelente",
   ].join("\n");
+}
+
+async function resolveAttendanceTpl(
+  supabase: SB,
+  consultantId: string | null,
+  key: string,
+  fallback: string,
+  vars: Record<string, string | number | null | undefined> = {},
+): Promise<string> {
+  const r = await resolveConsultantMessage(supabase, consultantId, key, vars, fallback);
+  return r.text || fallback;
 }
 
 export function parseAttendanceRating(input: {
@@ -307,7 +319,21 @@ export async function sendWelcomeHeader(
   }
 
   const greeting = buildWelcomeHeaderGreeting(consultantName);
-  const protoBlock = `${buildWelcomeHeaderProtocol(protocol, consultantName)}\n\n${NAME_ASK_TEXT}`;
+  const askName = await resolveAttendanceTpl(
+    supabase,
+    consultantId,
+    "attendance_ask_name",
+    NAME_ASK_TEXT,
+    { consultor: consultantName, protocolo: protocol },
+  );
+  const protocolTpl = await resolveAttendanceTpl(
+    supabase,
+    consultantId,
+    "attendance_protocol_block",
+    buildWelcomeHeaderProtocol(protocol, consultantName),
+    { consultor: consultantName || "", protocolo: protocol },
+  );
+  const protoBlock = `${protocolTpl}\n\n${askName}`;
 
   const sendCtx = {
     customerId,
@@ -416,7 +442,12 @@ export async function sendAttendanceRatingRequest(
     supabase,
   };
 
-  const closing = buildAttendanceClosingText();
+  const closing = await resolveAttendanceTpl(
+    supabase,
+    consultantId,
+    "attendance_closing",
+    buildAttendanceClosingText(),
+  );
   const r1 = await channel.adapter.sendText(jid, closing, sendCtx as never);
   if (!r1.ok) {
     return { ok: false, code: "send_failed_closing", detail: (r1 as { detail?: string }).detail };
@@ -432,7 +463,12 @@ export async function sendAttendanceRatingRequest(
 
   await new Promise((r) => setTimeout(r, 900));
 
-  const prompt = buildAttendanceRatingPrompt();
+  const prompt = await resolveAttendanceTpl(
+    supabase,
+    consultantId,
+    "attendance_rating_prompt",
+    buildAttendanceRatingPrompt(),
+  );
   const r2 = await channel.adapter.sendText(jid, prompt, {
     ...sendCtx,
     idempotencyKey: `attendance-rating:${customerId}:${Date.now()}`,
@@ -594,7 +630,12 @@ export async function tryInterceptAttendanceRating(
         conversation_step: ATTENDANCE_RATING_STEP,
       }).then(() => {}, () => {});
     }
-    const hint = buildAttendanceRatingMediaHintText();
+    const hint = await resolveAttendanceTpl(
+      args.supabase,
+      args.customer.consultant_id || null,
+      "attendance_rating_media_hint",
+      buildAttendanceRatingMediaHintText(),
+    );
     try {
       await args.sendText(args.remoteJid, hint);
       await args.supabase.from("conversations").insert({
@@ -626,7 +667,12 @@ export async function tryInterceptAttendanceRating(
         conversation_step: ATTENDANCE_RATING_STEP,
       }).then(() => {}, () => {});
     }
-    const retry = buildAttendanceRatingRetryText();
+    const retry = await resolveAttendanceTpl(
+      args.supabase,
+      args.customer.consultant_id || null,
+      "attendance_rating_retry",
+      buildAttendanceRatingRetryText(),
+    );
     try {
       await args.sendText(args.remoteJid, retry);
       await args.supabase.from("conversations").insert({
@@ -675,7 +721,13 @@ export async function tryInterceptAttendanceRating(
     // Ainda assim tenta agradecer; o consultor vê no painel se a coluna falhou.
   }
 
-  const thanks = buildAttendanceThanksText(rating);
+  const thanks = await resolveAttendanceTpl(
+    args.supabase,
+    args.customer.consultant_id || null,
+    "attendance_rating_thanks",
+    buildAttendanceThanksText(rating),
+    { nota: rating },
+  );
   try {
     await args.sendText(args.remoteJid, thanks);
     await args.supabase.from("conversations").insert({

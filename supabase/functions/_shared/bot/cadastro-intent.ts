@@ -15,6 +15,8 @@ const NEGATION_BEFORE = ["nao ", "nem ", "nunca ", "jamais "];
 const ADVANCE_PHRASES = [
   "quero contratar", "quero assinar", "quero cadastrar", "quero me cadastrar",
   "quero aderir", "quero fechar", "quero participar", "quero o desconto",
+  "ativar o beneficio", "ativar o benefício", "ativar beneficio", "ativar benefício",
+  "quero ativar", "ativar",
   "quero sim", "vou querer", "pode fazer", "pode cadastrar", "pode ser",
   "me inscreve", "me cadastra", "vamos fechar", "vamos fazer", "vamos sim",
   "vamos la", "bora fechar", "bora cadastrar", "bora", "partiu", "simbora",

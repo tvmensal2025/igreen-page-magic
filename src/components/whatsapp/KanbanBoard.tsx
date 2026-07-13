@@ -34,7 +34,7 @@ interface KanbanBoardProps {
 export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
   const { stages, fetchStages, addStage, updateStage, deleteStage, saveAutoMessage, toggleAutoMessage, reorderStages } = useKanbanStages(consultantId);
   const [showTests, setShowTests] = useState(false);
-  const { deals, fetchDeals, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal } = useKanbanDeals(consultantId, { includeTests: showTests });
+  const { deals, fetchDeals, loadMore, hasMore, loadingMore, resolveNames, moveDeal, editDeal, deleteDeal, reclassifyAsReal } = useKanbanDeals(consultantId, { includeTests: showTests });
   const { customStepMap, stepOptions } = useFlowSteps(consultantId);
 
   const [stepFilter, setStepFilter] = useState<string>("all");
@@ -210,7 +210,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle className="text-sm">Configurar colunas do funil</DialogTitle></DialogHeader>
-              <p className="text-[11px] text-muted-foreground -mt-1">O funil termina em <strong>Finalizando cadastro</strong>. Depois que a extensão iGreen sincronizar, o cliente interessado vira cliente e segue no <strong>CRM Pós-Venda</strong> (Aprovado/Reprovado/30-60-90-120 dias).</p>
+              <p className="text-[11px] text-muted-foreground -mt-1">O funil de cadastro vai até <strong>Finalizando</strong>. <strong>Ganho</strong>/<strong>Perdido</strong> são desfechos manuais. Quando a carteira iGreen sincronizar, o interessado vira <strong>cliente ativo</strong> e segue no CRM Pós-Venda.</p>
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {stages.map((stage) => (
                   <div
@@ -271,6 +271,14 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
           <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} onView={setViewTarget} />
         ))}
       </div>
+
+      {hasMore && (
+        <div className="flex justify-center py-2">
+          <Button variant="outline" size="sm" className="h-8 text-xs" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? "Carregando…" : "Carregar mais deals"}
+          </Button>
+        </div>
+      )}
 
       <CustomerQuickViewDialog customerId={viewTarget?.customerId} dealId={viewTarget?.dealId} onClose={() => setViewTarget(null)} />
 

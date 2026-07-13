@@ -48,7 +48,7 @@ import {
 import { parseMoneyBR, extractMoneyFromText } from "../../_shared/parse-money.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
-import { detectPostponeIntent, buildPostponeReply } from "../../_shared/postpone-intent.ts";
+import { detectPostponeIntent, buildPostponeReplyResolved } from "../../_shared/postpone-intent.ts";
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import {
@@ -78,6 +78,7 @@ import {
   isNonNameReply,
   resumeAfterAddressEdit,
   looksLikeSpamBlast,
+  nextSeparatedCadastroStep,
 } from "../../_shared/bot/cadastro-fixes.ts";
 
 import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
@@ -728,6 +729,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             try { await sendMedia(remoteJid, m.url, "", m.kind, Number((m as any).duration_sec || 0) || undefined); } catch (_) { /* segue */ }
           }
           answer = (qa.text || "").trim();
+          if (answer) {
+            const { formatFaqReply } = await import("../../_shared/format-reply.ts");
+            answer = formatFaqReply(answer);
+          }
           source = "faq";
         }
       }
@@ -2758,7 +2763,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (intent) {
         const firstName = ((customer as any)?.name || "").split(/\s+/)[0] || "";
         const waitingDoc = step.startsWith("aguardando_doc");
-        const reply = buildPostponeReply({ firstName, when: intent.when, waitingDoc });
+        const reply = await buildPostponeReplyResolved(supabase, (customer as any)?.consultant_id, { firstName, when: intent.when, waitingDoc });
         console.log(`[postpone] customer=${customer.id} step=${step} when="${intent.when}" until=${intent.pauseUntil}`);
         try {
           await sendText(remoteJid, reply);
@@ -2958,11 +2963,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const stype = String(stepRow.step_type || "message");
           console.log(`[custom-step-resolver] step="${step}" → type=${stype} pos=${stepRow.position}`);
 
-          if (stype === "capture_conta") step = "aguardando_conta";
+          if (stype === "capture_conta") {
+            if ((stepRow as any)?.id) {
+              updates.previous_conversation_step = String((stepRow as any).id);
+              (customer as any).previous_conversation_step = String((stepRow as any).id);
+            }
+            step = "aguardando_conta";
+          }
           else if (stype === "capture_documento" || stype === "capture_doc") step = "aguardando_doc_auto";
           else if (stype === "capture_email") step = "ask_email";
           else if (stype === "confirm_phone") step = "ask_phone_confirm";
-          else if (stype === "finalizar_cadastro") step = "finalizando";
+          else if (stype === "finalizar_cadastro") {
+            step = nextSeparatedCadastroStep(customer as any);
+          }
 
           // 🛡️ Guarda ordem do funil: NUNCA pedir documento antes da conta+simulação.
           if ((stype === "capture_documento" || stype === "capture_doc") && !hasBillData(customer)) {
@@ -3280,11 +3293,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               const ntype = String(current.step_type || "message");
               let nextStepValue: string = current.id;
               let _isCapture = false;
-              if (ntype === "capture_conta") { nextStepValue = "aguardando_conta"; _isCapture = true; }
+              if (ntype === "capture_conta") {
+                nextStepValue = "aguardando_conta";
+                _isCapture = true;
+                if (current?.id) (customer as any).previous_conversation_step = String(current.id);
+              }
               else if (ntype === "capture_documento" || ntype === "capture_doc") { nextStepValue = "aguardando_doc_auto"; _isCapture = true; }
               else if (ntype === "capture_email") { nextStepValue = "ask_email"; _isCapture = true; }
               else if (ntype === "confirm_phone") { nextStepValue = "ask_phone_confirm"; _isCapture = true; }
-              else if (ntype === "finalizar_cadastro") nextStepValue = "finalizando";
+              else if (ntype === "finalizar_cadastro") {
+                nextStepValue = nextSeparatedCadastroStep(customer as any);
+              }
               // 🛡️ Skip-guard: se o capture seguinte já tem o dado, avança direto.
               if (_isCapture && shouldSkipAskStep(nextStepValue, customer)) {
                 const skipped = nextStepValue;
@@ -3294,6 +3313,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               }
               console.log(`[custom-step-resolver] message→advance final=${current.step_key} type=${ntype} isCapture=${_isCapture}`);
               const _updates: any = { conversation_step: nextStepValue, __inline_sent: (emittedCurrent || dispatchedAny) || undefined };
+              if (ntype === "capture_conta" && current?.id) {
+                _updates.previous_conversation_step = String(current.id);
+              }
               const _currentHasInlineCapture = Array.isArray((current as any)?.captures)
                 && (current as any).captures.some((c: any) => c?.enabled === true);
               if ((_isCapture || _currentHasInlineCapture) && (emittedCurrent || dispatchedAny)) {
@@ -4005,11 +4027,27 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         try {
           const _flowRowSuccess = await resolveFlowId(supabase, customer.consultant_id, (customer as any)?.flow_variant || "A");
           if (_flowRowSuccess?.id) {
-            const { data: _captureStep } = await supabase
-              .from("bot_flow_steps").select("fallback")
+            const { data: _allSteps } = await supabase
+              .from("bot_flow_steps").select("id, step_key, step_type, title, position, fallback, transitions, is_active")
               .eq("flow_id", (_flowRowSuccess as any).id).eq("is_active", true)
-              .eq("step_type", "capture_conta")
-              .order("position", { ascending: true }).limit(1).maybeSingle();
+              .order("position", { ascending: true });
+            let _recentInbound = "";
+            try {
+              const { data: _li } = await supabase
+                .from("conversations")
+                .select("message_text")
+                .eq("customer_id", customer.id)
+                .eq("message_direction", "inbound")
+                .order("created_at", { ascending: false })
+                .limit(5);
+              _recentInbound = (((_li as any[]) || []).map((r) => String(r.message_text || "")).join(" | ")).slice(0, 500);
+            } catch (_) { /* noop */ }
+            const { pickCaptureContaForPostBill } = await import("../../_shared/bot/post-bill-capture.ts");
+            const _captureStep = pickCaptureContaForPostBill((_allSteps as any[]) || [], {
+              preferredStepId: (customer as any).previous_conversation_step || null,
+              recentInbound: _recentInbound,
+            });
+            console.log(`[post-confirm-conta] capture escolhido=${(_captureStep as any)?.step_key || "null"}`);
             const _fb = (_captureStep as any)?.fallback || {};
             const _successId = resolvePostBillNextStepId(_fb);
             const _successSource = _fb.success_goto_step_id ? "success_goto_step_id" : "fallback.goto_step_id";
@@ -4024,7 +4062,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 .eq("id", _successId).eq("is_active", true).maybeSingle();
               if (_target) {
                 nextCustom = _target;
-                console.log(`[post-confirm-conta] ${_successSource}=${_successId} → ${(_target as any).step_key}`);
+                console.log(`[post-confirm-conta] capture=${(_captureStep as any)?.step_key} ${_successSource}=${_successId} → ${(_target as any).step_key}`);
               } else {
                 console.warn(`[post-confirm-conta] success_goto ${_successId} NÃO pertence ao flow ativo ${(_flowRowSuccess as any).id} — ignorando e usando posição`);
               }
@@ -4152,24 +4190,31 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               ? true
               : await dispatchStepFromFlow(nextCustom.step_key, _vars);
             if (nextCustom.step_type === "finalizar_cadastro") {
+              const gate = nextSeparatedCadastroStep(customer as any);
               try {
-                const rawText = (nextCustom.message_text || "").trim();
-                const firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
-                const finalText = (rawText || FINAL_FALLBACK_TEXT)
-                  .replaceAll("{{nome}}", firstName)
-                  .replaceAll("{{representante}}", nomeRepresentante || "");
-                await sendOptions(remoteJid, finalText, [
-                  { id: "btn_finalizar", title: "✅ Finalizar" },
-                ]);
-                await supabase.from("conversations").insert({
-                  customer_id: customer.id, message_direction: "outbound",
-                  message_text: finalText, message_type: "text", conversation_step: "ask_finalizar",
-                });
+                if (gate === "ask_contaunica") {
+                  const msg = getReplyForStep("ask_contaunica", customer);
+                  const opts = getPreferenceOptions("ask_contaunica") || [];
+                  await sendOptions(remoteJid, msg, [...opts]);
+                } else {
+                  const rawText = (nextCustom.message_text || "").trim();
+                  const firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
+                  const finalText = (rawText || FINAL_FALLBACK_TEXT)
+                    .replaceAll("{{nome}}", firstName)
+                    .replaceAll("{{representante}}", nomeRepresentante || "");
+                  await sendOptions(remoteJid, finalText, [
+                    { id: "btn_finalizar", title: "✅ Finalizar" },
+                  ]);
+                  await supabase.from("conversations").insert({
+                    customer_id: customer.id, message_direction: "outbound",
+                    message_text: finalText, message_type: "text", conversation_step: "ask_finalizar",
+                  });
+                }
               } catch (e) {
-                console.warn(`[post-confirm-conta] envio do botão finalizar falhou:`, (e as Error).message);
-                await sendFinalizarButton();
+                console.warn(`[post-confirm-conta] envio gate finalizar falhou:`, (e as Error).message);
+                if (gate === "ask_finalizar") await sendFinalizarButton();
               }
-              updates.conversation_step = "ask_finalizar";
+              updates.conversation_step = gate;
             } else if (nextCustom.step_type === "capture_conta") {
               updates.conversation_step = "aguardando_conta";
             } else if (nextCustom.step_type === "capture_email") {
@@ -5302,19 +5347,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       console.log(`[ask_email] customer=${customer.id} → aceito, next_step="${next}"`);
-      // 🚀 Atalho: se email foi o último dado e o sistema iria
-      // perguntar "Deseja finalizar?", pula esse passo e finaliza direto.
-      // Preferências Portal 2: perguntamos boleto (unificado ⇔ transferir titularidade).
-      if (next === "ask_finalizar") {
-        updates.conversation_step = "finalizando";
-        reply = "✅ Tudo certo! Processando seu cadastro no portal iGreen...";
-      } else if (next === "ask_contaunica" || next === "ask_transferir_titularidade") {
-        updates.conversation_step = "ask_contaunica";
-        const msg = getReplyForStep("ask_contaunica", merged);
-        const opts = getPreferenceOptions("ask_contaunica") || [];
-        const sent = await sendOptions(remoteJid, msg, [...opts]);
-        if (!sent) reply = msg;
-        else reply = "";
+      // Passos finais SEPARADOS: nunca pular boleto/confirmação direto pro portal.
+      if (next === "ask_finalizar" || next === "ask_contaunica" || next === "ask_transferir_titularidade") {
+        const gate = nextSeparatedCadastroStep(merged as any);
+        updates.conversation_step = gate;
+        if (gate === "ask_contaunica") {
+          const msg = getReplyForStep("ask_contaunica", merged);
+          const opts = getPreferenceOptions("ask_contaunica") || [];
+          const sent = await sendOptions(remoteJid, msg, [...opts]);
+          if (!sent) reply = msg;
+          else reply = "";
+        } else {
+          const sent = await sendOptions(remoteJid, getReplyForStep("ask_finalizar", merged), [
+            { id: "btn_finalizar", title: "✅ Finalizar" },
+          ]);
+          if (!sent) reply = getReplyForStep("ask_finalizar", merged);
+          else reply = "";
+        }
       } else {
         updates.conversation_step = next;
         if (next === "ask_email") {
@@ -5429,19 +5478,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
-      // 🚀 Atalho: se o complemento foi o último campo, pula ask_finalizar
-      // e dispara a finalização automática (bloco abaixo cuida do envio ao portal).
-      // Preferências Portal 2: perguntamos boleto (unificado ⇔ transferir titularidade).
-      if (next === "ask_finalizar") {
-        updates.conversation_step = "finalizando";
-        reply = "✅ Tudo certo! Processando seu cadastro...";
-      } else if (next === "ask_contaunica" || next === "ask_transferir_titularidade") {
-        updates.conversation_step = "ask_contaunica";
-        const msg = getReplyForStep("ask_contaunica", merged);
-        const opts = getPreferenceOptions("ask_contaunica") || [];
-        const sent = await sendOptions(remoteJid, msg, [...opts]);
-        if (!sent) reply = msg;
-        else reply = "";
+      // Passos finais SEPARADOS: boleto → confirmar (nunca portal direto).
+      if (next === "ask_finalizar" || next === "ask_contaunica" || next === "ask_transferir_titularidade") {
+        const gate = nextSeparatedCadastroStep(merged as any);
+        updates.conversation_step = gate;
+        if (gate === "ask_contaunica") {
+          const msg = getReplyForStep("ask_contaunica", merged);
+          const opts = getPreferenceOptions("ask_contaunica") || [];
+          const sent = await sendOptions(remoteJid, msg, [...opts]);
+          if (!sent) reply = msg;
+          else reply = "";
+        } else {
+          const sent = await sendOptions(remoteJid, getReplyForStep("ask_finalizar", merged), [
+            { id: "btn_finalizar", title: "✅ Finalizar" },
+          ]);
+          if (!sent) reply = getReplyForStep("ask_finalizar", merged);
+          else reply = "";
+        }
       } else {
         updates.conversation_step = next;
         reply = getReplyForStep(next, merged);
@@ -5611,11 +5664,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.transferir_titularidade_answered = true;
         const merged = { ...customer, ...updates };
         const next = await autoResolveCepIfNeeded(merged, updates);
+        // SEPARADO: após boleto → ask_finalizar (NÃO portal ainda).
         if (next === "ask_finalizar" || next === "ask_transferir_titularidade" || next === "ask_contaunica") {
-          updates.conversation_step = "finalizando";
-          reply = chooseUnificado
-            ? "✅ *Boleto unificado* anotado! Processando seu cadastro..."
-            : "✅ *Boleto separado* anotado! Processando seu cadastro...";
+          updates.conversation_step = "ask_finalizar";
+          const note = chooseUnificado
+            ? "✅ *Boleto unificado* anotado!"
+            : "✅ *Boleto separado* anotado!";
+          const msg = `${note}\n\n${getReplyForStep("ask_finalizar", merged)}`;
+          const sent = await sendOptions(remoteJid, msg, [
+            { id: "btn_finalizar", title: "✅ Finalizar" },
+          ]);
+          if (!sent) reply = msg;
+          else reply = "";
         } else {
           updates.conversation_step = next;
           reply = getReplyForStep(next, merged);

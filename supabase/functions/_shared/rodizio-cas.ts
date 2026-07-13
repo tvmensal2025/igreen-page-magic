@@ -88,7 +88,8 @@ export async function markManualReview(
 
 /**
  * Registra em `campaign_match_log` o resultado do rodízio para monitoramento.
- * `outcome` = "assigned" | "pool_empty" | "rpc_error" | "no_campaign_manual_review"
+ * `outcome` = assigned | already_assigned | pool_empty | rpc_error |
+ * no_campaign_manual_review | cas_error
  */
 export async function logRodizioOutcome(
   supabase: SupabaseClient,
@@ -96,7 +97,13 @@ export async function logRodizioOutcome(
     customerId: string;
     campaignId: string | null;
     method: string;
-    outcome: "assigned" | "pool_empty" | "rpc_error" | "no_campaign_manual_review";
+    outcome:
+      | "assigned"
+      | "already_assigned"
+      | "pool_empty"
+      | "rpc_error"
+      | "no_campaign_manual_review"
+      | "cas_error";
     messageSample?: string | null;
   },
 ): Promise<void> {

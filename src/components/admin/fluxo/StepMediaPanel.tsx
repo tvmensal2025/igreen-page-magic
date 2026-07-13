@@ -536,7 +536,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         {m.kind === "audio" && variant === "B" && (
           <AudioTranscriptEditor media={m} onChange={(t) => setItems(prev => prev.map(x => x.id === m.id ? { ...x, transcript: t } : x))} />
         )}
-        {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" />}
+        {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" loading="lazy" decoding="async" />}
         {m.url && m.kind === "video" && <video controls src={m.url} className="w-full max-h-40 rounded" />}
         <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="shrink-0">⏱️ Aguardar antes de enviar:</span>
@@ -762,7 +762,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
                       <AudioPlayer mediaId={m.id} url={m.url} fileName={m.label} />
                     </div>
                   )}
-                  {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" />}
+                  {m.url && m.kind === "image" && <img src={m.url} alt={m.label} className="w-full max-h-32 object-cover rounded" loading="lazy" decoding="async" />}
                   {m.url && m.kind === "video" && <video controls src={m.url} className="w-full max-h-40 rounded" onClick={e => e.stopPropagation()} />}
                   {m.slot_key && <div className="text-[10px] text-muted-foreground mt-1">já usada em: {prettyStepLabel(m.slot_key)}</div>}
                 </button>

@@ -13,13 +13,14 @@ interface SettingsRow {
 }
 
 // Perfis de qualidade da IA (espelha ai-config.ts no backend).
-type AiProfile = "fast" | "balanced" | "accuracy";
+type AiProfile = "auto" | "fast" | "balanced" | "accuracy";
 type AiProvider = "google" | "openai";
 
 const PROFILE_OPTIONS: { id: AiProfile; label: string; desc: string; icon: typeof Zap }[] = [
+  { id: "auto", label: "Automático (recomendado)", desc: "Roteia por tarefa: classificação barata, respostas com precisão alta. Melhor custo/qualidade.", icon: Sparkles },
   { id: "fast", label: "Rápido", desc: "Mais barato e veloz (modelos leves). Bom volume, respostas simples.", icon: Zap },
-  { id: "balanced", label: "Equilibrado", desc: "Recomendado. Boa qualidade com custo controlado.", icon: Brain },
-  { id: "accuracy", label: "Máxima qualidade", desc: "Modelos topo de linha. Respostas melhores, custo maior.", icon: Sparkles },
+  { id: "balanced", label: "Equilibrado", desc: "Boa qualidade com custo controlado em todas as tarefas.", icon: Brain },
+  { id: "accuracy", label: "Máxima qualidade", desc: "Modelos topo de linha em tudo. Respostas melhores, custo maior.", icon: Sparkles },
 ];
 
 // Chaves persistidas em `settings`.
@@ -41,7 +42,7 @@ export function AIControlPanel() {
   const [strict, setStrict] = useState(false);
   const [handoff, setHandoff] = useState(0.5);
   const [execute, setExecute] = useState(0.75);
-  const [profile, setProfile] = useState<AiProfile>("balanced");
+  const [profile, setProfile] = useState<AiProfile>("auto");
   const [provider, setProvider] = useState<AiProvider>("google");
   const [kbOnly, setKbOnly] = useState(true);
   const [audioTranscribe, setAudioTranscribe] = useState(true);
@@ -58,8 +59,12 @@ export function AIControlPanel() {
         setStrict((map.strict_script_mode || "false").toLowerCase() === "true");
         setHandoff(parseFloat(map.ai_confidence_threshold_handoff || "0.5"));
         setExecute(parseFloat(map.ai_confidence_threshold_execute || "0.75"));
-        const p = (map.ai_profile_global || "balanced").toLowerCase();
-        setProfile(p === "fast" || p === "accuracy" ? (p as AiProfile) : "balanced");
+        const p = (map.ai_profile_global || "auto").toLowerCase();
+        setProfile(
+          p === "fast" || p === "accuracy" || p === "balanced" || p === "auto"
+            ? (p as AiProfile)
+            : "auto",
+        );
         setProvider((map.ai_provider_global || "google").toLowerCase() === "openai" ? "openai" : "google");
         // Default true (segurança: prioriza respostas gravadas) quando ausente.
         setKbOnly((map.ai_kb_only_mode || "true").toLowerCase() === "true");
@@ -109,7 +114,7 @@ export function AIControlPanel() {
         {/* Perfil */}
         <div className="space-y-2">
           <Label className="text-sm font-medium">Nível de qualidade</Label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
             {PROFILE_OPTIONS.map((opt) => {
               const Icon = opt.icon;
               const active = profile === opt.id;

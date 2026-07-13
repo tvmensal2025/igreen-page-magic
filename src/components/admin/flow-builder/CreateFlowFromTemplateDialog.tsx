@@ -39,7 +39,7 @@ interface Props {
 
 type RenderStyle = "buttons" | "text-numbered" | "list-interactive";
 type AiProvider = "google" | "openai" | "none";
-type AiProfile = "accuracy" | "balanced" | "fast";
+type AiProfile = "auto" | "accuracy" | "balanced" | "fast";
 
 interface BlockOption {
   id: string;
@@ -99,13 +99,18 @@ const BLOCKS: BlockOption[] = [
 ];
 
 const AI_PROFILE_DESCRIPTIONS: Record<AiProfile, { label: string; sub: string; icon: any }> = {
+  auto: {
+    label: "Automático (recomendado)",
+    sub: "Roteamento inteligente — classificação barata, respostas com precisão alta. Melhor custo/qualidade.",
+    icon: Sparkles,
+  },
   accuracy: {
     label: "Precisão máxima",
     sub: "Gemini 3.1 Pro / GPT-5.5 — respostas mais inteligentes, menos alucinação. Recomendado para vendas complexas.",
     icon: Target,
   },
   balanced: {
-    label: "Equilibrado (default)",
+    label: "Equilibrado",
     sub: "Gemini 3.5 Flash / GPT-5 — bom custo-benefício, latência baixa. Funciona bem para a maioria dos casos.",
     icon: Sparkles,
   },
@@ -135,7 +140,7 @@ export default function CreateFlowFromTemplateDialog({
   // Step 2: estilo + IA
   const [renderStyle, setRenderStyle] = useState<RenderStyle>("buttons");
   const [aiProvider, setAiProvider] = useState<AiProvider>("google");
-  const [aiProfile, setAiProfile] = useState<AiProfile>("balanced");
+  const [aiProfile, setAiProfile] = useState<AiProfile>("auto");
 
   // Step 3: blocos
   const [enabledBlocks, setEnabledBlocks] = useState<Record<string, boolean>>(
@@ -151,7 +156,7 @@ export default function CreateFlowFromTemplateDialog({
     setStep(1);
     setRenderStyle("buttons");
     setAiProvider("google");
-    setAiProfile("balanced");
+    setAiProfile("auto");
     setEnabledBlocks(Object.fromEntries(BLOCKS.map((b) => [b.id, b.defaultEnabled])));
     setLoadingVariants(true);
     (async () => {
@@ -441,7 +446,7 @@ export default function CreateFlowFromTemplateDialog({
                     className="space-y-2"
                     disabled={busy}
                   >
-                    {(["accuracy", "balanced", "fast"] as const).map((p) => {
+                    {(["auto", "accuracy", "balanced", "fast"] as const).map((p) => {
                       const cfg = AI_PROFILE_DESCRIPTIONS[p];
                       const Icon = cfg.icon;
                       return (

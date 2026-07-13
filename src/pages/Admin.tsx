@@ -55,7 +55,6 @@ const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").the
 const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => ({ default: m.VozTab })));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
-const CarteiraGreenPanel = lazy(() => import("@/features/produtos/carteira-green/CarteiraGreenPanel").then(m => ({ default: m.CarteiraGreenPanel })));
 const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
 const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/FinanceiroPanel").then(m => ({ default: m.FinanceiroPanel })));
 
@@ -267,21 +266,38 @@ const AdminContent = () => {
   }, [activeTab, fetchCustomers]);
 
   // Realtime: reflete alterações do worker/edge sem exigir novo clique.
+  // Debounce + throttle: muitos UPDATEs em sequência não disparam N refetches completos.
+  const activeTabRef = React.useRef(activeTab);
+  activeTabRef.current = activeTab;
   React.useEffect(() => {
     if (!userId) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let analyticsThrottleUntil = 0;
     const channel = supabase
       .channel(`cust-${userId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "customers", filter: `consultant_id=eq.${userId}` },
         () => {
-          void fetchCustomers({ bypassCache: true });
-          // Também invalida analytics (dashboard/gráficos) — prefixo pega todas as variantes.
-          void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            void fetchCustomers({ bypassCache: true });
+            // Analytics só quando o dashboard está visível; throttle de 30s.
+            if (activeTabRef.current === "dashboard") {
+              const now = Date.now();
+              if (now >= analyticsThrottleUntil) {
+                analyticsThrottleUntil = now + 30_000;
+                void queryClient.invalidateQueries({ queryKey: ["analytics"] });
+              }
+            }
+          }, 1500);
         },
       )
       .subscribe();
-    return () => { void supabase.removeChannel(channel); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
   }, [userId, fetchCustomers, queryClient]);
 
   // Cleanup: cancela fetch pendente ao desmontar.

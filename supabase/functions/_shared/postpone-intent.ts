@@ -172,5 +172,34 @@ export function buildPostponeReply(opts: {
   const greet = name ? `${name}, ` : "";
   const article = opts.waitingDoc ? "o" : "a";
   const what = opts.waitingDoc ? "documento" : "conta de luz";
-  return `Combinado, ${greet}sem pressa! 💚\n\nFico no aguardo d${article} ${what} *${opts.when}*. Qualquer dúvida é só me chamar por aqui. 🤝`;
+  return `Combinado, ${greet}sem pressa!\n\nFico no aguardo d${article} ${what} *${opts.when}*. Qualquer dúvida é só me chamar por aqui.`;
+}
+
+/** Resolve template DB `postpone_confirm` com fallback hardcoded. */
+export async function buildPostponeReplyResolved(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  consultantId: string | null | undefined,
+  opts: { firstName?: string | null; when: string; waitingDoc?: boolean },
+): Promise<string> {
+  const fallback = buildPostponeReply(opts);
+  try {
+    const { resolveConsultantMessage } = await import("./consultant-template.ts");
+    const name = (opts.firstName || "").trim();
+    const r = await resolveConsultantMessage(
+      supabase,
+      consultantId ?? null,
+      "postpone_confirm",
+      {
+        nome: name ? `${name}, ` : "",
+        quando: opts.when,
+        o_que: opts.waitingDoc ? "documento" : "conta de luz",
+        artigo: opts.waitingDoc ? "o" : "a",
+      },
+      fallback,
+    );
+    return r.text || fallback;
+  } catch {
+    return fallback;
+  }
 }

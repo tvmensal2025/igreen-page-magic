@@ -28,8 +28,8 @@ import { tryInterceptOtp } from "./handlers/otp-intercept.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
-import { decideRodizioAssignment } from "../_shared/rodizio-assignment.ts";
-import { casAssignPartner, markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
+import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
+import { assignRodizioLead } from "../_shared/rodizio-assign.ts";
 
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
@@ -1064,18 +1064,9 @@ Deno.serve(async (req) => {
       console.warn("[lead-source] falha ao detectar:", (e as Error).message);
     }
 
-    // ─── Rodízio de leads de anúncio (round-robin) ──────────────────────
-    // Quando o lead veio de um anúncio (source_campaign_id resolvido acima) e a
-    // campanha tem uma pool de rodízio ativa, o participante da vez é escolhido
-    // de forma atômica por rodizio_next(p_campaign_id). O participante entra
-    // como referral_partner_id; o consultant_id continua o da instância central
-    // (NÃO é alterado). Quando o rodízio é aplicado, o match por keyword abaixo é
-    // ignorado para este lead — a guarda `!referral_partner_id` do bloco de
-    // keyword já cuida disso (prioridade do rodízio — Requisito 8).
-    // Fail-open: qualquer falha aqui apenas loga e segue (o lead nunca se perde);
-    // sem partner_id válido, o lead cai no consultor dono (Requisito 11).
-    // 4ª tentativa: protocolo profissional (FB-87321 etc.) ou similaridade segura
-    // entre múltiplas campanhas ativas. Não escolhe por acaso em empate.
+    // ─── Resolução extra de campanha (frase CTWA sem AD ID) ─────────────
+    // Protocolo profissional (FB-87321 etc.) ou similaridade segura entre
+    // múltiplas campanhas ativas. Não escolhe por acaso em empate.
     if (
       customer &&
       !(customer as any).source_campaign_id &&
@@ -1171,21 +1162,105 @@ Deno.serve(async (req) => {
       !!messageText &&
       matchesMetaCtwaPhrase(messageText);
 
+    // ─── Rodízio (atômico) ─────────────────────────────────────────────
+    // rodizio_assign_lead: FOR UPDATE no customer + rodizio_next na mesma
+    // transação. Fail-open: lead nunca se perde (Requisito 11).
     if (customer && !(customer as any).referral_partner_id && rodizioCampaignId) {
       try {
-        // Atribuição atômica: passa o id da campanha direto (sem slug).
-        const { data: rodizioRows, error: rodizioError } = await supabase.rpc(
-          "rodizio_next",
-          { p_campaign_id: rodizioCampaignId },
-        );
-        if (rodizioError) {
-          console.warn("[rodizio] rodizio_next falhou:", rodizioError.message);
-          // Erro na RPC → fila de revisão manual + aviso ao dono (Furo 3).
+        // Atribuição atômica (FOR UPDATE no customer + rodizio_next na mesma RPC).
+        const assign = await assignRodizioLead(supabase, customer.id, rodizioCampaignId);
+
+        if (assign.outcome === "assigned" && assign.partnerId) {
+          const rodizioPartnerId = assign.partnerId;
+          (customer as any).referral_partner_id = rodizioPartnerId;
+          console.log(
+            `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} partner=${rodizioPartnerId}`,
+          );
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: rodizioCampaignId,
+            method: "rodizio_assign_lead",
+            outcome: "assigned",
+            messageSample: messageText,
+          });
+
+          (async () => {
+            const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
+            const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", rodizioPartnerId).maybeSingle();
+            const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: rodizioPartnerId, partnerName: (prow as any)?.nome });
+            return notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
+              id: customer.id,
+              name: (customer as any).name,
+              phone_whatsapp: (customer as any).phone_whatsapp,
+              is_sandbox: (customer as any).is_sandbox,
+              tracking_protocol: res?.protocol,
+            });
+          })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
+
+          const cAny = customer as any;
+          if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
+            let partnerName: string | null = null;
+            try {
+              const { data: prow } = await supabase
+                .from("referral_partners")
+                .select("nome")
+                .eq("id", rodizioPartnerId)
+                .maybeSingle();
+              partnerName = (prow as any)?.nome ?? null;
+            } catch { /* ignore */ }
+            notifySuperAdminUnmatchedLead(
+              instanceData.consultant_id,
+              {
+                id: customer.id,
+                name: cAny.name,
+                phone_whatsapp: cAny.phone_whatsapp,
+                is_sandbox: cAny.is_sandbox,
+              },
+              "initial_message_match_no_ad_id",
+              partnerName,
+            ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
+          }
+        } else if (assign.outcome === "already_assigned") {
+          if (assign.partnerId) {
+            (customer as any).referral_partner_id = assign.partnerId;
+          }
+          console.log(
+            `[rodizio] customer=${customer.id} já atribuído — turno não consumido`,
+          );
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: rodizioCampaignId,
+            method: "rodizio_assign_lead",
+            outcome: "already_assigned",
+            messageSample: messageText,
+          });
+        } else if (assign.outcome === "pool_empty" || assign.outcome === "customer_missing") {
+          await markManualReview(supabase, customer.id, "rodizio_pool_empty");
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: rodizioCampaignId,
+            method: "rodizio_assign_lead",
+            outcome: "pool_empty",
+            messageSample: messageText,
+          });
+          notifyOwnerManualReview(
+            instanceData.consultant_id,
+            {
+              id: customer.id,
+              name: (customer as any).name,
+              phone_whatsapp: (customer as any).phone_whatsapp,
+              is_sandbox: (customer as any).is_sandbox,
+            },
+            "rodizio_pool_empty",
+          ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
+        } else {
+          // rpc_error
+          console.warn("[rodizio] rodizio_assign_lead falhou:", assign.errorMessage);
           await markManualReview(supabase, customer.id, "rodizio_rpc_error");
           await logRodizioOutcome(supabase, {
             customerId: customer.id,
             campaignId: rodizioCampaignId,
-            method: "rodizio_next",
+            method: "rodizio_assign_lead",
             outcome: "rpc_error",
             messageSample: messageText,
           });
@@ -1199,97 +1274,6 @@ Deno.serve(async (req) => {
             },
             "rodizio_rpc_error",
           ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
-        } else {
-          const rodizioDecision = decideRodizioAssignment({
-            customer: customer as any,
-            rodizioRows,
-          });
-          const rodizioPartnerId = rodizioDecision.referralPartnerId;
-
-          if (rodizioDecision.applied && rodizioPartnerId) {
-            // CAS: só atribui se ninguém atribuiu antes (blindagem contra
-            // corrida de 2 mensagens simultâneas — Furo 2).
-            const cas = await casAssignPartner(supabase, customer.id, rodizioPartnerId);
-
-            if (cas.applied) {
-              (customer as any).referral_partner_id = rodizioPartnerId;
-              console.log(
-                `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} partner=${rodizioPartnerId}`,
-              );
-              await logRodizioOutcome(supabase, {
-                customerId: customer.id,
-                campaignId: rodizioCampaignId,
-                method: "rodizio_next",
-                outcome: "assigned",
-                messageSample: messageText,
-              });
-
-              // Aviso ao participante da vez (Requisito 7.3). Só notifica quem
-              // GANHOU o CAS — evita 2 parceiros receberem o mesmo lead.
-              (async () => {
-                const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
-                const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", rodizioPartnerId).maybeSingle();
-                const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: rodizioPartnerId, partnerName: (prow as any)?.nome });
-                return notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
-                  id: customer.id,
-                  name: (customer as any).name,
-                  phone_whatsapp: (customer as any).phone_whatsapp,
-                  is_sandbox: (customer as any).is_sandbox,
-                  tracking_protocol: res?.protocol,
-                });
-              })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
-
-              // Se a atribuição veio de sinal fraco (initial_message sem AD ID
-              // nem ctwa_clid) → ainda avisa o super admin pra conferir cadastro.
-              const cAny = customer as any;
-              if (cAny.source_campaign_id && !cAny.source_ad_id && !cAny.source_ctwa_clid) {
-                let partnerName: string | null = null;
-                try {
-                  const { data: prow } = await supabase
-                    .from("referral_partners")
-                    .select("nome")
-                    .eq("id", rodizioPartnerId)
-                    .maybeSingle();
-                  partnerName = (prow as any)?.nome ?? null;
-                } catch { /* ignore */ }
-                notifySuperAdminUnmatchedLead(
-                  instanceData.consultant_id,
-                  {
-                    id: customer.id,
-                    name: cAny.name,
-                    phone_whatsapp: cAny.phone_whatsapp,
-                    is_sandbox: cAny.is_sandbox,
-                  },
-                  "initial_message_match_no_ad_id",
-                  partnerName,
-                ).catch((e) => console.warn("[notify-superadmin] falhou:", (e as Error).message));
-              }
-            } else if (cas.alreadyAssigned) {
-              console.log(
-                `[rodizio] customer=${customer.id} corrida detectada — outro turno já atribuiu, este é descartado`,
-              );
-            }
-          } else {
-            // Pool vazia / inativa / retorno inválido → fila de revisão manual.
-            await markManualReview(supabase, customer.id, "rodizio_pool_empty");
-            await logRodizioOutcome(supabase, {
-              customerId: customer.id,
-              campaignId: rodizioCampaignId,
-              method: "rodizio_next",
-              outcome: "pool_empty",
-              messageSample: messageText,
-            });
-            notifyOwnerManualReview(
-              instanceData.consultant_id,
-              {
-                id: customer.id,
-                name: (customer as any).name,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
-              },
-              "rodizio_pool_empty",
-            ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
-          }
         }
       } catch (e) {
         console.warn("[rodizio] falhou:", (e as Error).message);
@@ -1460,6 +1444,21 @@ Deno.serve(async (req) => {
       message_type: isFile ? "image" : "text",
       conversation_step: customer.conversation_step,
     });
+
+    // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
+    try {
+      const { onLeadInboundResponse, ensureCadenceState } = await import(
+        "../_shared/cadence-hooks.ts"
+      );
+      await onLeadInboundResponse(supabase, customer.id);
+      await ensureCadenceState(
+        supabase,
+        customer.id,
+        (customer as { consultant_id?: string | null }).consultant_id ?? instanceData.consultant_id ?? null,
+      );
+    } catch (hookErr) {
+      console.warn("[cadence-hooks] inbound sync failed:", (hookErr as Error).message);
+    }
 
     // (Gate global de IA desligada foi movido para o topo — antes mesmo de
     // criar customer ou notificar. Veja "global-off-silent" no início.)

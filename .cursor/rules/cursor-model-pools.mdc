@@ -1,0 +1,37 @@
+---
+description: Preferir Grok (first-party); Fable/API só quando pedido
+alwaysApply: true
+---
+
+# Cursor — Grok primeiro (pool first-party)
+
+## Idioma
+Responder **sempre em português** (Brasil).
+
+## Preferência de modelo (pedido do usuário)
+
+- **Padrão do agente / chat / Task:** **Grok 4.5** (`grok-4.5`, pool **first-party**).
+- Subagentes (`explore`, `shell`, `generalPurpose`, etc.) também em **Grok 4.5**.
+- **Não** forçar Fable/Opus/Sonnet por padrão — isso queima o pool **API** e quebra quando o crédito API acaba.
+- Usar **Fable / Opus / GPT** só quando o usuário pedir explicitamente uma tarefa difícil de API.
+- Fallback se Grok falhar: **Composer 2.5** ou **Auto** (ainda first-party).
+
+## Dois pools (fato do Cursor)
+
+| Pool | Modelos | Quem gasta |
+|---|---|---|
+| **API** | Fable, Opus, Sonnet, GPT… | Só modelos API |
+| **First-party** | Auto, Composer 2.5, **Grok 4.5** | Só esses |
+
+**Grok NÃO consome o pool API.** Fable sim.
+
+## Como trabalhar neste projeto
+
+1. Chat principal → **Grok 4.5** (ou Auto/Composer).
+2. Tasks/subagentes → herdar Grok; não passar `model: claude-fable-*` sem pedido.
+3. Fable → só sob demanda (arquitetura pesada / auditoria longa), e avisar se a API estiver no limite.
+
+## Setup local
+
+Overrides de subagente ficam em `cursor/subagentModelOverrides` (SQLite do Cursor).
+Se Grok “sumir” de novo e voltar Fable nos subagentes, reaplicar o override para `grok-4.5` e reiniciar o Cursor.

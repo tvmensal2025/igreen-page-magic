@@ -368,29 +368,86 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
     }
   }, [instanceName, isWhapi, persistPicCache]);
 
-  // Supabase Realtime subscription for inbound messages
+  // Supabase Realtime: patch local do chat afetado (evita refetch completo da API).
+  // Fallback com debounce se o contato ainda não estiver na lista.
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleFullFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void fetchChats();
+      }, 2000);
+    };
+
     const channel = supabase
       .channel("conversations-realtime")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "conversations", filter: "message_direction=eq.inbound" },
         (payload) => {
-          const msg = payload.new as any;
-          if (msg.message_text) {
-            toast({
-              title: "💬 Nova mensagem recebida",
-              description: msg.message_text.slice(0, 80),
-            });
-            setNewMessageAlert(true);
-            // Trigger refetch
-            fetchChats();
-          }
-        }
+          const msg = payload.new as {
+            message_text?: string | null;
+            customer_id?: string;
+            created_at?: string;
+          };
+          if (!msg.message_text) return;
+
+          toast({
+            title: "💬 Nova mensagem recebida",
+            description: msg.message_text.slice(0, 80),
+          });
+          setNewMessageAlert(true);
+
+          const preview = msg.message_text.slice(0, 120);
+          const ts = msg.created_at
+            ? Math.floor(new Date(msg.created_at).getTime() / 1000)
+            : Math.floor(Date.now() / 1000);
+
+          void (async () => {
+            let phoneDigits = "";
+            if (msg.customer_id) {
+              try {
+                const { data } = await supabase
+                  .from("customers")
+                  .select("phone_whatsapp")
+                  .eq("id", msg.customer_id)
+                  .maybeSingle();
+                phoneDigits = digitsOnly(data?.phone_whatsapp);
+              } catch {
+                /* fallback abaixo */
+              }
+            }
+
+            let patched = false;
+            if (phoneDigits) {
+              setChats((prev) => {
+                const idx = prev.findIndex((c) => {
+                  const d = digitsOnly((c.sendTargetJid || c.remoteJid).split("@")[0]);
+                  if (!d) return false;
+                  return d === phoneDigits || d.endsWith(phoneDigits) || phoneDigits.endsWith(d);
+                });
+                if (idx < 0) return prev;
+                patched = true;
+                const current = prev[idx];
+                const updated: ChatItem = {
+                  ...current,
+                  lastMessage: preview,
+                  lastMessageTimestamp: Math.max(current.lastMessageTimestamp || 0, ts),
+                  unreadCount: (current.unreadCount || 0) + 1,
+                };
+                const rest = prev.filter((_, i) => i !== idx);
+                return [updated, ...rest];
+              });
+            }
+
+            if (!patched) scheduleFullFetch();
+          })();
+        },
       )
       .subscribe();
 
     return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
   }, [toast, fetchChats]);

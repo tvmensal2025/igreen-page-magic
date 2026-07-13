@@ -248,7 +248,21 @@ export async function createCampaign(body: CreateCampaignBody) {
     const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });
     if (error) await throwFunctionError(error);
     if ((data as any)?.error) throw new Error((data as any).error);
-    return data as { ok: true; campaign_id: string; adset_id: string; ad_ids: string[]; ads_count: number };
+    return data as {
+      ok: true;
+      campaign_id: string;
+      portal_campaign_id?: string;
+      adset_id: string;
+      ad_ids: string[];
+      ads_count: number;
+      activated?: boolean;
+      activation_error?: string | null;
+      rodizio_configured?: boolean;
+      rodizio_pool_id?: string | null;
+      rodizio_members?: number;
+      rodizio_warning?: string | null;
+      tracking_protocol?: string;
+    };
   } catch (err) {
     // Timeout de rede / "Failed to fetch": a função pode ter concluído mesmo assim
     // (o realign de spend_cap roda em background e pode passar do timeout do fetch

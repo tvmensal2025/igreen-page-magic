@@ -69,7 +69,7 @@
 | B5 | Spec `.kiro/specs/scheduled-messages` não implementada | spec dir | **CORRIGIDO (docs)** | — |
 | B6 | Context7 MCP indisponível | erro de conexão na auditoria | **CORRIGIDO (docs)** | Análise só via repositório |
 | B7 | Agente Outono inexistente | ambiente Cursor | **CORRIGIDO (docs)** | — |
-| B8 | Secret voice-dialer em migration versionada | `20260710020000:21` | **PENDENTE** | — |
+| B8 | Secret voice-dialer em migration versionada | `20260710020000:21` | **CORRIGIDO** | Job lê `settings.voice_dialer_cron_secret` (`20260713100000_…`) |
 | B9 | `ai_decisions` RLS ampla | migration policy | **PENDENTE** | Fora do escopo imediato |
 
 ---
@@ -81,8 +81,8 @@
 | Crítico | 6 | 4 | 0 | 1 | 1 |
 | Alto | 8 | 5 | 0 | 0 | 3 |
 | Médio | 14 | 9 | 0 | 1 | 4 |
-| Baixo | 9 | 0 | 5 | 0 | 4 |
-| **Total** | **37** | **18** | **5** | **2** | **12** |
+| Baixo | 9 | 1 | 5 | 0 | 3 |
+| **Total** | **37** | **19** | **5** | **2** | **11** |
 
 ---
 

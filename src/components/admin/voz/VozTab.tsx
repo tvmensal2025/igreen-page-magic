@@ -1,16 +1,18 @@
 /**
  * Aba Admin > Ligação — Velip (PSTN) — módulo isolado do WhatsApp.
- * 6 sub-abas: Nova ligação · SMS · Bases · Histórico · Painel · Ajuda
+ * Sub-abas: Nova ligação · SMS · Bases · Não Perturbe · Histórico · Painel · Ajuda
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Phone, History, MessageSquare, Users, BarChart3, HelpCircle } from "lucide-react";
+import { Loader2, Phone, History, MessageSquare, Users, BarChart3, HelpCircle, ShieldBan } from "lucide-react";
 import { VoiceDialerPanel } from "@/components/admin/voz/VoiceDialerPanel";
 import { VoiceCallHistoryPanel } from "@/components/admin/voz/VoiceCallHistoryPanel";
 import { VoiceSmsPanel } from "@/components/admin/voz/VoiceSmsPanel";
 import { VoiceContactBasesPanel } from "@/components/admin/voz/VoiceContactBasesPanel";
 import { VoiceDashboardPanel } from "@/components/admin/voz/VoiceDashboardPanel";
+import { VoiceDncPanel } from "@/components/admin/voz/VoiceDncPanel";
+import { VoiceHelpPanel } from "@/components/admin/voz/VoiceHelpPanel";
 import { VelipHealthBanner } from "@/components/admin/voz/VelipHealthBanner";
 import type { VozCustomer } from "@/components/admin/voz/VozContactPickerDialog";
 
@@ -63,8 +65,10 @@ export function VozTab({ consultantId }: Props) {
           <TabsTrigger value="nova" className="gap-2"><Phone className="h-4 w-4" /> Nova ligação</TabsTrigger>
           <TabsTrigger value="sms" className="gap-2"><MessageSquare className="h-4 w-4" /> SMS</TabsTrigger>
           <TabsTrigger value="bases" className="gap-2"><Users className="h-4 w-4" /> Bases</TabsTrigger>
+          <TabsTrigger value="dnc" className="gap-2"><ShieldBan className="h-4 w-4" /> Não Perturbe</TabsTrigger>
           <TabsTrigger value="historico" className="gap-2"><History className="h-4 w-4" /> Histórico</TabsTrigger>
           <TabsTrigger value="painel" className="gap-2"><BarChart3 className="h-4 w-4" /> Painel</TabsTrigger>
+          <TabsTrigger value="ajuda" className="gap-2"><HelpCircle className="h-4 w-4" /> Ajuda</TabsTrigger>
         </TabsList>
         <TabsContent value="nova" className="mt-4">
           <VoiceDialerPanel consultantId={consultantId} customers={customers} />
@@ -75,11 +79,17 @@ export function VozTab({ consultantId }: Props) {
         <TabsContent value="bases" className="mt-4">
           <VoiceContactBasesPanel consultantId={consultantId} />
         </TabsContent>
+        <TabsContent value="dnc" className="mt-4">
+          <VoiceDncPanel consultantId={consultantId} />
+        </TabsContent>
         <TabsContent value="historico" className="mt-4">
           <VoiceCallHistoryPanel consultantId={consultantId} />
         </TabsContent>
         <TabsContent value="painel" className="mt-4">
           <VoiceDashboardPanel consultantId={consultantId} />
+        </TabsContent>
+        <TabsContent value="ajuda" className="mt-4">
+          <VoiceHelpPanel />
         </TabsContent>
       </Tabs>
     </div>

@@ -7,6 +7,7 @@ import { notifyHandoff } from "../_shared/notify-consultant.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isLeadEligible } from "../_shared/origin-guard.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
+import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,6 +28,13 @@ Deno.serve(async (req) => {
 
     if (!(await isBotGloballyEnabled(supabase))) {
       return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!(await isAutomationEnabled(supabase, "bot_loop_watchdog"))) {
+      await logSkipped(supabase, "bot_loop_watchdog");
+      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bot_loop_watchdog" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -126,10 +134,22 @@ Deno.serve(async (req) => {
         // mas a mensagem ao lead NÃO sai de madrugada.
         try {
           if (isQuietHourBRT()) throw new Error("quiet_hours_skip_lead_notice");
-          const tip =
+          const tipKey = reason === "auto_orphan_step_detected"
+            ? "watchdog_orphan_tip"
+            : "watchdog_loop_tip";
+          const tipFallback =
             reason === "auto_orphan_step_detected"
-              ? "Estou te encaminhando para um consultor humano para continuar seu atendimento. Em breve alguém te responde por aqui 👍"
-              : "Vou te passar para um consultor humano para te atender melhor. Em breve alguém te responde por aqui 👍";
+              ? "Estou te encaminhando para um consultor humano para continuar seu atendimento. Em breve alguém te responde por aqui."
+              : "Vou te passar para um consultor humano para te atender melhor. Em breve alguém te responde por aqui.";
+          const { resolveConsultantMessage } = await import("../_shared/consultant-template.ts");
+          const tipResolved = await resolveConsultantMessage(
+            supabase,
+            customer.consultant_id,
+            tipKey,
+            { nome: (customer.name || "").split(" ")[0] || "" },
+            tipFallback,
+          );
+          const tip = tipResolved.text || tipFallback;
           await supabase.from("conversations").insert({
             customer_id: customer.id,
             message_direction: "outbound",

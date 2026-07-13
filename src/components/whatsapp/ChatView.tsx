@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MessageBubble } from "./MessageBubble";
@@ -259,6 +260,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       .from("kanban_stages")
       .select("*")
       .eq("consultant_id", consultantId)
+      .or("stage_scope.eq.lead,stage_scope.is.null")
       .order("position")
       .then(({ data }) => {
         if (data && data.length > 0) setKanbanStages(data);
@@ -470,11 +472,24 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
 
+  const rowVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 96,
+    overscan: 12,
+    getItemKey: (index) => messages[index]?.id ?? index,
+  });
+
   const forceScrollToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+    if (messages.length > 0) {
+      try {
+        rowVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+      } catch { /* ignore */ }
+    }
     el.scrollTop = el.scrollHeight;
-  }, []);
+  }, [messages.length, rowVirtualizer]);
 
   const scheduleScrollToBottom = useCallback((force = false) => {
     if (!force && !stickToBottomRef.current) return;
@@ -940,24 +955,47 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             Início da conversa
           </p>
         )}
-        {messages.map((msg) => (
-          <div key={msg.id} data-msg-bubble>
-            <MessageBubble
-              message={msg}
-              onLoadMedia={loadMedia}
-              consultantId={consultantId}
-              customerId={customerId}
-              onAttachToCapture={customerId ? async (m, key, loaded) => {
-                await attachMediaToCapture({
-                  customerId,
-                  key,
-                  sourceUrl: loaded,
-                  fileName: m.fileName,
-                });
-              } : undefined}
-            />
-          </div>
-        ))}
+        <div
+          style={{
+            height: rowVirtualizer.getTotalSize(),
+            width: "100%",
+            position: "relative",
+          }}
+        >
+          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+            const msg = messages[virtualRow.index]!;
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                data-msg-bubble
+                ref={rowVirtualizer.measureElement}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <MessageBubble
+                  message={msg}
+                  onLoadMedia={loadMedia}
+                  consultantId={consultantId}
+                  customerId={customerId}
+                  onAttachToCapture={customerId ? async (m, key, loaded) => {
+                    await attachMediaToCapture({
+                      customerId,
+                      key,
+                      sourceUrl: loaded,
+                      fileName: m.fileName,
+                    });
+                  } : undefined}
+                />
+              </div>
+            );
+          })}
+        </div>
         <div ref={bottomRef} aria-hidden className="h-2" />
       </div>
 

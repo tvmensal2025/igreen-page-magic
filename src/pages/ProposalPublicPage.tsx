@@ -205,7 +205,9 @@ export default function ProposalPublicPage() {
   // Separa as formas de pagamento (kind: "payment") dos detalhes comuns, para
   // renderizar o pagamento num bloco dedicado (cartão, parcelas, juros, banco).
   const paymentItems = proposal.lineItems.filter((i) => i.kind === "payment");
-  const detailItems = proposal.lineItems.filter((i) => i.kind !== "payment" && i.kind !== "solar_design");
+  const detailItems = proposal.lineItems.filter(
+    (i) => i.kind !== "payment" && i.kind !== "solar_design" && i.kind !== "scoring_input",
+  );
 
   return (
     <>

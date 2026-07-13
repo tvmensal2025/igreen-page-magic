@@ -406,6 +406,8 @@ function MessageBody({ row }: { row: ConvRow }) {
             src={dataUrl}
             alt={MEDIA_LABEL[type]}
             className="rounded-md max-h-64 w-auto object-cover border border-white/10"
+            loading="lazy"
+            decoding="async"
           />
         </a>
       )}

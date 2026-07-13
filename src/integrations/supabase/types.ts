@@ -11513,6 +11513,15 @@ export type Database = {
           position: number
         }[]
       }
+      rodizio_assign_lead: {
+        Args: { p_customer_id: string; p_campaign_id: string }
+        Returns: {
+          outcome: string
+          partner_id: string
+          pool_id: string
+          position: number
+        }[]
+      }
       seed_default_camila_flow: {
         Args: { _consultant_id: string }
         Returns: string

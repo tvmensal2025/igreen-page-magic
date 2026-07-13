@@ -35,7 +35,18 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => null)) as Body | null;
     if (!body?.campaign_id) return fail("campaign_id obrigatório");
 
-    const partnerIds = Array.isArray(body.partner_ids) ? body.partner_ids.filter(Boolean) : [];
+    let partnerIds = Array.isArray(body.partner_ids)
+      ? body.partner_ids.filter((id): id is string => typeof id === "string" && !!id.trim())
+      : [];
+    // Dedup preservando ordem
+    {
+      const seen = new Set<string>();
+      partnerIds = partnerIds.filter((id) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      });
+    }
     if (body.enabled && partnerIds.length < 1) {
       return fail("Selecione pelo menos 1 participante (você ou outra pessoa).");
     }
@@ -49,17 +60,27 @@ Deno.serve(async (req) => {
     if (!camp) return fail("Campanha não encontrada.", 404);
     if ((camp as any).consultant_id !== auth.id) return fail("Sem permissão.", 403);
 
-    // Valida ownership dos partners
+    // Valida ownership + ativos; mantém só válidos (fail se sobrar 0).
     if (partnerIds.length) {
       const { data: partners } = await admin
         .from("referral_partners")
-        .select("id, consultant_id")
+        .select("id, consultant_id, is_active")
         .in("id", partnerIds);
-      const ownedIds = new Set(((partners as any[]) || [])
-        .filter((p) => p.consultant_id === auth.id)
-        .map((p) => p.id));
-      const bad = partnerIds.filter((id) => !ownedIds.has(id));
-      if (bad.length) return fail(`Participantes inválidos: ${bad.join(", ")}`, 400);
+      const ownedActive = new Set(((partners as any[]) || [])
+        .filter((p) => p.consultant_id === auth.id && p.is_active !== false)
+        .map((p) => p.id as string));
+      const validIds = partnerIds.filter((id) => ownedActive.has(id));
+      const bad = partnerIds.filter((id) => !ownedActive.has(id));
+      if (validIds.length < 1) {
+        return fail(
+          "Nenhum participante válido/ativo. Remova inativos ou reative antes de salvar o rodízio.",
+          400,
+        );
+      }
+      if (bad.length) {
+        console.warn("[fb-update-rodizio] partners ignorados:", bad.join(", "));
+      }
+      partnerIds = validIds;
     }
 
     // Desativa pool atual (mantém histórico e lead_count).

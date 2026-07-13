@@ -285,15 +285,17 @@ async function ensureLeadPartnerLink(
       campaignId = unique[0];
     }
 
-    const { data: rodizioRows, error: rodizioError } = await supabase.rpc("rodizio_next", {
+    const { data: assignRows, error: assignError } = await supabase.rpc("rodizio_assign_lead", {
+      p_customer_id: customerId,
       p_campaign_id: campaignId,
     });
-    if (rodizioError || !rodizioRows) return;
-    const row = Array.isArray(rodizioRows) ? rodizioRows[0] : rodizioRows;
-    const partnerId = (row as any)?.partner_id || (row as any)?.referral_partner_id;
-    if (!partnerId) return;
+    if (assignError) return;
+    const row = Array.isArray(assignRows) ? assignRows[0] : assignRows;
+    const outcome = (row as any)?.outcome as string | undefined;
+    const partnerId = (row as any)?.partner_id as string | undefined;
+    if (outcome !== "assigned" || !partnerId) return;
 
-    // Atribui + protocolo + avisa parceiro (edge function já validada)
+    // Protocolo + aviso ao parceiro (edge já valida ownership / ativo)
     await supabase.functions.invoke("assign-lead-manual", {
       body: { customer_id: customerId, partner_id: partnerId },
     });
@@ -350,9 +352,11 @@ export function useMessages(
       });
   }, []);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (opts?: { force?: boolean }) => {
     if (!remoteJid) return;
     if (!isWhapi && !instanceName) return;
+    // Aba oculta: não gasta CPU/rede; visibilitychange força ao voltar.
+    if (typeof document !== "undefined" && document.hidden && !opts?.force) return;
     if (fetchingRef.current) return;
     fetchingRef.current = true;
 
@@ -503,7 +507,7 @@ export function useMessages(
     setMessages([]);
     offsetRef.current = 0;
     setHasMoreOlder(true);
-    fetchMessages();
+    fetchMessages({ force: true });
     if (!remoteJid) return;
     if (!isWhapi && !instanceName) return;
 
@@ -512,7 +516,10 @@ export function useMessages(
       // Polling de segurança a cada 6s (antes 20s). O realtime abaixo cobre o
       // caso comum (mensagem nova chega na hora); o polling garante consistencia
       // se o realtime falhar/cair.
-      intervalRef.current = setInterval(fetchMessages, 6000);
+      intervalRef.current = setInterval(() => {
+        if (typeof document !== "undefined" && document.hidden) return;
+        void fetchMessages();
+      }, 6000);
     };
     const stopPolling = () => {
       if (intervalRef.current) {
@@ -522,11 +529,9 @@ export function useMessages(
     };
     startPolling();
 
-    // Realtime: assina a tabela `conversations`. Qualquer mensagem gravada
-    // (inbound do cliente OU outbound do painel/bot) agenda um refetch do chat
-    // aberto — as mensagens aparecem quase na hora, sem esperar os 6s.
-    // Debounce de 700ms evita rajada de refetches quando chegam varias linhas
-    // juntas. Nome de canal estavel por telefone + cleanup (boa pratica Supabase).
+    // Realtime: assina a tabela `conversations`. Filtra pelo customer do chat
+    // aberto quando conhecido; senão aceita qualquer INSERT (comportamento antigo).
+    // Debounce de 700ms evita rajada de refetches. Skip se aba oculta.
     const phoneKey = remoteJid.split("@")[0];
     let debounceId: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
@@ -534,16 +539,19 @@ export function useMessages(
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "conversations" },
-        () => {
+        (payload) => {
+          if (typeof document !== "undefined" && document.hidden) return;
+          const row = payload.new as { customer_id?: string };
+          if (customerId && row?.customer_id && row.customer_id !== customerId) return;
           if (debounceId) clearTimeout(debounceId);
-          debounceId = setTimeout(() => { fetchMessages(); }, 700);
+          debounceId = setTimeout(() => { void fetchMessages(); }, 700);
         },
       )
       .subscribe();
 
     const onVisibility = () => {
       if (document.hidden) stopPolling();
-      else { fetchMessages(); startPolling(); }
+      else { void fetchMessages({ force: true }); startPolling(); }
     };
     document.addEventListener("visibilitychange", onVisibility);
 
@@ -553,7 +561,7 @@ export function useMessages(
       supabase.removeChannel(channel);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [fetchMessages, instanceName, remoteJid, isWhapi]);
+  }, [fetchMessages, instanceName, remoteJid, isWhapi, customerId]);
 
   const resolveSendTargetJid = useCallback(async () => {
     const initialTarget = resolvedSendTargetJid || preferredSendTargetJid || remoteJid;

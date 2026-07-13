@@ -5,21 +5,9 @@
 // consultor criar uma venda à mão — para acordos que aconteceram fora do fluxo
 // de orçamento por link (ex.: cliente fechou direto no WhatsApp ou
 // pessoalmente).
-//
-// Campos:
-//   - Etapa inicial: Interesse | Negociando | Fechado (NÃO permite "Perdido"
-//     na criação manual — só faz sentido mover para perdido depois).
-//   - Produto (obrigatório): escolhido do catálogo (useProducts).
-//   - Cliente (opcional): associado pela base do consultor.
-//   - Valor (em reais; convertido para centavos com reaisToCents ao salvar).
-//   - Observações (opcional).
-//
-// Reusa useCreateSale/createSale (já preparados para amountCents, status com o
-// novo enum e default "interesse"). Valores sempre em centavos no banco; a UI
-// usa reaisToCents ao salvar e formatBRLFromCents na prévia.
 // =============================================================================
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -44,11 +32,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useProducts } from "../catalogo/hooks";
 import { PRODUCT_FAMILY_LABEL } from "../catalogo/types";
 import { useCreateSale } from "../vendas/hooks";
+import { computePointsKwh } from "../vendas/scoring";
 import { SALE_STATUS_LABEL, type CaptureData, type SaleStatus } from "../vendas/types";
 import { formatBRLFromCents, reaisToCents } from "../lib/money";
-import { validateCaptureForFamily } from "../captura/schemas";
+import { CaptureForm } from "../captura/CaptureForm";
+import { hasCaptureForm, validateCaptureForFamily } from "../captura/schemas";
 
-// Etapas permitidas na criação manual (Requisito 3.2): sem "perdido".
 const MANUAL_STAGES: SaleStatus[] = ["interesse", "negociando", "fechado"];
 
 interface CustomerRow {
@@ -72,19 +61,17 @@ export function RegistrarVendaDialog({
   const { data: products = [] } = useProducts();
   const createSale = useCreateSale(consultantId);
 
-  // Estado do formulário.
   const [stage, setStage] = useState<SaleStatus>("interesse");
   const [productId, setProductId] = useState<string>("");
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [amountReais, setAmountReais] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [captureData, setCaptureData] = useState<CaptureData>({});
 
-  // Seletor de cliente (opcional) — busca na base do consultor.
   const [customerSearch, setCustomerSearch] = useState("");
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
 
-  // Reseta o formulário sempre que o diálogo é aberto.
   useEffect(() => {
     if (open) {
       setStage("interesse");
@@ -93,10 +80,10 @@ export function RegistrarVendaDialog({
       setAmountReais("");
       setNotes("");
       setCustomerSearch("");
+      setCaptureData({});
     }
   }, [open]);
 
-  // Carrega os clientes da base do consultor quando o diálogo abre.
   useEffect(() => {
     if (!open || !consultantId) return;
     let cancelled = false;
@@ -127,8 +114,6 @@ export function RegistrarVendaDialog({
     );
   }, [customers, customerSearch]);
 
-  // Converte o valor digitado (reais) para centavos. Aceita vírgula ou ponto.
-  // Retorna null quando vazio/ inválido (valor é opcional).
   const amountCents = useMemo(() => {
     const raw = amountReais.replace(/\./g, "").replace(",", ".").trim();
     if (!raw) return null;
@@ -137,31 +122,47 @@ export function RegistrarVendaDialog({
     return reaisToCents(reais);
   }, [amountReais]);
 
-  // Só permite salvar com produto escolhido (Requisito 3.1).
+  const product = useMemo(
+    () => products.find((p) => p.id === productId) ?? null,
+    [products, productId],
+  );
+
+  const showCapture = !!product && hasCaptureForm(product.family);
+
+  const onCaptureChange = useCallback((data: CaptureData) => {
+    setCaptureData(data);
+  }, []);
+
   const canSubmit = !!productId && !createSale.isPending;
 
   const handleSubmit = async () => {
-    if (!productId) return;
+    if (!productId || !product) return;
 
-    // Validação leve de captura por família (Requisito 7.2). Hoje este form
-    // não coleta campos de captura por família, então `captureData` fica
-    // vazio e a validação passa direto (no-op). A guarda já está ligada: se
-    // no futuro adicionarmos campos de captura aqui, basta preencher
-    // `captureData` que a validação Zod da família passa a valer, exibindo
-    // erro amigável em pt-BR antes de salvar.
-    const product = products.find((p) => p.id === productId);
-    const captureData: CaptureData = {};
-    if (product) {
-      const validation = validateCaptureForFamily(product.family, captureData);
-      if (!validation.ok) {
-        toast({
-          title: "Dados de captura incompletos",
-          description: validation.message,
-          variant: "destructive",
-        });
-        return;
-      }
+    const requireCapture = stage === "fechado" && hasCaptureForm(product.family);
+    const validation = validateCaptureForFamily(product.family, captureData, {
+      requireCapture,
+    });
+    if (!validation.ok) {
+      toast({
+        title: "Dados de captura incompletos",
+        description: validation.message,
+        variant: "destructive",
+      });
+      return;
     }
+
+    const normalizedCapture = (validation.data as CaptureData) ?? captureData;
+
+    const placas = normalizedCapture as { consumo_kwh?: number };
+    const telecom = normalizedCapture as { portabilidade?: boolean };
+    const pointsKwh = computePointsKwh(product.scoringRule, {
+      kwh: typeof placas.consumo_kwh === "number" ? placas.consumo_kwh : undefined,
+      units: 1,
+      captureData: normalizedCapture,
+      ...(typeof telecom.portabilidade === "boolean"
+        ? { captureData: normalizedCapture }
+        : {}),
+    });
 
     try {
       await createSale.mutateAsync({
@@ -171,6 +172,8 @@ export function RegistrarVendaDialog({
         status: stage,
         amountCents,
         notes: notes.trim() || null,
+        captureData: normalizedCapture,
+        pointsKwh,
       });
       toast({
         title: "Venda registrada!",
@@ -188,7 +191,7 @@ export function RegistrarVendaDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar venda</DialogTitle>
           <DialogDescription>
@@ -198,7 +201,6 @@ export function RegistrarVendaDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Etapa inicial (sem "perdido") */}
           <Field label="Etapa inicial">
             <Select value={stage} onValueChange={(v) => setStage(v as SaleStatus)}>
               <SelectTrigger className="h-10 text-sm">
@@ -214,9 +216,14 @@ export function RegistrarVendaDialog({
             </Select>
           </Field>
 
-          {/* Produto (obrigatório) */}
           <Field label="Produto *">
-            <Select value={productId} onValueChange={setProductId}>
+            <Select
+              value={productId}
+              onValueChange={(id) => {
+                setProductId(id);
+                setCaptureData({});
+              }}
+            >
               <SelectTrigger className="h-10 text-sm">
                 <SelectValue placeholder="Escolha o produto" />
               </SelectTrigger>
@@ -230,7 +237,26 @@ export function RegistrarVendaDialog({
             </Select>
           </Field>
 
-          {/* Cliente (opcional) */}
+          {showCapture && product && (
+            <Field
+              label={
+                stage === "fechado"
+                  ? "Dados de captura *"
+                  : "Dados de captura (opcional)"
+              }
+            >
+              <div className="rounded-lg border border-pv-mid/30 p-3 bg-pv-bg/40">
+                <CaptureForm
+                  key={product.id}
+                  family={product.family}
+                  embedded
+                  onChange={onCaptureChange}
+                  onSubmit={onCaptureChange}
+                />
+              </div>
+            </Field>
+          )}
+
           <Field label="Cliente (opcional)">
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -253,7 +279,6 @@ export function RegistrarVendaDialog({
                 </p>
               )}
               <div className="p-1 space-y-0.5">
-                {/* Opção de não associar nenhum cliente */}
                 {!loadingCustomers && filteredCustomers.length > 0 && (
                   <button
                     type="button"
@@ -293,7 +318,6 @@ export function RegistrarVendaDialog({
             </div>
           </Field>
 
-          {/* Valor (reais) */}
           <Field label="Valor (opcional)">
             <Input
               inputMode="decimal"
@@ -309,7 +333,6 @@ export function RegistrarVendaDialog({
             )}
           </Field>
 
-          {/* Observações (opcional) */}
           <Field label="Observações (opcional)">
             <Textarea
               value={notes}
@@ -337,7 +360,6 @@ export function RegistrarVendaDialog({
   );
 }
 
-// Rótulo de campo padronizado (mesmo visual do builder de orçamento).
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">

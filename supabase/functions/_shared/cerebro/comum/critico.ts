@@ -13,7 +13,7 @@ Regras (REPROVAR se viola QUALQUER uma):
 2. Promete vídeo, áudio, link, PDF, retorno futuro ("te ligo amanhã", "vou consultar e volto")
 3. Promete obra, painel solar, visita técnica
 4. Frases proibidas: "como posso te ajudar", "me conta mais", "estou à disposição"
-5. Não tem CTA (pergunta ou pedido de ação) ao final
+5. Não tem fechamento (pergunta neutra, oferta de esclarecer mais, ou ponte ao próximo passo). NÃO exige pedir cadastro — preferir fechamento profissional sem pressão.
 6. Tom desalinhado com o perfil do lead (ex: efusivo demais com lead irritado, infantil com cético)
 7. Repete saudação quando já tem histórico
 8. **TRAVA DA ETAPA**: Se a etapa é 'valor', a mensagem DEVE perguntar o valor em R$ — NÃO pode pedir foto/doc/e-mail. Se a etapa é 'simulacao', DEVE apresentar a faixa 8-20% + número — NÃO pode pedir foto. Se a etapa é 'foto_conta', DEVE pedir a foto. Se a etapa é 'nome', DEVE perguntar o nome — sem pedir outra coisa.
@@ -21,7 +21,7 @@ Regras (REPROVAR se viola QUALQUER uma):
 10. **CAPTURA**: Se o plano pediu capturar um campo X (ex: 'valor_conta'), a pergunta da mensagem DEVE ser sobre X.
 
 Devolva APENAS JSON:
-{ "aprovado": true|false, "problemas": ["..."], "sugestao": "texto corrigido se reprovar (curto, 1-3 linhas, com CTA)" }`;
+{ "aprovado": true|false, "problemas": ["..."], "sugestao": "texto corrigido se reprovar (curto, 1-3 linhas, fechamento neutro — sem empurrar cadastro)" }`;
 
 export async function criticar(args: {
   texto: string;

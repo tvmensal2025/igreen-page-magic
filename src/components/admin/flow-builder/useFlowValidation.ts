@@ -23,7 +23,9 @@ export type FlowWarning = {
     | "var_before_capture"
     | "media_missing"
     | "flow_no_ending"
-    | "too_many_buttons";
+    | "too_many_buttons"
+    | "activate_to_sim_path"
+    | "activate_skips_conta";
   message: string;
 
 
@@ -295,6 +297,88 @@ export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): 
             message:
               "OCR ativo, mas não há passo de confirmação logo depois. Aplique o template \"Confirmação pós-OCR\".",
           });
+        }
+      }
+
+      // F16 / regra D+M (vale para QUALQUER fluxo, atual ou futuro):
+      //   Ativar/cadastrar → documento (se já tem conta) OU conta de CADASTRO
+      //   (conta cujo próximo passo é documento). NUNCA seletor de simulação
+      //   nem conta cujo caminho reabre o resultado.
+      // Detecção genérica por step_type + arestas (não depende de nomes d_*;
+      // os nomes entram só como reforço para os fluxos D/M atuais).
+      if (s.is_active) {
+        const activateRx = /ativar|cadastrar|quero\s+me\s+cadastrar|continuar\s+cadastro/i;
+
+        // Saídas de um passo (success_goto → goto → transitions) — espelha o motor.
+        const nextStepsOf = (st: Step): Step[] => {
+          const ids: string[] = [];
+          const fb = (st as any).fallback || {};
+          if (fb.success_goto_step_id) ids.push(String(fb.success_goto_step_id));
+          if (fb.mode === "goto" && fb.goto_step_id) ids.push(String(fb.goto_step_id));
+          for (const tt of st.transitions || []) {
+            if (tt.goto_step_id) ids.push(String(tt.goto_step_id));
+          }
+          return ids
+            .map((id) => steps.find((x) => x.id === id))
+            .filter((x): x is Step => !!x);
+        };
+        const leadsToDoc = (st: Step): boolean =>
+          nextStepsOf(st).some(
+            (n) =>
+              n.step_type === "capture_documento" ||
+              n.step_type === "capture_doc" ||
+              /documento/.test(String(n.step_key || "")),
+          );
+        const leadsToSim = (st: Step): boolean =>
+          nextStepsOf(st).some((n) =>
+            /resultado|simular/.test(String(n.step_key || "")),
+          );
+        // Conta de CADASTRO existe no fluxo? (conta cujo próximo é documento)
+        const hasContaCadastro = steps.some(
+          (x) => x.is_active && x.step_type === "capture_conta" && leadsToDoc(x),
+        );
+
+        for (const t of s.transitions || []) {
+          const phrases = (t.trigger_phrases || []).join(" ");
+          if (!activateRx.test(phrases) && !activateRx.test(String(t.trigger_intent || ""))) continue;
+          const dest = steps.find((x) => x.id === t.goto_step_id);
+          if (!dest) continue;
+          const dk = String(dest.step_key || "");
+          const dt = String(dest.step_type || "");
+          const isSimChooser =
+            dk === "d_escolher_simulacao" ||
+            dk === "d_simular_valor" ||
+            /escolher_simulacao|simular_valor/.test(dk);
+          const isSimConta =
+            dt === "capture_conta" &&
+            !leadsToDoc(dest) &&
+            (dk === "d_pedir_conta" || leadsToSim(dest) || nextStepsOf(dest).length > 0);
+          if (isSimChooser || isSimConta) {
+            warnings.push({
+              id: `${s.id}:activate_to_sim_path:${dest.id}`,
+              stepId: s.id,
+              level: "error",
+              kind: "activate_to_sim_path",
+              message:
+                "Ativar/cadastrar está apontando para o caminho de SIMULAÇÃO. Corrija para Pedir documento (se já tem conta) ou Pedir conta de cadastro (que vai para documento) — nunca para Completa/Rápida nem para a conta que reabre o resultado.",
+            });
+          }
+
+          // Pulo de conta: cadastrar → documento DIRETO, mas o fluxo tem uma
+          // conta de cadastro. Sem conta, o lead chega ao documento sem foto/
+          // valor da conta. O motor auto-corrige em runtime (F16), mas o grafo
+          // deve apontar para a conta de cadastro.
+          const isDocDirect = dt === "capture_documento" || dt === "capture_doc";
+          if (isDocDirect && hasContaCadastro) {
+            warnings.push({
+              id: `${s.id}:activate_skips_conta:${dest.id}`,
+              stepId: s.id,
+              level: "warn",
+              kind: "activate_skips_conta",
+              message:
+                "Ativar/cadastrar está indo DIRETO para o documento, pulando a conta de luz de cadastro. Aponte para a conta de cadastro — o robô pula sozinho para o documento quando o cliente já tem conta.",
+            });
+          }
         }
       }
 

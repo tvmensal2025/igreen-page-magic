@@ -31,6 +31,11 @@ import {
   IGREEN_CLUB_BENEFITS,
 } from "./catalog";
 import { computeQuoteAmount, paymentOptionsToLineItems } from "./pricing";
+import {
+  buildScoringLineItem,
+  estimateKwhFromBillCents,
+  extractScoringInputFromLineItems,
+} from "./scoringInput";
 import { useCreateProposal } from "./hooks";
 import {
   FINANCING_BANKS,
@@ -214,7 +219,23 @@ export function OrcamentoBuilderSheet({
       const paymentItems = isProjectOnce
         ? paymentOptionsToLineItems(paymentsToCents(payments))
         : [];
-      const lineItems = [...quote.details, ...solarExtraItems, ...paymentItems];
+      const baseItems = [...quote.details, ...solarExtraItems, ...paymentItems];
+
+      // Input de pontuação para a aceite (proposal-respond). Energia: estima
+      // kWh pela conta; telecom: portabilidade; placas: gera/ano do solar ou
+      // fallback via extract dos line items solares.
+      const fromSolar = extractScoringInputFromLineItems(solarExtraItems);
+      const billCents = currentBill ? reaisToCents(Number(currentBill)) : 0;
+      const scoringPayload = {
+        kwh:
+          fromSolar.kwh ??
+          (billCents > 0 ? estimateKwhFromBillCents(billCents) : undefined),
+        units: product.family === "telecom" || product.family === "seguros" ? 1 : undefined,
+        portabilidade:
+          product.family === "telecom" ? portabilidade : undefined,
+        plano: plan?.label,
+      };
+      const lineItems = [...baseItems, buildScoringLineItem(scoringPayload)];
 
       const proposal = await createProposal.mutateAsync({
         consultantId,

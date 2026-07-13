@@ -25,9 +25,9 @@ const GROUPS: { title: string; hint: string; items: { key: Key; label: string; d
     title: "Automação no WhatsApp",
     hint: "⚠️ Estas opções mandam mensagem sozinhas para o cliente. Ligue só se quiser que aconteça sem você precisar aprovar cada uma.",
     items: [
-      { key: "auto_wa_boleto_vencendo", label: "Enviar o boleto pro cliente antes de vencer, pelo WhatsApp", desc: "O sistema manda a mensagem sozinho, sem você precisar fazer nada." },
-      { key: "auto_wa_aniversariante", label: "Parabenizar o cliente no dia do aniversário, pelo WhatsApp", desc: "O sistema envia sozinho no dia." },
-      { key: "cross_sell_bot", label: "Oferecer Telefonia e Seguro Auto para clientes que só têm Energia", desc: "Quando o cliente conversar com o bot, ele mesmo sugere os outros produtos." },
+      { key: "auto_wa_boleto_vencendo", label: "Enfileirar aviso de boleto a vencer (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
+      { key: "auto_wa_aniversariante", label: "Enfileirar parabéns de aniversário (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
+      { key: "cross_sell_bot", label: "Sugerir Telefonia e Seguro Auto (bot, modo sombra)", desc: "Quando ligado, o bot avalia cross-sell em sombra (log) até ativação explícita." },
     ],
   },
 ];
@@ -52,7 +52,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       <div>
         <h3 className="font-semibold text-sm">Automações iGreen</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Alertas já vêm ligados. As opções que enviam mensagem direto pro cliente ficam desligadas — ligue só as que você quer que rodem no automático.
+          Alertas já vêm ligados. Opções de WhatsApp ficam desligadas por padrão
+          e, mesmo ligadas, só enfileiram avisos no painel (dry-run) — sem envio
+          automático até liberação explícita na Central de Automações.
         </p>
       </div>
 
