@@ -1,5 +1,8 @@
 // Kill switch global — Fase 0 da auditoria de lançamento.
-// Lido por webhooks e crons antes de qualquer ação automática.
+// Semântica de produto (jul/2026):
+//   - OFF = bot PARA DE FALAR (sem outbound automático)
+//   - OFF NÃO impede receber: webhook deve gravar inbound + avisar consultor
+// Crons de automação continuam respeitando este flag (não disparam envio).
 // Cache 5s para evitar query em cada inbound.
 
 // Tipo estrutural relaxado (padrão do automation-gate): os chamadores criam

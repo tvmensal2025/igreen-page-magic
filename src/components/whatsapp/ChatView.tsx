@@ -828,6 +828,24 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         </div>
       )}
 
+      {customerId && !botActive && (
+        <div className="mx-3 mb-1 flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5">
+          <BotOff className="h-3.5 w-3.5 shrink-0 text-amber-700" />
+          <span className="text-[11px] font-medium text-amber-950 flex-1">
+            Bot desligado neste lead — não responde sozinho. Só religa no botão IA OFF → ON.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2 border-amber-600/40 text-amber-900"
+            onClick={toggleBot}
+            disabled={togglingBot}
+          >
+            Religar
+          </Button>
+        </div>
+      )}
+
       <AlertDialog open={endAttendanceDialogOpen} onOpenChange={setEndAttendanceDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

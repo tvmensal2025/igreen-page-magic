@@ -1,7 +1,9 @@
 // Manual step sender: human takes over a conversation and triggers individual
 // pieces (audio / image / video / text) of a configured flow step, on-demand.
-// By default it does NOT advance conversation_step or unpause the bot. When
-// continueFlow=true, it resumes the custom flow after the selected step.
+// By default it does NOT advance conversation_step.
+// Decisão de produto (jul/2026): envio manual NÃO religa o bot — só o botão
+// "Religar" no chat (ou equivalente) despausa. When continueFlow=true, it
+// resumes the custom flow after the selected step but keeps bot_paused.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
@@ -18,24 +20,13 @@ function inferNameSource(name: string | null | undefined, currentSource: string 
 }
 
 /**
- * Constrói o patch de update do customer para envio manual.
+ * Patch de update no envio manual.
  *
- * Regra: QUALQUER ação manual do consultor sobre um lead específico
- * (mandar áudio, iniciar fluxo, encadear passos) DESPAUSA aquele lead.
- * O consultor está deliberadamente engajando aquele cliente — quer que
- * o bot rode dali pra frente.
- *
- * Pausa global (`manual_global_pause`) continua valendo para leads que
- * ninguém tocou — eles seguem calados até o consultor tomar ação.
+ * Decisão de produto: NÃO despausar. Bot fica off até "Religar" no chat.
+ * Mantemos a função (e os spreads) para não quebrar call sites — retorna {}.
  */
 function buildUnpausePatch(_customer: any): Record<string, any> {
-  return {
-    bot_paused: false,
-    bot_paused_reason: null,
-    bot_paused_at: null,
-    bot_paused_until: null,
-    assigned_human_id: null,
-  };
+  return {};
 }
 
 interface Body {

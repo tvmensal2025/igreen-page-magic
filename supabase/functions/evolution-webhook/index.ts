@@ -289,14 +289,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Kill switch global (Fase 0 auditoria). Fail-open: erros = habilitado.
-    // Status/ACK e conexão são processados antes do kill switch para não perder
-    // confirmações/falhas reais de entrega quando a IA estiver silenciada.
-    if (!(await isBotGloballyEnabled(supabase as any))) {
-      console.log("[evolution-webhook] bot_global_enabled=false → silenciado");
-      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Kill switch global: OFF = não fala, MAS continua o pipeline (grava inbound + avisa).
+    // Status/ACK e conexão já foram tratados acima.
+    const botGlobalOutboundEnabled = await isBotGloballyEnabled(supabase as any);
+    if (!botGlobalOutboundEnabled) {
+      console.log("[evolution-webhook] bot_global_enabled=false → inbound OK, outbound automático bloqueado");
     }
 
     // ─── 2) Identify instance ──────────────────────────────────────────
@@ -412,18 +409,15 @@ Deno.serve(async (req) => {
     // Read fails closed to 'off'. The cached value lives ~30 s per instance.
     const v2Flag = await getFlowReliabilityV2(supabase, instanceData.consultant_id);
 
-    // ─── 🛑 IA GLOBALMENTE DESLIGADA — silêncio total (antes de tudo) ──
-    // Antes do parse/dedup/customer: se o switch está OFF, ignora e retorna ok.
-    // `as any`: helper compartilhado pina @supabase/supabase-js@2.49.4 enquanto este
-    // arquivo pina @2; runtime idêntico mas TS vê duas shapes (mesmo padrão da linha
-    // que cuida de checkAndMarkProcessed abaixo).
-    if (await isConsultantAIDisabled(supabase as any, instanceData.consultant_id)) {
-      // Antes de silenciar, checa override por lead (force_bot_phones ou
-      // customers.bot_force_enabled). Setado pelo botão Zerar e pelo toggle
-      // individual no chat. Phone vem do remoteJid do payload.
+    // ─── 🛑 IA GLOBALMENTE DESLIGADA — não fala, mas NÃO descarta inbound ──
+    // Decisão de produto: sempre criar/atualizar lead e gravar mensagem.
+    // O gate de outbound fica depois que o customer existe (abaixo).
+    // `as any`: tipagem cruzada supabase-js (mesmo padrão whapi).
+    let consultantAiDisabled = await isConsultantAIDisabled(supabase as any, instanceData.consultant_id);
+    let forceBotForLeadEarly = false;
+    if (consultantAiDisabled) {
       const rawJid: string = body?.data?.key?.remoteJid || "";
       const phoneDigits = String(rawJid).split("@")[0].replace(/\D/g, "");
-      let forceForLead = false;
       if (phoneDigits) {
         const [{ data: pending }, { data: cust }] = await Promise.all([
           supabase.from("force_bot_phones").select("phone_digits")
@@ -434,15 +428,14 @@ Deno.serve(async (req) => {
             .eq("phone_whatsapp", phoneDigits)
             .eq("bot_force_enabled", true).maybeSingle(),
         ]);
-        forceForLead = !!pending || !!cust;
+        forceBotForLeadEarly = !!pending || !!cust;
       }
-      if (!forceForLead) {
-        console.log(`🛑 [global-off-silent] IA do consultor ${instanceData.consultant_id} desligada — ignorando inbound`);
-        return new Response(JSON.stringify({ ok: true, msg: "global_ai_disabled_silent" }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      if (forceBotForLeadEarly) {
+        console.log(`✅ [force-bot-active] IA global off, mas lead tem override → bot pode responder`);
+        consultantAiDisabled = false;
+      } else {
+        console.log(`🛑 [global-off] IA do consultor ${instanceData.consultant_id} desligada — inbound será salvo sem auto-reply`);
       }
-      console.log(`✅ [force-bot-active] IA global off, mas lead ${phoneDigits} tem override → bot responde`);
     }
 
     // ─── 3) Parse + dedupe + filter ────────────────────────────────────
@@ -1614,6 +1607,43 @@ Deno.serve(async (req) => {
         console.warn("[notify-paused-reply] setup falhou:", (e as Error).message);
       }
       return new Response(JSON.stringify({ ok: true, msg: "bot_paused" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── 6.1.b) Bot OFF (kill switch global ou IA consultor) — grava + avisa ──
+    const forceBotForLead = forceBotForLeadEarly || (customer as any)?.bot_force_enabled === true;
+    if ((!botGlobalOutboundEnabled || consultantAiDisabled) && !forceBotForLead) {
+      const why = !botGlobalOutboundEnabled
+        ? "Kill switch global (bot_global_enabled=false)"
+        : "IA do consultor desligada";
+      console.log(`🛑 [bot-off] ${why} — inbound sem auto-reply customer=${customer.id}`);
+      try {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id,
+          message_direction: "inbound",
+          message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : "[mensagem]"),
+          message_type: hasAudio ? "audio" : (hasImage || hasDocument ? "image" : "text"),
+          conversation_step: customer.conversation_step,
+        });
+      } catch (e) {
+        console.warn("[bot-off] insert inbound falhou:", (e as Error).message);
+      }
+      const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
+      if (notifyTo) {
+        const kind = hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
+        const preview = messageText
+          || (kind === "image" ? "[imagem]" : kind === "audio" ? "[áudio]" : kind === "document" ? "[documento]" : "[mensagem]");
+        const { notifyInboundWhileBotOff } = await import("../_shared/notify-consultant.ts");
+        notifyInboundWhileBotOff(notifyTo, customer as any, preview, {
+          kind: kind as any,
+          reason: why,
+        }).catch((e) => console.warn("[notify-bot-off] falhou:", (e as Error).message));
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        msg: !botGlobalOutboundEnabled ? "bot_globally_disabled_inbound_saved" : "global_ai_disabled_inbound_saved",
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

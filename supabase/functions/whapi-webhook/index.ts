@@ -85,14 +85,11 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    // Kill switch global (Fase 0 auditoria). Fail-open: erros = habilitado.
-    // `as any`: helper compartilhado pina @supabase/supabase-js@2.49.4 enquanto este
-    // arquivo pina @2; runtime idêntico mas TS vê duas shapes diferentes.
-    if (!(await isBotGloballyEnabled(supabase as any))) {
-      console.log("[whapi-webhook] bot_global_enabled=false → silenciado");
-      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled" }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // Kill switch global: OFF = não fala (outbound), MAS continua recebendo.
+    // Flag lida cedo; o early-return antigo foi removido para não perder lead.
+    const botGlobalOutboundEnabled = await isBotGloballyEnabled(supabase as any);
+    if (!botGlobalOutboundEnabled) {
+      console.log("[whapi-webhook] bot_global_enabled=false → inbound OK, outbound automático bloqueado");
     }
 
     let body: any;
@@ -1523,7 +1520,43 @@ Deno.serve(async (req) => {
         conversation_step: customer.conversation_step,
       });
       console.log(`🛑 [global-off-silent] IA manual — inbound texto/áudio salvo sem resposta customer=${customer.id} step="${currentStep}"`);
+      {
+        const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || superAdminConsultantId;
+        if (notifyTo) {
+          const preview = messageText || (hasAudio ? "[áudio]" : "[mensagem]");
+          const { notifyInboundWhileBotOff } = await import("../_shared/notify-consultant.ts");
+          notifyInboundWhileBotOff(notifyTo, customer as any, preview, {
+            kind: hasAudio ? "audio" : "text",
+            reason: "IA do consultor desligada",
+          }).catch((e) => console.warn("[notify-bot-off] falhou:", (e as Error).message));
+        }
+      }
       return new Response(JSON.stringify({ ok: true, msg: "global_ai_disabled_inbound_saved" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Kill switch global OFF: grava inbound, avisa consultor, não responde.
+    if (!botGlobalOutboundEnabled && !forceBotForLead) {
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "inbound",
+        message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : "[arquivo]"),
+        message_type: hasAudio ? "audio" : (isFile ? "image" : "text"),
+        conversation_step: customer.conversation_step,
+      });
+      const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || superAdminConsultantId;
+      if (notifyTo) {
+        const kind = hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
+        const preview = messageText
+          || (kind === "image" ? "[imagem]" : kind === "audio" ? "[áudio]" : kind === "document" ? "[documento]" : "[mensagem]");
+        const { notifyInboundWhileBotOff } = await import("../_shared/notify-consultant.ts");
+        notifyInboundWhileBotOff(notifyTo, customer as any, preview, {
+          kind: kind as any,
+          reason: "Kill switch global (bot_global_enabled=false)",
+        }).catch((e) => console.warn("[notify-bot-off] falhou:", (e as Error).message));
+      }
+      return new Response(JSON.stringify({ ok: true, msg: "bot_globally_disabled_inbound_saved" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

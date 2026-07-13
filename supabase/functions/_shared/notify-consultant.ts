@@ -380,12 +380,57 @@ export async function notifyClientReplyWhilePaused(
       `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n` +
       protocolLine +
       `📍 *Etapa:* ${stepHuman}\n` +
+      `🤖 *Bot DESLIGADO* neste lead — só religa no painel.\n` +
       `🕐 ${nowBRT()}\n\n` +
       `${preview}\n\n` +
       `_Atendimento humano ativo — responda no painel._`;
     return sendRawToAlertNumber(consultantId, text);
   } catch (e) {
     console.warn("[notify-paused-reply] erro:", (e as Error).message);
+    return false;
+  }
+}
+
+/**
+ * Lead escreveu enquanto o bot NÃO pode falar (kill switch global ou IA do
+ * consultor OFF). Inbound já foi/será salvo; só avisamos o responsável.
+ */
+export async function notifyInboundWhileBotOff(
+  consultantId: string,
+  lead: {
+    id?: string;
+    name?: string | null;
+    phone_whatsapp?: string | null;
+    conversation_step?: string | null;
+    tracking_protocol?: string | null;
+    is_sandbox?: boolean | null;
+  },
+  lastMessage: string,
+  opts?: { kind?: InboundNotifyKind; reason?: string },
+): Promise<boolean> {
+  try {
+    if (!consultantId) return false;
+    if (lead?.is_sandbox) return false;
+    const memKey = `botoff:${consultantId}:${lead.id || lead.phone_whatsapp || ""}`;
+    if (!shouldSend(memKey, 3 * 60_000)) return false;
+    const stepHuman = String(lead.conversation_step || "")
+      .replace(/^(ask_|aguardando_|editing_|flow:)/, "")
+      .replace(/_/g, " ") || "entrada";
+    const { title, preview } = describeInboundKind(opts?.kind, lastMessage);
+    const why = opts?.reason || "bot_off";
+    const text =
+      `📩 *Lead escreveu — bot NÃO respondeu*\n` +
+      `\n` +
+      `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
+      `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n` +
+      `📍 *Etapa:* ${stepHuman}\n` +
+      `🤖 Motivo: ${why}\n` +
+      `🕐 ${nowBRT()}\n\n` +
+      `${title}\n${preview}\n\n` +
+      `_Mensagem gravada no painel. Responda manualmente ou religue o bot._`;
+    return sendRawToAlertNumber(consultantId, text);
+  } catch (e) {
+    console.warn("[notify-bot-off] erro:", (e as Error).message);
     return false;
   }
 }
