@@ -208,6 +208,7 @@ export function CaptureLeadList({
         capture_started_at: c.capture_started_at,
         created_at: c.created_at,
         welcome_sent_at: c.welcome_sent_at ?? null,
+        attendance_rating_requested_at: c.attendance_rating_requested_at ?? null,
         filled: CAPTURE_FIELDS.filter((f) => {
           const v = c[f.key];
           if (v === null || v === undefined) return false;
