@@ -1178,6 +1178,26 @@ function LeadCard({
           >
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
+          {(l.partnerName || l.campaignName) && (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {l.partnerName && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-amber-700 dark:text-amber-300 max-w-[140px] truncate"
+                  title={`Indicação: ${l.partnerName}`}
+                >
+                  🤝 {l.partnerName}
+                </span>
+              )}
+              {l.campaignName && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-sky-700 dark:text-sky-300 max-w-[140px] truncate"
+                  title={`Campanha: ${l.campaignName}`}
+                >
+                  🎯 {l.campaignName}
+                </span>
+              )}
+            </div>
+          )}
           <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}
