@@ -1023,6 +1023,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                 "Este contato ainda não expôs o telefone real (só ID criptografado). Peça uma mensagem do cliente ou cadastre o número manualmente para conseguir responder.",
               );
             }
+            // Regra absoluta: consultor mandou msg = IA desliga automaticamente.
+            const takeoverPhone = override || (await getResolvedPhone().catch(() => null));
+            if (takeoverPhone) void takeoverWithUndo(takeoverPhone, "humano_assumiu");
             await sendMessage(text, override);
             scheduleScrollToBottom(true);
           } catch (err) {
