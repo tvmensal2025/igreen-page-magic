@@ -16,7 +16,7 @@ import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { resolveConsultantMessage } from "../_shared/consultant-template.ts";
 
-interface Body { customerId: string; consultantId: string }
+interface Body { customerId: string; consultantId: string; restart?: boolean }
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -51,6 +51,7 @@ Deno.serve(async (req) => {
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;
     const customerId = String(body.customerId || "").trim();
     const consultantId = String(body.consultantId || "").trim();
+    const restart = body.restart === true;
     if (!customerId || !consultantId) {
       return json({ ok: false, error: "missing_fields" }, 400);
     }
@@ -81,6 +82,29 @@ Deno.serve(async (req) => {
     if (error || !customer) return json({ ok: false, error: "customer_not_found" }, 404);
     if (customer.consultant_id && customer.consultant_id !== consultantId) {
       return json({ ok: false, error: "forbidden" }, 403);
+    }
+
+    // Reiniciar atendimento: limpa marcadores para permitir novo welcome+protocolo,
+    // mesmo que o cliente não tenha dado nota. Usado pelo botão "Reiniciar".
+    if (restart) {
+      const full = await supabase
+        .from("customers")
+        .update({
+          welcome_sent_at: null,
+          tracking_protocol: null,
+          attendance_rating: null,
+          attendance_rating_requested_at: null,
+          attendance_rating_at: null,
+          attendance_auto_close_at: null,
+        })
+        .eq("id", customerId);
+      if (full.error) {
+        // Fallback quando colunas opcionais ainda não existem no schema.
+        await supabase
+          .from("customers")
+          .update({ welcome_sent_at: null, tracking_protocol: null })
+          .eq("id", customerId);
+      }
     }
 
     const { data: consultant } = await supabase

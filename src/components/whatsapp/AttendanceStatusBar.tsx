@@ -1,4 +1,4 @@
-import { CheckCircle2, Copy, Loader2, PlayCircle, Settings, Star } from "lucide-react";
+import { CheckCircle2, Copy, Loader2, PlayCircle, RotateCcw, Settings, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ interface AttendanceStatusBarProps {
   ending?: boolean;
   onStart: () => void;
   onRequestEnd: () => void;
+  onRestart?: () => void;
   compact?: boolean;
 }
 
@@ -41,6 +42,7 @@ export function AttendanceStatusBar({
   ending,
   onStart,
   onRequestEnd,
+  onRestart,
   compact,
 }: AttendanceStatusBarProps) {
   const { toast } = useToast();
@@ -95,6 +97,20 @@ export function AttendanceStatusBar({
         >
           {ending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Star className="h-3.5 w-3.5" />}
           <span className="text-[11px] font-semibold hidden sm:inline">Finalizar</span>
+        </Button>
+      )}
+
+      {(state === "awaiting_rating" || state === "rated") && onRestart && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRestart}
+          disabled={starting}
+          className="h-8 gap-1.5 px-3 rounded-full border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 shrink-0"
+          title="Recomeça o atendimento (novo protocolo) mesmo sem a nota do cliente"
+        >
+          {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+          <span className="text-[11px] font-semibold hidden sm:inline">Reiniciar</span>
         </Button>
       )}
 

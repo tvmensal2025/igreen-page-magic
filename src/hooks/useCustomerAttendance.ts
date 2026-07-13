@@ -135,11 +135,11 @@ export function useCustomerAttendance(
     };
   }, [customerId, refresh]);
 
-  const startAttendance = useCallback(async () => {
+  const startAttendance = useCallback(async (opts?: { restart?: boolean }) => {
     if (!customerId || starting) return;
     setStarting(true);
     const doInvoke = () => supabase.functions.invoke("start-customer-attendance", {
-      body: { customerId, consultantId },
+      body: { customerId, consultantId, restart: opts?.restart === true },
     });
     try {
       const { data, error } = await doInvoke();
@@ -148,10 +148,14 @@ export function useCustomerAttendance(
       notifyAttendanceOutcome(body, {
         kind: "start",
         navigate: go,
-        onRetry: () => { void startAttendance(); },
+        onRetry: () => { void startAttendance(opts); },
       });
       if (body.ok !== false) {
         setWelcomeSentAt(new Date().toISOString());
+        if (opts?.restart) {
+          setAttendanceRating(null);
+          setAttendanceRatingRequestedAt(null);
+        }
         if (body.protocol) setTrackingProtocol(String(body.protocol));
         await refresh();
       }
@@ -161,6 +165,8 @@ export function useCustomerAttendance(
       setStarting(false);
     }
   }, [customerId, consultantId, starting, toast, refresh, go]);
+
+  const restartAttendance = useCallback(() => startAttendance({ restart: true }), [startAttendance]);
 
   const endAttendance = useCallback(async () => {
     if (!customerId || ending) return;
@@ -195,6 +201,7 @@ export function useCustomerAttendance(
     starting,
     ending,
     startAttendance,
+    restartAttendance,
     endAttendance,
     refresh,
   };
