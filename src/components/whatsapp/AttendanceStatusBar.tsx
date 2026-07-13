@@ -100,6 +100,20 @@ export function AttendanceStatusBar({
         </Button>
       )}
 
+      {(state === "awaiting_rating" || state === "rated") && onRestart && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onRestart}
+          disabled={starting}
+          className="h-8 gap-1.5 px-3 rounded-full border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 shrink-0"
+          title="Recomeça o atendimento (novo protocolo) mesmo sem a nota do cliente"
+        >
+          {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+          <span className="text-[11px] font-semibold hidden sm:inline">Reiniciar</span>
+        </Button>
+      )}
+
       <span
         className={`inline-flex items-center gap-1.5 h-7 max-w-[min(100%,16rem)] px-2 rounded-full border shrink-0 ${
           state === "rated"
