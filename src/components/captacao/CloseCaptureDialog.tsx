@@ -119,18 +119,16 @@ export function CloseCaptureDialog({
         supabase
           .from("customers")
           .select(
-            "source_campaign_id, referral_partner_id, media_consumo, electricity_bill_value",
+            "name, phone_whatsapp, tracking_protocol, address_city, address_state, source_campaign_id, referral_partner_id, media_consumo, electricity_bill_value",
           )
           .eq("id", customerId)
           .maybeSingle(),
       ]);
       if (cancelled) return;
-      setCampaigns(
-        ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) })),
-      );
-      setPartners(
-        ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) })),
-      );
+      const campaignList = ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) }));
+      const partnerList = ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) }));
+      setCampaigns(campaignList);
+      setPartners(partnerList);
       const prods = ((prod.data as any[]) || []).map((r) => ({ id: r.id, label: r.name }));
       setProducts(prods);
       if (prods[0]) setProductId(prods[0].id);
@@ -145,6 +143,41 @@ export function CloseCaptureDialog({
       }
       if (cu?.media_consumo) setPointsKwh(String(cu.media_consumo));
       if (cu?.electricity_bill_value) setBillValue(String(cu.electricity_bill_value));
+
+      // Enrich lead info with partner + campaign names
+      let partnerName: string | null = null;
+      if (cu?.referral_partner_id) {
+        const found = partnerList.find((x) => x.id === cu.referral_partner_id);
+        if (found) partnerName = found.label;
+        else {
+          const { data: pr } = await supabase
+            .from("referral_partners").select("nome").eq("id", cu.referral_partner_id).maybeSingle();
+          partnerName = (pr as any)?.nome || null;
+        }
+      }
+      let campaignName: string | null = null;
+      if (cu?.source_campaign_id) {
+        const found = campaignList.find((x) => x.id === cu.source_campaign_id);
+        if (found) campaignName = found.label;
+        else {
+          const { data: ca } = await supabase
+            .from("facebook_campaigns").select("name").eq("id", cu.source_campaign_id).maybeSingle();
+          campaignName = (ca as any)?.name || null;
+        }
+      }
+      if (cancelled) return;
+      setLeadInfo({
+        name: cu?.name ?? null,
+        phone: cu?.phone_whatsapp ?? null,
+        protocol: cu?.tracking_protocol ?? null,
+        partnerId: cu?.referral_partner_id ?? null,
+        partnerName,
+        campaignId: cu?.source_campaign_id ?? null,
+        campaignName,
+        city: cu?.address_city ?? null,
+        uf: cu?.address_state ?? null,
+      });
+      setNotifyPartner(!!cu?.referral_partner_id);
     })();
     return () => {
       cancelled = true;
