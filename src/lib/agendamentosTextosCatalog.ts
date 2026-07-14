@@ -297,7 +297,6 @@ export const TEXTOS_CATALOGO: TextoCatalogItem[] = [
     prioridade: "baixa",
   },
 
-  // ── Externos (não dá pra listar tudo inline, mas o botão leva) ──
   // ── Fluxos / FAQ / Voz / Chat / Campanhas (agora inline nas abas) ──
   {
     id: "ext_fluxos",
