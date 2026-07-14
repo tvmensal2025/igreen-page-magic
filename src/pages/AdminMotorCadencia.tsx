@@ -196,7 +196,12 @@ export default function AdminMotorCadencia() {
           media_url: row.media_url,
           media_type: row.media_type || "text",
           velip_audio_id: row.velip_audio_id,
-        };
+          max_per_lead: row.max_per_lead || 0,
+          window_start_hour: row.window_start_hour,
+          window_end_hour: row.window_end_hour,
+          window_days: row.window_days,
+        } as any;
+
         if (row.id) {
           const { error } = await supabase.from("cadence_stage_config").update(payload).eq("id", row.id);
           if (error) throw error;
