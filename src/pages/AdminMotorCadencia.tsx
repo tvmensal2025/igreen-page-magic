@@ -127,8 +127,28 @@ export default function AdminMotorCadencia() {
 
     setLogs(recentLogs || []);
     await loadDue();
+    await loadMetrics();
     setLoading(false);
   }
+
+  async function loadMetrics() {
+    const { data } = await (supabase as any)
+      .from("cadence_metrics_daily")
+      .select("stage, channel, sent, failed, unique_leads, responded_leads")
+      .order("day", { ascending: false })
+      .limit(200);
+    // Agrega últimos 7 dias por stage+channel
+    const agg = new Map<string, any>();
+    for (const r of (data || [])) {
+      const k = `${r.stage}|${r.channel}`;
+      const prev = agg.get(k) || { stage: r.stage, channel: r.channel, sent: 0, failed: 0, unique_leads: 0, responded_leads: 0 };
+      prev.sent += r.sent || 0; prev.failed += r.failed || 0;
+      prev.unique_leads += r.unique_leads || 0; prev.responded_leads += r.responded_leads || 0;
+      agg.set(k, prev);
+    }
+    setMetrics(Array.from(agg.values()).sort((a,b) => b.sent - a.sent));
+  }
+
 
   async function loadDue() {
     const soon = new Date(Date.now() + 60 * 60_000).toISOString(); // próxima 1h
