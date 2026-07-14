@@ -54,6 +54,9 @@ export const CATEGORIA_LABEL: Record<string, string> = {
   voz: "Voz e SMS (campanhas)",
   fluxos: "Fluxos do bot (passos)",
   chat: "Respostas rápidas do chat",
+  crm: "CRM — mensagens por estágio",
+  "ia-config": "IA — Conhecimento e personalidade",
+  calendario: "Calendário (feriados / quiet-hours)",
 };
 
 /** Lista completa — nada de automação/agendamento fora desta lista. */
