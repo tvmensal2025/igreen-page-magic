@@ -497,6 +497,8 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     toast.success(`${label} salvo`);
     await load();
   }
+
+  const grupos = useMemo(() => {
     const s = new Set(TEXTOS_CATALOGO.map((t) => t.grupo));
     return GRUPO_ORDER.filter((g) => s.has(g));
   }, []);
