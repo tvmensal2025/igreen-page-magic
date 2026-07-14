@@ -343,6 +343,60 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     setBulkCamps((bulkRes.data || []) as BulkCampRow[]);
     setSchedMsgs((schedRes.data || []) as SchedMsgRow[]);
 
+    // ── Fontes adicionais: CRM, IA (RAG + agente), Rodízio, Pós-venda global, Calendário ──
+    const [stageAutoRes, aiKnowRes, aiAgentRes, rodizioRes, posGlobalRes, holidaysRes] = await Promise.all([
+      (supabase as any)
+        .from("stage_auto_messages")
+        .select("id, stage_id, position, message_type, message_text, delay_seconds, kanban_stages!inner(label, stage_key, consultant_id)")
+        .eq("kanban_stages.consultant_id", consultantId)
+        .order("position")
+        .limit(300),
+      supabase
+        .from("ai_knowledge_sections")
+        .select("id, title, content, is_active, is_critical, persona, consultant_id")
+        .or(`consultant_id.eq.${consultantId},consultant_id.is.null`)
+        .order("position")
+        .limit(200),
+      supabase
+        .from("ai_agent_config")
+        .select("consultant_id, persona_name, tone, system_prompt, step_prompts, enabled")
+        .eq("consultant_id", consultantId)
+        .maybeSingle(),
+      supabase
+        .from("rodizio_pools")
+        .select("id, slug, label, message, is_active")
+        .eq("consultant_id", consultantId)
+        .order("label"),
+      supabase
+        .from("pos_venda_default_media")
+        .select("stage, message_type, message_text, is_active")
+        .order("stage"),
+      supabase
+        .from("holidays")
+        .select("id, date, label, consultant_id")
+        .or(`consultant_id.eq.${consultantId},consultant_id.is.null`)
+        .order("date", { ascending: true })
+        .limit(200),
+    ]);
+
+    setStageAuto(
+      ((stageAutoRes.data || []) as any[]).map((r) => ({
+        id: r.id,
+        stage_id: r.stage_id,
+        stage_label: r.kanban_stages?.label,
+        stage_key: r.kanban_stages?.stage_key,
+        position: r.position,
+        message_type: r.message_type,
+        message_text: r.message_text,
+        delay_seconds: r.delay_seconds,
+      })),
+    );
+    setAiKnow((aiKnowRes.data || []) as AiKnowRow[]);
+    setAiAgent((aiAgentRes.data as AiAgentRow) || null);
+    setRodizio((rodizioRes.data || []) as RodizioRow[]);
+    setPosVendaGlobal((posGlobalRes.data || []) as PosVendaDefaultRow[]);
+    setHolidays((holidaysRes.data || []) as HolidayRow[]);
+
     setDrafts({});
     setLoading(false);
   }, [consultantId]);
