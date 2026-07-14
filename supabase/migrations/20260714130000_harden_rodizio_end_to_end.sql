@@ -4,6 +4,12 @@
 ALTER TABLE public.rodizio_pools
   ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
 
+-- Uma campanha possui uma única pool, ativa ou pausada. Além de preservar o
+-- contador, este índice é o arbiter do ON CONFLICT em configure_rodizio_pool.
+CREATE UNIQUE INDEX IF NOT EXISTS rodizio_pools_campaign_id_uniq
+  ON public.rodizio_pools (campaign_id)
+  WHERE campaign_id IS NOT NULL;
+
 UPDATE public.rodizio_pools rp
 SET is_active = (
   rp.is_enabled IS TRUE
@@ -389,6 +395,8 @@ GRANT EXECUTE ON FUNCTION public.rodizio_assign_lead(uuid, uuid) TO authenticate
 COMMENT ON FUNCTION public.rodizio_assign_lead(uuid, uuid) IS
   'Atribuição atômica com campanha ativa, isolamento por consultor, vínculo de campanha e ledger imutável.';
 
+DROP TRIGGER IF EXISTS trg_sync_pool_active_with_campaign
+  ON public.facebook_campaigns;
 DROP TRIGGER IF EXISTS sync_pool_active_with_campaign_trigger
   ON public.facebook_campaigns;
 CREATE TRIGGER sync_pool_active_with_campaign_trigger
