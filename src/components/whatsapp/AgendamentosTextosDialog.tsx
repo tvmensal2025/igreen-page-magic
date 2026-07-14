@@ -222,6 +222,67 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     setReactivation((reaRes.data || []) as ReactivationRow[]);
     setPhrases((phrRes.data || []) as PhraseRow[]);
     setPosVenda((kanRes.data || []) as PosVendaRow[]);
+
+    // ── Novas fontes: fluxos, FAQ, voz, chat rápido, campanhas ──
+    const flowsRes = await supabase
+      .from("bot_flows")
+      .select("id, name, variant, consultant_id, is_public")
+      .or(`consultant_id.eq.${consultantId},is_public.eq.true`);
+    const flowIds = ((flowsRes.data || []) as Array<{ id: string }>).map((f) => f.id);
+    setFlows(((flowsRes.data || []) as FlowRow[]).map((f) => ({ id: f.id, name: f.name, variant: f.variant })));
+
+    const [stepsRes, qaRes, voiceRes, chatRes, bulkRes, schedRes] = await Promise.all([
+      flowIds.length
+        ? supabase
+            .from("bot_flow_steps")
+            .select("id, flow_id, step_key, title, message_text, position")
+            .in("flow_id", flowIds)
+            .not("message_text", "is", null)
+            .order("flow_id")
+            .order("position")
+        : Promise.resolve({ data: [], error: null } as any),
+      flowIds.length
+        ? supabase
+            .from("bot_flow_qa")
+            .select("id, flow_id, intent_name, text_response, position")
+            .in("flow_id", flowIds)
+            .order("flow_id")
+            .order("position")
+        : Promise.resolve({ data: [], error: null } as any),
+      supabase
+        .from("voice_campaigns")
+        .select("id, name, tts_text, sms_on_no_answer_text")
+        .eq("consultant_id", consultantId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("message_templates")
+        .select("id, name, content, shortcut, consultant_id")
+        .or(`consultant_id.eq.${consultantId},is_public.eq.true`)
+        .order("name")
+        .limit(200),
+      supabase
+        .from("bulk_campaigns")
+        .select("id, name, message_text, status")
+        .eq("consultant_id", consultantId)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("scheduled_messages")
+        .select("id, message_text, scheduled_at, status, remote_jid")
+        .eq("consultant_id", consultantId)
+        .in("status", ["pending", "scheduled", "queued"])
+        .order("scheduled_at", { ascending: true })
+        .limit(100),
+    ]);
+
+    setFlowSteps((stepsRes.data || []) as FlowStepRow[]);
+    setFlowQa((qaRes.data || []) as FlowQaRow[]);
+    setVoiceCamps((voiceRes.data || []) as VoiceCampRow[]);
+    setChatTpl((chatRes.data || []) as ChatTemplateRow[]);
+    setBulkCamps((bulkRes.data || []) as BulkCampRow[]);
+    setSchedMsgs((schedRes.data || []) as SchedMsgRow[]);
+
     setDrafts({});
     setLoading(false);
   }, [consultantId]);
