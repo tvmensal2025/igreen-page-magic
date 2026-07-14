@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { driver, type Driver, type DriveStep } from "driver.js";
-import "driver.js/dist/driver.css";
 import { supabase } from "@/integrations/supabase/client";
 import type { TourStep, TourProgress } from "./types";
 
@@ -54,7 +52,8 @@ export function useTour() {
   const [progress, setProgress] = useState<TourProgress | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const driverRef = useRef<Driver | null>(null);
+  const [open, setOpen] = useState(false);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -68,44 +67,18 @@ export function useTour() {
     })();
   }, []);
 
-  const buildDriveSteps = useCallback((all: TourStep[], startIndex: number): DriveStep[] => {
-    const slice = all.slice(startIndex);
-    return slice.map((s, i) => ({
-      element: s.selector || undefined,
-      popover: {
-        title: s.title || `Passo ${s.order_index}`,
-        description: (s.body || "") + (s.cta_href
-          ? `<div style="margin-top:8px"><a href="${s.cta_href}" style="color:hsl(var(--primary));text-decoration:underline">${s.cta_label || "Abrir"}</a></div>`
-          : ""),
-        side: "bottom",
-        align: "start",
-        onNextClick: async () => {
-          const next = slice[i + 1];
-          if (next?.route && typeof window !== "undefined" && !window.location.pathname.startsWith(next.route)) {
-            navigate(next.route);
-            await new Promise((r) => setTimeout(r, 450));
-          }
-          driverRef.current?.moveNext();
-        },
-        onPrevClick: async () => {
-          const prev = slice[i - 1];
-          if (prev?.route && typeof window !== "undefined" && !window.location.pathname.startsWith(prev.route)) {
-            navigate(prev.route);
-            await new Promise((r) => setTimeout(r, 450));
-          }
-          driverRef.current?.movePrevious();
-        },
-      },
-      onHighlightStarted: async () => {
-        const idx = all.findIndex((x) => x.id === s.id);
-        await saveProgress(userId, { current_step: idx });
-        setProgress((p) => ({ ...(p || { user_id: userId || "", started_at: new Date().toISOString(), completed_at: null, dismissed_at: null }), current_step: idx }));
-      },
-    }));
-  }, [userId, navigate]);
+  const goTo = useCallback(async (i: number, all: TourStep[]) => {
+    const step = all[i];
+    if (!step) return;
+    if (step.route && typeof window !== "undefined" && !window.location.pathname.startsWith(step.route)) {
+      navigate(step.route);
+    }
+    setIndex(i);
+    await saveProgress(userId, { current_step: i });
+    setProgress((p) => ({ ...(p || { user_id: userId || "", started_at: new Date().toISOString(), completed_at: null, dismissed_at: null }), current_step: i }));
+  }, [navigate, userId]);
 
-
-  const start = useCallback(async (opts?: { from?: number; force?: boolean }) => {
+  const start = useCallback(async (opts?: { from?: number }) => {
     let all = steps;
     if (all.length === 0) {
       all = await fetchSteps();
@@ -113,47 +86,36 @@ export function useTour() {
     }
     if (all.length === 0) return;
     const from = opts?.from ?? 0;
+    setOpen(true);
+    await goTo(from, all);
+    await saveProgress(userId, { started_at: new Date().toISOString() });
+  }, [steps, userId, goTo]);
 
-    // Navigate to the first step's route before starting
-    const first = all[from];
-    if (first && typeof window !== "undefined" && !window.location.pathname.startsWith(first.route)) {
-      navigate(first.route);
-      // Give the target route time to mount
-      await new Promise((r) => setTimeout(r, 400));
+  const next = useCallback(async () => {
+    if (index >= steps.length - 1) {
+      await saveProgress(userId, { completed_at: new Date().toISOString(), current_step: steps.length - 1 });
+      setOpen(false);
+      return;
     }
+    await goTo(index + 1, steps);
+  }, [index, steps, userId, goTo]);
 
-    driverRef.current?.destroy();
-    const d = driver({
-      showProgress: true,
-      allowClose: true,
-      overlayOpacity: 0.5,
-      progressText: "{{current}} de {{total}}",
-      nextBtnText: "Próximo →",
-      prevBtnText: "← Voltar",
-      doneBtnText: "Concluir",
-      steps: buildDriveSteps(all, from),
-      onDestroyed: async () => {
-        await saveProgress(userId, { dismissed_at: new Date().toISOString() });
-      },
-      onDestroyStarted: async () => {
-        const active = d.getActiveIndex();
-        const total = buildDriveSteps(all, from).length;
-        if (typeof active === "number" && active >= total - 1) {
-          await saveProgress(userId, { completed_at: new Date().toISOString(), current_step: all.length - 1 });
-        }
-        d.destroy();
-      },
-    });
-    driverRef.current = d;
-    d.drive();
-  }, [steps, buildDriveSteps, userId, navigate]);
+  const prev = useCallback(async () => {
+    if (index <= 0) return;
+    await goTo(index - 1, steps);
+  }, [index, steps, goTo]);
+
+  const dismiss = useCallback(async () => {
+    setOpen(false);
+    await saveProgress(userId, { dismissed_at: new Date().toISOString() });
+  }, [userId]);
 
   const resume = useCallback(() => {
     const from = Math.max(0, progress?.current_step ?? 0);
     start({ from });
   }, [progress, start]);
 
-  const restart = useCallback(() => start({ from: 0, force: true }), [start]);
+  const restart = useCallback(() => start({ from: 0 }), [start]);
 
   const shouldAutoStart = ready
     && steps.length > 0
@@ -161,5 +123,9 @@ export function useTour() {
     && !progress?.dismissed_at
     && (progress?.current_step ?? 0) === 0;
 
-  return { ready, steps, progress, shouldAutoStart, start, resume, restart };
+  return {
+    ready, steps, progress, shouldAutoStart,
+    open, setOpen, index, current: steps[index] || null, total: steps.length,
+    start, resume, restart, next, prev, dismiss,
+  };
 }
