@@ -51,29 +51,53 @@ export async function onLeadInboundResponse(
 ): Promise<void> {
   try {
     const now = new Date();
-    // Pausa padrão 24h; se settings existirem, usa call_answered_pause como referência
-    // de “lead engajado” (mesmo valor configurável).
-    let pauseHours = 24;
-    try {
-      const s = await loadRetentionSettings(supabase);
-      pauseHours = s.call_answered_pause_hours || 24;
-    } catch { /* defaults */ }
 
-    const resumeAt = new Date(now.getTime() + pauseHours * 3600_000).toISOString();
+    // 1) Cancela a cadência: o lead voltou a falar → deixa o bot_flow do
+    //    consultor (variante A) assumir. Marcamos como PAUSED por 72h para
+    //    não voltar a assediar. Se o consultor perder de novo (nenhum
+    //    fechamento em 72h), o motor reaquece do zero.
+    const resumeAt = new Date(now.getTime() + 72 * 3600_000).toISOString();
     await supabase
       .from("lead_cadence_state")
       .update({
-        stage: "AI_QUALIFYING",
+        stage: "PAUSED",
         last_response_at: now.toISOString(),
         next_action_at: resumeAt,
-        paused_reason: null,
-        paused_until: null,
+        paused_until: resumeAt,
+        paused_reason: "lead_responded",
       })
       .eq("customer_id", customer_id);
+
+    // 2) Log da resposta para métricas (view cadence_metrics_daily lê isso).
+    await supabase.from("cadence_action_log").insert({
+      customer_id,
+      stage: "AI_QUALIFYING",
+      channel: "system",
+      status: "queued",
+      detail: { reason: "inbound_response", resumed_flow: true },
+    }).then(() => {}, () => {});
+
+    // 3) Reset da conversa: apaga estado do fluxo custom para que o inbound
+    //    atual seja processado como se fosse novo — reentra no bot_flow ativo
+    //    do consultor (variante A) pelo caminho normal.
+    await supabase
+      .from("customers")
+      .update({
+        conversation_step: null,
+        custom_step_retries: 0,
+        last_custom_prompt_at: null,
+        ai_followups_count: 0,
+        origin_recovery: "cadence",
+      })
+      .eq("id", customer_id);
+
+    // Libera os slots de mídia/áudio para o fluxo reintroduzir welcomes.
+    await supabase.from("ai_slot_dispatch_log").delete().eq("customer_id", customer_id);
   } catch (err) {
     console.warn("onLeadInboundResponse failed", err);
   }
 }
+
 
 /**
  * Ligação atendida → pausa cadência (toggle call_answered_pause_cadence).

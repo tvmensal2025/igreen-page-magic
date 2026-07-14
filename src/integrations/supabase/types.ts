@@ -2393,12 +2393,16 @@ export type Database = {
           delay_hours: number
           enabled: boolean
           id: string
+          max_per_lead: number
           media_type: string | null
           media_url: string | null
           message_text: string | null
           stage: string
           updated_at: string
           velip_audio_id: string | null
+          window_days: number[] | null
+          window_end_hour: number | null
+          window_start_hour: number | null
         }
         Insert: {
           consultant_id?: string | null
@@ -2406,12 +2410,16 @@ export type Database = {
           delay_hours?: number
           enabled?: boolean
           id?: string
+          max_per_lead?: number
           media_type?: string | null
           media_url?: string | null
           message_text?: string | null
           stage: string
           updated_at?: string
           velip_audio_id?: string | null
+          window_days?: number[] | null
+          window_end_hour?: number | null
+          window_start_hour?: number | null
         }
         Update: {
           consultant_id?: string | null
@@ -2419,12 +2427,16 @@ export type Database = {
           delay_hours?: number
           enabled?: boolean
           id?: string
+          max_per_lead?: number
           media_type?: string | null
           media_url?: string | null
           message_text?: string | null
           stage?: string
           updated_at?: string
           velip_audio_id?: string | null
+          window_days?: number[] | null
+          window_end_hour?: number | null
+          window_start_hour?: number | null
         }
         Relationships: [
           {
@@ -4072,6 +4084,7 @@ export type Database = {
           media_consumo: number | null
           media_message_id: string | null
           media_storage: string | null
+          meta_retargeting_synced_at: string | null
           name: string | null
           name_ask_sent_at: string | null
           name_mismatch_acknowledged_at: string | null
@@ -4103,6 +4116,7 @@ export type Database = {
           origin_channel: string | null
           origin_consultant_id: string | null
           origin_instance_name: string | null
+          origin_recovery: string | null
           otp_code: string | null
           otp_pending_replay: boolean
           otp_received_at: string | null
@@ -4322,6 +4336,7 @@ export type Database = {
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
+          meta_retargeting_synced_at?: string | null
           name?: string | null
           name_ask_sent_at?: string | null
           name_mismatch_acknowledged_at?: string | null
@@ -4353,6 +4368,7 @@ export type Database = {
           origin_channel?: string | null
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
+          origin_recovery?: string | null
           otp_code?: string | null
           otp_pending_replay?: boolean
           otp_received_at?: string | null
@@ -4572,6 +4588,7 @@ export type Database = {
           media_consumo?: number | null
           media_message_id?: string | null
           media_storage?: string | null
+          meta_retargeting_synced_at?: string | null
           name?: string | null
           name_ask_sent_at?: string | null
           name_mismatch_acknowledged_at?: string | null
@@ -4603,6 +4620,7 @@ export type Database = {
           origin_channel?: string | null
           origin_consultant_id?: string | null
           origin_instance_name?: string | null
+          origin_recovery?: string | null
           otp_code?: string | null
           otp_pending_replay?: boolean
           otp_received_at?: string | null
@@ -10875,6 +10893,19 @@ export type Database = {
       }
     }
     Views: {
+      cadence_metrics_daily: {
+        Row: {
+          channel: Database["public"]["Enums"]["cadence_channel"] | null
+          day: string | null
+          failed: number | null
+          queued: number | null
+          responded_leads: number | null
+          sent: number | null
+          stage: Database["public"]["Enums"]["cadence_stage"] | null
+          unique_leads: number | null
+        }
+        Relationships: []
+      }
       cerebro_decisao_sombra: {
         Row: {
           coincide: boolean | null

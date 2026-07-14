@@ -43,7 +43,12 @@ interface StageRow {
   media_url: string | null;
   media_type: string | null;
   velip_audio_id: string | null;
+  max_per_lead: number;
+  window_start_hour: number | null;
+  window_end_hour: number | null;
+  window_days: number[] | null;
 }
+
 
 interface Window {
   weekday_start: number;
@@ -73,6 +78,8 @@ export default function AdminMotorCadencia() {
   const [saving, setSaving] = useState(false);
   const [ticking, setTicking] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [metrics, setMetrics] = useState<Array<{ stage: string; channel: string; sent: number; failed: number; unique_leads: number; responded_leads: number }>>([]);
+
 
   useEffect(() => { void load(); }, []);
   useEffect(() => {
@@ -97,9 +104,21 @@ export default function AdminMotorCadencia() {
     for (const s of STAGES) {
       const found = (cfgs || []).find((c: any) => c.stage === s);
       map[s] = found
-        ? { ...found, stage: s, message_text: found.message_text || "" }
-        : { stage: s, enabled: true, delay_hours: 24, message_text: "", media_url: null, media_type: "text", velip_audio_id: null };
+        ? {
+            ...found, stage: s,
+            message_text: found.message_text || "",
+            max_per_lead: (found as any).max_per_lead ?? 0,
+            window_start_hour: (found as any).window_start_hour ?? null,
+            window_end_hour: (found as any).window_end_hour ?? null,
+            window_days: (found as any).window_days ?? null,
+          }
+        : {
+            stage: s, enabled: true, delay_hours: 24, message_text: "",
+            media_url: null, media_type: "text", velip_audio_id: null,
+            max_per_lead: 0, window_start_hour: null, window_end_hour: null, window_days: null,
+          };
     }
+
     setStages(map);
 
     const grouped: Record<string, number> = {};
@@ -108,8 +127,28 @@ export default function AdminMotorCadencia() {
 
     setLogs(recentLogs || []);
     await loadDue();
+    await loadMetrics();
     setLoading(false);
   }
+
+  async function loadMetrics() {
+    const { data } = await (supabase as any)
+      .from("cadence_metrics_daily")
+      .select("stage, channel, sent, failed, unique_leads, responded_leads")
+      .order("day", { ascending: false })
+      .limit(200);
+    // Agrega últimos 7 dias por stage+channel
+    const agg = new Map<string, any>();
+    for (const r of (data || [])) {
+      const k = `${r.stage}|${r.channel}`;
+      const prev = agg.get(k) || { stage: r.stage, channel: r.channel, sent: 0, failed: 0, unique_leads: 0, responded_leads: 0 };
+      prev.sent += r.sent || 0; prev.failed += r.failed || 0;
+      prev.unique_leads += r.unique_leads || 0; prev.responded_leads += r.responded_leads || 0;
+      agg.set(k, prev);
+    }
+    setMetrics(Array.from(agg.values()).sort((a,b) => b.sent - a.sent));
+  }
+
 
   async function loadDue() {
     const soon = new Date(Date.now() + 60 * 60_000).toISOString(); // próxima 1h
@@ -179,7 +218,12 @@ export default function AdminMotorCadencia() {
           media_url: row.media_url,
           media_type: row.media_type || "text",
           velip_audio_id: row.velip_audio_id,
-        };
+          max_per_lead: row.max_per_lead || 0,
+          window_start_hour: row.window_start_hour,
+          window_end_hour: row.window_end_hour,
+          window_days: row.window_days,
+        } as any;
+
         if (row.id) {
           const { error } = await supabase.from("cadence_stage_config").update(payload).eq("id", row.id);
           if (error) throw error;
@@ -350,10 +394,33 @@ export default function AdminMotorCadencia() {
                     <Input placeholder="Velip audio_id (opcional — se vazio usa TTS acima)" value={row.velip_audio_id || ""}
                       onChange={e => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })} />
                   )}
+
+                  {/* Limites e janela específicos do estágio */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Máx. envios/lead (0 = ilimitado)</Label>
+                      <Input type="number" min={0} max={20} className="h-8"
+                        value={row.max_per_lead}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, max_per_lead: +e.target.value } })} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Janela início (h, vazio=global)</Label>
+                      <Input type="number" min={0} max={23} className="h-8"
+                        value={row.window_start_hour ?? ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, window_start_hour: e.target.value === "" ? null : +e.target.value } })} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Janela fim (h)</Label>
+                      <Input type="number" min={0} max={23} className="h-8"
+                        value={row.window_end_hour ?? ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, window_end_hour: e.target.value === "" ? null : +e.target.value } })} />
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
+
 
           <div className="mt-4 flex justify-end">
             <Button onClick={saveAll} disabled={saving}>
@@ -363,7 +430,46 @@ export default function AdminMotorCadencia() {
           </div>
         </Card>
 
+        {/* Métricas 7 dias */}
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold mb-3">📊 Métricas dos últimos 7 dias</h2>
+          {metrics.length === 0 ? <p className="text-xs text-muted-foreground">Sem dados ainda.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="text-left py-1">Estágio</th>
+                    <th className="text-left">Canal</th>
+                    <th className="text-right">Enviados</th>
+                    <th className="text-right">Falhas</th>
+                    <th className="text-right">Leads únicos</th>
+                    <th className="text-right">Respondidos</th>
+                    <th className="text-right">Taxa resp.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.map((m, i) => {
+                    const rate = m.unique_leads > 0 ? Math.round((m.responded_leads / m.unique_leads) * 100) : 0;
+                    return (
+                      <tr key={i} className="border-b">
+                        <td className="py-1"><Badge variant="outline">{m.stage}</Badge></td>
+                        <td><Badge variant="secondary">{m.channel}</Badge></td>
+                        <td className="text-right font-mono">{m.sent}</td>
+                        <td className="text-right font-mono text-destructive">{m.failed}</td>
+                        <td className="text-right font-mono">{m.unique_leads}</td>
+                        <td className="text-right font-mono text-emerald-600">{m.responded_leads}</td>
+                        <td className="text-right font-mono">{rate}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
         {/* Últimas ações */}
+
         <Card className="p-4">
           <h2 className="text-sm font-semibold mb-3">Últimas 20 ações</h2>
           {logs.length === 0 ? <p className="text-xs text-muted-foreground">Nenhuma ação registrada ainda.</p> : (
