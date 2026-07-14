@@ -595,7 +595,16 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
 
   // ── Savers das novas fontes ──
   async function saveSimple(
-    table: "bot_flow_steps" | "bot_flow_qa" | "voice_campaigns" | "message_templates" | "bulk_campaigns" | "scheduled_messages",
+    table:
+      | "bot_flow_steps"
+      | "bot_flow_qa"
+      | "voice_campaigns"
+      | "message_templates"
+      | "bulk_campaigns"
+      | "scheduled_messages"
+      | "stage_auto_messages"
+      | "ai_knowledge_sections"
+      | "rodizio_pools",
     id: string,
     field: string,
     key: string,
@@ -609,6 +618,65 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     if (error) { toast.error(error.message); return; }
     setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
     toast.success(`${label} salvo`);
+    await load();
+  }
+
+  async function savePosGlobal(row: PosVendaDefaultRow) {
+    const key = `pvg:${row.stage}`;
+    const text = drafts[key] ?? row.message_text ?? "";
+    setSaving(key);
+    const { error } = await (supabase as any)
+      .from("pos_venda_default_media")
+      .update({ message_text: text })
+      .eq("stage", row.stage);
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
+    toast.success("Legenda salva");
+    await load();
+  }
+
+  async function saveAiAgent(field: "system_prompt" | "persona_name" | "tone") {
+    const key = `agent:${field}`;
+    const text = drafts[key];
+    if (text === undefined) return;
+    setSaving(key);
+    const { error } = await (supabase as any)
+      .from("ai_agent_config")
+      .upsert(
+        { consultant_id: consultantId, [field]: text },
+        { onConflict: "consultant_id" },
+      );
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
+    toast.success("Agente IA atualizado");
+    await load();
+  }
+
+  async function addHoliday() {
+    if (!newHolidayDate || !newHolidayLabel) {
+      toast.error("Preencha data e nome");
+      return;
+    }
+    setSaving("new-holiday");
+    const { error } = await supabase.from("holidays").insert({
+      date: newHolidayDate,
+      label: newHolidayLabel,
+      consultant_id: consultantId,
+    });
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setNewHolidayDate(""); setNewHolidayLabel("");
+    toast.success("Feriado adicionado");
+    await load();
+  }
+
+  async function removeHoliday(id: string) {
+    if (!confirm("Remover este feriado?")) return;
+    const { error } = await supabase.from("holidays").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Feriado removido");
     await load();
   }
 
