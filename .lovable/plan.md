@@ -1,44 +1,75 @@
-## Problema
 
-Hoje, na lista de Captação, um lead entra em **"Em atendimento"** assim que `welcome_sent_at` é preenchido — e nunca mais sai, mesmo depois de o consultor clicar em **"Finalizar atendimento"**. Como o cliente raramente responde à pesquisa 1–5, dezenas de leads ficam presos em "Em atendimento", impedindo o consultor de selecioná-los novamente para disparar um novo atendimento em lote.
+## Diagnóstico
 
-## Regra desejada
+Hoje o hub (`AgendamentosTextosDialog`) tem 40 itens no catálogo, mas **11 deles apontam para tela externa** (`fonte: "externo"`) e vários grupos inteiros ficam de fora da edição inline:
 
-Um lead deve aparecer em **"Em espera"** quando:
-- ainda não recebeu boas-vindas (`welcome_sent_at IS NULL`), **OU**
-- já teve o atendimento **finalizado** pelo consultor (`attendance_rating_requested_at IS NOT NULL`), independente do cliente ter respondido a pesquisa.
+| Fonte | Linhas no banco | Hoje no hub |
+|---|---|---|
+| `consultant_message_templates` | 20 chaves | ✅ inline |
+| `cadence_stage_config` | 9 stages | ✅ inline |
+| `reactivation_templates` | 1 | ✅ aba própria |
+| `conversion_phrase_catalog` | 27 | ✅ aba própria |
+| `kanban_stages` (pós-venda) | 95 | ✅ aba própria |
+| **`bot_flow_steps.message_text`** | **197** | ❌ só link externo |
+| **`bot_flow_qa` (perguntas/respostas)** | **535** | ❌ só link externo |
+| **`voice_templates` (TTS/SMS por campanha)** | **1+** | ❌ só link externo |
+| **`message_templates` (respostas rápidas do chat)** | **23** | ❌ só link externo |
+| **`bulk_campaigns.message_text`** | várias | ❌ só link externo |
+| **`scheduled_messages.message_text`** | várias | ❌ só link externo |
 
-Assim, ao clicar em "Finalizar", o lead volta para "Em espera" e pode ser incluído em uma nova seleção em massa para iniciar outro atendimento.
+Ou seja: os 4 grupos mais volumosos (fluxos, FAQ, voz, chat/campanhas) ficam de fora — e são justamente os que o usuário está pedindo.
 
-Continua em **"Em atendimento"** apenas quem tem `welcome_sent_at` preenchido **e** `attendance_rating_requested_at IS NULL` (atendimento em curso, ainda não encerrado).
+## Objetivo
 
-## Mudanças
+Fazer com que **100% dos textos** que a plataforma pode enviar apareçam e sejam editáveis dentro do próprio hub, sem precisar sair para outra tela. Manter o comportamento atual: salvar sempre grava override do consultor, envio automático segue dependendo do toggle correspondente.
 
-### 1. `src/components/captacao/CaptureLeadList.tsx`
-- Adicionar `attendance_rating_requested_at: string | null` na interface `CaptureBatchLead`.
-- Incluir a coluna no `select` do `load()` e no mapeamento das linhas.
-- Ajustar o agrupamento (linhas 370–371):
-  ```ts
-  const emAtendimento = filtered.filter(l => !!l.welcome_sent_at && !l.attendance_rating_requested_at);
-  const emEspera      = filtered.filter(l => !l.welcome_sent_at ||  !!l.attendance_rating_requested_at);
-  ```
-- Ajustar `unreadByTab` (linha 388) e `selectWithoutAttendance` (linha 478) com a mesma condição, para que "Só sem atendimento" também inclua os finalizados.
+## O que muda
 
-### 2. `src/hooks/useCustomerAttendance.ts` (leitura já existente)
-Sem mudanças — o hook já lê `attendance_rating_requested_at`. A lista faz sua própria query e realtime, então basta atualizar `CaptureLeadList`.
+### 1. Novas abas no dialog (`AgendamentosTextosDialog.tsx`)
 
-### 3. Realtime
-O canal atual já recarrega em `UPDATE` de `customers`. Como `end-customer-attendance` grava `attendance_rating_requested_at`, o lead migra automaticamente de aba assim que o botão "Finalizar" é clicado.
+Adicionar, ao lado das abas existentes (Catálogo / Reaquecimento / Frases / Pós-venda):
 
-## Fora de escopo
+- **Fluxos** — lista `bot_flow_steps` (agrupada por fluxo A/B/C/D e por `step_key`), textarea inline para `message_text`, salva no próprio row. Filtro por fluxo + busca.
+- **FAQ** — lista `bot_flow_qa` (pergunta + resposta), edição inline dos dois campos, filtro por fluxo.
+- **Voz/SMS** — lista `voice_templates` + `voice_campaigns.tts_text` / `sms_post_no_answer_text`, edição inline.
+- **Chat rápido** — lista `message_templates` (respostas rápidas usadas no chat manual), edição inline.
+- **Campanhas** — lista `bulk_campaigns.message_text` + `scheduled_messages.message_text` (últimos 90 dias / ativos), edição inline.
 
-- Não mexer em `start-customer-attendance` / `end-customer-attendance` — o comportamento server-side (protocolo, envio, kill-switch) continua igual.
-- Não alterar `CloseCaptureButton` / `CloseCaptureDialog` (Ganho/Perdido continua removendo o lead da lista via `capture_closed_at`).
-- Sem migração de banco — a coluna `attendance_rating_requested_at` já existe.
+Cada aba segue o padrão já existente das abas Reaquecimento/Frases/Pós-venda: `Textarea` + botão **Salvar** + badge "não salvo", com `drafts` e `saving` já implementados.
 
-## Como validar
+### 2. Catálogo atualizado (`src/lib/agendamentosTextosCatalog.ts`)
 
-1. Abrir Captação, escolher um lead em "Em atendimento", clicar **Finalizar atendimento**.
-2. Confirmar que o lead sai de "Em atendimento" e aparece em "Em espera" em segundos (via realtime).
-3. Ativar seleção múltipla, usar **"Só sem atendimento"** — o lead finalizado deve ser selecionado junto.
-4. Disparar batch: o modal reabre atendimento normalmente para esses leads.
+- Trocar os itens hoje `fonte: "externo"` que passam a ter edição inline para novas fontes tipadas:
+  - `ext_fluxos` → `bot_flow_steps`
+  - `ext_faq` → `bot_flow_qa`
+  - `ext_voz` / `ext_voice_templates` → `voice_templates`
+  - `ext_chat_templates` → `message_templates`
+  - `ext_bulk` / `ext_agenda` → `bulk_campaigns` / `scheduled_messages`
+- Ampliar o `TextoFonte` union com as novas fontes.
+- Manter `ext_motor_cadencia` como link externo (é um painel inteiro, não um texto).
+- Contador do hub passa a mostrar total real (catálogo + linhas dinâmicas), ex.: "40 fixos + 883 dinâmicos".
+
+### 3. Preservar segurança e escopo
+
+- Todas as queries continuam com `.eq("consultant_id", consultantId)` (ou fallback global). Nenhum consultor edita texto de outro.
+- Upserts seguem o padrão atual: quando o registro base é global, cria override do consultor; quando já é do consultor, atualiza direto.
+- Nada de mexer em RLS/policies existentes — as tabelas já são acessíveis pelo consultor logado no CRM.
+
+### 4. UX
+
+- Header do dialog vira: **"Todos os textos ajustáveis — 100% do que a plataforma envia"**.
+- Cada aba tem busca própria + contador.
+- Ícone de aviso amarelo (`AlertTriangle`) quando `is_active = false` ou toggle correspondente está OFF, para o usuário saber que salvar não implica em envio.
+- Textareas com contador de caracteres e placeholders com as variáveis suportadas.
+
+## Fora do escopo
+
+- Reescrever o editor de fluxo visual (mantém-se em `/admin/fluxos` para reordenar/duplicar passos).
+- Criar novos textos que ainda não existem — o hub edita o que já existe; criação continua nas telas específicas.
+- Mudanças em cron/toggles: seguem em `AdminAgendamentosCentral`.
+
+## Arquivos envolvidos
+
+- `src/components/whatsapp/AgendamentosTextosDialog.tsx` — 5 novas abas + loaders + savers.
+- `src/lib/agendamentosTextosCatalog.ts` — expandir `TextoFonte`, reclassificar os itens hoje "externo".
+- (Sem novas migrations, sem edge functions novas.)
