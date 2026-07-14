@@ -126,6 +126,58 @@ type SchedMsgRow = {
   remote_jid: string;
 };
 
+type StageAutoRow = {
+  id: string;
+  stage_id: string;
+  stage_label?: string;
+  stage_key?: string;
+  position: number;
+  message_type: string;
+  message_text: string | null;
+  delay_seconds: number;
+};
+
+type AiKnowRow = {
+  id: string;
+  title: string;
+  content: string;
+  is_active: boolean;
+  is_critical: boolean;
+  persona: string | null;
+  consultant_id: string | null;
+};
+
+type AiAgentRow = {
+  consultant_id: string;
+  persona_name: string | null;
+  tone: string | null;
+  system_prompt: string | null;
+  step_prompts: Record<string, string> | null;
+  enabled: boolean;
+};
+
+type RodizioRow = {
+  id: string;
+  slug: string;
+  label: string;
+  message: string | null;
+  is_active: boolean;
+};
+
+type PosVendaDefaultRow = {
+  stage: string;
+  message_type: string;
+  message_text: string | null;
+  is_active: boolean;
+};
+
+type HolidayRow = {
+  id: string;
+  date: string;
+  label: string;
+  consultant_id: string | null;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -163,6 +215,14 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
   const [chatTpl, setChatTpl] = useState<ChatTemplateRow[]>([]);
   const [bulkCamps, setBulkCamps] = useState<BulkCampRow[]>([]);
   const [schedMsgs, setSchedMsgs] = useState<SchedMsgRow[]>([]);
+  const [stageAuto, setStageAuto] = useState<StageAutoRow[]>([]);
+  const [aiKnow, setAiKnow] = useState<AiKnowRow[]>([]);
+  const [aiAgent, setAiAgent] = useState<AiAgentRow | null>(null);
+  const [rodizio, setRodizio] = useState<RodizioRow[]>([]);
+  const [posVendaGlobal, setPosVendaGlobal] = useState<PosVendaDefaultRow[]>([]);
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+  const [newHolidayLabel, setNewHolidayLabel] = useState("");
   const [flowFilter, setFlowFilter] = useState<string>("all");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
@@ -282,6 +342,60 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     setChatTpl((chatRes.data || []) as ChatTemplateRow[]);
     setBulkCamps((bulkRes.data || []) as BulkCampRow[]);
     setSchedMsgs((schedRes.data || []) as SchedMsgRow[]);
+
+    // ── Fontes adicionais: CRM, IA (RAG + agente), Rodízio, Pós-venda global, Calendário ──
+    const [stageAutoRes, aiKnowRes, aiAgentRes, rodizioRes, posGlobalRes, holidaysRes] = await Promise.all([
+      (supabase as any)
+        .from("stage_auto_messages")
+        .select("id, stage_id, position, message_type, message_text, delay_seconds, kanban_stages!inner(label, stage_key, consultant_id)")
+        .eq("kanban_stages.consultant_id", consultantId)
+        .order("position")
+        .limit(300),
+      supabase
+        .from("ai_knowledge_sections")
+        .select("id, title, content, is_active, is_critical, persona, consultant_id")
+        .or(`consultant_id.eq.${consultantId},consultant_id.is.null`)
+        .order("position")
+        .limit(200),
+      supabase
+        .from("ai_agent_config")
+        .select("consultant_id, persona_name, tone, system_prompt, step_prompts, enabled")
+        .eq("consultant_id", consultantId)
+        .maybeSingle(),
+      supabase
+        .from("rodizio_pools")
+        .select("id, slug, label, message, is_active")
+        .eq("consultant_id", consultantId)
+        .order("label"),
+      supabase
+        .from("pos_venda_default_media")
+        .select("stage, message_type, message_text, is_active")
+        .order("stage"),
+      supabase
+        .from("holidays")
+        .select("id, date, label, consultant_id")
+        .or(`consultant_id.eq.${consultantId},consultant_id.is.null`)
+        .order("date", { ascending: true })
+        .limit(200),
+    ]);
+
+    setStageAuto(
+      ((stageAutoRes.data || []) as any[]).map((r) => ({
+        id: r.id,
+        stage_id: r.stage_id,
+        stage_label: r.kanban_stages?.label,
+        stage_key: r.kanban_stages?.stage_key,
+        position: r.position,
+        message_type: r.message_type,
+        message_text: r.message_text,
+        delay_seconds: r.delay_seconds,
+      })),
+    );
+    setAiKnow((aiKnowRes.data || []) as AiKnowRow[]);
+    setAiAgent((aiAgentRes.data as AiAgentRow) || null);
+    setRodizio((rodizioRes.data || []) as RodizioRow[]);
+    setPosVendaGlobal((posGlobalRes.data || []) as PosVendaDefaultRow[]);
+    setHolidays((holidaysRes.data || []) as HolidayRow[]);
 
     setDrafts({});
     setLoading(false);
@@ -481,7 +595,16 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
 
   // ── Savers das novas fontes ──
   async function saveSimple(
-    table: "bot_flow_steps" | "bot_flow_qa" | "voice_campaigns" | "message_templates" | "bulk_campaigns" | "scheduled_messages",
+    table:
+      | "bot_flow_steps"
+      | "bot_flow_qa"
+      | "voice_campaigns"
+      | "message_templates"
+      | "bulk_campaigns"
+      | "scheduled_messages"
+      | "stage_auto_messages"
+      | "ai_knowledge_sections"
+      | "rodizio_pools",
     id: string,
     field: string,
     key: string,
@@ -495,6 +618,65 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     if (error) { toast.error(error.message); return; }
     setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
     toast.success(`${label} salvo`);
+    await load();
+  }
+
+  async function savePosGlobal(row: PosVendaDefaultRow) {
+    const key = `pvg:${row.stage}`;
+    const text = drafts[key] ?? row.message_text ?? "";
+    setSaving(key);
+    const { error } = await (supabase as any)
+      .from("pos_venda_default_media")
+      .update({ message_text: text })
+      .eq("stage", row.stage);
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
+    toast.success("Legenda salva");
+    await load();
+  }
+
+  async function saveAiAgent(field: "system_prompt" | "persona_name" | "tone") {
+    const key = `agent:${field}`;
+    const text = drafts[key];
+    if (text === undefined) return;
+    setSaving(key);
+    const { error } = await (supabase as any)
+      .from("ai_agent_config")
+      .upsert(
+        { consultant_id: consultantId, [field]: text },
+        { onConflict: "consultant_id" },
+      );
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
+    toast.success("Agente IA atualizado");
+    await load();
+  }
+
+  async function addHoliday() {
+    if (!newHolidayDate || !newHolidayLabel) {
+      toast.error("Preencha data e nome");
+      return;
+    }
+    setSaving("new-holiday");
+    const { error } = await supabase.from("holidays").insert({
+      date: newHolidayDate,
+      label: newHolidayLabel,
+      consultant_id: consultantId,
+    });
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setNewHolidayDate(""); setNewHolidayLabel("");
+    toast.success("Feriado adicionado");
+    await load();
+  }
+
+  async function removeHoliday(id: string) {
+    if (!confirm("Remover este feriado?")) return;
+    const { error } = await supabase.from("holidays").delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Feriado removido");
     await load();
   }
 
@@ -560,6 +742,12 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
             <TabsTrigger value="campanhas" className="rounded-xl text-xs">
               Campanhas ({bulkCamps.length + schedMsgs.length})
             </TabsTrigger>
+            <TabsTrigger value="crm" className="rounded-xl text-xs">CRM ({stageAuto.length})</TabsTrigger>
+            <TabsTrigger value="ia-rag" className="rounded-xl text-xs">IA Conhecimento ({aiKnow.length})</TabsTrigger>
+            <TabsTrigger value="ia-agente" className="rounded-xl text-xs">IA Personalidade</TabsTrigger>
+            <TabsTrigger value="rodizio" className="rounded-xl text-xs">Rodízio ({rodizio.length})</TabsTrigger>
+            <TabsTrigger value="posvenda-global" className="rounded-xl text-xs">Pós-venda global ({posVendaGlobal.length})</TabsTrigger>
+            <TabsTrigger value="calendario" className="rounded-xl text-xs">Calendário ({holidays.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="catalogo" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
@@ -1051,6 +1239,154 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
                 );
               })}
             </div>
+          </TabsContent>
+
+          <TabsContent value="crm" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Mensagens automáticas disparadas quando um card entra numa coluna do CRM.</p>
+            {stageAuto.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma mensagem automática configurada. Configure em CRM &gt; coluna.</p>}
+            {stageAuto.map((r) => {
+              const key = `sam:${r.id}`;
+              const val = drafts[key] ?? r.message_text ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.stage_label || r.stage_key}</Badge>
+                    <span className="text-muted-foreground">#{r.position} · {r.message_type} · +{r.delay_seconds}s</span>
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={3} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("stage_auto_messages", r.id, "message_text", key, r.message_text, "Mensagem CRM")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="ia-rag" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Seções que a IA vendedora consulta (RAG). Edite o conteúdo — títulos são fixos.</p>
+            {aiKnow.map((r) => {
+              const key = `rag:${r.id}`;
+              const val = drafts[key] ?? r.content ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.title}</Badge>
+                    {r.is_critical && <Badge variant="destructive">crítico</Badge>}
+                    {!r.is_active && <Badge variant="secondary">inativo</Badge>}
+                    {!r.consultant_id && <Badge variant="secondary">global</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={5} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("ai_knowledge_sections", r.id, "content", key, r.content, "Conhecimento IA")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="ia-agente" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-4">
+            <p className="text-xs text-muted-foreground">Personalidade, tom e prompt-mestre do agente IA.</p>
+            {(["persona_name", "tone", "system_prompt"] as const).map((field) => {
+              const key = `agent:${field}`;
+              const current = (aiAgent as any)?.[field] ?? "";
+              const val = drafts[key] ?? current;
+              const dirty = drafts[key] !== undefined;
+              const labels: Record<string, string> = { persona_name: "Nome da persona", tone: "Tom (formal, próximo, direto…)", system_prompt: "System prompt (instruções gerais)" };
+              return (
+                <div key={field} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{labels[field]}</Badge>
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={field === "system_prompt" ? 10 : 2} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveAiAgent(field)}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="rodizio" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Mensagem enviada aos parceiros quando um lead entra no rodízio.</p>
+            {rodizio.map((r) => {
+              const key = `rod:${r.id}`;
+              const val = drafts[key] ?? r.message ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.label}</Badge>
+                    <span className="text-muted-foreground">{r.slug}</span>
+                    {!r.is_active && <Badge variant="secondary">pausado</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={4} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} placeholder="Use {nome}, {telefone}, {campanha}, {posicao}…" />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("rodizio_pools", r.id, "message", key, r.message, "Aviso ao parceiro")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="posvenda-global" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Legendas padrão das mídias de pós-venda (usadas quando não há override do consultor).</p>
+            {posVendaGlobal.map((r) => {
+              const key = `pvg:${r.stage}`;
+              const val = drafts[key] ?? r.message_text ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.stage} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.stage}</Badge>
+                    <span className="text-muted-foreground">{r.message_type}</span>
+                    {!r.is_active && <Badge variant="secondary">inativo</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={3} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => savePosGlobal(r)}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="calendario" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Feriados que o motor de cadência e crons devem respeitar (não envia mensagens nestes dias).</p>
+            <div className="border rounded-xl p-3 space-y-2 bg-muted/30">
+              <div className="text-xs font-semibold">Adicionar feriado</div>
+              <div className="flex gap-2 flex-wrap">
+                <input type="date" className="border rounded-md px-2 py-1 text-sm bg-background" value={newHolidayDate} onChange={(e) => setNewHolidayDate(e.target.value)} />
+                <input type="text" placeholder="Nome do feriado" className="border rounded-md px-2 py-1 text-sm bg-background flex-1 min-w-[180px]" value={newHolidayLabel} onChange={(e) => setNewHolidayLabel(e.target.value)} />
+                <Button size="sm" disabled={saving === "new-holiday"} onClick={addHoliday}>Adicionar</Button>
+              </div>
+            </div>
+            {holidays.map((h) => (
+              <div key={h.id} className="border rounded-xl p-3 flex items-center gap-3">
+                <Badge variant="outline">{h.date}</Badge>
+                <span className="text-sm flex-1">{h.label}</span>
+                {!h.consultant_id && <Badge variant="secondary">global</Badge>}
+                {h.consultant_id && (
+                  <Button size="sm" variant="ghost" onClick={() => removeHoliday(h.id)}>Remover</Button>
+                )}
+              </div>
+            ))}
           </TabsContent>
         </Tabs>
       </DialogContent>
