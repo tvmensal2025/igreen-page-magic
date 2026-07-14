@@ -368,6 +368,58 @@ export const TEXTOS_CATALOGO: TextoCatalogItem[] = [
     toggle: "cadence_engine",
     prioridade: "media",
   },
+
+  // ── Novas fontes (abas dedicadas) ──
+  {
+    id: "ext_stage_auto",
+    grupo: "crm",
+    nome: "CRM — mensagens automáticas por estágio",
+    oQueFaz: "Cada coluna do funil pode ter mensagens que disparam ao mover o card. Edite na aba CRM.",
+    fonte: "stage_auto_messages",
+    prioridade: "alta",
+  },
+  {
+    id: "ext_ai_knowledge",
+    grupo: "ia-config",
+    nome: "IA — Base de conhecimento (RAG)",
+    oQueFaz: "Seções que a IA vendedora consulta para responder objeções, preço, garantia. Edite na aba IA Conhecimento.",
+    fonte: "ai_knowledge_sections",
+    prioridade: "alta",
+  },
+  {
+    id: "ext_ai_agent",
+    grupo: "ia-config",
+    nome: "IA — Personalidade e prompt do agente",
+    oQueFaz: "System prompt, persona, tom e prompts por passo do agente IA. Edite na aba IA Personalidade.",
+    fonte: "ai_agent_config",
+    prioridade: "alta",
+  },
+  {
+    id: "ext_rodizio",
+    grupo: "parceiros",
+    nome: "Rodízio — texto do alerta ao parceiro",
+    oQueFaz: "Mensagem que o parceiro recebe quando um lead é atribuído no rodízio. Edite na aba Rodízio.",
+    fonte: "rodizio_pools",
+    toggle: "notify_partner_leads_batch",
+    prioridade: "media",
+  },
+  {
+    id: "ext_pos_venda_global",
+    grupo: "pos-venda",
+    nome: "Pós-venda global — legendas padrão de mídia",
+    oQueFaz: "Caption das mídias padrão do pós-venda (aplicadas quando o consultor não tem override). Edite na aba Pós-venda global.",
+    fonte: "pos_venda_default_media",
+    toggle: "pos_venda_auto_messages",
+    prioridade: "baixa",
+  },
+  {
+    id: "ext_holidays",
+    grupo: "calendario",
+    nome: "Calendário — feriados / quiet-hours",
+    oQueFaz: "Datas que o motor de cadência e crons respeitam para não enviar. Edite na aba Calendário.",
+    fonte: "holidays",
+    prioridade: "media",
+  },
 ];
 
 export function countCatalogByFonte() {
