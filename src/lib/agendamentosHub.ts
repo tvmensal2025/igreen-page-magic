@@ -4,7 +4,8 @@ export type AgendamentoTimelineKind =
   | "manual_scheduled"
   | "pos_venda_auto"
   | "bot_followup"
-  | "bulk_campaign";
+  | "bulk_campaign"
+  | "voice_campaign";
 
 export type AgendamentoTimelineStatus = "pending" | "overdue" | "running" | "sent" | "failed";
 
@@ -44,6 +45,20 @@ export interface BulkCampaignRow {
   failed: number;
   scheduled_at: string | null;
   started_at: string | null;
+}
+
+/** Campanha PSTN (Velip) — mesma forma útil para timeline/listagem. */
+export interface VoiceCampaignRow {
+  id: string;
+  name: string;
+  status: string;
+  total: number;
+  dialed: number;
+  answered: number;
+  failed: number;
+  scheduled_at: string | null;
+  started_at: string | null;
+  created_at: string;
 }
 
 export interface ReactivationSettingsSummary {
@@ -92,6 +107,7 @@ export function buildAgendamentosTimeline(input: {
   posVenda: UpcomingPosVendaItem[];
   botFollowups: BotFollowupRow[];
   bulk: BulkCampaignRow[];
+  voice?: VoiceCampaignRow[];
 }): AgendamentoTimelineItem[] {
   const now = Date.now();
   const items: AgendamentoTimelineItem[] = [];
@@ -145,9 +161,29 @@ export function buildAgendamentosTimeline(input: {
       at,
       status: c.status === "running" ? "running" : "pending",
       badge:
-        c.status === "scheduled" ? "Campanha agendada"
-        : c.status === "paused" ? "Campanha pausada — precisa de atenção"
-        : "Campanha em andamento",
+        c.status === "scheduled" ? "Campanha WA agendada"
+        : c.status === "paused" ? "Campanha WA pausada — precisa de atenção"
+        : "Campanha WA em andamento",
+    });
+  }
+
+  for (const c of input.voice || []) {
+    const at = c.scheduled_at
+      ? new Date(c.scheduled_at)
+      : c.started_at
+        ? new Date(c.started_at)
+        : new Date(c.created_at);
+    items.push({
+      id: `voice-${c.id}`,
+      kind: "voice_campaign",
+      title: c.name || "Campanha de ligação",
+      preview: `${c.dialed}/${c.total} discados · ${c.answered} atendidos`,
+      at,
+      status: c.status === "running" ? "running" : "pending",
+      badge:
+        c.status === "scheduled" ? "Ligação agendada"
+        : c.status === "paused" ? "Ligação pausada — precisa de atenção"
+        : "Ligação em andamento",
     });
   }
 

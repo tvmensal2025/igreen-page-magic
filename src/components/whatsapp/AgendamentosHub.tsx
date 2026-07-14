@@ -85,6 +85,13 @@ function describeSource(item: AgendamentoTimelineItem): {
         targetTab: "campanhas",
         ctaLabel: "Abrir Campanhas",
       };
+    case "voice_campaign":
+      return {
+        where: "Ligação (Velip)",
+        hint: "Excluir cancela a campanha de ligação. Para acompanhar o progresso, abra a aba Ligação.",
+        targetTab: "campanhas",
+        ctaLabel: "Ver campanhas",
+      };
   }
 }
 
@@ -126,20 +133,24 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
     case "pos_venda_auto": return <Sparkles className="w-3.5 h-3.5 text-primary" />;
     case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
+    case "voice_campaign": return <Phone className="w-3.5 h-3.5 text-info" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
   }
 }
 
-/** Status de campanha em massa em PT claro (cobre todos os estados do bulk-scheduler). */
+/** Status de campanha em massa / ligação em PT claro. */
 function campaignStatusLabel(status: string): string {
   switch (status) {
-    case "running": return "Enviando";
+    case "running": return "Em andamento";
     case "scheduled": return "Agendada";
     case "paused": return "Pausada";
-    case "completed": return "Concluída";
+    case "completed":
+    case "finished":
+    case "done": return "Concluída";
     case "failed": return "Com erro";
     case "draft": return "Rascunho";
-    case "cancelled": return "Cancelada";
+    case "cancelled":
+    case "canceled": return "Cancelada";
     default: return status;
   }
 }
@@ -184,6 +195,7 @@ export function AgendamentosHub({
     posVenda,
     botFollowups,
     bulkCampaigns,
+    voiceCampaigns,
     reactivationSettings,
     autoReactivateTemplates,
     timeline,
@@ -262,7 +274,7 @@ export function AgendamentosHub({
       description:
         item.kind === "pos_venda_auto"
           ? `“${item.title}” · ${item.badge}\n\nEste cliente não receberá esta mensagem automática. O texto da coluna continua igual para os outros.`
-          : item.kind === "bulk_campaign"
+          : item.kind === "bulk_campaign" || item.kind === "voice_campaign"
             ? `Campanha “${item.title}” será cancelada e some da fila.`
             : item.kind === "bot_followup"
               ? `Remove o próximo reaquecimento de “${item.title}”.`
@@ -350,6 +362,26 @@ export function AgendamentosHub({
         toast({ title: "Campanha cancelada" });
         setSelected(null);
         refresh();
+        return;
+      }
+
+      if (item.kind === "voice_campaign") {
+        const campaignId = item.id.replace(/^voice-/, "");
+        const { data, error } = await supabase.functions.invoke("voice-campaign-control", {
+          body: { campaign_id: campaignId, action: "cancel" },
+        });
+        if (error) {
+          toast({ title: "Erro ao cancelar ligação", description: error.message, variant: "destructive" });
+          return;
+        }
+        if (data?.error) {
+          toast({ title: "Erro ao cancelar ligação", description: String(data.error), variant: "destructive" });
+          return;
+        }
+        toast({ title: "Campanha de ligação cancelada" });
+        setSelected(null);
+        refresh();
+        return;
       }
     } finally {
       setDeletingItem(false);
@@ -637,7 +669,8 @@ export function AgendamentosHub({
                   { id: "all", label: "Todos" },
                   { id: "manual_scheduled", label: "Manual" },
                   { id: "pos_venda_auto", label: "Pós-venda" },
-                  { id: "bulk_campaign", label: "Campanha" },
+                  { id: "bulk_campaign", label: "WA" },
+                  { id: "voice_campaign", label: "Ligação" },
                   { id: "bot_followup", label: "Reaquecer" },
                 ];
                 return (
@@ -710,6 +743,8 @@ export function AgendamentosHub({
                                   ? "bg-info"
                                   : item.kind === "bulk_campaign"
                                   ? "bg-warning"
+                                  : item.kind === "voice_campaign"
+                                  ? "bg-info"
                                   : "bg-primary";
                               return (
                                 <button
@@ -1031,26 +1066,52 @@ export function AgendamentosHub({
             </Button>
           </TabsContent>
 
-          {/* ── Campanhas em massa ── */}
+          {/* ── Campanhas em massa + ligação ── */}
           <TabsContent value="campanhas" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
-                <p className="text-sm font-bold">Campanhas em massa</p>
-                <p className="text-[11px] text-muted-foreground">Disparos para várias pessoas de uma vez (antigo Disparo PRO).</p>
+                <p className="text-sm font-bold">Campanhas</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Disparo WhatsApp e campanhas de ligação (Velip) agendadas ou em andamento.
+                </p>
               </div>
-              <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "whatsapp", whatsappSub: "envio_massa" })}>
-                <Megaphone className="w-3.5 h-3.5" /> Criar campanha
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "whatsapp", whatsappSub: "envio_massa" })}>
+                  <Megaphone className="w-3.5 h-3.5" /> WhatsApp
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => dispatchAgendamentosNav({ tab: "voz" })}>
+                  <Phone className="w-3.5 h-3.5" /> Ligação
+                </Button>
+              </div>
             </div>
-            {bulkCampaigns.length === 0 ? (
+
+            {bulkCampaigns.length === 0 && voiceCampaigns.length === 0 ? (
               <EmptyState text="Nenhuma campanha agendada ou em andamento" />
             ) : (
               <div className="space-y-2">
-                {bulkCampaigns.map((c) => (
-                  <div key={c.id} className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
+                {voiceCampaigns.map((c) => (
+                  <div key={`voice-${c.id}`} className="rounded-xl border border-info/20 bg-info/5 px-4 py-3">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <Phone className="w-3.5 h-3.5 text-info shrink-0" />
                       <span className="text-sm font-bold">{c.name}</span>
                       <Badge variant="secondary" className="text-[9px]">{campaignStatusLabel(c.status)}</Badge>
+                      <Badge variant="outline" className="text-[9px]">Ligação</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {c.dialed} de {c.total} discados · {c.answered} atendidos · {c.failed} falhas
+                    </p>
+                    {c.scheduled_at && (
+                      <p className="text-[11px] text-muted-foreground mt-1">Liga em: {formatScheduleDate(c.scheduled_at)}</p>
+                    )}
+                  </div>
+                ))}
+                {bulkCampaigns.map((c) => (
+                  <div key={`bulk-${c.id}`} className="rounded-xl border border-warning/20 bg-warning/5 px-4 py-3">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <Megaphone className="w-3.5 h-3.5 text-warning shrink-0" />
+                      <span className="text-sm font-bold">{c.name}</span>
+                      <Badge variant="secondary" className="text-[9px]">{campaignStatusLabel(c.status)}</Badge>
+                      <Badge variant="outline" className="text-[9px]">WhatsApp</Badge>
                     </div>
                     <p className="text-xs text-muted-foreground">{c.sent} de {c.total} enviados · {c.failed} com erro</p>
                     {c.scheduled_at && (

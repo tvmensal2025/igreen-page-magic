@@ -16,6 +16,7 @@ import {
   type BulkCampaignRow,
   type ReactivationSettingsSummary,
   type ScheduledMessageRow,
+  type VoiceCampaignRow,
 } from "@/lib/agendamentosHub";
 
 export function useAgendamentosHub(consultantId: string) {
@@ -24,6 +25,7 @@ export function useAgendamentosHub(consultantId: string) {
   const [posVenda, setPosVenda] = useState<UpcomingPosVendaItem[]>([]);
   const [botFollowups, setBotFollowups] = useState<BotFollowupRow[]>([]);
   const [bulkCampaigns, setBulkCampaigns] = useState<BulkCampaignRow[]>([]);
+  const [voiceCampaigns, setVoiceCampaigns] = useState<VoiceCampaignRow[]>([]);
   const [reactivationSettings, setReactivationSettings] = useState<ReactivationSettingsSummary>(
     DEFAULT_REACTIVATION_SETTINGS,
   );
@@ -41,6 +43,7 @@ export function useAgendamentosHub(consultantId: string) {
         defRes,
         followupRes,
         bulkRes,
+        voiceRes,
         settingsRes,
         templatesRes,
         pendingValidationRes,
@@ -79,6 +82,12 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("consultant_id", consultantId)
           // "paused" incluída: campanha pausada pelo guard anti-ban/telefone
           // sumia da lista e o consultor não sabia que precisava agir.
+          .in("status", ["scheduled", "running", "paused"])
+          .order("scheduled_at", { ascending: true, nullsFirst: false }),
+        (supabase as any)
+          .from("voice_campaigns")
+          .select("id, name, status, total, dialed, answered, failed, scheduled_at, started_at, created_at")
+          .eq("consultant_id", consultantId)
           .in("status", ["scheduled", "running", "paused"])
           .order("scheduled_at", { ascending: true, nullsFirst: false }),
         (supabase as any)
@@ -126,6 +135,7 @@ export function useAgendamentosHub(consultantId: string) {
 
       setBotFollowups((followupRes.data || []) as BotFollowupRow[]);
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
+      setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
 
       if (settingsRes.data) {
         const s = settingsRes.data;
@@ -158,6 +168,7 @@ export function useAgendamentosHub(consultantId: string) {
     posVenda,
     botFollowups,
     bulk: bulkCampaigns,
+    voice: voiceCampaigns,
   });
 
   const pendingManual = manual.filter((m) => m.status === "pending");
@@ -171,6 +182,7 @@ export function useAgendamentosHub(consultantId: string) {
     posVenda,
     botFollowups,
     bulkCampaigns,
+    voiceCampaigns,
     reactivationSettings,
     autoReactivateTemplates,
     pendingValidation,
@@ -180,7 +192,7 @@ export function useAgendamentosHub(consultantId: string) {
       pendingManual: pendingManual.length,
       posVendaUpcoming: posVenda.length,
       botFollowups: botFollowups.length,
-      bulkActive: bulkCampaigns.length,
+      bulkActive: bulkCampaigns.length + voiceCampaigns.length,
       sentManual,
       failedManual,
       posVendaOverdue: posVenda.filter((p) => p.isOverdue).length,

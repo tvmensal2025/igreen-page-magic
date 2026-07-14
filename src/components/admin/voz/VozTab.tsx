@@ -1,6 +1,9 @@
 /**
  * Aba Admin > Ligação — Velip (PSTN) — módulo isolado do WhatsApp.
  * Sub-abas: Nova ligação · SMS · Bases · Não Perturbe · Histórico · Painel · Ajuda
+ *
+ * Contatos: busca leads e carteira em queries separadas para o PostgREST
+ * (max ~1000) não esconder whatsapp_lead atrás de igreen_sync recentes.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +21,18 @@ import type { VozCustomer } from "@/components/admin/voz/VozContactPickerDialog"
 
 interface Props { consultantId: string; }
 
+const CUSTOMER_SELECT =
+  "id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name, created_at, updated_at, customer_origin";
+
+function mergeById(primary: VozCustomer[], secondary: VozCustomer[]): VozCustomer[] {
+  const map = new Map<string, VozCustomer>();
+  for (const c of primary) map.set(c.id, c);
+  for (const c of secondary) {
+    if (!map.has(c.id)) map.set(c.id, c);
+  }
+  return Array.from(map.values());
+}
+
 export function VozTab({ consultantId }: Props) {
   const [customers, setCustomers] = useState<VozCustomer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,15 +40,35 @@ export function VozTab({ consultantId }: Props) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const { data } = await supabase
+      setLoading(true);
+      // Duas queries com .in() (evita .or() que às vezes zera o resultado no client).
+      const leadsQ = supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name, created_at, updated_at")
+        .select(CUSTOMER_SELECT)
         .eq("consultant_id", consultantId)
+        .in("customer_origin", ["whatsapp_lead", "manual"])
         .not("phone_whatsapp", "is", null)
         .order("updated_at", { ascending: false })
-        .limit(3000);
+        .limit(2000);
+
+      const walletQ = supabase
+        .from("customers")
+        .select(CUSTOMER_SELECT)
+        .eq("consultant_id", consultantId)
+        .in("customer_origin", ["igreen_sync", "igreen_extension"])
+        .not("phone_whatsapp", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(2000);
+
+      const [leadsRes, walletRes] = await Promise.all([leadsQ, walletQ]);
       if (!alive) return;
-      setCustomers((data as VozCustomer[]) ?? []);
+
+      if (leadsRes.error) console.error("[VozTab] leads fetch", leadsRes.error);
+      if (walletRes.error) console.error("[VozTab] wallet fetch", walletRes.error);
+
+      const leads = (leadsRes.data as VozCustomer[]) ?? [];
+      const wallet = (walletRes.data as VozCustomer[]) ?? [];
+      setCustomers(mergeById(leads, wallet));
       setLoading(false);
     })();
     return () => { alive = false; };

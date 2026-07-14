@@ -11,12 +11,23 @@ import { useToast } from "@/components/ui/use-toast";
 import * as XLSX from "xlsx";
 import { findContacts, fetchAllGroups, getGroupParticipants, type EvolutionContact, type EvolutionGroup, type EvolutionGroupParticipant } from "@/services/evolutionApi";
 import type { BulkContact } from "@/types/whatsapp";
+import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+
+/** Lead para campanha de voz: origem whatsapp_lead/manual (não carteira iGreen). */
+function isVoiceCampaignLead(c: { customer_origin?: string | null; status?: string }): boolean {
+  if (c.status === "lead") return true;
+  if (isIgreenWalletOrigin(c.customer_origin)) return false;
+  return c.customer_origin === "whatsapp_lead" || c.customer_origin === "manual";
+}
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
   last_inbound_at?: string | null;
+  customer_origin?: string | null;
 }
+
+type StatusFilter = "all" | "approved" | "rejected" | "pending" | "lead";
 
 interface ContactImporterProps {
   customers: Customer[];
@@ -24,6 +35,8 @@ interface ContactImporterProps {
   onContactsChange: (contacts: BulkContact[]) => void;
   disabled?: boolean;
   instanceName?: string;
+  /** Filtro inicial da Base (ex.: "lead" no wizard de ligação). */
+  defaultStatusFilter?: StatusFilter;
 }
 
 function isValidPhone(phone: string): boolean {
@@ -80,8 +93,6 @@ function getAvatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-type StatusFilter = "all" | "approved" | "rejected" | "pending";
-
 const DEVOLUTIVA_CATEGORIES = [
   { key: "fatura_ilegivel", label: "Fatura Ilegível", match: ["fatura ilegível", "fatura ilegivel"] },
   { key: "sem_fatura", label: "Sem Fatura de Energia", match: ["sem anexo de fatura", "fatura de energia não anexada", "fatura não anexada"] },
@@ -107,6 +118,7 @@ function statusBadge(status?: string) {
     case "approved": return { label: "Aprovado", cls: "bg-primary/15 text-primary border-primary/25" };
     case "rejected": return { label: "Reprovado", cls: "bg-destructive/15 text-destructive border-destructive/25" };
     case "pending": return { label: "Pendente", cls: "bg-warning/15 text-warning border-warning/25" };
+    case "lead": return { label: "Lead", cls: "bg-info/15 text-info border-info/25" };
     case "active": return { label: "Ativo", cls: "bg-info/15 text-info border-info/25" };
     default: return null;
   }
@@ -153,11 +165,11 @@ function ContactRow({ name, phone, valid, selected, onToggle, status, source }: 
   );
 }
 
-export function ContactImporter({ customers, contacts, onContactsChange, disabled, instanceName }: ContactImporterProps) {
+export function ContactImporter({ customers, contacts, onContactsChange, disabled, instanceName, defaultStatusFilter = "all" }: ContactImporterProps) {
   const [activeTab, setActiveTab] = useState("database");
   const [pasteText, setPasteText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(defaultStatusFilter);
   const [devolutivaFilter, setDevolutivaFilter] = useState("all");
   const [licenciadoFilter, setLicenciadoFilter] = useState<Set<string>>(new Set());
   const [only48h, setOnly48h] = useState(false);
@@ -192,9 +204,18 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
     return Array.from(set).sort();
   }, [customers]);
 
+  const leadCount = useMemo(
+    () => customers.filter((c) => isVoiceCampaignLead(c)).length,
+    [customers],
+  );
+
   const filteredCustomers = useMemo(() => {
     let list = customers;
-    if (statusFilter !== "all") list = list.filter(c => c.status === statusFilter);
+    if (statusFilter === "lead") {
+      list = list.filter((c) => isVoiceCampaignLead(c));
+    } else if (statusFilter !== "all") {
+      list = list.filter((c) => c.status === statusFilter);
+    }
     if (devolutivaFilter !== "all") list = list.filter(c => matchDevolutiva(c.devolutiva, devolutivaFilter));
     if (licenciadoFilter.size > 0) list = list.filter(c => c.registered_by_name != null && licenciadoFilter.has(c.registered_by_name));
     if (only48h) {
@@ -500,12 +521,26 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
         {/* ─── DATABASE TAB ─── */}
         <TabsContent value="database" className="space-y-2 mt-2">
           <div className="flex flex-wrap gap-1.5">
-            {(["all", "approved", "rejected", "pending"] as const).map(f => (
-              <button key={f} onClick={() => { setStatusFilter(f); setDevolutivaFilter("all"); }}
+            {([
+              { key: "all" as const, label: "Todos" },
+              { key: "lead" as const, label: `Leads (${leadCount})` },
+              { key: "approved" as const, label: "Aprovado" },
+              { key: "rejected" as const, label: "Reprovado" },
+              { key: "pending" as const, label: "Pendente" },
+            ]).map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => { setStatusFilter(f.key); setDevolutivaFilter("all"); }}
                 className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
-                  statusFilter === f ? "bg-primary/20 border-primary/40 text-primary" : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
-                }`}>
-                {f === "all" ? "Todos" : f === "approved" ? "Aprovado" : f === "rejected" ? "Reprovado" : "Pendente"}
+                  statusFilter === f.key
+                    ? f.key === "lead"
+                      ? "bg-info/20 border-info/40 text-info"
+                      : "bg-primary/20 border-primary/40 text-primary"
+                    : "bg-secondary/40 border-border/50 text-muted-foreground hover:bg-secondary/60"
+                }`}
+              >
+                {f.label}
               </button>
             ))}
           </div>
@@ -616,7 +651,9 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
 
           <div className="max-h-52 overflow-y-auto rounded-xl border border-border/50 divide-y divide-border/20">
             {filteredCustomers.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-6">Nenhum cliente encontrado</p>
+              <p className="text-xs text-muted-foreground text-center py-6">
+                {statusFilter === "lead" ? "Nenhum lead encontrado" : "Nenhum cliente encontrado"}
+              </p>
             ) : filteredCustomers.map(c => (
               <ContactRow
                 key={c.id}
@@ -625,7 +662,7 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
                 valid={isValidPhone(c.phone_whatsapp)}
                 selected={selectedDbIds.has(c.id)}
                 onToggle={() => setSelectedDbIds(prev => { const n = new Set(prev); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n; })}
-                status={c.status}
+                status={isVoiceCampaignLead(c) ? "lead" : c.status}
               />
             ))}
           </div>

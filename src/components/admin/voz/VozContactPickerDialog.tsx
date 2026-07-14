@@ -1,20 +1,18 @@
 /**
- * Modal de seleção de contatos — mesmo padrão do Disparo PRO:
- * aba Base (ContactImporter) + aba Leads parados (list_stuck_leads).
+ * Seleção de contatos para Voz — Base (Clientes + filtro Leads).
+ * Busca leads sob demanda no consultor (não depende só da lista do VozTab).
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Users, Flame, Check } from "lucide-react";
+import { Users, Check, CalendarDays, Loader2 } from "lucide-react";
 import { ContactImporter } from "@/components/whatsapp/ContactImporter";
 import { supabase } from "@/integrations/supabase/client";
 import type { BulkContact } from "@/types/whatsapp";
-import { KNOWN_REACTIVATION_STEPS } from "@/lib/reactivation-steps";
 import { normalizeBrazilPhone } from "@/lib/phone";
+import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 
 export interface VozCustomer {
   id: string;
@@ -27,35 +25,212 @@ export interface VozCustomer {
   last_inbound_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
+  customer_origin?: string | null;
 }
 
-interface StuckLead {
-  id: string;
-  name: string | null;
-  phone_whatsapp: string;
-  conversation_step: string;
-  hours_stuck: number;
-  total_count: number;
+const LEAD_SELECT =
+  "id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name, created_at, updated_at, customer_origin";
+
+function dedupeContacts(list: BulkContact[]): BulkContact[] {
+  const seen = new Set<string>();
+  const unique: BulkContact[] = [];
+  for (const c of list) {
+    const k = c.phone.replace(/\D/g, "");
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    unique.push(c);
+  }
+  return unique;
 }
 
-interface Props {
+function mergeCustomers(a: VozCustomer[], b: VozCustomer[]): VozCustomer[] {
+  const map = new Map<string, VozCustomer>();
+  for (const c of a) map.set(c.id, c);
+  for (const c of b) map.set(c.id, c);
+  return Array.from(map.values());
+}
+
+function pickByPeriod(customers: VozCustomer[], days: number): BulkContact[] {
+  const cutoff = Date.now() - days * 86_400_000;
+  const picked: BulkContact[] = [];
+  const seen = new Set<string>();
+  for (const c of customers) {
+    const ts = Date.parse(c.updated_at || c.created_at || "");
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    const phone = normalizeBrazilPhone(c.phone_whatsapp);
+    if (!phone) continue;
+    const key = phone.replace(/\D/g, "");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push({ id: c.id, name: c.name || phone, phone, source: "database" });
+  }
+  return picked;
+}
+
+export interface VozContactPickerPanelProps {
+  consultantId: string;
+  customers: VozCustomer[];
+  value: BulkContact[];
+  onChange: (contacts: BulkContact[]) => void;
+  active?: boolean;
+  showPeriodSelect?: boolean;
+}
+
+/** Painel embutível (sem Dialog) — passo Contatos do wizard. */
+export function VozContactPickerPanel({
+  consultantId,
+  customers,
+  value,
+  onChange,
+  active = true,
+  showPeriodSelect = true,
+}: VozContactPickerPanelProps) {
+  const [periodDays, setPeriodDays] = useState<string>("none");
+  const [fetchedLeads, setFetchedLeads] = useState<VozCustomer[]>([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [leadsError, setLeadsError] = useState<string | null>(null);
+
+  // Busca leads direto (whatsapp_lead / manual) + last_inbound_at em customer_flow_state
+  // (a coluna NÃO existe em customers — erro que zerava a lista).
+  useEffect(() => {
+    if (!active || !consultantId) return;
+    let alive = true;
+    (async () => {
+      setLeadsLoading(true);
+      setLeadsError(null);
+      const { data, error } = await supabase
+        .from("customers")
+        .select(LEAD_SELECT)
+        .eq("consultant_id", consultantId)
+        .in("customer_origin", ["whatsapp_lead", "manual"])
+        .not("phone_whatsapp", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(2000);
+      if (!alive) return;
+      if (error) {
+        console.error("[VozContactPicker] leads", error);
+        setLeadsError(error.message);
+        setFetchedLeads([]);
+        setLeadsLoading(false);
+        return;
+      }
+      const leads = (data as VozCustomer[]) ?? [];
+      // Enrich 48h filter from customer_flow_state (onde last_inbound_at realmente vive)
+      const ids = leads.map((c) => c.id);
+      const inboundMap = new Map<string, string | null>();
+      for (let i = 0; i < ids.length; i += 200) {
+        const slice = ids.slice(i, i + 200);
+        const { data: flowRows } = await supabase
+          .from("customer_flow_state")
+          .select("customer_id, last_inbound_at")
+          .in("customer_id", slice);
+        if (!alive) return;
+        for (const row of (flowRows as { customer_id: string; last_inbound_at: string | null }[]) || []) {
+          inboundMap.set(String(row.customer_id), row.last_inbound_at ?? null);
+        }
+      }
+      if (!alive) return;
+      setFetchedLeads(
+        leads.map((c) => ({ ...c, last_inbound_at: inboundMap.get(c.id) ?? null })),
+      );
+      setLeadsLoading(false);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [active, consultantId]);
+
+  const allCustomers = useMemo(
+    () => mergeCustomers(fetchedLeads, customers),
+    [fetchedLeads, customers],
+  );
+
+  const leadCount = useMemo(
+    () => allCustomers.filter((c) => !isIgreenWalletOrigin(c.customer_origin)).filter((c) =>
+      c.customer_origin === "whatsapp_lead" || c.customer_origin === "manual" || c.status === "lead"
+    ).length,
+    [allCustomers],
+  );
+
+  const dayCounts = useMemo(() => {
+    const counts = new Array<number>(9).fill(0);
+    const now = Date.now();
+    for (const c of allCustomers) {
+      const ts = Date.parse(c.updated_at || c.created_at || "");
+      if (!Number.isFinite(ts)) continue;
+      if (!normalizeBrazilPhone(c.phone_whatsapp)) continue;
+      const daysAgo = Math.max(1, Math.ceil((now - ts) / 86_400_000));
+      for (let d = daysAgo; d <= 8; d++) counts[d]++;
+    }
+    return counts;
+  }, [allCustomers]);
+
+  const applyPeriod = (daysStr: string) => {
+    setPeriodDays(daysStr);
+    if (daysStr === "none") return;
+    const days = Number(daysStr);
+    onChange(pickByPeriod(allCustomers, days));
+  };
+
+  return (
+    <div className="space-y-3">
+      {showPeriodSelect && (
+        <div className="rounded-[var(--pe-radius)] border p-3 space-y-2" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}>
+          <Label className="flex items-center gap-1.5 text-xs">
+            <CalendarDays className="h-3.5 w-3.5" style={{ color: "var(--pe-emerald)" }} />
+            Atalho — atividade recente
+          </Label>
+          <Select value={periodDays} onValueChange={applyPeriod}>
+            <SelectTrigger>
+              <SelectValue placeholder="Escolher período" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Selecionar manualmente</SelectItem>
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
+                <SelectItem key={d} value={String(d)}>
+                  Últimos {d} dia{d > 1 ? "s" : ""} ({dayCounts[d]} contatos)
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] flex items-center gap-1.5" style={{ color: "var(--pe-text-muted)" }}>
+            {leadsLoading ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" /> Carregando leads…
+              </>
+            ) : leadsError ? (
+              <span className="text-destructive">Falha ao carregar leads: {leadsError}</span>
+            ) : (
+              <>
+                <strong style={{ color: "var(--pe-emerald-strong)" }}>{leadCount} leads</strong>
+                {" "}na base · use o filtro <strong>Leads</strong> abaixo.
+              </>
+            )}
+          </p>
+        </div>
+      )}
+
+      <ContactImporter
+        customers={allCustomers}
+        contacts={value}
+        onContactsChange={onChange}
+        defaultStatusFilter="lead"
+      />
+
+      <p className="text-sm font-medium" style={{ color: "var(--pe-text)" }}>
+        {value.length} contato(s) selecionado(s)
+      </p>
+    </div>
+  );
+}
+
+interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   consultantId: string;
   customers: VozCustomer[];
   value: BulkContact[];
   onConfirm: (contacts: BulkContact[]) => void;
-}
-
-function formatHoursStuck(hours: number): string {
-  if (hours < 24) return `${Math.round(hours)}h`;
-  const days = Math.floor(hours / 24);
-  const rem = Math.round(hours % 24);
-  return `${days}d ${rem}h`;
-}
-
-function stepLabel(step: string): string {
-  return KNOWN_REACTIVATION_STEPS.find((s) => s.step === step)?.label ?? step;
 }
 
 export function VozContactPickerDialog({
@@ -65,99 +240,16 @@ export function VozContactPickerDialog({
   customers,
   value,
   onConfirm,
-}: Props) {
+}: DialogProps) {
   const [draft, setDraft] = useState<BulkContact[]>(value);
-  const [stuck, setStuck] = useState<StuckLead[]>([]);
-  const [stuckLoading, setStuckLoading] = useState(false);
-  const [stepFilter, setStepFilter] = useState<string>("all");
-  const [stuckSelected, setStuckSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!open) return;
     setDraft(value);
-    setStuckSelected(new Set(value.filter((c) => c.source === "database").map((c) => c.id)));
   }, [open, value]);
 
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    (async () => {
-      setStuckLoading(true);
-      const { data, error } = await (supabase as any).rpc("list_stuck_leads", {
-        p_consultant: consultantId,
-        p_step: stepFilter === "all" ? null : stepFilter,
-        p_limit: 100,
-        p_offset: 0,
-      });
-      if (!alive) return;
-      if (error) {
-        console.error(error);
-        setStuck([]);
-      } else {
-        setStuck((data as StuckLead[]) || []);
-      }
-      setStuckLoading(false);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [open, consultantId, stepFilter]);
-
-  const toggleStuck = (lead: StuckLead) => {
-    const phone = normalizeBrazilPhone(lead.phone_whatsapp);
-    if (!phone) return;
-
-    setStuckSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(lead.id)) next.delete(lead.id);
-      else next.add(lead.id);
-      return next;
-    });
-
-    setDraft((prev) => {
-      const exists = prev.some((c) => c.id === lead.id);
-      if (exists) return prev.filter((c) => c.id !== lead.id);
-      return [
-        ...prev,
-        {
-          id: lead.id,
-          name: lead.name || "Lead parado",
-          phone,
-          source: "database" as const,
-        },
-      ];
-    });
-  };
-
-  const selectAllStuck = () => {
-    const nextDraft = [...draft];
-    const nextIds = new Set(stuckSelected);
-    for (const lead of stuck) {
-      const phone = normalizeBrazilPhone(lead.phone_whatsapp);
-      if (!phone || nextIds.has(lead.id)) continue;
-      nextIds.add(lead.id);
-      nextDraft.push({
-        id: lead.id,
-        name: lead.name || "Lead parado",
-        phone,
-        source: "database",
-      });
-    }
-    setStuckSelected(nextIds);
-    setDraft(nextDraft);
-  };
-
   const handleConfirm = () => {
-    // dedupe por telefone
-    const seen = new Set<string>();
-    const unique: BulkContact[] = [];
-    for (const c of draft) {
-      const k = c.phone.replace(/\D/g, "");
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      unique.push(c);
-    }
-    onConfirm(unique);
+    onConfirm(dedupeContacts(draft));
     onOpenChange(false);
   };
 
@@ -169,90 +261,19 @@ export function VozContactPickerDialog({
             <Users className="w-4 h-4" style={{ color: "var(--pe-emerald)" }} /> Selecionar contatos
           </DialogTitle>
           <DialogDescription>
-            Escolha clientes da base ou leads parados (mesmo estilo do Disparo em massa).
+            Clientes da carteira ou leads WhatsApp. Use o filtro Leads para campanhas de ligação.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto p-4" style={{ background: "var(--pe-surface)" }}>
-          <Tabs defaultValue="base">
-            <TabsList className="mb-3" style={{ background: "var(--pe-surface-muted)" }}>
-              <TabsTrigger value="base" className="gap-1.5 data-[state=active]:bg-[var(--pe-surface)]">
-                <Users className="h-3.5 w-3.5" /> Clientes
-              </TabsTrigger>
-              <TabsTrigger value="stuck" className="gap-1.5 data-[state=active]:bg-[var(--pe-surface)]">
-                <Flame className="h-3.5 w-3.5" /> Leads parados
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="base" className="mt-0">
-              <ContactImporter
-                customers={customers}
-                contacts={draft}
-                onContactsChange={setDraft}
-              />
-            </TabsContent>
-
-            <TabsContent value="stuck" className="mt-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Select value={stepFilter} onValueChange={setStepFilter}>
-                  <SelectTrigger className="w-[220px]">
-                    <SelectValue placeholder="Filtrar passo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os passos</SelectItem>
-                    {KNOWN_REACTIVATION_STEPS.map((s) => (
-                      <SelectItem key={s.step} value={s.step}>{s.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button type="button" variant="outline" size="sm" onClick={selectAllStuck} disabled={stuck.length === 0}>
-                  Selecionar página
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  {stuckSelected.size} selecionado(s) nesta lista
-                </span>
-              </div>
-
-              {stuckLoading ? (
-                <div className="flex justify-center py-10">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                </div>
-              ) : stuck.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-8 text-center">
-                  Nenhum lead parado neste filtro.
-                </p>
-              ) : (
-                <ul className="max-h-72 space-y-1.5 overflow-y-auto rounded-[var(--pe-radius)] border p-2" style={{ borderColor: "var(--pe-border)" }}>
-                  {stuck.map((lead) => {
-                    const checked = stuckSelected.has(lead.id);
-                    return (
-                      <li key={lead.id}>
-                        <button
-                          type="button"
-                          onClick={() => toggleStuck(lead)}
-                          className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors border"
-                          style={
-                            checked
-                              ? { background: "var(--pe-emerald-10)", borderColor: "var(--pe-emerald-20)" }
-                              : { background: "transparent", borderColor: "transparent" }
-                          }
-                        >
-                          <Checkbox checked={checked} className="pointer-events-none" />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium truncate">{lead.name || "Sem nome"}</p>
-                            <p className="text-xs text-muted-foreground">{stepLabel(lead.conversation_step)}</p>
-                          </div>
-                          <Badge variant="secondary" className="shrink-0 text-[10px]">
-                            {formatHoursStuck(Number(lead.hours_stuck) || 0)}
-                          </Badge>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </TabsContent>
-          </Tabs>
+          <VozContactPickerPanel
+            consultantId={consultantId}
+            customers={customers}
+            value={draft}
+            onChange={setDraft}
+            active={open}
+            showPeriodSelect
+          />
         </div>
 
         <div className="flex items-center justify-between gap-3 border-t px-5 py-3" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}>

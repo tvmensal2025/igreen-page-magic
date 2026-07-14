@@ -69,8 +69,33 @@ describe("buildAgendamentosTimeline", () => {
 
   it("campanha rodando mantém badge de andamento", () => {
     const items = buildAgendamentosTimeline({ manual: [], posVenda: [], botFollowups: [], bulk: [baseBulk] });
-    expect(items[0].badge).toBe("Campanha em andamento");
+    expect(items[0].badge).toBe("Campanha WA em andamento");
     expect(items[0].status).toBe("running");
+  });
+
+  it("inclui campanha de ligação agendada na timeline e no contador de campanhas", () => {
+    const items = buildAgendamentosTimeline({
+      manual: [],
+      posVenda: [],
+      botFollowups: [],
+      bulk: [],
+      voice: [{
+        id: "v1",
+        name: "Campanha de ligação",
+        status: "scheduled",
+        total: 76,
+        dialed: 0,
+        answered: 0,
+        failed: 0,
+        scheduled_at: new Date(Date.now() + 3600_000).toISOString(),
+        started_at: null,
+        created_at: new Date().toISOString(),
+      }],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("voice_campaign");
+    expect(items[0].badge).toBe("Ligação agendada");
+    expect(items[0].preview).toContain("0/76");
   });
 
   it("ordena por horário crescente", () => {
