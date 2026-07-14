@@ -10589,6 +10589,33 @@ export type Database = {
         }
         Relationships: []
       }
+      whapi_send_throttle: {
+        Row: {
+          day: string | null
+          instance_name: string
+          last_jid: string | null
+          last_slot_at: string | null
+          sent_today: number
+          updated_at: string
+        }
+        Insert: {
+          day?: string | null
+          instance_name: string
+          last_jid?: string | null
+          last_slot_at?: string | null
+          sent_today?: number
+          updated_at?: string
+        }
+        Update: {
+          day?: string | null
+          instance_name?: string
+          last_jid?: string | null
+          last_slot_at?: string | null
+          sent_today?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       whatsapp_instances: {
         Row: {
           connected_phone: string | null
@@ -11221,6 +11248,16 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      claim_whapi_send_slot: {
+        Args: {
+          p_global_ms?: number
+          p_instance: string
+          p_jid: string
+          p_max_wait_ms?: number
+          p_same_contact_ms?: number
+        }
+        Returns: Json
       }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
