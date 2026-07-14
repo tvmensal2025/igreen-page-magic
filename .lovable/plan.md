@@ -1,96 +1,64 @@
-## Objetivo
+## Cadência com fluxo direcionado + gaps operacionais
 
-Novo consultor admin entra e o próprio sistema o ensina a usar tudo — sem manual em PDF, sem vídeo obrigatório. Trilha única, spotlight em botões reais, conteúdo gerado por IA a partir do código e editável depois.
+### 1. Resposta do lead → entra no fluxo do consultor (variante A)
 
-## Como vai funcionar (visão do consultor)
+Quando um lead responder qualquer WhatsApp/SMS da cadência (COLD_*, SMS_*) ou retornar a ligação Velip:
 
-1. **1º login** → tela cheia com "Bem-vindo. Faz um tour de 5 min pra você usar 100% da plataforma?" com botões **Começar** / **Depois**.
-2. Balões destacam bot�es reais em cada tela ("Aqui você conecta o WhatsApp", "Este é o Kanban do CRM"), com **Próximo / Voltar / Pular etapa / Fechar**.
-3. Progresso salva sozinho. Se sair no meio, ao voltar → "Continuar de onde parou?".
-4. Bot�o flutuante **"?"** no canto inferior direito, **sempre visível**, abre menu:
-   - Reiniciar tour completo
-   - Central de Ajuda
-   - Falar com suporte (abre o chat de suporte que já existe)
-5. Em cada tela importante, um **"?" pequeno inline** ao lado do título → abre balão contextual só daquela tela ("Como funciona o Motor de Cadência").
+- `evolution-webhook` e `whapi-webhook` detectam `customer.cadence_stage IS NOT NULL` no inbound.
+- Ao detectar: cancela cadência (`cadence_stage = NULL`, `cadence_next_run_at = NULL`), grava `cadence_result = 'responded'` em `cadence_action_log`, e reinicia o lead no fluxo ativo do consultor (variante A) — mesma lógica de `start-customer-attendance` (reset `conversation_step`, limpa `ai_slot_dispatch_log`, dispatch do primeiro passo do `bot_flows` ativo).
+- SMS de resgate leva `wa.me/{{consultor_phone}}` — quando o clique chega no WhatsApp, mesmo caminho.
 
-## A trilha (12 passos)
+### 2. Fim de cadência sem resposta (após COLD_4/CALL_3)
 
-Ordem pensada pra ir do essencial ao avançado:
+`cadence-tick` ao encerrar o último passo:
 
-1. **Boas-vindas** — o que a plataforma faz em 3 frases (captar → conversar → fechar → pós-venda).
-2. **Menu lateral** — mapa geral do `/admin`.
-3. **WhatsApp — conectar instância** — sem isso nada funciona (destaca botão QR).
-4. **WhatsApp — ligar o robô** — kill switch global + toggle por consultor.
-5. **CRM (Kanban)** — como mover cards, o que cada coluna faz.
-6. **Captação de leads** — lista + seleção múltipla + "Iniciar atendimento em lote".
-7. **Conversão** — leads parados dos últimos 120 dias, como retomar.
-8. **Motor de Cadência** — o robô nunca deixa lead esfriar (WA → ligação → SMS).
-9. **Meta Ads + Carteira** — criar campanha, saldo mínimo, protocolo automático.
-10. **Hub de textos** (`/admin/agendamentos-central`) — **tudo** que o robô fala é editável aqui (as 15 abas que acabamos de montar).
-11. **Central de Automações** — ligar/desligar cada função com um clique.
-12. **Onde pedir ajuda** — mostra o botão "?" que ficou fixo e explica como reabrir o tour.
+- Marca `captured_leads.status = 'lost'`, motivo `nao_respondeu_cadencia`.
+- Dispara `close-capture-and-register-sale` em modo "perda" → usa o **modelo formatado ao parceiro** já existente (Meire/Abel), preenchendo campanha + motivo + tentativas por canal.
+- Adiciona telefone hash + email hash na **audiência custom Meta** (`facebook-capi` custom_audience) para retargeting pago. Novo campo `meta_retargeting_synced_at` em `customers`.
 
-## Conteúdo gerado por IA + editável
+### 3. Handoff humano no meio da cadência
 
-- Edge function **`generate-tour-content`** roda 1× e lê:
-  - `docs/auditoria/05-fluxos-do-sistema.md`
-  - `docs/captacao/MAPA-OPERACIONAL.md`
-  - `docs/captacao/DECISOES-PRODUTO-BOT.md`
-  - `src/features/produtos/acompanhamento/sistemaCapacidadesMapa.ts`
-  - `src/lib/agendamentosTextosCatalog.ts`
-- Modelo: `google/gemini-2.5-flash` via Lovable AI Gateway.
-- Gera JSON com título curto (máx 40 chars), texto (máx 200 chars) e call-to-action de cada passo.
-- Você edita tudo em **`/admin/ajuda/editor`** — 12 cards, campo título, campo texto, campo "link saiba mais", botão **Salvar** por passo. Sem mexer no código.
-- Bot�o **"Regenerar rascunho com IA"** por passo se quiser tentar outro texto.
+- Trigger DB `pause_cadence_on_manual_send`: quando `conversations` recebe INSERT com `direction='outbound'` e `sent_by_consultant=true`, faz `UPDATE customers SET cadence_stage=NULL, cadence_next_run_at=NULL, cadence_paused_reason='handoff_humano'`.
+- Espelha o comportamento já existente do `clear_attendance_auto_close_on_inbound`.
 
-## Central de Ajuda (`/ajuda`)
+### 4. Limites por canal (anti-ban / anti-custo)
 
-Complemento leve pra quando o consultor quer consultar depois:
-- Busca por palavra-chave.
-- Categorias: WhatsApp · Campanhas · CRM · Cadência · Pós-venda · Textos e IA · Financeiro.
-- Cada artigo tem botão **"Fazer o tour desta função"** → dispara o driver.js já na tela certa.
-- Consultor pode adicionar seus próprios artigos (mesma tabela, botão "Novo artigo" pra admin).
+Novos campos em `cadence_stage_config` (ou app_settings):
+- `max_whatsapp_per_lead` (default 4)
+- `max_calls_per_lead` (default 3)
+- `max_sms_per_lead` (default 2)
 
-## Persistência (3 tabelas novas)
+`cadence-tick` conta em `cadence_action_log` antes de disparar; se atingiu → pula estágio ou encerra cadência.
 
-| Tabela | Campos principais | Uso |
-|---|---|---|
-| `tour_steps` | `order_index`, `route`, `selector`, `title`, `body`, `cta_label`, `cta_href` | Os 12 passos da trilha, editáveis |
-| `tour_articles` | `category`, `title`, `body`, `video_url`, `related_tour_step_id` | Central de Ajuda |
-| `user_tour_progress` | `user_id`, `current_step`, `completed_at`, `dismissed_at` | Retomar de onde parou, saber quem já fez |
+### 5. Horário comercial e quiet hours por canal
 
-RLS:
-- `tour_steps` e `tour_articles`: qualquer `authenticated` lê; só quem tem `has_role('admin')` edita.
-- `user_tour_progress`: cada usuário só vê/edita a própria linha (`auth.uid() = user_id`).
+Novo bloco em `AdminMotorCadencia.tsx` + campos em `cadence_stage_config`:
+- WhatsApp: respeita quiet hours globais do consultor (já existe).
+- **SMS**: janela dura 9h-20h São Paulo, seg-sáb (SMS acorda gente).
+- **Ligação Velip**: 9h-19h seg-sex, 9h-13h sábado.
+- Se `cadence_next_run_at` cai fora da janela do canal → reagenda para próxima abertura, não pula.
 
-Grants completos (`anon`, `authenticated`, `service_role`) na mesma migration.
+### 6. Métricas de conversão da cadência
 
-## Arquivos a criar
+Nova aba "Métricas" em `AdminMotorCadencia.tsx`:
+- Taxa de resposta por estágio (COLD_1..CALL_3) = respondidos / disparados.
+- Custo Velip (segundos × tarifa) + custo SMS acumulado no período.
+- Leads recuperados / leads perdidos / ROI (vendas fechadas com `origin_recovery='cadence'`).
+- View SQL `cadence_metrics_daily` alimenta o dashboard.
 
-- `src/features/onboarding/TourProvider.tsx` — driver.js + botão "?" flutuante, envolve o `AppLayout`.
-- `src/features/onboarding/useTour.ts` — dispara/retoma/pula trilha, marca progresso.
-- `src/features/onboarding/tourSteps.ts` — carrega os passos do banco + fallback estático.
-- `src/features/onboarding/InlineHelpButton.tsx` — o "?" pequeno de cada tela.
-- `src/pages/AjudaPage.tsx` — Central de Ajuda com busca e categorias.
-- `src/pages/AdminTourEditor.tsx` — editor dos 12 passos + regenerar com IA.
-- `supabase/functions/generate-tour-content/index.ts` — chama Lovable AI Gateway.
-- Migration com as 3 tabelas + RLS + grants + seed dos 12 passos vazios.
-- Adicionar `data-tour="wa-connect"`, `data-tour="kanban"`, etc. nos ~12 botões-alvo (seletores estáveis).
+### 7. Detalhes técnicos
 
-## Fora do escopo
+**Migração:**
+- `customers`: `cadence_paused_reason text`, `meta_retargeting_synced_at timestamptz`, `origin_recovery text`.
+- `cadence_stage_config`: `max_per_lead int`, `channel_window_start time`, `channel_window_end time`, `channel_days int[]`.
+- Trigger `pause_cadence_on_manual_send`.
+- View `cadence_metrics_daily`.
 
-- Trilha de parceiro (você pediu pra deixar de fora).
-- Vídeos (campo `video_url` fica no schema, mas não gravamos nada agora).
-- Tradução — só português.
+**Edge functions:**
+- `cadence-tick`: adicionar checks de limite, janela de canal, e handler de fim-de-cadência (loss + retargeting).
+- `evolution-webhook` + `whapi-webhook`: hook `resumeFlowFromCadence(customer)` no início do processamento de inbound quando `cadence_stage IS NOT NULL`.
+- `close-capture-and-register-sale`: aceitar `trigger='cadence_exhausted'` que preenche mensagem formatada e chama sync Meta.
 
-## Ordem de execução
-
-1. Migration (3 tabelas + RLS + grants + seed).
-2. Edge function `generate-tour-content` + rodar 1× pra popular o rascunho.
-3. `TourProvider` + botão "?" flutuante no `AppLayout`.
-4. `data-tour="…"` nos 12 botões-alvo.
-5. `/admin/ajuda/editor` pra você revisar e ajustar os textos.
-6. `/ajuda` (Central de Ajuda) + `InlineHelpButton` nas telas principais.
-7. Testar o fluxo completo com um usuário novo (sem `user_tour_progress`) e ajustar.
-
-Ao terminar cada etapa te mostro o que ficou pra você aprovar antes de seguir.
+**Frontend:**
+- `AdminMotorCadencia.tsx`: nova aba Métricas + editor de limites/janelas por canal.
+- Ajuste no card do lead em Captação: badge "Em cadência: COLD_2 · próxima em 4h".
