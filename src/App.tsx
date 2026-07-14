@@ -59,6 +59,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
 import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
 import { UpdateAvailableToast } from "@/components/UpdateAvailableToast";
+import { TourProvider } from "@/features/onboarding/TourProvider";
 
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
