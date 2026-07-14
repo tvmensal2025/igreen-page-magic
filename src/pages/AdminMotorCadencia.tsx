@@ -102,9 +102,21 @@ export default function AdminMotorCadencia() {
     for (const s of STAGES) {
       const found = (cfgs || []).find((c: any) => c.stage === s);
       map[s] = found
-        ? { ...found, stage: s, message_text: found.message_text || "" }
-        : { stage: s, enabled: true, delay_hours: 24, message_text: "", media_url: null, media_type: "text", velip_audio_id: null };
+        ? {
+            ...found, stage: s,
+            message_text: found.message_text || "",
+            max_per_lead: (found as any).max_per_lead ?? 0,
+            window_start_hour: (found as any).window_start_hour ?? null,
+            window_end_hour: (found as any).window_end_hour ?? null,
+            window_days: (found as any).window_days ?? null,
+          }
+        : {
+            stage: s, enabled: true, delay_hours: 24, message_text: "",
+            media_url: null, media_type: "text", velip_audio_id: null,
+            max_per_lead: 0, window_start_hour: null, window_end_hour: null, window_days: null,
+          };
     }
+
     setStages(map);
 
     const grouped: Record<string, number> = {};
