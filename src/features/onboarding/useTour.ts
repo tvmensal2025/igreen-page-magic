@@ -118,9 +118,8 @@ export function useTour() {
         await saveProgress(userId, { dismissed_at: new Date().toISOString() });
       },
       onDestroyStarted: async () => {
-        // Detect completion by checking active index vs total
         const active = d.getActiveIndex();
-        const total = d.getSteps().length;
+        const total = buildDriveSteps(all, from).length;
         if (typeof active === "number" && active >= total - 1) {
           await saveProgress(userId, { completed_at: new Date().toISOString(), current_step: all.length - 1 });
         }
