@@ -15,6 +15,12 @@ export type TextoFonte =
   | "message_templates"
   | "bulk_campaigns"
   | "scheduled_messages"
+  | "stage_auto_messages"
+  | "ai_knowledge_sections"
+  | "ai_agent_config"
+  | "rodizio_pools"
+  | "pos_venda_default_media"
+  | "holidays"
   | "externo";
 
 export type TextoCatalogItem = {
