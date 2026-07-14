@@ -69,7 +69,8 @@ export function useTour() {
   }, []);
 
   const buildDriveSteps = useCallback((all: TourStep[], startIndex: number): DriveStep[] => {
-    return all.slice(startIndex).map((s) => ({
+    const slice = all.slice(startIndex);
+    return slice.map((s, i) => ({
       element: s.selector || undefined,
       popover: {
         title: s.title || `Passo ${s.order_index}`,
@@ -78,6 +79,22 @@ export function useTour() {
           : ""),
         side: "bottom",
         align: "start",
+        onNextClick: async () => {
+          const next = slice[i + 1];
+          if (next?.route && typeof window !== "undefined" && !window.location.pathname.startsWith(next.route)) {
+            navigate(next.route);
+            await new Promise((r) => setTimeout(r, 450));
+          }
+          driverRef.current?.moveNext();
+        },
+        onPrevClick: async () => {
+          const prev = slice[i - 1];
+          if (prev?.route && typeof window !== "undefined" && !window.location.pathname.startsWith(prev.route)) {
+            navigate(prev.route);
+            await new Promise((r) => setTimeout(r, 450));
+          }
+          driverRef.current?.movePrevious();
+        },
       },
       onHighlightStarted: async () => {
         const idx = all.findIndex((x) => x.id === s.id);
@@ -85,7 +102,8 @@ export function useTour() {
         setProgress((p) => ({ ...(p || { user_id: userId || "", started_at: new Date().toISOString(), completed_at: null, dismissed_at: null }), current_step: idx }));
       },
     }));
-  }, [userId]);
+  }, [userId, navigate]);
+
 
   const start = useCallback(async (opts?: { from?: number; force?: boolean }) => {
     let all = steps;
