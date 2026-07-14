@@ -9,6 +9,12 @@ export type TextoFonte =
   | "reactivation_templates"
   | "conversion_phrase_catalog"
   | "kanban_pos_venda"
+  | "bot_flow_steps"
+  | "bot_flow_qa"
+  | "voice_campaigns"
+  | "message_templates"
+  | "bulk_campaigns"
+  | "scheduled_messages"
   | "externo";
 
 export type TextoCatalogItem = {
