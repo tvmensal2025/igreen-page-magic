@@ -119,6 +119,8 @@ const App = () => (
               <Route path="/admin/motor" element={<ProtectedRoute><AdminMotorCadencia /></ProtectedRoute>} />
               <Route path="/admin/agendamentos-central" element={<ProtectedRoute><AdminAgendamentosCentral /></ProtectedRoute>} />
               <Route path="/consultor/mensagens" element={<ProtectedRoute><ConsultantMessages /></ProtectedRoute>} />
+              <Route path="/ajuda" element={<ProtectedRoute><AjudaPage /></ProtectedRoute>} />
+              <Route path="/admin/ajuda/editor" element={<ProtectedRoute><AdminTourEditor /></ProtectedRoute>} />
 
               
               <Route path="/admin/solar-design" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
