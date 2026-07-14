@@ -78,6 +78,8 @@ export default function AdminMotorCadencia() {
   const [saving, setSaving] = useState(false);
   const [ticking, setTicking] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [metrics, setMetrics] = useState<Array<{ stage: string; channel: string; sent: number; failed: number; unique_leads: number; responded_leads: number }>>([]);
+
 
   useEffect(() => { void load(); }, []);
   useEffect(() => {
