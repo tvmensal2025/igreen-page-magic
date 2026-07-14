@@ -55,14 +55,12 @@ export function CampaignRodizioLeadsDialog({
       setLoading(true);
       setError(null);
       try {
-        // 1) Pool ativa (mais recente ativa da campanha)
+        // 1) Pool configurada da campanha (continua visível quando pausada)
         const { data: pool, error: e1 } = await supabase
           .from("rodizio_pools")
           .select("id, metrics_broadcast_interval_minutes, metrics_quiet_start_hour, metrics_quiet_end_hour")
           .eq("campaign_id", campaignId)
-          .eq("is_active", true)
-          .order("created_at", { ascending: false })
-          .limit(1)
+          .eq("is_enabled", true)
           .maybeSingle();
         if (e1) throw e1;
         if (!cancelled) {

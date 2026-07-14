@@ -20,25 +20,27 @@ interface Props {
 }
 
 const PRESETS = [
-  { id: "eco", label: "Econômico", budget: 15, days: 3, hint: "R$ 45 total · testa rápido", icon: "🌱" },
-  { id: "std", label: "Recomendado", budget: 25, days: 7, hint: "R$ 175 total · melhor relação", icon: "⭐" },
-  { id: "custom", label: "Personalizado", budget: 0, days: 0, hint: "ajuste manual", icon: "🎛️" },
+  { id: "eco", label: "Teste inicial", budget: 15, days: 7, hint: "R$ 105 total · dá tempo para aprender", icon: "🌱" },
+  { id: "std", label: "Recomendado", budget: 25, days: 7, hint: "R$ 175 total · mais dados para otimizar", icon: "⭐" },
+  { id: "custom", label: "Personalizado", budget: 0, days: 0, hint: "você define valor e prazo", icon: "🎛️" },
 ] as const;
 
 export function StepBudget({ open, state, patch, patchFn }: Props) {
   const { budget, duration } = state;
-  const isEco = budget === 15 && duration === 3;
+  const isEco = budget === 15 && duration === 7;
   const isStd = budget === 25 && duration === 7;
   const isCustom = !isEco && !isStd;
   const [showPlacements, setShowPlacements] = useState(state.placementMode === "manual");
 
-  const dailyLeads = `${Math.max(1, Math.round(budget / 6))}–${Math.round(budget / 3)}`;
+  // Estimativa baseada na faixa histórica recente (R$ 3–6 por conversa).
+  // Não é promessa: o leilão, público e criativo alteram o CPL.
+  const dailyLeads = `${Math.max(1, Math.floor(budget / 6))}–${Math.max(1, Math.floor(budget / 3))}`;
   const total = duration === 0 ? `${budget * 30}/mês est.` : `${budget * duration}`;
 
   function selectPreset(id: string) {
-    if (id === "eco") patch({ budget: 15, duration: 3 });
+    if (id === "eco") patch({ budget: 15, duration: 7 });
     else if (id === "std") patch({ budget: 25, duration: 7 });
-    else patch({ budget: 30, duration: 5 }); // ponto de partida do personalizado
+    else patch({ budget: Math.max(15, budget), duration: Math.max(7, duration) });
   }
 
   return (
@@ -68,15 +70,16 @@ export function StepBudget({ open, state, patch, patchFn }: Props) {
         <div className="text-[11px] uppercase tracking-wider text-[hsl(var(--ads-muted))]">Conversas estimadas no WhatsApp</div>
         <div className="text-4xl ads-num font-semibold my-1">{dailyLeads}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
         <div className="text-[11px] text-[hsl(var(--ads-muted))]">A R$ {budget}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {total}</strong></div>
+        <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-1">Estimativa, não garantia. Criativo, público e leilão alteram o custo.</div>
       </div>
 
       {/* Sliders (sempre visíveis, mas destaque no personalizado) */}
-      <div className={isCustom ? "" : "opacity-70"}>
+      <div>
         <Label>Orçamento diário: <span className="text-[hsl(var(--ads-emerald-2))] font-bold">R$ {budget}</span></Label>
         <Slider min={10} max={500} step={5} value={[budget]} onValueChange={(v) => patch({ budget: v[0] })} className="mt-2" />
         <div className="flex justify-between text-xs text-[hsl(var(--ads-muted))] mt-1"><span>R$ 10</span><span>R$ 500</span></div>
       </div>
-      <div className={isCustom ? "" : "opacity-70"}>
+      <div>
         <Label>Duração: <span className="text-[hsl(var(--ads-emerald-2))] font-bold">{duration === 0 ? "Sem fim (até pausar)" : `${duration} dias`}</span></Label>
         <Slider min={0} max={30} step={1} value={[duration]} onValueChange={(v) => patch({ duration: v[0] })} className="mt-2" />
       </div>

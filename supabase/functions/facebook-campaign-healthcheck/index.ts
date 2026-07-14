@@ -8,7 +8,10 @@
 //   - via cron horário (sem body) → varre pending_review + recoverable
 //   - via cliente com { campaign_id } → tenta UMA específica (botão "tentar reativar")
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { isManualPause, isManualStop, isConsultantLocked, isRecoverableAutoPause } from "../_shared/campaign-pause.ts";
+import { validateCampaignActivationBudget } from "../_shared/validate-campaign-activation.ts";
+import { validateRodizioActivation } from "../_shared/validate-rodizio-activation.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -65,7 +68,7 @@ async function reactivateOne(
 ): Promise<{ activated: boolean; reason?: string }> {
   const { data: c } = await admin
     .from("facebook_campaigns")
-    .select("fb_campaign_id, fb_adset_ids, fb_ad_ids, status, rejection_reason")
+    .select("fb_campaign_id, fb_adset_ids, fb_ad_ids, status, rejection_reason, consultant_id, daily_budget_cents, duration_days, end_time_utc")
     .eq("id", campaignDbId)
     .maybeSingle();
   if (!c?.fb_campaign_id) return { activated: false, reason: "Campanha sem ID Meta" };
@@ -79,6 +82,23 @@ async function reactivateOne(
   // pediu reativar — ok. No cron, allowManual=false e já filtramos acima.
   if (!opts.allowManual && isManualPause(c.rejection_reason)) {
     return { activated: false, reason: "skipped_manual_pause" };
+  }
+
+  const remainingDays = c.end_time_utc
+    ? Math.max(1, Math.ceil((new Date(c.end_time_utc).getTime() - Date.now()) / 86400_000))
+    : null;
+  const activationBudget = await validateCampaignActivationBudget(admin, {
+    consultantId: c.consultant_id,
+    dailyBudgetCents: Number(c.daily_budget_cents),
+    durationDays: remainingDays,
+  });
+  if (!activationBudget.ok) {
+    return { activated: false, reason: activationBudget.error || "insufficient_wallet" };
+  }
+
+  const rodizio = await validateRodizioActivation(admin, campaignDbId, c.consultant_id);
+  if (!rodizio.ok) {
+    return { activated: false, reason: rodizio.error || "invalid_rodizio" };
   }
 
   // Campanhas usam SEMPRE o token da plataforma (conta-mãe), não o token pessoal do consultor.
@@ -106,6 +126,23 @@ async function reactivateOne(
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ status: "ACTIVE", access_token: token }),
     });
+
+    const adsetIds = (c.fb_adset_ids || []) as string[];
+    const adIds = (c.fb_ad_ids || []) as string[];
+    const [campaignState, ...children] = await Promise.all([
+      fbFetch(`/${c.fb_campaign_id}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(token)}`),
+      ...adsetIds.map((id) => fbFetch(`/${id}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(token)}`)),
+      ...adIds.map((id) => fbFetch(`/${id}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(token)}`)),
+    ]) as MetaObjectState[];
+    const resolved = resolveCampaignEffectiveStatus(
+      campaignState,
+      children.slice(0, adsetIds.length),
+      children.slice(adsetIds.length),
+    );
+    if (resolved.localStatus !== "active") {
+      return { activated: false, reason: `Meta ainda não confirmou toda a hierarquia: ${resolved.objectStatuses.join(", ")}` };
+    }
+
     await admin.from("facebook_campaigns").update({ status: "active", rejection_reason: null }).eq("id", campaignDbId);
     return { activated: true };
   } catch (e) {

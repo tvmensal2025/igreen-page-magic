@@ -9,6 +9,9 @@
 // Pausa MANUAL do consultor (MANUAL_PAUSE) NUNCA é reativada aqui.
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { isConsultantLocked, isAutoBalancePause } from "../_shared/campaign-pause.ts";
+import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
+import { validateCampaignActivationBudget } from "../_shared/validate-campaign-activation.ts";
+import { validateRodizioActivation } from "../_shared/validate-rodizio-activation.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -19,6 +22,18 @@ function json(body: unknown, status = 200) {
 function toCents(v: unknown) {
   const n = typeof v === "string" ? parseFloat(v) : typeof v === "number" ? v : 0;
   return Number.isFinite(n) ? Math.round(n * 100) : 0;
+}
+
+async function setMetaStatus(id: string, token: string, status: "ACTIVE" | "PAUSED") {
+  await fbFetch(`/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ status, access_token: token }),
+  });
+}
+
+async function getMetaState(id: string, token: string): Promise<MetaObjectState> {
+  return fbFetch(`/${id}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(token)}`);
 }
 
 Deno.serve(async (req) => {
@@ -56,7 +71,7 @@ Deno.serve(async (req) => {
 
     const { data: camps } = await admin
       .from("facebook_campaigns")
-      .select("id, fb_campaign_id, status, lifetime_cap_cents, daily_budget_cents, rejection_reason")
+      .select("id, fb_campaign_id, fb_adset_ids, fb_ad_ids, status, lifetime_cap_cents, daily_budget_cents, duration_days, end_time_utc, rejection_reason")
       .eq("consultant_id", consultantId)
       .in("status", ["active", "paused", "pending_review"]);
 
@@ -64,47 +79,55 @@ Deno.serve(async (req) => {
     const errors: any[] = [];
     const skippedManual: string[] = [];
 
-    // RATEIO ANTI-PREJUÍZO: divide o orçamento extra da Meta entre TODAS as campanhas
-    // que vão receber cap (ativas + pausadas que serão reativadas). Sem dividir, cada
-    // campanha receberia o saldo total e N campanhas poderiam gastar N × saldo.
+    // RATEIO ANTI-PREJUÍZO aplica spend_cap somente às campanhas contínuas.
+    // Campanhas com prazo já têm lifetime_budget e não aceitam spend_cap.
     const eligible = (camps || []).filter((c: any) => c.fb_campaign_id);
-    const denom = Math.max(1, eligible.length);
+    const continuous = eligible.filter((c: any) => !(Number(c.duration_days || 0) > 0));
+    const denom = Math.max(1, continuous.length);
     const perCampaignExtra = Math.floor(extraMetaBudgetCents / denom);
 
     for (const c of eligible) {
       try {
         const conn = await loadCampaignConnection(consultantId);
-        if (!conn?.token) continue;
+        if (!conn?.token) {
+          errors.push({ id: c.id, error: "missing_platform_token" });
+          continue;
+        }
 
-        // Lê gasto atual da Meta para essa campanha
         let currentSpendCents = 0;
         try {
           const r = await fbFetch(`/${c.fb_campaign_id}/insights?fields=spend&date_preset=maximum&access_token=${conn.token}`);
           currentSpendCents = toCents(r?.data?.[0]?.spend || 0);
         } catch (_) {}
 
-        const newCap = Math.max(1000, currentSpendCents + perCampaignExtra);
-        // Atualiza spend_cap na Meta (campaign-level lifetime ceiling)
-        try {
-          await fbFetch(`/${c.fb_campaign_id}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              spend_cap: String(newCap),
-              access_token: conn.token,
-            }),
-          });
-        } catch (e) {
-          errors.push({ id: c.id, error: `Meta spend_cap update: ${(e as Error).message}` });
+        const fixedDuration = Number(c.duration_days || 0) > 0;
+        const newCap = fixedDuration
+          ? Number(c.lifetime_cap_cents || Number(c.daily_budget_cents) * Number(c.duration_days))
+          : Math.max(30000, currentSpendCents + perCampaignExtra);
+        let metaBudgetApplied = fixedDuration;
+
+        if (!fixedDuration) {
+          try {
+            await fbFetch(`/${c.fb_campaign_id}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                spend_cap: String(newCap),
+                access_token: conn.token,
+              }),
+            });
+            metaBudgetApplied = true;
+          } catch (e) {
+            errors.push({ id: c.id, error: `Meta spend_cap update: ${(e as Error).message}` });
+          }
         }
 
-        // Reativa se solicitado e tem saldo — NUNCA se foi pausa MANUAL do consultor.
-        // Só reativa pausas automáticas de saldo/teto (recarga).
         const updates: any = {
-          lifetime_cap_cents: newCap,
           pause_pending: false,
           updated_at: new Date().toISOString(),
         };
+        if (!fixedDuration && metaBudgetApplied) updates.lifetime_cap_cents = newCap;
+
         const canReactivate =
           reactivate &&
           c.status === "paused" &&
@@ -116,16 +139,59 @@ Deno.serve(async (req) => {
         if (reactivate && c.status === "paused" && isConsultantLocked(c.rejection_reason)) {
           skippedManual.push(c.id);
         } else if (canReactivate) {
-          try {
-            await fbFetch(`/${c.fb_campaign_id}?status=ACTIVE&access_token=${conn.token}`, { method: "POST" });
-            updates.status = "active";
-            updates.rejection_reason = null;
-          } catch (e) {
-            errors.push({ id: c.id, error: `reactivate: ${(e as Error).message}` });
+          const remainingDays = c.end_time_utc
+            ? Math.max(1, Math.ceil((new Date(c.end_time_utc).getTime() - Date.now()) / 86400_000))
+            : null;
+          const activationBudget = await validateCampaignActivationBudget(admin, {
+            consultantId,
+            dailyBudgetCents: Number(c.daily_budget_cents),
+            durationDays: remainingDays,
+          });
+          const rodizio = activationBudget.ok
+            ? await validateRodizioActivation(admin, c.id, consultantId)
+            : { ok: false, error: activationBudget.error };
+          if (!rodizio.ok) {
+            errors.push({ id: c.id, error: rodizio.error || "activation_blocked" });
+          } else {
+            try {
+              const adsetIds = (c.fb_adset_ids || []) as string[];
+              const adIds = (c.fb_ad_ids || []) as string[];
+              for (const id of adsetIds) await setMetaStatus(id, conn.token, "ACTIVE");
+              for (const id of adIds) await setMetaStatus(id, conn.token, "ACTIVE");
+              await setMetaStatus(c.fb_campaign_id, conn.token, "ACTIVE");
+
+              const [campaignState, ...children] = await Promise.all([
+                getMetaState(c.fb_campaign_id, conn.token),
+                ...adsetIds.map((id) => getMetaState(id, conn.token)),
+                ...adIds.map((id) => getMetaState(id, conn.token)),
+              ]);
+              const resolved = resolveCampaignEffectiveStatus(
+                campaignState,
+                children.slice(0, adsetIds.length),
+                children.slice(adsetIds.length),
+              );
+              if (resolved.localStatus !== "active") {
+                throw new Error(`effective_status=${resolved.objectStatuses.join(",")}`);
+              }
+              updates.status = "active";
+              updates.rejection_reason = null;
+            } catch (e) {
+              errors.push({ id: c.id, error: `reactivate: ${(e as Error).message}` });
+            }
           }
         }
-        await admin.from("facebook_campaigns").update(updates).eq("id", c.id);
-        updated.push({ id: c.id, new_cap_cents: newCap, current_spend_cents: currentSpendCents });
+
+        const { error: updateError } = await admin.from("facebook_campaigns").update(updates).eq("id", c.id);
+        if (updateError) {
+          errors.push({ id: c.id, error: updateError.message });
+          continue;
+        }
+        updated.push({
+          id: c.id,
+          budget_model: fixedDuration ? "lifetime_budget" : "spend_cap",
+          new_cap_cents: newCap,
+          current_spend_cents: currentSpendCents,
+        });
       } catch (e) {
         errors.push({ id: c.id, error: (e as Error).message });
       }

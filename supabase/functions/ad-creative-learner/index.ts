@@ -15,36 +15,35 @@ interface AdRow {
   impressions: number;
   clicks: number;
   leads: number;
+  conversations: number;
   registrations: number;
   spend_cents: number;
   score: number;
 }
 
-function scoreOf(m: { spend_cents: number; clicks: number; leads: number; registrations: number }): number {
-  return m.registrations * 100 + m.leads * 10 + m.clicks * 1 - m.spend_cents / 100;
+function scoreOf(m: { spend_cents: number; leads: number; registrations: number }): number {
+  return m.registrations * 100 + m.leads * 10 - m.spend_cents / 100;
 }
 
 async function summarizeWithAI(samples: { winners: AdRow[]; losers: AdRow[] }): Promise<{
   winning_patterns: string[];
   losing_patterns: string[];
-  best_image_traits: string[];
   summary: string;
 } | null> {
-  const w = samples.winners.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
-  const l = samples.losers.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
-  const prompt = `Você é analista sênior de copy de Facebook Ads em pt-BR. Analise os anúncios abaixo e extraia padrões acionáveis.
+  const w = samples.winners.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
+  const l = samples.losers.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
+  const prompt = `Você é analista sênior de copy de Facebook Ads em pt-BR. Analise somente a copy dos anúncios abaixo e extraia padrões acionáveis. Não infira características de imagem.
 
-VENCEDORES (geraram leads/cadastros):
+VENCEDORES (geraram leads diretos/cadastros):
 ${w || "(nenhum)"}
 
-PERDEDORES (gastaram sem converter):
+PERDEDORES (gastaram sem lead direto/cadastro):
 ${l || "(nenhum)"}
 
 Retorne JSON ESTRITO:
 {
   "winning_patterns": ["padrão curto 1", "padrão curto 2", ...],
   "losing_patterns": ["padrão a evitar 1", ...],
-  "best_image_traits": ["traço visual 1", ...],
   "summary": "1 frase curta com a principal lição"
 }`;
 
@@ -78,26 +77,9 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
   for (const camp of campaigns) {
     const adIds: string[] = Array.isArray(camp.fb_ad_ids) ? camp.fb_ad_ids as string[] : [];
     if (adIds.length === 0) continue;
-    // métricas agregadas da campanha (fallback quando não tem per-ad)
-    const { data: ms } = await supabase
-      .from("facebook_metrics_daily")
-      .select("spend_cents, impressions, clicks, leads, messaging_conversations_started, complete_registrations")
-      .eq("campaign_id", camp.id)
-      .gte("date", since);
-    const tot = (ms || []).reduce(
-      (acc, m: any) => ({
-        spend_cents: acc.spend_cents + (m.spend_cents || 0),
-        impressions: acc.impressions + (m.impressions || 0),
-        clicks: acc.clicks + (m.clicks || 0),
-        // CTWA: se Meta não devolve "lead", usa conversa iniciada como proxy
-        leads: acc.leads + Math.max(Number(m.leads || 0), Number(m.messaging_conversations_started || 0)),
-        registrations: acc.registrations + (m.complete_registrations || 0),
-      }),
-      { spend_cents: 0, impressions: 0, clicks: 0, leads: 0, registrations: 0 }
-    );
-    if (tot.impressions < 100) continue;
 
-    // pega copy do creative_pack
+    // Pega copy do creative_pack. Métricas de campanha não entram aqui:
+    // somente linhas reais por anúncio podem alimentar classificação e score.
     let copyVariations: { text: string; framework: string }[] = [];
     if (camp.creative_pack_id) {
       const { data: pack } = await supabase
@@ -109,8 +91,16 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       copyVariations = Array.isArray(variants) ? variants : [];
     }
 
-    // Métricas granulares por fb_ad_id na NOVA tabela (preenchida pelo facebook-sync-metrics level=ad)
-    const perAdMetrics: Record<string, typeof tot> = {};
+    // Métricas granulares reais por anúncio. A coluna `leads` desta tabela
+    // contém somente ações diretas de lead; conversas permanecem separadas.
+    const perAdMetrics: Record<string, {
+      spend_cents: number;
+      impressions: number;
+      clicks: number;
+      leads: number;
+      conversations: number;
+      registrations: number;
+    }> = {};
     const { data: adMsAll } = await supabase
       .from("facebook_ad_metrics_daily")
       .select("fb_ad_id, spend_cents, impressions, clicks, leads, messaging_conversations_started, complete_registrations")
@@ -118,31 +108,24 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       .gte("date", since);
     for (const row of adMsAll || []) {
       const k = row.fb_ad_id;
-      const prev = perAdMetrics[k] || { spend_cents: 0, impressions: 0, clicks: 0, leads: 0, registrations: 0 };
+      const prev = perAdMetrics[k] || { spend_cents: 0, impressions: 0, clicks: 0, leads: 0, conversations: 0, registrations: 0 };
       perAdMetrics[k] = {
-        spend_cents: prev.spend_cents + (row.spend_cents || 0),
-        impressions: prev.impressions + (row.impressions || 0),
-        clicks: prev.clicks + (row.clicks || 0),
-        leads: prev.leads + Math.max(Number(row.leads || 0), Number(row.messaging_conversations_started || 0)),
-        registrations: prev.registrations + (row.complete_registrations || 0),
+        spend_cents: prev.spend_cents + Number(row.spend_cents || 0),
+        impressions: prev.impressions + Number(row.impressions || 0),
+        clicks: prev.clicks + Number(row.clicks || 0),
+        leads: prev.leads + Number(row.leads || 0),
+        conversations: prev.conversations + Number(row.messaging_conversations_started || 0),
+        registrations: prev.registrations + Number(row.complete_registrations || 0),
       };
     }
 
-    // Verifica se temos dados granulares para todos os ads
-    const hasGranular = adIds.every(id => perAdMetrics[id] !== undefined);
-
-    const perAd = adIds.length;
+    // Ausência de linha granular significa ausência de evidência por anúncio;
+    // nunca rateamos métricas da campanha entre os anúncios.
     for (let i = 0; i < adIds.length; i++) {
       const adId = adIds[i];
+      const m = perAdMetrics[adId];
+      if (!m) continue;
       const cv = copyVariations[i % Math.max(copyVariations.length, 1)];
-      // Usa métricas granulares se disponíveis; senão divide igualmente
-      const m = hasGranular ? perAdMetrics[adId] : {
-        spend_cents: Math.floor(tot.spend_cents / perAd),
-        impressions: Math.floor(tot.impressions / perAd),
-        clicks: Math.floor(tot.clicks / perAd),
-        leads: Math.floor(tot.leads / perAd),
-        registrations: Math.floor(tot.registrations / perAd),
-      };
       rows.push({
         id: crypto.randomUUID(),
         fb_ad_id: adId,
@@ -155,6 +138,7 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
         impressions: m.impressions,
         clicks: m.clicks,
         leads: m.leads,
+        conversations: m.conversations,
         registrations: m.registrations,
         spend_cents: m.spend_cents,
         score: 0,
@@ -165,10 +149,8 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
   rows.forEach(r => { r.score = scoreOf(r); });
   rows.sort((a, b) => b.score - a.score);
 
-  const winners = rows.filter(r => r.score > 0).slice(0, 5);
-  const losers = rows.filter(r => r.spend_cents > 500 && r.leads === 0).slice(-5);
-
-  // Pré-busca copy real (vinda do facebook-sync-ad-creatives) para preservar headline/primary_text
+  // Pré-busca copy real (vinda do facebook-sync-ad-creatives) antes de formar
+  // vencedores/perdedores e enviar amostras à IA.
   const allAdIds = rows.map(r => r.fb_ad_id);
   const realCopyMap: Record<string, { headline: string | null; primary_text: string | null; creative_format: string | null }> = {};
   if (allAdIds.length) {
@@ -180,6 +162,20 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       realCopyMap[e.fb_ad_id] = { headline: e.headline, primary_text: e.primary_text, creative_format: e.creative_format };
     }
   }
+  for (const row of rows) {
+    const real = realCopyMap[row.fb_ad_id];
+    if (real?.headline) row.headline = real.headline;
+    if (real?.primary_text) row.primary_text = real.primary_text;
+  }
+
+  // Não chama clique isolado de vencedor nem condena criativo cedo. As faixas
+  // dão tempo para a fase de aprendizado da Meta produzir uma amostra útil.
+  const winners = rows.filter(r =>
+    r.impressions >= 1000 && r.spend_cents >= 1500 && (r.leads >= 5 || r.registrations >= 2)
+  ).slice(0, 5);
+  const losers = rows.filter(r =>
+    r.impressions >= 1500 && r.spend_cents >= 3000 && r.leads === 0 && r.registrations === 0
+  ).slice(0, 5);
 
   // Upsert performance per ad — preserva copy real do Meta quando existir
   for (const r of rows) {
@@ -208,7 +204,6 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
   const insights = await summarizeWithAI({ winners, losers }) || {
     winning_patterns: winners.map(w => w.framework).filter(Boolean) as string[],
     losing_patterns: [],
-    best_image_traits: [],
     summary: "Aprendizado em construção. Roda mais alguns dias.",
   };
 
@@ -223,7 +218,7 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       distribuidora: d,
       winning_patterns: insights.winning_patterns,
       losing_patterns: insights.losing_patterns,
-      best_image_traits: insights.best_image_traits,
+      best_image_traits: [],
       best_ctr_bps: bestCtr,
       best_cpa_cents: bestCpa ? Math.round(bestCpa.spend_cents / bestCpa.registrations) : null,
       sample_size: rows.length,
@@ -267,8 +262,10 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
         consultant_id: consultantId,
         type: "losers_detected",
         title,
-        message: `${losers.length} anúncios estão gastando sem trazer conversa. Vamos pausá-los na próxima rodada (12h).`,
+        message: `${losers.length} anúncios têm amostra robusta de gasto e entrega sem conversão. Revise-os antes de decidir pausar; nada será alterado automaticamente.`,
         severity: "warning",
+        action_label: "Revisar criativos",
+        action_payload: { kind: "review_creatives", fb_ad_ids: losers.map((item) => item.fb_ad_id) },
       });
     }
   }
@@ -303,9 +300,9 @@ Deno.serve(async (req) => {
     try {
       const { data: allInsights } = await supabase
         .from("ad_creative_insights")
-        .select("winning_patterns, losing_patterns, best_image_traits, sample_size, summary")
+        .select("winning_patterns, losing_patterns, sample_size, summary")
         .gte("updated_at", new Date(Date.now() - 7 * 86400_000).toISOString());
-      const tally = (key: "winning_patterns" | "losing_patterns" | "best_image_traits") => {
+      const tally = (key: "winning_patterns" | "losing_patterns") => {
         const m = new Map<string, number>();
         for (const r of allInsights || []) {
           for (const p of (r as any)[key] || []) {
@@ -318,7 +315,7 @@ Deno.serve(async (req) => {
       const payload = {
         winning_patterns: tally("winning_patterns"),
         losing_patterns: tally("losing_patterns"),
-        best_image_traits: tally("best_image_traits"),
+        best_image_traits: [],
         consultants_in_sample: (allInsights || []).length,
       };
       await supabase.from("ad_playbooks").upsert({

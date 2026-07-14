@@ -141,21 +141,32 @@ export async function smartPublish(opts: {
   // Se audiência <80k, expande pra 2 cidades; se >2M, mantém só capital.
   let chosen: CityHit[] = [hits[0]];
 
-  // 3) Pré-validação
+  // Preserva a sugestão do template: orçamento baixo demais pode impedir a
+  // Meta de aprender. O backend valida a cobertura real da carteira.
+  const suggestedBudgetCents = Math.max(1000, template.suggested_daily_budget_cents);
+  const suggestedDurationDays = 7;
   log("validate", "Validando alcance no Facebook...");
   let reach: { lower: number; upper: number } | undefined;
   try {
     const pf = await preflightCampaign({
       cities: chosen.map((c) => ({ key: c.key, name: c.name })),
-      daily_budget_cents: template.suggested_daily_budget_cents,
+      daily_budget_cents: suggestedBudgetCents,
+      duration_days: suggestedDurationDays,
     });
+    if (!pf.ok) {
+      throw new Error(pf.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
+    }
     reach = pf.reach || undefined;
     if (reach && reach.lower < 80_000 && hits.length > 1) {
       chosen = hits.slice(0, Math.min(3, hits.length));
       const pf2 = await preflightCampaign({
         cities: chosen.map((c) => ({ key: c.key, name: c.name })),
-        daily_budget_cents: template.suggested_daily_budget_cents,
+        daily_budget_cents: suggestedBudgetCents,
+        duration_days: suggestedDurationDays,
       });
+      if (!pf2.ok) {
+        throw new Error(pf2.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
+      }
       reach = pf2.reach || reach;
     } else if (reach && reach.upper > 2_000_000) {
       chosen = [hits[0]];
@@ -164,8 +175,12 @@ export async function smartPublish(opts: {
       throw new Error(`Audiência muito pequena (${reach.lower.toLocaleString("pt-BR")} pessoas).`);
     }
   } catch (e) {
-    // Não bloquear publicação por falha de preflight; seguir com a escolha atual.
-    if ((e as Error)?.message?.startsWith("Audiência muito pequena")) throw e;
+    // Falha técnica de estimativa pode seguir; bloqueadores explícitos e
+    // audiência inviável nunca são engolidos pelo atalho inteligente.
+    const message = (e as Error)?.message || "";
+    if (message.startsWith("Audiência muito pequena") || message.includes("pré-validação bloqueou") || message.includes("Saldo insuficiente") || message.includes("WhatsApp") || message.includes("Facebook")) {
+      throw e;
+    }
   }
 
   // 4) Publicar
@@ -178,8 +193,8 @@ export async function smartPublish(opts: {
     template_id: template.id,
     name: `${template.title} — ${preset.nome} (${cityLabel})`,
     cities: chosen.map((c) => ({ key: c.key, name: c.name })),
-    daily_budget_cents: template.suggested_daily_budget_cents,
-    duration_days: null,
+    daily_budget_cents: suggestedBudgetCents,
+    duration_days: suggestedDurationDays,
     creative_mode: creativeMode,
     photos: creativeMode === "photo" ? template.photos : undefined,
     video: creativeMode === "video" && videoUrl

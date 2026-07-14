@@ -1,6 +1,7 @@
 // Pré-voo da campanha: valida token, conta, número WA, e pede reach estimate à Meta.
 // Retorna issues bloqueantes + estimativa de alcance — chamado antes de publicar.
-import { authConsultant, corsHeaders, FB_GRAPH, fbFetch, getOrCreateWallet, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { adminClient, authConsultant, corsHeaders, FB_GRAPH, fbFetch, getOrCreateWallet, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { calculateCampaignBudgetRequirement } from "../_shared/campaign-budget.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 interface PreflightBody {
@@ -13,6 +14,7 @@ interface PreflightBody {
     name?: string;
   }[];
   daily_budget_cents?: number;
+  duration_days?: number | null;
   age_min?: number;
   age_max?: number;
 }
@@ -101,16 +103,57 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 4.b. Saldo interno da carteira do consultor (evita criar campanha e falhar em wallet.reserve).
+    // 4.b. Saldo interno: usa exatamente a mesma cobertura e taxa da criação.
+    let budgetInfo: {
+      required_cents: number;
+      balance_cents: number;
+      media_cents: number;
+      fee_cents: number;
+      coverage_days: number;
+    } | null = null;
     try {
       const wallet = await getOrCreateWallet(auth.id);
-      const dailyCents = Number(body.daily_budget_cents ?? 0);
-      const minReserveCents = Math.max(dailyCents, 1000); // pelo menos R$10 pra cobrir 1 dia
-      if (wallet.balance_cents <= 0) {
-        blockers.push("Sua carteira está zerada — faça um depósito antes de publicar.");
-      } else if (dailyCents > 0 && wallet.balance_cents < minReserveCents) {
-        blockers.push(`Saldo insuficiente para reservar R$${(dailyCents / 100).toFixed(2)}/dia. Saldo atual R$${(wallet.balance_cents / 100).toFixed(2)}.`);
-      } else if (wallet.balance_cents < wallet.auto_pause_at_cents + Math.max(dailyCents, 0)) {
+      const dailyCents = Math.max(0, Math.round(Number(body.daily_budget_cents ?? 0)));
+      const admin = adminClient();
+      const [{ data: settings }, { data: walletDetails }] = await Promise.all([
+        admin.from("platform_settings")
+          .select("platform_fee_percent,campaign_safety_multiplier,min_balance_to_create_campaign_cents")
+          .eq("id", true)
+          .maybeSingle(),
+        admin.from("consultant_wallet")
+          .select("balance_cents,debt_cents")
+          .eq("consultant_id", auth.id)
+          .maybeSingle(),
+      ]);
+      const requirement = calculateCampaignBudgetRequirement({
+        dailyBudgetCents: dailyCents,
+        durationDays: body.duration_days,
+        platformFeePercent: Number(settings?.platform_fee_percent ?? 20),
+        safetyMultiplier: Number(settings?.campaign_safety_multiplier ?? 1),
+        minBalanceCents: Number(settings?.min_balance_to_create_campaign_cents ?? 3000),
+      });
+      const liquidBalance = Math.max(
+        0,
+        Number(walletDetails?.balance_cents ?? wallet.balance_cents) - Number(walletDetails?.debt_cents ?? 0),
+      );
+      budgetInfo = {
+        required_cents: requirement.requiredCents,
+        balance_cents: liquidBalance,
+        media_cents: requirement.mediaCents,
+        fee_cents: requirement.feeCents,
+        coverage_days: requirement.coverageDays,
+      };
+
+      if (body.duration_days != null && (body.duration_days < 1 || body.duration_days > 30)) {
+        blockers.push("A duração deve ficar entre 1 e 30 dias, ou sem prazo final.");
+      }
+      if (dailyCents < 1000) {
+        blockers.push("Orçamento mínimo é R$ 10/dia.");
+      } else if (liquidBalance < requirement.requiredCents) {
+        blockers.push(
+          `Saldo insuficiente: esta campanha exige R$ ${(requirement.requiredCents / 100).toFixed(2)} e seu saldo disponível é R$ ${(liquidBalance / 100).toFixed(2)}.`,
+        );
+      } else if (liquidBalance < wallet.auto_pause_at_cents + dailyCents) {
         warnings.push(`Saldo perto do limite de auto-pausa (R$${(wallet.auto_pause_at_cents / 100).toFixed(2)}). Reforce a carteira pra não pausar no meio.`);
       }
     } catch (e) {
@@ -203,6 +246,7 @@ Deno.serve(async (req) => {
         ? { id: resolvedPhone.id, display: resolvedPhone.display, digits: resolvedPhone.digits }
         : null,
       waba_numbers: wabaNumbers,
+      ...(budgetInfo || {}),
     });
   } catch (err) {
     return json({ error: (err as Error).message }, 500);

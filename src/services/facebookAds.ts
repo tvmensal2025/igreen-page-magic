@@ -193,11 +193,17 @@ export interface PreflightResult {
   blockers: string[];
   warnings: string[];
   reach: { lower: number; upper: number; daily_min: number; daily_max: number } | null;
+  required_cents?: number;
+  balance_cents?: number;
+  media_cents?: number;
+  fee_cents?: number;
+  coverage_days?: number;
 }
 export async function preflightCampaign(input: {
   cities?: { key: string; name: string }[];
   custom_locations?: CustomLocation[];
   daily_budget_cents: number;
+  duration_days?: number | null;
 }): Promise<PreflightResult> {
   const { data, error } = await supabase.functions.invoke("facebook-preflight-check", { body: input });
   if (error) throw error;
@@ -243,59 +249,40 @@ export interface CreateCampaignBody {
   // Lista ORDENADA de referral_partners.id (a ordem define o rodízio).
   rodizio_partner_ids?: string[];
 }
-export async function createCampaign(body: CreateCampaignBody) {
+export interface CreateCampaignResult {
+  ok: true;
+  campaign_id: string;
+  portal_campaign_id?: string;
+  adset_id: string;
+  ad_ids: string[];
+  ads_count: number;
+  /** true somente quando a consulta posterior confirmou todos os objetos como ACTIVE */
+  activated: boolean;
+  effective_status: string;
+  local_status: "active" | "pending_review" | "rejected";
+  activation_error?: string | null;
+  rodizio_configured?: boolean;
+  rodizio_pool_id?: string | null;
+  rodizio_members?: number;
+  rodizio_warning?: string | null;
+  tracking_protocol?: string;
+  recovered?: boolean;
+}
+
+export async function createCampaign(body: CreateCampaignBody): Promise<CreateCampaignResult> {
   try {
     const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });
     if (error) await throwFunctionError(error);
     if ((data as any)?.error) throw new Error((data as any).error);
-    return data as {
-      ok: true;
-      campaign_id: string;
-      portal_campaign_id?: string;
-      adset_id: string;
-      ad_ids: string[];
-      ads_count: number;
-      activated?: boolean;
-      activation_error?: string | null;
-      rodizio_configured?: boolean;
-      rodizio_pool_id?: string | null;
-      rodizio_members?: number;
-      rodizio_warning?: string | null;
-      tracking_protocol?: string;
-    };
+    return data as CreateCampaignResult;
   } catch (err) {
-    // Timeout de rede / "Failed to fetch": a função pode ter concluído mesmo assim
-    // (o realign de spend_cap roda em background e pode passar do timeout do fetch
-    // do browser). Consulta o banco pelas últimas campanhas do consultor com este
-    // nome — se aparecer nos últimos 90s, considera sucesso.
+    // Nunca repete o POST nem associa por heurística após timeout: outra aba pode
+    // ter criado uma campanha parecida. Sem chave idempotente, o único resultado
+    // seguro é pedir conferência na lista antes de qualquer nova publicação.
     const msg = (err as Error)?.message || String(err);
-    const isNetwork = /failed to fetch|network|aborted|timeout/i.test(msg);
+    const isNetwork = /failed to fetch|network|aborted|timeout|demorou demais/i.test(msg);
     if (!isNetwork) throw err;
-    try {
-      const { data: sess } = await supabase.auth.getUser();
-      const uid = sess?.user?.id;
-      if (!uid) throw err;
-      const since = new Date(Date.now() - 90_000).toISOString();
-      const { data: rows } = await supabase
-        .from("facebook_campaigns")
-        .select("id, fb_campaign_id, fb_adset_ids, fb_ad_ids, created_at")
-        .eq("consultant_id", uid)
-        .eq("name", body.name)
-        .gte("created_at", since)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const row = rows?.[0] as any;
-      if (row?.fb_campaign_id) {
-        return {
-          ok: true as const,
-          campaign_id: row.fb_campaign_id,
-          adset_id: (row.fb_adset_ids || [])[0] || "",
-          ad_ids: row.fb_ad_ids || [],
-          ads_count: (row.fb_ad_ids || []).length,
-        };
-      }
-    } catch { /* segue lançando erro original */ }
-    throw new Error("A resposta do servidor demorou. Verifique em 'Anúncios' se a campanha aparece antes de tentar novamente — pode ter sido publicada.");
+    throw new Error("A resposta do servidor demorou. Não tente publicar de novo agora: atualize a lista de Anúncios e confirme se a campanha apareceu.");
   }
 }
 

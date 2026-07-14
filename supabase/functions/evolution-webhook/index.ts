@@ -29,7 +29,7 @@ import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
-import { assignRodizioLead } from "../_shared/rodizio-assign.ts";
+import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assign.ts";
 
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
@@ -980,7 +980,7 @@ Deno.serve(async (req) => {
 
 
         if (sourceCampaignId && sourceAdId) {
-          const validAd = await campaignContainsAdId(supabase, sourceCampaignId, sourceAdId);
+          const validAd = await campaignContainsAdId(supabase, sourceCampaignId, sourceAdId, instanceData.consultant_id);
           if (!validAd) {
             console.warn(`[lead-source] bloqueado: campaign=${sourceCampaignId} não contém ad_id=${sourceAdId}`);
             await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
@@ -1007,10 +1007,24 @@ Deno.serve(async (req) => {
 
         if (hasReferral || textMatch || sourceCampaignId || ctwaPhraseMatch) {
           const patch: Record<string, any> = { lead_source: "meta_ads" };
-          if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
           if (sourceAdId) patch.source_ad_id = String(sourceAdId);
           if (referralPayload) patch.source_referral = referralPayload;
+
+          if (sourceCampaignId) {
+            const bind = await bindCustomerCampaign(supabase, customer.id, sourceCampaignId);
+            if (bind.outcome === "bound" || bind.outcome === "already_bound") {
+              sourceCampaignId = bind.campaignId;
+              (customer as any).source_campaign_id = bind.campaignId;
+            } else {
+              console.warn(
+                `[lead-source] vínculo bloqueado outcome=${bind.outcome} requested=${sourceCampaignId} persisted=${bind.campaignId}`,
+              );
+              await markManualReview(supabase, customer.id, `campaign_bind_${bind.outcome}`);
+              sourceCampaignId = bind.campaignId;
+              if (bind.campaignId) (customer as any).source_campaign_id = bind.campaignId;
+            }
+          }
 
           await supabase.from("customers").update(patch).eq("id", customer.id);
           Object.assign(customer, patch);
@@ -1088,13 +1102,13 @@ Deno.serve(async (req) => {
           messageText,
         );
         if (resolved) {
-          await supabase
-            .from("customers")
-            .update({ source_campaign_id: resolved, lead_source: "meta_ads" })
-            .eq("id", customer.id)
-            .is("source_campaign_id", null);
-          (customer as any).source_campaign_id = resolved;
-          (customer as any).lead_source = "meta_ads";
+          const bind = await bindCustomerCampaign(supabase, customer.id, resolved);
+          if (bind.outcome === "bound" || bind.outcome === "already_bound") {
+            (customer as any).source_campaign_id = bind.campaignId;
+            (customer as any).lead_source = "meta_ads";
+          } else {
+            await markManualReview(supabase, customer.id, `campaign_bind_${bind.outcome}`);
+          }
           jsonLog("info", "lead_source_tagged_single_pool_fuzzy", {
             customer_id: customer.id,
             consultant_id: instanceData.consultant_id,
@@ -1111,13 +1125,13 @@ Deno.serve(async (req) => {
             { phone: (customer as any).phone_whatsapp, messageText },
           );
           if (ladder) {
-            await supabase
-              .from("customers")
-              .update({ source_campaign_id: ladder.campaignId, lead_source: "meta_ads" })
-              .eq("id", customer.id)
-              .is("source_campaign_id", null);
-            (customer as any).source_campaign_id = ladder.campaignId;
-            (customer as any).lead_source = "meta_ads";
+            const bind = await bindCustomerCampaign(supabase, customer.id, ladder.campaignId);
+            if (bind.outcome === "bound" || bind.outcome === "already_bound") {
+              (customer as any).source_campaign_id = bind.campaignId;
+              (customer as any).lead_source = "meta_ads";
+            } else {
+              await markManualReview(supabase, customer.id, `campaign_bind_${bind.outcome}`);
+            }
             await logRodizioOutcome(supabase, {
               customerId: customer.id,
               campaignId: ladder.campaignId,
@@ -1142,7 +1156,12 @@ Deno.serve(async (req) => {
 
     let rodizioCampaignId = (customer as any)?.source_campaign_id || null;
     if (rodizioCampaignId && (customer as any)?.source_ad_id) {
-      const validAd = await campaignContainsAdId(supabase, rodizioCampaignId, (customer as any).source_ad_id);
+      const validAd = await campaignContainsAdId(
+        supabase,
+        rodizioCampaignId,
+        (customer as any).source_ad_id,
+        instanceData.consultant_id,
+      );
       if (!validAd) {
         console.warn(`[rodizio] bloqueado: campaign=${rodizioCampaignId} não contém ad_id=${(customer as any).source_ad_id}`);
         await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");

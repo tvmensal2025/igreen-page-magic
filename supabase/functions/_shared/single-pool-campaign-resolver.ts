@@ -39,13 +39,14 @@ async function listActivePoolCampaigns(
     .from("rodizio_pools")
     .select("campaign_id, facebook_campaigns!inner(id, initial_message, status, tracking_protocol, cities)")
     .eq("consultant_id", consultantId)
+    .eq("is_enabled", true)
     .eq("is_active", true)
     .not("campaign_id", "is", null);
 
   return ((pools || []) as any[])
     .filter((p) => {
       const c = p.facebook_campaigns;
-      return c && ["active", "pending_review"].includes(c.status);
+      return c && c.status === "active";
     })
     .map((p) => ({
       campaignId: String(p.facebook_campaigns.id),

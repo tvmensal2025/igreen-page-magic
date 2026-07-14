@@ -448,13 +448,15 @@ export async function notifyInboundWhileBotOff(
 // ─── Resolve telefone do parceiro (notification_phone) ─────────────────────
 async function resolvePartnerContact(
   partnerId: string,
+  ownerConsultantId: string,
 ): Promise<{ phone: string | null; name: string | null }> {
   try {
     const admin = adminClient();
     const { data, error } = await admin
       .from("referral_partners")
-      .select("nome, notification_phone, is_active")
+      .select("nome, notification_phone, is_active, consultant_id")
       .eq("id", partnerId)
+      .eq("consultant_id", ownerConsultantId)
       .maybeSingle();
     if (error) {
       console.warn("[resolve-partner-contact] query falhou:", error.message);
@@ -536,7 +538,7 @@ export async function notifyPartnerNewLead(
     if (lead?.is_sandbox) return { ok: false, reason: "sandbox" };
     if (!partnerId) return { ok: false, reason: "no_partner" };
 
-    const { phone, name: partnerName } = await resolvePartnerContact(partnerId);
+    const { phone, name: partnerName } = await resolvePartnerContact(partnerId, ownerConsultantId);
     if (!phone) {
       console.warn(`[notify-partner-lead] parceiro ${partnerId} sem notification_phone`);
       return { ok: false, reason: "partner_no_phone" };
@@ -665,7 +667,7 @@ export async function notifyPartnerStep(
     const partnerId = (customer as any).referral_partner_id as string | null;
     if (!partnerId) return false;
 
-    const { phone, name: partnerName } = await resolvePartnerContact(partnerId);
+    const { phone, name: partnerName } = await resolvePartnerContact(partnerId, ownerConsultantId);
     if (!phone) return false;
 
     // Cache rápido em memória.

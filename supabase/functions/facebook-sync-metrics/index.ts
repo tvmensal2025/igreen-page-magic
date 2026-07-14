@@ -4,7 +4,6 @@
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
-import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
 
 
 const corsHeaders = {
@@ -102,11 +101,11 @@ Deno.serve(async (req) => {
       const since = new Date(Date.now() - 30 * 86400_000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
       const { data } = await admin
         .from("facebook_metrics_daily")
-        .select("spend_cents,leads,campaign_id,facebook_campaigns!inner(consultant_id)")
+        .select("spend_cents,meta_lead_actions,campaign_id,facebook_campaigns!inner(consultant_id)")
         .eq("facebook_campaigns.consultant_id", consultantId)
         .gte("date", since);
       let totSpend = 0; let totLeads = 0;
-      for (const r of (data as any[]) || []) { totSpend += r.spend_cents || 0; totLeads += r.leads || 0; }
+      for (const r of (data as any[]) || []) { totSpend += r.spend_cents || 0; totLeads += r.meta_lead_actions || 0; }
       const avg = totLeads >= 5 ? Math.round(totSpend / totLeads) : null; // exige amostra mínima
       cplAvgCache[consultantId] = avg;
       return avg;
@@ -167,9 +166,14 @@ Deno.serve(async (req) => {
         const url = `${FB_GRAPH}/${c.fb_campaign_id}/insights?fields=impressions,reach,clicks,ctr,cpm,spend,actions,frequency&time_range={"since":"${since}","until":"${until}"}&time_increment=1&access_token=${token}`;
         const json = await fbFetch(url);
 
-        // Breakdown por placement (publisher_platform + platform_position) nos últimos 7d
-        // — sem time_increment pra agregar e dar custo/lead por placement.
-        let cplByPlacement: Record<string, { spend: number; leads: number; cpl: number }> = {};
+        // Breakdown analítico por placement: lead direto e conversa ficam separados.
+        let cplByPlacement: Record<string, {
+          spend: number;
+          leads: number;
+          conversations: number;
+          cpl: number;
+          cost_per_conversation: number;
+        }> = {};
         try {
           const urlBp = `${FB_GRAPH}/${c.fb_campaign_id}/insights?fields=spend,actions&breakdowns=publisher_platform,platform_position&date_preset=last_7d&access_token=${token}`;
           const bp = await fbFetch(urlBp);
@@ -177,11 +181,14 @@ Deno.serve(async (req) => {
             const key = `${row.publisher_platform || "?"}:${row.platform_position || "?"}`;
             const spend = Math.round(parseFloat(row.spend || "0") * 100);
             const leadsDirect = sumActions(row.actions, LEAD_ACTIONS);
-            const convs = sumActions(row.actions, CONV_ACTIONS);
-            const leads = leadsDirect > 0 ? leadsDirect : convs;
-            const cpl = leads > 0 ? Math.round(spend / leads) : 0;
-            cplByPlacement[key] = { spend, leads, cpl };
-
+            const conversations = sumActions(row.actions, CONV_ACTIONS);
+            cplByPlacement[key] = {
+              spend,
+              leads: leadsDirect,
+              conversations,
+              cpl: leadsDirect > 0 ? Math.round(spend / leadsDirect) : 0,
+              cost_per_conversation: conversations > 0 ? Math.round(spend / conversations) : 0,
+            };
           }
         } catch (be) {
           console.warn("[fb-sync] breakdown placement falhou", c.fb_campaign_id, (be as Error).message);
@@ -201,24 +208,18 @@ Deno.serve(async (req) => {
           const conv = sumActions(row.actions, CONV_ACTIONS);
           const regs = (row.actions || []).find((a: any) => a.action_type === "complete_registration")?.value || 0;
           const spend = Math.round(parseFloat(row.spend || "0") * 100);
-          // CTWA: a maioria das campanhas WhatsApp NÃO reporta action_type="lead",
-          // só "messaging_conversation_started". Sem isso, leads ficava sempre 0 e
-          // o CPL/painéis apareciam zerados. Tratamos conversa iniciada como lead
-          // quando não há lead direto (fallback), pra popular o número.
-          const leads = leadsDirect > 0 ? leadsDirect : conv;
-          // Denominador do CPL = leads (já inclui o fallback de conversa).
-          const cplBase = leads;
-          const cpl = cplBase > 0 ? Math.round(spend / cplBase) : 0;
-          // Totais usam os sinais CRUS (leadsDirect e conv separados) pra não
-          // duplicar conversas no leads_count / auto-pause. A coluna persistida
-          // "leads" é que recebe o fallback de conversa.
+          // `leads` permanece híbrido apenas para compatibilidade legada.
+          const hybridLeads = leadsDirect > 0 ? leadsDirect : conv;
+          // Consumidores analíticos usam exclusivamente lead direto no CPL.
+          const cpl = leadsDirect > 0 ? Math.round(spend / leadsDirect) : 0;
+          // Totais preservam os sinais crus, sem misturar conversa com lead.
           totalSpend += spend; totalLeads += Number(leadsDirect); totalConv += Number(conv);
           maxFreq = Math.max(maxFreq, parseFloat(row.frequency || "0"));
 
           // Lê linha existente pra calcular delta de gasto + atividade incremental no período
           const { data: prev } = await admin
             .from("facebook_metrics_daily")
-            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,leads,platform_fee_cents")
+            .select("spend_cents,synced_to_wallet_cents,impressions,clicks,meta_lead_actions,platform_fee_cents")
             .eq("campaign_id", c.id)
             .eq("date", date)
             .maybeSingle();
@@ -226,10 +227,10 @@ Deno.serve(async (req) => {
           const deltaSpend = Math.max(0, spend - alreadyDebited);
           const impressionsNow = parseInt(row.impressions || "0");
           const clicksNow = parseInt(row.clicks || "0");
-          const leadsNow = Number(leads);
+          const leadsNow = Number(leadsDirect);
           const dImpressions = Math.max(0, impressionsNow - Number((prev as any)?.impressions || 0));
           const dClicks = Math.max(0, clicksNow - Number((prev as any)?.clicks || 0));
-          const dLeads = Math.max(0, leadsNow - Number((prev as any)?.leads || 0));
+          const dLeads = Math.max(0, leadsNow - Number((prev as any)?.meta_lead_actions || 0));
           // Por padrão, mantém o synced anterior. Só avança quando o débito der OK
           // (evita "perder" cobrança em caso de falha do RPC).
           let syncedToWalletCents = alreadyDebited;
@@ -285,7 +286,7 @@ Deno.serve(async (req) => {
             gross_spend_cents: spend,
             synced_to_wallet_cents: syncedToWalletCents,
             platform_fee_cents: prevFee + feeCharged,
-            leads: Number(leads),
+            leads: Number(hybridLeads),
             meta_lead_actions: Number(leadsDirect),
             meta_conversations: Number(conv),
             messaging_conversations_started: Number(conv),
@@ -298,8 +299,8 @@ Deno.serve(async (req) => {
         }
         synced++;
 
-        // Métricas POR ANÚNCIO (level=ad) — necessário para o ad-creative-learner identificar
-        // qual criativo individual converte mais. Sem isso, o learner divide tudo por igual.
+        // Métricas POR ANÚNCIO (level=ad) — necessárias para o learner
+        // avaliar cada criativo somente quando houver evidência granular real.
         try {
           const urlAd = `${FB_GRAPH}/${c.fb_campaign_id}/insights?level=ad&fields=ad_id,impressions,reach,clicks,spend,actions,frequency&time_range={"since":"${since}","until":"${until}"}&time_increment=1&access_token=${token}`;
           const adJson = await fbFetch(urlAd);
@@ -327,22 +328,10 @@ Deno.serve(async (req) => {
           console.warn("[fb-sync] ad-level insights falhou", c.fb_campaign_id, (ae as Error).message);
         }
 
-        // Reconcilia leads + customers_acquired POR CAMPANHA baseado no CRM real.
-        // Só conta customers com prova Meta (AD ID / ctwa_clid) — nunca
-        // manual_backfill / fallback_pool / só source_campaign_id.
+        // Reconcilia somente customers_acquired por campanha com prova Meta.
+        // Leads diretos e conversas permanecem exclusivamente nas métricas Meta.
         try {
           const sinceIso = new Date(Date.now() - 7 * 86400_000).toISOString();
-          const { data: attributedLeads } = await admin
-            .from("customers")
-            .select("created_at")
-            .eq("source_campaign_id", c.id)
-            .or(META_CAMPAIGN_PROOF_OR)
-            .gte("created_at", sinceIso);
-          const leadsByDate: Record<string, number> = {};
-          for (const l of (attributedLeads || []) as any[]) {
-            const dt = String(l.created_at).slice(0, 10);
-            leadsByDate[dt] = (leadsByDate[dt] || 0) + 1;
-          }
           // Clientes aprovados desta campanha (filtra prova Meta em memória —
           // PostgREST .or em join embutido é frágil).
           const { data: deals } = await admin
@@ -359,21 +348,13 @@ Deno.serve(async (req) => {
             const dt = String(d.created_at).slice(0, 10);
             customersByDate[dt] = (customersByDate[dt] || 0) + 1;
           }
-          const allDates = new Set([...Object.keys(leadsByDate), ...Object.keys(customersByDate)]);
-          for (const dt of allDates) {
-            const attrLeads = leadsByDate[dt] || 0;
-            const acquired = customersByDate[dt] || 0;
-            // Pega o que a Meta reporta e usa o MAIOR (atribuição CRM costuma ser mais confiável
-            // pra CTWA, mas se Meta reporta mais leads diretos, mantemos)
-            const { data: existing } = await admin
-              .from("facebook_metrics_daily")
-              .select("leads")
-              .eq("campaign_id", c.id).eq("date", dt).maybeSingle();
-            const metaLeads = Number((existing as any)?.leads || 0);
+          // Reconcile do CRM não altera métricas de lead Meta. Mantém apenas
+          // customers_acquired; `leads` continua híbrido por compatibilidade e
+          // análises usam `meta_lead_actions`.
+          for (const dt of new Set(Object.keys(customersByDate))) {
             await admin.from("facebook_metrics_daily")
               .update({
-                leads: Math.max(metaLeads, attrLeads),
-                customers_acquired: acquired,
+                customers_acquired: customersByDate[dt] || 0,
                 updated_at: new Date().toISOString(),
               })
               .eq("campaign_id", c.id)
@@ -381,11 +362,11 @@ Deno.serve(async (req) => {
           }
         } catch (re) { console.error("[fb-sync] attribution reconcile failed", c.id, (re as Error).message); }
 
-        // Persiste leads_count agregado (necessário pro CBO→ABO disparar)
-        // Conta leads + conversas iniciadas como "sinal de lead" — ABO precisa de >=20.
+        // `leads_count` é uma coluna híbrida legada usada por automações antigas.
+        // Métricas analíticas acima e abaixo mantêm leads diretos e conversas separados.
         try {
           await admin.from("facebook_campaigns")
-            .update({ leads_count: totalLeads + totalConv, updated_at: new Date().toISOString() })
+            .update({ leads_count: Math.max(totalLeads, totalConv), updated_at: new Date().toISOString() })
             .eq("id", c.id);
         } catch (ue) { console.error("[fb-sync] leads_count update failed", c.id, (ue as Error).message); }
 
@@ -421,57 +402,72 @@ Deno.serve(async (req) => {
         } catch (be) { console.error("[fb-sync] budget sync failed", c.id, (be as Error).message); }
 
 
-        // Auto-pause adaptativo (2026):
-        // 1) Frequência cap 3.0 (cold messaging cansa rápido)
-        // 2) R$30+ sem nenhuma conversa/lead
-        // 3) CPL atual > 2.5x do CPL médio dos últimos 30d do consultor
-        // 4) 5 dias seguidos com zero leads (consome verba à toa)
-        const reachedActions = totalLeads + totalConv;
+        // Sinais analíticos mantêm leads diretos e conversas separados.
+        // Nenhum deles causa pausa por desempenho.
         const cplAvg = await getConsultantAvgCpl(c.consultant_id);
-        const cplNow = reachedActions > 0 ? Math.round(totalSpend / reachedActions) : null;
-        const cplBlown = cplAvg && cplNow && cplNow > cplAvg * 2.5 && totalSpend >= 1500;
-        // Conta dias seguidos sem leads no fim da janela
+        const cplNow = totalLeads > 0 ? Math.round(totalSpend / totalLeads) : null;
         const daily = (json.data || []).slice().sort((a: any, b: any) => (a.date_start > b.date_start ? -1 : 1));
-        let zeroStreak = 0;
+        let zeroLeadStreak = 0;
         for (const row of daily) {
-          const l = sumActions(row.actions, LEAD_ACTIONS);
-          const c2 = sumActions(row.actions, CONV_ACTIONS);
-          if (l + c2 === 0) zeroStreak++; else break;
+          const directLeads = sumActions(row.actions, LEAD_ACTIONS);
+          if (directLeads === 0) zeroLeadStreak++; else break;
         }
 
-        // Auto-pause também por saldo da wallet abaixo do limite
-        const wallet = await getWallet(c.consultant_id);
-        const lowBalance = wallet && wallet.balance <= wallet.auto_pause_at;
-        const shouldPause = c.status === "active" && (
-          maxFreq > 3 ||
-          (totalSpend >= 3000 && reachedActions === 0) ||
-          cplBlown ||
-          zeroStreak >= 5 ||
-          lowBalance
-        );
-        if (shouldPause) {
+        const performanceSignals: string[] = [];
+        if (maxFreq > 3) performanceSignals.push(`frequência ${maxFreq.toFixed(1)}`);
+        if (totalSpend >= 3000 && totalLeads === 0) {
+          performanceSignals.push(`R$ ${(totalSpend / 100).toFixed(2)} sem lead direto nos últimos 7 dias`);
+        }
+        if (cplNow != null && cplAvg != null && totalLeads >= 10 && cplNow > cplAvg * 2) {
+          performanceSignals.push(`CPL direto R$ ${(cplNow / 100).toFixed(2)} acima do histórico R$ ${(cplAvg / 100).toFixed(2)}`);
+        }
+        if (zeroLeadStreak >= 5) performanceSignals.push(`${zeroLeadStreak} dias sem lead direto`);
+
+        if (performanceSignals.length > 0) {
           try {
-            let reason: string;
-            if (lowBalance) reason = `Auto-pausada: saldo da carteira baixo (R$ ${((wallet?.balance||0)/100).toFixed(2)}) — recarregue para reativar`;
-            else if (maxFreq > 3) reason = `Auto-pausada: frequência ${maxFreq.toFixed(1)} > 3 — criativo cansado`;
-            else if (cplBlown) reason = `Auto-pausada: CPL R$${(cplNow!/100).toFixed(2)} > 2.5x da média da conta (R$${(cplAvg!/100).toFixed(2)})`;
-            else if (zeroStreak >= 5) reason = `Auto-pausada: ${zeroStreak} dias seguidos sem leads`;
-            else reason = `Auto-pausada: gastou R$ ${(totalSpend/100).toFixed(2)} sem leads (últimos 7 dias)`;
+            const title = `Revisar desempenho: ${c.fb_campaign_id}`;
+            const { data: existing } = await admin
+              .from("ad_recommendations")
+              .select("id")
+              .eq("consultant_id", c.consultant_id)
+              .eq("type", "campaign_performance_review")
+              .eq("title", title)
+              .is("dismissed_at", null)
+              .is("applied_at", null)
+              .limit(1);
+            if (!existing?.length) {
+              await admin.from("ad_recommendations").insert({
+                consultant_id: c.consultant_id,
+                type: "campaign_performance_review",
+                title,
+                message: `${performanceSignals.join("; ")}. A campanha não foi pausada: aguarde amostra suficiente e revise criativo, público e oferta.`,
+                severity: "warning",
+                action_label: "Revisar campanha",
+                action_payload: { kind: "review_campaign", campaign_id: c.id },
+              });
+            }
+          } catch (re) {
+            console.warn("[fb-sync] performance recommendation failed", c.id, (re as Error).message);
+          }
+        }
+
+        const wallet = await getWallet(c.consultant_id);
+        const lowBalance = Boolean(wallet && wallet.balance <= wallet.auto_pause_at);
+        if (c.status === "active" && lowBalance) {
+          try {
+            const reason = `Auto-pausada: saldo da carteira abaixo do limite (R$ ${((wallet?.balance || 0) / 100).toFixed(2)}) — recarregue para reativar`;
             await fbFetch(`${FB_GRAPH}/${c.fb_campaign_id}?status=PAUSED&access_token=${token}`, { method: "POST" });
             await admin.from("facebook_campaigns")
               .update({ status: "paused", rejection_reason: reason })
               .eq("id", c.id);
             autoPaused++;
             try {
-              await notifyConsultant(c.consultant_id, lowBalance ? "warning" : "info",
-                lowBalance ? "Campanha pausada — saldo baixo 💳" : "Campanha pausada automaticamente",
-                reason);
+              await notifyConsultant(c.consultant_id, "warning", "Campanha pausada — saldo baixo 💳", reason);
             } catch (_) {}
             try {
-              await notifyRodizioOnCampaignPaused(admin, c.id, lowBalance ? "low_balance" : "auto_performance");
+              await notifyRodizioOnCampaignPaused(admin, c.id, "low_balance");
             } catch (_) {}
-          } catch (pe) { console.error("[fb-sync] auto-pause failed", c.fb_campaign_id, (pe as Error).message); }
-
+          } catch (pe) { console.error("[fb-sync] balance auto-pause failed", c.fb_campaign_id, (pe as Error).message); }
         }
       } catch (e) {
         const msg = (e as Error).message;

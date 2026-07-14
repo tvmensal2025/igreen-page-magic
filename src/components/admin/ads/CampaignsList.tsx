@@ -26,10 +26,10 @@ interface Campaign {
   thumbnail_url: string | null; creative_format: string | null;
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
-interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }
-interface DaySlice { impressions: number; clicks: number; spend_cents: number; leads: number; messaging_conversations_started: number }
+interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; meta_lead_actions: number; messaging_conversations_started: number; cost_per_lead_cents: number }
+interface DaySlice { impressions: number; clicks: number; spend_cents: number; meta_lead_actions: number; messaging_conversations_started: number }
 
-const EMPTY_DAY: DaySlice = { impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0 };
+const EMPTY_DAY: DaySlice = { impressions: 0, clicks: 0, spend_cents: 0, meta_lead_actions: 0, messaging_conversations_started: 0 };
 
 /** YYYY-MM-DD no fuso America/Sao_Paulo (evita “hoje” virar ontem perto da meia-noite UTC). */
 function brDateOffset(daysAgo: number): string {
@@ -46,16 +46,17 @@ function brDateOffset(daysAgo: number): string {
   return `${y}-${m}-${d}`;
 }
 
-function healthOf(m: { spend_cents: number; leads: number; messaging_conversations_started: number; cost_per_lead_cents: number }): { level: "green" | "yellow" | "red" | "idle"; label: string } {
+function healthOf(m: { spend_cents: number; meta_lead_actions: number; messaging_conversations_started: number }): { level: "green" | "yellow" | "red" | "idle"; label: string } {
   const spend = m.spend_cents / 100;
   if (spend < 5) return { level: "idle", label: "Aquecendo" };
-  const actions = m.leads + m.messaging_conversations_started;
+  // Leads e conversas da Meta podem representar a mesma pessoa.
+  const actions = Math.max(m.meta_lead_actions, m.messaging_conversations_started);
   if (actions === 0 && spend >= 30) return { level: "red", label: "Sem clientes interessados — revisar" };
   if (actions === 0) return { level: "yellow", label: "Sem clientes interessados ainda" };
-  const cpl = m.cost_per_lead_cents / 100;
-  if (cpl > 0 && cpl <= 10) return { level: "green", label: `CPL R$${cpl.toFixed(2)}` };
-  if (cpl > 0 && cpl <= 25) return { level: "yellow", label: `CPL R$${cpl.toFixed(2)}` };
-  return { level: "red", label: `CPL R$${cpl.toFixed(2)} alto` };
+  const costPerResult = spend / actions;
+  if (costPerResult <= 10) return { level: "green", label: `Custo/resultado R$${costPerResult.toFixed(2)}` };
+  if (costPerResult <= 25) return { level: "yellow", label: `Custo/resultado R$${costPerResult.toFixed(2)}` };
+  return { level: "red", label: `Custo/resultado R$${costPerResult.toFixed(2)} alto` };
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -172,18 +173,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         const yesterdayKey = brDateOffset(1);
         const { data: ms } = await supabase
           .from("facebook_metrics_daily")
-          .select("campaign_id,date,impressions,clicks,spend_cents,leads,messaging_conversations_started,cost_per_lead_cents")
+          .select("campaign_id,date,impressions,clicks,spend_cents,meta_lead_actions,messaging_conversations_started")
           .in("campaign_id", list.map(c => c.id))
           .gte("date", since);
         const agg: Record<string, Metric> = {};
         const todayMap: Record<string, DaySlice> = {};
         const yestMap: Record<string, DaySlice> = {};
         (ms || []).forEach((m: any) => {
-          const cur = agg[m.campaign_id] || { campaign_id: m.campaign_id, impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
+          const cur = agg[m.campaign_id] || { campaign_id: m.campaign_id, impressions: 0, clicks: 0, spend_cents: 0, meta_lead_actions: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
           cur.impressions += m.impressions || 0;
           cur.clicks += m.clicks || 0;
           cur.spend_cents += m.spend_cents || 0;
-          cur.leads += m.leads || 0;
+          cur.meta_lead_actions += m.meta_lead_actions || 0;
           cur.messaging_conversations_started += m.messaging_conversations_started || 0;
           agg[m.campaign_id] = cur;
 
@@ -191,18 +192,20 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
             impressions: Number(m.impressions || 0),
             clicks: Number(m.clicks || 0),
             spend_cents: Number(m.spend_cents || 0),
-            leads: Number(m.leads || 0),
+            meta_lead_actions: Number(m.meta_lead_actions || 0),
             messaging_conversations_started: Number(m.messaging_conversations_started || 0),
           };
           if (m.date === todayKey) todayMap[m.campaign_id] = slice;
           if (m.date === yesterdayKey) yestMap[m.campaign_id] = slice;
         });
-        Object.values(agg).forEach(m => { m.cost_per_lead_cents = m.leads > 0 ? Math.round(m.spend_cents / m.leads) : 0; });
+        Object.values(agg).forEach(m => {
+          m.cost_per_lead_cents = m.meta_lead_actions > 0 ? Math.round(m.spend_cents / m.meta_lead_actions) : 0;
+        });
         setMetrics(agg);
         setTodayByCamp(todayMap);
         setYesterdayByCamp(yestMap);
 
-        // ─── Leads WA da campanha (só com prova Meta: AD ID ou ctwa_clid) ───────────
+        // ─── Contatos atribuídos no CRM (só com prova Meta: AD ID ou ctwa_clid) ───
         // Nunca conta manual_backfill / fallback_pool / só source_campaign_id.
         const { data: waRows } = await (supabase as any)
           .from("customers")
@@ -216,13 +219,13 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         });
         setWaLeads(waCounts);
 
-        // ─── Campanhas com rodízio ativo (para exibir botão de leads distribuídos) ───
+        // ─── Campanhas com rodízio configurado (inclusive quando pausadas) ───
         try {
           const { data: pools } = await (supabase as any)
             .from("rodizio_pools")
             .select("campaign_id")
             .in("campaign_id", list.map(c => c.id))
-            .eq("is_active", true);
+            .eq("is_enabled", true);
           const rSet = new Set<string>();
           (pools || []).forEach((p: any) => { if (p.campaign_id) rSet.add(p.campaign_id); });
           setRodizioSet(rSet);
@@ -341,8 +344,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const newStatus = (data as any)?.status || (action === "pause" ? "paused" : "active");
       setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: newStatus, rejection_reason: action === "activate" ? null : x.rejection_reason } : x));
       toast({
-        title: action === "pause" ? "Campanha pausada" : "Campanha ativada",
-        description: "Sincronizado com o Meta.",
+        title: action === "pause"
+          ? "Campanha pausada"
+          : newStatus === "active"
+            ? "Campanha ativa"
+            : newStatus === "rejected"
+              ? "Meta sinalizou uma pendência"
+              : "Ativação enviada à Meta",
+        description: action === "pause"
+          ? "Pausa sincronizada com a Meta."
+          : newStatus === "active"
+            ? "A Meta confirmou a campanha como ativa."
+            : "A campanha está em análise ou processamento. Atualize o status em alguns minutos.",
       });
     } catch (e: any) {
       toast({ title: "Falha ao alterar status", description: e?.message || "Erro", variant: "destructive" });
@@ -422,7 +435,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   return (
     <div className="grid gap-3">
       {items.map(c => {
-        const m = metrics[c.id] || { impressions: 0, clicks: 0, spend_cents: 0, leads: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
+        const m = metrics[c.id] || { impressions: 0, clicks: 0, spend_cents: 0, meta_lead_actions: 0, messaging_conversations_started: 0, cost_per_lead_cents: 0 };
         const waCount = waLeads[c.id] || 0;
         const today = todayByCamp[c.id] || EMPTY_DAY;
         const yesterday = yesterdayByCamp[c.id] || EMPTY_DAY;
@@ -606,16 +619,16 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               <Stat icon={<MessageCircle className="w-3.5 h-3.5" />} label="Conversas" value={String(m.messaging_conversations_started)} />
               <Stat
                 icon={<Users className="w-3.5 h-3.5" />}
-                label="Clientes interessados Meta"
-                value={String(m.leads)}
-                tooltip="Contados pelo Facebook via CTA/pixel. Pode diferir dos que chegaram no WhatsApp — muitos clicam e não escrevem."
+                label="Leads reportados pela Meta"
+                value={String(m.meta_lead_actions)}
+                tooltip="Eventos de lead informados diretamente pela Meta. Não inclui automaticamente todas as conversas nem todos os contatos do CRM."
               />
               <Stat
                 icon={<MessageCircle className="w-3.5 h-3.5 text-primary" />}
-                label="Clientes interessados WhatsApp"
+                label="Contatos atribuídos no CRM"
                 value={String(waCount)}
                 highlight={waCount > 0}
-                tooltip="Clientes interessados que mandaram mensagem no WhatsApp e foram atribuídos a esta campanha (via mensagem pré-preenchida ou CTWA)"
+                tooltip="Contatos identificados no CRM e ligados a esta campanha por ID do anúncio ou identificador CTWA."
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
@@ -626,9 +639,9 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
-                label="CPL"
-                value={m.leads > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : "—"}
-                tooltip="Custo por lead = Gasto ÷ Clientes interessados Meta"
+                label="Custo/lead Meta"
+                value={m.meta_lead_actions > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : "—"}
+                tooltip="Gasto dividido apenas pelos eventos de lead reportados pela Meta."
               />
             </div>
             {hasDayActivity && (
@@ -639,7 +652,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Impr.</div>
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Cliques</div>
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Conversas</div>
-                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Leads</div>
+                  <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Leads Meta</div>
                   {([
                     ["Hoje", today],
                     ["Ontem", yesterday],
@@ -659,7 +672,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                         {day.messaging_conversations_started}
                       </div>
                       <div className="bg-card px-2 py-1.5 text-right tabular-nums text-foreground">
-                        {day.leads}
+                        {day.meta_lead_actions}
                       </div>
                     </div>
                   ))}

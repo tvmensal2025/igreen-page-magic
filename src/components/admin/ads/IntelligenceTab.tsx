@@ -83,7 +83,7 @@ export function IntelligenceTab({ consultantId }: Props) {
                 Timeline de atualizações
               </h3>
               <p className="text-xs text-muted-foreground mb-3">
-                Cron: scraper toda 2ª às 06:00 UTC · Learner diário 07:00 UTC · Rotator diário 08:00 UTC
+                Últimas execuções registradas. A lista não presume uma agenda automática.
               </p>
               {events.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">Sem eventos ainda.</p>

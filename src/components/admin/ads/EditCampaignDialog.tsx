@@ -117,7 +117,7 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
           .from("rodizio_pools")
           .select("id")
           .eq("campaign_id", campaign.id)
-          .eq("is_active", true)
+          .eq("is_enabled", true)
           .maybeSingle();
         if (pool?.id) {
           const { data: members } = await (supabase as any)

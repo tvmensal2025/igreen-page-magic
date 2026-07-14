@@ -8763,6 +8763,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_enabled: boolean
           label: string
           last_pause_reason: string | null
           message: string | null
@@ -8782,6 +8783,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           label?: string
           last_pause_reason?: string | null
           message?: string | null
@@ -8801,6 +8803,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_enabled?: boolean
           label?: string
           last_pause_reason?: string | null
           message?: string | null
@@ -11812,6 +11815,26 @@ export type Database = {
       review_flow_template: {
         Args: { _approve: boolean; _note?: string; _submission_id: string }
         Returns: undefined
+      }
+      bind_customer_campaign: {
+        Args: { p_campaign_id: string; p_customer_id: string }
+        Returns: {
+          campaign_id: string | null
+          outcome: string
+        }[]
+      }
+      configure_rodizio_pool: {
+        Args: {
+          p_campaign_id: string
+          p_enabled: boolean
+          p_label?: string
+          p_partner_ids: string[]
+        }
+        Returns: {
+          enabled: boolean
+          members: number
+          pool_id: string
+        }[]
       }
       rodizio_assign_lead: {
         Args: { p_campaign_id: string; p_customer_id: string }

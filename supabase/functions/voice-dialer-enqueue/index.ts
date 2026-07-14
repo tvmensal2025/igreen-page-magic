@@ -354,10 +354,19 @@ Deno.serve(async (req) => {
     conversation_step: step || null,
     cold_hours: coldHours,
     ...(body.config ?? {}),
+    // Agendamento único deve respeitar a data/hora escolhida, inclusive fora
+    // da janela padrão. O cron só promove a campanha após scheduled_at.
+    ...(scheduled
+      ? { scheduledExact: true, windowStart: "00:00", windowEnd: "23:59", weekdaysOnly: false }
+      : {}),
   };
 
-  const preferBatch = body.velip_mode === "batch" ||
-    (body.velip_mode !== "single" && targets.length >= 30);
+  // A API de lote da Velip só é criada no envio imediato. Agendamentos são
+  // sempre single para que o cron faça a discagem no horário programado.
+  const preferBatch = !scheduled && dispatchKind === "audio" && (
+    body.velip_mode === "batch" ||
+    (body.velip_mode !== "single" && targets.length >= 30)
+  );
   const velipMode: "single" | "batch" = preferBatch ? "batch" : "single";
 
   const { data: campaign, error: campErr } = await admin

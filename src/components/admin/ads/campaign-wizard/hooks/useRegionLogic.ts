@@ -69,7 +69,8 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
       try {
         const r = await preflightCampaign({
           cities: state.cities.map((c) => ({ key: c.key, name: c.name })),
-          daily_budget_cents: 3000,
+          daily_budget_cents: Math.max(1000, Math.round(state.budget * 100)),
+          duration_days: state.duration > 0 ? state.duration : null,
         });
         patch({ liveReach: r.reach ? { lower: r.reach.lower, upper: r.reach.upper } : null });
       } catch { patch({ liveReach: null }); }

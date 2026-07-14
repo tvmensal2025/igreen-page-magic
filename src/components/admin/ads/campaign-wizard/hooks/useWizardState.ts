@@ -159,7 +159,7 @@ const INITIAL_STATE: WizardState = {
   initialMsgChecking: false,
   initialMsgVarying: false,
   budget: 15,
-  duration: 3,
+  duration: 7,
   placementMode: "auto",
   placements: ALL_PLACEMENTS,
   rodizioEnabled: false,

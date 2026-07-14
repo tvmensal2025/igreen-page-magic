@@ -4,7 +4,7 @@
  * persiste telefone, faz upload de mídia, monta payload, cria campanha e
  * tenta retry em falha de rede.
  */
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
 import {
   preflightCampaign, createCampaign, uploadAdPhotos, uploadAdVideo,
@@ -29,22 +29,29 @@ interface Deps {
 
 export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state, derived, patch, LS_KEY, onCreated, onClose }: Deps) {
   const { toast } = useToast();
+  const submitLockRef = useRef(false);
 
   const runPreflight = useCallback(async () => {
     patch({ preflightLoading: true, preflight: null });
     try {
-      const r = await preflightCampaign({
+      const result = await preflightCampaign({
         cities: state.geoMode === "cities" ? state.cities.map((c) => ({ key: c.key, name: c.name })) : [],
         custom_locations: state.geoMode === "radius"
           ? state.radiusPoints.map((p) => ({ ...p, distance_unit: "kilometer" as const }))
           : undefined,
         daily_budget_cents: Math.round(state.budget * 100),
+        duration_days: state.duration > 0 ? state.duration : null,
       });
-      patch({ preflight: r });
+      patch({ preflight: result });
+      return result;
     } catch (e: any) {
-      patch({ preflight: { ok: false, blockers: [e?.message || "Falha no pré-voo"], warnings: [], reach: null } });
-    } finally { patch({ preflightLoading: false }); }
-  }, [state.geoMode, state.cities, state.radiusPoints, state.budget, patch]);
+      const result = { ok: false, blockers: [e?.message || "Falha no pré-voo"], warnings: [], reach: null };
+      patch({ preflight: result });
+      return result;
+    } finally {
+      patch({ preflightLoading: false });
+    }
+  }, [state.geoMode, state.cities, state.radiusPoints, state.budget, state.duration, patch]);
 
   function taggedFiles(): { file: AdFile; format: AdFormat }[] {
     return [
@@ -55,6 +62,7 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
   }
 
   const submit = useCallback(async () => {
+    if (submitLockRef.current) return;
     if (!consultantPhone) {
       toast({ title: "Telefone do consultor não configurado", description: "Adicione seu WhatsApp na aba Dados antes de publicar.", variant: "destructive" });
       return;
@@ -68,10 +76,20 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
       });
       return;
     }
-    if (state.preflight && !state.preflight.ok) {
-      toast({ title: "Pré-voo em revisão", description: "Vou tentar publicar direto pela conta principal.", variant: "destructive" });
-    }
+    submitLockRef.current = true;
     patch({ submitting: true });
+    // Revalida no clique para orçamento, duração e localização nunca usarem um pré-voo antigo.
+    const currentPreflight = await runPreflight();
+    if (!currentPreflight.ok) {
+      submitLockRef.current = false;
+      patch({ submitting: false });
+      toast({
+        title: "Corrija os bloqueios do pré-voo",
+        description: currentPreflight.blockers.join(" • ") || "A campanha não pode ser publicada com a configuração atual.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       try {
         await supabase.from("consultant_ad_settings").upsert(
@@ -132,24 +150,15 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
             }
           : {}),
       };
-      let result: any;
-      try {
-        result = await createCampaign(payload);
-      } catch (err: any) {
-        const msg = String(err?.message || "");
-        if (/failed to fetch|network|5\d\d/i.test(msg)) {
-          await new Promise((r) => setTimeout(r, 1500));
-          result = await createCampaign(payload);
-        } else throw err;
-      }
-      const activated = result?.activated === true;
-      const rodizioConfigured = result?.rodizio_configured === true;
-      const rodizioWarning = typeof result?.rodizio_warning === "string" ? result.rodizio_warning : null;
+      const result = await createCampaign(payload);
+      const activated = result.local_status === "active" && result.effective_status === "ACTIVE";
+      const rodizioConfigured = result.rodizio_configured === true;
+      const rodizioWarning = typeof result.rodizio_warning === "string" ? result.rodizio_warning : null;
       const wantedRodizio = state.rodizioEnabled && state.rodizioPartners.length >= 1;
 
       if (wantedRodizio && !rodizioConfigured) {
         toast({
-          title: activated ? "Campanha no ar — rodízio pendente" : "Campanha salva — rodízio pendente",
+          title: activated ? "Campanha ativa — rodízio pendente" : "Campanha enviada — rodízio pendente",
           description: rodizioWarning
             ? `A Meta recebeu a campanha, mas o rodízio não ligou: ${rodizioWarning}. Edite a campanha e configure de novo.`
             : "A campanha foi criada, mas a pool de rodízio não foi configurada. Edite a campanha para ligar os participantes.",
@@ -157,17 +166,17 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
         });
       } else if (wantedRodizio && rodizioWarning) {
         toast({
-          title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
+          title: activated ? "Campanha ativa ✅" : "Campanha enviada à Meta",
           description: `Rodízio ativo com aviso: ${rodizioWarning}`,
         });
       } else {
         toast({
-          title: activated ? "Campanha publicada ✅" : "Campanha criada para revisão",
+          title: activated ? "Campanha ativa ✅" : "Campanha enviada à Meta",
           description: activated
             ? wantedRodizio
-              ? "Rodízio e dados da campanha foram salvos. A Meta pode levar alguns minutos para entregar os primeiros leads."
-              : "Campanha no ar. A Meta pode levar alguns minutos para entregar os primeiros leads."
-            : "A campanha foi salva e enviada para análise da Meta. Se precisar, aparecerá como revisão no painel.",
+              ? "Rodízio e dados da campanha foram salvos. A Meta confirmou a campanha como ativa."
+              : "A Meta confirmou a campanha como ativa. A entrega pode levar alguns minutos para começar."
+            : "A campanha foi criada e está em análise ou processamento na Meta. O painel mostrará quando ela ficar ativa.",
         });
       }
       try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
@@ -184,8 +193,11 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
           : msg,
         variant: "destructive",
       });
-    } finally { patch({ submitting: false }); }
-  }, [consultantPhone, consultantId, state, derived, patch, LS_KEY, onCreated, onClose, toast]); // eslint-disable-line react-hooks/exhaustive-deps
+    } finally {
+      submitLockRef.current = false;
+      patch({ submitting: false });
+    }
+  }, [consultantPhone, consultantId, state, derived, patch, runPreflight, LS_KEY, onCreated, onClose, toast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSaveAsTemplate = useCallback(async (meta: { title: string; description: string }) => {
     if (!state.headline.trim() || !state.primaryText.trim()) return toast({ title: "Preencha headline e texto antes", variant: "destructive" });

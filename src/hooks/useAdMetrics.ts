@@ -23,28 +23,13 @@ export interface AdMetrics {
   hasCampaigns: boolean;
 }
 
-/**
- * Extrai o valor textual de customers.lead_source (coluna jsonb que guarda
- * a string "meta_ads"). Cobre os casos: string já parseada, objeto legado
- * { utm_source } e null.
- */
-function leadSourceValue(raw: unknown): string | null {
-  if (raw == null) return null;
-  if (typeof raw === "string") return raw;
-  if (typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    if (typeof o.utm_source === "string") return o.utm_source;
-  }
-  return null;
-}
-
 export function useAdMetrics(consultantId: string | undefined | null, periodDays: number) {
   return useQuery({
     queryKey: ["ad-metrics-wa", consultantId, periodDays],
     enabled: !!consultantId,
     queryFn: async (): Promise<AdMetrics> => {
       const since = new Date();
-      since.setDate(since.getDate() - periodDays);
+    since.setDate(since.getDate() - Math.max(0, periodDays - 1));
       since.setHours(0, 0, 0, 0);
       const sinceISO = since.toISOString();
       const sinceDate = sinceISO.slice(0, 10);
@@ -56,15 +41,14 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
         .eq("consultant_id", consultantId!);
       const campaignIds = (campRows ?? []).map((c: any) => c.id as string);
 
-      // 2) Métricas reais por dia (facebook_metrics_daily, já reconciliado por
-      //    source_campaign_id no sync) — leads vêm DAQUI, não de customers.lead_source,
-      //    pra não inflar/desinflar CPL por causa de leads atribuídos a outras campanhas.
-      // 3) Conexão Meta ativa
+      // 2) Métricas reais por dia. "leads" usa somente eventos de lead
+      //    reportados pela Meta; conversas permanecem em campo separado.
+      // 3) Conexão Meta consultada separadamente das campanhas existentes.
       const [metricsRes, fbRes] = await Promise.all([
         campaignIds.length
           ? supabase
               .from("facebook_metrics_daily")
-              .select("date, spend_cents, impressions, clicks, leads, messaging_conversations_started")
+              .select("date, spend_cents, impressions, clicks, meta_lead_actions, messaging_conversations_started")
               .in("campaign_id", campaignIds)
               .gte("date", sinceDate)
               .order("date", { ascending: true })
@@ -86,7 +70,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
         cur.spend += Number(r.spend_cents ?? 0);
         cur.impressions += Number(r.impressions ?? 0);
         cur.clicks += Number(r.clicks ?? 0);
-        cur.leads += Number(r.leads ?? 0);
+        cur.leads += Number(r.meta_lead_actions ?? 0);
         metricsByDay.set(d, cur);
       }
 
@@ -132,7 +116,7 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
         conversations,
         ctr: impressions > 0 ? clicks / impressions : null,
         daily,
-        hasConnection: !!fbRes.data,
+        hasConnection: !!fbRes.data || campaignIds.length > 0,
         hasCampaigns: campaignIds.length > 0,
       };
     },
