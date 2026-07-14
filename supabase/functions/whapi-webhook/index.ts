@@ -1022,7 +1022,7 @@ Deno.serve(async (req) => {
               supabase,
               candidateCampaignId,
               currentSourceAdId,
-              instanceData.consultant_id,
+              (customer as any).consultant_id,
             );
             if (!validAd) {
               console.warn(`[rodizio] bloqueado: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
@@ -1057,7 +1057,7 @@ Deno.serve(async (req) => {
           // 3) há pool de rodízio ATIVA para essa campanha? (dupla trava: pool.is_active + campanha viva)
           if (candidateCampaignId) {
             if (currentSourceAdId) {
-              const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId, instanceData.consultant_id);
+              const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId, (customer as any).consultant_id);
               if (!validAd) {
                 console.warn(`[rodizio] pool bloqueada: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
                 await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");

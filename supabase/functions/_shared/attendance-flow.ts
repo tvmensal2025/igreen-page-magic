@@ -597,6 +597,7 @@ export interface AttendanceRatingInterceptArgs {
   supabase: SB;
   customer: {
     id: string;
+    consultant_id?: string | null;
     conversation_step?: string | null;
     attendance_rating?: number | null;
     attendance_rating_requested_at?: string | null;

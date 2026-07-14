@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { HELP_SYSTEM_KNOWLEDGE, formatHelpArticles } from "../_shared/help-system-knowledge.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,12 +18,11 @@ Seu trabalho:
 - Para erros do Facebook (rejeição de anúncio, WhatsApp Business, saldo, conexão expirada, baixo alcance) dê a solução prática.
 - NUNCA invente preços, números de telefone, links, ou políticas. Se não souber, diga "vou pedir para o suporte humano te chamar".
 
-Regras importantes do iGreen que você JÁ sabe:
-- Anúncios de mensagem só funcionam com WhatsApp Business — se o número está em WhatsApp comum, o Facebook reprova (subcode 2446885).
-- Saldo mínimo para criar campanha = 7 dias de orçamento diário (com taxa).
-- Comissão paga só quando o cliente vira "ativo" (após validação iGreen).
-- O bot atende automático 24/7; consultor só intervém se o cliente pedir humano.
-- Pagamento da carteira é via Stripe (cartão).`;
+Regras importantes:
+- Para anúncios e carteira, consulte os DADOS ATUAIS DO CONSULTOR antes de informar saldo, mínimo, taxa, situação ou motivo de reprovação.
+- Para comissão, pagamento e situação de cliente, explique apenas o que estiver confirmado nos dados ou na documentação publicada.
+- Uma resposta manual pode pausar a automação da conversa. Oriente o consultor a conferir o estado atual antes de reativar.
+- Nunca afirme que uma automação está ligada, funcionando ou disponível sem evidência nos dados fornecidos.`;
 
 Deno.serve(async (req) => {
   const json = (o: unknown, status = 200) =>
@@ -53,23 +53,26 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
     const ctx: Record<string, unknown> = { consultant_id: user.id };
+    let publishedHelp = "";
     try {
-      const [{ data: c }, { data: w }, { data: fb }, { data: camp }] = await Promise.all([
+      const [{ data: c }, { data: w }, { data: fb }, { data: camp }, { data: articles }] = await Promise.all([
         admin.from("consultants").select("name,license,phone,approved").eq("id", user.id).maybeSingle(),
         admin.from("consultant_wallet").select("balance_cents,total_spent_cents,auto_pause_at_cents").eq("consultant_id", user.id).maybeSingle(),
         admin.from("facebook_connections").select("status,page_name,ad_account_name,ad_account_currency,whatsapp_destination_number,token_expires_at,validation_errors,pixel_id").eq("consultant_id", user.id).maybeSingle(),
         admin.from("facebook_campaigns").select("name,status,daily_budget_cents,leads_count,started_at,rejection_reason").eq("consultant_id", user.id).order("created_at", { ascending: false }).limit(3),
+        admin.from("tour_articles").select("category,title,body,video_url").eq("is_active", true).order("order_index"),
       ]);
       ctx.consultor = c;
       ctx.carteira = w ? { saldo_reais: ((w.balance_cents || 0) / 100).toFixed(2), gasto_total_reais: ((w.total_spent_cents || 0) / 100).toFixed(2) } : null;
       ctx.facebook = fb;
       ctx.campanhas_recentes = camp;
+      publishedHelp = formatHelpArticles(articles || []);
     } catch (e) {
       console.warn("[support-chat] ctx error", e);
     }
 
     const fullMessages = [
-      { role: "system", content: SYS_PROMPT },
+      { role: "system", content: `${SYS_PROMPT}\n\n${HELP_SYSTEM_KNOWLEDGE}${publishedHelp}` },
       { role: "system", content: "DADOS ATUAIS DO CONSULTOR (use para responder com base na realidade dele):\n" + JSON.stringify(ctx, null, 2) },
       ...messages,
     ];

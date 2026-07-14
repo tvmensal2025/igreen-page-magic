@@ -5,7 +5,7 @@
  * Com ON: respeita cooldown + prioridade em `retention_settings`.
  */
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.4";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isAutomationEnabled, logSkipped } from "./automation-gate.ts";
 
 // deno-lint-ignore no-explicit-any

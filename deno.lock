@@ -7925,6 +7925,7 @@
         "npm:dagre@~0.8.5",
         "npm:date-fns@^3.6.0",
         "npm:dotenv@^17.4.2",
+        "npm:driver.js@^1.7.0",
         "npm:embla-carousel-autoplay@^8.6.0",
         "npm:embla-carousel-react@^8.6.0",
         "npm:eslint-plugin-react-hooks@^5.2.0",

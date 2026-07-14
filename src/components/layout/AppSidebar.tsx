@@ -21,6 +21,7 @@ import {
   Settings,
   CalendarClock,
   Receipt,
+  CircleHelp,
 } from "lucide-react";
 
 
@@ -175,6 +176,7 @@ export function AppSidebar({
       )}
 
       <aside
+        data-tour="menu-lateral"
         className={`pe-sidebar ${collapsed ? "is-collapsed" : ""} fixed lg:sticky lg:top-0 left-0 top-0 z-40 h-[100dvh] shrink-0 flex flex-col shadow-2xl transition-all duration-300 ${
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         } ${collapsed ? "w-[72px]" : "w-72"}`}
@@ -231,42 +233,53 @@ export function AppSidebar({
           </div>
 
 
-          {/* Conta — Configurações e Sair no mesmo padrão dos demais itens */}
-          {(onOpenSettings || onLogout) && (
-            <div>
-              {!collapsed && <div className="pe-sidebar-section">Conta</div>}
-              {collapsed && <div className="my-2 mx-3 h-px bg-white/5" />}
-              <div className="space-y-0.5">
-                {onOpenSettings && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onOpenSettings();
-                      onOpenChange?.(false);
-                    }}
-                    className="pe-nav-item w-full text-left"
-                    title={collapsed ? "Configurações" : undefined}
-                    aria-label="Configurações"
-                  >
-                    <Settings className="w-[18px] h-[18px] shrink-0" />
-                    {!collapsed && <span className="truncate">Configurações</span>}
-                  </button>
-                )}
-                {onLogout && (
-                  <button
-                    type="button"
-                    onClick={onLogout}
-                    className="pe-nav-item w-full text-left"
-                    title={collapsed ? "Sair" : undefined}
-                    aria-label="Sair"
-                  >
-                    <LogOut className="w-[18px] h-[18px] shrink-0" />
-                    {!collapsed && <span className="truncate">Sair</span>}
-                  </button>
-                )}
-              </div>
+          {/* Conta — ajuda, configurações e saída no mesmo padrão dos demais itens */}
+          <div>
+            {!collapsed && <div className="pe-sidebar-section">Ajuda e conta</div>}
+            {collapsed && <div className="my-2 mx-3 h-px bg-white/5" />}
+            <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigate?.("/ajuda");
+                  onOpenChange?.(false);
+                }}
+                className="pe-nav-item w-full text-left"
+                title={collapsed ? "Central de ajuda" : undefined}
+                aria-label="Central de ajuda"
+              >
+                <CircleHelp className="w-[18px] h-[18px] shrink-0" />
+                {!collapsed && <span className="truncate">Central de ajuda</span>}
+              </button>
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenSettings();
+                    onOpenChange?.(false);
+                  }}
+                  className="pe-nav-item w-full text-left"
+                  title={collapsed ? "Configurações" : undefined}
+                  aria-label="Configurações"
+                >
+                  <Settings className="w-[18px] h-[18px] shrink-0" />
+                  {!collapsed && <span className="truncate">Configurações</span>}
+                </button>
+              )}
+              {onLogout && (
+                <button
+                  type="button"
+                  onClick={onLogout}
+                  className="pe-nav-item w-full text-left"
+                  title={collapsed ? "Sair" : undefined}
+                  aria-label="Sair"
+                >
+                  <LogOut className="w-[18px] h-[18px] shrink-0" />
+                  {!collapsed && <span className="truncate">Sair</span>}
+                </button>
+              )}
             </div>
-          )}
+          </div>
         </nav>
 
       </aside>

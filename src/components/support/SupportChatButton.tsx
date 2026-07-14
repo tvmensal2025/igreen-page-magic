@@ -9,10 +9,10 @@ import { useToast } from "@/hooks/use-toast";
 interface Msg { role: "user" | "assistant"; content: string }
 
 const SUGGESTIONS = [
+  "Como conecto ou reconecto meu WhatsApp?",
+  "Como acompanho um cliente interessado?",
   "Por que minha campanha foi reprovada?",
-  "Como migro pro WhatsApp Business?",
-  "Meu saldo está baixo, o que faço?",
-  "Como melhorar o CPL?",
+  "Onde vejo saldo e comissões?",
 ];
 
 interface SupportChatButtonProps {
@@ -24,13 +24,19 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([
-    { role: "assistant", content: "Oi! Sou o Suporte iGreen com IA. Posso ver seus dados (saldo, campanhas, conexão Facebook) e te ajudar agora. O que você precisa?" },
+    { role: "assistant", content: "Olá. Sou a assistência da iGreen com IA. Consulto os guias da plataforma e os dados atuais da sua operação para orientar você. O que precisa fazer?" },
   ]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" }); }, [msgs, sending]);
+
+  useEffect(() => {
+    const handleOpen = () => setOpen(true);
+    window.addEventListener("open-support-chat", handleOpen);
+    return () => window.removeEventListener("open-support-chat", handleOpen);
+  }, []);
 
   async function send(text: string) {
     const txt = text.trim();
@@ -70,7 +76,7 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
         <SheetContent side="right" className="flex flex-col p-0 w-full sm:max-w-md">
           <SheetHeader className="px-4 pt-4 pb-2 border-b">
             <SheetTitle className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-primary" /> Suporte iGreen com IA
+              <Sparkles className="w-4 h-4 text-primary" /> Assistência iGreen com IA
             </SheetTitle>
             <p className="text-[11px] text-muted-foreground">Vê seus dados em tempo real e responde no contexto da sua operação.</p>
           </SheetHeader>

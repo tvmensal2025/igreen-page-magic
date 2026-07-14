@@ -143,9 +143,11 @@ export default function AdminTourEditor() {
                   <div className="grid gap-2 md:grid-cols-2">
                     <Input placeholder="Título" value={cur.title} onChange={(e) => patchStep(s.id, { title: e.target.value })} />
                     <Input placeholder="Texto do link (opcional)" value={cur.cta_label || ""} onChange={(e) => patchStep(s.id, { cta_label: e.target.value })} />
+                    <Input placeholder="Rota exata (ex.: /admin?tab=whatsapp)" value={cur.route} onChange={(e) => patchStep(s.id, { route: e.target.value })} />
+                    <Input placeholder='Seletor visual (ex.: [data-tour="whatsapp"])' value={cur.selector || ""} onChange={(e) => patchStep(s.id, { selector: e.target.value || null })} />
                   </div>
                   <Textarea rows={3} placeholder="Texto do balão" value={cur.body} onChange={(e) => patchStep(s.id, { body: e.target.value })} />
-                  <Input placeholder="Link do botão (ex: /admin/motor-cadencia)" value={cur.cta_href || ""} onChange={(e) => patchStep(s.id, { cta_href: e.target.value })} />
+                  <Input placeholder="Link do botão (ex.: /admin/motor)" value={cur.cta_href || ""} onChange={(e) => patchStep(s.id, { cta_href: e.target.value })} />
                   <div className="flex justify-end gap-2">
                     <Button size="sm" variant="outline" onClick={() => regenerateStep(s.order_index)} disabled={saving === `gen-${s.order_index}`}>
                       {saving === `gen-${s.order_index}` ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-2" />}
@@ -194,7 +196,8 @@ export default function AdminTourEditor() {
                     </Button>
                   </div>
                   <Input placeholder="Título" value={cur.title} onChange={(e) => patchArticle(a.id, { title: e.target.value })} />
-                  <Textarea rows={4} placeholder="Corpo do artigo" value={cur.body} onChange={(e) => patchArticle(a.id, { body: e.target.value })} />
+                  <Textarea rows={6} placeholder="Passo a passo do artigo. Use uma etapa por linha." value={cur.body} onChange={(e) => patchArticle(a.id, { body: e.target.value })} />
+                  <Input placeholder="URL do vídeo (opcional)" value={cur.video_url || ""} onChange={(e) => patchArticle(a.id, { video_url: e.target.value || null })} />
                   <div className="flex justify-end">
                     <Button size="sm" onClick={() => saveArticle(a)} disabled={!dirty || saving === a.id}>
                       <Save className="h-3.5 w-3.5 mr-2" /> {saving === a.id ? "Salvando…" : "Salvar"}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Lightbulb, X } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 interface Recommendation {
   id: string;

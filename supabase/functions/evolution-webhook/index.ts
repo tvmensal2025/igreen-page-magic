@@ -942,7 +942,7 @@ Deno.serve(async (req) => {
         let matchSimilarity: number | null = null;
 
         // 0) Blindagem: sinais fortes do Meta vêm primeiro e nunca perdem para protocolo/texto.
-        const strongFields = extractMetaReferralFields(rawMsg, body);
+        const strongFields = extractMetaReferralFields(msgData, body);
         const strong = await resolveCampaignFromStrongMeta(supabase, instanceData.consultant_id, {
           ...strongFields,
           referral: strongFields.referral || externalAdReply || null,

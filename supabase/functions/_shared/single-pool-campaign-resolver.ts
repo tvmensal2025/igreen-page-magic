@@ -166,9 +166,12 @@ export async function resolveByRecentActivity(
     const byCamp = new Map<string, { count: number; last: string }>();
     for (const row of (data || []) as any[]) {
       const cid = String(row.source_campaign_id);
-      const cur = byCamp.get(cid);
-      if (!cur) byCamp.set(cid, { count: 1, last: row.created_at });
-      else cur.count++;
+      if (byCamp.has(cid)) {
+        const cur = byCamp.get(cid)!;
+        cur.count = cur.count + 1;
+      } else {
+        byCamp.set(cid, { count: 1, last: row.created_at });
+      }
     }
     if (byCamp.size !== 1) return null;
     const [cid, info] = [...byCamp.entries()][0];
@@ -241,9 +244,10 @@ export async function resolveByFallbackRotation(
     const uf = ufFromPhone(phone);
     let candidates = alive;
     if (uf) {
+      const ufStr = uf as string;
       const byUf = alive.filter((id) => {
         const camp = active.find((a) => a.campaignId === id);
-        return camp ? ufsFromCampaignCities(camp.cities).has(uf) : false;
+        return camp ? ufsFromCampaignCities(camp.cities).has(ufStr) : false;
       });
       if (byUf.length > 0) {
         candidates = byUf;

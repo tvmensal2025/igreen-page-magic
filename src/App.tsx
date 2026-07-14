@@ -60,6 +60,8 @@ import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDial
 import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
 import { UpdateAvailableToast } from "@/components/UpdateAvailableToast";
 import { TourProvider } from "@/features/onboarding/TourProvider";
+import { TourStateProvider } from "@/features/onboarding/useTour";
+import { SupportChatButton } from "@/components/support/SupportChatButton";
 
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
@@ -84,6 +86,7 @@ const App = () => (
         <Sonner />
         <UpdateAvailableToast />
         <BrowserRouter>
+          <TourStateProvider>
           <Suspense fallback={
             <div className="flex h-screen items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-4">
@@ -172,7 +175,9 @@ const App = () => (
             <RechargeRequiredDialog />
             <RemoteSupportProvider />
             <TourProvider />
+            <SupportChatButton className="hidden" />
           </Suspense>
+          </TourStateProvider>
         </BrowserRouter>
         </PromptDialogProvider>
         </ConfirmDialogProvider>

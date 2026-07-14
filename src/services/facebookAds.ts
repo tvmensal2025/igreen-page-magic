@@ -204,6 +204,10 @@ export async function preflightCampaign(input: {
   custom_locations?: CustomLocation[];
   daily_budget_cents: number;
   duration_days?: number | null;
+  // Idade é opcional: não afeta a pré-validação de alcance/orçamento, mas é
+  // aceita para que quem publica reaproveite o mesmo objeto de targeting.
+  age_min?: number;
+  age_max?: number;
 }): Promise<PreflightResult> {
   const { data, error } = await supabase.functions.invoke("facebook-preflight-check", { body: input });
   if (error) throw error;

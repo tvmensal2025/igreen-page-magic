@@ -8,7 +8,7 @@
  *   (criar estado sem motor ligado evita fila fantasma).
  */
 
-import type { SupabaseClient } from "npm:@supabase/supabase-js@2.49.4";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { computeNextActionAt } from "./cadence-engine.ts";
 import { isAutomationEnabled } from "./automation-gate.ts";
 import { loadRetentionSettings } from "./retention-orchestrator.ts";

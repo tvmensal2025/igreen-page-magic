@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { HELP_SYSTEM_KNOWLEDGE, formatHelpArticles } from "../_shared/help-system-knowledge.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,9 +13,10 @@ async function loadKnowledge(supabaseUrl: string, supabaseKey: string): Promise<
   let baseKnowledge = FALLBACK_KNOWLEDGE;
   let extraKnowledge = "";
   let coverageData = "";
+  let helpKnowledge = HELP_SYSTEM_KNOWLEDGE;
 
   try {
-    if (!supabaseUrl || !supabaseKey) return baseKnowledge;
+    if (!supabaseUrl || !supabaseKey) return `${baseKnowledge}\n\n${helpKnowledge}`;
     const sb = createClient(supabaseUrl, supabaseKey);
 
     const { data: sections } = await sb
@@ -29,6 +31,13 @@ async function loadKnowledge(supabaseUrl: string, supabaseKey: string): Promise<
         `==========================================================\n${s.title}\n==========================================================\n\n${s.content}`
       ).join("\n\n");
     }
+
+    const { data: articles } = await sb
+      .from("tour_articles")
+      .select("category, title, body, video_url")
+      .eq("is_active", true)
+      .order("order_index", { ascending: true });
+    helpKnowledge += formatHelpArticles(articles || []);
 
     const { data: extraData } = await sb.from("settings").select("value").eq("key", "ai_knowledge_extra").maybeSingle();
     if (extraData?.value) {
@@ -73,7 +82,7 @@ async function loadKnowledge(supabaseUrl: string, supabaseKey: string): Promise<
     console.error("Failed to load knowledge:", e);
   }
 
-  return baseKnowledge + extraKnowledge + coverageData;
+  return `${baseKnowledge}\n\n${helpKnowledge}${extraKnowledge}${coverageData}`;
 }
 
 Deno.serve(async (req) => {
