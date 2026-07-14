@@ -126,7 +126,17 @@ Deno.serve(async (req) => {
         manual_review_reason: null,
       })
       .eq("id", customer_id);
-    if (updErr) throw updErr;
+    if (updErr) {
+      const msg = updErr.message || "";
+      if (msg.includes("campaign_ad_id_mismatch")) {
+        return json({
+          ok: false,
+          error: "partner_not_in_campaign_pool",
+          hint: "Este parceiro não faz parte do pool de rodízio da campanha Meta deste lead. Adicione-o ao pool da campanha antes de atribuir, ou escolha outro parceiro.",
+        }, 409);
+      }
+      throw updErr;
+    }
 
     // Protocolo do parceiro (short_code-YYMMDD-seq)
     let protocol: string | null = customer.tracking_protocol || null;
