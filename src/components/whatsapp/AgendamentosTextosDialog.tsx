@@ -545,6 +545,21 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
             <TabsTrigger value="posvenda" className="rounded-xl text-xs">
               Pós-venda ({posVenda.length})
             </TabsTrigger>
+            <TabsTrigger value="fluxos" className="rounded-xl text-xs">
+              Fluxos ({flowSteps.length})
+            </TabsTrigger>
+            <TabsTrigger value="faq" className="rounded-xl text-xs">
+              FAQ ({flowQa.length})
+            </TabsTrigger>
+            <TabsTrigger value="voz" className="rounded-xl text-xs">
+              Voz ({voiceCamps.length})
+            </TabsTrigger>
+            <TabsTrigger value="chat" className="rounded-xl text-xs">
+              Chat ({chatTpl.length})
+            </TabsTrigger>
+            <TabsTrigger value="campanhas" className="rounded-xl text-xs">
+              Campanhas ({bulkCamps.length + schedMsgs.length})
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="catalogo" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
