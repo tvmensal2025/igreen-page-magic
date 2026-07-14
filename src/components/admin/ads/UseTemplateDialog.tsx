@@ -129,13 +129,16 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
         if (filtered.length) cities = filtered;
       }
 
+      const suggestedBudgetCents = Math.max(1000, template!.suggested_daily_budget_cents);
+      const suggestedDurationDays = 7;
       setStepLog("Validando alcance no Facebook...");
       const pf = await preflightCampaign({
         cities: cities.map((c) => ({ key: c.key, name: c.name })),
-        daily_budget_cents: template!.suggested_daily_budget_cents,
+        daily_budget_cents: suggestedBudgetCents,
+        duration_days: suggestedDurationDays,
       });
       if (!pf.ok) {
-        toast({ title: "Pré-validação em revisão", description: pf.blockers.join(" | ") || "Vou tentar publicar direto.", variant: "destructive" });
+        throw new Error(pf.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
       }
       if (pf.reach && pf.reach.lower < 50_000) {
         throw new Error(`Audiência muito pequena (${pf.reach.lower.toLocaleString("pt-BR")} pessoas).`);
@@ -146,8 +149,8 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
         template_id: template!.id,
         name: `${template!.title} — ${preset.nome}${selectedCity !== "__all__" ? ` (${selectedCity})` : ""}`,
         cities: cities.map((c) => ({ key: c.key, name: c.name })),
-        daily_budget_cents: template!.suggested_daily_budget_cents,
-        duration_days: null,
+        daily_budget_cents: suggestedBudgetCents,
+        duration_days: suggestedDurationDays,
         photos: template!.photos,
         headline: template!.headline,
         primary_text: template!.primary_text,
@@ -263,7 +266,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
 
             <div className="text-xs space-y-1 rounded border border-primary/30 bg-primary/5 p-3">
               <div>📍 <strong>{preset?.nome}</strong> — {selectedCity === "__all__" ? `${presetCities.length} cidades` : selectedCity}</div>
-              <div>💰 <strong>R$ {(template.suggested_daily_budget_cents / 100).toFixed(0)}/dia</strong>, sem prazo final</div>
+              <div>💰 <strong>R$ {(Math.max(1000, template.suggested_daily_budget_cents) / 100).toFixed(0)}/dia</strong>, por 7 dias</div>
               <div>👥 Idade {template.age_min}-{template.age_max}, LAL da plataforma + exclusão de clientes ativos</div>
               <div>📱 Clientes interessados chegam direto no seu WhatsApp configurado</div>
             </div>

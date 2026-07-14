@@ -14,20 +14,22 @@ async function loadInsights(consultantId: string, distribuidora?: string) {
   } catch { return null; }
 }
 
-// Carrega criativos de concorrentes que estão há mais tempo no ar (sinal de que convertem).
-// Prioriza os que têm imagem real coletada (referência visual concreta para o builder).
-async function loadCompetitorWinners(limit = 8) {
+// Carrega somente anúncios concorrentes observados recentemente. A permanência
+// no ar é uma heurística de relevância, não uma prova de conversão. O modelo
+// recebe apenas copy e metadados; as imagens coletadas não são enviadas ao Gemini.
+async function loadCompetitorReferences(limit = 8) {
   try {
     const admin = adminClient();
+    const recentCutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
     const { data } = await admin
       .from("ad_competitor_creatives")
-      .select("advertiser, headline, primary_text, angle, creative_format, active_days, image_url")
-      .order("active_days", { ascending: false })
+      .select("advertiser, headline, primary_text, angle, creative_format, last_seen_at")
+      .gte("last_seen_at", recentCutoff)
+      .order("last_seen_at", { ascending: false })
       .limit(limit * 2);
-    const arr = data || [];
-    const withImg = arr.filter((c: any) => c.image_url);
-    const withoutImg = arr.filter((c: any) => !c.image_url);
-    return [...withImg, ...withoutImg].slice(0, limit);
+    return (data || [])
+      .filter((item: any) => !/i\s*green/i.test(String(item.advertiser || "")))
+      .slice(0, limit);
   } catch { return []; }
 }
 
@@ -65,9 +67,24 @@ const WEAK_OPENERS = [
   /^ol[áa][,.\s]/i,
 ];
 
+const UNVERIFIED_CLAIMS = [
+  /\d/,
+  /\b(?:lei|prazo|urg[eê]ncia|depoimento|milhares?|famílias?|clientes? satisfeitos?)\b/i,
+  /\b(?:economia|desconto)\s+(?:de|at[ée])\b/i,
+  /\b(?:por cento|percentual|reais|r\$)\b/i,
+];
+
+function claimSafe(s: string): boolean {
+  if (UNVERIFIED_CLAIMS.some((r) => r.test(s))) return false;
+  if (/\bsem\s+(?:obra|placas?)\b/i.test(s) && !/\b(?:consulte|consulta|opção|pode|simule|verifique|confira|sujeit[oa])\b/i.test(s)) {
+    return false;
+  }
+  return true;
+}
+
 function isClean(s: string): boolean {
   if (!s) return false;
-  return !FORBIDDEN.some((r) => r.test(s));
+  return claimSafe(s) && !FORBIDDEN.some((r) => r.test(s));
 }
 
 // Para primary_text: verifica se a primeira sentença (até ponto/quebra) cabe em 40 chars.
@@ -91,8 +108,7 @@ function variationScore(s: string, kind: "headline" | "primary"): number {
   const idealMax = kind === "headline" ? 30 : 90;
   let score = 60;
   if (len >= idealMin && len <= idealMax) score += 15;
-  if (/\d/.test(s)) score += 10; // números aumentam CTR
-  if (/(fala|toca|garante|peça|peca|simule|baixe|conhe[çc]a|descubra|economiz|chame|👇|👉)/i.test(s)) score += 10;
+  if (/(fala|toca|peça|peca|simule|consulte|entenda|verifique|chame|👇|👉)/i.test(s)) score += 10;
   if (/cliente|cidade|região|aqui|seu boleto|sua conta/i.test(s)) score += 5;
   // Bônus de hook curto APENAS no primary — o texto fica visível mesmo com "ver mais".
   if (kind === "primary" && hookOk(s)) score += 20;
@@ -101,22 +117,23 @@ function variationScore(s: string, kind: "headline" | "primary"): number {
 
 const FALLBACK = {
   headlines: [
-    { text: "Conta de luz 20% mais barata", framework: "específico", angle: "economia_concreta", score: 90 },
-    { text: "Sua conta de luz subiu de novo?", framework: "PAS", angle: "quebra_objecao", score: 80 },
-    { text: "Pague menos sem obra nem taxa", framework: "objeção", angle: "quebra_objecao", score: 85 },
-    { text: "Em até 30 dias na sua fatura", framework: "urgência", angle: "urgencia", score: 78 },
-    { text: "+50 mil famílias economizam", framework: "prova social", angle: "prova_social", score: 82 },
+    { text: "Simule sua conta de luz", framework: "simulação", angle: "simulacao", score: 85 },
+    { text: "Veja se há economia", framework: "transparência", angle: "transparencia", score: 82 },
+    { text: "Consulte opção sem placas", framework: "objeção", angle: "sem_placas", score: 84 },
+    { text: "Consulte opção sem obra", framework: "objeção", angle: "sem_obra", score: 84 },
+    { text: "Entenda antes de aderir", framework: "transparência", angle: "como_funciona", score: 80 },
+    { text: "Conta alta? Faça simulação", framework: "PAS", angle: "dor_pas", score: 82 },
   ],
   primary_texts: [
-    { text: "Conta de luz subindo de novo? Desconto direto no boleto, sem obra. Fala no zap 👇", framework: "PAS", angle: "dor_pas", score: 95 },
-    { text: "Sua fatura passou de R$ 300? Até 20% mais barata todo mês. Toca aqui.", framework: "AIDA", angle: "economia_concreta", score: 92 },
-    { text: "Cansada de pagar caro? Energia limpa, conta leve, sem instalar nada. Garante 🌱", framework: "benefício", angle: "quebra_objecao", score: 90 },
+    { text: "Conta de luz pesando? Simule para verificar se pode haver economia. Fale no zap 👇", framework: "PAS", angle: "simulacao", score: 90 },
+    { text: "Quer entender a proposta? Consulte as condições antes de decidir. Fale no zap.", framework: "transparência", angle: "transparencia", score: 88 },
+    { text: "Prefere evitar instalação? Consulte se há opção sem placas e sem obra para o local.", framework: "objeção", angle: "sem_obra", score: 86 },
   ],
-  description: "Sem obra. Sem taxa.",
+  description: "Consulte e simule",
   image_briefs: [
-    { format: "estatico", brief: "Foto real de uma fatura de luz na mão, valores 'antes/depois' destacados em verde, sem stock photo." },
-    { format: "estatico", brief: "Pessoa real (não modelo) sorrindo segurando a conta, fundo de cozinha simples, texto pequeno: 'Diminuí R$ 1.200/ano'." },
-    { format: "carrossel", brief: "Slide 1 fundo amarelo texto preto: 'A Lei 14.300 te dá direito a desconto. Quase ninguém sabe.' Slides seguintes explicam." },
+    { format: "estatico", brief: "Pessoa consultando uma fatura sem valores legíveis, com chamada para simulação e sem promessa de resultado." },
+    { format: "video_9x16", brief: "Vídeo vertical mostrando o passo a passo da simulação, as condições de forma legível e um convite para consultar." },
+    { format: "carrossel", brief: "Carrossel explicando como consultar disponibilidade, simular e revisar condições antes de decidir." },
   ],
 };
 
@@ -131,14 +148,14 @@ interface CopyPack {
   legacy?: { headlines: string[]; primary_texts: string[] };
 }
 
-// Ângulos obrigatórios — IA precisa entregar 1 de cada (evita 6 títulos do mesmo tipo).
+// Ângulos verificáveis — evitam números, prova social, prazo ou benefício não comprovado.
 const REQUIRED_ANGLES = [
-  "economia_concreta", // R$/% específicos
-  "quebra_objecao",    // sem obra, sem fidelidade, sem instalar
-  "prova_social",      // milhares de famílias, depoimento
-  "curiosidade",       // gancho, lei 14.300, segredo
-  "urgencia_local",    // cidade/distribuidora + prazo
-  "dor_pas",           // PAS — começa pela dor
+  "simulacao",
+  "transparencia",
+  "sem_placas",
+  "sem_obra",
+  "como_funciona",
+  "dor_pas",
 ];
 
 async function generate(cities: string[], insights?: any, competitors: any[] = [], consultantId?: string, globalPlaybook?: any): Promise<CopyPack> {
@@ -147,70 +164,69 @@ async function generate(cities: string[], insights?: any, competitors: any[] = [
 
   const learnedBlock = insights ? `
 
-APRENDIZADO DESTE CONSULTOR (use como guia obrigatório):
+APRENDIZADO DESTE CONSULTOR (use somente padrões de copy sustentados pelas métricas reais):
 - Padrões VENCEDORES (use): ${(insights.winning_patterns || []).join(", ") || "(ainda coletando)"}
 - Padrões PERDEDORES (evite): ${(insights.losing_patterns || []).join(", ") || "(ainda coletando)"}
-- Melhor taxa de toque atingida: ${((insights.best_ctr_bps || 0) / 100).toFixed(2)}% — supere isso
 ${insights.summary ? `- Lição mais recente: ${insights.summary}` : ""}
-${insights.competitor_summary ? `- Padrão dos concorrentes vencedores: ${insights.competitor_summary}` : ""}
+${insights.competitor_summary ? `- Referências recentes de copy dos concorrentes: ${insights.competitor_summary}` : ""}
 ` : "";
 
   const competitorBlock = competitors.length ? `
 
-ANÚNCIOS DE CONCORRENTES NO AR HÁ MAIS TEMPO (sinal claro de que convertem — inspire-se, NÃO copie):
-${competitors.map((c, i) => `${i + 1}. [${c.advertiser} • ${c.active_days}d • ${c.creative_format || "?"} • ${c.angle || "?"}] "${(c.headline || "").slice(0, 60)}" — ${(c.primary_text || "").slice(0, 100)}`).join("\n")}
+ANÚNCIOS DE OUTRAS EMPRESAS OBSERVADOS RECENTEMENTE (referências de linguagem; observação e tempo no ar NÃO comprovam conversão, desempenho ou veracidade; inspire-se, NÃO copie claims):
+${competitors.map((c, i) => `${i + 1}. [${c.advertiser} • ${c.creative_format || "?"} • ${c.angle || "?"}] "${(c.headline || "").slice(0, 60)}" — ${(c.primary_text || "").slice(0, 100)}`).join("\n")}
 ` : "";
 
   const globalBlock = globalPlaybook ? `
 
-PADRÕES DA REDE iGREEN (últimos 7 dias, ${globalPlaybook.consultants_in_sample || 0} consultores — use como reforço):
+PADRÕES DE COPY DA REDE (últimos 7 dias, ${globalPlaybook.consultants_in_sample || 0} consultores — use somente como referência):
 - TOP vencedores globais: ${(globalPlaybook.winning_patterns || []).slice(0, 5).map((p: any) => p.pattern).join(" | ") || "(coletando)"}
 - A EVITAR globalmente: ${(globalPlaybook.losing_patterns || []).slice(0, 5).map((p: any) => p.pattern).join(" | ") || "(coletando)"}
-- Imagens que mais funcionaram: ${(globalPlaybook.best_image_traits || []).slice(0, 3).map((p: any) => p.pattern).join(" | ") || "(coletando)"}
 ` : "";
 
-  const prompt = `Você é o melhor copywriter de Facebook Ads do Brasil. Gere copy em pt-BR para iGreen Energy (energia por assinatura — desconto na conta de luz).
+  const prompt = `Você escreve anúncios em pt-BR para energia por assinatura. Crie copy clara para a iGreen Energy sem prometer resultado não comprovado.
 
 Contexto-alvo: ${ctx}.
-${isDistribuidora ? "IMPORTANTE: o 1º item é a distribuidora do cliente — use o NOME dela em pelo menos 3 dos 6 títulos.\n" : ""}${learnedBlock}${globalBlock}${competitorBlock}
+${isDistribuidora ? "IMPORTANTE: o 1º item é a distribuidora do cliente — use o nome dela somente como contexto de localização, sem afirmar disponibilidade ou prazo.\n" : ""}${learnedBlock}${globalBlock}${competitorBlock}
 
 Retorne JSON ESTRITO. Cada headline DEVE ter um ângulo distinto da lista [${REQUIRED_ANGLES.join(", ")}] — exatamente 1 de cada:
 
 {
   "headlines": [
-    { "text": "...", "framework": "específico",        "angle": "economia_concreta" },
-    { "text": "...", "framework": "objeção",           "angle": "quebra_objecao" },
-    { "text": "...", "framework": "prova_social",      "angle": "prova_social" },
-    { "text": "...", "framework": "curiosidade",       "angle": "curiosidade" },
-    { "text": "...", "framework": "urgência_local",    "angle": "urgencia_local" },
-    { "text": "...", "framework": "PAS",               "angle": "dor_pas" }
+    { "text": "...", "framework": "simulação",       "angle": "simulacao" },
+    { "text": "...", "framework": "transparência", "angle": "transparencia" },
+    { "text": "...", "framework": "objeção",       "angle": "sem_placas" },
+    { "text": "...", "framework": "objeção",       "angle": "sem_obra" },
+    { "text": "...", "framework": "explicativo",   "angle": "como_funciona" },
+    { "text": "...", "framework": "PAS",           "angle": "dor_pas" }
   ],
   "primary_texts": [
-    { "text": "...", "framework": "AIDA",              "angle": "economia_concreta" },
-    { "text": "...", "framework": "PAS",               "angle": "dor_pas" },
-    { "text": "...", "framework": "benefício_direto",  "angle": "quebra_objecao" }
+    { "text": "...", "framework": "simulação",       "angle": "simulacao" },
+    { "text": "...", "framework": "transparência",   "angle": "transparencia" },
+    { "text": "...", "framework": "objeção",         "angle": "sem_obra" }
   ],
   "description": "1 descrição curta",
   "image_briefs": [
-    { "format": "estatico",  "brief": "descreva 1 imagem que NÃO seja painel solar genérico — mostre conta antes/depois, pessoa real, ou objeto cotidiano." },
-    { "format": "video_9x16","brief": "descreva 1 vídeo vertical 15-25s: hook nos 3 primeiros segundos, prova visual no meio, CTA WhatsApp no fim." },
-    { "format": "carrossel", "brief": "slide 1 de alto contraste com texto de curiosidade; slides seguintes mostram a economia." }
+    { "format": "estatico",  "brief": "imagem cotidiana que convide a simular, sem valores, antes/depois ou promessa visual." },
+    { "format": "video_9x16","brief": "vídeo vertical curto explicando consulta, simulação e revisão das condições." },
+    { "format": "carrossel", "brief": "carrossel informativo sobre como consultar e simular antes de decidir." }
   ]
 }
 
-REGRAS DE OURO (cumpra TODAS, senão a Meta rejeita):
+REGRAS DE OURO:
 - Títulos: 14 a 30 caracteres. Textos: 35 a 90 caracteres. Descrição: até 25.
 - PROIBIDO usar: "garantido", "100%", "milagre", "ganhe dinheiro", "grátis", "melhor do Brasil/mundo", "!!" ou "??", VOCÊ/SEU/SUA em CAIXA ALTA.
-- Tom direto, brasileiro, sem enrolação. Foque em ECONOMIA, nunca em ganho.
-- **HOOK DE FEED (crítico)**: cada primary_text DEVE começar com uma frase de gancho de 12 a 40 caracteres antes do primeiro ponto/exclamação. O Feed mobile corta tudo depois disso. Exemplos de hook: "Conta de luz subindo de novo?", "Cansado de pagar conta cara?", "Sua fatura passou de R$ 300?".
+- Não invente nem exija percentuais, valores, quantidade de clientes, depoimentos, leis, datas, prazos, urgência, disponibilidade, economia ou qualquer prova social.
+- Use linguagem condicional: "pode", "consulte", "simule", "verifique". "Sem placas" e "sem obra" devem aparecer como opção sujeita à consulta, não como garantia universal.
+- O tempo no ar ou o texto de outra empresa não comprova conversão nem valida claims.
+- Cada primary_text deve começar com gancho curto e terminar com CTA de consulta ou simulação.
 - PROIBIDO começar primary_text com: "Entre em contato", "Saiba mais", "Conheça", "Clique aqui", "Olá".
-- Cada texto primário precisa ter um CTA no final (ex: "Fala no zap 👇", "Toca aqui", "Garante a sua").
-- Use no máximo 1 emoji por texto. Pelo menos 3 itens devem conter um número específico.
-- Image briefs: NUNCA proponha painel solar bonito em telhado azul — esse é o erro #1 do mercado.
+- Use no máximo 1 emoji por texto. Números não são obrigatórios e só podem aparecer se vierem do contexto fornecido.
+- Image briefs não podem inventar resultado, comparação antes/depois, depoimento, prazo ou valor.
 
-Exemplo do nível de qualidade esperado:
-- headline: "Conta CPFL 20% mais barata"
-- primary: "Cansado da conta alta? Desconto de até 20% direto no boleto. Sem obra. Fala no zap 👇"  ← hook "Cansado da conta alta?" tem 24 chars, cabe no feed.`;
+Exemplo do nível esperado:
+- headline: "Simule sua conta de luz"
+- primary: "Conta de luz pesando? Simule para verificar se pode haver economia. Fale no zap 👇"`;
 
   try {
     const result = await geminiGenerate({
@@ -256,7 +272,7 @@ Exemplo do nível de qualidade esperado:
     const briefs: ImageBrief[] = Array.isArray(parsed.image_briefs)
       ? parsed.image_briefs
           .map((b: any) => ({ format: String(b?.format || "estatico").slice(0, 24), brief: String(b?.brief || "").slice(0, 280) }))
-          .filter((b: ImageBrief) => b.brief.length > 10)
+          .filter((b: ImageBrief) => b.brief.length > 10 && claimSafe(b.brief))
           .slice(0, 3)
       : FALLBACK.image_briefs;
 
@@ -289,7 +305,7 @@ Deno.serve(async (req) => {
     const { cities, distribuidora } = await req.json().catch(() => ({ cities: [] }));
     const [insights, competitors, globalPlaybook] = await Promise.all([
       loadInsights(auth.id, distribuidora),
-      loadCompetitorWinners(8),
+      loadCompetitorReferences(8),
       loadGlobalPlaybook(),
     ]);
     const copy = await generate(cities || [], insights, competitors, auth.id, globalPlaybook);

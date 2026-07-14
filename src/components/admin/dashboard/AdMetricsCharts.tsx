@@ -123,7 +123,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="CPL diário" subtitle="Custo por cliente interessado WhatsApp ao longo do tempo">
+      <ChartCard title="Custo por lead Meta diário" subtitle="Gasto dividido pelos eventos de lead reportados pela Meta">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <defs>
@@ -139,10 +139,10 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
               contentStyle={tooltipStyle}
               formatter={(value: number) => [
                 value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-                "CPL",
+                "Custo/lead Meta",
               ]}
             />
-            <Area type="monotone" dataKey="cpl" stroke="hsl(48 96% 53%)" fill="url(#cplGrad)" strokeWidth={2} name="CPL" />
+            <Area type="monotone" dataKey="cpl" stroke="hsl(48 96% 53%)" fill="url(#cplGrad)" strokeWidth={2} name="Custo/lead Meta" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -159,7 +159,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
                 formatter={(value: number, _name, item: any) => {
                   const cpl = item?.payload?.cplCents;
                   return [
-                    `${value} leads · ${fmtBRL(item?.payload?.spendCents ?? 0)} gasto · CPL ${cpl != null ? fmtBRL(cpl) : "—"}`,
+                    `${value} leads Meta · ${fmtBRL(item?.payload?.spendCents ?? 0)} gasto · custo/lead ${cpl != null ? fmtBRL(cpl) : "—"}`,
                     "Resultado",
                   ];
                 }}

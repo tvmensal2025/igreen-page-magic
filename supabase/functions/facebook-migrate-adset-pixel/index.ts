@@ -25,6 +25,13 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
+    if (body?.confirm_learning_reset !== true) {
+      return new Response(JSON.stringify({
+        error: "Confirmação obrigatória: envie confirm_learning_reset: true para autorizar a duplicação do adset e o reset do aprendizado.",
+      }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const adsetId = String(body?.adset_id || "").trim();
     if (!adsetId) {
       return new Response(JSON.stringify({ error: "adset_id obrigatório" }), {

@@ -3,13 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Loader2, DollarSign, Users, FileCheck2, CheckCircle2, TrendingUp, Target, BarChart3, Eye, Hand, MousePointerClick, MessageCircle } from "lucide-react";
+import { Loader2, DollarSign, Users, FileCheck2, Target, BarChart3, Eye, Hand, MousePointerClick, MessageCircle } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { MetricTooltip } from "./MetricTooltip";
 import { HealthSummaryCard } from "./HealthSummaryCard";
 import { InsightCards } from "./InsightCards";
 import { CostExplainerCard } from "./CostExplainerCard";
 import { FunnelWithCosts } from "./FunnelWithCosts";
+import { CampaignExperimentCard } from "./CampaignExperimentCard";
+import { META_CAMPAIGN_PROOF_OR } from "@/lib/metaCampaignProof";
 
 type Range = 7 | 30 | 90;
 
@@ -29,23 +31,9 @@ interface DailyMetric {
   spend_cents: number;
   impressions: number;
   clicks: number;
-  leads: number;
+  meta_lead_actions: number;
   messaging_conversations_started: number;
   complete_registrations: number;
-  customers_acquired: number;
-}
-
-const TICKET_MEDIO_MENSAL = 30; // R$ estimado de comissão por cliente ativo/mês (ajustável)
-
-/** Extrai o valor textual de customers.lead_source (jsonb que guarda "meta_ads"). */
-function leadSourceValue(raw: unknown): string | null {
-  if (raw == null) return null;
-  if (typeof raw === "string") return raw;
-  if (typeof raw === "object") {
-    const o = raw as Record<string, unknown>;
-    if (typeof o.utm_source === "string") return o.utm_source;
-  }
-  return null;
 }
 
 export function ResultsDashboard({
@@ -66,8 +54,8 @@ export function ResultsDashboard({
   const [loading, setLoading] = useState(true);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [metrics, setMetrics] = useState<DailyMetric[]>([]);
-  const [acquired, setAcquired] = useState<number>(0);
-  const [realLeads, setRealLeads] = useState<number>(0);
+  const [contactsByCampaign, setContactsByCampaign] = useState<Record<string, number>>({});
+  const [approvedByCampaign, setApprovedByCampaign] = useState<Record<string, number>>({});
 
   useEffect(() => {
     (async () => {
@@ -84,44 +72,55 @@ export function ResultsDashboard({
       setCampaigns(list);
 
       if (list.length > 0) {
-        const { data: ms } = await supabase
+        const { data: ms, error: metricsError } = await supabase
           .from("facebook_metrics_daily")
-          .select("campaign_id,date,spend_cents,impressions,clicks,leads,messaging_conversations_started,complete_registrations,customers_acquired")
+          .select("campaign_id,date,spend_cents,impressions,clicks,meta_lead_actions,messaging_conversations_started,complete_registrations")
           .in("campaign_id", list.map(c => c.id))
           .gte("date", sinceDate)
           .order("date", { ascending: true });
+        if (metricsError) console.error("[ResultsDashboard] Falha ao carregar métricas:", metricsError.message);
         setMetrics((ms || []) as DailyMetric[]);
       } else {
         setMetrics([]);
       }
 
-      // Leads de ANÚNCIO no período (lead_source = "meta_ads").
-      // lead_source é jsonb → .eq() falha no PostgREST; filtramos no cliente.
-      const { data: leadRows } = await supabase
-        .from("customers")
-        .select("id, lead_source")
-        .eq("consultant_id", consultantId)
-        .not("lead_source", "is", null)
-        .gte("created_at", since)
-        .limit(10000);
-      const adLeads = (leadRows || []).filter(
-        (c: any) => leadSourceValue(c.lead_source) === "meta_ads",
-      );
-      setRealLeads(adLeads.length);
+      // Contatos atribuídos por campanha, exigindo prova Meta (AD ID ou ctwa_clid).
+      if (list.length > 0) {
+        const { data: contactRows } = await (supabase as any)
+          .from("customers")
+          .select("id, source_campaign_id")
+          .eq("consultant_id", consultantId)
+          .in("source_campaign_id", list.map((c) => c.id))
+          .or(META_CAMPAIGN_PROOF_OR)
+          .gte("created_at", since)
+          .limit(10000);
+        const contactCounts: Record<string, number> = {};
+        (contactRows || []).forEach((row: any) => {
+          if (row.source_campaign_id) contactCounts[row.source_campaign_id] = (contactCounts[row.source_campaign_id] || 0) + 1;
+        });
+        setContactsByCampaign(contactCounts);
 
-      // Aprovados que vieram de anúncio: deals no estágio "aprovado" cujo customer
-      // veio de anúncio. Filtra lead_source no cliente (jsonb).
-      const { data: approvedRows } = await supabase
-        .from("crm_deals")
-        .select("id, customers!inner(lead_source)")
-        .eq("consultant_id", consultantId)
-        .eq("stage", "aprovado")
-        .gte("created_at", since)
-        .limit(10000);
-      const adApproved = (approvedRows || []).filter(
-        (d: any) => leadSourceValue(d.customers?.lead_source) === "meta_ads",
-      );
-      setAcquired(adApproved.length);
+        const { data: approvedRows } = await (supabase as any)
+          .from("crm_deals")
+          .select("id, customers!inner(source_campaign_id, source_ad_id, ctwa_clid, source_ctwa_clid)")
+          .eq("consultant_id", consultantId)
+          .eq("stage", "aprovado")
+          .in("customers.source_campaign_id", list.map((c) => c.id))
+          .gte("created_at", since)
+          .limit(10000);
+        const approvedCounts: Record<string, number> = {};
+        (approvedRows || []).forEach((deal: any) => {
+          const customer = deal.customers;
+          const hasProof = !!(customer?.source_ad_id || customer?.ctwa_clid || customer?.source_ctwa_clid);
+          if (hasProof && customer?.source_campaign_id) {
+            approvedCounts[customer.source_campaign_id] = (approvedCounts[customer.source_campaign_id] || 0) + 1;
+          }
+        });
+        setApprovedByCampaign(approvedCounts);
+      } else {
+        setContactsByCampaign({});
+        setApprovedByCampaign({});
+      }
 
       setLoading(false);
     })();
@@ -145,36 +144,44 @@ export function ResultsDashboard({
     [metrics, filteredCampaignIds],
   );
 
+  const filteredContactCount = useMemo(
+    () => Array.from(filteredCampaignIds).reduce((sum, id) => sum + (contactsByCampaign[id] || 0), 0),
+    [filteredCampaignIds, contactsByCampaign],
+  );
+  const filteredApprovedCount = useMemo(
+    () => Array.from(filteredCampaignIds).reduce((sum, id) => sum + (approvedByCampaign[id] || 0), 0),
+    [filteredCampaignIds, approvedByCampaign],
+  );
+
   const totals = useMemo(() => {
-    const t = { spend: 0, impressions: 0, clicks: 0, leads: 0, conversations: 0, registrations: 0 };
+    const t = { spend: 0, impressions: 0, clicks: 0, metaLeads: 0, conversations: 0, registrations: 0 };
     filteredMetrics.forEach(m => {
       t.spend += m.spend_cents;
       t.impressions += m.impressions;
       t.clicks += m.clicks;
-      t.leads += m.leads;
+      t.metaLeads += m.meta_lead_actions;
       t.conversations += m.messaging_conversations_started;
       t.registrations += m.complete_registrations;
     });
     return t;
   }, [filteredMetrics]);
 
-  // CPL/CPA usam os dados REAIS do CRM (não os reportados pela Meta, que dependem do Pixel)
-  const cpl = realLeads > 0 ? totals.spend / realLeads / 100 : 0;
-  const cpa = acquired > 0 ? totals.spend / acquired / 100 : 0;
-  const convRate = realLeads > 0 ? (acquired / realLeads) * 100 : 0;
-  const roiMensal = (acquired * TICKET_MEDIO_MENSAL) - (totals.spend / 100);
+  // CPL/CPA usam contatos e clientes realmente atribuídos no CRM.
+  const cpl = filteredContactCount > 0 ? totals.spend / filteredContactCount / 100 : 0;
+  const cpa = filteredApprovedCount > 0 ? totals.spend / filteredApprovedCount / 100 : 0;
+  const convRate = filteredContactCount > 0 ? (filteredApprovedCount / filteredContactCount) * 100 : 0;
   // Métricas de eficiência criativa/funil de topo
   const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-  const clickToLead = totals.clicks > 0 ? (realLeads / totals.clicks) * 100 : 0;
+  const clickToLead = totals.clicks > 0 ? (filteredContactCount / totals.clicks) * 100 : 0;
   const cpc = totals.clicks > 0 ? totals.spend / totals.clicks / 100 : 0;
 
   const chartData = useMemo(() => {
-    const map = new Map<string, { date: string; gasto: number; leads: number; cadastros: number }>();
+    const map = new Map<string, { date: string; gasto: number; conversas: number; leadsMeta: number }>();
     filteredMetrics.forEach(m => {
-      const cur = map.get(m.date) || { date: m.date, gasto: 0, leads: 0, cadastros: 0 };
+      const cur = map.get(m.date) || { date: m.date, gasto: 0, conversas: 0, leadsMeta: 0 };
       cur.gasto += m.spend_cents / 100;
-      cur.leads += m.leads;
-      cur.cadastros += m.complete_registrations;
+      cur.conversas += m.messaging_conversations_started;
+      cur.leadsMeta += m.meta_lead_actions;
       map.set(m.date, cur);
     });
     return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date)).map(d => ({
@@ -190,19 +197,23 @@ export function ResultsDashboard({
       .map(c => {
         const ms = metrics.filter(m => m.campaign_id === c.id);
         const spend = ms.reduce((s, m) => s + m.spend_cents, 0);
-        const leads = ms.reduce((s, m) => s + m.leads, 0);
-        const regs = ms.reduce((s, m) => s + m.complete_registrations, 0);
+        const conversations = ms.reduce((s, m) => s + m.messaging_conversations_started, 0);
+        const metaLeads = ms.reduce((s, m) => s + m.meta_lead_actions, 0);
+        const contacts = contactsByCampaign[c.id] || 0;
+        const approved = approvedByCampaign[c.id] || 0;
         return {
           ...c,
           spend_cents: spend,
-          leads,
-          registrations: regs,
-          cpl_cents: leads > 0 ? Math.round(spend / leads) : 0,
-          cpa_cents: regs > 0 ? Math.round(spend / regs) : 0,
+          conversations,
+          meta_leads: metaLeads,
+          contacts,
+          approved,
+          cost_per_conversation_cents: conversations > 0 ? Math.round(spend / conversations) : 0,
+          cost_per_contact_cents: contacts > 0 ? Math.round(spend / contacts) : 0,
         };
       })
       .sort((a, b) => b.spend_cents - a.spend_cents);
-  }, [campaigns, metrics, filteredCampaignIds]);
+  }, [campaigns, metrics, filteredCampaignIds, contactsByCampaign, approvedByCampaign]);
 
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>;
 
@@ -251,15 +262,15 @@ export function ResultsDashboard({
       </div>
 
       {/* Aviso quando há cliques mas nenhum lead foi atribuído ao anúncio */}
-      {totals.clicks > 0 && realLeads === 0 && (
+      {totals.clicks > 0 && filteredContactCount === 0 && (
         <Card className="p-4 bg-warning/10 border-warning/40">
           <div className="flex items-start gap-3">
             <div className="text-warning text-lg">⚠️</div>
             <div className="text-xs sm:text-sm">
               <p className="font-semibold text-foreground mb-1">Atribuição de anúncio pendente</p>
               <p className="text-muted-foreground">
-                Você teve <strong className="text-foreground">{totals.clicks} cliques</strong> no anúncio, mas nenhum contato no seu WhatsApp foi marcado como <code className="px-1 rounded bg-secondary text-foreground">lead_source = meta_ads</code> ainda.
-                Isso acontece quando o link do anúncio não passa o parâmetro de origem, ou os contatos entraram antes da atribuição automática.
+                Você teve <strong className="text-foreground">{totals.clicks} cliques</strong> no anúncio, mas nenhum contato no CRM possui prova de atribuição por ID do anúncio ou identificador CTWA ainda.
+                Isso pode acontecer quando a origem do anúncio não chega junto com a conversa ou quando o contato entrou antes da atribuição automática.
                 Os números abaixo mostram <strong className="text-foreground">apenas clientes interessados/clientes confirmados de anúncio</strong>.
               </p>
             </div>
@@ -267,12 +278,14 @@ export function ResultsDashboard({
         </Card>
       )}
 
+      <CampaignExperimentCard consultantId={consultantId} />
+
       {/* Explicação clara: Click vs Lead vs Cliente */}
       <CostExplainerCard
         spendCents={totals.spend}
         clicks={totals.clicks}
-        leads={realLeads}
-        approved={acquired}
+        leads={filteredContactCount}
+        approved={filteredApprovedCount}
       />
 
 
@@ -286,9 +299,9 @@ export function ResultsDashboard({
       {/* Saúde geral + insights da IA */}
       <HealthSummaryCard
         spend_cents={totals.spend}
-        leads={realLeads}
+        leads={filteredContactCount}
         impressions={totals.impressions}
-        registrations={acquired}
+        registrations={filteredApprovedCount}
       />
       <InsightCards consultantId={consultantId} />
 
@@ -297,9 +310,9 @@ export function ResultsDashboard({
         <StatCard icon={<DollarSign className="w-4 h-4" />} label="Quanto gastou" metric="spend" value={`R$ ${(totals.spend / 100).toFixed(2)}`} accent />
         <StatCard icon={<Eye className="w-4 h-4" />} label="Pessoas que viram" metric="impressions" value={totals.impressions.toLocaleString("pt-BR")} />
         <StatCard icon={<Hand className="w-4 h-4" />} label="Tocaram no anúncio" metric="clicks" value={totals.clicks.toString()} sub={cpc > 0 ? `R$ ${cpc.toFixed(2)} por clique` : "—"} />
-        <StatCard icon={<Users className="w-4 h-4" />} label="Clientes interessados no WhatsApp" metric="leads" value={realLeads.toString()} sub={cpl > 0 ? `R$ ${cpl.toFixed(2)} cada` : "—"} />
-        <StatCard icon={<FileCheck2 className="w-4 h-4" />} label="Viraram cliente" metric="registrations" value={acquired.toString()} sub={realLeads > 0 ? `${convRate.toFixed(1)}% dos leads` : "—"} />
-        <StatCard icon={<TrendingUp className="w-4 h-4" />} label="Lucro estimado/mês" value={`R$ ${roiMensal.toFixed(0)}`} accent={roiMensal >= 0} />
+        <StatCard icon={<MessageCircle className="w-4 h-4" />} label="Conversas iniciadas (Meta)" value={totals.conversations.toString()} sub="Dado informado pela Meta" />
+        <StatCard icon={<Users className="w-4 h-4" />} label="Contatos identificados no CRM" metric="leads" value={filteredContactCount.toString()} sub={cpl > 0 ? `R$ ${cpl.toFixed(2)} cada` : "—"} />
+        <StatCard icon={<FileCheck2 className="w-4 h-4" />} label="Viraram cliente" metric="registrations" value={filteredApprovedCount.toString()} sub={filteredContactCount > 0 ? `${convRate.toFixed(1)}% dos contatos` : "—"} />
       </div>
 
       {/* Eficiência do funil: topo (anúncio) e meio (clique → conversa) */}
@@ -318,10 +331,9 @@ export function ResultsDashboard({
             </div>
           </div>
           <div className="text-[11px] text-muted-foreground mt-2">
-            {ctr === 0 && "Sem dados ainda."}
-            {ctr > 0 && ctr < 1 && <span className="text-warning">⚠ Abaixo de 1% — criativo pode estar fraco.</span>}
-            {ctr >= 1 && ctr < 2 && "Dentro da média do mercado (1–2%)."}
-            {ctr >= 2 && <span className="text-primary">✅ Acima da média — criativo performando bem.</span>}
+            {ctr === 0
+              ? "Sem dados ainda."
+              : "Compare esta taxa com o histórico das suas próprias campanhas e considere o volume de impressões antes de concluir."}
           </div>
         </Card>
 
@@ -335,7 +347,7 @@ export function ResultsDashboard({
               {totals.clicks > 0 ? `${clickToLead.toFixed(1)}%` : "—"}
             </div>
             <div className="text-[11px] text-muted-foreground text-right">
-              {realLeads} leads reais<br/>de {totals.clicks.toLocaleString("pt-BR")} cliques
+              {filteredContactCount} contatos atribuídos<br/>de {totals.clicks.toLocaleString("pt-BR")} cliques
             </div>
           </div>
           <div className="text-[11px] text-muted-foreground mt-2">
@@ -354,12 +366,11 @@ export function ResultsDashboard({
           <div className="flex-1">
             <div className="text-xs text-muted-foreground">Custo real pra ganhar 1 cliente novo</div>
             <div className="text-2xl font-bold text-foreground">
-              {acquired > 0 ? `R$ ${((totals.spend / 100) / acquired).toFixed(2)}` : "—"}
+              {filteredApprovedCount > 0 ? `R$ ${((totals.spend / 100) / filteredApprovedCount).toFixed(2)}` : "—"}
             </div>
             <div className="text-[11px] text-muted-foreground mt-0.5">
-              R$ {(totals.spend / 100).toFixed(2)} gastos → {acquired} cliente{acquired === 1 ? "" : "s"} aprovado{acquired === 1 ? "" : "s"}
-              {acquired > 0 && (totals.spend / 100) / acquired <= 60 && <span className="ml-2 text-primary">✅ dentro da meta (R$ 60)</span>}
-              {acquired > 0 && (totals.spend / 100) / acquired > 60 && <span className="ml-2 text-warning">⚠ acima da meta de R$ 60</span>}
+              R$ {(totals.spend / 100).toFixed(2)} gastos → {filteredApprovedCount} cliente{filteredApprovedCount === 1 ? "" : "s"} aprovado{filteredApprovedCount === 1 ? "" : "s"}.
+              Compare o custo com sua margem real e seu histórico; nenhuma meta fixa foi presumida.
             </div>
           </div>
         </div>
@@ -379,8 +390,8 @@ export function ResultsDashboard({
               <Tooltip contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               <Line type="monotone" dataKey="gasto" name="Gasto (R$)" stroke="hsl(var(--destructive))" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="leads" name="Clientes interessados" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="cadastros" name="Cadastros" stroke="hsl(var(--accent-foreground))" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="conversas" name="Conversas Meta" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="leadsMeta" name="Leads Meta" stroke="hsl(var(--accent-foreground))" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         )}
@@ -398,10 +409,12 @@ export function ResultsDashboard({
                 <th className="py-2">Campanha</th>
                 <th>Distribuidora</th>
                 <th className="text-right">Gasto</th>
-                <th className="text-right">Clientes interessados</th>
-                <th className="text-right">Cadastros</th>
-                <th className="text-right">CPL</th>
-                <th className="text-right">CPA</th>
+                <th className="text-right">Conversas Meta</th>
+                <th className="text-right">Leads Meta</th>
+                <th className="text-right">Contatos CRM</th>
+                <th className="text-right">Aprovados</th>
+                <th className="text-right">Custo/conversa</th>
+                <th className="text-right">Custo/contato</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -411,10 +424,12 @@ export function ResultsDashboard({
                   <td className="py-2 max-w-[200px] truncate font-medium text-foreground">{c.name}</td>
                   <td className="text-muted-foreground">{c.distribuidora || "—"}</td>
                   <td className="text-right font-mono">R$ {(c.spend_cents / 100).toFixed(2)}</td>
-                  <td className="text-right font-mono">{c.leads}</td>
-                  <td className="text-right font-mono">{c.registrations}</td>
-                  <td className="text-right font-mono">{c.cpl_cents > 0 ? `R$ ${(c.cpl_cents / 100).toFixed(2)}` : "—"}</td>
-                  <td className="text-right font-mono">{c.cpa_cents > 0 ? `R$ ${(c.cpa_cents / 100).toFixed(2)}` : "—"}</td>
+                  <td className="text-right font-mono">{c.conversations}</td>
+                  <td className="text-right font-mono">{c.meta_leads}</td>
+                  <td className="text-right font-mono">{c.contacts}</td>
+                  <td className="text-right font-mono">{c.approved}</td>
+                  <td className="text-right font-mono">{c.cost_per_conversation_cents > 0 ? `R$ ${(c.cost_per_conversation_cents / 100).toFixed(2)}` : "—"}</td>
+                  <td className="text-right font-mono">{c.cost_per_contact_cents > 0 ? `R$ ${(c.cost_per_contact_cents / 100).toFixed(2)}` : "—"}</td>
                   <td><Badge variant="outline" className="text-[10px]">{c.status}</Badge></td>
                 </tr>
               ))}
@@ -424,8 +439,8 @@ export function ResultsDashboard({
       </Card>
 
       <p className="text-[10px] text-muted-foreground text-center">
-        ROI estimado considera ticket médio mensal de R$ {TICKET_MEDIO_MENSAL} por cliente ativo.
-        Cadastros e clientes ativos exigem o Pixel conectado e o evento `Lead`/`CompleteRegistration` configurado.
+        Métricas Meta (conversas e leads) são exibidas separadas dos contatos e aprovados confirmados no CRM.
+        Não há projeção de lucro sem margem ou comissão real cadastrada.
       </p>
     </div>
   );

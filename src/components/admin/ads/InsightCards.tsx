@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Lightbulb, X, Check } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { Lightbulb, X } from "lucide-react";
 
 interface Recommendation {
   id: string;
@@ -37,11 +35,6 @@ export function InsightCards({ consultantId }: { consultantId: string }) {
     await supabase.from("ad_recommendations").update({ dismissed_at: new Date().toISOString() }).eq("id", id);
     setRecs(p => p.filter(r => r.id !== id));
   }
-  async function apply(r: Recommendation) {
-    await supabase.from("ad_recommendations").update({ applied_at: new Date().toISOString() }).eq("id", r.id);
-    toast({ title: "Aplicado!", description: "A próxima campanha vai usar esse aprendizado." });
-    setRecs(p => p.filter(x => x.id !== r.id));
-  }
 
   if (recs.length === 0) return null;
 
@@ -61,9 +54,9 @@ export function InsightCards({ consultantId }: { consultantId: string }) {
               <div className="text-sm font-semibold text-foreground">{r.title}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{r.message}</div>
               {r.action_label && (
-                <Button size="sm" variant="outline" className="h-7 text-xs mt-2" onClick={() => apply(r)}>
-                  <Check className="w-3 h-3 mr-1" /> {r.action_label}
-                </Button>
+                <div className="text-[11px] text-muted-foreground mt-2">
+                  Sugestão: {r.action_label}
+                </div>
               )}
             </div>
             <button onClick={() => dismiss(r.id)} className="text-muted-foreground hover:text-foreground">

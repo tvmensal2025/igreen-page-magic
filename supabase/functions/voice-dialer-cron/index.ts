@@ -90,8 +90,11 @@ Deno.serve(async (req) => {
 
   const { data: camps, error: e1 } = await admin
     .from("voice_campaigns")
-    .select("id, consultant_id, audio_clip_id, audio_url, config, status, total, dialed, answered, failed, velip_mode, dispatch_kind, tts_text, caller_id")
+    .select("id, consultant_id, audio_clip_id, audio_url, config, status, total, dialed, answered, failed, velip_mode, velip_campaign_id, dispatch_kind, tts_text, caller_id")
     .eq("status", "running")
+    // Batch com ID remoto é responsabilidade da Velip e não pode ocupar as
+    // cinco vagas do worker, senão campanhas single podem ficar sem execução.
+    .or("velip_mode.neq.batch,velip_campaign_id.is.null")
     .order("created_at", { ascending: true })
     .limit(MAX_CAMPAIGNS);
 
@@ -133,20 +136,31 @@ Deno.serve(async (req) => {
     console.warn("reconcile_failed:", (e as Error).message);
   }
 
-  // Disparo modo `single` — batch é orquestrado pela Velip sozinha
+  // Disparo modo `single` — batch válido é orquestrado pela Velip sozinha.
+  // Campanha batch sem ID remoto é inválida; degrada para single para não travar.
   for (const camp of camps ?? []) {
     if (Date.now() - started > MAX_EXEC_MS) break;
     if ((camp as { velip_mode?: string }).velip_mode === "batch") {
-      report.push({ campaign_id: camp.id, skipped: "batch_mode" });
-      continue;
+      if ((camp as { velip_campaign_id?: string | null }).velip_campaign_id) {
+        report.push({ campaign_id: camp.id, skipped: "batch_mode" });
+        continue;
+      }
+      await admin
+        .from("voice_campaigns")
+        .update({ velip_mode: "single" })
+        .eq("id", camp.id)
+        .eq("velip_mode", "batch")
+        .is("velip_campaign_id", null);
+      console.warn(`[voice-dialer-cron] batch sem campanha Velip; usando single: ${camp.id}`);
     }
 
     const cfg = (camp.config ?? {}) as {
       windowStart?: string;
       windowEnd?: string;
       weekdaysOnly?: boolean;
+      scheduledExact?: boolean;
     };
-    if (!inCallWindow(cfg)) {
+    if (!cfg.scheduledExact && !inCallWindow(cfg)) {
       report.push({ campaign_id: camp.id, skipped: "outside_window" });
       continue;
     }
@@ -180,6 +194,7 @@ Deno.serve(async (req) => {
       .select("id, phone, name")
       .eq("campaign_id", camp.id)
       .eq("status", "queued")
+      .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
       .order("created_at", { ascending: true })
       .limit(MAX_CALLS_PER_CAMPAIGN);
 
@@ -208,9 +223,10 @@ Deno.serve(async (req) => {
 
       const { data: claimed } = await admin
         .from("voice_campaign_targets")
-        .update({ status: "dialing", dialed_at: new Date().toISOString() })
+        .update({ status: "dialing", dialed_at: new Date().toISOString(), next_attempt_at: null })
         .eq("id", t.id)
         .eq("status", "queued")
+        .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
         .select("id")
         .maybeSingle();
       if (!claimed) continue;

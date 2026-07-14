@@ -8,6 +8,8 @@ import {
   loadConsultantAdSettings,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
+import { calculateCampaignBudgetRequirement } from "../_shared/campaign-budget.ts";
+import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import {
@@ -16,7 +18,7 @@ import {
   ensureCampaignTrackingProtocol,
   normalizeTrackingProtocol,
 } from "../_shared/campaign-tracking.ts";
-import { buildRodizioPoolPlan, filterRodizioPartnerIds, normalizeRodizioPartnerIds } from "./rodizio-pool.ts";
+import { normalizeRodizioPartnerIds } from "./rodizio-pool.ts";
 
 async function safeNotifyConsultant(
   consultantId: string,
@@ -200,10 +202,52 @@ Deno.serve(async (req) => {
     if ((!hasCities && !hasCustomLocations) || !body.daily_budget_cents || !hasCreative || !body.headline || !body.primary_text) {
       return new Response(JSON.stringify({ error: "Campos obrigatórios faltando (localização, criativo, headline ou texto)." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    // Mínimo R$ 10/dia (Meta aceita a partir de ~R$ 6/dia em CTWA, mas <R$10
-    // o aprendizado fica muito lento). UI também recomenda R$20 como sweet spot.
+    // Orçamento mínimo operacional; não há teto artificial. O saldo e o prazo
+    // continuam limitando o gasto total antes de qualquer chamada à Meta.
     if (body.daily_budget_cents < 1000) {
       return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (body.duration_days != null && (body.duration_days < 1 || body.duration_days > 30)) {
+      return new Response(JSON.stringify({
+        error: "A duração deve ficar entre 1 e 30 dias, ou sem prazo final.",
+        code: "INVALID_DURATION",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Valida o rodízio antes de qualquer chamada mutável à Meta. A criação é
+    // fail-closed: participante inválido/inativo bloqueia toda a publicação.
+    const requestedRodizioIds = normalizeRodizioPartnerIds(body);
+    const rodizioRequested = body.rodizio_enabled === true;
+    if (rodizioRequested && requestedRodizioIds.length < 1) {
+      return new Response(JSON.stringify({
+        error: "Selecione pelo menos 1 participante ativo para publicar com rodízio.",
+        code: "RODIZIO_PARTNER_REQUIRED",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    if (rodizioRequested) {
+      const validationAdmin = adminClient();
+      const { data: partners, error: partnersError } = await validationAdmin
+        .from("referral_partners")
+        .select("id, consultant_id, is_active")
+        .in("id", requestedRodizioIds);
+      if (partnersError) {
+        return new Response(JSON.stringify({
+          error: "Não foi possível validar os participantes do rodízio.",
+          code: "RODIZIO_VALIDATION_FAILED",
+        }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const allowed = new Set(
+        ((partners as any[]) || [])
+          .filter((partner) => partner.consultant_id === auth.id && partner.is_active === true)
+          .map((partner) => String(partner.id)),
+      );
+      const invalidIds = requestedRodizioIds.filter((id) => !allowed.has(id));
+      if (invalidIds.length > 0) {
+        return new Response(JSON.stringify({
+          error: `${invalidIds.length} participante(s) do rodízio não pertence(m) a você ou está(ão) inativo(s).`,
+          code: "RODIZIO_INVALID_PARTNERS",
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
     // ─── Protocolo rastreável CTWA ───────────────────────────────────────
@@ -270,10 +314,13 @@ Deno.serve(async (req) => {
         .gte("created_at", cutoffIso)
         .limit(20);
       const nameNorm = (body.name || "").trim().toLowerCase();
-      const clash = (recent || []).find((r: any) =>
-        String(r.name || "").trim().toLowerCase() === nameNorm &&
-        Number(r.daily_budget_cents) === Number(body.daily_budget_cents)
-      );
+      const expectedNameSegment = nameNorm ? ` · ${nameNorm} · ` : null;
+      const clash = expectedNameSegment
+        ? (recent || []).find((r: any) =>
+            ` ${String(r.name || "").trim().toLowerCase()} `.includes(expectedNameSegment) &&
+            Number(r.daily_budget_cents) === Number(body.daily_budget_cents)
+          )
+        : null;
       if (clash) {
         return new Response(JSON.stringify({
           error: "Você acabou de publicar uma campanha idêntica há menos de 3 minutos. Recarregue a lista — ela já foi criada.",
@@ -283,25 +330,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Admin (Super Admin) usa a conta Facebook da plataforma diretamente —
-    // bypass dos guardrails de carteira (ele paga via cartão na conta Meta).
+    // A mesma trava de carteira vale para qualquer usuário, inclusive admin,
+    // porque o gasto ocorre na conta Meta compartilhada da plataforma.
     const adminDb = adminClient();
-    const { data: adminRole } = await adminDb
-      .from("user_roles").select("role")
-      .eq("user_id", auth.id).eq("role", "admin").maybeSingle();
-    const isAdmin = !!adminRole;
 
-    // GUARDRAIL: saldo da carteira precisa cobrir pelo menos N dias do orçamento
-    // (com o markup já aplicado), senão a campanha pausa antes de gerar resultado.
-    // Admin TAMBÉM precisa ter saldo no consultor — sem bypass, pra evitar prejuízo.
+    // GUARDRAIL: campanhas com prazo exigem cobertura do orçamento total + taxa.
+    // Campanhas contínuas mantêm a proteção mínima de dias configurada.
     const admin = adminDb;
     const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
+    const budgetRequirement = calculateCampaignBudgetRequirement({
+      dailyBudgetCents: body.daily_budget_cents,
+      durationDays: body.duration_days,
+      platformFeePercent: Number(ps?.platform_fee_percent ?? 20),
+      safetyMultiplier: Number(ps?.campaign_safety_multiplier ?? 1),
+      minBalanceCents: Number(ps?.min_balance_to_create_campaign_cents ?? 3000),
+    });
     const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
-    // Mínimo de 3 dias (era 7) — permite teste rápido "gastar pouco para validar".
-    const minDays = 3;
-    const safety = Math.max(Number(ps?.campaign_safety_multiplier ?? 1.0), minDays);
-    const minBalance = Number(ps?.min_balance_to_create_campaign_cents ?? 3000);
-    const requiredCents = Math.max(minBalance, Math.round(body.daily_budget_cents * (1 + feePct) * safety));
+    const requiredCents = budgetRequirement.requiredCents;
     const { data: w } = await admin.from("consultant_wallet")
       .select("balance_cents,debt_cents").eq("consultant_id", auth.id).maybeSingle();
     const balance = Number(w?.balance_cents ?? 0);
@@ -698,11 +743,14 @@ Deno.serve(async (req) => {
       ...(adlabelsParam ? { adlabels: adlabelsParam } : {}),
       access_token: conn.token,
     };
-    // Janela do adset precisa ser ≥ 24 h (Meta subcode 1487793). Soma 1 h de buffer pra absorver clock skew.
+    // Campanhas contínuas não recebem encerramento oculto. Para campanhas de
+    // prazo fixo, a janela do conjunto precisa ser ≥ 24 h (Meta 1487793).
     const startAt = Date.now() + 60_000;
     adsetParams.start_time = new Date(startAt).toISOString();
-    const days = Math.max(1, body.duration_days ?? 7);
-    adsetParams.end_time = new Date(startAt + days * 86400_000 + 3_600_000).toISOString();
+    if (hasFixedDuration) {
+      const days = Math.max(1, body.duration_days as number);
+      adsetParams.end_time = new Date(startAt + days * 86400_000 + 3_600_000).toISOString();
+    }
     console.log("[fb-create] step=adset_create campaign=", campaignId, "phone_authoritative=", waNumberClean, "phone_id=", authoritativePhoneId);
     let adset: any = null;
     try {
@@ -1262,97 +1310,59 @@ Deno.serve(async (req) => {
       throw new Error("Campanha criada na Meta, mas o portal não retornou o id interno.");
     }
 
-    // ─── Rodízio: cria a pool e os membros ligados a esta campanha ──────────
-    // Só cria quando o toggle veio ligado E há ≥1 participante válido/ativo.
-    // Fail-open: se a pool falhar, a campanha CTWA permanece; avisamos o dono.
+    // ─── Rodízio: configura pool + membros em uma única transação ────────
+    // A campanha ainda está pausada/pending_review; a pool só fica operacional
+    // quando o status local for confirmado como active pelo trigger do banco.
     let rodizioConfigured = false;
     let rodizioPoolId: string | null = null;
     let rodizioMembersCount = 0;
     let rodizioWarning: string | null = null;
 
-    const rodizioRequested =
-      !!body.rodizio_enabled && normalizeRodizioPartnerIds(body).length >= 1;
-
     if (rodizioRequested) {
-      try {
-        const requestedIds = normalizeRodizioPartnerIds(body);
-        const { data: partners, error: partnersError } = await admin
-          .from("referral_partners")
-          .select("id, consultant_id, is_active")
-          .in("id", requestedIds);
-        if (partnersError) {
-          throw new Error(partnersError.message);
-        }
-        const allowed = new Set(
-          ((partners as any[]) || [])
-            .filter((p) => p.consultant_id === auth.id && p.is_active !== false)
-            .map((p) => p.id as string),
-        );
-        const validIds = filterRodizioPartnerIds(requestedIds, allowed);
-        const skipped = requestedIds.filter((id) => !allowed.has(id));
-        if (skipped.length) {
-          rodizioWarning =
-            `Ignorados ${skipped.length} participante(s) inválido(s)/inativo(s).`;
-          console.warn("[fb-create] rodízio: partners ignorados:", skipped.join(", "));
-        }
-        if (validIds.length < 1) {
-          throw new Error(
-            "nenhum participante válido/ativo restante para montar a pool",
-          );
-        }
-
-        const rodizioPlan = buildRodizioPoolPlan({
-          input: { rodizio_enabled: true, rodizio_partner_ids: validIds },
-          campaignId: campaignRowId,
-          consultantId: auth.id,
-          label: campaignName,
-        });
-        if (!rodizioPlan) {
-          throw new Error("plano de pool nulo após validação");
-        }
-
-        const { data: pool, error: poolError } = await admin
-          .from("rodizio_pools")
-          .insert(rodizioPlan.pool)
-          .select("id")
-          .single();
-        if (poolError || !pool?.id) {
-          throw new Error(poolError?.message || "falha ao criar rodizio_pools");
-        }
-        const members = rodizioPlan.buildMembers(pool.id);
-        const { error: membersError } = await admin
-          .from("rodizio_pool_members")
-          .insert(members);
-        if (membersError) {
-          await admin.from("rodizio_pools").update({ is_active: false }).eq("id", pool.id);
-          throw new Error(membersError.message);
-        }
-
-        rodizioConfigured = true;
-        rodizioPoolId = pool.id as string;
-        rodizioMembersCount = members.length;
-        console.log(
-          `[fb-create] rodízio: pool ${pool.id} criada com ${members.length} membros para campanha ${campaignRowId}`,
-        );
-        if (rodizioWarning) {
-          await safeNotifyConsultant(
-            auth.id,
-            "warning",
-            "Rodízio parcial",
-            `Campanha "${campaignName}" publicada. ${rodizioWarning} A pool ficou com ${members.length} participante(s).`,
-          );
-        }
-      } catch (e) {
-        const msg = (e as Error).message;
-        rodizioWarning = msg;
-        console.error("[fb-create] falha ao criar pool de rodízio (campanha mantida):", msg);
-        await safeNotifyConsultant(
-          auth.id,
-          "warning",
-          "Rodízio não configurado",
-          `Sua campanha foi criada normalmente, mas não conseguimos ligar o rodízio de leads desta vez (${msg}). Os leads vão para o número padrão. Edite a campanha depois ou avise o suporte.`,
-        );
+      const { data: configured, error: configureError } = await admin.rpc(
+        "configure_rodizio_pool",
+        {
+          p_campaign_id: campaignRowId,
+          p_enabled: true,
+          p_partner_ids: requestedRodizioIds,
+          p_label: campaignName,
+        },
+      );
+      if (configureError) {
+        const msg = configureError.message || "falha ao configurar o rodízio";
+        await admin.from("facebook_campaigns").update({
+          status: "pending_review",
+          rejection_reason: `Rodízio não configurado: ${msg}`,
+        }).eq("id", campaignRowId);
+        console.error("[fb-create] publicação bloqueada: rodízio não configurado:", msg);
+        return new Response(JSON.stringify({
+          error: "A campanha foi criada pausada, mas o rodízio não pôde ser configurado. Nada foi ativado. Corrija o rodízio antes de tentar ativar.",
+          code: "RODIZIO_CONFIGURATION_FAILED",
+          portal_campaign_id: campaignRowId,
+          campaign_id: campaignId,
+          local_status: "pending_review",
+        }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      const result = Array.isArray(configured) ? configured[0] : configured;
+      rodizioConfigured = result?.enabled === true;
+      rodizioPoolId = result?.pool_id ?? null;
+      rodizioMembersCount = Number(result?.members ?? 0);
+      if (!rodizioConfigured || !rodizioPoolId || rodizioMembersCount < 1) {
+        await admin.from("facebook_campaigns").update({
+          status: "pending_review",
+          rejection_reason: "Rodízio retornou configuração incompleta.",
+        }).eq("id", campaignRowId);
+        return new Response(JSON.stringify({
+          error: "A campanha foi criada pausada, mas o rodízio ficou incompleto. Nada foi ativado.",
+          code: "RODIZIO_CONFIGURATION_INCOMPLETE",
+          portal_campaign_id: campaignRowId,
+          campaign_id: campaignId,
+          local_status: "pending_review",
+        }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      console.log(
+        `[fb-create] rodízio: pool ${rodizioPoolId} configurada com ${rodizioMembersCount} membros`,
+      );
     }
 
     // Telemetria de uso do template (gallery → consultor → campanha).
@@ -1364,9 +1374,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 7) Tenta ativar imediatamente (sem setTimeout — Edge Function morre depois do response)
+    // 7) Solicita ativação e confirma o effective_status antes de afirmar que está ativa.
     let activated = false;
     let activationError: string | null = null;
+    let effectiveStatus = "UNKNOWN";
+    let localStatus: "active" | "pending_review" | "rejected" = "pending_review";
     try {
       await fbFetch(`/${adsetId}`, {
         method: "POST",
@@ -1385,32 +1397,52 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ status: "ACTIVE", access_token: conn.token }),
       });
-      activated = true;
-      await admin.from("facebook_campaigns").update({ status: "active" }).eq("fb_campaign_id", campaignId);
-      if (rejectedImages.length) {
+
+      const [campaignState, adsetState, ...adStates] = await Promise.all([
+        fbFetch(`/${campaignId}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(conn.token)}`),
+        fbFetch(`/${adsetId}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(conn.token)}`),
+        ...adIds.map((adId) => fbFetch(`/${adId}?fields=effective_status,configured_status,issues_info&access_token=${encodeURIComponent(conn.token)}`)),
+      ]) as MetaObjectState[];
+      const resolved = resolveCampaignEffectiveStatus(campaignState, [adsetState], adStates);
+      effectiveStatus = resolved.campaignEffectiveStatus;
+      localStatus = resolved.localStatus === "active" ? "active"
+        : resolved.localStatus === "rejected" ? "rejected"
+          : "pending_review";
+      activated = localStatus === "active";
+      activationError = resolved.issues.length > 0 ? resolved.issues.join(" • ") : null;
+      await admin.from("facebook_campaigns").update({
+        status: localStatus,
+        rejection_reason: localStatus === "rejected" ? activationError || "A Meta sinalizou problema na campanha." : null,
+      }).eq("fb_campaign_id", campaignId);
+
+      if (localStatus === "active") {
         await safeNotifyConsultant(
           auth.id,
-          "warning",
-          "Campanha publicada com alertas",
-          `${rejectedImages.length} foto(s) foram descartadas na validação.\nCampanha: ${campaignName}`,
+          rejectedImages.length ? "warning" : "info",
+          rejectedImages.length ? "Campanha ativa com alertas" : "Campanha ativa ✅",
+          rejectedImages.length
+            ? `${rejectedImages.length} foto(s) foram descartadas. A Meta confirmou a campanha como ativa.\nCampanha: ${campaignName}`
+            : `A Meta confirmou sua campanha como ativa:\n${campaignName}\nOrçamento: R$ ${(body.daily_budget_cents / 100).toFixed(2)}/dia`,
         );
       } else {
         await safeNotifyConsultant(
           auth.id,
-          "info",
-          "Campanha ativada ✅",
-          `Sua campanha está no ar:\n${campaignName}\nOrçamento: R$ ${(body.daily_budget_cents / 100).toFixed(2)}/dia`,
+          localStatus === "rejected" ? "error" : "info",
+          localStatus === "rejected" ? "Campanha com pendência na Meta" : "Campanha enviada à Meta",
+          localStatus === "rejected"
+            ? `A campanha "${campaignName}" precisa de correção.\n\n${activationError || "Consulte o painel para ver os detalhes."}`
+            : `A campanha "${campaignName}" foi criada e está em análise ou processamento. O painel mostrará quando ficar ativa.`,
         );
       }
     } catch (e) {
       activationError = (e as Error).message;
-      console.warn("[fb-create] ativação adiada:", activationError);
+      console.warn("[fb-create] ativação/reconciliação adiada:", activationError);
       await admin.from("facebook_campaigns").update({ status: "pending_review", rejection_reason: activationError }).eq("fb_campaign_id", campaignId);
       await safeNotifyConsultant(
         auth.id,
         "warning",
-        "Campanha em revisão",
-        `A campanha "${campaignName}" foi criada mas não ativou automaticamente.\n\nMotivo: ${activationError}\n\nAcesse o painel e clique em "Tentar reativar".`,
+        "Campanha aguardando confirmação",
+        `A campanha "${campaignName}" foi criada, mas não foi possível confirmar o estado final na Meta.\n\nMotivo: ${activationError}\n\nAtualize o painel antes de tentar qualquer nova publicação.`,
       );
     }
 
@@ -1461,6 +1493,8 @@ Deno.serve(async (req) => {
       ads_count: adIds.length,
       tracking_protocol: trackingProtocol,
       activated,
+      effective_status: effectiveStatus,
+      local_status: localStatus,
       activation_error: activationError,
       rodizio_configured: rodizioConfigured,
       rodizio_pool_id: rodizioPoolId,

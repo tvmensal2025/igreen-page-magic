@@ -133,13 +133,15 @@ export async function campaignContainsAdId(
   supabase: any,
   campaignId: string | null | undefined,
   adId: string | null | undefined,
+  consultantId?: string | null,
 ): Promise<boolean> {
   if (!campaignId || !adId) return true;
-  const { data, error } = await supabase
+  let query = supabase
     .from("facebook_campaigns")
     .select("id, fb_ad_ids")
-    .eq("id", campaignId)
-    .maybeSingle();
+    .eq("id", campaignId);
+  if (consultantId) query = query.eq("consultant_id", consultantId);
+  const { data, error } = await query.maybeSingle();
   if (error) {
     console.warn("[campaignContainsAdId] lookup falhou:", error.message);
     return false;
@@ -170,13 +172,21 @@ export async function resolveCampaignFromStrongMeta(
   }
 
   if (fields.ctwaClid) {
-    const { data } = await supabase
+    const { data: mapping } = await supabase
       .from("ctwa_clid_mapping")
       .select("campaign_id")
       .eq("ctwa_clid", fields.ctwaClid)
       .maybeSingle();
-    if ((data as any)?.campaign_id) {
-      return { campaignId: String((data as any).campaign_id), method: "ctwa_clid", sourceAdId: adId };
+    if ((mapping as any)?.campaign_id) {
+      const { data: campaign } = await supabase
+        .from("facebook_campaigns")
+        .select("id")
+        .eq("id", String((mapping as any).campaign_id))
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      if ((campaign as any)?.id) {
+        return { campaignId: String((campaign as any).id), method: "ctwa_clid", sourceAdId: adId };
+      }
     }
   }
 

@@ -2,6 +2,7 @@
 // Retorna effective_status da campanha, adsets e ads + último horário de impressão.
 // Usado pelo painel "Está funcionando?" no card da campanha.
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -37,16 +38,19 @@ Deno.serve(async (req) => {
     if (!conn?.token) return j({ error: "Sem conexão Meta" }, 500);
     const token = conn.token;
 
-    // 1) Status ao vivo da campanha + adset + ad
-    const [camp, adset, ad] = await Promise.all([
+    // 1) Status ao vivo da campanha + todos os adsets e anúncios
+    const [camp, adsets, ads] = await Promise.all([
       fbFetch(`/${c.fb_campaign_id}?fields=effective_status,issues_info,configured_status&access_token=${encodeURIComponent(token)}`).catch((e) => ({ _err: e?.message })),
-      (c.fb_adset_ids?.[0])
-        ? fbFetch(`/${c.fb_adset_ids[0]}?fields=effective_status,issues_info&access_token=${encodeURIComponent(token)}`).catch(() => null)
-        : null,
-      (c.fb_ad_ids?.[0])
-        ? fbFetch(`/${c.fb_ad_ids[0]}?fields=effective_status,issues_info&access_token=${encodeURIComponent(token)}`).catch(() => null)
-        : null,
+      Promise.all(((c.fb_adset_ids || []) as string[]).map((id) =>
+        fbFetch(`/${id}?fields=effective_status,issues_info,configured_status&access_token=${encodeURIComponent(token)}`).catch(() => null)
+      )),
+      Promise.all(((c.fb_ad_ids || []) as string[]).map((id) =>
+        fbFetch(`/${id}?fields=effective_status,issues_info,configured_status&access_token=${encodeURIComponent(token)}`).catch(() => null)
+      )),
     ]);
+    const normalizedAdsets = adsets.map((item) => item || { effective_status: "UNKNOWN" }) as MetaObjectState[];
+    const normalizedAds = ads.map((item) => item || { effective_status: "UNKNOWN" }) as MetaObjectState[];
+    const resolved = resolveCampaignEffectiveStatus(camp as MetaObjectState, normalizedAdsets, normalizedAds);
 
     // 2) Insights ao vivo: impressões hoje + últimos 7 dias
     const insightsToday = await fbFetch(
@@ -61,31 +65,29 @@ Deno.serve(async (req) => {
     const impressions24h = Number(todayRow.impressions || 0);
     const impressions7d = Number(weekRow.impressions || 0);
 
-    const issues = [
-      ...(camp?.issues_info || []),
-      ...((adset as any)?.issues_info || []),
-      ...((ad as any)?.issues_info || []),
-    ].map((i: any) => i?.error_message || i?.error_summary).filter(Boolean);
+    const issues = resolved.issues;
 
-    // Veredito
-    const campStatus = (camp?.effective_status || "UNKNOWN") as string;
-    const adsetStatus = (adset as any)?.effective_status || null;
-    const adStatus = (ad as any)?.effective_status || null;
+    // Veredito combinado: campanha, todos os conjuntos e todos os anúncios.
+    const campStatus = resolved.campaignEffectiveStatus;
+    const adsetStatuses = normalizedAdsets.map((item) => item.effective_status || "UNKNOWN");
+    const adStatuses = normalizedAds.map((item) => item.effective_status || "UNKNOWN");
+    const adsetStatus = adsetStatuses[0] || null;
+    const adStatus = adStatuses[0] || null;
     const ageHours = (Date.now() - new Date(c.created_at).getTime()) / 3_600_000;
 
     let delivery: "delivering" | "warming" | "no_delivery" | "paused" | "rejected" | "review" = "no_delivery";
     let message = "";
 
-    if (["DISAPPROVED", "ADSET_DISAPPROVED", "CAMPAIGN_DISAPPROVED", "WITH_ISSUES"].includes(campStatus)) {
+    if (resolved.localStatus === "rejected") {
       delivery = "rejected";
-      message = "Anúncio reprovado pela Meta";
-    } else if (campStatus === "PAUSED" || campStatus === "ARCHIVED" || campStatus === "DELETED") {
+      message = "Anúncio com pendência ou reprovação na Meta";
+    } else if (resolved.localStatus === "paused") {
       delivery = "paused";
       message = "Pausado";
-    } else if (["IN_PROCESS", "PENDING_REVIEW", "PREAPPROVED"].includes(campStatus)) {
+    } else if (resolved.localStatus === "pending_review") {
       delivery = "review";
-      message = "Em revisão pela Meta";
-    } else if (campStatus === "ACTIVE") {
+      message = "Em análise ou processamento na Meta";
+    } else if (resolved.localStatus === "active") {
       if (impressions24h > 0) {
         delivery = "delivering";
         message = `Entregando — ${impressions24h.toLocaleString("pt-BR")} impressões hoje`;
@@ -106,6 +108,9 @@ Deno.serve(async (req) => {
       campaign_status: campStatus,
       adset_status: adsetStatus,
       ad_status: adStatus,
+      adset_statuses: adsetStatuses,
+      ad_statuses: adStatuses,
+      resolved_local_status: resolved.localStatus,
       issues,
       impressions_24h: impressions24h,
       impressions_7d: impressions7d,

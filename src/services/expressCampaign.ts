@@ -37,8 +37,10 @@ export interface ExpressSuggestions {
   defaults: ExpressDefaults;
 }
 
+const DEFAULT_DAILY_BUDGET_CENTS = 1500;
+
 const FALLBACK: ExpressDefaults = {
-  budget_cents: 5000, // R$ 50/dia
+  budget_cents: DEFAULT_DAILY_BUDGET_CENTS,
   duration_days: 7,
   age_min: 30,
   age_max: 65,
@@ -96,8 +98,11 @@ async function loadWinnerDefaults(consultantId: string): Promise<Partial<Express
   const avg = (xs: number[]) => xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : 0;
   const budgets = rows.map((r) => r.daily_budget_cents).filter(Boolean);
   const ages = rows.filter((r) => r.age_min && r.age_max);
+  const suggestedBudget = budgets.length ? avg(budgets) : DEFAULT_DAILY_BUDGET_CENTS;
+  const durations = rows.map((r) => r.duration_days).filter((v): v is number => Number(v) > 0);
   return {
-    budget_cents: budgets.length ? avg(budgets) : undefined,
+    budget_cents: Math.max(1000, suggestedBudget),
+    duration_days: durations.length ? Math.max(3, Math.min(30, avg(durations))) : 7,
     age_min: ages.length ? Math.min(...ages.map(a => a.age_min!)) : undefined,
     age_max: ages.length ? Math.max(...ages.map(a => a.age_max!)) : undefined,
   };

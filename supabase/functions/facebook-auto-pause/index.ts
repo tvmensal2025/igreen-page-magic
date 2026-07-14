@@ -1,66 +1,62 @@
-// Auto-pause de criativos ruins: roda 1x/dia, pausa Ads com CTR <0.8% e gasto >R$50.
-// Os melhores Ads do AdSet continuam → algoritmo concentra verba neles.
-import { adminClient, corsHeaders, fbFetch } from "../_shared/fb-graph.ts";
-import { decryptToken } from "../_shared/fb-crypto.ts";
+// Analisa criativos com baixo CTR e cria recomendações. Não altera a Meta.
+import { adminClient, corsHeaders } from "../_shared/fb-graph.ts";
 
-const MIN_SPEND_CENTS = 5000;     // R$ 50
-const MIN_CTR_BPS = 80;           // 0.8%
+const MIN_SPEND_CENTS = 5000;
+const MIN_CTR_BPS = 80;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const admin = adminClient();
+    const since = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+    const { data: metrics, error } = await admin
+      .from("facebook_ad_metrics_daily")
+      .select("campaign_id, fb_ad_id, spend_cents, impressions, clicks, facebook_campaigns!inner(consultant_id, status)")
+      .eq("facebook_campaigns.status", "active")
+      .gte("date", since);
+    if (error) throw error;
 
-    // Pega campanhas ativas com pelo menos 2 ads (não vai pausar single ad)
-    const { data: camps } = await admin
-      .from("facebook_campaigns")
-      .select("id, consultant_id, fb_campaign_id, fb_ad_ids")
-      .eq("status", "active");
-
-    const summary: any[] = [];
-    for (const c of camps || []) {
-      const ads = (c.fb_ad_ids || []) as string[];
-      if (ads.length < 2) continue;
-
-      const { data: conn } = await admin
-        .from("facebook_connections")
-        .select("access_token_encrypted")
-        .eq("consultant_id", c.consultant_id)
-        .maybeSingle();
-      if (!conn?.access_token_encrypted) continue;
-      const token = await decryptToken(conn.access_token_encrypted);
-
-      // Pega insights por ad nos últimos 7 dias
-      const paused: string[] = [];
-      try {
-        const url = `/${c.fb_campaign_id}/insights?level=ad&fields=ad_id,ctr,spend,impressions&date_preset=last_7d&access_token=${token}`;
-        const r = await fbFetch(url);
-        const rows = (r?.data || []) as any[];
-        // Não pausar se ficaria com <2 ads ativos
-        const candidates = rows.filter((x) => Number(x.spend) * 100 >= MIN_SPEND_CENTS && Number(x.ctr) * 100 < (MIN_CTR_BPS / 100));
-        // ordena pior primeiro
-        candidates.sort((a, b) => Number(a.ctr) - Number(b.ctr));
-        const maxToPause = Math.max(0, rows.length - 2); // sempre manter pelo menos 2 vivos
-        for (const cand of candidates.slice(0, maxToPause)) {
-          try {
-            await fbFetch(`/${cand.ad_id}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/x-www-form-urlencoded" },
-              body: new URLSearchParams({ status: "PAUSED", access_token: token }),
-            });
-            paused.push(cand.ad_id);
-          } catch (e) {
-            console.warn("[auto-pause] falhou pausar", cand.ad_id, (e as Error).message);
-          }
-        }
-      } catch (e) {
-        console.warn("[auto-pause] insights falhou", c.fb_campaign_id, (e as Error).message);
-      }
-      if (paused.length) summary.push({ campaign: c.fb_campaign_id, paused });
+    const grouped = new Map<string, { consultantId: string; campaignId: string; adId: string; spend: number; impressions: number; clicks: number }>();
+    for (const row of (metrics as any[]) || []) {
+      const key = `${row.campaign_id}:${row.fb_ad_id}`;
+      const current = grouped.get(key) || {
+        consultantId: row.facebook_campaigns.consultant_id,
+        campaignId: row.campaign_id,
+        adId: row.fb_ad_id,
+        spend: 0, impressions: 0, clicks: 0,
+      };
+      current.spend += Number(row.spend_cents || 0);
+      current.impressions += Number(row.impressions || 0);
+      current.clicks += Number(row.clicks || 0);
+      grouped.set(key, current);
     }
-    return new Response(JSON.stringify({ ok: true, processed: (camps || []).length, summary }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    let recommended = 0;
+    for (const item of grouped.values()) {
+      const ctrBps = item.impressions > 0 ? Math.round(item.clicks * 10000 / item.impressions) : 0;
+      if (item.spend < MIN_SPEND_CENTS || item.impressions < 1500 || ctrBps >= MIN_CTR_BPS) continue;
+      const title = `Revisar criativo ${item.adId}`;
+      const { data: existing } = await admin.from("ad_recommendations").select("id")
+        .eq("consultant_id", item.consultantId).eq("title", title)
+        .is("dismissed_at", null).is("applied_at", null).limit(1);
+      if (existing?.length) continue;
+      const { error: insertError } = await admin.from("ad_recommendations").insert({
+        consultant_id: item.consultantId,
+        type: "low_ctr_review",
+        title,
+        message: `CTR ${(ctrBps / 100).toFixed(2)}% após R$ ${(item.spend / 100).toFixed(2)} e ${item.impressions} impressões. Nada foi pausado automaticamente.`,
+        severity: "warning",
+        action_label: "Revisar criativo",
+        action_payload: { kind: "review_creative", campaign_id: item.campaignId, fb_ad_id: item.adId },
+      });
+      if (!insertError) recommended++;
+    }
+    return new Response(JSON.stringify({ ok: true, recommended, paused: 0 }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
-    console.error("[auto-pause]", e);
-    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: (e as Error).message }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });

@@ -27,6 +27,7 @@ export interface RodizioPoolInsert {
   campaign_id: string;
   consultant_id: string;
   label: string;
+  is_enabled: boolean;
   is_active: boolean;
 }
 
@@ -125,7 +126,9 @@ export function buildRodizioPoolPlan(args: {
       campaign_id: campaignId,
       consultant_id: consultantId,
       label,
-      is_active: true,
+      is_enabled: true,
+      // A configuração existe, mas só fica operacional após a campanha ativa.
+      is_active: false,
     },
     buildMembers: (poolId: string) => buildRodizioPoolMembers(poolId, partnerIds),
   };

@@ -43,45 +43,23 @@ async function loadPartnerCampaignLeads(
   partnerId: string,
   sinceIso?: string,
 ): Promise<PartnerLeadRow[]> {
-  const { data: logs } = await supabase
-    .from("campaign_match_log")
-    .select("customer_id")
+  let query = supabase
+    .from("rodizio_assignments")
+    .select("customer_id, assigned_at")
     .eq("campaign_id", campaignId)
+    .eq("partner_id", partnerId)
+    .order("assigned_at", { ascending: false })
     .limit(500);
-  const matchIds = [...new Set(((logs || []) as any[]).map((l) => l.customer_id).filter(Boolean))] as string[];
-
-  const byId = new Map<string, PartnerLeadRow>();
-
-  let q1 = supabase
-    .from("customers")
-    .select("id, created_at")
-    .eq("referral_partner_id", partnerId)
-    .eq("source_campaign_id", campaignId)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (sinceIso) q1 = q1.gte("created_at", sinceIso);
-  const { data: bySource } = await q1;
-  for (const r of (bySource || []) as PartnerLeadRow[]) byId.set(r.id, r);
-
-  if (matchIds.length) {
-    for (let i = 0; i < matchIds.length; i += 100) {
-      const chunk = matchIds.slice(i, i + 100);
-      let q2 = supabase
-        .from("customers")
-        .select("id, created_at")
-        .eq("referral_partner_id", partnerId)
-        .in("id", chunk)
-        .order("created_at", { ascending: false })
-        .limit(200);
-      if (sinceIso) q2 = q2.gte("created_at", sinceIso);
-      const { data: byMatch } = await q2;
-      for (const r of (byMatch || []) as PartnerLeadRow[]) byId.set(r.id, r);
-    }
+  if (sinceIso) query = query.gte("assigned_at", sinceIso);
+  const { data, error } = await query;
+  if (error) {
+    console.error("[rodizio-metrics] ledger de atribuições indisponível:", error.message);
+    return [];
   }
-
-  return [...byId.values()].sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
+  return ((data || []) as any[]).map((row) => ({
+    id: String(row.customer_id),
+    created_at: String(row.assigned_at),
+  }));
 }
 
 function nowBRT(): { label: string; hour: number; minutesSinceMidnightUTC: number } {
@@ -215,10 +193,17 @@ Deno.serve(async (req) => {
         metrics_quiet_start_hour, metrics_quiet_end_hour,
         facebook_campaigns!inner(id, name, status, fb_campaign_id, consultant_id, created_at, cities, duration_days, daily_budget_cents, tracking_protocol, fb_adset_ids)
       `)
+      .eq("is_enabled", true)
+      .eq("is_active", true)
       .eq("facebook_campaigns.status", "active");
 
     for (const pool of (pools || []) as any[]) {
       const camp = pool.facebook_campaigns;
+      if (pool.consultant_id !== camp?.consultant_id) {
+        console.error(`[rodizio-metrics] pool ${pool.id} pertence a outro consultor; envio bloqueado`);
+        errors++;
+        continue;
+      }
       const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 60);
       if (!camp?.id || !camp.fb_campaign_id) continue;
       if (intervalMin <= 0) { skippedInterval++; continue; }

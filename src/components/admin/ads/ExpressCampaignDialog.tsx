@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Loader2, MapPin, Image as ImageIcon, Type, DollarSign, Calendar, Sparkles, Check, Upload, RotateCcw, ExternalLink } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { searchCities, type CityHit, createCampaign, uploadAdPhotos } from "@/services/facebookAds";
+import { searchCities, type CityHit, createCampaign, preflightCampaign, uploadAdPhotos } from "@/services/facebookAds";
 import { fetchExpressSuggestions, type ExpressSuggestions, type ExpressImage, type ExpressCopy } from "@/services/expressCampaign";
 import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
 
@@ -53,7 +53,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
   const [selectedCopyIdx, setSelectedCopyIdx] = useState(0);
 
   // 4-5) VALOR / DIAS
-  const [budget, setBudget] = useState(50);
+  const [budget, setBudget] = useState(15);
   const [days, setDays] = useState<number | null>(7);
 
   const [publishing, setPublishing] = useState(false);
@@ -64,7 +64,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
     setGeoMode("cities");
     setCityQuery(""); setCityHits([]); setCities([]); setRadiusPoints([]);
     setSuggestions(null); setSelectedImage(null); setSelectedCopyIdx(0);
-    setBudget(50); setDays(7);
+    setBudget(15); setDays(7);
   }, [open]);
 
   // Autocomplete cidades (debounce)
@@ -100,8 +100,8 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
       const s = await fetchExpressSuggestions({ consultantId, cities: names });
       setSuggestions(s);
       if (!selectedImage && s.images.length) setSelectedImage(s.images[0]);
-      setBudget(Math.round(s.defaults.budget_cents / 100));
-      if (s.defaults.duration_days !== undefined) setDays(s.defaults.duration_days);
+      setBudget(Math.max(10, Math.round(s.defaults.budget_cents / 100)));
+      setDays(s.defaults.duration_days ?? 7);
     } catch (e: any) {
       toast({ title: "Falha ao carregar sugestões", description: e.message, variant: "destructive" });
     } finally { setLoadingSugg(false); }
@@ -137,7 +137,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
     if (cityNames.length === 0) return "Escolha pelo menos 1 cidade ou endereço.";
     if (!selectedImage) return "Selecione uma imagem.";
     if (!suggestions?.copies[selectedCopyIdx]) return "Aguardando geração da copy...";
-    if (budget < 5) return "Orçamento mínimo R$ 5/dia.";
+    if (budget < 10) return "Orçamento mínimo R$ 10/dia.";
     return null;
   }
 
@@ -151,8 +151,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
       const campaignName = geoMode === "cities"
         ? `iGreen Express — ${cities.map(c => c.name).slice(0, 2).join(", ")}`
         : `iGreen Express — ${radiusPoints[0]?.address_string.slice(0, 40) || "Raio"}`;
-      await createCampaign({
-        name: campaignName,
+      const targeting = {
         cities: geoMode === "cities" ? cities.map((c) => ({ key: c.key, name: c.name })) : [],
         custom_locations: geoMode === "radius"
           ? radiusPoints.map((p) => ({
@@ -160,6 +159,20 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
               radius: p.radius, address_string: p.address_string, name: p.name,
             }))
           : undefined,
+      };
+      const preflight = await preflightCampaign({
+        ...targeting,
+        daily_budget_cents: Math.round(budget * 100),
+        duration_days: days,
+        age_min: defaults.age_min,
+        age_max: defaults.age_max,
+      });
+      if (!preflight.ok) {
+        throw new Error(preflight.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
+      }
+      await createCampaign({
+        name: campaignName,
+        ...targeting,
         daily_budget_cents: Math.round(budget * 100),
         duration_days: days,
         creative_mode: "photo",
@@ -312,9 +325,10 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
           <section className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5 text-sm"><DollarSign className="w-4 h-4 text-primary" /> 4. Valor por dia (R$)</Label>
-              <Input type="number" min={5} max={500} value={budget}
-                onChange={(e) => setBudget(Math.max(5, Number(e.target.value) || 5))} className="h-9" />
-              {defaults && defaults.budget_cents !== 5000 && (
+              <Input type="number" min={10} max={500} value={budget}
+                onChange={(e) => setBudget(Math.max(10, Number(e.target.value) || 10))} className="h-9" />
+              <p className="text-[11px] text-muted-foreground">A sugestão considera seu histórico; ajuste conforme a verba disponível.</p>
+              {defaults && defaults.budget_cents !== 1500 && (
                 <p className="text-[11px] text-muted-foreground">Média dos seus winners: R$ {(defaults.budget_cents / 100).toFixed(0)}</p>
               )}
             </div>

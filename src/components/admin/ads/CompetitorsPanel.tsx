@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, RefreshCw, Search, Trophy, Wand2, ExternalLink } from "lucide-react";
+import { Eye, RefreshCw, Search, Clock3, Wand2, ExternalLink } from "lucide-react";
 
 interface Row {
   id: string;
@@ -20,6 +20,7 @@ interface Row {
   active_days: number | null;
   thumbnail_url: string | null;
   image_url: string | null;
+  last_seen_at: string | null;
   ingested_at: string;
 }
 
@@ -50,7 +51,7 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
     setLoading(true);
     const { data } = await supabase
       .from("ad_competitor_creatives")
-      .select("id, ad_archive_id, advertiser, headline, primary_text, cta, angle, creative_format, active_days, thumbnail_url, image_url, ingested_at")
+      .select("id, ad_archive_id, advertiser, headline, primary_text, cta, angle, creative_format, active_days, thumbnail_url, image_url, last_seen_at, ingested_at")
       .order("active_days", { ascending: false })
       .limit(100);
     setRows((data as Row[]) || []);
@@ -73,8 +74,19 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
   }
 
   const advertisers = Array.from(new Set(rows.map(r => r.advertiser))).sort();
+  const ownBenchmark = rows.filter(r => /i\s*green/i.test(r.advertiser));
+  const competitors = rows.filter(r => !/i\s*green/i.test(r.advertiser));
+  const recentCutoff = Date.now() - 30 * 86400_000;
+  const isRecent = (row: Row) => {
+    const seenAt = row.last_seen_at || row.ingested_at;
+    const timestamp = new Date(seenAt).getTime();
+    return Number.isFinite(timestamp) && timestamp >= recentCutoff;
+  };
+  const recentCompetitors = competitors.filter(isRecent);
 
   const filtered = rows.filter(r => {
+    if (!isRecent(r)) return false;
+    if (advertiser === "all" && /i\s*green/i.test(r.advertiser)) return false;
     if (advertiser !== "all" && r.advertiser !== advertiser) return false;
     if (angle !== "all" && r.angle !== angle) return false;
     if (format !== "all" && r.creative_format !== format) return false;
@@ -82,8 +94,8 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
     return true;
   });
 
-  const top5Ids = new Set([...rows].slice(0, 5).map(r => r.id));
-  const champion = rows[0]; // mais dias no ar = campeão da semana
+  const top5Ids = new Set(recentCompetitors.slice(0, 5).map(r => r.id));
+  const longestObserved = recentCompetitors[0];
 
   function inspire(r: Row) {
     const hint = `${r.advertiser} · ${r.active_days || 0}d no ar — "${(r.headline || r.primary_text || "").slice(0, 100)}"`;
@@ -105,10 +117,11 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
         <div>
           <h3 className="font-bold text-foreground flex items-center gap-2">
             <Eye className="w-5 h-5 text-primary" />
-            Concorrentes ativos no Brasil
+            Referências de anúncios observadas no Brasil
           </h3>
           <p className="text-xs text-muted-foreground mt-1">
-            {rows.length} anúncios mapeados de {advertisers.length} marcas. Top 5 mais antigos = ★ alta conversão provável.
+            {recentCompetitors.length} anúncios recentes de outras empresas. Permanência no ar é referência de observação, não prova de conversão.
+            {ownBenchmark.length > 0 && ` iGreen aparece separadamente como benchmark próprio (${ownBenchmark.length}).`}
           </p>
         </div>
         <Button size="sm" variant="outline" onClick={rescan} disabled={scanning} className="gap-1.5">
@@ -117,19 +130,20 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
         </Button>
       </div>
 
-      {/* Anúncio Campeão da Semana */}
-      {champion && (
+      {/* Referência observada há mais tempo entre registros recentes */}
+      {longestObserved && (
         <div className="mb-4 p-4 rounded-xl border-2 border-primary/50 bg-gradient-to-br from-primary/15 via-primary/5 to-transparent">
           <div className="flex items-center gap-2 mb-2">
-            <Trophy className="w-5 h-5 text-primary" />
-            <span className="font-bold text-sm text-foreground">Anúncio CAMPEÃO da semana</span>
-            <Badge className="text-[10px] h-5">{champion.active_days || 0}d no ar</Badge>
+            <Clock3 className="w-5 h-5 text-primary" />
+            <span className="font-bold text-sm text-foreground">Referência observada há mais tempo</span>
+            <Badge className="text-[10px] h-5">{longestObserved.active_days || 0}d observados</Badge>
           </div>
+          <p className="text-[11px] text-muted-foreground mb-3">A permanência observada não comprova conversão nem valida as afirmações do anúncio.</p>
           <div className="grid md:grid-cols-[120px_1fr] gap-3">
-            {(champion.thumbnail_url || champion.image_url) ? (
+            {(longestObserved.thumbnail_url || longestObserved.image_url) ? (
               <img
-                src={champion.thumbnail_url || champion.image_url || ""}
-                alt={champion.advertiser}
+                src={longestObserved.thumbnail_url || longestObserved.image_url || ""}
+                alt={longestObserved.advertiser}
                 className="w-full md:w-[120px] aspect-square object-cover rounded-lg border border-border/40"
                 loading="lazy"
               />
@@ -140,19 +154,19 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className="font-semibold text-sm text-foreground">{champion.advertiser}</span>
-                {champion.angle && <Badge variant="outline" className="text-[10px] h-5">{ANGLE_LABEL[champion.angle] || champion.angle}</Badge>}
-                {champion.creative_format && <Badge variant="outline" className="text-[10px] h-5">{champion.creative_format}</Badge>}
+                <span className="font-semibold text-sm text-foreground">{longestObserved.advertiser}</span>
+                {longestObserved.angle && <Badge variant="outline" className="text-[10px] h-5">{ANGLE_LABEL[longestObserved.angle] || longestObserved.angle}</Badge>}
+                {longestObserved.creative_format && <Badge variant="outline" className="text-[10px] h-5">{longestObserved.creative_format}</Badge>}
               </div>
-              {champion.headline && <p className="text-sm text-foreground font-medium">"{champion.headline}"</p>}
-              {champion.primary_text && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{champion.primary_text}</p>}
+              {longestObserved.headline && <p className="text-sm text-foreground font-medium">"{longestObserved.headline}"</p>}
+              {longestObserved.primary_text && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{longestObserved.primary_text}</p>}
               <div className="flex gap-2 mt-2 flex-wrap">
-                <Button size="sm" className="h-7 text-[11px] gap-1" onClick={() => inspire(champion)}>
-                  <Wand2 className="w-3 h-3" /> Inspirar criativo nele
+                <Button size="sm" className="h-7 text-[11px] gap-1" onClick={() => inspire(longestObserved)}>
+                  <Wand2 className="w-3 h-3" /> Usar como referência
                 </Button>
-                {fbAdLibUrl(champion) && (
+                {fbAdLibUrl(longestObserved) && (
                   <Button size="sm" variant="outline" className="h-7 text-[11px] gap-1" asChild>
-                    <a href={fbAdLibUrl(champion)!} target="_blank" rel="noopener">
+                    <a href={fbAdLibUrl(longestObserved)!} target="_blank" rel="noopener noreferrer">
                       <ExternalLink className="w-3 h-3" /> Ver na Meta
                     </a>
                   </Button>
@@ -204,7 +218,7 @@ export function CompetitorsPanel({ onInspire }: Props = {}) {
               <div className="flex items-start justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm text-foreground">{r.advertiser}</span>
-                  {top5Ids.has(r.id) && <Trophy className="w-3.5 h-3.5 text-primary" />}
+                  {top5Ids.has(r.id) && <Clock3 className="w-3.5 h-3.5 text-primary" aria-label="Entre as referências recentes observadas há mais tempo" />}
                   {r.angle && <Badge variant="outline" className="text-[10px] h-5">{ANGLE_LABEL[r.angle] || r.angle}</Badge>}
                   {r.creative_format && <Badge variant="outline" className="text-[10px] h-5">{r.creative_format}</Badge>}
                 </div>

@@ -14,6 +14,10 @@ export type RodizioAssignOutcome =
   | "already_assigned"
   | "pool_empty"
   | "customer_missing"
+  | "campaign_inactive"
+  | "campaign_conflict"
+  | "assignment_conflict"
+  | "tenant_mismatch"
   | "rpc_error";
 
 export interface RodizioAssignResult {
@@ -60,6 +64,10 @@ function normalizeOutcome(raw: string | null): RodizioAssignOutcome {
     case "already_assigned":
     case "pool_empty":
     case "customer_missing":
+    case "campaign_inactive":
+    case "campaign_conflict":
+    case "assignment_conflict":
+    case "tenant_mismatch":
       return raw;
     default:
       return "rpc_error";
@@ -107,6 +115,62 @@ export async function assignRodizioLead(
       position: null,
       poolId: null,
       errorMessage: msg,
+    };
+  }
+}
+
+export type CampaignBindOutcome =
+  | "bound"
+  | "already_bound"
+  | "campaign_conflict"
+  | "tenant_mismatch"
+  | "customer_missing"
+  | "rpc_error";
+
+export interface CampaignBindResult {
+  outcome: CampaignBindOutcome;
+  campaignId: string | null;
+  errorMessage?: string;
+}
+
+/**
+ * Fixa source_campaign_id sob FOR UPDATE e devolve a campanha realmente
+ * persistida. Em conflito, não sobrescreve a primeira origem gravada.
+ */
+export async function bindCustomerCampaign(
+  supabase: SupabaseClient,
+  customerId: string,
+  campaignId: string,
+): Promise<CampaignBindResult> {
+  try {
+    const { data, error } = await supabase.rpc("bind_customer_campaign", {
+      p_customer_id: customerId,
+      p_campaign_id: campaignId,
+    });
+    if (error) {
+      return { outcome: "rpc_error", campaignId: null, errorMessage: error.message };
+    }
+    const pick = Array.isArray(data) ? data[0] : data;
+    const rawOutcome = typeof pick?.outcome === "string" ? pick.outcome : "rpc_error";
+    const outcome: CampaignBindOutcome = [
+      "bound",
+      "already_bound",
+      "campaign_conflict",
+      "tenant_mismatch",
+      "customer_missing",
+    ].includes(rawOutcome)
+      ? rawOutcome as CampaignBindOutcome
+      : "rpc_error";
+    const persistedCampaignId =
+      typeof pick?.campaign_id === "string" && pick.campaign_id.trim()
+        ? pick.campaign_id.trim()
+        : null;
+    return { outcome, campaignId: persistedCampaignId };
+  } catch (e) {
+    return {
+      outcome: "rpc_error",
+      campaignId: null,
+      errorMessage: (e as Error).message,
     };
   }
 }

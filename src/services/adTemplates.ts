@@ -184,7 +184,7 @@ export async function getTemplateAggregatedMetrics(
   // 3. Métricas diárias agregadas
   const { data: rows } = await supabase
     .from("facebook_metrics_daily")
-    .select("date, spend_cents, impressions, clicks, leads, messaging_conversations_started, complete_registrations, customers_acquired, frequency_x100, cpm_cents")
+    .select("date, spend_cents, impressions, clicks, meta_lead_actions, messaging_conversations_started, complete_registrations, customers_acquired, frequency_x100, cpm_cents")
     .in("campaign_id", campaignIds)
     .gte("date", sinceDate);
 
@@ -196,7 +196,7 @@ export async function getTemplateAggregatedMetrics(
     impr += r.impressions || 0;
     clicks += r.clicks || 0;
     conv += r.messaging_conversations_started || 0;
-    leads += r.leads || 0;
+    leads += r.meta_lead_actions || 0;
     regs += r.complete_registrations || 0;
     cust += r.customers_acquired || 0;
     if (r.frequency_x100) { freqSum += r.frequency_x100; freqN++; }
@@ -207,9 +207,9 @@ export async function getTemplateAggregatedMetrics(
     cur.clicks += r.clicks || 0;
     byDate.set(r.date, cur);
   }
-  // Para CTWA, conversa iniciada vira denominador do CPL quando não há "lead" direto.
-  const cplBase = leads > 0 ? leads : conv;
-  const cpl = cplBase > 0 ? Math.round(spend / cplBase) : 0;
+  // CPL usa apenas ações diretas de lead; custo por conversa deve ser tratado
+  // separadamente por consumidores que exibem `conversations`.
+  const cpl = leads > 0 ? Math.round(spend / leads) : 0;
   const ctr = impr > 0 ? (clicks / impr) * 100 : 0;
 
   return {
@@ -226,7 +226,7 @@ export async function getTemplateAggregatedMetrics(
     cpl_cents: cpl,
     cpm_cents: cpmN > 0 ? Math.round(cpmSum / cpmN) : 0,
     frequency_avg: freqN > 0 ? Math.round(freqSum / freqN) / 100 : 0,
-    has_data: spend > 0 || impr > 0 || conv > 0,
+    has_data: spend > 0 || impr > 0 || conv > 0 || leads > 0,
     daily: Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date)),
   };
 }

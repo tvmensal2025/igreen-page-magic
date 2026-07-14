@@ -29,6 +29,7 @@ export async function notifyRodizioOnCampaignPaused(
         facebook_campaigns!inner(id, name)
       `)
       .eq("campaign_id", campaignId)
+      .eq("is_enabled", true)
       .is("paused_notified_at", null);
     if (poolErr) {
       console.error("[rodizio-pause-notify] pools query erro:", poolErr.message);

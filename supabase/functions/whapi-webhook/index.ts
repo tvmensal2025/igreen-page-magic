@@ -34,7 +34,7 @@ import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
 import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
 import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
-import { assignRodizioLead } from "../_shared/rodizio-assign.ts";
+import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assign.ts";
 import {
   campaignContainsAdId,
   extractMetaReferralFields,
@@ -1018,7 +1018,12 @@ Deno.serve(async (req) => {
           // ganhasse o CAS — leads ficavam sem source_campaign_id e sumiam
           // do dialog "Ver leads do rodízio".
           if (candidateCampaignId && currentSourceAdId) {
-            const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId);
+            const validAd = await campaignContainsAdId(
+              supabase,
+              candidateCampaignId,
+              currentSourceAdId,
+              instanceData.consultant_id,
+            );
             if (!validAd) {
               console.warn(`[rodizio] bloqueado: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
               await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
@@ -1034,30 +1039,25 @@ Deno.serve(async (req) => {
           }
 
           if (candidateCampaignId && !campaignAlreadyPersisted) {
-            try {
-              const { error: tagErr } = await supabase
-                .from("customers")
-                .update({
-                  source_campaign_id: candidateCampaignId,
-                  lead_source: "meta_ads",
-                })
-                .eq("id", customer.id)
-                .is("source_campaign_id", null);
-              if (!tagErr) {
-                (customer as any).source_campaign_id = candidateCampaignId;
-                (customer as any).lead_source = "meta_ads";
-              } else {
-                console.warn("[rodizio] persist source_campaign_id falhou:", tagErr.message);
-              }
-            } catch (e) {
-              console.warn("[rodizio] persist source_campaign_id exceção:", (e as Error).message);
+            const bind = await bindCustomerCampaign(supabase, customer.id, candidateCampaignId);
+            if (bind.outcome === "bound" || bind.outcome === "already_bound") {
+              candidateCampaignId = bind.campaignId;
+              (customer as any).source_campaign_id = bind.campaignId;
+              (customer as any).lead_source = "meta_ads";
+            } else {
+              console.warn(
+                `[rodizio] vínculo bloqueado outcome=${bind.outcome} requested=${candidateCampaignId} persisted=${bind.campaignId}`,
+              );
+              await markManualReview(supabase, customer.id, `campaign_bind_${bind.outcome}`);
+              candidateCampaignId = bind.campaignId;
+              if (bind.campaignId) (customer as any).source_campaign_id = bind.campaignId;
             }
           }
 
           // 3) há pool de rodízio ATIVA para essa campanha? (dupla trava: pool.is_active + campanha viva)
           if (candidateCampaignId) {
             if (currentSourceAdId) {
-              const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId);
+              const validAd = await campaignContainsAdId(supabase, candidateCampaignId, currentSourceAdId, instanceData.consultant_id);
               if (!validAd) {
                 console.warn(`[rodizio] pool bloqueada: campaign=${candidateCampaignId} não contém ad_id=${currentSourceAdId}`);
                 await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
@@ -1071,8 +1071,9 @@ Deno.serve(async (req) => {
               .from("rodizio_pools")
               .select("id, facebook_campaigns!inner(status)")
               .eq("campaign_id", candidateCampaignId)
+              .eq("is_enabled", true)
               .eq("is_active", true)
-              .in("facebook_campaigns.status", ["active", "pending_review"])
+              .eq("facebook_campaigns.status", "active")
               .maybeSingle();
             if ((pool as any)?.id) {
               rodizioPoolAtiva = true;
@@ -1090,14 +1091,11 @@ Deno.serve(async (req) => {
 
               if (assign.outcome === "assigned" && assign.partnerId) {
                 const rodizioPartnerId = assign.partnerId;
-                if (!campaignAlreadyPersisted || rodizioMatchMethod !== "cached_campaign") {
-                  const extraPatch: Record<string, unknown> = {};
-                  if (!campaignAlreadyPersisted) extraPatch.source_campaign_id = resolvedCampaignId;
-                  if (rodizioMatchMethod !== "cached_campaign") extraPatch.lead_source = "meta_ads";
-                  if (Object.keys(extraPatch).length > 0) {
-                    await supabase.from("customers").update(extraPatch).eq("id", customer.id);
-                  }
-                }
+                // A RPC já vinculou a campanha de forma transacional. Aqui apenas
+          // complementamos a origem quando necessário, sem regravar o vínculo.
+          if (rodizioMatchMethod !== "cached_campaign") {
+            await supabase.from("customers").update({ lead_source: "meta_ads" }).eq("id", customer.id);
+          }
                 (customer as any).referral_partner_id = rodizioPartnerId;
                 if (!campaignAlreadyPersisted) {
                   (customer as any).source_campaign_id = resolvedCampaignId;
@@ -1918,7 +1916,12 @@ Deno.serve(async (req) => {
         }
 
         if (sourceCampaignId && sourceAdId) {
-          const validAd = await campaignContainsAdId(supabase, sourceCampaignId, sourceAdId);
+          const validAd = await campaignContainsAdId(
+            supabase,
+            sourceCampaignId,
+            sourceAdId,
+            (customer as any).consultant_id,
+          );
           if (!validAd) {
             console.warn(`[lead-source] bloqueado: campaign=${sourceCampaignId} não contém ad_id=${sourceAdId}`);
             await markManualReview(supabase, customer.id, "campaign_ad_id_mismatch");
@@ -1939,6 +1942,21 @@ Deno.serve(async (req) => {
           console.warn(`[lead-source] customer ${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
         }
 
+        if (sourceCampaignId) {
+          const bind = await bindCustomerCampaign(supabase, customer.id, sourceCampaignId);
+          if (bind.outcome === "bound" || bind.outcome === "already_bound") {
+            sourceCampaignId = bind.campaignId;
+            (customer as any).source_campaign_id = bind.campaignId;
+          } else {
+            console.warn(
+              `[lead-source] vínculo bloqueado outcome=${bind.outcome} requested=${sourceCampaignId} persisted=${bind.campaignId}`,
+            );
+            await markManualReview(supabase, customer.id, `campaign_bind_${bind.outcome}`);
+            sourceCampaignId = bind.campaignId;
+            if (bind.campaignId) (customer as any).source_campaign_id = bind.campaignId;
+          }
+        }
+
         if (hasReferral || textMatch || sourceCampaignId || utmDetail || ctwaClid) {
           const patch: Record<string, any> = {};
           if (hasReferral || ctwaClid || sourceCampaignId || textMatch) {
@@ -1948,7 +1966,6 @@ Deno.serve(async (req) => {
           } else if (utmDetail) {
             patch.lead_source = utmDetail.utm_source || "utm";
           }
-          if (sourceCampaignId) patch.source_campaign_id = sourceCampaignId;
           if (ctwaClid) patch.ctwa_clid = ctwaClid;
           if (sourceAdId) patch.source_ad_id = String(sourceAdId);
           const detail: Record<string, any> = {};

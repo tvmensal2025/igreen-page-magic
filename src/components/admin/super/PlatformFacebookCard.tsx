@@ -84,9 +84,18 @@ export function PlatformFacebookCard() {
   }
 
   async function migrateOne(adsetId: string) {
+    const ok = await confirm({
+      title: "Duplicar adset e corrigir o pixel?",
+      description: "A Meta não permite trocar o pixel deste adset diretamente. A operação duplicará o adset, pausará o original e reiniciará o aprendizado no novo conjunto.",
+      confirmText: "Confirmar reset",
+      tone: "info",
+    });
+    if (!ok) return;
     setMigratingId(adsetId);
     try {
-      const { data, error } = await supabase.functions.invoke("facebook-migrate-adset-pixel", { body: { adset_id: adsetId } });
+      const { data, error } = await supabase.functions.invoke("facebook-migrate-adset-pixel", {
+        body: { adset_id: adsetId, confirm_learning_reset: true },
+      });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       toast({ title: "Adset migrado", description: `Novo adset: ${(data as any)?.new_adset_id || "—"}` });
@@ -102,13 +111,20 @@ export function PlatformFacebookCard() {
     if (!diagData?.adsets) return;
     const wrong = diagData.adsets.filter((a: any) => a.adset_id && a.is_correct === false);
     if (wrong.length === 0) return;
-    const ok = await confirm({ title: `Migrar ${wrong.length} adset(s) para o pixel correto?`, description: "Isso reseta o aprendizado.", confirmText: "Migrar", tone: "info" });
+    const ok = await confirm({
+      title: `Duplicar ${wrong.length} adset(s) e corrigir o pixel?`,
+      description: "Cada adset será duplicado, o original será pausado e o aprendizado será reiniciado no novo conjunto. Confirme somente se esse reset for realmente necessário.",
+      confirmText: "Confirmar resets",
+      tone: "info",
+    });
     if (!ok) return;
     setMigratingAll(true);
     let okCount = 0, failCount = 0;
     for (const a of wrong) {
       try {
-        const { data, error } = await supabase.functions.invoke("facebook-migrate-adset-pixel", { body: { adset_id: a.adset_id } });
+        const { data, error } = await supabase.functions.invoke("facebook-migrate-adset-pixel", {
+          body: { adset_id: a.adset_id, confirm_learning_reset: true },
+        });
         if (error || (data as any)?.error) throw new Error(error?.message || (data as any).error);
         okCount++;
       } catch {

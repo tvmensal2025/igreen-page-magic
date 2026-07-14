@@ -11,8 +11,6 @@ import { ptBR } from "date-fns/locale";
 interface Insight {
   winning_patterns: any;
   losing_patterns: any;
-  best_image_traits: any;
-  best_image_briefs: any;
   summary: string | null;
   sample_size: number;
   best_ctr_bps: number;
@@ -32,19 +30,26 @@ export function InsightsPanel({ consultantId }: Props) {
   const [insight, setInsight] = useState<Insight | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [evidenceCount, setEvidenceCount] = useState(0);
   const [freqAlert, setFreqAlert] = useState<{ avg: number; max: number; days: number } | null>(null);
 
   async function load() {
     setLoading(true);
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const [{ data }, { data: freqRows }] = await Promise.all([
+      const [{ data }, { data: evidenceRows }, { data: freqRows }] = await Promise.all([
       supabase
         .from("ad_creative_insights")
-        .select("winning_patterns, losing_patterns, best_image_traits, best_image_briefs, summary, sample_size, best_ctr_bps, best_cpa_cents, updated_at")
+        .select("winning_patterns, losing_patterns, summary, sample_size, best_ctr_bps, best_cpa_cents, updated_at")
         .eq("consultant_id", consultantId)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("ad_creative_performance")
+        .select("is_winner, is_loser")
+        .eq("consultant_id", consultantId)
+        .or("is_winner.eq.true,is_loser.eq.true")
+        .limit(1000),
       supabase
         .from("facebook_metrics_daily")
         .select("frequency_x100, facebook_campaigns!inner(consultant_id)")
@@ -52,6 +57,7 @@ export function InsightsPanel({ consultantId }: Props) {
         .gte("date", since),
     ]);
     setInsight(data as Insight | null);
+    setEvidenceCount((evidenceRows || []).length);
     if (freqRows && freqRows.length > 0) {
       const freqs = freqRows.map((r: any) => (r.frequency_x100 || 0) / 100).filter(f => f > 0);
       if (freqs.length > 0) {
@@ -91,7 +97,7 @@ export function InsightsPanel({ consultantId }: Props) {
 
   const winners = patternsToList(insight?.winning_patterns);
   const losers = patternsToList(insight?.losing_patterns);
-  const traits = patternsToList(insight?.best_image_traits);
+  const confidence = evidenceCount >= 10 ? "Alta" : evidenceCount >= 4 ? "Média" : "Baixa";
 
   return (
     <Card className="p-5 bg-card/50 backdrop-blur border-border/60">
@@ -102,9 +108,12 @@ export function InsightsPanel({ consultantId }: Props) {
             Insights da IA (sua performance)
           </h3>
           {insight && (
-            <p className="text-xs text-muted-foreground mt-1">
-              {insight.sample_size} anúncios analisados · atualizado {formatDistanceToNow(new Date(insight.updated_at), { locale: ptBR, addSuffix: true })}
-            </p>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <p className="text-xs text-muted-foreground">
+                {insight.sample_size} anúncios com dados granulares · atualizado {formatDistanceToNow(new Date(insight.updated_at), { locale: ptBR, addSuffix: true })}
+              </p>
+              <Badge variant="outline" className="text-[10px] h-5">Confiança {confidence.toLowerCase()} · {evidenceCount} classificados</Badge>
+            </div>
           )}
         </div>
         <Button size="sm" variant="outline" onClick={run} disabled={running} className="gap-1.5">
@@ -119,7 +128,7 @@ export function InsightsPanel({ consultantId }: Props) {
         <div className="text-center py-6 space-y-2">
           <Lightbulb className="w-8 h-8 text-muted-foreground/50 mx-auto" />
           <p className="text-sm text-muted-foreground">Sem insights ainda.</p>
-          <p className="text-xs text-muted-foreground">Suba 3+ anúncios e a IA começa a identificar seus padrões vencedores automaticamente todo dia às 07:00.</p>
+          <p className="text-xs text-muted-foreground">Use “Atualizar agora” depois que houver métricas granulares por anúncio. Nenhuma agenda automática é presumida aqui.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -137,8 +146,8 @@ export function InsightsPanel({ consultantId }: Props) {
                 </p>
                 <p className="text-muted-foreground mt-0.5">
                   {freqAlert.max >= 4
-                    ? "Mesma pessoa vendo 4+ vezes. Troque criativo ou amplie público para evitar fadiga e queda de CTR."
-                    : "Comece a planejar criativo novo — se passar de 4x, o CPL sobe."}
+                    ? "A repetição elevada pode indicar fadiga. Revise criativo e público sem pausar automaticamente."
+                    : "Acompanhe a tendência e planeje uma nova variação se a frequência continuar subindo."}
                 </p>
               </div>
             </div>
@@ -171,15 +180,6 @@ export function InsightsPanel({ consultantId }: Props) {
               )}
             </div>
           </div>
-
-          {traits.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-foreground mb-2">🎨 Traços de imagem vencedores</h4>
-              <div className="flex flex-wrap gap-1.5">
-                {traits.map((t, i) => <Badge key={i} variant="secondary" className="text-[11px]">{t}</Badge>)}
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-border/40">
             <div>

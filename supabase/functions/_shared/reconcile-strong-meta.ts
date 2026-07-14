@@ -13,6 +13,9 @@
 // 3. Não toca em nada quando não há sinal forte OU quando a campanha já bate.
 
 import {
+  bindCustomerCampaign,
+} from "./rodizio-assign.ts";
+import {
   campaignContainsAdId,
   extractMetaReferralFields,
   resolveCampaignFromStrongMeta,
@@ -67,26 +70,34 @@ export async function reconcileStrongMetaCampaign(
         supabase,
         currentCampaignId,
         strong.sourceAdId,
+        consultantId,
       );
       if (currentBelongs) {
         return { changed: false, reason: "already_correct" };
       }
     }
 
-    // Sobrescreve a campanha; limpa o parceiro (rodízio será recalculado no
-    // fluxo abaixo com a campanha correta).
-    const patch: Record<string, any> = {
-      source_campaign_id: strong.campaignId,
-      lead_source: "meta_ads",
-    };
-    if (strong.sourceAdId) patch.source_ad_id = String(strong.sourceAdId);
-    if (fields.ctwaClid) patch.ctwa_clid = String(fields.ctwaClid);
-    if (currentCampaignId && currentCampaignId !== strong.campaignId) {
-      patch.referral_partner_id = null;
+    // Fixa a origem de forma atômica. Se uma mensagem concorrente já vinculou
+    // outra campanha, não sobrescreve nem limpa o parceiro: revisão manual.
+    const bind = await bindCustomerCampaign(supabase, customerId, strong.campaignId);
+    if (bind.outcome !== "bound" && bind.outcome !== "already_bound") {
+      await supabase.from("customers").update({
+        needs_manual_review: true,
+        manual_review_reason: `strong_meta_${bind.outcome}`,
+        manual_review_at: new Date().toISOString(),
+      }).eq("id", customerId);
+      console.warn(
+        `[reconcile-strong-meta] conflito customer=${customerId} atual=${bind.campaignId ?? "null"} sinal=${strong.campaignId} outcome=${bind.outcome}`,
+      );
+      return { changed: false, reason: "no_resolution" };
     }
 
+    const patch: Record<string, any> = { lead_source: "meta_ads" };
+    if (strong.sourceAdId) patch.source_ad_id = String(strong.sourceAdId);
+    if (fields.ctwaClid) patch.ctwa_clid = String(fields.ctwaClid);
+
     await supabase.from("customers").update(patch).eq("id", customerId);
-    Object.assign(customer, patch);
+    Object.assign(customer, patch, { source_campaign_id: bind.campaignId });
 
     // Registra a correção; método com prefixo "override_" para auditoria.
     try {

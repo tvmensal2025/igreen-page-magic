@@ -1,7 +1,6 @@
-// Substitui a pool de rodízio de uma campanha existente. Desativa a pool
-// atual (mantém histórico e lead_count) e cria uma nova com os
-// participantes na ordem recebida (position 0..n). Quando `enabled=false`
-// apenas desativa e não cria nova (destino único volta a valer).
+// Configura a pool de rodízio de uma campanha existente por uma RPC
+// transacional. A mesma pool é preservada para manter counter, métricas e
+// lead_count dos participantes que continuarem na fila.
 //
 // Regras:
 // - Apenas o dono da campanha (consultant_id) pode alterar.
@@ -60,69 +59,46 @@ Deno.serve(async (req) => {
     if (!camp) return fail("Campanha não encontrada.", 404);
     if ((camp as any).consultant_id !== auth.id) return fail("Sem permissão.", 403);
 
-    // Valida ownership + ativos; mantém só válidos (fail se sobrar 0).
+    // Validação estrita: nenhum participante inválido/inativo é ignorado.
     if (partnerIds.length) {
-      const { data: partners } = await admin
+      const { data: partners, error: partnerError } = await admin
         .from("referral_partners")
         .select("id, consultant_id, is_active")
         .in("id", partnerIds);
+      if (partnerError) return fail("Erro ao validar participantes: " + partnerError.message, 500);
       const ownedActive = new Set(((partners as any[]) || [])
-        .filter((p) => p.consultant_id === auth.id && p.is_active !== false)
+        .filter((p) => p.consultant_id === auth.id && p.is_active === true)
         .map((p) => p.id as string));
-      const validIds = partnerIds.filter((id) => ownedActive.has(id));
       const bad = partnerIds.filter((id) => !ownedActive.has(id));
-      if (validIds.length < 1) {
+      if (bad.length) {
         return fail(
-          "Nenhum participante válido/ativo. Remova inativos ou reative antes de salvar o rodízio.",
+          `${bad.length} participante(s) não pertence(m) a você ou está(ão) inativo(s). Corrija a seleção antes de salvar.`,
           400,
         );
       }
-      if (bad.length) {
-        console.warn("[fb-update-rodizio] partners ignorados:", bad.join(", "));
-      }
-      partnerIds = validIds;
     }
 
-    // Desativa pool atual (mantém histórico e lead_count).
-    await admin
-      .from("rodizio_pools")
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("campaign_id", body.campaign_id)
-      .eq("is_active", true);
-
-    if (!body.enabled) {
-      return ok({ ok: true, enabled: false, pool_id: null, members: 0 });
-    }
-
-    // Cria nova pool + membros na ordem recebida.
     const label = (body.label || `Rodízio — ${(camp as any).name || "Campanha"}`).slice(0, 120);
-    const { data: pool, error: ePool } = await admin
-      .from("rodizio_pools")
-      .insert({
-        campaign_id: body.campaign_id,
-        consultant_id: auth.id,
-        label,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-    if (ePool || !pool) return fail("Erro ao criar pool: " + (ePool?.message || "sem retorno"), 500);
-    const poolId = (pool as any).id as string;
-
-    const members = partnerIds.map((partner_id, index) => ({
-      pool_id: poolId,
-      partner_id,
-      position: index,
-      lead_count: 0,
-    }));
-    const { error: eMem } = await admin.from("rodizio_pool_members").insert(members);
-    if (eMem) {
-      // rollback pool para não deixar pool sem membro
-      await admin.from("rodizio_pools").update({ is_active: false }).eq("id", poolId);
-      return fail("Erro ao inserir membros: " + eMem.message, 500);
+    const { data: configured, error: configureError } = await admin.rpc(
+      "configure_rodizio_pool",
+      {
+        p_campaign_id: body.campaign_id,
+        p_enabled: body.enabled,
+        p_partner_ids: body.enabled ? partnerIds : [],
+        p_label: label,
+      },
+    );
+    if (configureError) {
+      console.error("[fb-update-rodizio] RPC falhou:", configureError.message);
+      return fail("Não foi possível salvar o rodízio de forma segura: " + configureError.message, 500);
     }
-
-    return ok({ ok: true, enabled: true, pool_id: poolId, members: members.length });
+    const result = Array.isArray(configured) ? configured[0] : configured;
+    return ok({
+      ok: true,
+      enabled: result?.enabled === true,
+      pool_id: result?.pool_id ?? null,
+      members: Number(result?.members ?? 0),
+    });
   } catch (e) {
     console.error("[fb-update-rodizio]", e);
     return fail((e as Error)?.message || "Erro interno", 500);

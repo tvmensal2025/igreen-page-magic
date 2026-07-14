@@ -78,7 +78,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <span className={`text-[10px] ${state.headline.length > COPY_LIMITS.headline ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.headline.length}/{COPY_LIMITS.headline}</span>
         </Label>
         <Input maxLength={COPY_LIMITS.headline} value={state.headline}
-          onChange={(e) => patch({ headline: e.target.value })} placeholder="Conta 20% mais barata" />
+          onChange={(e) => patch({ headline: e.target.value })} placeholder="Veja se sua conta pode baixar" />
         {copy && copy.headlines.length > 1 && (
           <div className="flex flex-col gap-1.5 mt-2">
             {(copy.variations?.headlines || copy.headlines.map((t) => ({ text: t, framework: "geral", score: 75 }))).map((h, i) => (
@@ -99,7 +99,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <span className={`text-[10px] ${state.primaryText.length > COPY_LIMITS.primary ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.primaryText.length}/{COPY_LIMITS.primary}</span>
         </Label>
         <Textarea rows={3} maxLength={COPY_LIMITS.primary} value={state.primaryText}
-          onChange={(e) => patch({ primaryText: e.target.value })} placeholder="Sua conta de luz 20% mais barata. Sem obra. Fala no zap 👇" />
+          onChange={(e) => patch({ primaryText: e.target.value })} placeholder="Veja se sua conta pode baixar. Consulte as condições para sua região." />
         {copy && copy.primary_texts.length > 1 && (
           <div className="flex flex-col gap-1.5 mt-2">
             {(copy.variations?.primary_texts || copy.primary_texts.map((t) => ({ text: t, framework: "geral", score: 75 }))).map((t, i) => (
@@ -120,7 +120,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <span className={`text-[10px] ${state.description.length > COPY_LIMITS.description ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.description.length}/{COPY_LIMITS.description}</span>
         </Label>
         <Input maxLength={COPY_LIMITS.description} value={state.description}
-          onChange={(e) => patch({ description: e.target.value })} placeholder="Sem obra. Sem taxa." />
+          onChange={(e) => patch({ description: e.target.value })} placeholder="Consulte e simule" />
       </div>
 
       {/* Primeira mensagem WhatsApp */}

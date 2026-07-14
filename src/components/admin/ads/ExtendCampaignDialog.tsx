@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { Loader2, CalendarPlus, DollarSign, Sparkles } from "lucide-react";
+import { Loader2, CalendarPlus, DollarSign, Sparkles, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,7 +25,7 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
   const { toast } = useToast();
   const [addDays, setAddDays] = useState(7);
   const [budgetReais, setBudgetReais] = useState<string>(
-    campaign ? String(Math.round(campaign.daily_budget_cents / 100)) : "20"
+    campaign ? String(Math.max(10, Math.round(campaign.daily_budget_cents / 100))) : "15"
   );
   const [loading, setLoading] = useState(false);
 
@@ -34,9 +34,14 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
   const currentEnd = campaign.ended_at ? new Date(campaign.ended_at).getTime() : Date.now();
   const base = Math.max(currentEnd, Date.now());
   const newEnd = new Date(base + addDays * 86400_000);
-  const budgetCents = Math.max(500, Math.round(Number(budgetReais || "0") * 100));
+  const budgetCents = Math.max(1000, Math.round(Number(budgetReais || "0") * 100));
   const estTotal = (budgetCents / 100) * addDays;
   const wasExpired = campaign.ended_at && new Date(campaign.ended_at).getTime() < Date.now();
+  const currentBudgetCents = Math.max(0, campaign.daily_budget_cents);
+  const budgetChangePct = currentBudgetCents > 0
+    ? Math.abs(budgetCents - currentBudgetCents) / currentBudgetCents * 100
+    : 0;
+  const largeBudgetChange = budgetChangePct > 20;
 
   async function handleSubmit() {
     if (!campaign) return;
@@ -110,7 +115,8 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
             <Input
               id="budget"
               type="number"
-              min={5}
+              min={10}
+              max={500}
               step={1}
               value={budgetReais}
               onChange={(e) => setBudgetReais(e.target.value)}
@@ -118,6 +124,14 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
             <p className="text-[11px] text-muted-foreground">
               Gasto estimado no período: <strong className="text-foreground">R$ {estTotal.toFixed(2)}</strong>
             </p>
+            {largeBudgetChange && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 p-2 text-[11px] text-muted-foreground">
+                <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-warning" />
+                <span>
+                  Mudança de {budgetChangePct.toFixed(0)}% em relação ao orçamento atual. Alterações maiores podem afetar a fase de aprendizado da Meta; o aviso não bloqueia a edição.
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -125,7 +139,7 @@ export function ExtendCampaignDialog({ open, onOpenChange, campaign, onUpdated }
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={loading || budgetCents < 500} className="gap-1.5">
+          <Button onClick={handleSubmit} disabled={loading || budgetCents < 1000} className="gap-1.5">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             Aplicar e reativar
           </Button>
