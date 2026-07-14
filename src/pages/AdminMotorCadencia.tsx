@@ -372,10 +372,33 @@ export default function AdminMotorCadencia() {
                     <Input placeholder="Velip audio_id (opcional — se vazio usa TTS acima)" value={row.velip_audio_id || ""}
                       onChange={e => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })} />
                   )}
+
+                  {/* Limites e janela específicos do estágio */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t">
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Máx. envios/lead (0 = ilimitado)</Label>
+                      <Input type="number" min={0} max={20} className="h-8"
+                        value={row.max_per_lead}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, max_per_lead: +e.target.value } })} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Janela início (h, vazio=global)</Label>
+                      <Input type="number" min={0} max={23} className="h-8"
+                        value={row.window_start_hour ?? ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, window_start_hour: e.target.value === "" ? null : +e.target.value } })} />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] text-muted-foreground">Janela fim (h)</Label>
+                      <Input type="number" min={0} max={23} className="h-8"
+                        value={row.window_end_hour ?? ""}
+                        onChange={e => setStages({ ...stages, [s]: { ...row, window_end_hour: e.target.value === "" ? null : +e.target.value } })} />
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </div>
+
 
           <div className="mt-4 flex justify-end">
             <Button onClick={saveAll} disabled={saving}>
