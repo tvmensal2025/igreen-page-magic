@@ -479,7 +479,24 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     await load();
   }
 
-  const grupos = useMemo(() => {
+  // ── Savers das novas fontes ──
+  async function saveSimple(
+    table: "bot_flow_steps" | "bot_flow_qa" | "voice_campaigns" | "message_templates" | "bulk_campaigns" | "scheduled_messages",
+    id: string,
+    field: string,
+    key: string,
+    fallback: string | null,
+    label: string,
+  ) {
+    const text = drafts[key] ?? fallback ?? "";
+    setSaving(key);
+    const { error } = await (supabase as any).from(table).update({ [field]: text }).eq("id", id);
+    setSaving(null);
+    if (error) { toast.error(error.message); return; }
+    setDrafts((d) => { const n = { ...d }; delete n[key]; return n; });
+    toast.success(`${label} salvo`);
+    await load();
+  }
     const s = new Set(TEXTOS_CATALOGO.map((t) => t.grupo));
     return GRUPO_ORDER.filter((g) => s.has(g));
   }, []);
