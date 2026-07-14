@@ -126,6 +126,58 @@ type SchedMsgRow = {
   remote_jid: string;
 };
 
+type StageAutoRow = {
+  id: string;
+  stage_id: string;
+  stage_label?: string;
+  stage_key?: string;
+  position: number;
+  message_type: string;
+  message_text: string | null;
+  delay_seconds: number;
+};
+
+type AiKnowRow = {
+  id: string;
+  title: string;
+  content: string;
+  is_active: boolean;
+  is_critical: boolean;
+  persona: string | null;
+  consultant_id: string | null;
+};
+
+type AiAgentRow = {
+  consultant_id: string;
+  persona_name: string | null;
+  tone: string | null;
+  system_prompt: string | null;
+  step_prompts: Record<string, string> | null;
+  enabled: boolean;
+};
+
+type RodizioRow = {
+  id: string;
+  slug: string;
+  label: string;
+  message: string | null;
+  is_active: boolean;
+};
+
+type PosVendaDefaultRow = {
+  stage: string;
+  message_type: string;
+  message_text: string | null;
+  is_active: boolean;
+};
+
+type HolidayRow = {
+  id: string;
+  date: string;
+  label: string;
+  consultant_id: string | null;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
