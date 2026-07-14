@@ -527,7 +527,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
               />
             </div>
             <Badge variant="outline" className="text-[10px]">
-              {TEXTOS_CATALOGO.length} itens no catálogo
+              {TEXTOS_CATALOGO.length} fixos + {flowSteps.length + flowQa.length + voiceCamps.length + chatTpl.length + bulkCamps.length + schedMsgs.length + reactivation.length + phrases.length + posVenda.length} dinâmicos
             </Badge>
             {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
