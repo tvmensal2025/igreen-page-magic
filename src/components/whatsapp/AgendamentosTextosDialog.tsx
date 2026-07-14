@@ -156,6 +156,14 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
   const [reactivation, setReactivation] = useState<ReactivationRow[]>([]);
   const [phrases, setPhrases] = useState<PhraseRow[]>([]);
   const [posVenda, setPosVenda] = useState<PosVendaRow[]>([]);
+  const [flows, setFlows] = useState<FlowRow[]>([]);
+  const [flowSteps, setFlowSteps] = useState<FlowStepRow[]>([]);
+  const [flowQa, setFlowQa] = useState<FlowQaRow[]>([]);
+  const [voiceCamps, setVoiceCamps] = useState<VoiceCampRow[]>([]);
+  const [chatTpl, setChatTpl] = useState<ChatTemplateRow[]>([]);
+  const [bulkCamps, setBulkCamps] = useState<BulkCampRow[]>([]);
+  const [schedMsgs, setSchedMsgs] = useState<SchedMsgRow[]>([]);
+  const [flowFilter, setFlowFilter] = useState<string>("all");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(TEXTOS_CATALOGO[0]?.id ?? null);
