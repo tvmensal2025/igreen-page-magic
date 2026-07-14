@@ -215,6 +215,14 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
   const [chatTpl, setChatTpl] = useState<ChatTemplateRow[]>([]);
   const [bulkCamps, setBulkCamps] = useState<BulkCampRow[]>([]);
   const [schedMsgs, setSchedMsgs] = useState<SchedMsgRow[]>([]);
+  const [stageAuto, setStageAuto] = useState<StageAutoRow[]>([]);
+  const [aiKnow, setAiKnow] = useState<AiKnowRow[]>([]);
+  const [aiAgent, setAiAgent] = useState<AiAgentRow | null>(null);
+  const [rodizio, setRodizio] = useState<RodizioRow[]>([]);
+  const [posVendaGlobal, setPosVendaGlobal] = useState<PosVendaDefaultRow[]>([]);
+  const [holidays, setHolidays] = useState<HolidayRow[]>([]);
+  const [newHolidayDate, setNewHolidayDate] = useState("");
+  const [newHolidayLabel, setNewHolidayLabel] = useState("");
   const [flowFilter, setFlowFilter] = useState<string>("all");
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
