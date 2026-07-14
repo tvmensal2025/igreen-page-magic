@@ -43,7 +43,12 @@ interface StageRow {
   media_url: string | null;
   media_type: string | null;
   velip_audio_id: string | null;
+  max_per_lead: number;
+  window_start_hour: number | null;
+  window_end_hour: number | null;
+  window_days: number[] | null;
 }
+
 
 interface Window {
   weekday_start: number;
