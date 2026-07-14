@@ -455,8 +455,15 @@ Deno.serve(async (req) => {
       attempts_by_channel: attempts,
     }).eq("id", row.id);
 
+    // Fim natural da cadência: CALL_3 → CLOSE_LOST. Dispara notificação
+    // formatada ao parceiro (o retarget-sync cuida do Meta em cron próprio).
+    if (def.next === "CLOSE_LOST") {
+      await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
+    }
+
     dispatched++;
   }
+
 
   return json({ processed: due.length, dispatched, deferred, skipped, sent, failed });
 });
