@@ -192,7 +192,7 @@ export function CrmAnalyticsTab() {
           <p className="text-[11px] text-muted-foreground">Visualizações</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4">
-          <Play className="w-5 h-5 text-accent mb-2" />
+          <Play className="w-5 h-5 text-primary mb-2" />
           <p className="text-2xl font-bold text-foreground">{metrics.videoPlays}</p>
           <p className="text-[11px] text-muted-foreground">Reproduções Vídeo</p>
           {metrics.videoPlays > 0 && (

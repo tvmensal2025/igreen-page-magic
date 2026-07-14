@@ -66,7 +66,7 @@ export function GeographyCard({ customers }: { customers: Customer[] | undefined
 
       <div className="rounded-2xl border border-border/60 bg-card/60 backdrop-blur overflow-hidden">
         <header className="flex items-center gap-3 px-5 py-4 border-b border-border/40">
-          <MapPin className="w-4 h-4 text-accent" />
+          <MapPin className="w-4 h-4 text-primary" />
           <div>
             <h3 className="font-heading font-black text-sm tracking-tight">TOP ESTADOS</h3>
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Onde estão seus clientes</p>

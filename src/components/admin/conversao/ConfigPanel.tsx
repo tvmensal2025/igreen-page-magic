@@ -12,7 +12,7 @@ import { toast } from "sonner";
  * Painel de CONFIGURAÇÃO do reaquecimento — auto-save com debounce de 600ms.
  * Cada mudança em um campo grava automaticamente em reactivation_settings;
  * sem botão "Salvar". Cache em escopo de módulo evita piscar o loader quando
- * o consultor alterna entre abas do ViewSwitcher.
+ * o consultor alterna entre abas do cockpit.
  */
 
 interface Settings {
@@ -35,7 +35,7 @@ const DEFAULTS: Settings = {
   enviar_fim_de_semana: false,
 };
 
-// Cache em escopo de módulo: ao remontar a aba "Configurar" o estado já
+// Cache em escopo de módulo: ao remontar a aba "Ajustes" o estado já
 // aparece preenchido sem spinner, enquanto o load() confirma em background.
 const SETTINGS_CACHE = new Map<string, Settings>();
 

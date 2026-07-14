@@ -44,7 +44,8 @@ Nada aqui altera webhooks de chat.
 
 ## Secrets
 
-Preencher em Supabase → Project Settings → Edge Functions → Secrets:
+Preencher em Supabase → Project Settings → Edge Functions → Secrets
+(ou `./scripts/setup-velip-secrets.sh` com `SUPABASE_ACCESS_TOKEN` + `VELIP_API_TOKEN`):
 
 ```bash
 # Bearer da conta Velip (painel Velip → Integrações → API)
@@ -57,10 +58,14 @@ VELIP_WEBHOOK_AUTH=
 # OPCIONAL: BINA padrão E.164 (55DDNNNNNNNN)
 VELIP_CALLER_ID=
 
-# Já existentes no projeto
+# Mesmo valor de public.settings.key=voice_dialer_cron_secret
 VOICE_DIALER_CRON_SECRET=
 SERVICE_SHARED_SECRET=
 ```
+
+**Status ops (2026-07-13):** `VELIP_WEBHOOK_AUTH` e `VOICE_DIALER_CRON_SECRET` já
+gravados nas Edge secrets (cron alinhado com `public.settings`). Falta só
+`VELIP_API_TOKEN` (o token no painel Velip **não** entra sozinho no Supabase).
 
 **pg_cron:** o job `voice-dialer-tick` lê o header de
 `public.settings` onde `key = 'voice_dialer_cron_secret'` (mesmo valor do Edge secret).
@@ -72,6 +77,8 @@ URL do callback a colar no painel Velip → Integrações → URLs para Retorno:
 https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/voice-dialer-webhook?auth=<VELIP_WEBHOOK_AUTH>
 ```
 
+O valor exato de `?auth=` é o secret `VELIP_WEBHOOK_AUTH` (não versionar no git).
+Recuperar: Dashboard → Edge Functions → Secrets, ou arquivo local gerado no setup.
 ## Mapa de status Velip → interno
 
 | Velip `cd_called_status` | Interno | Retry? |
@@ -86,7 +93,27 @@ https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/voice-dialer-webhook?auth=
 ## Ligação individual (test_call)
 
 `voice-dialer-enqueue` com `action: "test_call"`, `test_phone`, `audio_clip_id`.
-Cria campanha efêmera + 1 target + `PlayAudioFile` imediato.
+Cria campanha efêmera + 1 target + `MakeTTSCall` imediato (com `content` p/ áudio).
+
+## Protocolo Velip (armadilhas — corrigido em 2026-07-13)
+
+Fonte: https://api.velip.com.br/ (repo `velipbr/velip-docs`). O driver
+`_shared/voice-dialer/velip.ts` respeita:
+
+- Resposta sempre no envelope `{"return": {...}}`; `status_code` é **string** ("0" = ok).
+- **Ligação com áudio gravado = `MakeTTSCall` + `content=<id sem prefixo tf>`.**
+  O endpoint `PlayAudioFile` só BAIXA/streama o áudio — não disca.
+- Campos oficiais: `callerid`, `timelimit`, `block` (agendar), `voice`, `encoding=UTF-8`
+  (form default é ISO-8859-1 → sem isso acentos corrompem no TTS).
+- Upload (`CreateAudioFile`): campo `audio` + `name` + **`ttswrt=1`** (senão o áudio
+  expira em 1 dia e o `velip_audio_id` salvo apodrece). Resposta: `return.cdw_file`.
+- `GetUserID` **não retorna saldo** (API v2 não expõe saldo → banner mostra "ver painel Velip").
+- `GetCallStatus`: resposta em `calls[].cd_status`; `cd_id` usa formato `<db>_<id>` — passar
+  exatamente como veio do `MakeTTSCall`.
+- `CreateDestinationBase` (`datajson`) retorna **erro 230** nesta conta → o enqueue faz
+  fallback automático de `batch` para `single` (cron disca 1 a 1). Se a Velip habilitar
+  listas na conta, o batch volta a funcionar sozinho.
+- `ChangeCampaign`: só `active` 0/1 (não existe cancel na API; cancelar = pausar + status no banco).
 
 ## Reconciliação
 

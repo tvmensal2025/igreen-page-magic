@@ -57,7 +57,7 @@ const LicConsultantSection = ({
               </div>
               <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
                 <span className="text-lg shrink-0">✅</span>
-                <span className="text-foreground/90">Envie uma mensagem para meu WhatsApp clicando no botão abaixo e comece hoje mesmo a faturar com todos os 8 produtos</span>
+                <span className="text-foreground/90">Envie uma mensagem para meu WhatsApp clicando no botão abaixo e comece hoje mesmo a faturar com todos os 9 produtos</span>
               </div>
             </div>
             <a href={WHATSAPP} target="_blank" rel="noopener noreferrer" className="btn-cta-lg text-center w-full block animate-pulse-green">

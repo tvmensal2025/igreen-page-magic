@@ -106,7 +106,13 @@ export function VelipHealthBanner() {
         </Button>
       </div>
       <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        <Metric icon={<Wallet className="h-3 w-3" />} label="Saldo" value={fmt(saldo)} strong />
+        {/* API v2 da Velip não expõe saldo — quando null, orientar o painel deles */}
+        <Metric
+          icon={<Wallet className="h-3 w-3" />}
+          label="Saldo"
+          value={saldo == null ? "ver painel Velip" : fmt(saldo)}
+          strong={saldo != null}
+        />
         <Metric icon={<TrendingUp className="h-3 w-3" />} label="Hoje" value={fmt(state.spend?.spend_today ?? 0)} />
         <Metric label="7 dias" value={fmt(state.spend?.spend_week ?? 0)} />
         <Metric label="30 dias" value={fmt(spendMonth)} />

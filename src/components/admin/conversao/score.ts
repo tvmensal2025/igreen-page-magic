@@ -86,7 +86,7 @@ export const TIER_META: Record<
   { label: string; cls: string; dot: string }
 > = {
   urgente: {
-    label: "Atender agora",
+    label: "Urgente",
     cls: "bg-destructive/15 text-destructive border-destructive/30",
     dot: "bg-destructive",
   },

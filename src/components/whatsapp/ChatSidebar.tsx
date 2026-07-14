@@ -24,6 +24,20 @@ interface ChatSidebarProps {
 
 type PartnerJoin = { nome?: string | null } | { nome?: string | null }[] | null;
 
+type ChatEnrichment = {
+  /** Mesma regra da Captação: welcome enviado e atendimento ainda não finalizado. */
+  inAttendance: boolean;
+  partnerNome: string | null;
+};
+
+/** Atendimento ativo = welcome enviado e ainda não finalizado (igual Captação). */
+function isInAttendance(row: {
+  welcome_sent_at?: string | null;
+  attendance_ended_at?: string | null;
+}): boolean {
+  return !!row.welcome_sent_at && !row.attendance_ended_at;
+}
+
 /** Telefone real do chat (ignora @lid sem sendTarget). */
 function chatPhoneDigits(chat: ChatItem): string | null {
   const jid =
@@ -77,8 +91,22 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
   const newPhoneRef = useRef<HTMLInputElement>(null);
   const [customerResults, setCustomerResults] = useState<CustomerResult[]>([]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** remoteJid → nome do parceiro (só leads com referral_partner_id). */
-  const [partnerByJid, setPartnerByJid] = useState<Record<string, string>>({});
+  /** remoteJid → atendimento ativo + nome do parceiro. */
+  const [enrichByJid, setEnrichByJid] = useState<Record<string, ChatEnrichment>>({});
+  const [listTab, setListTab] = useState<"atendimento" | "espera">(() => {
+    try {
+      const v = localStorage.getItem("wa_chat_list_tab");
+      return v === "espera" ? "espera" : "atendimento";
+    } catch {
+      return "atendimento";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("wa_chat_list_tab", listTab);
+    } catch { /* ignore */ }
+  }, [listTab]);
 
   useEffect(() => {
     if (showNewChat) {
@@ -86,10 +114,10 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     }
   }, [showNewChat]);
 
-  // Enrich conversas com flag de parceiro (batch por telefones da lista).
+  // Enrich: atendimento (welcome/ended) + parceiro — mesma regra da Captação.
   useEffect(() => {
     if (!consultantId || chats.length === 0) {
-      setPartnerByJid({});
+      setEnrichByJid({});
       return;
     }
 
@@ -101,11 +129,8 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
       if (chat.isGroup) continue;
       const phone = chatPhoneDigits(chat);
       if (!phone) continue;
-      // Só variantes “completas” no .in() — cauda de 9 dígitos serve só no match local.
       const forQuery = phoneLookupKeys(phone).filter((k) => k.length >= 10);
-      for (const key of forQuery) {
-        queryPhones.add(key);
-      }
+      for (const key of forQuery) queryPhones.add(key);
       for (const key of phoneLookupKeys(phone)) {
         const list = phoneToJids.get(key) || [];
         if (!list.includes(chat.remoteJid)) list.push(chat.remoteJid);
@@ -115,36 +140,44 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
 
     const candidates = Array.from(queryPhones);
     if (candidates.length === 0) {
-      setPartnerByJid({});
+      setEnrichByJid({});
       return;
     }
 
     (async () => {
-      const next: Record<string, string> = {};
-      // Chunk evita URL longa no .in() do PostgREST.
+      const next: Record<string, ChatEnrichment> = {};
       const CHUNK = 80;
       for (let i = 0; i < candidates.length; i += CHUNK) {
         const slice = candidates.slice(i, i + CHUNK);
         const { data } = await supabase
           .from("customers")
-          .select("phone_whatsapp, referral_partner_id, referral_partners(nome)")
+          .select(
+            "phone_whatsapp, welcome_sent_at, attendance_ended_at, referral_partner_id, referral_partners(nome)",
+          )
           .eq("consultant_id", consultantId)
-          .not("referral_partner_id", "is", null)
           .in("phone_whatsapp", slice);
         if (cancelled) return;
         for (const row of data || []) {
-          const nome =
-            partnerNomeFromJoin(
-              (row as { referral_partners?: PartnerJoin }).referral_partners ?? null,
-            ) || "Parceiro";
+          const nome = row.referral_partner_id
+            ? partnerNomeFromJoin(
+                (row as { referral_partners?: PartnerJoin }).referral_partners ?? null,
+              ) || "Parceiro"
+            : null;
+          const attending = isInAttendance(
+            row as { welcome_sent_at?: string | null; attendance_ended_at?: string | null },
+          );
           for (const key of phoneLookupKeys(String(row.phone_whatsapp || ""))) {
             for (const jid of phoneToJids.get(key) || []) {
-              next[jid] = nome;
+              const prev = next[jid];
+              next[jid] = {
+                inAttendance: prev?.inAttendance || attending,
+                partnerNome: prev?.partnerNome || nome,
+              };
             }
           }
         }
       }
-      if (!cancelled) setPartnerByJid(next);
+      if (!cancelled) setEnrichByJid(next);
     })();
 
     return () => {
@@ -152,7 +185,6 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     };
   }, [chats, consultantId]);
 
-  // Search customers from DB when search has 3+ chars
   const searchCustomers = useCallback(async (query: string) => {
     if (!consultantId || query.length < 3) { setCustomerResults([]); return; }
     try {
@@ -203,6 +235,29 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     [chats, search],
   );
 
+  const emAtendimento = useMemo(
+    () => filtered.filter((c) => !!enrichByJid[c.remoteJid]?.inAttendance),
+    [filtered, enrichByJid],
+  );
+  const emEspera = useMemo(
+    () => filtered.filter((c) => !enrichByJid[c.remoteJid]?.inAttendance),
+    [filtered, enrichByJid],
+  );
+
+  const unreadByTab = useMemo(() => {
+    let atend = 0;
+    let esp = 0;
+    for (const c of filtered) {
+      const n = c.unreadCount || 0;
+      if (n <= 0) continue;
+      if (enrichByJid[c.remoteJid]?.inAttendance) atend += n;
+      else esp += n;
+    }
+    return { atend, esp };
+  }, [filtered, enrichByJid]);
+
+  const visibleChats = listTab === "atendimento" ? emAtendimento : emEspera;
+
   return (
     <div className="flex flex-col h-full min-h-0 border-r border-border/60 bg-card">
       {/* Header */}
@@ -252,8 +307,8 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
         </div>
       )}
 
-      {/* Search */}
-      <div className="px-2 py-2 shrink-0">
+      {/* Search + abas Em atendimento / Em espera (padrão WA Business / Captação) */}
+      <div className="px-2 py-2 shrink-0 space-y-2 border-b border-border/40">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
@@ -262,6 +317,61 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-9 text-xs bg-muted/40 border border-border/40 rounded-full focus-visible:ring-primary/40 focus-visible:ring-2 focus-visible:bg-background transition-all"
           />
+        </div>
+
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-0.5">
+          {([
+            {
+              key: "atendimento" as const,
+              label: "Em atendimento",
+              count: emAtendimento.length,
+              unread: unreadByTab.atend,
+              live: emAtendimento.length > 0,
+            },
+            {
+              key: "espera" as const,
+              label: "Em espera",
+              count: emEspera.length,
+              unread: unreadByTab.esp,
+              live: false,
+            },
+          ]).map((t) => {
+            const active = listTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setListTab(t.key)}
+                className={`relative flex items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-semibold transition ${
+                  active
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.live && active && (
+                  <span className="relative inline-flex w-1.5 h-1.5">
+                    <span className="absolute inset-0 rounded-full bg-emerald-500 animate-ping opacity-60" />
+                    <span className="relative inline-flex w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  </span>
+                )}
+                <span className="truncate">{t.label}</span>
+                <span
+                  className={`text-[10px] tabular-nums font-bold px-1.5 py-px rounded-full ${
+                    active
+                      ? "bg-primary/15 text-primary"
+                      : "bg-background/80 text-muted-foreground border border-border/60"
+                  }`}
+                >
+                  {t.count}
+                </span>
+                {t.unread > 0 && (
+                  <span className="text-[9px] tabular-nums font-bold text-primary-foreground bg-primary min-w-[14px] h-[14px] px-1 rounded-full flex items-center justify-center">
+                    {t.unread > 9 ? "9+" : t.unread}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -291,21 +401,28 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
         </div>
       )}
 
-      {/* Chat list — virtualizada (só DOM dos itens visíveis) */}
+      {/* Chat list — virtualizada */}
       <div className="flex-1 min-h-0">
         {isLoading && chats.length === 0 && (
           <div className="p-4 text-center text-xs text-muted-foreground">
             Carregando conversas...
           </div>
         )}
-        {!isLoading && filtered.length === 0 && (
-          <div className="p-4 text-center text-xs text-muted-foreground">
-            Nenhuma conversa encontrada
+        {!isLoading && visibleChats.length === 0 && (
+          <div className="p-6 text-center space-y-1">
+            <p className="text-xs font-medium text-foreground">
+              {listTab === "atendimento" ? "Ninguém em atendimento" : "Nenhuma conversa em espera"}
+            </p>
+            <p className="text-[11px] text-muted-foreground max-w-[220px] mx-auto">
+              {listTab === "atendimento"
+                ? "Quem tiver atendimento aberto (welcome enviado) aparece aqui — igual Captação."
+                : "Novas conversas e leads sem atendimento ativo ficam nesta fila."}
+            </p>
           </div>
         )}
-        {filtered.length > 0 && (
+        {visibleChats.length > 0 && (
           <VirtualList
-            items={filtered}
+            items={visibleChats}
             estimateSize={68}
             overscan={10}
             height="100%"
@@ -313,7 +430,8 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
             renderItem={(chat) => {
               const isSelected = selectedJid === chat.remoteJid;
               const hasUnread = chat.unreadCount > 0;
-              const partnerNome = partnerByJid[chat.remoteJid];
+              const partnerNome = enrichByJid[chat.remoteJid]?.partnerNome || null;
+              const attending = !!enrichByJid[chat.remoteJid]?.inAttendance;
               return (
                 <button
                   onClick={() => onSelectChat(chat.remoteJid)}
@@ -326,7 +444,17 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
                   {isSelected && (
                     <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-primary" />
                   )}
-                  <Avatar className={`h-10 w-10 shrink-0 transition-all ${hasUnread ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card" : partnerNome ? "ring-2 ring-amber-500/35 ring-offset-1 ring-offset-card" : "ring-1 ring-border/40"}`}>
+                  <Avatar
+                    className={`h-10 w-10 shrink-0 transition-all ${
+                      hasUnread
+                        ? "ring-2 ring-primary/40 ring-offset-1 ring-offset-card"
+                        : partnerNome
+                          ? "ring-2 ring-amber-500/35 ring-offset-1 ring-offset-card"
+                          : attending
+                            ? "ring-2 ring-emerald-500/30 ring-offset-1 ring-offset-card"
+                            : "ring-1 ring-border/40"
+                    }`}
+                  >
                     <AvatarImage
                       src={chat.profilePicUrl}
                       onError={(e) => {

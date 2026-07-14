@@ -2,8 +2,10 @@
  * Painel B — ligação PSTN (Velip).
  * Visual Disparo PRO + modal de seleção de clientes/leads parados.
  * Modo de disparo: Auto (default), Single (1-a-1 pelo cron) ou Batch (CreateCampaign Velip).
+ * Teste rápido de 1 clique (usa áudio disponível ou voz sintetizada) e
+ * seleção de contatos por período (últimos 1–8 dias).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Mic, Square, Upload, Phone, PhoneCall, RefreshCw, Users, X, Pause, Play, XCircle } from "lucide-react";
+import { Loader2, Mic, Square, Upload, Phone, PhoneCall, RefreshCw, Users, X, Pause, Play, XCircle, Zap, CalendarDays, Check, AudioLines } from "lucide-react";
 import { toast } from "sonner";
 import { uploadMedia } from "@/services/minioUpload";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
@@ -21,6 +23,7 @@ import { normalizeBrazilPhone } from "@/lib/phone";
 import type { BulkContact } from "@/types/whatsapp";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import { VozContactPickerDialog, type VozCustomer } from "./VozContactPickerDialog";
+import { firstName, resolveNameByPhone } from "./voiceContactResolve";
 
 interface Props {
   consultantId: string;
@@ -71,6 +74,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [windowEnd, setWindowEnd] = useState("18:00");
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
   const [testPhone, setTestPhone] = useState("");
+  const [daysFilter, setDaysFilter] = useState<number | null>(null);
   const [velipMode, setVelipMode] = useState<VelipMode>("auto");
   const [dispatchKind, setDispatchKind] = useState<"audio" | "tts">("audio");
   const [ttsText, setTtsText] = useState("");
@@ -78,6 +82,11 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [maxAttempts, setMaxAttempts] = useState(2);
   const [smsFallback, setSmsFallback] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const testPhoneName = useMemo(
+    () => resolveNameByPhone(testPhone, customers),
+    [testPhone, customers],
+  );
 
   useEffect(() => {
     if (!recording) return;
@@ -109,6 +118,18 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
     void loadClips();
     void loadCampaigns();
   }, [loadClips, loadCampaigns]);
+
+  // Auto-seleciona o áudio mais recente já disponível (só na 1ª carga)
+  const autoPickedClip = useRef(false);
+  useEffect(() => {
+    if (autoPickedClip.current || clips.length === 0) return;
+    autoPickedClip.current = true;
+    if (!clipId) {
+      setClipId(clips[0].id);
+      setAudioUrl(clips[0].audio_url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clips]);
 
   const persistClip = async (url: string, durationHint?: number) => {
     const { data, error } = await (supabase as any)
@@ -209,35 +230,78 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
     return data;
   };
 
+  /** Teste de 1 clique: usa o áudio disponível; sem áudio, cai em voz sintetizada. */
+  const DEFAULT_TEST_TTS =
+    "Olá! Esta é uma ligação de teste da iGreen. O sistema de ligações está funcionando perfeitamente. Até logo!";
+
   const runTestCall = async () => {
     const phone = normalizeBrazilPhone(testPhone);
     if (!phone) {
-      toast.error("Informe um celular válido para o teste");
+      toast.error("Informe um celular válido com DDD");
       return;
     }
-    if (!audioUrl && !clipId) {
-      toast.error("Grave ou escolha um clipe primeiro");
-      return;
-    }
+    const useClip = dispatchKind === "audio" && !!clipId;
+    const rawTts = dispatchKind === "tts" && ttsText.trim() ? ttsText.trim() : DEFAULT_TEST_TTS;
+    const nome = firstName(testPhoneName) || "cliente";
+    const tts = rawTts.replace(/\{\{\s*nome\s*\}\}/gi, nome).replace(/\{\s*nome\s*\}/gi, nome);
     setBusy(true);
     try {
       const data = await invokeEnqueue({
         action: "test_call",
         test_phone: phone,
-        audio_clip_id: dispatchKind === "audio" ? (clipId || null) : null,
-        audio_url: dispatchKind === "audio" ? audioUrl : null,
-        dispatch_kind: dispatchKind,
-        tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
+        audio_clip_id: useClip ? clipId : null,
+        audio_url: useClip ? audioUrl : null,
+        dispatch_kind: useClip ? "audio" : "tts",
+        tts_text: useClip ? null : tts,
         caller_id: callerId.trim() || null,
-        campaign_name: "Teste PSTN",
+        campaign_name: "Teste rápido",
       });
-      toast.success(`Ligação iniciada (ID Velip: ${data.velip_call_id || data.campaign_id})`);
+      toast.success(`Ligação disparada — atenda o telefone! (ID: ${data.velip_call_id || data.campaign_id})`);
       await loadCampaigns();
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+
+  /** Seleciona automaticamente contatos com atividade nos últimos N dias. */
+  const dayCounts = useMemo(() => {
+    const counts = new Array<number>(9).fill(0);
+    const now = Date.now();
+    for (const c of customers) {
+      const ts = Date.parse(c.updated_at || c.created_at || "");
+      if (!Number.isFinite(ts)) continue;
+      if (!normalizeBrazilPhone(c.phone_whatsapp)) continue;
+      const daysAgo = Math.max(1, Math.ceil((now - ts) / 86_400_000));
+      for (let d = daysAgo; d <= 8; d++) counts[d]++;
+    }
+    return counts;
+  }, [customers]);
+
+  const applyDaysFilter = (days: number) => {
+    setDaysFilter(days);
+    const cutoff = Date.now() - days * 86_400_000;
+    const picked: BulkContact[] = [];
+    const seen = new Set<string>();
+    for (const c of customers) {
+      const ts = Date.parse(c.updated_at || c.created_at || "");
+      if (!Number.isFinite(ts) || ts < cutoff) continue;
+      const phone = normalizeBrazilPhone(c.phone_whatsapp);
+      if (!phone) continue;
+      const key = phone.replace(/\D/g, "");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      picked.push({ id: c.id, name: c.name || phone, phone, source: "database" as const });
+    }
+    setContacts(picked);
+    if (picked.length === 0) toast.info(`Nenhum contato nos últimos ${days} dia(s)`);
+    else toast.success(`${picked.length} contato(s) dos últimos ${days} dia(s) selecionados`);
+  };
+
+  const clearDaysFilter = () => {
+    setDaysFilter(null);
+    setContacts([]);
   };
 
   const createCampaign = async () => {
@@ -334,6 +398,57 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           </div>
         }
       >
+        <VozSection title="Teste rápido — 1 clique">
+          <div
+            className="rounded-[var(--pe-radius)] border p-3 space-y-2.5"
+            style={{ borderColor: "var(--pe-emerald-20)", background: "var(--pe-emerald-10)" }}
+          >
+            <p className="flex items-center gap-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
+              <Zap className="h-4 w-4 shrink-0" style={{ color: "var(--pe-emerald)" }} />
+              <span>
+                Vai tocar:{" "}
+                <b>
+                  {dispatchKind === "audio" && clipId
+                    ? clips.find((c) => c.id === clipId)?.name || "áudio selecionado"
+                    : dispatchKind === "tts" && ttsText.trim()
+                      ? "seu texto (voz sintetizada)"
+                      : "mensagem de teste (voz sintetizada)"}
+                </b>
+              </span>
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="flex-1 space-y-1">
+                <Input
+                  className="bg-white/70 dark:bg-black/20"
+                  placeholder="Seu celular com DDD — ex: 11 99999-9999"
+                  value={testPhone}
+                  onChange={(e) => setTestPhone(e.target.value)}
+                />
+                {testPhoneName && (
+                  <p className="text-[11px] font-medium" style={{ color: "var(--pe-emerald-strong)" }}>
+                    Contato: {testPhoneName}
+                    {firstName(testPhoneName) ? ` · fala com ${firstName(testPhoneName)}` : ""}
+                  </p>
+                )}
+              </div>
+              <Button
+                type="button"
+                className="gap-1.5 font-semibold shrink-0"
+                style={{ background: "var(--pe-emerald)", color: "#fff" }}
+                onClick={() => void runTestCall()}
+                disabled={busy}
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
+                Ligar agora
+              </Button>
+            </div>
+            <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
+              Sem áudio gravado? Sem problema — a ligação sai com voz sintetizada automaticamente.
+              Custo aproximado: R$ 0,09 (até 30s) a R$ 0,12 (até 42s) por chamada atendida.
+            </p>
+          </div>
+        </VozSection>
+
         <VozSection title="Como falar com o cliente">
           <div className="flex flex-wrap gap-2">
             <Button type="button" size="sm" variant={dispatchKind === "audio" ? "default" : "outline"} onClick={() => setDispatchKind("audio")}>
@@ -362,10 +477,10 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           </div>
         </VozSection>
 
-        {dispatchKind === "audio" && <VozSection title="Clipe de voz">
+        {dispatchKind === "audio" && <VozSection title="Áudios salvos (templates)">
           <div className="space-y-1.5">
-            <Label>Nome do clipe</Label>
-            <Input value={clipName} onChange={(e) => setClipName(e.target.value)} />
+            <Label>Nome ao gravar / salvar novo</Label>
+            <Input value={clipName} onChange={(e) => setClipName(e.target.value)} placeholder="Ex: Follow-up 20s" />
           </div>
           <div className="flex flex-wrap gap-2">
             {!recording ? (
@@ -395,52 +510,93 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               />
             </label>
           </div>
-          {clips.length > 0 && (
-            <Select
-              value={clipId || "__none__"}
-              onValueChange={(v) => {
-                if (v === "__none__") {
-                  setClipId("");
-                  return;
-                }
-                setClipId(v);
-                const c = clips.find((x) => x.id === v);
-                if (c) setAudioUrl(c.audio_url);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Escolher clipe salvo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">—</SelectItem>
-                {clips.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}{c.duration_sec ? ` (${c.duration_sec}s)` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {audioUrl && <audio controls src={audioUrl} className="w-full" />}
-        </VozSection>}
 
-        <VozSection title="Teste (obrigatório antes da massa)">
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Input
-              className="flex-1"
-              placeholder="Seu celular com DDD"
-              value={testPhone}
-              onChange={(e) => setTestPhone(e.target.value)}
-            />
-            <Button type="button" variant="outline" className="gap-1.5" onClick={() => void runTestCall()} disabled={busy}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PhoneCall className="h-4 w-4" />}
-              Ligar teste
-            </Button>
-          </div>
-        </VozSection>
+          {clips.length === 0 ? (
+            <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
+              Nenhum áudio salvo ainda. Grave ou faça upload para reutilizar nas ligações.
+            </p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {clips.map((c) => {
+                const selected = clipId === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => {
+                      setClipId(c.id);
+                      setAudioUrl(c.audio_url);
+                      setClipName(c.name);
+                    }}
+                    className="flex items-start gap-2 rounded-[var(--pe-radius)] border p-2.5 text-left transition hover:border-[var(--pe-emerald)]"
+                    style={{
+                      borderColor: selected ? "var(--pe-emerald)" : "var(--pe-border)",
+                      background: selected ? "var(--pe-emerald-10)" : "var(--pe-surface)",
+                    }}
+                  >
+                    <span
+                      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+                      style={{
+                        background: selected ? "var(--pe-emerald)" : "var(--pe-muted)",
+                        color: selected ? "#fff" : "var(--pe-text-muted)",
+                      }}
+                    >
+                      {selected ? <Check className="h-4 w-4" /> : <AudioLines className="h-4 w-4" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium" style={{ color: "var(--pe-text)" }}>
+                        {c.name}
+                      </span>
+                      <span className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
+                        {c.duration_sec ? `${c.duration_sec}s · ` : ""}
+                        {new Date(c.created_at).toLocaleDateString("pt-BR")}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {audioUrl && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">Prévia do áudio selecionado</Label>
+              <audio controls src={audioUrl} className="w-full" />
+            </div>
+          )}
+        </VozSection>}
 
         <VozSection title="Campanha">
           <Input value={campaignName} onChange={(e) => setCampaignName(e.target.value)} placeholder="Nome da campanha" />
+          <div className="space-y-1.5">
+            <Label className="flex items-center gap-1.5">
+              <CalendarDays className="h-3.5 w-3.5" style={{ color: "var(--pe-emerald)" }} />
+              Contatos rápidos — últimos dias
+            </Label>
+            <div className="flex flex-wrap gap-1.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((d) => (
+                <Button
+                  key={d}
+                  type="button"
+                  size="sm"
+                  variant={daysFilter === d ? "default" : "outline"}
+                  className="h-8 px-3"
+                  style={daysFilter === d ? { background: "var(--pe-emerald)", color: "#fff" } : undefined}
+                  onClick={() => applyDaysFilter(d)}
+                >
+                  {d}d
+                  <span className="ml-1 text-[10px] opacity-70">({dayCounts[d]})</span>
+                </Button>
+              ))}
+              {daysFilter != null && (
+                <Button type="button" size="sm" variant="ghost" className="h-8 px-2" onClick={clearDaysFilter}>
+                  <X className="h-3.5 w-3.5 mr-1" /> Limpar
+                </Button>
+              )}
+            </div>
+            <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
+              Um clique seleciona todos os contatos com atividade no período. Para ajuste fino, use o botão abaixo.
+            </p>
+          </div>
           <Button type="button" variant="outline" className="gap-2" onClick={() => setPickerOpen(true)}>
             <Users className="h-4 w-4" />
             Selecionar clientes / leads parados
@@ -480,10 +636,10 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               value={smsFallback}
               onChange={(e) => setSmsFallback(e.target.value.slice(0, 160))}
               rows={2}
-              placeholder="Oi {nome}, tentei ligar. Me chama no WhatsApp quando puder 🌱 iGreen"
+              placeholder="Oi {{nome}}, tentei ligar. Me chama no WhatsApp quando puder. iGreen"
             />
             <p className="text-[11px] text-muted-foreground">
-              Opcional. Enviado só depois das tentativas terminarem em "não atendeu". {smsFallback.length}/160
+              Opcional. Use {"{{nome}}"} — personaliza com o nome do contato. Enviado só após "não atendeu". {smsFallback.length}/160
             </p>
           </div>
         </VozSection>

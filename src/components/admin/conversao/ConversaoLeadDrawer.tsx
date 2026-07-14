@@ -21,9 +21,9 @@ const TEMP_META_LABEL: Record<Temp, string> = {
 };
 
 const SOURCE_LABEL: Record<string, string> = {
-  rules: "Regras",
+  rules: "Automático",
   ai_lite: "IA lite",
-  ai_full: "IA full",
+  ai_full: "IA completa",
   cache: "Cache",
 };
 

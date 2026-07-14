@@ -19,7 +19,7 @@ function getUtmParams() {
 export function trackClickEvent(
   consultantId: string,
   eventTarget: string,
-  pageType: "client" | "licenciada"
+  pageType: string
 ) {
   const utm = getUtmParams();
   supabase.from("page_events").insert({

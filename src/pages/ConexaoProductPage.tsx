@@ -18,8 +18,8 @@ import { trackClickEvent } from "@/hooks/useTrackEvent";
 // Rota: /conexao-<produto>/:licenca
 //
 // O conteúdo vem do catálogo no banco (tabela products) via useProduct.
-// Durante a migração, resolveLanding cai no catálogo estático
-// (src/data/conexaoProducts.ts) quando landing_content ainda está vazio.
+// Se o produto estiver ativo e landing_content vazio, resolveLanding usa o
+// catálogo estático só para campos. Produto inativo/ausente → 404.
 // ─────────────────────────────────────────────
 
 const ConexaoProductPage = () => {
@@ -33,7 +33,7 @@ const ConexaoProductPage = () => {
   const product = resolveLanding(dbProduct, productSlug);
 
   const { data: consultant, isLoading } = useConsultant(licenca || "");
-  useTrackView(consultant?.id, "client");
+  useTrackView(consultant?.id, productSlug || "client");
 
   const { data: instancePhone } = useInstancePhone(consultant?.id);
 
@@ -411,7 +411,7 @@ function ConsultorSection({ consultant, whatsappUrl, product }: ConsultorSection
   const displayId = consultant.igreen_id || "";
 
   const handleClick = (target: string) => {
-    if (consultant.id) trackClickEvent(consultant.id, target, "client");
+    if (consultant.id) trackClickEvent(consultant.id, target, product.slug || "client");
   };
 
   return (

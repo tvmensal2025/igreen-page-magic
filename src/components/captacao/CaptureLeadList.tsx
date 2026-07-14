@@ -13,14 +13,28 @@ import {
   PanelLeftClose,
   Clock,
   CheckCheck,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 import { VirtualList } from "@/components/ui/VirtualList";
+import { hasValidBatchPhone } from "@/components/captacao/runAttendanceBatch";
+import {
+  LeadOriginEditorDialog,
+  type LeadOriginSaved,
+} from "@/components/leads/LeadOriginEditorDialog";
+import { CustomerTagsEditor } from "@/components/leads/CustomerTagsEditor";
+import {
+  loadCustomerTagsBatch,
+  phoneToRemoteJid,
+  type CustomerTag,
+} from "@/hooks/useCustomerTags";
 
 export type CapturePeriodKey = "48h" | "7d" | "30d" | "60d" | "90d" | "all";
 
@@ -35,7 +49,9 @@ export interface CaptureBatchLead {
   filled: number;
   lastMsg?: string | null;
   lastMsgAt?: string | null;
+  partnerId?: string | null;
   partnerName?: string | null;
+  campaignId?: string | null;
   campaignName?: string | null;
 }
 
@@ -102,6 +118,11 @@ function sortByActivity(rows: CaptureBatchLead[]): CaptureBatchLead[] {
   return [...rows].sort((a, b) => activityAnchor(b) - activityAnchor(a));
 }
 
+/** Atendimento ativo = welcome enviado e pesquisa ainda não pedida. */
+function isInAttendance(l: CaptureBatchLead): boolean {
+  return !!l.welcome_sent_at && !l.attendance_rating_requested_at;
+}
+
 async function fetchLastMessagesByCustomer(
   ids: string[],
 ): Promise<Map<string, { text: string; at: string }>> {
@@ -150,21 +171,50 @@ export function CaptureLeadList({
 }: Props) {
 
   const prompt = usePrompt();
+  const confirm = useConfirm();
   const [leads, setLeads] = useState<CaptureBatchLead[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [period, setPeriod] = useState<CapturePeriodKey>("60d");
+  const [closingAll, setClosingAll] = useState(false);
+  const [closingProgress, setClosingProgress] = useState<{ done: number; total: number } | null>(null);
   /** unread por lead (client-side, apoiado em localStorage cap_last_seen_*) */
   const [unread, setUnread] = useState<Record<string, number>>({});
   /** flag para “piscar” a borda do card quando entra msg nova */
   const [flash, setFlash] = useState<Record<string, number>>({});
+  const [tagsByJid, setTagsByJid] = useState<Map<string, CustomerTag[]>>(new Map());
+  const [originLead, setOriginLead] = useState<CaptureBatchLead | null>(null);
   const loadSeqRef = useRef(0);
   const selectedRef = useRef<string | null>(selectedId);
   useEffect(() => {
     selectedRef.current = selectedId;
   }, [selectedId]);
+
+  const reloadTags = useCallback(async () => {
+    const jids = leads
+      .map((r) => phoneToRemoteJid(r.phone_whatsapp))
+      .filter((j): j is string => !!j);
+    const map = await loadCustomerTagsBatch(consultantId, jids);
+    setTagsByJid(map);
+  }, [leads, consultantId]);
+
+  const applyOriginSaved = useCallback((leadId: string, saved: LeadOriginSaved) => {
+    setLeads((prev) =>
+      prev.map((l) =>
+        l.id === leadId
+          ? {
+              ...l,
+              partnerId: saved.referral_partner_id,
+              partnerName: saved.partner_name,
+              campaignId: saved.source_campaign_id,
+              campaignName: saved.campaign_name,
+            }
+          : l,
+      ),
+    );
+  }, []);
 
   const load = useCallback(async () => {
     const seq = ++loadSeqRef.current;
@@ -239,11 +289,21 @@ export function CaptureLeadList({
           if (f.key === "electricity_bill_value" && Number(v) <= 0) return false;
           return true;
         }).length,
+        partnerId: c.referral_partner_id ?? null,
         partnerName: c.referral_partner_id ? partnerMap.get(c.referral_partner_id) ?? null : null,
+        campaignId: c.source_campaign_id ?? null,
         campaignName: c.source_campaign_id ? campaignMap.get(c.source_campaign_id) ?? null : null,
       }));
       setLeads(sortByActivity(rows));
       setLoading(false);
+
+      const jids = rows
+        .map((r) => phoneToRemoteJid(r.phone_whatsapp))
+        .filter((j): j is string => !!j);
+      void loadCustomerTagsBatch(consultantId, jids).then((map) => {
+        if (seq !== loadSeqRef.current) return;
+        setTagsByJid(map);
+      });
 
       const ids = rows.map((r) => r.id);
       if (ids.length === 0) return;
@@ -539,6 +599,151 @@ export function CaptureLeadList({
     onOpenBatch(picked, periodLabelOf(period));
   };
 
+  /** Todos em atendimento na lista carregada (independente do filtro de período). */
+  const allInAttendance = useMemo(() => leads.filter((l) => isInAttendance(l)), [leads]);
+
+  const closeAllAttendances = async () => {
+    const targets = allInAttendance;
+    if (targets.length === 0 || closingAll) return;
+
+    if (!whatsappConnected) {
+      toast.error("WhatsApp desconectado — reconecte para finalizar e enviar a pesquisa");
+      return;
+    }
+
+    const withPhone = targets.filter((l) => hasValidBatchPhone(l.phone_whatsapp));
+    const withoutPhone = targets.length - withPhone.length;
+    const delaySec = 5;
+    const etaMin = Math.ceil((withPhone.length * delaySec) / 60);
+
+    const ok = await confirm({
+      title: `Finalizar ${targets.length} atendimento${targets.length === 1 ? "" : "s"}?`,
+      description: [
+        `Cada cliente receberá a mensagem de encerramento e a pesquisa de satisfação (1–5).`,
+        withPhone.length > 0
+          ? `Envio um a um, com ~${delaySec}s de intervalo (~${etaMin} min para ${withPhone.length}).`
+          : null,
+        withoutPhone > 0
+          ? `${withoutPhone} sem telefone válido serão pulados.`
+          : null,
+        `Só continue se quiser enviar para todos agora.`,
+      ].filter(Boolean).join("\n\n"),
+      confirmText: withPhone.length > 0 ? `Enviar e fechar (${withPhone.length})` : "Fechar sem envio",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    // Segunda confirmação se lote grande (cuidado anti-ban / massa).
+    if (withPhone.length >= 10) {
+      const ok2 = await confirm({
+        title: `Confirmar envio em massa?`,
+        description: `Você vai disparar encerramento + pesquisa para ${withPhone.length} clientes agora.\n\nIsso é irreversível e conta como envio em lote no WhatsApp.`,
+        confirmText: "Sim, enviar para todos",
+        cancelText: "Cancelar",
+        tone: "danger",
+      });
+      if (!ok2) return;
+    }
+
+    setClosingAll(true);
+    setClosingProgress({ done: 0, total: withPhone.length });
+    const toastId = "close-all-attendance";
+    let okCount = 0;
+    let skipped = withoutPhone;
+    let failed = 0;
+    let stoppedEarly: string | null = null;
+
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+    try {
+      if (withPhone.length === 0) {
+        // Sem telefone: só marca fechado no banco (não há canal para pesquisa).
+        const now = new Date().toISOString();
+        const ids = targets.map((l) => l.id);
+        const { error } = await supabase
+          .from("customers")
+          .update({ attendance_ended_at: now })
+          .in("id", ids)
+          .eq("consultant_id", consultantId);
+        if (error) throw error;
+        toast.success("Atendimentos fechados (sem WhatsApp — sem telefone)");
+      } else {
+        toast.loading(`Finalizando 0/${withPhone.length}…`, { id: toastId });
+        for (let i = 0; i < withPhone.length; i++) {
+          const lead = withPhone[i];
+          setClosingProgress({ done: i, total: withPhone.length });
+          toast.loading(`Finalizando ${i + 1}/${withPhone.length}…`, { id: toastId });
+
+          try {
+            const { data, error } = await supabase.functions.invoke("end-customer-attendance", {
+              body: { customerId: lead.id, consultantId },
+            });
+            const body = (data ?? {}) as {
+              ok?: boolean;
+              skipped?: string;
+              fixHint?: string;
+              message?: string;
+              error?: string;
+            };
+            if (error && !data) throw error;
+
+            if (body.ok === false) {
+              failed++;
+              const hint = body.fixHint || "";
+              if (hint === "channel_unavailable" || hint === "instance_offline" || hint === "rate_limit") {
+                stoppedEarly = body.message || hint;
+                skipped += withPhone.length - i - 1;
+                break;
+              }
+            } else if (body.skipped === "already_rated" || body.skipped === "rating_pending") {
+              skipped++;
+            } else {
+              okCount++;
+            }
+          } catch (e) {
+            failed++;
+            console.error("[captacao] closeAllAttendances", lead.id, e);
+          }
+
+          setClosingProgress({ done: i + 1, total: withPhone.length });
+          if (i < withPhone.length - 1 && !stoppedEarly) {
+            await sleep(delaySec * 1000);
+          }
+        }
+
+        toast.dismiss(toastId);
+        const parts = [
+          okCount > 0 ? `${okCount} finalizado(s)` : null,
+          skipped > 0 ? `${skipped} pulado(s)` : null,
+          failed > 0 ? `${failed} falha(s)` : null,
+        ].filter(Boolean);
+        if (stoppedEarly) {
+          toast.warning(`Parado cedo: ${stoppedEarly}`, {
+            description: parts.join(" · ") || undefined,
+          });
+        } else if (failed > 0 && okCount === 0) {
+          toast.error("Nenhum atendimento finalizado", { description: parts.join(" · ") });
+        } else {
+          toast.success("Lote de finalização concluído", { description: parts.join(" · ") });
+        }
+      }
+
+      try {
+        window.dispatchEvent(new CustomEvent("captacao:batch-finished"));
+      } catch { /* ignore */ }
+      await load();
+    } catch (e) {
+      toast.dismiss(toastId);
+      toast.error("Erro ao finalizar atendimentos", {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setClosingAll(false);
+      setClosingProgress(null);
+    }
+  };
+
   return (
     <aside className="w-full md:w-auto md:shrink-0 flex flex-col flex-1 h-full border-b md:border-b-0 md:border-r border-border bg-card/40 min-h-0 overflow-hidden">
       <div className="p-2.5 border-b border-border space-y-2 shrink-0 bg-card">
@@ -605,6 +810,27 @@ export function CaptureLeadList({
               </>
             )}
           </Button>
+          {allInAttendance.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+              onClick={() => void closeAllAttendances()}
+              disabled={closingAll}
+              title="Finaliza todos com mensagem de encerramento + pesquisa (1 a 1, com intervalo)"
+            >
+              {closingAll ? (
+                <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+              ) : (
+                <LogOut className="w-3 h-3 shrink-0" />
+              )}
+              <span className="truncate">
+                {closingProgress
+                  ? `${closingProgress.done}/${closingProgress.total}`
+                  : `Fechar todos (${allInAttendance.length})`}
+              </span>
+            </Button>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-1">
@@ -761,9 +987,32 @@ export function CaptureLeadList({
             fmtPhone={fmtPhone}
             unread={unread}
             flash={flash}
+            onOriginSaved={applyOriginSaved}
+            tagsByJid={tagsByJid}
+            onTagsChange={reloadTags}
+            onEditOrigin={setOriginLead}
           />
         )}
       </div>
+
+      {originLead && (
+        <LeadOriginEditorDialog
+          open={!!originLead}
+          onOpenChange={(v) => {
+            if (!v) setOriginLead(null);
+          }}
+          customerId={originLead.id}
+          consultantId={consultantId}
+          initialPartnerId={originLead.partnerId}
+          initialCampaignId={originLead.campaignId}
+          initialPartnerName={originLead.partnerName}
+          initialCampaignName={originLead.campaignName}
+          onSaved={(saved) => {
+            applyOriginSaved(originLead.id, saved);
+            setOriginLead(null);
+          }}
+        />
+      )}
 
 
       {selectMode && selectedVisibleCount > 0 ? (
@@ -865,6 +1114,10 @@ interface GroupedLeadsProps {
   fmtPhone: (p: string | null) => string;
   unread: Record<string, number>;
   flash: Record<string, number>;
+  onOriginSaved: (leadId: string, saved: LeadOriginSaved) => void;
+  tagsByJid: Map<string, CustomerTag[]>;
+  onTagsChange: () => void;
+  onEditOrigin: (lead: CaptureBatchLead) => void;
 }
 
 function useGroupOpen(key: string, initial: boolean) {
@@ -930,6 +1183,10 @@ function GroupedLeads(props: GroupedLeadsProps & { mode: "atendimento" | "espera
             fmtPhone={props.fmtPhone}
             unreadCount={props.unread[l.id] || 0}
             flashAt={props.flash[l.id] || 0}
+            onOriginSaved={props.onOriginSaved}
+            tagsByJid={props.tagsByJid}
+            onTagsChange={props.onTagsChange}
+            onEditOrigin={props.onEditOrigin}
           />
         ))}
       </ul>
@@ -981,6 +1238,10 @@ function LeadSection({
   unread,
   flash,
   showLiveDot,
+  onOriginSaved,
+  tagsByJid,
+  onTagsChange,
+  onEditOrigin,
 }: LeadSectionProps) {
   const [open, setOpen] = useGroupOpen(groupKey, defaultOpen);
   if (leads.length === 0) return null;
@@ -1033,6 +1294,10 @@ function LeadSection({
                   fmtPhone={fmtPhone}
                   unreadCount={unread[l.id] || 0}
                   flashAt={flash[l.id] || 0}
+                  onOriginSaved={onOriginSaved}
+                  tagsByJid={tagsByJid}
+                  onTagsChange={onTagsChange}
+                  onEditOrigin={onEditOrigin}
                 />
               )}
             />
@@ -1053,6 +1318,10 @@ function LeadSection({
                 fmtPhone={fmtPhone}
                 unreadCount={unread[l.id] || 0}
                 flashAt={flash[l.id] || 0}
+                onOriginSaved={onOriginSaved}
+                tagsByJid={tagsByJid}
+                onTagsChange={onTagsChange}
+                onEditOrigin={onEditOrigin}
               />
             ))}
           </ul>
@@ -1074,6 +1343,10 @@ interface LeadCardProps {
   fmtPhone: (p: string | null) => string;
   unreadCount: number;
   flashAt: number;
+  onOriginSaved: (leadId: string, saved: LeadOriginSaved) => void;
+  tagsByJid: Map<string, CustomerTag[]>;
+  onTagsChange: () => void;
+  onEditOrigin: (lead: CaptureBatchLead) => void;
 }
 
 function LeadCard({
@@ -1088,6 +1361,9 @@ function LeadCard({
   fmtPhone,
   unreadCount,
   flashAt,
+  onEditOrigin,
+  tagsByJid,
+  onTagsChange,
 }: LeadCardProps) {
   const active = l.id === selectedId && !selectMode;
   const pct = Math.round((l.filled / CAPTURE_FIELDS.length) * 100);
@@ -1118,11 +1394,16 @@ function LeadCard({
   const enterSelectAndToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!selectMode) {
-      // Entra em modo seleção já marcando este item
       toggleId(l.id);
     } else {
       toggleId(l.id);
     }
+  };
+
+  const openOrigin = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onEditOrigin(l);
   };
 
   return (
@@ -1212,26 +1493,50 @@ function LeadCard({
           >
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
-          {(l.partnerName || l.campaignName) && (
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              {l.partnerName && (
-                <span
-                  className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-amber-700 dark:text-amber-300 max-w-[140px] truncate"
-                  title={`Indicação: ${l.partnerName}`}
-                >
-                  🤝 {l.partnerName}
-                </span>
-              )}
-              {l.campaignName && (
-                <span
-                  className="inline-flex items-center gap-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-sky-700 dark:text-sky-300 max-w-[140px] truncate"
-                  title={`Campanha: ${l.campaignName}`}
-                >
-                  🎯 {l.campaignName}
-                </span>
-              )}
-            </div>
-          )}
+          <div className="mt-1 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            {l.partnerName && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-amber-700 dark:text-amber-300 max-w-[140px] truncate hover:bg-amber-500/20"
+                title={`Indicação: ${l.partnerName} — clicar para editar`}
+                onClick={openOrigin}
+              >
+                🤝 {l.partnerName}
+              </button>
+            )}
+            {l.campaignName && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-sky-700 dark:text-sky-300 max-w-[140px] truncate hover:bg-sky-500/20"
+                title={`Campanha: ${l.campaignName} — clicar para editar`}
+                onClick={openOrigin}
+              >
+                🎯 {l.campaignName}
+              </button>
+            )}
+            {!l.partnerName && !l.campaignName && !selectMode && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 rounded-full border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground hover:bg-muted"
+                title="Definir origem (indicação ou campanha)"
+                onClick={openOrigin}
+              >
+                + Origem
+              </button>
+            )}
+          </div>
+          <CustomerTagsEditor
+            consultantId={consultantId}
+            phone={l.phone_whatsapp}
+            compact
+            preloadedTags={
+              phoneToRemoteJid(l.phone_whatsapp)
+                ? tagsByJid.get(phoneToRemoteJid(l.phone_whatsapp)!) || []
+                : []
+            }
+            onTagsChange={onTagsChange}
+            className="mt-1"
+          />
           <div className="mt-1.5 h-1 rounded-full bg-muted overflow-hidden">
             <div
               className={`h-full rounded-full transition-all ${ready ? "bg-primary" : "bg-primary/60"}`}

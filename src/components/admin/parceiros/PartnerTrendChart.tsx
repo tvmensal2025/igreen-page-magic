@@ -46,7 +46,7 @@ export function PartnerTrendChart({ analytics }: Props) {
     <Card className="h-full">
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
-          <LineIcon className="h-4 w-4 text-accent" />
+          <LineIcon className="h-4 w-4 text-primary" />
           Evolução (30 dias) — top 5
         </CardTitle>
       </CardHeader>

@@ -7,6 +7,7 @@ const products = [
   { num: 6, name: "Conexão Club PJ", desc: "Clube de benefícios empresarial" },
   { num: 7, name: "Conexão Expansão", desc: "Formação de equipe" },
   { num: 8, name: "Conexão Telecom", desc: "Telefonia e internet" },
+  { num: 9, name: "Conexão Seguros", desc: "Proteção veicular acessível" },
 ];
 
 const LicProductsIntro = () => (
@@ -14,11 +15,11 @@ const LicProductsIntro = () => (
     <div className="absolute inset-0 pointer-events-none opacity-[0.04]" style={{ background: 'radial-gradient(circle at 20% 80%, hsl(130, 100%, 36%), transparent 50%)' }} />
     <div className="section-container text-center relative z-10">
       <div className="badge-green mx-auto mb-6">Produtos</div>
-      <h2 className="section-heading mb-6">Conheça nossos 8 produtos</h2>
+      <h2 className="section-heading mb-6">Conheça nossos 9 produtos</h2>
       <p className="text-foreground/70 text-lg max-w-3xl mx-auto mb-14">
         Entenda como você será remunerado com cada um deles e construa sua renda recorrente
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
         {products.map((p) => (
           <div key={p.num} className="glass-card !p-4 text-center group">
             <div className="product-number mx-auto mb-3">{p.num}</div>

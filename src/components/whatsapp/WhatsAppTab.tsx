@@ -212,52 +212,35 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
 
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
-      {/* Status + sub-abas — ocultos no mobile enquanto uma conversa está aberta */}
-      {!immersiveChat && (
-      <>
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-primary/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
-        {isConnected ? (
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inset-0 rounded-full bg-primary animate-ping opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
-              </span>
-              <span className="text-[10px] font-semibold text-primary tracking-wide uppercase">Conectado</span>
+      {/* Status só quando NÃO conectado — economiza 32px no dia a dia */}
+      {!immersiveChat && !isConnected && (
+      <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-destructive/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive/10 border border-destructive/25">
+            <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+            <span className="text-[10px] font-semibold text-destructive tracking-wide uppercase truncate">
+              {connectionStatus === "connecting" ? "Conectando" : "Desconectado"}
             </span>
-            {instanceName && (
-              <span className="text-[10px] text-muted-foreground truncate font-mono">{instanceName}</span>
-            )}
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive/10 border border-destructive/25">
-                <span className="h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
-                <span className="text-[10px] font-semibold text-destructive tracking-wide uppercase truncate">
-                  {connectionStatus === "connecting" ? "Conectando" : "Desconectado"}
-                </span>
-              </span>
-            </div>
-            <button
-              onClick={() => {
-                setActiveSubTab("conversas");
-                if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
-              }}
-              disabled={isLoading || fatalLocked}
-              title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {fatalLocked
-                ? "Em revisão"
-                : isLoading || connectionStatus === "connecting" ? "Conectando…" : "Conectar →"}
-            </button>
-          </>
-        )}
+          </span>
+        </div>
+        <button
+          onClick={() => {
+            setActiveSubTab("conversas");
+            if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
+          }}
+          disabled={isLoading || fatalLocked}
+          title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {fatalLocked
+            ? "Em revisão"
+            : isLoading || connectionStatus === "connecting" ? "Conectando…" : "Conectar →"}
+        </button>
       </div>
+      )}
 
       {/* Sub-abas: mobile (<lg) condensadas + "Mais"; desktop todas visíveis */}
-      {(() => {
+      {!immersiveChat && (() => {
         const tabBtnClass = (isActive: boolean) =>
           `relative flex items-center gap-1 px-2 lg:px-3 py-1.5 text-[10px] lg:text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 min-h-[44px] lg:min-h-0 ${
             isActive
@@ -292,7 +275,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           );
         };
 
-        const navShell = "flex border-x border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 min-h-10 px-1 pr-3 gap-0.5 scrollbar-thin items-center snap-x snap-mandatory";
+        const navShell = `flex border border-border/60 bg-card/80 backdrop-blur-sm overflow-x-auto shrink-0 min-h-10 px-1 pr-3 gap-0.5 scrollbar-thin items-center snap-x snap-mandatory ${isConnected ? "rounded-t-xl" : "border-t-0 border-x"}`;
 
         return (
           <>
@@ -349,11 +332,9 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
           </>
         );
       })()}
-      </>
-      )}
 
       {/* Content area */}
-      <div className="flex-1 min-h-0 min-w-0 border border-t-0 border-border rounded-b-lg overflow-hidden bg-background flex flex-col">
+      <div className={`flex-1 min-h-0 min-w-0 border border-border overflow-hidden bg-background flex flex-col ${isConnected || immersiveChat ? "rounded-lg" : "border-t-0 rounded-b-lg"}`}>
         {/* Banner global de billing Whapi — aparece em qualquer sub-aba quando o canal está bloqueado por pagamento */}
         <WhapiBillingBanner enabled={!!isWhapi} />
         {activeSubTab === "dashboard" && (

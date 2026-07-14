@@ -1,10 +1,18 @@
 /**
  * Driver Velip Voice V2 — módulo voice-dialer (isolado do WhatsApp).
  *
- * Docs de referência: https://api.velip.com.br/  (endpoints v2 usados
- *   CreateAudioFile, PlayAudioFile, MakeTTSCall, CreateCampaign,
+ * Docs de referência: https://api.velip.com.br/ (fonte: github.com/velipbr/velip-docs).
+ * Endpoints v2 usados: CreateAudioFile, MakeTTSCall, CreateCampaign,
  *   CreateDestinationBase, ChangeCampaign, GetCampaignsList,
- *   GetCallStatus, GetUserID).
+ *   GetCallStatus, GetAudiosList, MakeSMS, GetUserID.
+ *
+ * Particularidades do protocolo (conferidas na doc oficial + testes reais):
+ *  - Toda resposta vem no envelope `{"return": {...}}`; `status_code` é string ("0" = ok).
+ *  - Ligação com áudio gravado = MakeTTSCall com `content=<id numérico sem o prefixo "tf">`.
+ *    (PlayAudioFile na Velip serve para BAIXAR/stream do áudio, não para discar.)
+ *  - Upload precisa de `ttswrt=1` para o asset não expirar em 1 dia.
+ *  - Form-urlencoded default é ISO-8859-1 → enviar `encoding=UTF-8` junto com textos.
+ *  - GetUserID NÃO retorna saldo (a API v2 não expõe saldo; consultar no painel).
  *
  * A Velip **não assina** callbacks; segurança do webhook é ?auth=<token>.
  */
@@ -75,6 +83,12 @@ interface RawResp {
   error?: string;
 }
 
+/** Extrai o envelope `return` da resposta Velip (com fallback para a raiz). */
+function velipEnvelope(json: Record<string, unknown>): Record<string, unknown> {
+  const ret = json?.return;
+  return ret && typeof ret === "object" ? (ret as Record<string, unknown>) : json;
+}
+
 async function velipPost(
   path: string,
   form: URLSearchParams | FormData,
@@ -82,7 +96,7 @@ async function velipPost(
 ): Promise<RawResp> {
   const headers = velipHeaders();
   if (form instanceof URLSearchParams) {
-    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8";
   }
   try {
     const res = await fetch(`${VELIP_BASE}${path}`, {
@@ -98,10 +112,16 @@ async function velipPost(
     } catch {
       json = { _raw: text };
     }
-    const status_code = typeof json.status_code === "number"
-      ? json.status_code
-      : Number(json.status_code ?? NaN);
-    const status = typeof json.status === "string" ? json.status : undefined;
+    // Velip responde `{"return": {"status": "OK", "status_code": "0", ...}}`
+    // com status_code como STRING. Ler no envelope, com fallback na raiz.
+    const env = velipEnvelope(json);
+    const scRaw = env.status_code ?? json.status_code;
+    const status_code = typeof scRaw === "number" ? scRaw : Number(scRaw ?? NaN);
+    const status = typeof env.status === "string"
+      ? env.status
+      : typeof json.status === "string"
+        ? json.status
+        : undefined;
     const ok = res.ok && (Number.isFinite(status_code) ? status_code === 0 : true);
     return {
       ok,
@@ -110,7 +130,8 @@ async function velipPost(
       raw: json,
       error: ok
         ? undefined
-        : (status ?? `http_${res.status}`) + (status_code != null ? `#${status_code}` : ""),
+        : (status ?? `http_${res.status}`) +
+          (Number.isFinite(status_code) ? `#${status_code}` : ""),
     };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message || "network_error" };
@@ -125,9 +146,11 @@ export interface UserIDResp extends RawResp {
 
 export async function getUserID(): Promise<UserIDResp> {
   const r = await velipPost("/GetUserID", new URLSearchParams(), 10_000);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const saldoRaw = raw.saldo ?? raw.balance ?? raw.credit ?? null;
-  const saldo = typeof saldoRaw === "number" ? saldoRaw : Number(saldoRaw);
+  // A API v2 NÃO expõe saldo (GetUserID retorna só ids + flags aut_*).
+  // saldo fica null → UI mostra "—" e orienta consultar o painel Velip.
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
+  const saldoRaw = env.saldo ?? env.balance ?? env.credit;
+  const saldo = saldoRaw == null ? NaN : Number(saldoRaw);
   return { ...r, saldo: Number.isFinite(saldo) ? saldo : null };
 }
 
@@ -147,15 +170,19 @@ export async function uploadAudioFile(
   // aqui sempre vêm de ArrayBuffer comum (fetch/File), nunca SharedArrayBuffer.
   const blob = new Blob([bytes as unknown as BlobPart], { type: contentType });
   const safeName = (name || "clipe").replace(/[^\w.-]+/g, "_").slice(0, 60) || "clipe";
-  // Velip aceita `arquivo` OU `file`; enviamos ambos para robustez.
-  fd.append("arquivo", blob, `${safeName}.mp3`);
-  fd.append("file", blob, `${safeName}.mp3`);
-  fd.append("nome", safeName);
+  // Doc CreateAudioFile: campo de arquivo `audio` (aceita qualquer nome de
+  // campo, mas `audio` é o documentado) + `name` + `ttswrt=1` para o asset
+  // NÃO expirar em 1 dia (sem isso, expira amanhã e o id salvo fica inválido).
+  fd.append("audio", blob, `${safeName}.mp3`);
   fd.append("name", safeName);
+  fd.append("name_up", `${safeName}.mp3`);
+  fd.append("ttswrt", "1");
   const r = await velipPost("/CreateAudioFile", fd, 60_000);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
+  // Resposta: `return.cdw_file` = "tf12345". Nas chamadas (MakeTTSCall) o
+  // parâmetro `content` aceita o id com ou sem o prefixo "tf"; guardamos como veio.
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
   const audio_id = String(
-    raw.audio_id ?? raw.id ?? raw.aid ?? raw.audio ?? "",
+    env.cdw_file ?? env.audio_id ?? env.id ?? env.aid ?? env.audio ?? "",
   ) || undefined;
   return { ...r, audio_id };
 }
@@ -169,17 +196,19 @@ export interface AudioListItem {
 export async function listAudios(): Promise<{ ok: boolean; items: AudioListItem[]; error?: string; raw?: unknown }> {
   const r = await velipPost("/GetAudiosList", new URLSearchParams(), 15_000);
   const raw = (r.raw ?? {}) as Record<string, unknown>;
+  // Resposta real: `{"return": {...}, "audios": [{"cdw_file": "tf123",
+  //   "cdw_name": "...", "cdw_sec": "27.6", ...}]}` — `audios` fica na RAIZ.
   const arr = (raw.audios ?? raw.data ?? raw.list ?? []) as unknown[];
   const items: AudioListItem[] = [];
   if (Array.isArray(arr)) {
     for (const it of arr) {
       const row = it as Record<string, unknown>;
-      const id = String(row.audio_id ?? row.id ?? "");
+      const id = String(row.cdw_file ?? row.audio_id ?? row.id ?? "");
       if (!id) continue;
       items.push({
         audio_id: id,
-        name: (row.name as string) ?? (row.nome as string) ?? undefined,
-        duration_sec: Number(row.duration_sec ?? row.duracao ?? NaN) || undefined,
+        name: (row.cdw_name as string) ?? (row.name as string) ?? (row.nome as string) ?? undefined,
+        duration_sec: Number(row.cdw_sec ?? row.duration_sec ?? row.duracao ?? NaN) || undefined,
       });
     }
   }
@@ -192,9 +221,11 @@ export interface MakeCallOpts {
   to: string;               // 55DDNNNNNNNN
   audioId?: string;
   ttsText?: string;
+  /** Voz TTS no formato `provider|VoiceName` (GetTTSVoices). */
+  voice?: string;
   ctid: string;
   timeLimitSec?: number;
-  /** Formato YYYY-MM-DD HH:MM:SS (fuso Velip). */
+  /** Formato YYYY-MM-DD HH:MM:SS (fuso Velip) — vira `block` (não discar antes de). */
   scheduledAt?: string;
   callerId?: string;
 }
@@ -207,31 +238,46 @@ function baseCallForm(opts: MakeCallOpts): URLSearchParams {
   const form = new URLSearchParams();
   form.set("dest", opts.to);
   form.set("ctid", toCtid(opts.ctid));
-  if (opts.timeLimitSec) form.set("time_limit", String(opts.timeLimitSec));
-  if (opts.scheduledAt) form.set("scheduled_at", opts.scheduledAt);
+  // Nomes oficiais MakeTTSCall: `timelimit`, `block`, `callerid`.
+  if (opts.timeLimitSec) form.set("timelimit", String(opts.timeLimitSec));
+  if (opts.scheduledAt) form.set("block", opts.scheduledAt);
   const bina = opts.callerId ?? Deno.env.get("VELIP_CALLER_ID")?.trim();
-  if (bina) form.set("caller_id", bina);
+  if (bina) form.set("callerid", bina);
   return form;
 }
 
+/**
+ * Liga tocando um áudio gravado.
+ * ATENÇÃO: o endpoint `PlayAudioFile` da Velip serve para BAIXAR/stream do
+ * áudio (não disca). Ligação com áudio gravado é `MakeTTSCall` com `content`.
+ * Mantemos o nome da função para não quebrar os call-sites existentes.
+ */
 export async function playAudioFile(opts: MakeCallOpts): Promise<MakeCallResult> {
   if (!opts.audioId) return { ok: false, error: "missing_audio_id" };
-  const form = baseCallForm(opts);
-  form.set("audio_id", opts.audioId);
-  const r = await velipPost("/PlayAudioFile", form);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const cd_id = String(raw.cd_id ?? raw.id ?? raw.call_id ?? "") || undefined;
-  return { ...r, cd_id };
+  return await makeTTSCall(opts);
 }
 
 export async function makeTTSCall(opts: MakeCallOpts): Promise<MakeCallResult> {
   const form = baseCallForm(opts);
-  if (opts.audioId) form.set("audio_id", opts.audioId);
-  if (opts.ttsText) form.set("text", opts.ttsText);
+  if (opts.audioId) {
+    // A doc diz "numeric portion (without tf)", mas NA PRÁTICA (validado
+    // 2026-07-13) o content numérico faz a chamada cair ao atender (dur=0,
+    // status NA) — sem o áudio. Com o prefixo "tf" toca até o fim.
+    const id = String(opts.audioId).trim();
+    form.set("content", /^\d+$/.test(id) ? `tf${id}` : id);
+  }
+  if (opts.ttsText) {
+    form.set("text", opts.ttsText);
+    // Form-urlencoded default é ISO-8859-1; sem isso os acentos corrompem.
+    form.set("encoding", "UTF-8");
+    if (opts.voice) form.set("voice", opts.voice);
+  }
   const r = await velipPost("/MakeTTSCall", form);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const cd_id = String(raw.cd_id ?? raw.id ?? raw.call_id ?? "") || undefined;
-  return { ...r, cd_id };
+  // Resposta: `return.cd_id` no formato "<cdcs_db>_<id>" — usar como veio
+  // no GetCallStatus (doc manda passar as-is).
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
+  const cd_id = String(env.cd_id ?? env.id ?? env.call_id ?? "") || undefined;
+  return { ...r, cd_id: cd_id === "0" ? undefined : cd_id };
 }
 
 // ─── Campanhas em lote ─────────────────────────────────────────────────────
@@ -253,19 +299,22 @@ export async function createDestinationBase(
   name = `base_${Date.now()}`,
 ): Promise<DestinationBaseResp> {
   const form = new URLSearchParams();
-  form.set("nome", name);
   form.set("name", name);
-  // A Velip aceita JSON no campo `destinos`
-  form.set("destinos", JSON.stringify(items.map((it) => ({
-    dest: it.dest,
-    ctid: it.ctid ? toCtid(it.ctid) : undefined,
-    name: it.name,
-    cod_cli: it.cod_cli,
-    extras: it.extras,
-  }))));
+  // Doc CreateDestinationBase: lista vai no campo `datajson`, cada registro
+  // com `phone` (não "dest"); extras viram extra1..extra4 (placeholders TTS).
+  form.set("datajson", JSON.stringify(items.map((it) => {
+    const rec: Record<string, unknown> = { phone: it.dest };
+    if (it.name) rec.name = it.name;
+    if (it.cod_cli) rec.cod_cli = it.cod_cli;
+    (it.extras ?? []).slice(0, 4).forEach((v, i) => {
+      if (v) rec[`extra${i + 1}`] = v;
+    });
+    return rec;
+  })));
   const r = await velipPost("/CreateDestinationBase", form, 60_000);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const base_id = String(raw.base_id ?? raw.id ?? "") || undefined;
+  // Resposta: `return.cdlc_id` (+ num_dest / base_size).
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
+  const base_id = String(env.cdlc_id ?? env.base_id ?? env.id ?? "") || undefined;
   return { ...r, base_id };
 }
 
@@ -283,16 +332,26 @@ export interface CreateCampaignResp extends RawResp {
 
 export async function createCampaign(opts: CreateCampaignOpts): Promise<CreateCampaignResp> {
   const form = new URLSearchParams();
-  form.set("nome", opts.name);
   form.set("name", opts.name);
-  form.set("base_id", opts.baseId);
-  form.set("audio_id", opts.audioId);
-  if (opts.scheduledAt) form.set("scheduled_at", opts.scheduledAt);
-  if (opts.ctid) form.set("ctid", toCtid(opts.ctid));
+  // Doc CreateCampaign: lista = `cdlc_id`; áudio principal = `content`
+  // (cd_wav.cdw_file, ex. "tf12345"); id correlação = `cp_ctid`.
+  form.set("cdlc_id", opts.baseId);
+  form.set("content", opts.audioId);
+  if (opts.ctid) form.set("cp_ctid", toCtid(opts.ctid));
+  form.set("cp_ativo", "1");
+  if (opts.scheduledAt) {
+    // "YYYY-MM-DD HH:MM:SS" → date_start + time_start (roda só nesse dia).
+    const [d, t] = opts.scheduledAt.split(" ");
+    if (d) {
+      form.set("date_start", d);
+      form.set("date_end", d);
+    }
+    if (t) form.set("time_start", t);
+  }
   const r = await velipPost("/CreateCampaign", form, 30_000);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const cp_id = String(raw.cp_id ?? raw.campaign_id ?? raw.id ?? "") || undefined;
-  return { ...r, cp_id };
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
+  const cp_id = String(env.cp_id ?? env.campaign_id ?? env.id ?? "") || undefined;
+  return { ...r, cp_id: cp_id === "0" ? undefined : cp_id };
 }
 
 export type CampaignAction = "pause" | "resume" | "cancel";
@@ -300,10 +359,13 @@ export type CampaignAction = "pause" | "resume" | "cancel";
 export async function changeCampaign(cp_id: string, action: CampaignAction): Promise<RawResp> {
   const form = new URLSearchParams();
   form.set("cp_id", cp_id);
-  form.set("campaign_id", cp_id);
-  form.set("action", action);
-  form.set("acao", action === "pause" ? "pausar" : action === "resume" ? "retomar" : "cancelar");
-  return await velipPost("/ChangeCampaign", form, 15_000);
+  // Doc ChangeCampaign: o campo mutável é `active` (0/1). A API não tem
+  // "cancel" — cancelar = pausar na Velip; o status cancelado fica no banco.
+  form.set("active", action === "resume" ? "1" : "0");
+  const r = await velipPost("/ChangeCampaign", form, 15_000);
+  // Código 230 = "Parameters without change" (já estava no estado pedido) — tratar como ok.
+  if (!r.ok && r.status_code === 230) return { ...r, ok: true };
+  return r;
 }
 
 export async function getCampaignsList(): Promise<{ ok: boolean; items: unknown[]; error?: string; raw?: unknown }> {
@@ -320,6 +382,8 @@ export interface MakeSMSOpts {
   message: string;
   ctid?: string;
   scheduledAt?: string;
+  /** Janela anti-duplicata em segundos (default Velip=10). Use 0 para desligar. */
+  httpdup?: number;
 }
 
 export interface MakeSMSResult extends RawResp {
@@ -329,22 +393,41 @@ export interface MakeSMSResult extends RawResp {
 export async function makeSMS(opts: MakeSMSOpts): Promise<MakeSMSResult> {
   const form = new URLSearchParams();
   form.set("dest", opts.to);
-  form.set("text", opts.message);
-  form.set("mensagem", opts.message);
+  // Doc MakeSMS: campo oficial `message` (aliases text/msg_text).
+  // cuttext=1 evita erro 238 quando passa de 160 chars.
+  form.set("message", opts.message);
+  form.set("cuttext", "1");
   if (opts.ctid) form.set("ctid", toCtid(opts.ctid));
-  if (opts.scheduledAt) form.set("scheduled_at", opts.scheduledAt);
+  if (opts.httpdup != null) form.set("httpdup", String(Math.max(0, Math.min(600, opts.httpdup))));
+  // MakeSMS não tem agendamento na API v2 (scheduledAt fica só na interface).
   const r = await velipPost("/MakeSMS", form, 15_000);
-  const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const cdls_id = String(raw.cdls_id ?? raw.id ?? "") || undefined;
-  return { ...r, cdls_id };
+  const env = velipEnvelope((r.raw ?? {}) as Record<string, unknown>);
+  const cdls_id = String(env.cdls_id ?? env.id ?? "") || undefined;
+  const id = cdls_id === "0" ? undefined : cdls_id;
+  // Doc: status_code 1 + status "WR" = aceito, ainda aguardando provedor.
+  // Com cdls_id presente, considerar sucesso (não marcar failed no portal).
+  const waiting = r.status_code === 1 || String(r.status || "").toUpperCase() === "WR";
+  const ok = r.ok || (waiting && !!id) || (!!id && (r.status_code === 0 || r.status_code == null));
+  return {
+    ...r,
+    ok,
+    cdls_id: id,
+    error: ok ? undefined : r.error,
+  };
 }
 
 export async function getCallStatus(cd_id: string): Promise<RawResp & { called_status?: string }> {
   const form = new URLSearchParams();
+  // cd_id no formato "<cdcs_db>_<id>" exatamente como veio do MakeTTSCall.
   form.set("cd_id", cd_id);
   const r = await velipPost("/GetCallStatus", form, 15_000);
   const raw = (r.raw ?? {}) as Record<string, unknown>;
-  const called_status = String(raw.cd_called_status ?? raw.called_status ?? "") || undefined;
+  // Resposta: `{"return": {...}, "calls": [{"cd_status": "OK"|"NA"|..., ...}]}`
+  const calls = Array.isArray(raw.calls) ? (raw.calls as Record<string, unknown>[]) : [];
+  const first = calls[0] ?? {};
+  const called_status = String(
+    first.cd_status ?? first.cd_called_status ?? raw.cd_called_status ?? "",
+  ) || undefined;
   return { ...r, called_status };
 }
 

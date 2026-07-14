@@ -269,6 +269,23 @@ async function ensureLeadPartnerLink(
     }
 
     // Sem parceiro: só auto-atribui com 1 campanha/pool ativa (ou campanha já no lead)
+    // Se o consultor acabou de editar origem manualmente (campanha / sem origem),
+    // NÃO rearmar rodízio+notify — isso quebraria o "sem aviso ao parceiro".
+    const { data: manualOriginLogs } = await supabase
+      .from("campaign_match_log")
+      .select("rodizio_outcome, created_at")
+      .eq("customer_id", customerId)
+      .eq("method", "manual_origin_edit")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const lastManual = (manualOriginLogs as { rodizio_outcome?: string | null }[] | null)?.[0];
+    if (
+      lastManual?.rodizio_outcome === "campaign" ||
+      lastManual?.rodizio_outcome === "none"
+    ) {
+      return;
+    }
+
     let campaignId = (cust as any).source_campaign_id as string | null;
     if (!campaignId) {
       const { data: pools } = await supabase

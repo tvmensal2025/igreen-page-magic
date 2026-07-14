@@ -55,7 +55,7 @@ const CHANNEL_LABEL: Record<string, string> = {
 
 const CHANNEL_STYLE: Record<string, string> = {
   meta_leadads: "border-primary/40 text-primary bg-primary/10",
-  tiktok_leadgen: "border-accent/40 text-accent bg-accent/10",
+  tiktok_leadgen: "border-primary/40 text-primary bg-primary/10",
   ctwa: "border-success/40 text-success bg-success/10",
   landing: "border-info/40 text-info bg-info/10",
   research: "border-info/40 text-info bg-info/10",

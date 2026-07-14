@@ -27,7 +27,7 @@ export function VozTab({ consultantId }: Props) {
     (async () => {
       const { data } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name")
+        .select("id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name, created_at, updated_at")
         .eq("consultant_id", consultantId)
         .not("phone_whatsapp", "is", null)
         .order("updated_at", { ascending: false })
@@ -74,7 +74,7 @@ export function VozTab({ consultantId }: Props) {
           <VoiceDialerPanel consultantId={consultantId} customers={customers} />
         </TabsContent>
         <TabsContent value="sms" className="mt-4">
-          <VoiceSmsPanel consultantId={consultantId} />
+          <VoiceSmsPanel consultantId={consultantId} customers={customers} />
         </TabsContent>
         <TabsContent value="bases" className="mt-4">
           <VoiceContactBasesPanel consultantId={consultantId} />

@@ -6,14 +6,13 @@ import { useReferralPartners } from "@/components/admin/parceiros/hooks/useRefer
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
   LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
-  ListOrdered, MessageSquareText, Settings2, BarChart3, CheckSquare, X,
+  CheckSquare, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -59,13 +58,6 @@ export interface LeadRow {
   // derivado
   score: number;
 }
-
-const SOURCE_LABEL: Record<string, string> = {
-  rules: "Regras",
-  ai_lite: "IA lite",
-  ai_full: "IA full",
-  cache: "Cache",
-};
 
 type OriginFilter = "all" | "meta_ads" | "whatsapp_direct" | "partner";
 
@@ -467,17 +459,16 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
   }, [selectedIds, rows, exitSelectMode, fetchRows]);
 
   return (
-    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-5">
-      <ViewSwitcher value={activeView} onChange={setActiveView} />
-      <TabsList className="sr-only">
-        <TabsTrigger value="fila">Fila</TabsTrigger>
-        <TabsTrigger value="frases">Frases</TabsTrigger>
-        <TabsTrigger value="resultados">Resultados</TabsTrigger>
-        <TabsTrigger value="config">Configurar</TabsTrigger>
+    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4">
+      <TabsList className="h-9 w-full justify-start gap-1 overflow-x-auto sm:w-auto">
+        <TabsTrigger value="fila" className="px-3">Fila</TabsTrigger>
+        <TabsTrigger value="frases" className="px-3">Frases</TabsTrigger>
+        <TabsTrigger value="resultados" className="px-3">Resultados</TabsTrigger>
+        <TabsTrigger value="config" className="px-3">Ajustes</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="fila" className="space-y-5">
-        <HeroStrip
+      <TabsContent value="fila" className="space-y-3">
+        <FilaToolbar
           metrics={metrics}
           bulk={bulk}
           onClassifyAll={classifyAll}
@@ -485,9 +476,6 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           staleLoading={bulkStale}
           onReload={fetchRows}
           loading={loading}
-        />
-
-        <FilterBar
           tempFilter={tempFilter}
           setTempFilter={setTempFilter}
           tempCounts={tempCounts}
@@ -499,19 +487,16 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
           hasPartners={partners.length > 0}
           search={search}
           setSearch={setSearch}
-        />
-
-        <SelectionBar
           selectMode={selectMode}
           selectedCount={selectedIds.size}
           batchSending={batchSending}
-          onToggleMode={() => {
+          onToggleSelectMode={() => {
             setSelectMode((v) => !v);
             setSelectedIds(new Set());
           }}
           onSelectAll={() => setSelectedIds(new Set(filtered.map((r) => r.customer_id)))}
-          onClear={() => setSelectedIds(new Set())}
-          onSend={sendBatch}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onSendBatch={sendBatch}
         />
 
         {loading ? (
@@ -523,11 +508,10 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
         ) : (
           <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.length > 50 ? (
-              filtered.map((r, idx) => (
+              filtered.map((r) => (
                 <LeadCard
                   key={r.customer_id}
                   lead={r}
-                  rank={idx + 1}
                   stepLabelText={stepLabel(r.conversation_step, flowTitles)}
                   classifying={classifying === r.customer_id}
                   selectMode={selectMode}
@@ -540,11 +524,10 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
               ))
             ) : (
               <AnimatePresence mode="popLayout">
-                {filtered.map((r, idx) => (
+                {filtered.map((r) => (
                   <LeadCard
                     key={r.customer_id}
                     lead={r}
-                    rank={idx + 1}
                     stepLabelText={stepLabel(r.conversation_step, flowTitles)}
                     classifying={classifying === r.customer_id}
                     selectMode={selectMode}
@@ -588,100 +571,51 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
 //  Sub-componentes
 // ════════════════════════════════════════════════════════════════════════════
 
-function HeroStrip({ metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading }: {
-  metrics: { total: number; classified: number; unclassified: number; hotStuck: number; revenueAtStake: number; avgChance: number };
+type Metrics = {
+  total: number;
+  classified: number;
+  unclassified: number;
+  hotStuck: number;
+  revenueAtStake: number;
+  avgChance: number;
+};
+
+function FilaToolbar({
+  metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading,
+  tempFilter, setTempFilter, tempCounts, originFilter, setOriginFilter,
+  partnerOptions, partnerFilter, setPartnerFilter, hasPartners, search, setSearch,
+  selectMode, selectedCount, batchSending, onToggleSelectMode, onSelectAll, onClearSelection, onSendBatch,
+}: {
+  metrics: Metrics;
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
   onClassifyStale: () => void;
   staleLoading: boolean;
   onReload: () => void;
   loading: boolean;
+  tempFilter: Temp | "all";
+  setTempFilter: (v: Temp | "all") => void;
+  tempCounts: Record<Temp, number>;
+  originFilter: OriginFilter;
+  setOriginFilter: (v: OriginFilter) => void;
+  partnerOptions: ComboboxOption[];
+  partnerFilter: string;
+  setPartnerFilter: (v: string) => void;
+  hasPartners: boolean;
+  search: string;
+  setSearch: (v: string) => void;
+  selectMode: boolean;
+  selectedCount: number;
+  batchSending: { done: number; total: number } | null;
+  onToggleSelectMode: () => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onSendBatch: () => void;
 }) {
-  return (
-    <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/[0.07] via-card to-card">
-      <div className="flex flex-wrap items-center gap-4 p-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary/30 bg-primary/15">
-          <TrendingUp className="h-6 w-6 text-primary" />
-        </div>
-        <div className="flex-1 min-w-[220px]">
-          <h2 className="text-lg font-semibold text-foreground">Central de Conversão</h2>
-          <p className="text-xs text-muted-foreground">
-            Fila ordenada por potencial de fechamento — os melhores leads no topo.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={onReload} disabled={loading || !!bulk}>
-            <RefreshCw className={`mr-1 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Recarregar
-          </Button>
-          {metrics.unclassified > 0 && (
-            <Button size="sm" onClick={onClassifyAll} disabled={!!bulk} className="gap-1.5">
-              {bulk ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-              Classificar {metrics.unclassified}
-            </Button>
-          )}
-          {metrics.unclassified === 0 && metrics.classified > 0 && (
-            <Button size="sm" variant="outline" onClick={onClassifyStale} disabled={!!bulk || staleLoading} className="gap-1.5">
-              {staleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              Reclassificar 24h
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 gap-px border-t border-border/40 bg-border/40 sm:grid-cols-4">
-        <Kpi label="Leads na fila" value={String(metrics.total)} icon={<MessageSquare className="h-3.5 w-3.5" />} />
-        <Kpi
-          label="Quentes parados"
-          value={String(metrics.hotStuck)}
-          icon={<BellOff className="h-3.5 w-3.5" />}
-          tone={metrics.hotStuck > 0 ? "danger" : "default"}
-        />
-        <Kpi label="Receita em jogo" value={brl(metrics.revenueAtStake)} sub="/mês em contas" icon={<Flame className="h-3.5 w-3.5" />} tone="warn" />
-        <Kpi label="Chance média" value={`${metrics.avgChance}%`} icon={<TrendingUp className="h-3.5 w-3.5" />} />
-      </div>
-
-      {bulk && (
-        <div className="space-y-1.5 border-t border-border/40 p-3">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Classificando com IA…</span>
-            <span className="font-mono">{bulk.done}/{bulk.total}</span>
-          </div>
-          <Progress value={(bulk.done / Math.max(1, bulk.total)) * 100} className="h-1.5" />
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function Kpi({ label, value, sub, icon, tone = "default" }: {
-  label: string; value: string; sub?: string; icon: React.ReactNode;
-  tone?: "default" | "danger" | "warn";
-}) {
-  const toneCls = tone === "danger" ? "text-destructive" : tone === "warn" ? "text-warning" : "text-foreground";
-  return (
-    <div className="bg-card p-3">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-        {icon} {label}
-      </div>
-      <div className={`mt-1 text-xl font-semibold ${toneCls}`}>
-        {value}
-        {sub && <span className="ml-1 text-[10px] font-normal text-muted-foreground">{sub}</span>}
-      </div>
-    </div>
-  );
-}
-
-function FilterBar({
-  tempFilter, setTempFilter, tempCounts, originFilter, setOriginFilter,
-  partnerOptions, partnerFilter, setPartnerFilter, hasPartners, search, setSearch,
-}: any) {
   const ORIGIN_LABEL: Record<OriginFilter, string> = {
     all: "Todas", meta_ads: "Meta Ads", whatsapp_direct: "WhatsApp", partner: "Parceiro",
   };
-  // Total de leads classificados em cada temperatura (para o "Todos").
   const totalTemp = (Object.keys(tempCounts) as Temp[]).reduce((s, t) => s + tempCounts[t], 0);
-  // Temperatura — agora em combobox (libera espaço no topo e fica mais limpo).
   const tempOptions: ComboboxOption[] = [
     { value: "all", label: "Todos", hint: String(totalTemp) },
     ...(Object.keys(TEMP_META) as Temp[]).map((t) => ({
@@ -690,35 +624,64 @@ function FilterBar({
       hint: String(tempCounts[t]),
     })),
   ];
+
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-card/40 p-2.5">
-      {/* Temperatura — combobox (substitui a fileira de botões) */}
-      <div className="w-44">
-        <Combobox
-          options={tempOptions}
-          value={tempFilter}
-          onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
-          placeholder="Temperatura"
-          searchPlaceholder="Buscar temperatura…"
-          className="h-8"
-        />
+    <div className="space-y-2.5 rounded-xl border border-border/50 bg-card p-3">
+      {/* KPIs + ações */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+          <Kpi label="Na fila" value={String(metrics.total)} icon={<MessageSquare className="h-3 w-3" />} />
+          <Kpi
+            label="Quentes parados"
+            value={String(metrics.hotStuck)}
+            icon={<BellOff className="h-3 w-3" />}
+            tone={metrics.hotStuck > 0 ? "danger" : "default"}
+          />
+          <Kpi label="Receita em jogo" value={brl(metrics.revenueAtStake)} icon={<Flame className="h-3 w-3" />} tone="warn" />
+          <Kpi label="Chance média" value={`${metrics.avgChance}%`} icon={<TrendingUp className="h-3 w-3" />} />
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button variant="outline" size="sm" className="h-8" onClick={onReload} disabled={loading || !!bulk}>
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Recarregar
+          </Button>
+          {metrics.unclassified > 0 && (
+            <Button size="sm" className="h-8 gap-1.5" onClick={onClassifyAll} disabled={!!bulk}>
+              {bulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Classificar {metrics.unclassified}
+            </Button>
+          )}
+          {metrics.unclassified === 0 && metrics.classified > 0 && (
+            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onClassifyStale} disabled={!!bulk || staleLoading}>
+              {staleLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Reclassificar 24h
+            </Button>
+          )}
+        </div>
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
-        {hasPartners && (
-          <div className="w-48">
-            <Combobox
-              options={partnerOptions}
-              value={partnerFilter}
-              onChange={(v: string | null) => setPartnerFilter(v ?? "all")}
-              placeholder="Parceiro"
-              searchPlaceholder="Buscar parceiro…"
-              className="h-8"
-            />
+      {bulk && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Classificando com IA…</span>
+            <span className="font-mono">{bulk.done}/{bulk.total}</span>
           </div>
-        )}
-        {/* Origem — combobox (substitui a fileira de botões) */}
+          <Progress value={(bulk.done / Math.max(1, bulk.total)) * 100} className="h-1.5" />
+        </div>
+      )}
+
+      {/* Filtros + seleção */}
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2.5">
         <div className="w-40">
+          <Combobox
+            options={tempOptions}
+            value={tempFilter}
+            onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
+            placeholder="Temperatura"
+            searchPlaceholder="Buscar temperatura…"
+            className="h-8"
+          />
+        </div>
+        <div className="w-36">
           <Combobox
             options={(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => ({
               value: o,
@@ -731,22 +694,78 @@ function FilterBar({
             className="h-8"
           />
         </div>
+        {hasPartners && (
+          <div className="w-44">
+            <Combobox
+              options={partnerOptions}
+              value={partnerFilter}
+              onChange={(v: string | null) => setPartnerFilter(v ?? "all")}
+              placeholder="Parceiro"
+              searchPlaceholder="Buscar parceiro…"
+              className="h-8"
+            />
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar nome / resumo"
-            className="h-8 w-52 pl-7 text-xs"
+            className="h-8 w-44 pl-7 text-xs sm:w-52"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {!selectMode ? (
+            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onToggleSelectMode}>
+              <CheckSquare className="h-3.5 w-3.5" /> Selecionar
+            </Button>
+          ) : (
+            <>
+              <span className="text-xs font-medium text-foreground">{selectedCount} sel.</span>
+              <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onSelectAll}>Todos</Button>
+              <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onClearSelection}>Limpar</Button>
+              {batchSending && (
+                <span className="font-mono text-[11px] text-muted-foreground">{batchSending.done}/{batchSending.total}</span>
+              )}
+              <Button
+                size="sm"
+                className="h-7 gap-1.5 text-[11px]"
+                disabled={selectedCount < 2 || !!batchSending}
+                onClick={onSendBatch}
+              >
+                {batchSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                Reativar
+              </Button>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleSelectMode} disabled={!!batchSending}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify, lite }: {
-  lead: LeadRow; rank: number; stepLabelText: string; classifying: boolean;
+function Kpi({ label, value, icon, tone = "default" }: {
+  label: string; value: string; icon: React.ReactNode;
+  tone?: "default" | "danger" | "warn";
+}) {
+  const toneCls = tone === "danger" ? "text-destructive" : tone === "warn" ? "text-warning" : "text-foreground";
+  return (
+    <div className="rounded-lg bg-muted/30 px-2.5 py-2">
+      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+        {icon} {label}
+      </div>
+      <div className={`mt-0.5 text-lg font-semibold tabular-nums ${toneCls}`}>{value}</div>
+    </div>
+  );
+}
+
+function LeadCard({ lead, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify, lite }: {
+  lead: LeadRow; stepLabelText: string; classifying: boolean;
   selectMode: boolean; selected: boolean; onToggleSelect: () => void;
   onOpen: () => void; onClassify: () => void;
   lite?: boolean;
@@ -774,8 +793,7 @@ function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected
         className={`group relative cursor-pointer overflow-hidden p-3 transition hover:border-primary/40 hover:shadow-sm ${selected ? "border-primary/60 ring-1 ring-primary/40" : ""}`}
         onClick={selectMode ? onToggleSelect : onOpen}
       >
-        {/* Faixa de prioridade na lateral */}
-        <span className={`absolute left-0 top-0 h-full w-1 ${TM.dot}`} />
+        <span className={`absolute left-0 top-0 h-full w-1 ${TM.dot}`} title={TM.label} />
 
         {selectMode && (
           <span
@@ -795,53 +813,42 @@ function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected
               {lead.bot_paused && (
                 <BellOff className="h-3 w-3 shrink-0 text-destructive" aria-label="Bot pausado" />
               )}
+              <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
+                <Clock className="h-2.5 w-2.5" /> Parado {formatStuck(lead.hours_stuck)}
+              </span>
             </div>
-            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-              <span className={`rounded border px-1.5 py-0.5 text-[10px] ${TM.cls}`}>{TM.label}</span>
-              {temp && TempIcon && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              {temp && TempIcon ? (
                 <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] ${temp.cls}`}>
                   <TempIcon className="h-2.5 w-2.5" /> {temp.label}
                 </span>
-              )}
-              {lead.classification_source && lead.classification_source !== "cache" && (
-                <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[9px] text-muted-foreground">
-                  {SOURCE_LABEL[lead.classification_source] ?? lead.classification_source}
+              ) : (
+                <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  Sem classificação
                 </span>
               )}
-              <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                <Clock className="h-2.5 w-2.5" /> {formatStuck(lead.hours_stuck)}
-              </span>
+              {lead.conversation_step && (
+                <span className="truncate text-[10px] text-muted-foreground">{stepLabelText}</span>
+              )}
             </div>
-            {lead.conversation_step && (
-              <p className="mt-1 truncate text-[10px] text-muted-foreground">{stepLabelText}</p>
-            )}
-          </div>
-          <div className="text-right">
-            <div className="font-mono text-sm font-semibold text-foreground">{Math.round(lead.score)}</div>
-            <div className="text-[9px] uppercase text-muted-foreground">score</div>
           </div>
         </div>
 
-        {/* conta + chance */}
-        <div className="mt-2 flex items-center gap-3 pl-1.5">
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-1.5 text-[11px] text-muted-foreground">
           {lead.bill_value != null && (
-            <span className="text-[11px] text-muted-foreground">conta <strong className="text-foreground">{brl(lead.bill_value)}</strong></span>
+            <span>Conta <strong className="text-foreground">{brl(lead.bill_value)}</strong></span>
           )}
-          {lead.conversion_chance != null && (
-            <div className="flex flex-1 items-center gap-1.5">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted/60">
-                <div className={`h-full ${TM.dot}`} style={{ width: `${Math.max(3, Math.min(100, lead.conversion_chance))}%` }} />
-              </div>
-              <span className="font-mono text-[10px] text-muted-foreground">{lead.conversion_chance}%</span>
-            </div>
+          {isClassified && lead.conversion_chance != null && (
+            <span>{lead.conversion_chance}%</span>
           )}
+          <span className="ml-auto font-mono tabular-nums text-muted-foreground/80">{Math.round(lead.score)}</span>
         </div>
 
-        {/* próxima ação ou CTA classificar */}
         {isClassified ? (
           lead.next_action && (
-            <p className="mt-2 line-clamp-1 pl-1.5 text-[11px] text-muted-foreground">
-              <span className="text-primary">▸</span> {lead.next_action}
+            <p className="mt-2 line-clamp-2 border-t border-border/30 pt-2 pl-1.5 text-[12px] text-foreground">
+              <span className="font-medium text-primary">Próximo:</span>{" "}
+              <span className="text-muted-foreground">{lead.next_action}</span>
             </p>
           )
         ) : (
@@ -859,50 +866,6 @@ function LeadCard({ lead, rank, stepLabelText, classifying, selectMode, selected
   );
 }
 
-function SelectionBar({ selectMode, selectedCount, batchSending, onToggleMode, onSelectAll, onClear, onSend }: {
-  selectMode: boolean;
-  selectedCount: number;
-  batchSending: { done: number; total: number } | null;
-  onToggleMode: () => void;
-  onSelectAll: () => void;
-  onClear: () => void;
-  onSend: () => void;
-}) {
-  if (!selectMode) {
-    return (
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={onToggleMode} className="gap-1.5">
-          <CheckSquare className="h-4 w-4" /> Selecionar para envio em lote
-        </Button>
-      </div>
-    );
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-2.5">
-      <span className="text-xs font-medium text-foreground">{selectedCount} selecionado(s)</span>
-      <Button variant="ghost" size="sm" onClick={onSelectAll} className="h-7 text-[11px]">Selecionar todos</Button>
-      <Button variant="ghost" size="sm" onClick={onClear} className="h-7 text-[11px]">Limpar</Button>
-      <div className="ml-auto flex items-center gap-2">
-        {batchSending && (
-          <span className="text-[11px] text-muted-foreground font-mono">{batchSending.done}/{batchSending.total}</span>
-        )}
-        <Button
-          size="sm"
-          className="h-7 gap-1.5 text-[11px]"
-          disabled={selectedCount < 2 || !!batchSending}
-          onClick={onSend}
-        >
-          {batchSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-          Reativar selecionados
-        </Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleMode} disabled={!!batchSending}>
-          <X className="h-3.5 w-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function EmptyState({ unclassified, onClassifyAll }: { unclassified: number; onClassifyAll: () => void }) {
   return (
     <Card className="p-16 text-center">
@@ -916,50 +879,6 @@ function EmptyState({ unclassified, onClassifyAll }: { unclassified: number; onC
         </Button>
       )}
     </Card>
-  );
-}
-
-const VIEW_META: Record<string, { label: string; desc: string; icon: any }> = {
-  fila:       { label: "Fila de leads", desc: "Leads ordenados por potencial",  icon: ListOrdered },
-  frases:     { label: "Frases",        desc: "Mensagens sugeridas por etapa",  icon: MessageSquareText },
-  resultados: { label: "Resultados",    desc: "Métricas e desempenho",          icon: TrendingUp },
-  config:     { label: "Configurar",    desc: "Ajustes do cockpit",             icon: Settings2 },
-};
-
-function ViewSwitcher({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const current = VIEW_META[value] ?? VIEW_META.fila;
-  const CurrentIcon = current.icon;
-  const options: ComboboxOption[] = Object.entries(VIEW_META).map(([k, m]) => ({
-    value: k,
-    label: m.label,
-    hint: m.desc,
-  }));
-  return (
-    <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-gradient-to-br from-card via-card to-card/60 p-4 shadow-sm">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl"
-      />
-      <div className="relative flex flex-wrap items-center gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary">
-          <CurrentIcon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-foreground">{current.label}</h2>
-          <p className="truncate text-xs text-muted-foreground">{current.desc}</p>
-        </div>
-        <div className="w-full sm:w-64">
-          <Combobox
-            options={options}
-            value={value}
-            onChange={(v) => onChange((v as string) ?? "fila")}
-            placeholder="Selecionar visão"
-            searchPlaceholder="Buscar visão…"
-            className="h-9"
-          />
-        </div>
-      </div>
-    </div>
   );
 }
 

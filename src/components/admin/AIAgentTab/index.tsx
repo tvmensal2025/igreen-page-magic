@@ -10,6 +10,7 @@ import { AIDecisionsPanel } from "./AIDecisionsPanel";
 import { SlotsPanel } from "./SlotsPanel";
 import { BotTelemetryStrip } from "./BotTelemetryStrip";
 import BotHealthDashboard from "@/components/admin/saude/BotHealthDashboard";
+import { MonthlyCostsCard } from "@/components/whatsapp/MonthlyCostsCard";
 const AdminKnowledge = lazy(() => import("@/pages/AdminKnowledge"));
 
 type SubTab = "atendimentos" | "agente" | "decisoes" | "desempenho" | "conhecimento";
@@ -246,7 +247,8 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
           </div>
         )}
         {sub === "desempenho" && (
-          <div className="h-full overflow-y-auto pr-1">
+          <div className="h-full overflow-y-auto pr-1 space-y-4">
+            <MonthlyCostsCard userId={userId} className="rounded-xl p-3 space-y-3" />
             <BotHealthDashboard userId={userId} />
           </div>
         )}

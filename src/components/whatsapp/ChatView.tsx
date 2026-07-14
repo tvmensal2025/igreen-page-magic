@@ -22,6 +22,11 @@ import { AttendanceStatusBar } from "./AttendanceStatusBar";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
+import {
+  LeadOriginEditorDialog,
+  type LeadOriginSaved,
+} from "@/components/leads/LeadOriginEditorDialog";
+import { CustomerTagsEditor } from "@/components/leads/CustomerTagsEditor";
 
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
@@ -104,6 +109,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [togglingBot, setTogglingBot] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
+  const [originOpen, setOriginOpen] = useState(false);
+  const [partnerId, setPartnerId] = useState<string | null>(null);
+  const [campaignId, setCampaignId] = useState<string | null>(null);
+  const [campaignName, setCampaignName] = useState<string | null>(null);
   
 
   const [closingCapture, setClosingCapture] = useState(false);
@@ -336,8 +345,19 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       setCustomerId(null);
       setCustomerPhone(null);
       setPartnerName(null);
+      setPartnerId(null);
+      setCampaignId(null);
+      setCampaignName(null);
+      setOriginOpen(false);
       return;
     }
+
+    // Evita chips/dialog do lead anterior enquanto o fetch do novo chat roda
+    setPartnerName(null);
+    setPartnerId(null);
+    setCampaignId(null);
+    setCampaignName(null);
+    setOriginOpen(false);
 
     const realJid =
       (chat.sendTargetJid && chat.sendTargetJid.endsWith("@s.whatsapp.net"))
@@ -352,6 +372,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       setCustomerId(null);
       setCustomerPhone(null);
       setPartnerName(null);
+      setPartnerId(null);
+      setCampaignId(null);
+      setCampaignName(null);
       return;
     }
 
@@ -361,6 +384,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       setCustomerId(null);
       setCustomerPhone(null);
       setPartnerName(null);
+      setPartnerId(null);
+      setCampaignId(null);
+      setCampaignName(null);
       return;
     }
     // BR phone pode estar gravado com ou sem DDI 55 — gera candidatos
@@ -382,7 +408,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       // .maybeSingle() falhava ou trazia o shell antigo vazio → ficha 2/18.
       const { data: existingRows } = await supabase
         .from("customers")
-        .select("id, phone_whatsapp, created_at, referral_partner_id, referral_partners(nome)")
+        .select("id, phone_whatsapp, created_at, referral_partner_id, source_campaign_id, referral_partners(nome), facebook_campaigns:source_campaign_id(name)")
         .eq("consultant_id", consultantId)
         .in("phone_whatsapp", candidatesArr)
         .order("created_at", { ascending: false })
@@ -392,7 +418,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         id: string;
         phone_whatsapp?: string | null;
         referral_partner_id?: string | null;
-        referral_partners?: { nome?: string | null } | { nome?: string | null }[] | null;
+        source_campaign_id?: string | null;
+        referral_partners?: PartnerJoin;
+        facebook_campaigns?: { name?: string | null } | { name?: string | null }[] | null;
       }> | null)?.[0];
       if (existing?.id) {
         setIsCustomer(true);
@@ -402,6 +430,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         // pra Evolution e o envio manual falhava.
         setCustomerPhone(existing.phone_whatsapp ?? insertPhone);
         setPartnerName(readPartnerName(existing));
+        setPartnerId(existing.referral_partner_id ?? null);
+        setCampaignId(existing.source_campaign_id ?? null);
+        const campRel = existing.facebook_campaigns;
+        const campNome = Array.isArray(campRel) ? campRel[0]?.name : campRel?.name;
+        setCampaignName(campNome?.trim() || null);
         return;
       }
       // Fallback fuzzy: últimos 9 dígitos (DDD + número), evita duplicar
@@ -410,7 +443,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       if (tail.length === 9) {
         const { data: fuzzy } = await supabase
           .from("customers")
-          .select("id, phone_whatsapp, created_at, referral_partner_id, referral_partners(nome)")
+          .select("id, phone_whatsapp, created_at, referral_partner_id, source_campaign_id, referral_partners(nome), facebook_campaigns:source_campaign_id(name)")
           .eq("consultant_id", consultantId)
           .like("phone_whatsapp", `%${tail}`)
           .order("created_at", { ascending: false })
@@ -420,13 +453,20 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           id: string;
           phone_whatsapp?: string | null;
           referral_partner_id?: string | null;
-          referral_partners?: { nome?: string | null } | { nome?: string | null }[] | null;
+          source_campaign_id?: string | null;
+          referral_partners?: PartnerJoin;
+          facebook_campaigns?: { name?: string | null } | { name?: string | null }[] | null;
         }> | null)?.[0];
         if (found?.id) {
           setIsCustomer(true);
           setCustomerId(found.id);
           setCustomerPhone(found.phone_whatsapp ?? insertPhone);
           setPartnerName(readPartnerName(found));
+          setPartnerId(found.referral_partner_id ?? null);
+          setCampaignId(found.source_campaign_id ?? null);
+          const campRel = found.facebook_campaigns;
+          const campNome = Array.isArray(campRel) ? campRel[0]?.name : campRel?.name;
+          setCampaignName(campNome?.trim() || null);
           return;
         }
       }
@@ -457,15 +497,28 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         setCustomerId(created.id);
         setCustomerPhone(insertPhone);
         setPartnerName(null);
+        setPartnerId(null);
+        setCampaignId(null);
+        setCampaignName(null);
       } else if (error) {
         logger.error("Falha ao auto-criar cliente para chat:", error);
         setIsCustomer(false);
         setCustomerId(null);
         setPartnerName(null);
+        setPartnerId(null);
+        setCampaignId(null);
+        setCampaignName(null);
       }
     })();
     return () => { cancelled = true; };
   }, [chat, consultantId]);
+
+  const handleOriginSaved = useCallback((saved: LeadOriginSaved) => {
+    setPartnerId(saved.referral_partner_id);
+    setPartnerName(saved.partner_name);
+    setCampaignId(saved.source_campaign_id);
+    setCampaignName(saved.campaign_name);
+  }, []);
 
   const handleCustomerAdded = useCallback((newCustomerId?: string) => {
     setIsCustomer(true);
@@ -619,13 +672,35 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           <p className="text-sm font-semibold text-foreground truncate sensitive-name leading-tight flex items-center gap-1.5">
             <span className="truncate">{chat.name}</span>
             {partnerName && (
-              <span
-                className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-600/35"
-                title={`Indicação de ${partnerName} — acompanha as etapas do cadastro`}
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-950 border border-amber-600/35 hover:bg-amber-200/80"
+                title={`Indicação de ${partnerName} — clicar para editar origem`}
+                onClick={() => setOriginOpen(true)}
               >
                 <Handshake className="h-3 w-3 text-amber-800" />
                 <span className="text-[9px] font-bold uppercase tracking-wide hidden sm:inline">Indicação</span>
-              </span>
+              </button>
+            )}
+            {!partnerName && campaignName && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md bg-sky-100 text-sky-950 border border-sky-600/35 hover:bg-sky-200/80"
+                title={`Campanha: ${campaignName} — clicar para editar origem`}
+                onClick={() => setOriginOpen(true)}
+              >
+                <span className="text-[9px] font-bold uppercase tracking-wide">Campanha</span>
+              </button>
+            )}
+            {isCustomer && customerId && !partnerName && !campaignName && !captureClosedAt && (
+              <button
+                type="button"
+                className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md border border-border text-muted-foreground hover:bg-muted text-[9px] font-medium"
+                title="Definir origem (indicação ou campanha)"
+                onClick={() => setOriginOpen(true)}
+              >
+                + Origem
+              </button>
             )}
           </p>
           <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1 truncate">
@@ -633,6 +708,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             {phoneNumber}
             {partnerName && (
               <span className="text-amber-900 font-semibold truncate">· {partnerName}</span>
+            )}
+            {!partnerName && campaignName && (
+              <span className="text-sky-900 font-semibold truncate">· {campaignName}</span>
             )}
           </p>
         </div>
@@ -711,8 +789,24 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                   </DropdownMenuItem>
                 )}
                 {partnerName && (
-                  <DropdownMenuItem disabled className="text-xs opacity-100 text-amber-900">
+                  <DropdownMenuItem
+                    className="text-xs text-amber-900"
+                    onClick={() => setOriginOpen(true)}
+                  >
                     <Handshake className="h-4 w-4 mr-2" /> Indicação: {partnerName}
+                  </DropdownMenuItem>
+                )}
+                {!partnerName && campaignName && (
+                  <DropdownMenuItem
+                    className="text-xs text-sky-900"
+                    onClick={() => setOriginOpen(true)}
+                  >
+                    Campanha: {campaignName}
+                  </DropdownMenuItem>
+                )}
+                {isCustomer && customerId && !partnerName && !campaignName && !captureClosedAt && (
+                  <DropdownMenuItem className="text-xs" onClick={() => setOriginOpen(true)}>
+                    Definir origem
                   </DropdownMenuItem>
                 )}
                 {kanbanStages.length > 0 && (
@@ -834,19 +928,39 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         )}
       </div>
 
-      {partnerName && (
-        <div
-          className="flex items-center gap-1.5 px-3 lg:px-3.5 py-1.5 border-b border-amber-600/30 bg-amber-100 text-amber-950 shrink-0"
-          title={`${partnerName} acompanha as etapas do cadastro deste lead (não recebe o chat completo)`}
-          role="status"
+      {(partnerName || campaignName) && (
+        <button
+          type="button"
+          className={`flex items-center gap-1.5 px-3 lg:px-3.5 py-1.5 border-b shrink-0 text-left w-full ${
+            partnerName
+              ? "border-amber-600/30 bg-amber-100 text-amber-950 hover:bg-amber-200/70"
+              : "border-sky-600/30 bg-sky-100 text-sky-950 hover:bg-sky-200/70"
+          }`}
+          title={
+            partnerName
+              ? `${partnerName} — clicar para editar origem`
+              : `${campaignName} — clicar para editar origem`
+          }
+          onClick={() => setOriginOpen(true)}
         >
-          <Handshake className="h-3.5 w-3.5 shrink-0 text-amber-800" />
-          <span className="text-[12px] font-semibold truncate text-amber-950">
-            Indicação de {partnerName}
+          {partnerName ? (
+            <Handshake className="h-3.5 w-3.5 shrink-0 text-amber-800" />
+          ) : null}
+          <span className="text-[12px] font-semibold truncate">
+            {partnerName ? `Indicação de ${partnerName}` : `Campanha: ${campaignName}`}
           </span>
-          <span className="text-[11px] font-medium text-amber-900/80 hidden sm:inline shrink-0">
-            · acompanha as etapas do cadastro
+          <span className="text-[11px] font-medium opacity-80 hidden sm:inline shrink-0">
+            · editar origem
           </span>
+        </button>
+      )}
+
+      {isCustomer && customerId && (
+        <div className="px-3 lg:px-3.5 py-1.5 border-b border-border/50 bg-muted/20 shrink-0">
+          <CustomerTagsEditor
+            consultantId={consultantId}
+            phone={customerPhone || phoneNumber}
+          />
         </div>
       )}
 
@@ -903,6 +1017,21 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           customerId={customerId}
           consultantId={consultantId}
           onClosed={handleCaptureClosed}
+        />
+      )}
+
+      {customerId && consultantId && (
+        <LeadOriginEditorDialog
+          open={originOpen}
+          onOpenChange={setOriginOpen}
+          customerId={customerId}
+          consultantId={consultantId}
+          captureClosed={!!captureClosedAt}
+          initialPartnerId={partnerId}
+          initialCampaignId={campaignId}
+          initialPartnerName={partnerName}
+          initialCampaignName={campaignName}
+          onSaved={handleOriginSaved}
         />
       )}
 

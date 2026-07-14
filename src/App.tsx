@@ -38,6 +38,12 @@ const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
+const RedirectConexaoGreen = lazy(() =>
+  import("./pages/ConexaoCanonicalRedirects").then((m) => ({ default: m.RedirectConexaoGreen })),
+);
+const RedirectConexaoExpansao = lazy(() =>
+  import("./pages/ConexaoCanonicalRedirects").then((m) => ({ default: m.RedirectConexaoExpansao })),
+);
 const ProposalPublicPage = lazy(() => import("./pages/ProposalPublicPage"));
 const SolarDesignPage = lazy(() => import("./features/solar-3d/pages/SolarDesignPage"));
 const SolarDesignDetailPage = lazy(() => import("./features/solar-3d/pages/SolarDesignDetailPage"));
@@ -140,8 +146,9 @@ const App = () => (
               <Route path="/conexao-livre/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-club/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-club-pj/:licenca" element={<ConexaoProductPage />} />
-              <Route path="/conexao-green/:licenca" element={<ConexaoProductPage />} />
-              <Route path="/conexao-expansao/:licenca" element={<ConexaoProductPage />} />
+              {/* Green/Expansão canônicos no menu: /:licenca e /licenciado/:licenca */}
+              <Route path="/conexao-green/:licenca" element={<RedirectConexaoGreen />} />
+              <Route path="/conexao-expansao/:licenca" element={<RedirectConexaoExpansao />} />
 
               {/* Página pública de orçamento/proposta */}
               <Route path="/proposta/:token" element={<ProposalPublicPage />} />

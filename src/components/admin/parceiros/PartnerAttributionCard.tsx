@@ -50,7 +50,7 @@ export function PartnerAttributionCard({ analytics }: Props) {
 
           <div className="rounded-xl border border-accent/20 bg-gradient-to-br from-accent/[0.06] to-transparent p-3">
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="h-8 w-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center ring-1 ring-accent/20">
+              <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
                 <Tag className="h-4 w-4" />
               </div>
               <div className="min-w-0">

@@ -78,9 +78,84 @@ export function isValidWhatsAppPhone(phone: string | null | undefined): boolean 
   return digits.length >= 10;
 }
 
+/** Chave estável do WhatsApp (DDI 55 + dígitos) para deduplicar cadastros. */
+export function retentionPhoneKey(phone: string | null | undefined): string | null {
+  if (!isValidWhatsAppPhone(phone)) return null;
+  let digits = phone!.replace(/\D/g, "").replace(/^0+/, "");
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  if (digits.length < 12) return null;
+  return digits;
+}
+
+function retentionSentKey(consultantId: string, phoneKey: string, day: string) {
+  return `igreen:retention-wa-sent:${consultantId}:${day}:${phoneKey}`;
+}
+
+function todayIsoLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Já abriu WhatsApp de retenção/aniversário para este número hoje? */
+export function wasRetentionWhatsAppOpenedToday(
+  consultantId: string | null | undefined,
+  phone: string | null | undefined,
+): boolean {
+  if (!consultantId || typeof localStorage === "undefined") return false;
+  const key = retentionPhoneKey(phone);
+  if (!key) return false;
+  try {
+    return localStorage.getItem(retentionSentKey(consultantId, key, todayIsoLocal())) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markRetentionWhatsAppOpenedToday(
+  consultantId: string | null | undefined,
+  phone: string | null | undefined,
+): void {
+  if (!consultantId || typeof localStorage === "undefined") return;
+  const key = retentionPhoneKey(phone);
+  if (!key) return;
+  try {
+    localStorage.setItem(retentionSentKey(consultantId, key, todayIsoLocal()), "1");
+  } catch {
+    /* ignore */
+  }
+}
+
 export function openBirthdayWhatsApp(phone: string, message: string): boolean {
   if (!isValidWhatsAppPhone(phone)) return false;
-  const digits = phone.replace(/\D/g, "");
+  const digits = retentionPhoneKey(phone) || phone.replace(/\D/g, "");
   window.open(`https://wa.me/${digits}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   return true;
+}
+
+const preferredKey = (consultantId: string) => `igreen:birthday-msg:${consultantId}`;
+
+/** Mensagem preferida do consultor (local). Mantém {{nome}} para personalizar no envio. */
+export function getPreferredBirthdayTemplate(consultantId?: string | null): string {
+  if (!consultantId || typeof localStorage === "undefined") {
+    return BIRTHDAY_MESSAGE_TEMPLATES[0];
+  }
+  try {
+    const raw = localStorage.getItem(preferredKey(consultantId));
+    if (raw && raw.trim().length > 0) return raw;
+  } catch {
+    /* ignore */
+  }
+  return BIRTHDAY_MESSAGE_TEMPLATES[0];
+}
+
+export function setPreferredBirthdayTemplate(consultantId: string, template: string): void {
+  if (!consultantId || typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(preferredKey(consultantId), template);
+  } catch {
+    /* ignore */
+  }
 }

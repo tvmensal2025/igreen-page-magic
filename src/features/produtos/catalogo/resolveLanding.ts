@@ -4,10 +4,11 @@
 // Durante a migração, a coluna products.landing_content pode estar vazia
 // (o seed SQL não duplica o conteúdo extenso). Este resolver garante que a
 // landing sempre tenha conteúdo: usa o do banco quando presente, senão cai
-// no catálogo estático src/data/conexaoProducts.ts (fonte legada).
+// no catálogo estático src/data/conexaoProducts.ts (fonte legada) — somente
+// se o produto existir no banco e estiver ativo.
 //
-// Quando o conteúdo for migrado para o banco (scripts/seed-products), o
-// fallback deixa de ser acionado sem precisar tocar na ConexaoProductPage.
+// Produto inativo (is_active=false) ou ausente (ex.: RLS) NÃO revive o
+// fallback estático — a LP deve retornar 404.
 // =============================================================================
 
 import { conexaoProducts } from "@/data/conexaoProducts";
@@ -37,20 +38,20 @@ function hasContent(content: ProductLandingContent | undefined): boolean {
 /**
  * Resolve o conteúdo de landing por slug.
  * @param product Produto vindo do banco (pode ter landingContent vazio).
- * @param slug Slug usado para localizar o fallback estático.
+ * @param slug Slug usado para localizar o fallback estático de conteúdo.
  */
 export function resolveLanding(
   product: Product | null | undefined,
   slug: string,
 ): ResolvedLanding | null {
-  const dbContent = product?.landingContent;
+  // Sem produto no banco (RLS / inexistente) ou inativo → não servir LP.
+  if (!product || product.isActive === false) return null;
+
+  const dbContent = product.landingContent;
   const fallback = conexaoProducts.find((p) => p.slug === slug);
 
-  // Sem produto no banco e sem fallback estático → produto desconhecido.
-  if (!product && !fallback) return null;
-
-  const name = product?.name ?? fallback?.name ?? "";
-  const brandName = product?.brandName ?? fallback?.brandName ?? "iGreen Energy";
+  const name = product.name || fallback?.name || "";
+  const brandName = product.brandName || fallback?.brandName || "iGreen Energy";
 
   if (hasContent(dbContent)) {
     return {
@@ -68,7 +69,7 @@ export function resolveLanding(
     };
   }
 
-  // Fallback estático (conteúdo ainda não migrado para o banco).
+  // Conteúdo ainda não migrado: usa estático só para campos, produto ativo no DB.
   if (!fallback) return null;
   return {
     name,

@@ -23,6 +23,12 @@
     "analyzer": {
       "command": "bash",
       "args": ["${workspaceFolder}/scripts/mcp-analyzer.sh"]
+    },
+    "velip": {
+      "url": "https://vox20.velip.com.br/mcpserver/velip",
+      "headers": {
+        "Authorization": "Bearer SEU_TOKEN_VELIP_30_CHARS"
+      }
     }
   }
 }

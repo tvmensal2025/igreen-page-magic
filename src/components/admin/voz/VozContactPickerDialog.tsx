@@ -25,6 +25,8 @@ export interface VozCustomer {
   devolutiva?: string | null;
   registered_by_name?: string | null;
   last_inbound_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 interface StuckLead {

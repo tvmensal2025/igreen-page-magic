@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { MessageSquare, Clock, Send, TrendingUp, Calendar, Users, Sparkles, CalendarClock } from "lucide-react";
-import { MonthlyCostsCard } from "@/components/whatsapp/MonthlyCostsCard";
+import { AttendanceRatingsCard } from "@/components/whatsapp/AttendanceRatingsCard";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -271,7 +271,7 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
         <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Taxa de Resposta" value={`${kpis?.responseRate ?? 0}%`} subtitle="Clientes respondidos" />
       </div>
 
-      <MonthlyCostsCard userId={consultantId} className="rounded-xl p-3 space-y-3" />
+      <AttendanceRatingsCard consultantId={consultantId} />
 
       {/* Row 2: Funnel + Area Chart */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -376,7 +376,7 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
               {upcomingCombined.map((item) => (
                 <div key={item.id} className="flex items-start gap-2 p-1.5 rounded-lg bg-muted/20 min-w-0">
                   <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${item.kind === "auto" ? "bg-accent/10" : "bg-primary/10"}`}>
-                    {item.kind === "auto" ? <Sparkles className="w-3.5 h-3.5 text-accent" /> : <Clock className="w-3.5 h-3.5 text-primary" />}
+                    {item.kind === "auto" ? <Sparkles className="w-3.5 h-3.5 text-primary" /> : <Clock className="w-3.5 h-3.5 text-primary" />}
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-medium text-foreground truncate">{item.name || "Cliente"}</p>
@@ -384,7 +384,7 @@ export function WhatsAppDashboard({ consultantId }: WhatsAppDashboardProps) {
                     <p className="text-[10px] text-primary mt-0.5">
                       {format(parseISO(item.at), "dd/MM 'às' HH:mm", { locale: ptBR })}
                       <span className="text-muted-foreground/50 mx-1">•</span>
-                      <span className={item.kind === "auto" ? "text-accent" : "text-muted-foreground"}>{item.label}</span>
+                      <span className={item.kind === "auto" ? "text-primary" : "text-muted-foreground"}>{item.label}</span>
                     </p>
                   </div>
                 </div>

@@ -53,23 +53,40 @@ export function MaterialCard({ item, consultantId }: Props) {
 
   return (
     <div className="rounded-lg overflow-hidden border border-border bg-card flex flex-col">
-      <div className="relative bg-muted aspect-video">
+      <div className="relative bg-muted aspect-video overflow-hidden">
         {item.type === "video" ? (
           playing ? (
-            <video src={item.url} controls autoPlay className="w-full h-full object-contain bg-black" />
+            <video src={item.url} controls autoPlay playsInline className="w-full h-full object-contain bg-black" />
           ) : (
             <button
               type="button"
               onClick={() => setPlaying(true)}
-              className="w-full h-full flex items-center justify-center bg-black/80 hover:bg-black/70 transition-colors"
+              className="group relative block w-full h-full"
+              aria-label={`Reproduzir ${item.title}`}
             >
-              <div className="w-12 h-12 rounded-full bg-primary/90 flex items-center justify-center">
-                <Play className="w-5 h-5 text-primary-foreground ml-0.5" fill="currentColor" />
-              </div>
+              {/* Frame do vídeo como capa (#t=0.1 força poster em mais browsers) */}
+              <video
+                src={`${item.url}#t=0.1`}
+                preload="metadata"
+                muted
+                playsInline
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <span className="absolute inset-0 bg-black/25 transition-colors group-hover:bg-black/40" />
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/90 shadow-lg transition group-hover:scale-105">
+                  <Play className="ml-0.5 h-5 w-5 text-primary-foreground" fill="currentColor" />
+                </span>
+              </span>
             </button>
           )
         ) : (
-          <img src={item.url} alt={item.title} loading="lazy" className="w-full h-full object-contain" />
+          <img
+            src={item.url}
+            alt={item.title}
+            loading="lazy"
+            className="h-full w-full object-cover"
+          />
         )}
       </div>
       <div className="p-2.5 space-y-2 flex-1 flex flex-col">

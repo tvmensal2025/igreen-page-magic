@@ -181,21 +181,22 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
           Use quando conversar com alguém que quer trabalhar com você, não só ser cliente.
         </Callout>
 
-        <h3 className="text-xl font-bold mt-6" id="cadastro">3.3 Cadastro de cliente — <code>/cadastro/nome</code></h3>
-        <p>Formulário completo para o cliente virar assinante. Pede dados pessoais, endereço e a conta de luz. Depois de enviar, cai no funil da consultora.</p>
+        <h3 className="text-xl font-bold mt-6" id="cadastro">3.3 Cadastro Rápido — <code>/cadastro/nome</code></h3>
+        <p>Página enxuta com <strong>QR Code + WhatsApp</strong> para o lead falar com você em ~3 minutos. Não é o formulário multiproduto completo — serve para captura rápida no ponto de venda ou panfleto.</p>
 
         <h3 className="text-xl font-bold mt-6" id="conexao">3.4 Páginas Conexão (produtos)</h3>
-        <p>São 9 páginas de produto — cada uma vende um serviço diferente da iGreen. Todas têm o mesmo formato: hero, benefícios, preço, botão WhatsApp.</p>
+        <p>No menu <strong>Meus Links</strong> há 10 entradas: Green (página do cliente), Expansão (página do licenciado), Cadastro Rápido e 7 LPs <code>/conexao-*</code> (Telecom, Seguros, Solar, Placas, Livre, Club, Club PJ). Cada LP de produto tem o mesmo formato: hero, benefícios, preço, botão WhatsApp.</p>
         <ButtonRow items={[
+          { name: "Conexão Green", desc: "Landing do cliente — desconto na conta de luz (/slug)." },
+          { name: "Conexão Expansão", desc: "Landing do licenciado — oportunidade e carreira (/licenciado/slug)." },
+          { name: "Cadastro Rápido", desc: "QR + WhatsApp para captura rápida (/cadastro/slug)." },
           { name: "Conexão Telecom", desc: "Chip de celular com internet ilimitada." },
-          { name: "Conexão Seguros", desc: "Seguros diversos (auto, vida)." },
+          { name: "Conexão Seguros", desc: "Proteção veicular acessível." },
           { name: "Conexão Solar", desc: "Energia solar por assinatura." },
           { name: "Conexão Placas", desc: "Instalação de placas solares." },
           { name: "Conexão Livre", desc: "Energia livre por assinatura, sem obra." },
           { name: "Conexão Club", desc: "Clube de descontos pessoa física." },
           { name: "Conexão Club PJ", desc: "Clube de descontos pessoa jurídica." },
-          { name: "Conexão Green", desc: "Assinatura verde combinada." },
-          { name: "Conexão Expansão", desc: "Programa de expansão / franquia." },
         ]} />
 
         <h3 className="text-xl font-bold mt-6" id="proposta">3.5 Proposta pública — <code>/proposta/token</code></h3>

@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getTrackingMeta } from "./useTrackEvent";
 
-export function useTrackView(consultantId: string | undefined, pageType: "client" | "licenciada" | "cadastro") {
+/** pageType: "client" | "licenciada" | "cadastro" | slug do produto (ex.: "conexao-telecom") */
+export function useTrackView(consultantId: string | undefined, pageType: string) {
   useEffect(() => {
     if (!consultantId) return;
     const meta = getTrackingMeta();

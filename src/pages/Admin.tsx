@@ -320,7 +320,7 @@ const AdminContent = () => {
     "dashboard": { title: "Dashboard", subtitle: "Resumo operacional do dia" },
     "crm": { title: "Clientes interessados", subtitle: "Funil de clientes interessados do WhatsApp até finalizar cadastro" },
     "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
-    "conversao": { title: "Conversão", subtitle: "Análise de funil e gargalos" },
+    "conversao": { title: "Conversão", subtitle: "Fila priorizada para reativar e fechar" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
     "financeiro": { title: "Financeiro", subtitle: "Boletos, vencimentos e recebimentos da sua rede iGreen" },
     "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, pipeline, ganhos e faturas Green" },

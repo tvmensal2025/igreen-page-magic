@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useConsultant } from "@/hooks/useConsultant";
 import { useTrackView } from "@/hooks/useTrackView";
+import { useInstancePhone } from "@/hooks/useInstancePhone";
 import LicHeroSection from "@/components/licenciada/LicHeroSection";
 import LicAboutSection from "@/components/licenciada/LicAboutSection";
 import LicWhySection from "@/components/licenciada/LicWhySection";
@@ -14,6 +15,7 @@ import LicConexaoClub from "@/components/licenciada/LicConexaoClub";
 import LicConexaoClubPJ from "@/components/licenciada/LicConexaoClubPJ";
 import LicConexaoExpansao from "@/components/licenciada/LicConexaoExpansao";
 import LicConexaoTelecom from "@/components/licenciada/LicConexaoTelecom";
+import LicConexaoSeguros from "@/components/licenciada/LicConexaoSeguros";
 import LicCareerPlan from "@/components/licenciada/LicCareerPlan";
 import LicLicenseSection from "@/components/licenciada/LicLicenseSection";
 import LicConsultantSection from "@/components/licenciada/LicConsultantSection";
@@ -31,6 +33,7 @@ const LicenciadaPage = () => {
   const { licenca } = useParams<{ licenca: string }>();
   const { data: consultant, isLoading } = useConsultant(licenca || "");
   useTrackView(consultant?.id, "licenciada");
+  const { data: instancePhone } = useInstancePhone(consultant?.id);
   useEffect(() => { captureLeadSource(); }, []);
 
   if (isLoading) return <LoadingScreen />;
@@ -44,7 +47,16 @@ const LicenciadaPage = () => {
     );
   }
 
-  const whatsappUrl = `https://wa.me/${consultant.phone}?text=${encodeURIComponent("Olá, gostaria de mais informações sobre a oportunidade de Licenciado iGreen Energy")}`;
+  const rawPhone = consultant.phone?.replace(/\D/g, "") || "";
+  const normalizedPhone = rawPhone
+    ? rawPhone.startsWith("55")
+      ? rawPhone
+      : `55${rawPhone}`
+    : "";
+  const contactPhone = instancePhone || normalizedPhone;
+  const whatsappUrl = contactPhone
+    ? `https://wa.me/${contactPhone}?text=${encodeURIComponent("Olá, gostaria de mais informações sobre a oportunidade de Licenciado iGreen Energy")}`
+    : "#";
 
   return (
     <>
@@ -75,13 +87,14 @@ const LicenciadaPage = () => {
           whatsappUrl={whatsappUrl}
           consultantId={consultant.id}
           headline="Você já viu o potencial. Agora é a hora de agir."
-          subtext="Cada dia que passa é dinheiro que você deixa na mesa. Entre agora e comece a faturar com 8 produtos diferentes."
+          subtext="Cada dia que passa é dinheiro que você deixa na mesa. Entre agora e comece a faturar com 9 produtos diferentes."
           emoji="💰"
         />
         <LicConexaoClub />
         <LicConexaoClubPJ />
         <LicConexaoExpansao />
         <LicConexaoTelecom />
+        <LicConexaoSeguros />
         <LicCareerPlan />
         <LicLicenseSection />
         <LicConsultantSection

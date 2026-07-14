@@ -35,6 +35,15 @@ interface FullTemplate {
   is_public: boolean;
 }
 
+interface DefaultMedia {
+  stage: string;
+  message_type: string;
+  message_text: string | null;
+  media_url: string | null;
+  image_url: string | null;
+  is_active: boolean;
+}
+
 interface Props {
   consultantId: string;
   open: boolean;
@@ -94,12 +103,14 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   const [saving, setSaving] = useState(false);
 
   const [allTemplates, setAllTemplates] = useState<FullTemplate[]>([]);
+  /** Padrão institucional (pos_venda_default_media) — já cobre o envio automático. */
+  const [defaultsByStage, setDefaultsByStage] = useState<Record<string, DefaultMedia>>({});
 
   useEffect(() => {
     if (!open) return;
     (async () => {
       setLoading(true);
-      const [cfgRes, pubRes, mineRes, tplRes] = await Promise.all([
+      const [cfgRes, pubRes, mineRes, tplRes, defRes] = await Promise.all([
         supabase
           .from("consultant_pos_venda_media" as any)
           .select("stage,text_content,audio_media_id,image_media_id,video_media_id,use_default,send_order")
@@ -123,7 +134,17 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           .select("id,name,content,media_type,media_url,image_url,is_public,consultant_id")
           .or(`is_public.eq.true,consultant_id.eq.${consultantId}`)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("pos_venda_default_media")
+          .select("stage,message_type,message_text,media_url,image_url,is_active")
+          .eq("is_active", true),
       ]);
+
+      const defMap: Record<string, DefaultMedia> = {};
+      for (const d of (defRes.data || []) as DefaultMedia[]) {
+        if (d?.stage) defMap[d.stage] = d;
+      }
+      setDefaultsByStage(defMap);
 
       const next: any = {};
       POS_VENDA_STAGES.forEach((s) => (next[s.key] = { ...EMPTY }));
@@ -168,13 +189,28 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
   }, [open, consultantId]);
 
 
+  const stageIsReady = (stageKey: PosVendaStage, c: StageConfig) => {
+    if (c.text_content || c.audio_media_id || c.image_media_id || c.video_media_id) return true;
+    // Sem personalização: cobre pelo padrão institucional (usado no envio automático)
+    if (c.use_default === false) return false;
+    const d = defaultsByStage[stageKey];
+    return !!(d && d.is_active !== false && (d.message_text || d.media_url || d.image_url));
+  };
+
   const completedCount = useMemo(
+    () => POS_VENDA_STAGES.filter((s) => stageIsReady(s.key, configs[s.key])).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [configs, defaultsByStage],
+  );
+
+  const usingInstitutionalDefaults = useMemo(
     () =>
-      POS_VENDA_STAGES.filter((s) => {
+      POS_VENDA_STAGES.every((s) => {
         const c = configs[s.key];
-        return !c.use_default || c.text_content || c.audio_media_id || c.image_media_id || c.video_media_id;
-      }).length,
-    [configs],
+        const hasPersonal = !!(c.text_content || c.audio_media_id || c.image_media_id || c.video_media_id) && !c.use_default;
+        return !hasPersonal && !!defaultsByStage[s.key];
+      }),
+    [configs, defaultsByStage],
   );
 
   function updateStage(stage: PosVendaStage, patch: Partial<StageConfig>) {
@@ -396,13 +432,18 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             </Popover>
           </DialogTitle>
           <DialogDescription className="mt-1">
-            Personalize as mensagens que seus clientes receberão automaticamente após a aprovação iGreen.
+            {usingInstitutionalDefaults
+              ? "Padrão institucional iGreen já está ativo nos 6 estágios — o envio automático já funciona. Personalize só se quiser trocar as mensagens."
+              : "Personalize as mensagens que seus clientes receberão automaticamente após a aprovação iGreen."}
           </DialogDescription>
 
 
           <div className="space-y-1.5 mt-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>{completedCount} de {POS_VENDA_STAGES.length} estágios configurados</span>
+              <span>
+                {completedCount} de {POS_VENDA_STAGES.length} estágios configurados
+                {usingInstitutionalDefaults ? " · padrão iGreen" : ""}
+              </span>
               <span>Passo {stageIndex + 1}/{POS_VENDA_STAGES.length}</span>
             </div>
             <Progress value={progress} className="h-1.5" />
@@ -425,13 +466,7 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                 <div className="px-6 pt-4">
                   <TabsList className="grid grid-cols-6 w-full h-9">
                     {POS_VENDA_STAGES.map((s) => {
-                      const c = configs[s.key];
-                      const done =
-                        !c.use_default ||
-                        c.text_content ||
-                        c.audio_media_id ||
-                        c.image_media_id ||
-                        c.video_media_id;
+                      const done = stageIsReady(s.key, configs[s.key]);
                       return (
                         <TabsTrigger key={s.key} value={s.key} className="relative text-xs">
                           {s.label}
@@ -446,6 +481,11 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                   <Card className="p-3 bg-muted/30 border-border/50">
                     <h3 className="font-semibold text-sm">{stageMeta.label}</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">{stageMeta.description}</p>
+                    {stageCfg.use_default && defaultsByStage[activeStage] && (
+                      <p className="text-[11px] text-primary mt-2">
+                        Usando padrão institucional. Edite abaixo só se quiser personalizar este estágio.
+                      </p>
+                    )}
                   </Card>
 
                   {/* Carregar template completo */}
@@ -539,11 +579,20 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                       Texto
                     </h4>
                     <Textarea
-                      placeholder="Mensagem (deixe vazio para usar o padrão)"
+                      placeholder={
+                        defaultsByStage[activeStage]?.message_text
+                          || "Mensagem (deixe vazio para usar o padrão)"
+                      }
                       value={stageCfg.text_content}
                       onChange={(e) => updateStage(activeStage, { text_content: e.target.value })}
                       rows={3}
                     />
+                    {!stageCfg.text_content && defaultsByStage[activeStage]?.message_text && (
+                      <p className="text-[11px] text-muted-foreground mt-1 italic">
+                        Preview do padrão: {defaultsByStage[activeStage]!.message_text!.slice(0, 120)}
+                        {(defaultsByStage[activeStage]!.message_text!.length > 120) ? "…" : ""}
+                      </p>
+                    )}
                   </div>
 
                   <MediaPicker
@@ -584,22 +633,30 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
             {/* COLUNA DIREITA: preview celular */}
             <div className="hidden lg:flex flex-col items-center justify-start bg-gradient-to-b from-muted/40 to-muted/10 p-4 overflow-hidden">
               <p className="text-xs text-muted-foreground mb-2">Preview no WhatsApp</p>
-              <PhonePreview cfg={stageCfg} mediaById={mediaById} defaultsByKind={defaultsByKind} stageLabel={stageMeta.label} />
+              <PhonePreview
+                cfg={stageCfg}
+                mediaById={mediaById}
+                defaultsByKind={defaultsByKind}
+                institutionalDefault={defaultsByStage[activeStage] || null}
+                stageLabel={stageMeta.label}
+              />
             </div>
           </div>
         )}
 
         <div className="flex items-center justify-between px-6 py-3 border-t bg-background">
           <Badge variant="outline" className="text-xs">
-            Pode editar depois nas configurações
+            {usingInstitutionalDefaults
+              ? "Padrão iGreen ativo — personalizar é opcional"
+              : "Pode editar depois nas configurações"}
           </Badge>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Pular
+              {usingInstitutionalDefaults ? "Fechar" : "Pular"}
             </Button>
             <Button onClick={saveAll} disabled={saving} className="gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-              Salvar e continuar
+              {usingInstitutionalDefaults ? "Salvar personalização" : "Salvar e continuar"}
             </Button>
           </div>
         </div>
@@ -757,23 +814,42 @@ function PhonePreview({
   cfg,
   mediaById,
   defaultsByKind,
+  institutionalDefault,
   stageLabel,
 }: {
   cfg: StageConfig;
   mediaById: Map<string, MediaItem>;
   defaultsByKind: Record<string, MediaItem | undefined>;
+  institutionalDefault: DefaultMedia | null;
   stageLabel: string;
 }) {
   function resolve(slot: Slot): MediaItem | undefined {
     const id =
       slot === "audio" ? cfg.audio_media_id : slot === "image" ? cfg.image_media_id : slot === "video" ? cfg.video_media_id : null;
     if (id) return mediaById.get(id);
+    if (cfg.use_default && institutionalDefault) {
+      if (slot === "image" && institutionalDefault.image_url) {
+        return { id: "def-image", kind: "image", label: "Padrão", url: institutionalDefault.image_url, is_public: true };
+      }
+      if (slot === "audio" && institutionalDefault.media_url && institutionalDefault.message_type === "audio") {
+        return { id: "def-audio", kind: "audio", label: "Padrão", url: institutionalDefault.media_url, is_public: true };
+      }
+      if (slot === "video" && institutionalDefault.media_url && institutionalDefault.message_type === "video") {
+        return { id: "def-video", kind: "video", label: "Padrão", url: institutionalDefault.media_url, is_public: true };
+      }
+      // media_url genérico (muitas vezes áudio/vídeo sem type estrito)
+      if (slot === "audio" && institutionalDefault.media_url && !institutionalDefault.image_url) {
+        return { id: "def-media", kind: "audio", label: "Padrão", url: institutionalDefault.media_url, is_public: true };
+      }
+    }
     if (cfg.use_default) return defaultsByKind[slot];
     return undefined;
   }
 
+  const previewText = cfg.text_content.trim() || (cfg.use_default ? (institutionalDefault?.message_text || "").trim() : "");
+
   const hasAny =
-    cfg.text_content ||
+    previewText ||
     resolve("audio") ||
     resolve("image") ||
     resolve("video");
@@ -811,9 +887,8 @@ function PhonePreview({
       >
         {cfg.send_order.map((slot, idx) => {
           if (slot === "text") {
-            const txt = cfg.text_content.trim();
-            if (!txt) return null;
-            return <Bubble key={`t-${idx}`}><p className="text-[12px] whitespace-pre-wrap">{txt}</p></Bubble>;
+            if (!previewText) return null;
+            return <Bubble key={`t-${idx}`}><p className="text-[12px] whitespace-pre-wrap">{previewText}</p></Bubble>;
           }
           const m = resolve(slot);
           if (!m?.url) return null;

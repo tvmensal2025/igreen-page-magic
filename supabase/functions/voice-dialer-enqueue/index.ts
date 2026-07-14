@@ -421,27 +421,35 @@ Deno.serve(async (req) => {
       name: t.name ?? undefined,
     }));
 
-    const base = await createDestinationBase(items, `base_${campaign.id.slice(0, 8)}`);
-    if (!base.ok || !base.base_id) {
-      return json(502, {
-        error: "velip_base_failed",
-        detail: base.error,
-        message: "Base de destinos rejeitada pela Velip. Alvos criados no banco — pode reprocessar em modo single.",
+    // Se a Velip rejeitar a base/campanha (ex.: erro 230 do serviço de listas),
+    // degrada para modo `single`: o cron disca alvo a alvo via MakeTTSCall.
+    const fallbackToSingle = async (why: string | undefined) => {
+      await admin
+        .from("voice_campaigns")
+        .update({ velip_mode: "single" })
+        .eq("id", campaign.id);
+      console.warn(`[enqueue] batch→single (campanha ${campaign.id}): ${why ?? "?"}`);
+      return json(200, {
+        ok: true,
+        campaign_id: campaign.id,
+        total: targets.length,
+        status: scheduled ? "scheduled" : "running",
+        velip_mode: "single",
+        batch_fallback: why ?? "velip_batch_failed",
       });
-    }
+    };
+
+    const base = await createDestinationBase(items, `base_${campaign.id.slice(0, 8)}`);
+    if (!base.ok || !base.base_id) return await fallbackToSingle(base.error);
+
     const cp = await velipCreateCampaign({
       baseId: base.base_id,
       audioId: aud.audio_id,
       name: campaign.id.slice(0, 30),
       ctid: toCtid(campaign.id),
     });
-    if (!cp.ok || !cp.cp_id) {
-      return json(502, {
-        error: "velip_campaign_failed",
-        detail: cp.error,
-        message: "Falha ao criar campanha Velip — targets ficam em queued para o cron.",
-      });
-    }
+    if (!cp.ok || !cp.cp_id) return await fallbackToSingle(cp.error);
+
     await admin
       .from("voice_campaigns")
       .update({ velip_campaign_id: cp.cp_id, velip_base_id: base.base_id })

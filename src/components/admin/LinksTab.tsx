@@ -3,6 +3,7 @@ import { Copy, QrCode, FileText, LinkIcon, ExternalLink, ChevronDown, ChevronUp,
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { LinksDashboard } from "./LinksDashboard";
+import { useProducts } from "@/features/produtos/catalogo";
 
 interface LinksTabProps {
   slug: string;
@@ -21,6 +22,20 @@ const SOCIAL_SOURCES = [
   { source: "youtube", label: "YouTube", icon: "🎬" },
   { source: "google", label: "Google", icon: "🔍" },
 ];
+
+/** Slug em `products` para filtrar por is_active; null = sempre visível no menu. */
+const PAGE_PRODUCT_SLUG: Record<string, string | null> = {
+  green: null,
+  expansao: null,
+  cadastro: null,
+  telecom: "conexao-telecom",
+  seguros: "conexao-seguros",
+  solar: "conexao-solar",
+  placas: "conexao-placas",
+  livre: "conexao-livre",
+  club: "conexao-club",
+  "club-pj": "conexao-club-pj",
+};
 
 // ─── Páginas (sem duplicatas: Green=cliente, Expansão=licenciado) ───
 function getAllPages(slug: string) {
@@ -42,6 +57,7 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
   const [tab, setTab] = useState<"dashboard" | "links">("dashboard");
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
   const [consultantId, setConsultantId] = useState<string>();
+  const { data: activeProducts } = useProducts();
 
   useEffect(() => {
     supabase
@@ -54,7 +70,17 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
       });
   }, [slug]);
 
-  const pages = useMemo(() => getAllPages(slug), [slug]);
+  const pages = useMemo(() => {
+    const all = getAllPages(slug);
+    // Enquanto o catálogo não carrega, lista completa; depois filtra is_active.
+    if (!activeProducts) return all;
+    const activeSlugs = new Set(activeProducts.map((p) => p.slug));
+    return all.filter((page) => {
+      const productSlug = PAGE_PRODUCT_SLUG[page.id];
+      if (productSlug == null) return true;
+      return activeSlugs.has(productSlug);
+    });
+  }, [slug, activeProducts]);
 
   return (
     <div className="space-y-6">

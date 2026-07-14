@@ -254,7 +254,8 @@ export function useAnalytics(
         }
       }
 
-      const totalClient = views.filter((v) => v.page_type === "client").length;
+      const isClientPage = (pt: string) => pt === "client" || pt.startsWith("conexao-");
+      const totalClient = views.filter((v) => isClientPage(v.page_type)).length;
       const totalLicenciada = views.filter((v) => v.page_type === "licenciada").length;
 
       const totalClicks = events.filter((e) => e.event_type === "click").length;
@@ -279,8 +280,8 @@ export function useAnalytics(
         const key = row.created_at.split("T")[0];
         const entry = dayMap.get(key);
         if (entry) {
-          if (row.page_type === "client") entry.client++;
-          else entry.licenciada++;
+          if (isClientPage(row.page_type)) entry.client++;
+          else if (row.page_type === "licenciada") entry.licenciada++;
         }
       }
       const daily: DailyViews[] = Array.from(dayMap.entries()).map(([date, counts]) => ({ date, ...counts }));

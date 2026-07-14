@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useAgendamentosHub } from "@/hooks/useAgendamentosHub";
 import {
   dispatchAgendamentosNav,
@@ -23,7 +24,8 @@ import {
 import {
   Calendar, Clock, Plus, Send, CalendarClock, MessageSquare, Phone,
   CheckCircle2, XCircle, Loader2, AlertCircle, Sparkles, RefreshCw, Settings2,
-  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell, FileText,
+  Flame, Megaphone, Bot, History, LayoutGrid, ExternalLink, ShieldCheck, Zap, Bell, FileText, Trash2,
+  Image as ImageIcon, Volume2,
 } from "lucide-react";
 import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/AutomacoesAtivasBadge";
 import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
@@ -37,6 +39,13 @@ const RodiziosBroadcastPanel = lazy(() =>
   import("./RodiziosBroadcastPanel").then((m) => ({ default: m.RodiziosBroadcastPanel })),
 );
 
+/** Extrai customerId + stage_key de ids tipo `<uuid>-pv_aprovado`. */
+function parsePosVendaTimelineId(id: string): { customerId: string; stageKey: string } | null {
+  const m = id.match(/^(.+)-(pv_[a-z0-9]+)$/i);
+  if (!m) return null;
+  return { customerId: m[1], stageKey: m[2] };
+}
+
 /** Descreve onde o item da timeline está configurado + para onde levar o consultor. */
 function describeSource(item: AgendamentoTimelineItem): {
   where: string;
@@ -48,16 +57,16 @@ function describeSource(item: AgendamentoTimelineItem): {
     case "manual_scheduled":
       return {
         where: "Agenda manual",
-        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou cancelar aqui mesmo (cancelado fica no histórico).",
+        hint: "Você criou este envio manualmente. Pode editar o texto, remarcar ou excluir aqui mesmo (cancelado fica no histórico).",
         targetTab: "manual",
         ctaLabel: "Abrir Agenda manual",
       };
     case "pos_venda_auto": {
-      const stageKey = item.id.split("-").slice(-1)[0];
-      const stageLabel = labelForStageKey(stageKey);
+      const parsed = parsePosVendaTimelineId(item.id);
+      const stageLabel = parsed ? labelForStageKey(parsed.stageKey) : item.badge;
       return {
         where: `Pós-venda automático → ${stageLabel}`,
-        hint: "O texto e a mídia desta mensagem estão em Pós-venda automático, no botão “Autoprogressão”. Ao abrir, edite a coluna correspondente.",
+        hint: "Pode excluir só este envio deste cliente (não manda a mensagem). O texto padrão da coluna continua em Pós-venda automático.",
         targetTab: "pos-venda",
         ctaLabel: "Abrir Pós-venda automático",
       };
@@ -65,14 +74,14 @@ function describeSource(item: AgendamentoTimelineItem): {
     case "bot_followup":
       return {
         where: "Reaquecimento de leads",
-        hint: "O bot marcou uma continuação para este lead. Ajuste janelas, intervalos e templates em Reaquecimento.",
+        hint: "Excluir remove o próximo follow-up deste lead. Para desligar o motor inteiro, use Reaquecimento.",
         targetTab: "reaquecimento",
         ctaLabel: "Abrir Reaquecimento",
       };
     case "bulk_campaign":
       return {
         where: "Campanhas em massa",
-        hint: "Este item faz parte de uma campanha em massa. Abra Campanhas para pausar, editar ou ver o progresso.",
+        hint: "Excluir cancela a campanha agendada/em andamento. Para editar o conteúdo, abra Campanhas.",
         targetTab: "campanhas",
         ctaLabel: "Abrir Campanhas",
       };
@@ -114,7 +123,7 @@ function timelineStatusBadge(status: AgendamentoTimelineItem["status"]) {
 
 function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
   switch (kind) {
-    case "pos_venda_auto": return <Sparkles className="w-3.5 h-3.5 text-accent" />;
+    case "pos_venda_auto": return <Sparkles className="w-3.5 h-3.5 text-primary" />;
     case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
@@ -156,7 +165,9 @@ export function AgendamentosHub({
   const [text, setText] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(false);
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   // Item da timeline clicado — abre o diálogo "onde configurar / editar aqui".
   const [selected, setSelected] = useState<AgendamentoTimelineItem | null>(null);
@@ -233,12 +244,116 @@ export function AgendamentosHub({
       .select("id");
     if (error) {
       toast({ title: "Erro ao cancelar", description: error.message, variant: "destructive" });
-    } else if (!data || data.length === 0) {
-      toast({ title: "Não foi possível cancelar", description: "Esta mensagem já foi enviada ou está saindo agora.", variant: "destructive" });
-    } else {
-      toast({ title: "Agendamento cancelado" });
+      return false;
     }
+    if (!data || data.length === 0) {
+      toast({ title: "Não foi possível cancelar", description: "Esta mensagem já foi enviada ou está saindo agora.", variant: "destructive" });
+      return false;
+    }
+    toast({ title: "Agendamento cancelado" });
     refresh();
+    return true;
+  };
+
+  /** Exclui/cancela o item clicado em "Próximos envios → configurar". */
+  const handleDeleteTimelineItem = async (item: AgendamentoTimelineItem) => {
+    const ok = await confirm({
+      title: "Excluir este agendamento?",
+      description:
+        item.kind === "pos_venda_auto"
+          ? `“${item.title}” · ${item.badge}\n\nEste cliente não receberá esta mensagem automática. O texto da coluna continua igual para os outros.`
+          : item.kind === "bulk_campaign"
+            ? `Campanha “${item.title}” será cancelada e some da fila.`
+            : item.kind === "bot_followup"
+              ? `Remove o próximo reaquecimento de “${item.title}”.`
+              : `Cancela o envio manual de “${item.title}” (fica no histórico como Cancelada).`,
+      confirmText: "Excluir",
+      cancelText: "Manter",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setDeletingItem(true);
+    try {
+      if (item.kind === "manual_scheduled") {
+        const id = item.id.replace(/^manual-/, "");
+        const done = await handleCancelManual(id);
+        if (done) setSelected(null);
+        return;
+      }
+
+      if (item.kind === "pos_venda_auto") {
+        const parsed = parsePosVendaTimelineId(item.id);
+        if (!parsed) {
+          toast({ title: "Não foi possível identificar o envio", variant: "destructive" });
+          return;
+        }
+        const { error } = await supabase.from("customer_auto_message_log").insert({
+          customer_id: parsed.customerId,
+          consultant_id: consultantId,
+          stage_key: parsed.stageKey,
+          customer_name: item.title,
+          message_preview: item.preview ?? null,
+          status: "skipped_by_consultant",
+        });
+        if (error) {
+          // Já pulado / já enviado
+          if ((error as { code?: string }).code === "23505") {
+            toast({ title: "Este envio já estava marcado como processado" });
+            setSelected(null);
+            refresh();
+            return;
+          }
+          toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+          return;
+        }
+        toast({ title: "Envio removido da fila" });
+        setSelected(null);
+        refresh();
+        return;
+      }
+
+      if (item.kind === "bot_followup") {
+        const customerId = item.id.replace(/^followup-/, "");
+        const { error } = await supabase
+          .from("customers")
+          .update({ next_followup_at: null })
+          .eq("id", customerId)
+          .eq("consultant_id", consultantId);
+        if (error) {
+          toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+          return;
+        }
+        toast({ title: "Follow-up removido" });
+        setSelected(null);
+        refresh();
+        return;
+      }
+
+      if (item.kind === "bulk_campaign") {
+        const campaignId = item.id.replace(/^bulk-/, "");
+        const { data, error } = await (supabase as any)
+          .from("bulk_campaigns")
+          .update({ status: "canceled" })
+          .eq("id", campaignId)
+          .eq("consultant_id", consultantId)
+          .in("status", ["scheduled", "running", "paused"])
+          .select("id");
+        if (error) {
+          toast({ title: "Erro ao cancelar campanha", description: error.message, variant: "destructive" });
+          return;
+        }
+        if (!data || data.length === 0) {
+          toast({ title: "Campanha já finalizada", variant: "destructive" });
+          return;
+        }
+        toast({ title: "Campanha cancelada" });
+        setSelected(null);
+        refresh();
+      }
+    } finally {
+      setDeletingItem(false);
+    }
   };
 
   const statusConfig = (status: string, scheduledAtISO?: string) => {
@@ -477,7 +592,7 @@ export function AgendamentosHub({
             {[
               { n: stats.timelineUpcoming, label: "Próximos envios", icon: Clock, tone: "text-primary", bg: "bg-primary/10" },
               { n: stats.pendingManual, label: "Agenda manual", icon: CalendarClock, tone: "text-warning", bg: "bg-warning/10" },
-              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-accent", bg: "bg-accent/10" },
+              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-primary", bg: "bg-accent/10" },
               { n: stats.bulkActive, label: "Campanhas", icon: Megaphone, tone: "text-info", bg: "bg-info/10" },
             ].map((k) => {
               const Icon = k.icon;
@@ -645,7 +760,7 @@ export function AgendamentosHub({
                                     )}
                                   </div>
                                   <span className="hidden sm:inline text-[10px] text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                                    configurar →
+                                    abrir / excluir →
                                   </span>
                                 </button>
                               );
@@ -979,6 +1094,7 @@ export function AgendamentosHub({
 
       <TimelineItemDialog
         item={selected}
+        consultantId={consultantId}
         onClose={() => setSelected(null)}
         onGoToConfig={(tab) => { setActiveTab(tab); setSelected(null); }}
         editText={editText}
@@ -986,6 +1102,7 @@ export function AgendamentosHub({
         editAt={editAt}
         setEditAt={setEditAt}
         savingEdit={savingEdit}
+        deleting={deletingItem}
         onSaveManual={async () => {
           if (!selected || selected.kind !== "manual_scheduled") return;
           if (new Date(editAt).getTime() <= Date.now()) {
@@ -1021,11 +1138,9 @@ export function AgendamentosHub({
             setSavingEdit(false);
           }
         }}
-        onCancelManual={async () => {
-          if (!selected || selected.kind !== "manual_scheduled") return;
-          const id = selected.id.replace(/^manual-/, "");
-          await handleCancelManual(id);
-          setSelected(null);
+        onDelete={async () => {
+          if (!selected) return;
+          await handleDeleteTimelineItem(selected);
         }}
       />
     </div>
@@ -1033,10 +1148,11 @@ export function AgendamentosHub({
 }
 
 function TimelineItemDialog({
-  item, onClose, onGoToConfig,
-  editText, setEditText, editAt, setEditAt, savingEdit, onSaveManual, onCancelManual,
+  item, consultantId, onClose, onGoToConfig,
+  editText, setEditText, editAt, setEditAt, savingEdit, deleting, onSaveManual, onDelete,
 }: {
   item: AgendamentoTimelineItem | null;
+  consultantId: string;
   onClose: () => void;
   onGoToConfig: (tab: AgendamentosHubTab) => void;
   editText: string;
@@ -1044,15 +1160,81 @@ function TimelineItemDialog({
   editAt: string;
   setEditAt: (v: string) => void;
   savingEdit: boolean;
+  deleting: boolean;
   onSaveManual: () => void;
-  onCancelManual: () => void;
+  onDelete: () => void;
 }) {
+  const [posDefault, setPosDefault] = useState<PosVendaMediaBits | null>(null);
+  const [posOwn, setPosOwn] = useState<PosVendaMediaBits | null>(null);
+  const [posMediaLoading, setPosMediaLoading] = useState(false);
+
+  useEffect(() => {
+    if (!item || item.kind !== "pos_venda_auto") {
+      setPosDefault(null);
+      setPosOwn(null);
+      return;
+    }
+    const parsed = parsePosVendaTimelineId(item.id);
+    if (!parsed) return;
+    let alive = true;
+    setPosMediaLoading(true);
+    const defaultStage = stageKeyToDefaultStage(parsed.stageKey);
+    void (async () => {
+      const [defRes, stageRes] = await Promise.all([
+        supabase
+          .from("pos_venda_default_media")
+          .select("message_text, media_url, image_url, message_type, is_active")
+          .eq("stage", defaultStage)
+          .maybeSingle(),
+        supabase
+          .from("kanban_stages")
+          .select("auto_message_text, auto_message_media_url, auto_message_image_url, auto_message_type")
+          .eq("consultant_id", consultantId)
+          .eq("stage_scope", "pos_venda")
+          .eq("stage_key", parsed.stageKey)
+          .maybeSingle(),
+      ]);
+      if (!alive) return;
+      if (defRes.data && defRes.data.is_active !== false) {
+        setPosDefault({
+          message_text: defRes.data.message_text,
+          media_url: defRes.data.media_url,
+          image_url: defRes.data.image_url,
+          message_type: defRes.data.message_type,
+        });
+      } else {
+        setPosDefault(null);
+      }
+      const pick = stageRes.data as {
+        auto_message_text: string | null;
+        auto_message_media_url: string | null;
+        auto_message_image_url: string | null;
+        auto_message_type: string | null;
+      } | null;
+      if (pick && (pick.auto_message_media_url || pick.auto_message_image_url)) {
+        setPosOwn({
+          message_text: pick.auto_message_text,
+          media_url: pick.auto_message_media_url,
+          image_url: pick.auto_message_image_url,
+          message_type: pick.auto_message_type,
+        });
+      } else {
+        setPosOwn(null);
+      }
+      setPosMediaLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [item, consultantId]);
+
   if (!item) return null;
   const src = describeSource(item);
   const isManual = item.kind === "manual_scheduled";
+  const isPosVenda = item.kind === "pos_venda_auto";
+  const showDefault = isPosVenda && !posOwn && !!posDefault;
+
   return (
     <Dialog open={!!item} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Settings2 className="w-4 h-4 text-primary" />
@@ -1092,6 +1274,36 @@ function TimelineItemDialog({
                 <p className="text-[10px] text-muted-foreground">Horário local (Brasília).</p>
               </div>
             </div>
+          ) : isPosVenda ? (
+            <div className="space-y-3">
+              {posMediaLoading ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Carregando áudio/imagem…
+                </div>
+              ) : (
+                <>
+                  {showDefault && (
+                    <PosVendaMediaPreview
+                      label="Padrão iGreen (em uso)"
+                      hint="Áudio + imagem institucionais até o consultor colocar o próprio material."
+                      bits={posDefault}
+                    />
+                  )}
+                  {posOwn && (
+                    <PosVendaMediaPreview
+                      label="Material do consultor"
+                      bits={posOwn}
+                    />
+                  )}
+                  {!showDefault && !posOwn && item.preview && (
+                    <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
+                      <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia</p>
+                      <p className="text-sm whitespace-pre-wrap">{item.preview}</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           ) : item.preview ? (
             <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia</p>
@@ -1100,26 +1312,91 @@ function TimelineItemDialog({
           ) : null}
         </div>
 
-        <DialogFooter className="gap-2 flex-wrap">
-          {isManual && (
-            <>
-              <Button variant="ghost" className="text-destructive gap-1.5" onClick={onCancelManual}>
-                <XCircle className="w-3.5 h-3.5" />
-                Cancelar envio
-              </Button>
-              <Button onClick={onSaveManual} disabled={savingEdit || !editText.trim() || !editAt} className="gap-1.5">
+        <DialogFooter className="gap-2 flex-wrap sm:justify-between">
+          <Button
+            variant="ghost"
+            className="text-destructive gap-1.5"
+            onClick={onDelete}
+            disabled={deleting || savingEdit}
+          >
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            Excluir agendamento
+          </Button>
+          <div className="flex flex-wrap gap-2">
+            {isManual && (
+              <Button onClick={onSaveManual} disabled={savingEdit || deleting || !editText.trim() || !editAt} className="gap-1.5">
                 {savingEdit ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                 Salvar mudanças
               </Button>
-            </>
-          )}
-          <Button variant="outline" onClick={() => onGoToConfig(src.targetTab)} className="gap-1.5">
-            <Settings2 className="w-3.5 h-3.5" />
-            {src.ctaLabel}
-          </Button>
+            )}
+            <Button variant="outline" onClick={() => onGoToConfig(src.targetTab)} className="gap-1.5" disabled={deleting}>
+              <Settings2 className="w-3.5 h-3.5" />
+              {src.ctaLabel}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** pv_d120 → d120 (chave em pos_venda_default_media). */
+function stageKeyToDefaultStage(stageKey: string): string {
+  return stageKey.replace(/^pv_/, "");
+}
+
+type PosVendaMediaBits = {
+  message_text: string | null;
+  media_url: string | null;
+  image_url: string | null;
+  message_type?: string | null;
+};
+
+/** Prévia de texto + áudio + imagem (padrão iGreen ou do consultor). */
+function PosVendaMediaPreview({
+  label,
+  hint,
+  bits,
+}: {
+  label: string;
+  hint?: string;
+  bits: PosVendaMediaBits | null;
+}) {
+  if (!bits) return null;
+  const hasAnything = !!(bits.message_text || bits.media_url || bits.image_url);
+  if (!hasAnything) return null;
+  return (
+    <div className="rounded-xl border border-accent/30 bg-accent/5 p-3 space-y-2.5">
+      <div>
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
+        {hint && <p className="text-[11px] text-muted-foreground mt-0.5">{hint}</p>}
+      </div>
+      {bits.message_text && (
+        <p className="text-sm whitespace-pre-wrap text-foreground">{bits.message_text}</p>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+        {bits.image_url && (
+          <div className="shrink-0 space-y-1">
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <ImageIcon className="w-3 h-3" /> Imagem
+            </p>
+            <img
+              src={bits.image_url}
+              alt=""
+              className="h-24 w-24 rounded-lg object-cover border border-border/50"
+            />
+          </div>
+        )}
+        {bits.media_url && (
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+              <Volume2 className="w-3 h-3" /> Áudio
+            </p>
+            <audio controls preload="metadata" src={bits.media_url} className="w-full max-w-sm h-9" />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1158,39 +1435,80 @@ function PosVendaList({
   onSaved: () => void;
 }) {
   const [selected, setSelected] = useState<import("@/lib/posVendaSchedule").UpcomingPosVendaItem | null>(null);
-  const [stageRow, setStageRow] = useState<{ id: string; auto_message_text: string | null; auto_message_enabled: boolean } | null>(null);
+  const [stageRow, setStageRow] = useState<{
+    id: string;
+    auto_message_text: string | null;
+    auto_message_enabled: boolean;
+    auto_message_media_url: string | null;
+    auto_message_image_url: string | null;
+    auto_message_type: string | null;
+  } | null>(null);
+  const [defaultBits, setDefaultBits] = useState<PosVendaMediaBits | null>(null);
   const [draftText, setDraftText] = useState("");
   const [draftEnabled, setDraftEnabled] = useState(true);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
-  // Extrai a stage_key (pv_reprovado, pv_aprovado, pv_d30, ...) do id do item.
-  const stageKey = selected ? selected.id.split("-").slice(-1)[0] : null;
+  const stageKey = selected ? parsePosVendaTimelineId(selected.id)?.stageKey ?? null : null;
 
   useEffect(() => {
     if (!selected || !stageKey) return;
     setLoading(true);
     setStageRow(null);
-    supabase
-      .from("kanban_stages")
-      .select("id, auto_message_text, auto_message_enabled")
-      .eq("consultant_id", consultantId)
-      .eq("stage_scope", "pos_venda")
-      .eq("stage_key", stageKey)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) {
-          setStageRow(data as any);
-          setDraftText((data as any).auto_message_text || selected.messagePreview || "");
-          setDraftEnabled((data as any).auto_message_enabled ?? true);
-        } else {
-          setDraftText(selected.messagePreview || "");
-          setDraftEnabled(true);
-        }
-        setLoading(false);
-      });
+    setDefaultBits(null);
+    const defaultStage = stageKeyToDefaultStage(stageKey);
+
+    void (async () => {
+      const [stageRes, defRes] = await Promise.all([
+        supabase
+          .from("kanban_stages")
+          .select("id, auto_message_text, auto_message_enabled, auto_message_media_url, auto_message_image_url, auto_message_type")
+          .eq("consultant_id", consultantId)
+          .eq("stage_scope", "pos_venda")
+          .eq("stage_key", stageKey)
+          .maybeSingle(),
+        supabase
+          .from("pos_venda_default_media")
+          .select("message_text, media_url, image_url, message_type, is_active")
+          .eq("stage", defaultStage)
+          .maybeSingle(),
+      ]);
+
+      const data = stageRes.data as typeof stageRow;
+      if (data) {
+        setStageRow(data);
+        const ownText = data.auto_message_text?.trim();
+        setDraftText(ownText || defRes.data?.message_text || selected.messagePreview || "");
+        setDraftEnabled(data.auto_message_enabled ?? true);
+      } else {
+        setDraftText(defRes.data?.message_text || selected.messagePreview || "");
+        setDraftEnabled(true);
+      }
+
+      if (defRes.data && defRes.data.is_active !== false) {
+        setDefaultBits({
+          message_text: defRes.data.message_text,
+          media_url: defRes.data.media_url,
+          image_url: defRes.data.image_url,
+          message_type: defRes.data.message_type,
+        });
+      }
+      setLoading(false);
+    })();
   }, [selected, stageKey, consultantId]);
+
+  const ownMedia: PosVendaMediaBits | null = stageRow && (stageRow.auto_message_media_url || stageRow.auto_message_image_url || stageRow.auto_message_text)
+    ? {
+        message_text: stageRow.auto_message_text,
+        media_url: stageRow.auto_message_media_url,
+        image_url: stageRow.auto_message_image_url,
+        message_type: stageRow.auto_message_type,
+      }
+    : null;
+
+  const hasOwnMediaFiles = !!(stageRow?.auto_message_media_url || stageRow?.auto_message_image_url);
+  const showingDefaultMedia = !hasOwnMediaFiles && !!defaultBits;
 
   async function handleSave() {
     if (!stageRow) {
@@ -1198,12 +1516,23 @@ function PosVendaList({
       return;
     }
     setSaving(true);
+    // Se o consultor ainda não tem áudio/imagem próprios, copia o padrão
+    // ao salvar o texto — senão o motor deixa de usar o fallback e some a mídia.
+    const mediaUrl = stageRow.auto_message_media_url || defaultBits?.media_url || null;
+    const imageUrl = stageRow.auto_message_image_url || defaultBits?.image_url || null;
+    const msgType =
+      stageRow.auto_message_type ||
+      (mediaUrl ? (defaultBits?.message_type || "audio") : "text");
+
     const { error } = await supabase
       .from("kanban_stages")
       .update({
         auto_message_text: draftText || null,
         auto_message_enabled: draftEnabled,
-      })
+        auto_message_media_url: mediaUrl,
+        auto_message_image_url: imageUrl,
+        auto_message_type: msgType,
+      } as any)
       .eq("id", stageRow.id);
     setSaving(false);
     if (error) {
@@ -1228,7 +1557,7 @@ function PosVendaList({
             >
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <span className="text-sm font-bold">{item.customerName}</span>
-                <Badge className="text-[9px] bg-accent/15 text-accent border-accent/30">{item.stageLabel}</Badge>
+                <Badge className="text-[9px] bg-primary/10 text-primary border-primary/30">{item.stageLabel}</Badge>
                 <span className="ml-auto text-[10px] text-muted-foreground opacity-70">clique para editar</span>
               </div>
               {item.messagePreview && <p className="text-xs text-muted-foreground line-clamp-2 mb-1">{item.messagePreview}</p>}
@@ -1239,12 +1568,12 @@ function PosVendaList({
       </ScrollArea>
 
       <Dialog open={!!selected} onOpenChange={(o) => { if (!o) setSelected(null); }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           {selected && (
             <>
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-accent" />
+                  <Sparkles className="w-4 h-4 text-primary" />
                   {selected.customerName}
                 </DialogTitle>
                 <DialogDescription>
@@ -1257,7 +1586,7 @@ function PosVendaList({
                   <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Onde está configurado</p>
                   <p className="text-sm font-semibold">Pós-venda automático → coluna “{selected.stageLabel}”</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Edite abaixo o texto que sai para todos os clientes nesta coluna. Para mídia (áudio, imagem, vídeo) ou várias mensagens em sequência, use Autoprogressão.
+                    Enquanto você não sobe o seu áudio/imagem, o sistema usa o padrão iGreen (texto + áudio + imagem). Troque o seu material em Autoprogressão.
                   </p>
                 </div>
 
@@ -1267,12 +1596,27 @@ function PosVendaList({
                   </div>
                 ) : (
                   <>
+                    {showingDefaultMedia && (
+                      <PosVendaMediaPreview
+                        label="Padrão iGreen (em uso)"
+                        hint="Vale para todos os clientes desta coluna até você colocar o seu áudio/imagem."
+                        bits={defaultBits}
+                      />
+                    )}
+                    {hasOwnMediaFiles && (
+                      <PosVendaMediaPreview
+                        label="Seu material"
+                        hint="Configurado na Autoprogressão desta coluna."
+                        bits={ownMedia}
+                      />
+                    )}
+
                     <div className="space-y-1.5">
                       <Label className="text-xs">Texto da mensagem</Label>
                       <Textarea
                         value={draftText}
                         onChange={(e) => setDraftText(e.target.value)}
-                        rows={5}
+                        rows={4}
                         className="text-sm"
                         placeholder="Digite o texto que sai automaticamente…"
                       />
@@ -1300,7 +1644,7 @@ function PosVendaList({
                   className="gap-1.5"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  Abrir Autoprogressão (mídias)
+                  Trocar áudio/imagem (Autoprogressão)
                 </Button>
                 <Button onClick={handleSave} disabled={saving || loading} className="gap-1.5">
                   {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}

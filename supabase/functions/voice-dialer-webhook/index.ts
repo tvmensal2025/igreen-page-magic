@@ -200,11 +200,16 @@ Deno.serve(async (req) => {
     }
 
     if (smsRow) {
-      const delivered = /SUCCESS|DELIVERED|ENTREGUE/i.test(delivstatus);
+      // Velip/operadora usa códigos curtos: DELIVRD, UNDELIV, ACCEPTD, EXPIRED…
+      const st = (delivstatus || "").toUpperCase().trim();
+      const delivered = /^(DELIVRD|DELIVERED|SUCCESS|ENTREGUE|OK)$/.test(st) ||
+        /SUCCESS|DELIVERED|ENTREGUE|DELIVRD/i.test(delivstatus);
+      const undelivered = /^(UNDELIV|REJECTD|EXPIRED|DELETED|UNKNOWN)$/.test(st);
       await admin.from("voice_sms_log").update({
         delivery_status: delivstatus || null,
         delivered_at: delivered ? new Date().toISOString() : null,
-        status: delivered ? "delivered" : (delivstatus ? "failed" : "sent"),
+        status: delivered ? "delivered" : undelivered ? "failed" : (delivstatus ? "sent" : "sent"),
+        error: undelivered ? (delivstatus || "undelivered") : null,
       }).eq("id", smsRow.id);
     }
     return json(200, { ok: true, sms: true, matched: !!smsRow });

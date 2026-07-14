@@ -68,10 +68,24 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [view, setView] = useState<"fila" | "devolutivas">("fila");
   // igreen_id do consultor logado (para filtrar por registrados por ele)
   const [myIgreenId, setMyIgreenId] = useState<string | null>(null);
+  // true depois da 1ª leitura de consultants.igreen_id — evita vazar a rede no filtro "mine"
+  const [myIgreenReady, setMyIgreenReady] = useState(false);
   // Lista de licenciados da rede (para o seletor de filtro)
   const [registrants, setRegistrants] = useState<{ id: string; name: string }[]>([]);
 
   async function load() {
+    // "Meus clientes" NUNCA pode cair no fallback da rede inteira enquanto o
+    // igreen_id não chegou (bug: modal abria com 196 da rede em vez dos ~60 do consultor).
+    if (ownerFilter === "mine" && !myIgreenReady) {
+      setLoading(true);
+      return;
+    }
+    if (ownerFilter === "mine" && !myIgreenId) {
+      setLoading(false);
+      setItems([]);
+      return;
+    }
+
     setLoading(true);
     const nowIso = new Date().toISOString();
     let query = supabase
@@ -84,10 +98,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
 
     // Filtro por licenciado
     if (ownerFilter === "mine") {
-      if (myIgreenId) {
-        query = query.eq("registered_by_igreen_id", myIgreenId);
-      }
-      // se não tem myIgreenId ainda, mostra todos (até carregar)
+      query = query.eq("registered_by_igreen_id", myIgreenId!);
     } else if (ownerFilter !== "all") {
       // igreen_id específico de outro licenciado
       query = query.eq("registered_by_igreen_id", ownerFilter);
@@ -108,6 +119,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   async function loadMyIgreenId() {
     const { data } = await supabase.from("consultants").select("igreen_id").eq("id", consultantId).maybeSingle();
     if (data?.igreen_id) setMyIgreenId(String(data.igreen_id));
+    else setMyIgreenId(null);
+    setMyIgreenReady(true);
   }
 
   async function loadRegistrants() {
@@ -128,19 +141,39 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   }
 
   async function checkConfig() {
-    const { count } = await supabase
-      .from("consultant_pos_venda_media" as any)
-      .select("id", { count: "exact", head: true })
-      .eq("consultant_id", consultantId);
-    setHasConfig((count || 0) > 0);
+    // Personalização do consultor OU padrão institucional (pos_venda_default_media).
+    // O motor pos-venda-auto-progress já usa o padrão quando o consultor não
+    // customizou — então "0 linhas em consultant_pos_venda_media" NÃO significa
+    // "não configurado".
+    const [{ count: personalCount }, { count: defaultCount }] = await Promise.all([
+      supabase
+        .from("consultant_pos_venda_media" as any)
+        .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId),
+      supabase
+        .from("pos_venda_default_media")
+        .select("stage", { count: "exact", head: true })
+        .eq("is_active", true),
+    ]);
+    setHasConfig((personalCount || 0) > 0 || (defaultCount || 0) > 0);
   }
 
-  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId, ownerFilter, myIgreenId]);
-  useEffect(() => { loadMyIgreenId(); loadRegistrants(); /* eslint-disable-next-line */ }, [consultantId]);
+  useEffect(() => { load(); checkConfig(); /* eslint-disable-next-line */ }, [consultantId, ownerFilter, myIgreenId, myIgreenReady]);
+  useEffect(() => {
+    setMyIgreenReady(false);
+    setMyIgreenId(null);
+    loadMyIgreenId();
+    loadRegistrants();
+    /* eslint-disable-next-line */
+  }, [consultantId]);
 
   // Abertura manual via botão externo ("Validar clientes")
   useEffect(() => {
-    if (openSignal) { setOpen(true); load(); }
+    if (openSignal) {
+      setOpen(true);
+      // Só carrega se o filtro "mine" já puder ser aplicado (senão load() aguarda myIgreenReady).
+      load();
+    }
     // eslint-disable-next-line
   }, [openSignal]);
 
