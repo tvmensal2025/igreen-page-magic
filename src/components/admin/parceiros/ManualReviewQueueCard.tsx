@@ -19,6 +19,7 @@ interface ManualReviewLead {
   manual_review_reason: string | null;
   manual_review_at: string | null;
   source_campaign_id: string | null;
+  source_ad_id: string | null;
 }
 
 interface Partner {
@@ -34,6 +35,11 @@ const REASON_LABEL: Record<string, string> = {
   rodizio_pool_empty: "A fila de rodízio dessa campanha está vazia ou pausada",
   rodizio_rpc_error: "Falha técnica ao escolher o próximo parceiro da fila",
   no_campaign_generic: "Sinal de anúncio detectado, sem campanha vinculada",
+  meta_lead_no_campaign_or_pool:
+    "Veio de anúncio Meta, mas a campanha/pool de rodízio não estava pronta — escolha o parceiro da pool",
+  campaign_ad_id_mismatch:
+    "O parceiro precisa ser da pool da campanha deste anúncio Meta",
+  strong_meta_unmapped: "Anúncio Meta identificado, mas sem mapeamento de campanha",
 };
 
 const ERROR_LABEL: Record<string, string> = {
@@ -46,6 +52,8 @@ const ERROR_LABEL: Record<string, string> = {
   forbidden_customer: "Você não tem permissão para atribuir este lead.",
   partner_wrong_consultant: "Este parceiro não pertence ao dono do lead.",
   invalid_body: "Dados inválidos. Recarregue a página e tente de novo.",
+  partner_not_in_campaign_pool:
+    "Este parceiro não está na pool da campanha Meta deste lead. Escolha um da pool ou adicione-o na campanha.",
 };
 
 /**
@@ -71,7 +79,7 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
     queryFn: async (): Promise<ManualReviewLead[]> => {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, manual_review_reason, manual_review_at, source_campaign_id")
+        .select("id, name, phone_whatsapp, manual_review_reason, manual_review_at, source_campaign_id, source_ad_id")
         .eq("consultant_id", consultantId)
         .eq("needs_manual_review", true)
         .order("manual_review_at", { ascending: false })
@@ -96,6 +104,41 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
         .order("nome");
       if (error) throw error;
       return (data || []) as Partner[];
+    },
+  });
+
+  /** partner_id[] por campaign_id — inclui pool pausada (atribuir manual ainda exige pertencimento). */
+  const campaignIds = [...new Set(leads.map((l) => l.source_campaign_id).filter(Boolean))] as string[];
+  const { data: poolPartnerIdsByCampaign = {} } = useQuery({
+    queryKey: ["manual-review-pool-partners", consultantId, campaignIds.join(",")],
+    enabled: !!consultantId && campaignIds.length > 0,
+    staleTime: 60_000,
+    queryFn: async (): Promise<Record<string, string[]>> => {
+      const { data: pools, error } = await supabase
+        .from("rodizio_pools")
+        .select("id, campaign_id")
+        .eq("consultant_id", consultantId)
+        .in("campaign_id", campaignIds);
+      if (error) throw error;
+      const poolList = (pools || []) as { id: string; campaign_id: string }[];
+      const out: Record<string, string[]> = {};
+      for (const cid of campaignIds) out[cid] = [];
+      if (poolList.length === 0) return out;
+      const { data: members, error: memErr } = await supabase
+        .from("rodizio_pool_members")
+        .select("pool_id, partner_id")
+        .in(
+          "pool_id",
+          poolList.map((p) => p.id),
+        );
+      if (memErr) throw memErr;
+      const poolToCampaign = Object.fromEntries(poolList.map((p) => [p.id, p.campaign_id]));
+      for (const m of (members || []) as { pool_id: string; partner_id: string }[]) {
+        const cid = poolToCampaign[m.pool_id];
+        if (!cid) continue;
+        if (!out[cid].includes(m.partner_id)) out[cid].push(m.partner_id);
+      }
+      return out;
     },
   });
 
@@ -137,18 +180,34 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
         body: { customer_id: lead.id, partner_id: partnerId },
       });
 
-      const payload = (data || {}) as {
+      // supabase-js: non-2xx → FunctionsHttpError com Response em error.context
+      let payload = (data || {}) as {
         ok?: boolean;
         error?: string;
+        hint?: string;
         protocol?: string | null;
         partner_name?: string;
         notify_ok?: boolean;
         notify_error?: string | null;
       };
 
-      if (error || payload.ok === false) {
-        const code = payload.error || error?.message || "unknown";
-        throw new Error(ERROR_LABEL[code] || code);
+      if (error) {
+        const ctx = (error as { context?: Response }).context;
+        if (ctx && typeof ctx.json === "function") {
+          try {
+            payload = { ...payload, ...(await ctx.json()) };
+          } catch {
+            /* ignore */
+          }
+        }
+        if (!payload.error) {
+          throw new Error(error.message || "Falha ao atribuir");
+        }
+      }
+
+      if (payload.ok === false) {
+        const code = payload.error || "unknown";
+        throw new Error(payload.hint || ERROR_LABEL[code] || code);
       }
 
       const partnerName = payload.partner_name || "parceiro";
@@ -237,6 +296,19 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
             REASON_LABEL[lead.manual_review_reason || ""] ||
             lead.manual_review_reason ||
             "Motivo não informado";
+          const poolIds = lead.source_campaign_id
+            ? poolPartnerIdsByCampaign[lead.source_campaign_id]
+            : undefined;
+          const partnersForLead =
+            poolIds && poolIds.length > 0
+              ? partners.filter((p) => poolIds.includes(p.id))
+              : partners;
+          // Campanha conhecida e pool carregada sem membros → não dá para atribuir (trigger 409).
+          const poolEmptyLocked = !!(
+            lead.source_campaign_id &&
+            Array.isArray(poolIds) &&
+            poolIds.length === 0
+          );
           return (
             <div
               key={lead.id}
@@ -250,17 +322,28 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
                 <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 mt-0.5">
                   {reasonLabel}
                 </p>
+                {poolEmptyLocked && (
+                  <p className="text-[11px] text-destructive mt-0.5">
+                    Pool desta campanha está vazia. Adicione o parceiro na pool da campanha (Anúncios) e tente de novo.
+                  </p>
+                )}
+                {poolIds && poolIds.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Só parceiros da pool desta campanha (inclui pool pausada).
+                  </p>
+                )}
               </div>
 
               <Select
                 value={selectedPartner[lead.id] || ""}
                 onValueChange={(v) => setSelectedPartner((s) => ({ ...s, [lead.id]: v }))}
+                disabled={poolEmptyLocked || partnersForLead.length === 0}
               >
                 <SelectTrigger className="h-8 w-[220px] text-xs">
-                  <SelectValue placeholder="Escolher parceiro..." />
+                  <SelectValue placeholder={poolEmptyLocked ? "Pool vazia…" : "Escolher parceiro..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {partners.map((p) => (
+                  {partnersForLead.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.nome}
                       {p.short_code ? ` · ${p.short_code}` : ""}
@@ -272,7 +355,11 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
               <Button
                 size="sm"
                 onClick={() => handleAssign(lead)}
-                disabled={assigningId === lead.id || !selectedPartner[lead.id]}
+                disabled={
+                  assigningId === lead.id ||
+                  !selectedPartner[lead.id] ||
+                  poolEmptyLocked
+                }
               >
                 <CheckCircle2 className="w-4 h-4 mr-1" />
                 {assigningId === lead.id ? "Atribuindo…" : "Atribuir"}
