@@ -430,7 +430,46 @@ export default function AdminMotorCadencia() {
           </div>
         </Card>
 
+        {/* Métricas 7 dias */}
+        <Card className="p-4">
+          <h2 className="text-sm font-semibold mb-3">📊 Métricas dos últimos 7 dias</h2>
+          {metrics.length === 0 ? <p className="text-xs text-muted-foreground">Sem dados ainda.</p> : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-muted-foreground">
+                  <tr className="border-b">
+                    <th className="text-left py-1">Estágio</th>
+                    <th className="text-left">Canal</th>
+                    <th className="text-right">Enviados</th>
+                    <th className="text-right">Falhas</th>
+                    <th className="text-right">Leads únicos</th>
+                    <th className="text-right">Respondidos</th>
+                    <th className="text-right">Taxa resp.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {metrics.map((m, i) => {
+                    const rate = m.unique_leads > 0 ? Math.round((m.responded_leads / m.unique_leads) * 100) : 0;
+                    return (
+                      <tr key={i} className="border-b">
+                        <td className="py-1"><Badge variant="outline">{m.stage}</Badge></td>
+                        <td><Badge variant="secondary">{m.channel}</Badge></td>
+                        <td className="text-right font-mono">{m.sent}</td>
+                        <td className="text-right font-mono text-destructive">{m.failed}</td>
+                        <td className="text-right font-mono">{m.unique_leads}</td>
+                        <td className="text-right font-mono text-emerald-600">{m.responded_leads}</td>
+                        <td className="text-right font-mono">{rate}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
         {/* Últimas ações */}
+
         <Card className="p-4">
           <h2 className="text-sm font-semibold mb-3">Últimas 20 ações</h2>
           {logs.length === 0 ? <p className="text-xs text-muted-foreground">Nenhuma ação registrada ainda.</p> : (
