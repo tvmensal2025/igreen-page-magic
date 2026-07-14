@@ -77,6 +77,55 @@ type PosVendaRow = {
   auto_message_text: string | null;
 };
 
+type FlowStepRow = {
+  id: string;
+  flow_id: string;
+  step_key: string | null;
+  title: string | null;
+  message_text: string | null;
+  position: number;
+};
+
+type FlowRow = { id: string; name: string; variant: string | null };
+
+type FlowQaRow = {
+  id: string;
+  flow_id: string;
+  intent_name: string;
+  text_response: string;
+  position: number;
+};
+
+type VoiceCampRow = {
+  id: string;
+  name: string;
+  tts_text: string | null;
+  sms_on_no_answer_text: string | null;
+};
+
+type ChatTemplateRow = {
+  id: string;
+  name: string;
+  content: string;
+  shortcut: string | null;
+  consultant_id: string | null;
+};
+
+type BulkCampRow = {
+  id: string;
+  name: string;
+  message_text: string | null;
+  status: string;
+};
+
+type SchedMsgRow = {
+  id: string;
+  message_text: string;
+  scheduled_at: string;
+  status: string;
+  remote_jid: string;
+};
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
