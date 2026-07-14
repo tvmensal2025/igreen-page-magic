@@ -833,6 +833,225 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
               })
             )}
           </TabsContent>
+
+          {/* ── Fluxos ── */}
+          <TabsContent value="fluxos" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant={flowFilter === "all" ? "default" : "ghost"} className="h-7 text-[10px] rounded-lg" onClick={() => setFlowFilter("all")}>Todos</Button>
+              {flows.map((f) => (
+                <Button key={f.id} size="sm" variant={flowFilter === f.id ? "default" : "ghost"} className="h-7 text-[10px] rounded-lg" onClick={() => setFlowFilter(f.id)}>
+                  {f.name} {f.variant ? `· ${f.variant}` : ""}
+                </Button>
+              ))}
+            </div>
+            {flowSteps.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum passo com texto encontrado.</p>
+            ) : (
+              flowSteps
+                .filter((s) => flowFilter === "all" || s.flow_id === flowFilter)
+                .filter((s) => !q.trim() || (s.title || "").toLowerCase().includes(q.toLowerCase()) || (s.step_key || "").toLowerCase().includes(q.toLowerCase()) || (s.message_text || "").toLowerCase().includes(q.toLowerCase()))
+                .map((row) => {
+                  const key = `step:${row.id}`;
+                  const dirty = drafts[key] !== undefined;
+                  const flow = flows.find((f) => f.id === row.flow_id);
+                  return (
+                    <div key={row.id} className="rounded-xl border p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{row.title || row.step_key || "passo"}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">
+                            {flow?.name ?? "?"} · {row.step_key} · pos {row.position}
+                          </p>
+                        </div>
+                        <Button size="sm" className="rounded-xl" disabled={!dirty || saving === key}
+                          onClick={() => void saveSimple("bot_flow_steps", row.id, "message_text", key, row.message_text, "Passo")}>
+                          <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                        </Button>
+                      </div>
+                      <Textarea className="min-h-[100px] text-sm rounded-xl"
+                        value={drafts[key] ?? row.message_text ?? ""}
+                        onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                      />
+                    </div>
+                  );
+                })
+            )}
+          </TabsContent>
+
+          {/* ── FAQ ── */}
+          <TabsContent value="faq" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <div className="flex flex-wrap gap-1">
+              <Button size="sm" variant={flowFilter === "all" ? "default" : "ghost"} className="h-7 text-[10px] rounded-lg" onClick={() => setFlowFilter("all")}>Todos</Button>
+              {flows.map((f) => (
+                <Button key={f.id} size="sm" variant={flowFilter === f.id ? "default" : "ghost"} className="h-7 text-[10px] rounded-lg" onClick={() => setFlowFilter(f.id)}>
+                  {f.name}
+                </Button>
+              ))}
+            </div>
+            {flowQa.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma pergunta no FAQ.</p>
+            ) : (
+              flowQa
+                .filter((qa) => flowFilter === "all" || qa.flow_id === flowFilter)
+                .filter((qa) => !q.trim() || qa.intent_name.toLowerCase().includes(q.toLowerCase()) || (qa.text_response || "").toLowerCase().includes(q.toLowerCase()))
+                .map((row) => {
+                  const key = `qa:${row.id}`;
+                  const dirty = drafts[key] !== undefined;
+                  const flow = flows.find((f) => f.id === row.flow_id);
+                  return (
+                    <div key={row.id} className="rounded-xl border p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium">{row.intent_name}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{flow?.name ?? "?"} · pos {row.position}</p>
+                        </div>
+                        <Button size="sm" className="rounded-xl" disabled={!dirty || saving === key}
+                          onClick={() => void saveSimple("bot_flow_qa", row.id, "text_response", key, row.text_response, "FAQ")}>
+                          <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                        </Button>
+                      </div>
+                      <Textarea className="min-h-[80px] text-sm rounded-xl"
+                        value={drafts[key] ?? row.text_response ?? ""}
+                        onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                      />
+                    </div>
+                  );
+                })
+            )}
+          </TabsContent>
+
+          {/* ── Voz ── */}
+          <TabsContent value="voz" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            {voiceCamps.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma campanha de voz.</p>
+            ) : voiceCamps.map((row) => {
+              const keyT = `vtts:${row.id}`;
+              const keyS = `vsms:${row.id}`;
+              return (
+                <div key={row.id} className="rounded-xl border p-3 space-y-3">
+                  <p className="text-sm font-medium">{row.name}</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-muted-foreground">TTS (texto da ligação)</p>
+                      <Button size="sm" className="rounded-xl" disabled={drafts[keyT] === undefined || saving === keyT}
+                        onClick={() => void saveSimple("voice_campaigns", row.id, "tts_text", keyT, row.tts_text, "TTS")}>
+                        <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                      </Button>
+                    </div>
+                    <Textarea className="min-h-[70px] text-sm rounded-xl"
+                      value={drafts[keyT] ?? row.tts_text ?? ""}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [keyT]: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] text-muted-foreground">SMS pós-NA (se não atender)</p>
+                      <Button size="sm" className="rounded-xl" disabled={drafts[keyS] === undefined || saving === keyS}
+                        onClick={() => void saveSimple("voice_campaigns", row.id, "sms_on_no_answer_text", keyS, row.sms_on_no_answer_text, "SMS")}>
+                        <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                      </Button>
+                    </div>
+                    <Textarea className="min-h-[60px] text-sm rounded-xl"
+                      value={drafts[keyS] ?? row.sms_on_no_answer_text ?? ""}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [keyS]: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          {/* ── Chat rápido ── */}
+          <TabsContent value="chat" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            {chatTpl.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhum template rápido.</p>
+            ) : chatTpl
+                .filter((t) => !q.trim() || t.name.toLowerCase().includes(q.toLowerCase()) || (t.content || "").toLowerCase().includes(q.toLowerCase()))
+                .map((row) => {
+              const key = `mt:${row.id}`;
+              const dirty = drafts[key] !== undefined;
+              const readOnly = row.consultant_id !== consultantId;
+              return (
+                <div key={row.id} className="rounded-xl border p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium">{row.name}{row.shortcut ? ` · /${row.shortcut}` : ""}</p>
+                      {readOnly && <p className="text-[10px] text-amber-600">Template público — salve para criar sua cópia (em breve).</p>}
+                    </div>
+                    <Button size="sm" className="rounded-xl" disabled={!dirty || saving === key || readOnly}
+                      onClick={() => void saveSimple("message_templates", row.id, "content", key, row.content, "Template")}>
+                      <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                    </Button>
+                  </div>
+                  <Textarea className="min-h-[80px] text-sm rounded-xl"
+                    readOnly={readOnly}
+                    value={drafts[key] ?? row.content ?? ""}
+                    onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                  />
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          {/* ── Campanhas / Agenda ── */}
+          <TabsContent value="campanhas" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-4">
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Disparo PRO ({bulkCamps.length})</p>
+              {bulkCamps.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nenhuma campanha em massa.</p>
+              ) : bulkCamps.map((row) => {
+                const key = `bulk:${row.id}`;
+                const dirty = drafts[key] !== undefined;
+                return (
+                  <div key={row.id} className="rounded-xl border p-3 space-y-2 mb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">{row.name}</p>
+                        <p className="text-[10px] text-muted-foreground">status: {row.status}</p>
+                      </div>
+                      <Button size="sm" className="rounded-xl" disabled={!dirty || saving === key}
+                        onClick={() => void saveSimple("bulk_campaigns", row.id, "message_text", key, row.message_text, "Campanha")}>
+                        <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                      </Button>
+                    </div>
+                    <Textarea className="min-h-[80px] text-sm rounded-xl"
+                      value={drafts[key] ?? row.message_text ?? ""}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Agenda ({schedMsgs.length})</p>
+              {schedMsgs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Nenhuma mensagem agendada.</p>
+              ) : schedMsgs.map((row) => {
+                const key = `sch:${row.id}`;
+                const dirty = drafts[key] !== undefined;
+                return (
+                  <div key={row.id} className="rounded-xl border p-3 space-y-2 mb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <p className="text-sm font-medium">{row.remote_jid}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {new Date(row.scheduled_at).toLocaleString("pt-BR")} · {row.status}
+                        </p>
+                      </div>
+                      <Button size="sm" className="rounded-xl" disabled={!dirty || saving === key}
+                        onClick={() => void saveSimple("scheduled_messages", row.id, "message_text", key, row.message_text, "Agenda")}>
+                        <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+                      </Button>
+                    </div>
+                    <Textarea className="min-h-[70px] text-sm rounded-xl"
+                      value={drafts[key] ?? row.message_text ?? ""}
+                      onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
