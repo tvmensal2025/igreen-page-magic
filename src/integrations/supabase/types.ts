@@ -9847,6 +9847,95 @@ export type Database = {
           },
         ]
       }
+      tour_articles: {
+        Row: {
+          body: string
+          category: string
+          created_at: string
+          id: string
+          is_active: boolean
+          order_index: number
+          related_tour_step_id: string | null
+          title: string
+          updated_at: string
+          video_url: string | null
+        }
+        Insert: {
+          body?: string
+          category: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          order_index?: number
+          related_tour_step_id?: string | null
+          title: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Update: {
+          body?: string
+          category?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          order_index?: number
+          related_tour_step_id?: string | null
+          title?: string
+          updated_at?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tour_articles_related_tour_step_id_fkey"
+            columns: ["related_tour_step_id"]
+            isOneToOne: false
+            referencedRelation: "tour_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tour_steps: {
+        Row: {
+          body: string
+          created_at: string
+          cta_href: string | null
+          cta_label: string | null
+          id: string
+          is_active: boolean
+          order_index: number
+          route: string
+          selector: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          cta_href?: string | null
+          cta_label?: string | null
+          id?: string
+          is_active?: boolean
+          order_index: number
+          route: string
+          selector?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          cta_href?: string | null
+          cta_label?: string | null
+          id?: string
+          is_active?: boolean
+          order_index?: number
+          route?: string
+          selector?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -9861,6 +9950,33 @@ export type Database = {
         Update: {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_tour_progress: {
+        Row: {
+          completed_at: string | null
+          current_step: number
+          dismissed_at: string | null
+          started_at: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          current_step?: number
+          dismissed_at?: string | null
+          started_at?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          current_step?: number
+          dismissed_at?: string | null
+          started_at?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

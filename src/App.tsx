@@ -34,6 +34,8 @@ const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
 const AdminMotorCadencia = lazy(() => import("./pages/AdminMotorCadencia"));
 const AdminAgendamentosCentral = lazy(() => import("./pages/AdminAgendamentosCentral"));
 const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
+const AjudaPage = lazy(() => import("./pages/AjudaPage"));
+const AdminTourEditor = lazy(() => import("./pages/AdminTourEditor"));
 
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -57,6 +59,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import { RechargeRequiredDialog } from "@/components/wallet/RechargeRequiredDialog";
 import { RemoteSupportProvider } from "@/features/remote-support/RemoteSupportProvider";
 import { UpdateAvailableToast } from "@/components/UpdateAvailableToast";
+import { TourProvider } from "@/features/onboarding/TourProvider";
 
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
 
@@ -116,6 +119,8 @@ const App = () => (
               <Route path="/admin/motor" element={<ProtectedRoute><AdminMotorCadencia /></ProtectedRoute>} />
               <Route path="/admin/agendamentos-central" element={<ProtectedRoute><AdminAgendamentosCentral /></ProtectedRoute>} />
               <Route path="/consultor/mensagens" element={<ProtectedRoute><ConsultantMessages /></ProtectedRoute>} />
+              <Route path="/ajuda" element={<ProtectedRoute><AjudaPage /></ProtectedRoute>} />
+              <Route path="/admin/ajuda/editor" element={<ProtectedRoute><AdminTourEditor /></ProtectedRoute>} />
 
               
               <Route path="/admin/solar-design" element={<ProtectedRoute><SolarDesignPage /></ProtectedRoute>} />
@@ -166,6 +171,7 @@ const App = () => (
             <CookieBanner />
             <RechargeRequiredDialog />
             <RemoteSupportProvider />
+            <TourProvider />
           </Suspense>
         </BrowserRouter>
         </PromptDialogProvider>
