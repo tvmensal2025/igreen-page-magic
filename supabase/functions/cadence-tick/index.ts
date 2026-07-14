@@ -42,6 +42,10 @@ interface StageConfig {
   media_url: string | null;
   media_type: string | null;
   velip_audio_id: string | null;
+  max_per_lead: number | null;
+  window_start_hour: number | null;
+  window_end_hour: number | null;
+  window_days: number[] | null;
 }
 
 async function loadStageConfig(
@@ -49,7 +53,7 @@ async function loadStageConfig(
   consultantId: string | null,
   stage: string,
 ): Promise<StageConfig | null> {
-  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id";
+  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, max_per_lead, window_start_hour, window_end_hour, window_days";
   if (consultantId) {
     const { data } = await supabase
       .from("cadence_stage_config")
@@ -68,6 +72,86 @@ async function loadStageConfig(
     .maybeSingle();
   return g ?? null;
 }
+
+/** Verifica se `now` (São Paulo) cai na janela específica do estágio. */
+function isInStageWindow(now: Date, cfg: StageConfig): boolean {
+  if (cfg.window_start_hour == null || cfg.window_end_hour == null) return true;
+  const fmt = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Sao_Paulo", hour12: false, weekday: "short", hour: "2-digit",
+  });
+  const parts = fmt.formatToParts(now);
+  const wd = parts.find((p) => p.type === "weekday")?.value || "Mon";
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const dow = map[wd] ?? 1;
+  if (Array.isArray(cfg.window_days) && cfg.window_days.length > 0 && !cfg.window_days.includes(dow)) return false;
+  return hour >= cfg.window_start_hour && hour < cfg.window_end_hour;
+}
+
+/** Conta quantos disparos deste canal já enviados para o lead. */
+async function countChannelSends(supabase: any, customerId: string, channel: string): Promise<number> {
+  const { count } = await supabase
+    .from("cadence_action_log")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", customerId)
+    .eq("channel", channel)
+    .eq("status", "sent");
+  return count || 0;
+}
+
+/** Dispara notificação formatada de "lead perdido por exaustão de cadência" ao parceiro. */
+async function notifyPartnerOfLoss(supabase: any, customerId: string, consultantId: string | null) {
+  try {
+    const { data: cust } = await supabase
+      .from("customers")
+      .select("id, name, phone_whatsapp, referral_partner_id, source_campaign_id, address_city, address_state")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (!cust?.referral_partner_id) return;
+
+    const { data: partner } = await supabase
+      .from("referral_partners")
+      .select("nome, notification_phone")
+      .eq("id", cust.referral_partner_id)
+      .maybeSingle();
+    if (!partner?.notification_phone) return;
+
+    // Conta tentativas por canal
+    const [{ count: wa }, { count: call }, { count: sms }] = await Promise.all([
+      supabase.from("cadence_action_log").select("id", { count: "exact", head: true }).eq("customer_id", customerId).eq("channel", "whatsapp").eq("status", "sent"),
+      supabase.from("cadence_action_log").select("id", { count: "exact", head: true }).eq("customer_id", customerId).eq("channel", "voice").eq("status", "sent"),
+      supabase.from("cadence_action_log").select("id", { count: "exact", head: true }).eq("customer_id", customerId).eq("channel", "sms").eq("status", "sent"),
+    ]);
+
+    const cityLine = cust.address_city ? `📍 ${cust.address_city}${cust.address_state ? "/" + cust.address_state : ""}\n` : "";
+    const msg =
+      `🔴 *Lead esgotado - cadência sem resposta*\n` +
+      `━━━━━━━━━━━━━━━━━━\n` +
+      `👤 ${cust.name || "sem nome"}\n` +
+      `📱 ${cust.phone_whatsapp || "-"}\n` +
+      cityLine +
+      `\n📊 *Tentativas realizadas:*\n` +
+      `   💬 WhatsApp: ${wa ?? 0}\n` +
+      `   📞 Ligações: ${call ?? 0}\n` +
+      `   💌 SMS: ${sms ?? 0}\n` +
+      `\n❗ Lead não respondeu à cadência completa (9 estágios).\n` +
+      `➡️ Adicionado automaticamente ao retargeting Meta.`;
+
+    const { sendRawToNumber } = await import("../_shared/notify-consultant.ts");
+    await sendRawToNumber(consultantId || "system", partner.notification_phone, msg);
+
+    // Encerra captação silenciosamente
+    await supabase.from("customers").update({
+      capture_closed_at: new Date().toISOString(),
+      capture_closed_by: consultantId,
+      capture_mode: null,
+    }).eq("id", customerId).is("capture_closed_at", null);
+  } catch (e) {
+    console.warn("[cadence-tick] notifyPartnerOfLoss failed:", (e as Error).message);
+  }
+}
+
+
 
 function renderTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
