@@ -742,6 +742,12 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
             <TabsTrigger value="campanhas" className="rounded-xl text-xs">
               Campanhas ({bulkCamps.length + schedMsgs.length})
             </TabsTrigger>
+            <TabsTrigger value="crm" className="rounded-xl text-xs">CRM ({stageAuto.length})</TabsTrigger>
+            <TabsTrigger value="ia-rag" className="rounded-xl text-xs">IA Conhecimento ({aiKnow.length})</TabsTrigger>
+            <TabsTrigger value="ia-agente" className="rounded-xl text-xs">IA Personalidade</TabsTrigger>
+            <TabsTrigger value="rodizio" className="rounded-xl text-xs">Rodízio ({rodizio.length})</TabsTrigger>
+            <TabsTrigger value="posvenda-global" className="rounded-xl text-xs">Pós-venda global ({posVendaGlobal.length})</TabsTrigger>
+            <TabsTrigger value="calendario" className="rounded-xl text-xs">Calendário ({holidays.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="catalogo" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
