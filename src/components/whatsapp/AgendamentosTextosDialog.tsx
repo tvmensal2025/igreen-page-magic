@@ -1240,6 +1240,154 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
               })}
             </div>
           </TabsContent>
+
+          <TabsContent value="crm" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Mensagens automáticas disparadas quando um card entra numa coluna do CRM.</p>
+            {stageAuto.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma mensagem automática configurada. Configure em CRM &gt; coluna.</p>}
+            {stageAuto.map((r) => {
+              const key = `sam:${r.id}`;
+              const val = drafts[key] ?? r.message_text ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.stage_label || r.stage_key}</Badge>
+                    <span className="text-muted-foreground">#{r.position} · {r.message_type} · +{r.delay_seconds}s</span>
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={3} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("stage_auto_messages", r.id, "message_text", key, r.message_text, "Mensagem CRM")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="ia-rag" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Seções que a IA vendedora consulta (RAG). Edite o conteúdo — títulos são fixos.</p>
+            {aiKnow.map((r) => {
+              const key = `rag:${r.id}`;
+              const val = drafts[key] ?? r.content ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.title}</Badge>
+                    {r.is_critical && <Badge variant="destructive">crítico</Badge>}
+                    {!r.is_active && <Badge variant="secondary">inativo</Badge>}
+                    {!r.consultant_id && <Badge variant="secondary">global</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={5} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("ai_knowledge_sections", r.id, "content", key, r.content, "Conhecimento IA")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="ia-agente" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-4">
+            <p className="text-xs text-muted-foreground">Personalidade, tom e prompt-mestre do agente IA.</p>
+            {(["persona_name", "tone", "system_prompt"] as const).map((field) => {
+              const key = `agent:${field}`;
+              const current = (aiAgent as any)?.[field] ?? "";
+              const val = drafts[key] ?? current;
+              const dirty = drafts[key] !== undefined;
+              const labels: Record<string, string> = { persona_name: "Nome da persona", tone: "Tom (formal, próximo, direto…)", system_prompt: "System prompt (instruções gerais)" };
+              return (
+                <div key={field} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{labels[field]}</Badge>
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={field === "system_prompt" ? 10 : 2} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveAiAgent(field)}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="rodizio" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Mensagem enviada aos parceiros quando um lead entra no rodízio.</p>
+            {rodizio.map((r) => {
+              const key = `rod:${r.id}`;
+              const val = drafts[key] ?? r.message ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.id} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.label}</Badge>
+                    <span className="text-muted-foreground">{r.slug}</span>
+                    {!r.is_active && <Badge variant="secondary">pausado</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={4} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} placeholder="Use {nome}, {telefone}, {campanha}, {posicao}…" />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => saveSimple("rodizio_pools", r.id, "message", key, r.message, "Aviso ao parceiro")}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="posvenda-global" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Legendas padrão das mídias de pós-venda (usadas quando não há override do consultor).</p>
+            {posVendaGlobal.map((r) => {
+              const key = `pvg:${r.stage}`;
+              const val = drafts[key] ?? r.message_text ?? "";
+              const dirty = drafts[key] !== undefined;
+              return (
+                <div key={r.stage} className="border rounded-xl p-3 space-y-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="outline">{r.stage}</Badge>
+                    <span className="text-muted-foreground">{r.message_type}</span>
+                    {!r.is_active && <Badge variant="secondary">inativo</Badge>}
+                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                  </div>
+                  <Textarea rows={3} value={val} onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={!dirty || saving === key} onClick={() => savePosGlobal(r)}>
+                      {saving === key ? "Salvando…" : "Salvar"}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </TabsContent>
+
+          <TabsContent value="calendario" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
+            <p className="text-xs text-muted-foreground">Feriados que o motor de cadência e crons devem respeitar (não envia mensagens nestes dias).</p>
+            <div className="border rounded-xl p-3 space-y-2 bg-muted/30">
+              <div className="text-xs font-semibold">Adicionar feriado</div>
+              <div className="flex gap-2 flex-wrap">
+                <input type="date" className="border rounded-md px-2 py-1 text-sm bg-background" value={newHolidayDate} onChange={(e) => setNewHolidayDate(e.target.value)} />
+                <input type="text" placeholder="Nome do feriado" className="border rounded-md px-2 py-1 text-sm bg-background flex-1 min-w-[180px]" value={newHolidayLabel} onChange={(e) => setNewHolidayLabel(e.target.value)} />
+                <Button size="sm" disabled={saving === "new-holiday"} onClick={addHoliday}>Adicionar</Button>
+              </div>
+            </div>
+            {holidays.map((h) => (
+              <div key={h.id} className="border rounded-xl p-3 flex items-center gap-3">
+                <Badge variant="outline">{h.date}</Badge>
+                <span className="text-sm flex-1">{h.label}</span>
+                {!h.consultant_id && <Badge variant="secondary">global</Badge>}
+                {h.consultant_id && (
+                  <Button size="sm" variant="ghost" onClick={() => removeHoliday(h.id)}>Remover</Button>
+                )}
+              </div>
+            ))}
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
