@@ -648,7 +648,13 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
                   </div>
                 ) : selected.fonte === "reactivation_templates" ||
                   selected.fonte === "conversion_phrase_catalog" ||
-                  selected.fonte === "kanban_pos_venda" ? (
+                  selected.fonte === "kanban_pos_venda" ||
+                  selected.fonte === "bot_flow_steps" ||
+                  selected.fonte === "bot_flow_qa" ||
+                  selected.fonte === "voice_campaigns" ||
+                  selected.fonte === "message_templates" ||
+                  selected.fonte === "bulk_campaigns" ||
+                  selected.fonte === "scheduled_messages" ? (
                   <div className="space-y-2">
                     <h3 className="font-semibold">{selected.nome}</h3>
                     <p className="text-sm text-muted-foreground">{selected.oQueFaz}</p>
