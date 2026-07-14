@@ -382,6 +382,32 @@ Deno.serve(async (req) => {
         const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
         if (!cfg || !cfg.enabled) {
           detail = { ...detail, reason: "config_disabled_or_missing" };
+        } else if (!isInStageWindow(now, cfg)) {
+          // Janela específica do estágio (SMS 9-20, Voz 9-19 etc.) não abriu.
+          // Reagenda para daqui 30min sem consumir o disparo.
+          await supabase.from("lead_cadence_state").update({
+            next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+          }).eq("id", row.id);
+          detail = { ...detail, reason: "channel_window_closed" };
+          deferred++;
+          // pula insert + avanço de estado (skipping do log evita ruído)
+          continue;
+        } else if (cfg.max_per_lead && cfg.max_per_lead > 0
+                   && (await countChannelSends(supabase, row.customer_id, def.channel)) >= cfg.max_per_lead) {
+          // Limite por canal atingido → encerra cadência para este lead.
+          await supabase.from("lead_cadence_state").update({
+            stage: "CLOSE_LOST",
+            next_action_at: null,
+            paused_reason: "channel_limit_reached",
+          }).eq("id", row.id);
+          await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
+          detail = { ...detail, reason: "channel_limit_reached", channel: def.channel };
+          skipped++;
+          await supabase.from("cadence_action_log").insert({
+            customer_id: row.customer_id, consultant_id: row.consultant_id,
+            stage: "CLOSE_LOST", channel: "system", status: "queued", detail,
+          }).then(() => {}, () => {});
+          continue;
         } else {
           let res: { ok: boolean; detail: string };
           if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
@@ -396,6 +422,7 @@ Deno.serve(async (req) => {
         }
       }
     }
+
 
 
     const insertRes = await supabase.from("cadence_action_log").insert({
