@@ -134,7 +134,7 @@ export function CrossSellConfigDialog({ open, onOpenChange, consultantId, onSave
           description: meta.description,
           category: meta.category,
           text_content: text,
-          variables: buildCrossSellVariables(prefs),
+          variables: buildCrossSellVariables(prefs) as import("@/integrations/supabase/types").Json,
           is_active: true,
         },
         { onConflict: "consultant_id,template_key" },
