@@ -34,6 +34,8 @@ const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
 const AdminMotorCadencia = lazy(() => import("./pages/AdminMotorCadencia"));
 const AdminAgendamentosCentral = lazy(() => import("./pages/AdminAgendamentosCentral"));
 const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
+const AjudaPage = lazy(() => import("./pages/AjudaPage"));
+const AdminTourEditor = lazy(() => import("./pages/AdminTourEditor"));
 
 const NotFound = lazy(() => import("./pages/NotFound"));
 
