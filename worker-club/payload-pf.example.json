@@ -1,0 +1,18 @@
+{
+  "cpf_cnpj": "111.444.777-35",
+  "nome": "TESTE MAPEAMENTO WORKER CLUB",
+  "dtnasc": "01/01/1990",
+  "rg": "123456789",
+  "email": "teste.mapeamento.worker.club@example.com",
+  "celular": "(11) 98765-4321",
+  "cep": "01310-100",
+  "endereco": "Avenida Paulista",
+  "numero": "100",
+  "complemento": "",
+  "bairro": "Bela Vista",
+  "uf": "SP",
+  "uf_select": 35,
+  "cidade": "São Paulo",
+  "indcli": 0,
+  "idconsultor": 124170
+}

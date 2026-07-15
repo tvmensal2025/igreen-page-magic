@@ -1,0 +1,24 @@
+---
+description: iGreen Club — fatos oficiais do cadastro (não re-mapear do zero)
+globs:
+  - worker-club/**
+  - "**/*club*api*"
+  - "**/*Club*Worker*"
+alwaysApply: false
+---
+
+# iGreen Club — fatos oficiais (NÃO re-mapear do zero)
+
+**Fonte da verdade: `worker-club/CLUB-OFICIAL.md`**.
+Serviço **`worker-club`** é independente — não misturar com `worker-portal-2`.
+
+## Fatos de ouro
+
+1. API: `https://api.igreenenergy.com.br` (JWT `/auth/consultor`) — não HMAC Portal.
+2. Cadastro PF: `POST /cliente/club` com máscaras no body + `uf_select` IBGE.
+3. PF = 2 passos. Sem OCR, sem OTP, sem upload.
+4. Porta **3102**, fila `club-worker-leads`, colunas `club_*` (não `portal2_*`).
+5. `ALLOW_LIVE_CLUB_POST=true` no worker; `/submit-lead` ainda default `dryRun:true`.
+6. Cloudflare → Playwright (+ proxy se necessário).
+7. Consultor: `club_cadastro_url` = `https://club.igreenenergy.com.br/?id=<igreen_id>`.
+8. Sem flag de cortesia na SPA — decisão de produto separada.

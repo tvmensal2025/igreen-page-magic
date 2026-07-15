@@ -3273,6 +3273,7 @@ export type Database = {
           igreen_portal_email: string | null
           igreen_portal_password: string | null
           licenciada_cadastro_url: string | null
+          club_cadastro_url: string | null
           license: string
           name: string
           notification_phone: string | null
@@ -3320,6 +3321,7 @@ export type Database = {
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
           licenciada_cadastro_url?: string | null
+          club_cadastro_url?: string | null
           license: string
           name: string
           notification_phone?: string | null
@@ -3367,6 +3369,7 @@ export type Database = {
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
           licenciada_cadastro_url?: string | null
+          club_cadastro_url?: string | null
           license?: string
           name?: string
           notification_phone?: string | null

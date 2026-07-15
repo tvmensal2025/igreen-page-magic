@@ -14,6 +14,7 @@ import {
 } from "@/features/produtos/acompanhamento/greenCommission";
 import { useGreenSettings, useSaveGreenProfile } from "@/features/produtos/acompanhamento/greenHooks";
 import { SyncAllPanel } from "@/components/admin/SyncAllPanel";
+import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
 
 interface DadosTabProps {
   form: {
@@ -25,6 +26,7 @@ interface DadosTabProps {
     igreen_id: string;
     cadastro_url: string;
     licenciada_cadastro_url: string;
+    club_cadastro_url: string;
     facebook_pixel_id: string;
     google_analytics_id: string;
     portal_kind: "digital" | "autoconexao";
@@ -395,6 +397,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 portal_kind: "autoconexao",
                 cadastro_url: url,
                 licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : "",
+                club_cadastro_url: buildClubCadastroUrl(id),
               });
               if (id) void persistPortalKind("autoconexao", url);
             }} placeholder="ex: 126928" className="bg-secondary border-border" />
@@ -419,6 +422,18 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         <div className="mt-4 space-y-2">
           <Label htmlFor="licenciada_cadastro_url" className="text-sm text-muted-foreground">Link de cadastro Licença</Label>
           <Input id="licenciada_cadastro_url" value={form.licenciada_cadastro_url} readOnly className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed" />
+        </div>
+        <div className="mt-4 space-y-2">
+          <Label htmlFor="club_cadastro_url" className="text-sm text-muted-foreground">Link iGreen Club</Label>
+          <Input
+            id="club_cadastro_url"
+            value={form.club_cadastro_url}
+            readOnly
+            className="bg-secondary/50 border-border text-muted-foreground cursor-not-allowed"
+          />
+          <p className="text-xs text-muted-foreground">
+            Cadastro oficial no Club: <span className="font-mono">club.igreenenergy.com.br/?id=seu_id</span>
+          </p>
         </div>
       </div>
 

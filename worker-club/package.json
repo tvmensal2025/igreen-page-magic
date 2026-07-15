@@ -1,0 +1,27 @@
+{
+  "name": "worker-club-igreen",
+  "version": "1.0.0",
+  "description": "Worker VPS para iGreen Club (Conexão Club) — API JWT + Playwright tunnel TLS",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "test": "node --test test/",
+    "probe:auth": "node _probe-auth.mjs",
+    "dryrun": "node _dryrun-cadastro.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "bullmq": "^5.30.0",
+    "dotenv": "^17.3.1",
+    "express": "^4.22.1",
+    "playwright-chromium": "^1.49.1",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "iGreen Energy",
+  "license": "MIT"
+}

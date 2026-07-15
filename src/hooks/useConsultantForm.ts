@@ -4,6 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { Database } from "@/integrations/supabase/types";
 import type { ConsultantForm } from "./useAdminAuth";
 import { validateBrazilPhone } from "@/lib/phone";
+import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
 
 function describeSupabaseError(error: unknown): string {
   if (!error || typeof error !== "object") return String(error || "Erro desconhecido");
@@ -96,6 +97,7 @@ export function useConsultantForm(
         notification_phone: form.notification_phone ? form.notification_phone.replace(/\D/g, "") : null,
         cadastro_url: form.cadastro_url, igreen_id: form.igreen_id || null,
         licenciada_cadastro_url: form.licenciada_cadastro_url || null,
+        club_cadastro_url: form.club_cadastro_url || buildClubCadastroUrl(form.igreen_id) || null,
         facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
         igreen_portal_email: form.igreen_portal_email || null,
         assistant_name: form.assistant_name?.trim() || null,
@@ -118,6 +120,7 @@ export function useConsultantForm(
           notification_phone: form.notification_phone ? form.notification_phone.replace(/\D/g, "") : null,
           cadastro_url: form.cadastro_url, igreen_id: form.igreen_id || null,
           licenciada_cadastro_url: form.licenciada_cadastro_url || null,
+          club_cadastro_url: form.club_cadastro_url || buildClubCadastroUrl(form.igreen_id) || null,
           facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
           igreen_portal_email: form.igreen_portal_email || null,
           assistant_name: form.assistant_name?.trim() || null,

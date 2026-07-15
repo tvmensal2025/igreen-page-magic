@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Sparkles, Save, AlertCircle } from "lucide-react";
 import type { ConsultantForm } from "@/hooks/useAdminAuth";
 import { validateBrazilPhone } from "@/lib/phone";
+import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
 
 interface OnboardingGateProps {
   form: ConsultantForm;
@@ -150,6 +151,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                     igreen_id: id,
                     cadastro_url: id ? `https://digital.igreenenergy.com.br/?id=${id}&sendcontract=true` : "",
                     licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : "",
+                    club_cadastro_url: buildClubCadastroUrl(id),
                   });
                 }}
                 placeholder="ex: 126928"

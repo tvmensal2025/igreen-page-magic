@@ -57,16 +57,22 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
   const [tab, setTab] = useState<"dashboard" | "links">("dashboard");
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
   const [consultantId, setConsultantId] = useState<string>();
+  const [clubCadastroUrl, setClubCadastroUrl] = useState<string>("");
   const { data: activeProducts } = useProducts();
 
   useEffect(() => {
     supabase
       .from("consultants_public" as any)
-      .select("id")
+      .select("id, club_cadastro_url, igreen_id")
       .eq("license", slug)
       .maybeSingle()
       .then(({ data }) => {
-        if (data) setConsultantId((data as any).id);
+        if (!data) return;
+        const row = data as { id?: string; club_cadastro_url?: string | null; igreen_id?: string | null };
+        if (row.id) setConsultantId(row.id);
+        const club = (row.club_cadastro_url || "").trim()
+          || (row.igreen_id ? `https://club.igreenenergy.com.br/?id=${String(row.igreen_id).replace(/\D/g, "")}` : "");
+        setClubCadastroUrl(club);
       });
   }, [slug]);
 
@@ -111,6 +117,29 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
           <p className="text-xs text-muted-foreground">
             Toque em um produto para ver os links de cada rede social (Instagram, WhatsApp, etc)
           </p>
+
+          {clubCadastroUrl && (
+            <div className="bg-card rounded-2xl border border-primary/30 overflow-hidden shadow-sm p-4 flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0 ring-1 ring-primary/20">
+                🛍️
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-heading font-bold text-sm text-foreground">iGreen Club (cadastro oficial)</p>
+                <p className="text-[11px] text-muted-foreground truncate font-mono">{clubCadastroUrl}</p>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" title="Copiar" onClick={() => onCopy(clubCadastroUrl)}>
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" title="QR Code" onClick={() => onQrOpen(clubCadastroUrl, "iGreen Club")}>
+                  <QrCode className="w-3.5 h-3.5" />
+                </Button>
+                <a href={clubCadastroUrl} target="_blank" rel="noopener noreferrer" title="Abrir" className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted transition-colors">
+                  <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                </a>
+              </div>
+            </div>
+          )}
 
           {pages.map((page) => {
             const fullUrl = `https://${baseUrl}/${page.path}`;
