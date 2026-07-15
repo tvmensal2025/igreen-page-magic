@@ -1,6 +1,11 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { PORTAL_FIELDS, validateForPortal, type ValidationResult } from "@/lib/captacao/portalValidation";
+import {
+  validateForClub,
+  type ClubFieldKey,
+  type ClubValidationResult,
+} from "@/lib/captacao/clubValidation";
 import { resolvePortalWhatsapp, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 
 /**
@@ -27,7 +32,8 @@ export const CAPTURE_FIELDS = [
 
 export type CaptureFieldKey =
   | typeof PORTAL_FIELDS[number]["key"]
-  | typeof ID_OVERRIDE_FIELD.key;
+  | typeof ID_OVERRIDE_FIELD.key
+  | ClubFieldKey;
 
 export interface CaptureCustomer {
   id: string;
@@ -52,6 +58,18 @@ export interface CaptureCustomer {
   transferir_titularidade_answered?: boolean | null;
   /** Se preenchido, sobrescreve idconsultor no Portal 2. */
   portal_idconsultor_override?: number | null;
+  referral_partner_id?: string | null;
+  /** Join: parceiro indicador (cli / partner_igreen_id). */
+  referral_partners?: {
+    nome?: string | null;
+    cli?: string | number | null;
+    partner_igreen_id?: string | number | null;
+  } | null;
+  /** Join: consultor dono da página. */
+  consultants?: {
+    igreen_id?: string | number | null;
+    name?: string | null;
+  } | null;
   /** Telefone de contato do portal (edição da ficha). phone_whatsapp = chave do chat. */
   portal2_celular_alt?: string | null;
   document_front_url: string | null;
@@ -88,6 +106,14 @@ export interface CaptureCustomer {
 function isFieldFilled(c: CaptureCustomer | null | undefined, key: CaptureFieldKey): boolean {
   if (!c) return false;
   if (key === "phone_whatsapp") return !!resolvePortalWhatsapp(c);
+  if (key === "address_complement") {
+    const v = c.address_complement;
+    return v !== null && v !== undefined && String(v).trim() !== "";
+  }
+  if (key === "rg") {
+    const v = c.rg;
+    return v !== null && v !== undefined && String(v).trim().length >= 5;
+  }
   const v = (c as any)[key];
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && !v.trim()) return false;
@@ -96,6 +122,44 @@ function isFieldFilled(c: CaptureCustomer | null | undefined, key: CaptureFieldK
   }
   if (key === "portal_idconsultor_override" && Number(v) <= 0) return false;
   return true;
+}
+
+/** Mesma regra do worker-portal-2: override > partner_igreen_id > cli > consultor da página. */
+export type IdconsultorSource = "override" | "parceiro" | "pagina" | "none";
+
+export function resolveEffectiveIdconsultor(customer: CaptureCustomer | null | undefined): {
+  id: number | null;
+  source: IdconsultorSource;
+  partnerName: string | null;
+} {
+  if (!customer) return { id: null, source: "none", partnerName: null };
+  const overrideRaw = Number(customer.portal_idconsultor_override || 0);
+  if (Number.isFinite(overrideRaw) && overrideRaw > 0) {
+    return {
+      id: overrideRaw,
+      source: "override",
+      partnerName: customer.referral_partners?.nome ?? null,
+    };
+  }
+  const partner = customer.referral_partners;
+  const partnerIgreen = Number(partner?.partner_igreen_id || 0);
+  const partnerCli = Number(partner?.cli || 0);
+  const partnerId =
+    Number.isFinite(partnerIgreen) && partnerIgreen > 0
+      ? partnerIgreen
+      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  if (partnerId > 0) {
+    return {
+      id: partnerId,
+      source: "parceiro",
+      partnerName: partner?.nome ?? null,
+    };
+  }
+  const dono = Number(customer.consultants?.igreen_id || 0);
+  if (Number.isFinite(dono) && dono > 0) {
+    return { id: dono, source: "pagina", partnerName: null };
+  }
+  return { id: null, source: "none", partnerName: null };
 }
 
 export function useCaptureSession(customerId: string | null) {
@@ -107,7 +171,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, ocr_review_pending, ocr_review_started_at, created_at")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, referral_partner_id, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, do_not_contact, ocr_review_pending, ocr_review_started_at, created_at, referral_partners:referral_partner_id(nome, cli, partner_igreen_id), consultants:consultant_id(igreen_id, name)")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);
@@ -132,6 +196,12 @@ export function useCaptureSession(customerId: string | null) {
   // porque o card só olhava presença e a ficha somava inválidos também.
   const validation: ValidationResult = useMemo(() => validateForPortal(customer as any), [customer]);
 
+  // Validação Club — independente; não altera contadores do Portal 2.
+  const clubValidation: ClubValidationResult = useMemo(
+    () => validateForClub(customer as any),
+    [customer],
+  );
+
   const totalFields = validation.totalFields;
   // filledCount = só presença (missing). Inválidos NÃO descontam — senão um
   // único campo torto (ex: email com formato errado, name_mismatch, distrib
@@ -139,6 +209,20 @@ export function useCaptureSession(customerId: string | null) {
   // toda preenchida.
   const filledCount = Math.max(0, totalFields - validation.missing.length);
   const progress = Math.round((filledCount / totalFields) * 100);
+
+  const clubFilledCount = clubValidation.filledCount;
+  const clubTotalFields = clubValidation.totalFields;
+  const clubProgress = Math.round((clubFilledCount / Math.max(1, clubTotalFields)) * 100);
+  const clubMissing = useMemo(
+    () =>
+      clubValidation.pendingItems.map((p) =>
+        p.kind === "invalid" && p.reason
+          ? `${p.label} (${p.reason.slice(0, 60)}${p.reason.length > 60 ? "…" : ""})`
+          : p.label,
+      ),
+    [clubValidation],
+  );
+  const clubIsComplete = clubValidation.ok && !!customer;
 
   if (typeof window !== "undefined" && (import.meta as any)?.env?.DEV && customer) {
     // eslint-disable-next-line no-console
@@ -164,6 +248,8 @@ export function useCaptureSession(customerId: string | null) {
   );
 
   const isComplete = validation.ok && !!customer;
+
+  const idconsultor = useMemo(() => resolveEffectiveIdconsultor(customer), [customer]);
 
   const updateField = useCallback(async (field: CaptureFieldKey, value: any) => {
     if (!customerId || !customer) return;
@@ -289,6 +375,13 @@ export function useCaptureSession(customerId: string | null) {
     missing,
     isComplete,
     validation,
+    clubValidation,
+    clubFilledCount,
+    clubTotalFields,
+    clubProgress,
+    clubMissing,
+    clubIsComplete,
+    idconsultor,
     updateField,
     updateBoletoPreference,
     reload: load,

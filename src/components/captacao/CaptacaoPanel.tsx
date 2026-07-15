@@ -5,7 +5,7 @@ import { CaptureLeadList, type CaptureBatchLead } from "@/components/captacao/Ca
 import { OpenAttendanceBatchDialog } from "@/components/captacao/OpenAttendanceBatchDialog";
 import { CaptureStepsGrid } from "@/components/captacao/CaptureStepsGrid";
 import { CaptureConversationFeed } from "@/components/captacao/CaptureConversationFeed";
-import { CaptureLeadCard } from "@/components/captacao/CaptureLeadCard";
+import { CaptureLeadCard, type FichaMode } from "@/components/captacao/CaptureLeadCard";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, ClipboardCheck, X } from "lucide-react";
@@ -21,6 +21,8 @@ import { CloseCaptureButton } from "@/components/captacao/CloseCaptureButton";
 import { runFastStartAttendance } from "@/components/captacao/runFastStartAttendance";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
+import { ClubStatusTracker } from "@/components/captacao/ClubStatusTracker";
+import { ClubSubmitButton } from "@/components/captacao/ClubSubmitButton";
 import { ProgressRing } from "@/components/captacao/ProgressRing";
 import { WhatsAppStatusPill } from "@/components/captacao/WhatsAppStatusPill";
 import { CapturedLeadsPanel } from "@/components/captacao/CapturedLeadsPanel";
@@ -60,6 +62,19 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [fichaCollapsed, setFichaCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem("cap_ficha_collapsed") === "1"; } catch { return false; }
   });
+  const [fichaMode, setFichaMode] = useState<FichaMode>(() => {
+    try {
+      return localStorage.getItem("cap_ficha_mode") === "club" ? "club" : "energia";
+    } catch {
+      return "energia";
+    }
+  });
+  const persistFichaMode = useCallback((mode: FichaMode) => {
+    setFichaMode(mode);
+    try {
+      localStorage.setItem("cap_ficha_mode", mode);
+    } catch {}
+  }, []);
   const toggleFichaCollapsed = () => setFichaCollapsed((v) => {
     const n = !v;
     try { localStorage.setItem("cap_ficha_collapsed", n ? "1" : "0"); } catch {}
@@ -218,25 +233,40 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
     sonnerToast.success("Cadastro registrado com sucesso.");
   };
 
-  // Rodapé da ficha: status do portal + botão de finalizar (acende quando completo)
+  // Rodapé da ficha: Energia → portal2_*; Club → club_* (nunca misturar)
   // null = ainda carregando passos; 0 = sem fluxo (não bloqueia); N = exige todos enviados.
   const stepsKnown = totalSteps !== null;
   const allStepsSent = stepsKnown && (totalSteps === 0 || sentSteps.size >= totalSteps);
   const pendingStepsCount = stepsKnown ? Math.max(0, totalSteps - sentSteps.size) : 0;
   const fichaFooter = selectedId ? (
     <div className="space-y-2">
-      <PortalStatusTracker customerId={selectedId} consultantId={consultantId} />
-      <FinalizeButton
-        consultantId={consultantId}
-        customerId={selectedId}
-        variant={variant}
-        missing={session.missing || []}
-        isComplete={!!session.isComplete}
-        allStepsSent={allStepsSent}
-        pendingStepsCount={pendingStepsCount}
-        botPaused={!!session.customer?.bot_paused}
-        captureMode={session.customer?.capture_mode}
-      />
+      {fichaMode === "club" ? (
+        <>
+          <ClubStatusTracker customerId={selectedId} />
+          <ClubSubmitButton
+            consultantId={consultantId}
+            customerId={selectedId}
+            missing={session.clubMissing || []}
+            isComplete={!!session.clubIsComplete}
+            allowLive
+          />
+        </>
+      ) : (
+        <>
+          <PortalStatusTracker customerId={selectedId} consultantId={consultantId} />
+          <FinalizeButton
+            consultantId={consultantId}
+            customerId={selectedId}
+            variant={variant}
+            missing={session.missing || []}
+            isComplete={!!session.isComplete}
+            allStepsSent={allStepsSent}
+            pendingStepsCount={pendingStepsCount}
+            botPaused={!!session.customer?.bot_paused}
+            captureMode={session.customer?.capture_mode}
+          />
+        </>
+      )}
       <div className="px-3 pb-2">
         <CloseCaptureButton
           customerId={selectedId}
@@ -340,11 +370,21 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 <Button size="icon" variant="ghost" className="lg:hidden h-9 w-9 shrink-0" onClick={() => setSelectedId(null)} title="Voltar">
                   <ChevronLeft className="w-4 h-4" />
                 </Button>
-                <ProgressRing progress={session.progress} filled={session.filledCount} total={session.totalFields} />
+                <ProgressRing
+                  progress={fichaMode === "club" ? session.clubProgress : session.progress}
+                  filled={fichaMode === "club" ? session.clubFilledCount : session.filledCount}
+                  total={fichaMode === "club" ? session.clubTotalFields : session.totalFields}
+                />
                 <div className="min-w-0 flex-1">
                   <span className="text-sm font-semibold leading-tight truncate block">{customerName || phone || "—"}</span>
                   <span className="text-[11px] text-muted-foreground">
-                    {session.isComplete ? "Pronto para cadastrar" : `${session.filledCount} de ${session.totalFields} campos`}
+                    {fichaMode === "club"
+                      ? (session.clubIsComplete
+                        ? "Club pronto"
+                        : `${session.clubFilledCount} de ${session.clubTotalFields} campos Club`)
+                      : (session.isComplete
+                        ? "Pronto para cadastrar"
+                        : `${session.filledCount} de ${session.totalFields} campos`)}
                   </span>
                 </div>
                 <Button size="sm" variant="default" className="gap-1.5 h-9 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
@@ -440,12 +480,17 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   onSendAudioUrl={sendAudioUrl}
                   onSendMedia={sendMedia}
                   templates={templates}
-                  disabled={!instanceName || !phone}
+                  disabled={!instanceName || !phone || !!(session.customer as { do_not_contact?: boolean } | null)?.do_not_contact}
                   consultantId={consultantId}
                   customerId={selectedId || undefined}
                   customerJid={customerJid}
                   customerName={customerName || undefined}
                 />
+                {!!(session.customer as { do_not_contact?: boolean } | null)?.do_not_contact && (
+                  <p className="px-3 pb-2 text-[11px] text-destructive">
+                    Lead em lista de não contato — envio bloqueado.
+                  </p>
+                )}
               </div>
             </>
           )}
@@ -473,7 +518,9 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 <ClipboardCheck className="w-4 h-4" />
               </button>
               <span className="text-[10px] font-bold tabular-nums text-muted-foreground writing-mode-vertical" style={{ writingMode: "vertical-rl" }}>
-                {session.filledCount}/{session.totalFields}
+                {fichaMode === "club"
+                  ? `${session.clubFilledCount}/${session.clubTotalFields}`
+                  : `${session.filledCount}/${session.totalFields}`}
               </span>
             </div>
           ) : (
@@ -487,7 +534,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
               >
                 <ChevronsRight className="w-4 h-4" />
               </button>
-              <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
+              <CaptureLeadCard
+                customerId={selectedId}
+                onSubmitted={handleSubmitted}
+                sentStepsCount={sentSteps.size}
+                footer={fichaFooter}
+                fichaMode={fichaMode}
+                onFichaModeChange={persistFichaMode}
+              />
             </div>
           )
         )}
@@ -511,7 +565,14 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           </div>
           <div className="flex-1 min-h-0 overflow-hidden">
             {selectedId && (
-              <CaptureLeadCard customerId={selectedId} onSubmitted={handleSubmitted} sentStepsCount={sentSteps.size} footer={fichaFooter} />
+              <CaptureLeadCard
+                customerId={selectedId}
+                onSubmitted={handleSubmitted}
+                sentStepsCount={sentSteps.size}
+                footer={fichaFooter}
+                fichaMode={fichaMode}
+                onFichaModeChange={persistFichaMode}
+              />
             )}
           </div>
         </SheetContent>

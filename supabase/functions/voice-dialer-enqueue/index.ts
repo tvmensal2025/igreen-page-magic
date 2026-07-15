@@ -288,6 +288,7 @@ Deno.serve(async (req) => {
         "id, name, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, conversation_step, last_bot_interaction_at, updated_at",
       )
       .eq("consultant_id", consultantId)
+      .eq("do_not_contact", false)
       .limit(Math.min(body.max_targets ?? MAX_TARGETS, MAX_TARGETS));
 
     if (step) q = q.eq("conversation_step", step);
@@ -327,6 +328,21 @@ Deno.serve(async (req) => {
       .select("phone")
       .eq("consultant_id", consultantId);
     const blocked = new Set((dnc ?? []).map((r: { phone: string }) => r.phone.replace(/\D/g, "")));
+
+    // Também bloqueia customers.do_not_contact (mesmo phone)
+    const { data: dncCust } = await admin
+      .from("customers")
+      .select("phone_whatsapp, phone_landline, portal2_celular_alt")
+      .eq("consultant_id", consultantId)
+      .eq("do_not_contact", true)
+      .limit(5000);
+    for (const row of dncCust || []) {
+      for (const field of ["phone_whatsapp", "phone_landline", "portal2_celular_alt"] as const) {
+        const d = String((row as Record<string, unknown>)[field] || "").replace(/\D/g, "");
+        if (d) blocked.add(d);
+      }
+    }
+
     if (blocked.size) {
       const before = targets.length;
       // remove destino se qualquer sufixo bater
@@ -337,7 +353,7 @@ Deno.serve(async (req) => {
         }
       }
       if (before !== targets.length) {
-        console.log(`[dnc] removidos ${before - targets.length} alvo(s) por Não Perturbe`);
+        console.log(`[dnc] removidos ${before - targets.length} alvo(s) por Não Perturbe / do_not_contact`);
       }
     }
   }

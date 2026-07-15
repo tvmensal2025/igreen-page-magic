@@ -327,11 +327,12 @@ Deno.serve(async (req) => {
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
   const { data: custRows } = await supabase
     .from("customers")
-    .select("id, bot_paused, bot_paused_until, assigned_human_id")
+    .select("id, bot_paused, bot_paused_until, assigned_human_id, do_not_contact")
     .in("id", customerIds);
   const blockedCustomers = new Set(
     (custRows || [])
       .filter((c: any) =>
+        !!c.do_not_contact ||
         !!c.bot_paused ||
         !!c.assigned_human_id ||
         (c.bot_paused_until && new Date(c.bot_paused_until) > now))

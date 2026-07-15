@@ -159,6 +159,51 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
     return { status: "failed", error: `Número inválido: ${phone}` };
   }
 
+  // Hard gate: lead em lista de não contato (reclamação / opt-out)
+  if (customerId) {
+    try {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("do_not_contact")
+        .eq("id", customerId)
+        .maybeSingle();
+      if ((cust as { do_not_contact?: boolean } | null)?.do_not_contact) {
+        logger.warn("Envio bloqueado — do_not_contact:", customerId);
+        return {
+          status: "failed",
+          error: "Lead em lista de não contato — envio bloqueado.",
+        };
+      }
+    } catch {
+      // se a checagem falhar, segue (não derruba chat por blip de rede)
+    }
+  } else {
+    // Sem customerId: tenta pelo telefone (últimos 11 dígitos)
+    try {
+      const tail = phone.replace(/\D/g, "").slice(-11);
+      if (tail.length >= 10) {
+        const { data: rows } = await supabase
+          .from("customers")
+          .select("do_not_contact, phone_whatsapp")
+          .eq("do_not_contact", true)
+          .ilike("phone_whatsapp", `%${tail}`)
+          .limit(5);
+        const hit = (rows || []).some((r) => {
+          const d = String((r as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
+          return d.endsWith(tail) || tail.endsWith(d.slice(-11));
+        });
+        if (hit) {
+          return {
+            status: "failed",
+            error: "Lead em lista de não contato — envio bloqueado.",
+          };
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   // Enforce per-contact rate limiting
   await enforcePerContactRateLimit(phone);
 

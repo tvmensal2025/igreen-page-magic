@@ -467,6 +467,7 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: Rea
     // Lead pausado (fixo ou temporário) ou em mão humana não recebe
     // reativação — mesmos filtros dos demais crons proativos.
     .eq("bot_paused", false)
+    .eq("do_not_contact", false)
     .or(`bot_paused_until.is.null,bot_paused_until.lte.${new Date().toISOString()}`)
     .is("assigned_human_id", null)
     // Regra de ouro: carteira iGreen nunca recebe reativação automática.

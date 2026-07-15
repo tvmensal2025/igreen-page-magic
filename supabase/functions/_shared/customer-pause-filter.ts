@@ -39,6 +39,7 @@ export async function checkCustomerCanSend(
         bot_paused,
         bot_paused_until,
         assigned_human_id,
+        do_not_contact,
         customer_flow_state ( status, pause_reason )
       `)
       .eq("id", customerId)
@@ -49,6 +50,11 @@ export async function checkCustomerCanSend(
     }
 
     const c = data as any;
+    // Hard gate LGPD: nunca outbound automático se do_not_contact.
+    if (c.do_not_contact) {
+      return { v3Status: "lost", legacyPaused: true, canSend: false, disagreement: false };
+    }
+
     const cfs = Array.isArray(c.customer_flow_state) ? c.customer_flow_state[0] : c.customer_flow_state;
     const v3Status: string | null = cfs?.status ?? null;
     const v3PauseReason: string | null = cfs?.pause_reason ?? null;

@@ -116,6 +116,17 @@ Deno.serve(async (req) => {
     (dncRows ?? []).map((r: { phone: string }) => String(r.phone || "").replace(/\D/g, "")).filter(Boolean),
   );
 
+  const { data: dncCust } = await admin
+    .from("customers")
+    .select("phone_whatsapp")
+    .eq("consultant_id", consultantId)
+    .eq("do_not_contact", true)
+    .limit(5000);
+  for (const row of dncCust || []) {
+    const d = String((row as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
+    if (d) blocked.add(d);
+  }
+
   let sent = 0;
   let failed = 0;
   const results: unknown[] = [];

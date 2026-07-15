@@ -2234,6 +2234,36 @@ export type Database = {
         }
         Relationships: []
       }
+      br_municipios: {
+        Row: {
+          created_at: string
+          ibge_code: number
+          lat: number | null
+          lng: number | null
+          name: string
+          name_normalized: string
+          uf: string
+        }
+        Insert: {
+          created_at?: string
+          ibge_code: number
+          lat?: number | null
+          lng?: number | null
+          name: string
+          name_normalized: string
+          uf: string
+        }
+        Update: {
+          created_at?: string
+          ibge_code?: number
+          lat?: number | null
+          lng?: number | null
+          name?: string
+          name_normalized?: string
+          uf?: string
+        }
+        Relationships: []
+      }
       bulk_campaign_targets: {
         Row: {
           campaign_id: string
@@ -3411,6 +3441,50 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
+      contact_suppression_log: {
+        Row: {
+          actor_id: string | null
+          channel: string
+          consultant_id: string
+          created_at: string
+          customer_id: string | null
+          id: string
+          notes: string | null
+          phone: string
+          reason: string
+        }
+        Insert: {
+          actor_id?: string | null
+          channel?: string
+          consultant_id: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          notes?: string | null
+          phone: string
+          reason?: string
+        }
+        Update: {
+          actor_id?: string | null
+          channel?: string
+          consultant_id?: string
+          created_at?: string
+          customer_id?: string | null
+          id?: string
+          notes?: string | null
+          phone?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_suppression_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -11452,6 +11526,10 @@ export type Database = {
           customer_id: string
         }[]
       }
+      count_captured_leads_by_channel: {
+        Args: { p_consultant_id: string }
+        Returns: Json
+      }
       create_empty_bot_flow_variant: {
         Args: { _consultant_id: string; _name?: string; _variant: string }
         Returns: string
@@ -11529,6 +11607,10 @@ export type Database = {
           _value?: number
         }
         Returns: undefined
+      }
+      filter_dispatched_phones: {
+        Args: { p_consultant_id: string; p_phones: string[] }
+        Returns: string[]
       }
       flow_engine_housekeeping: { Args: never; Returns: Json }
       fork_ad_template: { Args: { _origin_id: string }; Returns: string }

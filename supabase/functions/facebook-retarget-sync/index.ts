@@ -68,14 +68,14 @@ Deno.serve(async (req) => {
 
     if (!leads?.length) { results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: 0 }); continue; }
 
-    // Filtra opt-outs.
+    // Filtra opt-outs via customers.do_not_contact (fonte da verdade).
     const ids = leads.map(l => l.customer_id);
     const { data: optouts } = await admin
-      .from("lead_consent_log")
-      .select("customer_id, consent_type")
-      .in("customer_id", ids)
-      .eq("consent_type", "opt_out");
-    const blocked = new Set((optouts ?? []).map(o => o.customer_id));
+      .from("customers")
+      .select("id")
+      .in("id", ids)
+      .eq("do_not_contact", true);
+    const blocked = new Set((optouts ?? []).map((o: { id: string }) => o.id));
 
     const rows: Array<[string, string]> = [];
     for (const l of leads) {

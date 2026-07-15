@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
           // Prioriza customer do consultor que criou o agendamento (evita colisão multi-tenant).
           let custQuery = supabase
             .from("customers")
-            .select("name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until")
+            .select("name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
             .eq("phone_whatsapp", phone);
           if (msg.consultant_id) {
             custQuery = custQuery.or(
@@ -137,6 +137,7 @@ Deno.serve(async (req) => {
             .limit(1)
             .maybeSingle();
           const paused =
+            !!cust?.do_not_contact ||
             !!cust?.bot_paused ||
             !!cust?.assigned_human_id ||
             (cust?.bot_paused_until && new Date(cust.bot_paused_until).getTime() > Date.now());
@@ -145,7 +146,7 @@ Deno.serve(async (req) => {
               .from("scheduled_messages")
               .update({ status: "skipped", processing_started_at: null })
               .eq("id", msg.id);
-            console.log(`⏭️ [scheduled] msg ${msg.id} pulada — humano assumiu (phone=${phone})`);
+            console.log(`⏭️ [scheduled] msg ${msg.id} pulada — pausado/opt-out (phone=${phone})`);
             skippedPaused++;
             continue;
           }

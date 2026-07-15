@@ -2,6 +2,7 @@
 // → NENHUM motor automático envia mensagem.
 //
 // Bloqueios verificados:
+//   - do_not_contact === true  (opt-out / reclamação — nunca religar automático)
 //   - bot_paused === true  (consultor clicou "Assumir")
 //   - assigned_human_id IS NOT NULL  (humano vinculado)
 //   - bot_paused_until > now()  (pausa programada ainda no futuro)
@@ -14,10 +15,13 @@ export interface PausableCustomer {
   bot_paused_reason?: string | null;
   assigned_human_id?: string | null;
   bot_paused_until?: string | null;
+  do_not_contact?: boolean | null;
 }
 
 export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined): boolean {
   if (!c) return false;
+  // Opt-out / reclamação: nunca responder automático (mesmo se bot_paused foi zerado por engano).
+  if (c.do_not_contact === true) return true;
   // Humano vinculado SEMPRE silencia.
   if (c.assigned_human_id) return true;
   // Modo Captação assistido NÃO silencia o bot — OCR/capture handlers precisam rodar.
@@ -45,7 +49,7 @@ export async function isPausedByPhone(
   if (!digits) return false;
   let q = supabase
     .from("customers")
-    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until")
+    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
     .eq("phone_whatsapp", digits)
     .limit(1);
   if (consultantId) q = q.eq("consultant_id", consultantId);

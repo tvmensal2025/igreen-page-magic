@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 
 type Part = "text" | "audio" | "image" | "video" | "document" | "all";
@@ -90,10 +91,27 @@ Deno.serve(async (req) => {
     // Resolve customer + phone
     const { data: customer } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, cpf, consultant_id, electricity_bill_value, flow_variant, conversation_step, last_custom_prompt_at, electricity_bill_photo_url, document_front_url, document_back_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_at, bill_data_confirmed_at, doc_data_confirmed_at, bill_holder_name, doc_holder_name, name_mismatch_flag, name_mismatch_acknowledged_at, rg, data_nascimento, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, cep, distribuidora, numero_instalacao")
+      .select("id, name, name_source, phone_whatsapp, cpf, consultant_id, electricity_bill_value, flow_variant, conversation_step, last_custom_prompt_at, electricity_bill_photo_url, document_front_url, document_back_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_at, bill_data_confirmed_at, doc_data_confirmed_at, bill_holder_name, doc_holder_name, name_mismatch_flag, name_mismatch_acknowledged_at, rg, data_nascimento, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, cep, distribuidora, numero_instalacao, do_not_contact")
       .eq("id", body.customerId)
       .maybeSingle();
     if (!customer) return json({ ok: false, blocked: true, code: "customer_not_found", error: "customer_not_found", message: "Lead não encontrado (pode ter sido removido). Recarregue a lista." });
+
+    const suppression = await assertCanContact(supabase, {
+      customerId: body.customerId,
+      consultantId: body.consultantId,
+      phone: customer.phone_whatsapp,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      return json({
+        ok: false,
+        blocked: true,
+        code: "do_not_contact",
+        error: "do_not_contact",
+        message: "Lead em lista de não contato — envio bloqueado.",
+        reason: suppression.reason,
+      });
+    }
 
     const rawPhone = String(customer.phone_whatsapp || "");
     if (rawPhone.startsWith("sem_celular_")) {

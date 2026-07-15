@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, Handshake, ClipboardCheck } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, Handshake, ClipboardCheck, ShieldBan } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
@@ -30,6 +30,10 @@ import { CustomerTagsEditor } from "@/components/leads/CustomerTagsEditor";
 
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
+import {
+  NeverContactConfirmDialog,
+  RevokeNeverContactDialog,
+} from "@/components/leads/NeverContactDialogs";
 
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -107,6 +111,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const [botForceEnabled, setBotForceEnabled] = useState<boolean>(false);
   const [globalAiEnabled, setGlobalAiEnabled] = useState<boolean>(true);
   const [togglingBot, setTogglingBot] = useState(false);
+  const [doNotContact, setDoNotContact] = useState(false);
+  const [neverContactOpen, setNeverContactOpen] = useState(false);
+  const [revokeContactOpen, setRevokeContactOpen] = useState(false);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [closeCaptureOpen, setCloseCaptureOpen] = useState(false);
   const [originOpen, setOriginOpen] = useState(false);
@@ -216,7 +223,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     (async () => {
       const [{ data: cust }, { data: cfg }] = await Promise.all([
         supabase.from("customers")
-          .select("bot_paused, bot_force_enabled")
+          .select("bot_paused, bot_force_enabled, do_not_contact")
           .eq("id", customerId).maybeSingle(),
         supabase.from("ai_agent_config")
           .select("enabled")
@@ -225,6 +232,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       if (cancelled) return;
       setBotPaused(!!(cust as any)?.bot_paused);
       setBotForceEnabled(!!(cust as any)?.bot_force_enabled);
+      setDoNotContact(!!(cust as any)?.do_not_contact);
       setGlobalAiEnabled((cfg as any)?.enabled !== false);
     })();
     return () => { cancelled = true; };
@@ -235,6 +243,14 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   const toggleBot = useCallback(async () => {
     if (!customerId || togglingBot) return;
+    if (!botActive && doNotContact) {
+      toast({
+        title: "Lead em lista de não contato",
+        description: "Não dá para religar o bot. Use “Revogar opt-out” no menu se for o caso.",
+        variant: "destructive",
+      });
+      return;
+    }
     setTogglingBot(true);
     try {
       if (botActive) {
@@ -267,7 +283,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } finally {
       setTogglingBot(false);
     }
-  }, [customerId, togglingBot, botActive, globalAiEnabled, toast]);
+  }, [customerId, togglingBot, botActive, globalAiEnabled, doNotContact, toast]);
 
   // Fetch kanban stages
   useEffect(() => {
@@ -706,6 +722,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           <p className="text-[10px] text-muted-foreground sensitive-phone leading-tight flex items-center gap-1 truncate">
             <span className="inline-block h-1 w-1 rounded-full bg-primary/60 shrink-0" />
             {phoneNumber}
+            {doNotContact && (
+              <span className="inline-flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/30 text-[9px] font-bold uppercase tracking-wide">
+                <ShieldBan className="h-2.5 w-2.5" /> Não contatar
+              </span>
+            )}
             {partnerName && (
               <span className="text-amber-900 font-semibold truncate">· {partnerName}</span>
             )}
@@ -822,10 +843,24 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                 {customerId && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={toggleBot} disabled={togglingBot}>
+                    <DropdownMenuItem onClick={toggleBot} disabled={togglingBot || (!botActive && doNotContact)}>
                       {botActive ? <Bot className="h-4 w-4 mr-2 text-primary" /> : <BotOff className="h-4 w-4 mr-2" />}
                       IA {botActive ? "ligada" : "desligada"} (só este lead)
                     </DropdownMenuItem>
+                    {doNotContact ? (
+                      <DropdownMenuItem onClick={() => setRevokeContactOpen(true)}>
+                        <ShieldBan className="h-4 w-4 mr-2 text-amber-600" />
+                        Revogar “nunca mais”
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setNeverContactOpen(true)}
+                      >
+                        <ShieldBan className="h-4 w-4 mr-2" />
+                        Nunca mais contatar
+                      </DropdownMenuItem>
+                    )}
                   </>
                 )}
                 <DropdownMenuSeparator />
@@ -1035,6 +1070,31 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         />
       )}
 
+      {consultantId && (
+        <NeverContactConfirmDialog
+          open={neverContactOpen}
+          onOpenChange={setNeverContactOpen}
+          consultantId={consultantId}
+          customerId={customerId}
+          phone={phoneNumber || customerPhone}
+          channel="whatsapp"
+          leadLabel={chat?.pushName || phoneNumber}
+          onDone={() => {
+            setDoNotContact(true);
+            setBotPaused(true);
+          }}
+        />
+      )}
+      {customerId && consultantId && (
+        <RevokeNeverContactDialog
+          open={revokeContactOpen}
+          onOpenChange={setRevokeContactOpen}
+          consultantId={consultantId}
+          customerId={customerId}
+          onDone={() => setDoNotContact(false)}
+        />
+      )}
+
 
 
 
@@ -1125,6 +1185,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                       key,
                       sourceUrl: loaded,
                       fileName: m.fileName,
+                      mediaId: m.whapiMediaId,
                     });
                   } : undefined}
                 />
@@ -1245,7 +1306,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           }
         }}
         templates={templates}
+        disabled={doNotContact}
       />
+      {doNotContact && (
+        <p className="px-3 pb-2 text-[11px] text-destructive bg-card">
+          Lead em lista de não contato — envio bloqueado. Use o menu → Revogar “nunca mais” se precisar.
+        </p>
+      )}
       </div>
 
       {/* Add Customer Dialog */}

@@ -25,6 +25,7 @@ export function useCustomerAttendance(
   const [trackingProtocol, setTrackingProtocol] = useState<string | null>(null);
   const [attendanceRatingRequestedAt, setAttendanceRatingRequestedAt] = useState<string | null>(null);
   const [attendanceRating, setAttendanceRating] = useState<number | null>(null);
+  const [doNotContact, setDoNotContact] = useState(false);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
 
@@ -42,6 +43,7 @@ export function useCustomerAttendance(
       setTrackingProtocol(null);
       setAttendanceRatingRequestedAt(null);
       setAttendanceRating(null);
+      setDoNotContact(false);
       return;
     }
     // Colunas de avaliação podem ainda não existir no banco (migration pendente).
@@ -49,13 +51,13 @@ export function useCustomerAttendance(
     let data: Record<string, unknown> | null = null;
     const full = await supabase
       .from("customers")
-      .select("welcome_sent_at, tracking_protocol, attendance_rating_requested_at, attendance_rating")
+      .select("welcome_sent_at, tracking_protocol, attendance_rating_requested_at, attendance_rating, do_not_contact")
       .eq("id", customerId)
       .maybeSingle();
     if (full.error) {
       const minimal = await supabase
         .from("customers")
-        .select("welcome_sent_at, tracking_protocol")
+        .select("welcome_sent_at, tracking_protocol, do_not_contact")
         .eq("id", customerId)
         .maybeSingle();
       data = (minimal.data as Record<string, unknown> | null) ?? null;
@@ -69,6 +71,7 @@ export function useCustomerAttendance(
     );
     const rating = data?.attendance_rating;
     setAttendanceRating(typeof rating === "number" ? rating : null);
+    setDoNotContact(!!data?.do_not_contact);
   }, [customerId]);
 
   useEffect(() => {
@@ -118,6 +121,9 @@ export function useCustomerAttendance(
               const r = row.attendance_rating;
               setAttendanceRating(typeof r === "number" ? r : null);
             }
+            if ("do_not_contact" in row) {
+              setDoNotContact(!!row.do_not_contact);
+            }
           },
         );
       channel.subscribe((status) => {
@@ -137,6 +143,14 @@ export function useCustomerAttendance(
 
   const startAttendance = useCallback(async (opts?: { restart?: boolean }) => {
     if (!customerId || starting) return;
+    if (doNotContact) {
+      toast({
+        title: "Lead em lista de não contato",
+        description: "Não é possível iniciar atendimento. Revogue o opt-out se for o caso.",
+        variant: "destructive",
+      });
+      return;
+    }
     setStarting(true);
     const doInvoke = () => supabase.functions.invoke("start-customer-attendance", {
       body: { customerId, consultantId, restart: opts?.restart === true },
@@ -164,12 +178,20 @@ export function useCustomerAttendance(
     } finally {
       setStarting(false);
     }
-  }, [customerId, consultantId, starting, toast, refresh, go]);
+  }, [customerId, consultantId, starting, toast, refresh, go, doNotContact]);
 
   const restartAttendance = useCallback(() => startAttendance({ restart: true }), [startAttendance]);
 
   const endAttendance = useCallback(async () => {
     if (!customerId || ending) return;
+    if (doNotContact) {
+      toast({
+        title: "Lead em lista de não contato",
+        description: "Não enviaremos pedido de nota nem mensagens de encerramento.",
+        variant: "destructive",
+      });
+      return;
+    }
     setEnding(true);
     const doInvoke = () => supabase.functions.invoke("end-customer-attendance", {
       body: { customerId, consultantId },
@@ -192,12 +214,13 @@ export function useCustomerAttendance(
     } finally {
       setEnding(false);
     }
-  }, [customerId, consultantId, ending, toast, refresh, go]);
+  }, [customerId, consultantId, ending, toast, refresh, go, doNotContact]);
 
   return {
     uiState,
     protocol: trackingProtocol,
     rating: attendanceRating,
+    doNotContact,
     starting,
     ending,
     startAttendance,

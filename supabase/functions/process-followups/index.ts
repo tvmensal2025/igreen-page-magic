@@ -82,6 +82,7 @@ Deno.serve(async (req) => {
       .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
       .lte("next_followup_at", now)
       .eq("bot_paused", false)
+      .eq("do_not_contact", false)
       // Pausa temporária ("me chama amanhã" → bot_paused_until) também bloqueia
       // follow-up. Antes só o booleano bot_paused era respeitado.
       .or(`bot_paused_until.is.null,bot_paused_until.lte.${now}`)

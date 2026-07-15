@@ -82,6 +82,7 @@ Deno.serve(async (req) => {
       .eq("followup_count", 0)
       .is("bot_paused_until", null)
       .eq("bot_paused", false)
+      .eq("do_not_contact", false)
       .is("assigned_human_id", null)
       // Regra de ouro: carteira iGreen nunca recebe automação. Helper compartilhado.
       .or(LEAD_ORIGIN_FILTER)
@@ -138,6 +139,7 @@ Deno.serve(async (req) => {
       .lte("last_followup_at", fortyEightHoursAgo)
       .is("bot_paused_until", null)
       .eq("bot_paused", false)
+      .eq("do_not_contact", false)
       .is("assigned_human_id", null)
       // Só leads do bot — carteira iGreen não é "esfriada".
       .or(LEAD_ORIGIN_FILTER)

@@ -308,18 +308,46 @@ export async function sendWelcomeHeader(
       message_type: "text",
       conversation_step: "welcome",
     }).then(() => {}, () => {});
+
+    // Áudio do template / Kit do Ciclo (se houver URL)
+    const audioUrl = args.customTemplate.audio_url?.trim();
+    if (audioUrl) {
+      await new Promise((r) => setTimeout(r, args.customTemplate?.typing_delay_ms || 600));
+      const ar = await channel.adapter.sendMedia(
+        jid,
+        { kind: "audio", url: audioUrl, ptt: true } as never,
+        {
+          ...sendCtxOv,
+          stepId: "manual:start_attendance:audio",
+          idempotencyKey: `welcome-audio:${customerId}:${Date.now()}`,
+        } as never,
+      );
+      if (ar.ok) {
+        await registerSend(supabase, channel.instanceName).catch(() => {});
+        await supabase.from("conversations").insert({
+          customer_id: customerId,
+          message_direction: "outbound",
+          message_text: "[áudio]",
+          message_type: "audio",
+          conversation_step: "welcome",
+        }).then(() => {}, () => {});
+      }
+    }
+
     const nowIso = new Date().toISOString();
-    // HANDOFF por padrão: bot NÃO segue pra cadastro CPF/RG sozinho.
-    // Consultor decide na hora quando reativar a IA (botão IA OFF→ON no header do chat).
+    // Abrir atendimento NÃO pausa o bot: o fluxo/IA segue quando o lead responder.
+    // Pausa só ocorre se o consultor enviar mensagem manual (auto-takeover / outboundHuman).
     await supabase.from("customers").update({
       welcome_sent_at: nowIso,
       name_ask_sent_at: nowIso,
-      conversation_step: "aguardando_humano",
-      capture_mode: "manual",
-      bot_paused: true,
-      bot_paused_reason: "manual_start_attendance",
-      bot_paused_at: nowIso,
-      assigned_human_id: consultantId,
+      conversation_step: "welcome",
+      capture_mode: "auto",
+      bot_paused: false,
+      bot_paused_reason: null,
+      bot_paused_at: null,
+      bot_paused_until: null,
+      assigned_human_id: null,
+      last_bot_reply_at: nowIso,
     }).eq("id", customerId).then(() => {}, () => {});
     return { ok: true, protocol, channel: channel.kind, instance: channel.instanceName };
   }
@@ -378,25 +406,27 @@ export async function sendWelcomeHeader(
     message_direction: "outbound",
     message_text: protoBlock,
     message_type: "text",
-    conversation_step: "aguardando_humano",
+    conversation_step: "welcome",
   }).then(() => {}, () => {});
 
   const now = new Date().toISOString();
-  // HANDOFF por padrão: bot NÃO cadastra CPF/RG sozinho depois do nome.
-  // Consultor reativa a IA quando quiser pelo botão IA OFF→ON no header do chat.
+  // Abrir atendimento NÃO pausa o bot: o fluxo/IA segue quando o lead responder.
+  // Pausa só ocorre se o consultor enviar mensagem manual (auto-takeover / outboundHuman).
   await supabase
     .from("customers")
     .update({
       welcome_sent_at: now,
       name_ask_sent_at: now,
-      conversation_step: "aguardando_humano",
-      capture_mode: "manual",
+      conversation_step: "welcome",
+      capture_mode: "auto",
       capture_started_at: now,
       tracking_protocol: protocol,
-      bot_paused: true,
-      bot_paused_reason: "manual_start_attendance",
-      bot_paused_at: now,
-      assigned_human_id: consultantId,
+      bot_paused: false,
+      bot_paused_reason: null,
+      bot_paused_at: null,
+      bot_paused_until: null,
+      assigned_human_id: null,
+      last_bot_reply_at: now,
     })
     .eq("id", customerId)
     .then(() => {}, () => {});
@@ -424,12 +454,25 @@ export async function sendAttendanceRatingRequest(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, attendance_rating, attendance_rating_requested_at",
+      "id, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, attendance_rating, attendance_rating_requested_at, do_not_contact",
     )
     .eq("id", customerId)
     .maybeSingle();
 
   if (!customer) return { ok: false, code: "customer_not_found" };
+  if ((customer as { do_not_contact?: boolean }).do_not_contact) {
+    // Nunca mais: encerra sem pedir nota e sem outbound.
+    const now = new Date().toISOString();
+    await supabase.from("customers").update({
+      attendance_ended_at: now,
+      conversation_step: ATTENDANCE_DONE_STEP,
+      bot_paused: true,
+      bot_paused_reason: "opt_out",
+      bot_paused_at: now,
+      bot_force_enabled: false,
+    }).eq("id", customerId).then(() => {}, () => {});
+    return { ok: true, skipped: "do_not_contact" };
+  }
   if (!customer.welcome_sent_at) return { ok: false, code: "attendance_not_started" };
   if (customer.attendance_rating != null) return { ok: true, skipped: "already_rated" };
   if (customer.attendance_rating_requested_at) return { ok: true, skipped: "rating_pending" };
@@ -601,6 +644,7 @@ export interface AttendanceRatingInterceptArgs {
     conversation_step?: string | null;
     attendance_rating?: number | null;
     attendance_rating_requested_at?: string | null;
+    do_not_contact?: boolean | null;
   };
   remoteJid: string;
   messageText?: string | null;
@@ -618,6 +662,39 @@ export async function tryInterceptAttendanceRating(
 ): Promise<{ intercepted: boolean; rating?: number; invalid?: boolean; media?: boolean }> {
   if (!isAwaitingAttendanceRating(args.customer)) {
     return { intercepted: false };
+  }
+
+  // Opt-out / reclamação: silencia — não pede nota, não reenvia retry.
+  let doNotContact = !!args.customer.do_not_contact;
+  if (!doNotContact) {
+    const { data: row } = await args.supabase
+      .from("customers")
+      .select("do_not_contact")
+      .eq("id", args.customer.id)
+      .maybeSingle();
+    doNotContact = !!(row as { do_not_contact?: boolean } | null)?.do_not_contact;
+  }
+  if (doNotContact) {
+    const inboundText = String(args.messageText || args.buttonId || "").slice(0, 200);
+    if (!args.skipInboundLog && inboundText) {
+      await args.supabase.from("conversations").insert({
+        customer_id: args.customer.id,
+        message_direction: "inbound",
+        message_text: inboundText,
+        message_type: "text",
+        conversation_step: ATTENDANCE_DONE_STEP,
+      }).then(() => {}, () => {});
+    }
+    const now = new Date().toISOString();
+    await args.supabase.from("customers").update({
+      conversation_step: ATTENDANCE_DONE_STEP,
+      bot_paused: true,
+      bot_paused_reason: "opt_out",
+      bot_paused_at: now,
+      bot_force_enabled: false,
+      updated_at: now,
+    }).eq("id", args.customer.id).then(() => {}, () => {});
+    return { intercepted: true };
   }
 
   const rating = parseAttendanceRating({

@@ -109,19 +109,25 @@ export async function takeoverByPhoneDetailed(
   }
 }
 
-/** Desfaz o takeover: religa o bot e remove a vinculação humana. */
+/** Desfaz o takeover: religa o bot e remove a vinculação humana.
+ *  Não religa se do_not_contact (opt-out / reclamação).
+ */
 export async function undoTakeoverByPhone(rawPhone: string): Promise<boolean> {
   const phoneDigits = (rawPhone || "").replace(/\D/g, "");
   if (!phoneDigits) return false;
   try {
     const { data: cust } = await supabase
       .from("customers")
-      .select("id")
+      .select("id, do_not_contact")
       .eq("phone_whatsapp", phoneDigits)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (!cust) return false;
+    if ((cust as { do_not_contact?: boolean }).do_not_contact) {
+      console.warn("[auto-takeover] undo bloqueado — do_not_contact");
+      return false;
+    }
     const patch = {
       bot_paused: false,
       bot_paused_reason: null,

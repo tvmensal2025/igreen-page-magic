@@ -1,10 +1,11 @@
 // start-customer-attendance
-// Botão "Iniciar atendimento" do consultor.
-// CLASSIFICAÇÃO: envio MANUAL — o consultor abriu o cliente e clicou.
-//   Chamadas com JWT de usuário válido NÃO passam pelo kill switch de
-//   automação (manual não é automático). O toggle
-//   automation_toggles.start_customer_attendance segue bloqueando chamadas
+// Botão "Iniciar atendimento" do consultor (e lote Captação).
+// CLASSIFICAÇÃO: envio MANUAL no sentido de kill-switch (JWT de usuário
+//   não passa pelo toggle de automação). O toggle
+//   automation_toggles.start_customer_attendance bloqueia só chamadas
 //   sem usuário autenticado (integrações internas/batch sem operador).
+// BOT: abrir atendimento NÃO pausa a IA. O bot só pausa se o consultor
+//   enviar mensagem manual no chat/app (auto-takeover / outboundHuman).
 // TEMPLATE: se o consultor personalizou 'start_attendance', envia essa msg
 //   (com {{saudacao}}, {{consultor}}, {{protocolo}}, {{nome}}) como única mensagem.
 //   Caso contrário, envia o cabeçalho padrão (greeting + protocolo + pedido de nome).
@@ -15,6 +16,7 @@ import { sendWelcomeHeader } from "../_shared/welcome-header.ts";
 import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { resolveConsultantMessage } from "../_shared/consultant-template.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 interface Body { customerId: string; consultantId: string; restart?: boolean }
 
@@ -76,12 +78,27 @@ Deno.serve(async (req) => {
 
     const { data: customer, error } = await supabase
       .from("customers")
-      .select("id, consultant_id, name")
+      .select("id, consultant_id, name, do_not_contact, phone_whatsapp")
       .eq("id", customerId)
       .maybeSingle();
     if (error || !customer) return json({ ok: false, error: "customer_not_found" }, 404);
     if (customer.consultant_id && customer.consultant_id !== consultantId) {
       return json({ ok: false, error: "forbidden" }, 403);
+    }
+
+    const suppression = await assertCanContact(supabase, {
+      customerId,
+      consultantId,
+      phone: (customer as { phone_whatsapp?: string }).phone_whatsapp,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      return json({
+        ok: false,
+        error: "do_not_contact",
+        message: "Lead em lista de não contato — não é possível iniciar atendimento.",
+        reason: suppression.reason,
+      }, 403);
     }
 
     // Reiniciar atendimento: limpa marcadores para permitir novo welcome+protocolo,
@@ -96,6 +113,12 @@ Deno.serve(async (req) => {
           attendance_rating_requested_at: null,
           attendance_rating_at: null,
           attendance_auto_close_at: null,
+          // Reiniciar deixa o bot pronto de novo (pause só com msg manual do consultor).
+          bot_paused: false,
+          bot_paused_reason: null,
+          bot_paused_at: null,
+          bot_paused_until: null,
+          assigned_human_id: null,
         })
         .eq("id", customerId);
       if (full.error) {

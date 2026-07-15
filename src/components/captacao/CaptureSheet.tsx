@@ -29,10 +29,14 @@ import { ComboTimer } from "@/components/captacao/game/ComboTimer";
 import { XpFloaterProvider, useXpFloater } from "@/components/captacao/game/XpFloater";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2, Phone, Play } from "lucide-react";
+import { X, ClipboardList, ListChecks, IdCard, Loader2, Trophy, ChevronDown, ChevronUp, Maximize2, Minimize2, UserPlus, Zap, CheckCircle2, Phone, Play, ShieldBan } from "lucide-react";
 import { askLeadName } from "@/lib/whatsapp/send";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 import { useCustomerAttendance } from "@/hooks/useCustomerAttendance";
+import {
+  NeverContactConfirmDialog,
+  RevokeNeverContactDialog,
+} from "@/components/leads/NeverContactDialogs";
 
 interface Props {
   open: boolean;
@@ -74,8 +78,11 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
   const [allSteps, setAllSteps] = useState<SequenceStep[]>([]);
   const [seqOpen, setSeqOpen] = useState(false);
   const [askNotice, setAskNotice] = useState(false);
+  const [neverContactOpen, setNeverContactOpen] = useState(false);
+  const [revokeContactOpen, setRevokeContactOpen] = useState(false);
   const lastCountRef = useRef(0);
   const attendance = useCustomerAttendance(customerId, consultantId);
+  const doNotContact = !!(customer as { do_not_contact?: boolean } | null)?.do_not_contact;
 
   // No mobile o painel abre minimizado (pílula no rodapé) pra não tampar o teclado/composer.
   // Mas quando o consultor expande, vai direto pra fullscreen (sem estado compacto intermediário).
@@ -552,6 +559,20 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               </Button>
             </div>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className={`w-full h-7 text-[10px] rounded-full gap-1 font-semibold ${
+              doNotContact
+                ? "border-amber-500/40 text-amber-800 hover:bg-amber-50"
+                : "border-destructive/40 text-destructive hover:bg-destructive/10"
+            }`}
+            onClick={() => (doNotContact ? setRevokeContactOpen(true) : setNeverContactOpen(true))}
+            title={doNotContact ? "Revogar lista de não contato" : "Bloquear lead: nunca mais contatar (reclamação)"}
+          >
+            <ShieldBan className="w-3 h-3" />
+            {doNotContact ? "Revogar “nunca mais”" : "Nunca mais contatar"}
+          </Button>
         </footer>
 
 
@@ -579,6 +600,23 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
           loading={closing}
           leadName={customerName || phoneNumber}
         />
+        <NeverContactConfirmDialog
+          open={neverContactOpen}
+          onOpenChange={setNeverContactOpen}
+          consultantId={consultantId}
+          customerId={customerId}
+          phone={phoneNumber}
+          channel="captacao"
+          leadLabel={customerName || phoneNumber}
+        />
+        {customerId && (
+          <RevokeNeverContactDialog
+            open={revokeContactOpen}
+            onOpenChange={setRevokeContactOpen}
+            consultantId={consultantId}
+            customerId={customerId}
+          />
+        )}
       </aside>
     );
   }
@@ -808,6 +846,19 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
               Encerrar captação
             </Button>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className={`w-full gap-1 font-semibold rounded-full ${expanded ? "h-10 text-xs" : "h-7 text-[10px]"} ${
+              doNotContact
+                ? "border-amber-500/40 text-amber-800 hover:bg-amber-50"
+                : "border-destructive/40 text-destructive hover:bg-destructive/10"
+            }`}
+            onClick={() => (doNotContact ? setRevokeContactOpen(true) : setNeverContactOpen(true))}
+          >
+            <ShieldBan className="w-3 h-3" />
+            {doNotContact ? "Revogar “nunca mais”" : "Nunca mais contatar"}
+          </Button>
         </footer>
       </SheetContent>
 
@@ -835,6 +886,23 @@ function CaptureSheetInner({ open, onOpenChange, consultantId, customerId, custo
         loading={closing}
         leadName={customerName || phoneNumber}
       />
+      <NeverContactConfirmDialog
+        open={neverContactOpen}
+        onOpenChange={setNeverContactOpen}
+        consultantId={consultantId}
+        customerId={customerId}
+        phone={phoneNumber}
+        channel="captacao"
+        leadLabel={customerName || phoneNumber}
+      />
+      {customerId && (
+        <RevokeNeverContactDialog
+          open={revokeContactOpen}
+          onOpenChange={setRevokeContactOpen}
+          consultantId={consultantId}
+          customerId={customerId}
+        />
+      )}
     </Sheet>
   );
 }

@@ -253,6 +253,39 @@ Deno.serve(async (req) => {
       continue;
     }
 
+    // Opt-out: não enviar para phones com do_not_contact neste consultor
+    const phoneDigits = list.map((t) => t.phone.replace(/\D/g, "")).filter(Boolean);
+    const suppressedPhones = new Set<string>();
+    if (phoneDigits.length) {
+      const { data: dncCust } = await supabase
+        .from("customers")
+        .select("phone_whatsapp")
+        .eq("consultant_id", camp.consultant_id)
+        .eq("do_not_contact", true)
+        .in("phone_whatsapp", list.map((t) => t.phone));
+      for (const row of dncCust || []) {
+        const d = String((row as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
+        if (d) suppressedPhones.add(d);
+      }
+      // Também tenta match pelos últimos 11 dígitos via like — phones podem diferir de formato
+      const { data: dncAll } = await supabase
+        .from("customers")
+        .select("phone_whatsapp")
+        .eq("consultant_id", camp.consultant_id)
+        .eq("do_not_contact", true)
+        .limit(5000);
+      const dncSet = new Set(
+        (dncAll || []).map((r: { phone_whatsapp?: string }) =>
+          String(r.phone_whatsapp || "").replace(/\D/g, ""),
+        ).filter(Boolean),
+      );
+      for (const d of phoneDigits) {
+        if ([...dncSet].some((b) => b === d || d.endsWith(b) || b.endsWith(d))) {
+          suppressedPhones.add(d);
+        }
+      }
+    }
+
     const mediaOrder = String(cfg.mediaOrder || "media_first");
 
     let processed = 0;
@@ -260,6 +293,16 @@ Deno.serve(async (req) => {
     let quotaBlocked = false;
     for (const t of list) {
       if (Date.now() - startedAt > MAX_EXEC_MS) break;
+
+      const tDigits = t.phone.replace(/\D/g, "");
+      if (suppressedPhones.has(tDigits) || [...suppressedPhones].some((b) => tDigits.endsWith(b) || b.endsWith(tDigits))) {
+        await supabase.from("bulk_campaign_targets").update({
+          status: "failed",
+          error: "do_not_contact",
+          sent_at: new Date().toISOString(),
+        }).eq("id", t.id).eq("status", "queued");
+        continue;
+      }
 
       // 🛡️ Anti-ban guard: warmup + recovery + circuit breaker.
       const quota = await checkSendQuota(supabase, instance);
