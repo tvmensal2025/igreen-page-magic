@@ -6,15 +6,44 @@
 //
 // Pode ser invocado:
 //   - via cron horário (sem body) → varre pending_review + recoverable
+//     Auth OBRIGATÓRIA: x-service-secret OU Bearer service_role
 //   - via cliente com { campaign_id } → tenta UMA específica (botão "tentar reativar")
+//     Auth: JWT do consultor (authConsultant)
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { isManualPause, isManualStop, isConsultantLocked, isRecoverableAutoPause } from "../_shared/campaign-pause.ts";
 import { validateCampaignActivationBudget } from "../_shared/validate-campaign-activation.ts";
 import { validateRodizioActivation } from "../_shared/validate-rodizio-activation.ts";
 
+const cronCorsHeaders = {
+  ...corsHeaders,
+  "Access-Control-Allow-Headers":
+    `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret`,
+};
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/** Auth do modo cron/varredura (sem campaign_id). Fail-closed. */
+function isCronCaller(req: Request): boolean {
+  const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") ?? "";
+  const headerSecret = req.headers.get("x-service-secret") ?? "";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  const okServiceSecret = !!(serviceSecret && timingSafeEqual(headerSecret, serviceSecret));
+  const okServiceRole = !!(serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey));
+  return okServiceSecret || okServiceRole;
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cronCorsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
     const targetCampaignId = body?.campaign_id as string | undefined;
@@ -26,6 +55,12 @@ Deno.serve(async (req) => {
       if (!auth) return j({ error: "Unauthorized" }, 401);
       const result = await reactivateOne(admin, targetCampaignId, auth.id, { allowManual: true });
       return j(result);
+    }
+
+    // Cron mode -> exige secret/service_role (AUD-004). Sem isso qualquer caller
+    // público com verify_jwt=false poderia varrer e reativar campanhas.
+    if (!isCronCaller(req)) {
+      return j({ error: "Unauthorized" }, 401);
     }
 
     // Cron mode -> NÃO inclui paused genérico. Só pending_review + paused com
@@ -168,5 +203,5 @@ async function reactivateOne(
 }
 
 function j(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...cronCorsHeaders, "Content-Type": "application/json" } });
 }

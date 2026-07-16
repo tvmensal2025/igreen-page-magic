@@ -8,10 +8,11 @@ import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isLeadEligible } from "../_shared/origin-guard.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -25,6 +26,9 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     if (!(await isBotGloballyEnabled(supabase))) {
       return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {

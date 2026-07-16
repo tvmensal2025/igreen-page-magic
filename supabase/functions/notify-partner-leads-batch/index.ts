@@ -99,10 +99,13 @@ Deno.serve(async (req) => {
     for (const customer_id of customer_ids) {
       const { data: customer } = await admin
         .from("customers")
-        .select("id, name, phone_whatsapp, referral_partner_id, source_campaign_id, consultant_id, last_partner_notified_at")
+        .select("id, name, phone_whatsapp, referral_partner_id, source_campaign_id, consultant_id, last_partner_notified_at, do_not_contact")
         .eq("id", customer_id).maybeSingle();
 
       if (!customer) { results.push({ customer_id, skipped: "not_found" }); continue; }
+      if ((customer as any).do_not_contact) {
+        results.push({ customer_id, skipped: "do_not_contact" }); continue;
+      }
       if ((customer as any).consultant_id !== ownerConsultantId) {
         results.push({ customer_id, skipped: "not_your_consultant" }); continue;
       }

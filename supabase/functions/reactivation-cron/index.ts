@@ -21,6 +21,7 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog } from "../_shared/audit.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import {
   checkSendQuota,
   registerSend,
@@ -31,10 +32,11 @@ import {
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const MAX_PER_RUN = 500;
@@ -170,12 +172,14 @@ if (import.meta.main) {
   });
 }
 
-async function handle(_req: Request): Promise<Response> {
+async function handle(req: Request): Promise<Response> {
   const t0 = Date.now();
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
     if (!(await isAutomationEnabled(supabase, "reactivation_cron"))) {
       await logSkipped(supabase, "reactivation_cron");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "reactivation_cron" }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -224,6 +228,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
   let totalFailed = 0;
   let totalSkippedWindow = 0;
   let totalSkippedCaptureMode = 0;
+  let totalSkippedSuppressed = 0;
 
   // Templates ativos com auto_reactivate=true — inclui JOIN com consultants
   // para resolver timezone e nome do representante.
@@ -354,6 +359,16 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         continue;
       }
 
+      const gate = await assertBotOutboundAllowed(supabase, {
+        customerId: customer.id,
+        phone: customer.phone_whatsapp,
+        consultantId: tpl.consultant_id,
+      });
+      if (!gate.allowed) {
+        totalSkippedSuppressed++;
+        continue;
+      }
+
       const finalText = renderMessage(tpl.message_text, customer, consultantName);
       const remoteJid = customer.phone_whatsapp.includes("@")
         ? customer.phone_whatsapp
@@ -431,7 +446,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     }
   }
 
-  return { templates_processed: templatesProcessed, total_sent: totalSent, total_failed: totalFailed, total_skipped_window: totalSkippedWindow, total_skipped_capture_mode: totalSkippedCaptureMode };
+  return { templates_processed: templatesProcessed, total_sent: totalSent, total_failed: totalFailed, total_skipped_window: totalSkippedWindow, total_skipped_capture_mode: totalSkippedCaptureMode, total_skipped_suppressed: totalSkippedSuppressed };
 }
 
 async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: ReactSettings): Promise<any[]> {

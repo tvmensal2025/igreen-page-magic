@@ -180,7 +180,24 @@ const AdminContent = () => {
     if (typeof window === "undefined") return [];
     try {
       const cached = sessionStorage.getItem(`customers_cache_${userId || "anon"}`);
-      return cached ? (JSON.parse(cached) as Record<string, unknown>[]) : [];
+      if (!cached) return [];
+      const parsed = JSON.parse(cached) as Record<string, unknown>[];
+      // AUD: cache sem PII sensível (telefone/CPF/e-mail/endereço completo).
+      return parsed.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        created_at: c.created_at,
+        address_city: c.address_city,
+        address_state: c.address_state,
+        customer_origin: c.customer_origin,
+        electricity_bill_value: c.electricity_bill_value,
+        andamento_igreen: c.andamento_igreen,
+        // placeholders até o refetch — evita UI quebrada sem vazar PII
+        phone_whatsapp: null,
+        email: null,
+        cpf: null,
+      }));
     } catch { return []; }
   });
   const fetchAbortRef = React.useRef<AbortController | null>(null);
@@ -248,7 +265,21 @@ const AdminContent = () => {
         link_assinatura: c.link_assinatura, customer_origin: c.customer_origin,
       }));
       setCustomers(mapped);
-      try { sessionStorage.setItem(`customers_cache_${userId}`, JSON.stringify(mapped)); } catch { /* quota */ }
+      try {
+        // Cache enxuto sem PII (telefone, CPF, e-mail, endereço, links).
+        const cacheSafe = mapped.map((c) => ({
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          created_at: c.created_at,
+          address_city: c.address_city,
+          address_state: c.address_state,
+          customer_origin: c.customer_origin,
+          electricity_bill_value: c.electricity_bill_value,
+          andamento_igreen: c.andamento_igreen,
+        }));
+        sessionStorage.setItem(`customers_cache_${userId}`, JSON.stringify(cacheSafe));
+      } catch { /* quota */ }
     } catch (err) {
       // NÃO zeramos a lista em erro — mantemos a última carga visível.
       console.error("[fetchCustomers] falhou após retries — mantendo cache atual", err);

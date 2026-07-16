@@ -33,7 +33,7 @@ function phonesMatch(a: string, b: string): boolean {
 
 /**
  * Retorna allowed=false se do_not_contact ou (canais voz/sms/reheat) voice_dnc.
- * Nunca lança — em erro falha fechado (allowed=false) quando há customerId.
+ * Nunca lança — em erro falha fechado (allowed=false) sempre.
  */
 export async function assertCanContact(
   supabase: SupabaseClient,
@@ -80,14 +80,49 @@ export async function assertCanContact(
       };
     }
 
+    // Sem customerId: ainda bloqueia se algum customer DNC bater no telefone.
+    const phoneForLookup = digitsOnly(input.phone) || phoneDigits;
+    if (!input.customerId && phoneForLookup.length >= 10) {
+      const tail = phoneForLookup.slice(-11);
+      let q = supabase
+        .from("customers")
+        .select("id, do_not_contact, phone_whatsapp, consultant_id")
+        .eq("do_not_contact", true)
+        .ilike("phone_whatsapp", `%${tail}`)
+        .limit(10);
+      if (consultantId) q = q.eq("consultant_id", consultantId);
+      const { data: dncRowsByPhone, error: phoneLookupErr } = await q;
+      if (phoneLookupErr) {
+        console.warn("[contact-suppression] phone DNC lookup failed:", phoneLookupErr.message);
+        return { allowed: false, reason: "lookup_error", doNotContact: true, voiceDnc: false };
+      }
+      const hit = (dncRowsByPhone ?? []).some((r: { phone_whatsapp?: string }) => {
+        const d = digitsOnly(r.phone_whatsapp);
+        return phonesMatch(phoneForLookup, d);
+      });
+      if (hit) {
+        return {
+          allowed: false,
+          reason: "do_not_contact",
+          doNotContact: true,
+          voiceDnc: false,
+        };
+      }
+    }
+
     const checkVoiceDnc = channel === "voice" || channel === "sms" || channel === "reheat" || channel === "any";
     const phoneForDnc = digitsOnly(input.phone) || phoneDigits;
 
     if (checkVoiceDnc && consultantId && phoneForDnc) {
-      const { data: dncRows } = await supabase
+      const { data: dncRows, error: voiceDncErr } = await supabase
         .from("voice_dnc_list")
         .select("phone")
         .eq("consultant_id", consultantId);
+
+      if (voiceDncErr) {
+        console.warn("[contact-suppression] voice_dnc lookup failed:", voiceDncErr.message);
+        return { allowed: false, reason: "lookup_error", doNotContact: false, voiceDnc: true };
+      }
 
       const blocked = (dncRows ?? []).map((r: { phone: string }) => digitsOnly(r.phone)).filter(Boolean);
       voiceDnc = blocked.some((b) => phonesMatch(phoneForDnc, b));
@@ -104,10 +139,7 @@ export async function assertCanContact(
     return { allowed: true, reason: null, doNotContact: false, voiceDnc: false };
   } catch (e) {
     console.warn("[contact-suppression] unexpected:", (e as Error)?.message);
-    // Sem customerId (só phone) e erro → permitir (não bloquear discagem em massa por falha transitória)
-    if (!input.customerId) {
-      return { allowed: true, reason: null, doNotContact: false, voiceDnc: false };
-    }
+    // Fail-closed sempre: erro na verificação NÃO libera envio (manual, auto, voz, bulk).
     return { allowed: false, reason: "exception", doNotContact: true, voiceDnc: false };
   }
 }

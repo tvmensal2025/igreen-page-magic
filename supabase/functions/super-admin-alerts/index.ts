@@ -6,10 +6,11 @@
 // usando infra_metrics(metric_key='instance_alert').
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const EVOLUTION_API_URL = (Deno.env.get("EVOLUTION_API_URL") || "").replace(/\/$/, "");
@@ -64,6 +65,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
 
   const cutoff = new Date(Date.now() - 5 * 60_000).toISOString();
   const { data: down } = await supabase

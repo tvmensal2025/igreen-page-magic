@@ -48,7 +48,7 @@ export interface SendWelcomeResult {
 
 export interface EndAttendanceResult {
   ok: boolean;
-  skipped?: "already_rated" | "rating_pending" | "no_phone";
+  skipped?: "already_rated" | "rating_pending" | "no_phone" | "do_not_contact";
   code?: string;
   detail?: string;
 }

@@ -12,6 +12,8 @@ import { bumpMission } from "./CaptureMissionsPanel";
 import { ProgressRing } from "./ProgressRing";
 import { resolvePortalWhatsapp } from "@/lib/captacao/portalPhone";
 
+export type FichaMode = "energia" | "club";
+
 interface Props {
   customerId: string;
   onSubmitted?: () => void;
@@ -19,9 +21,16 @@ interface Props {
   sentStepsCount?: number;
   /** Botão de ação no rodapé da ficha (ex.: Finalizar cadastro). */
   footer?: React.ReactNode;
+  fichaMode?: FichaMode;
+  onFichaModeChange?: (mode: FichaMode) => void;
 }
 
-export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sentStepsCount = 0, footer }: Props) {
+export function CaptureLeadCard({ customerId, onSubmitted, embedded = false, sentStepsCount = 0, footer,
+  fichaMode: _fichaMode,
+  onFichaModeChange: _onFichaModeChange,
+}: Props) {
+  void _fichaMode; void _onFichaModeChange;
+
   const {
     customer,
     loading,

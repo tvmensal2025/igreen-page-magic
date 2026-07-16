@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import { makeSMS, toCtid, toVelipBRDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -136,6 +137,17 @@ Deno.serve(async (req) => {
     if ([...blocked].some((b) => b === destDigits || destDigits.endsWith(b) || b.endsWith(destDigits))) {
       failed++;
       results.push({ dest: rec.phone, ok: false, error: "dnc_blocked" });
+      continue;
+    }
+
+    const gate = await assertCanContact(admin, {
+      phone: rec.phone,
+      consultantId,
+      channel: "sms",
+    });
+    if (!gate.allowed) {
+      failed++;
+      results.push({ dest: rec.phone, ok: false, error: gate.reason || "suppressed" });
       continue;
     }
 

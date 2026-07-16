@@ -7,13 +7,14 @@
 // Solução fail-open (NÃO quebra produção):
 //   - Se a env do segredo NÃO estiver configurada -> comportamento ATUAL
 //     (segue normalmente). Nada muda até você ativar.
-//   - Se a env do segredo ESTIVER configurada -> exige que a requisição
-//     traga o mesmo segredo, via header `x-webhook-secret` OU query
-//     `?secret=` / `?token=`. Caso contrário, 401.
+//   - Se a env do segredo ESTIVER configurada -> verifyWebhookOrigin retorna
+//     ok=false quando o token falta/erra. Os handlers (evolution/whapi) ainda
+//     ficam em grace/log-only até ENFORCE_WEBHOOK_ORIGIN=true.
 //
-// Ativação (quando quiser): definir o secret no Supabase (ex.:
-// WHAPI_WEBHOOK_SECRET) e configurar o provedor para enviar o mesmo valor
-// no header `x-webhook-secret` ou na query string da URL do webhook.
+// Ativação em duas etapas (quando quiser):
+//   1) Definir WHAPI_WEBHOOK_SECRET / EVOLUTION_WEBHOOK_SECRET e configurar
+//      o provedor (header x-webhook-secret ou ?secret= / ?token=).
+//   2) Só então setar ENFORCE_WEBHOOK_ORIGIN=true para passar a 401.
 
 /** Comparação de tempo constante para evitar timing attacks. */
 export function timingSafeEqualStr(a: string, b: string): boolean {
