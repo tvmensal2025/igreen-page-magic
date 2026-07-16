@@ -19,6 +19,14 @@ import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-o
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-internal-secret, x-service-secret",
+};
+
+const STAGE1_MIN = 10; // mínimo 10 min idle p/ não pisar em conversa ativa
 const STAGE3_MIN = 24 * 60;  // 24h → abandono
 const MAX_RESCUES_PER_RUN = 30;
 const COOLDOWN_AFTER_RESCUE_MIN = 45;
