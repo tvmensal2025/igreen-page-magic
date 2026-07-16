@@ -27,7 +27,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '.env') });
 
 const PORT = Number(process.env.PORT || 3101);
-const SECRET = process.env.WORKER_SECRET || 'change-me';
+const SECRET = process.env.WORKER_SECRET || '';
+const WEAK_SECRETS = new Set(['change-me', 'secret', 'password', 'test', 'worker', '123456', 'admin']);
+if (!SECRET || SECRET.length < 16 || WEAK_SECRETS.has(SECRET.toLowerCase())) {
+  console.error('❌ WORKER_SECRET ausente, curto (<16) ou fraco. Defina um segredo forte e reinicie.');
+  process.exit(1);
+}
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const REDIS_URL = process.env.REDIS_URL || 'redis://evolution-api-redis:6379';

@@ -65,18 +65,23 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Validação de origem em modo GRACE (log-only).
-  // Motivo: Whapi Cloud NÃO envia `x-webhook-secret` por padrão. Se
-  // WHAPI_WEBHOOK_SECRET estiver setado no Supabase sem a URL do webhook
-  // incluir `?secret=...`, o 401 engolia TODAS as mensagens do cliente
-  // (nota 1–5, PDF, texto) e o lead ficava travado sem resposta.
-  // Enforce rígido só volta quando a URL do Whapi for atualizada com o secret.
+  // Validação de origem: por padrão GRACE (log-only) — Whapi Cloud não envia
+  // x-webhook-secret sem URL com ?secret=. Enforce só com ENFORCE_WEBHOOK_ORIGIN=true
+  // (depois de o provedor já enviar o secret).
   const originAuth = verifyWebhookOrigin(req, "WHAPI_WEBHOOK_SECRET");
   if (!originAuth.ok) {
+    const enforce =
+      (Deno.env.get("ENFORCE_WEBHOOK_ORIGIN") || "").trim().toLowerCase() === "true";
     console.warn(
-      "[whapi-webhook] origem sem secret (grace/log-only, NÃO bloqueia):",
+      `[whapi-webhook] origem sem secret (${enforce ? "ENFORCE → 401" : "grace/log-only, NÃO bloqueia"}):`,
       originAuth.reason,
     );
+    if (enforce) {
+      return new Response(JSON.stringify({ ok: false, error: "unauthorized_webhook", reason: originAuth.reason }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   try {
