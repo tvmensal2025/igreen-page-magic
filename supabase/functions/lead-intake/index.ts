@@ -92,6 +92,30 @@ Deno.serve(async (req) => {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const userAgent = req.headers.get("user-agent") ?? null;
 
+  // Rate limit básico (público): por IP e por telefone via RPC persistente.
+  // Fail-open se o RPC falhar — não derruba landing por hiccup do Postgres.
+  const phoneDigits = String(body.phone || "").replace(/\D/g, "");
+  try {
+    if (ip) {
+      const { data: ipOk } = await supabase.rpc("try_acquire_rate_limit", {
+        p_phone: `intake:ip:${ip}`,
+        p_window_ms: 60_000,
+        p_max_count: 20,
+      });
+      if (ipOk === false) return json(429, { error: "rate_limited", scope: "ip" });
+    }
+    if (phoneDigits.length >= 10) {
+      const { data: phoneOk } = await supabase.rpc("try_acquire_rate_limit", {
+        p_phone: `intake:phone:${phoneDigits.slice(-11)}`,
+        p_window_ms: 600_000,
+        p_max_count: 5,
+      });
+      if (phoneOk === false) return json(429, { error: "rate_limited", scope: "phone" });
+    }
+  } catch (e) {
+    console.warn("[lead-intake] rate_limit check failed (fail-open):", (e as Error)?.message || e);
+  }
+
   const result = await ingestLead(supabase, {
     consultantId,
     channel: body.channel ?? "landing",

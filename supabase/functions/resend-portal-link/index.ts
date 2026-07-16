@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sender.ts";
 import { registerSend, checkSendQuota } from "../_shared/anti-ban.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 interface Body { customerId: string; consultantId: string }
 
@@ -57,6 +58,16 @@ Deno.serve(async (req) => {
 
     const digits = String(customer.phone_whatsapp || "").replace(/\D/g, "");
     if (!digits) return json({ ok: false, error: "no_phone" }, 400);
+
+    const suppression = await assertCanContact(supabase, {
+      customerId,
+      consultantId,
+      phone: customer.phone_whatsapp,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      return json({ ok: false, error: "do_not_contact", reason: suppression.reason }, 403);
+    }
 
     const env = {
       evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),

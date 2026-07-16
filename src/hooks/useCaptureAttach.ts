@@ -83,6 +83,7 @@ export function useCaptureAttach() {
       key: CaptureDocKey;
       sourceUrl: string;
       fileName?: string | null;
+      /** Whapi media id — opcional; ignorado no fetch direto (compat ChatView). */
       mediaId?: string | null;
     }) => {
       const { customerId, key, sourceUrl, fileName, mediaId } = opts;

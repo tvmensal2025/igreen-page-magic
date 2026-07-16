@@ -14,10 +14,12 @@ import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const MAX_ATTEMPTS = 3;
@@ -42,6 +44,9 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
 
     // Agenda manual (Hub): NÃO depende de bot_global_enabled — consultor agenda
     // mensagem própria; kill switch do bot não deve bloquear execução da agenda.
@@ -125,7 +130,7 @@ Deno.serve(async (req) => {
           // Prioriza customer do consultor que criou o agendamento (evita colisão multi-tenant).
           let custQuery = supabase
             .from("customers")
-            .select("name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
+            .select("id, name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
             .eq("phone_whatsapp", phone);
           if (msg.consultant_id) {
             custQuery = custQuery.or(
@@ -149,6 +154,22 @@ Deno.serve(async (req) => {
             console.log(`⏭️ [scheduled] msg ${msg.id} pulada — pausado/opt-out (phone=${phone})`);
             skippedPaused++;
             continue;
+          }
+          if (cust?.id || phone) {
+            const gate = await assertBotOutboundAllowed(supabase, {
+              customerId: (cust as { id?: string } | null)?.id,
+              phone,
+              consultantId: msg.consultant_id || (cust as { consultant_id?: string } | null)?.consultant_id,
+            });
+            if (!gate.allowed) {
+              await supabase
+                .from("scheduled_messages")
+                .update({ status: "skipped", processing_started_at: null })
+                .eq("id", msg.id);
+              console.log(`⏭️ [scheduled] msg ${msg.id} pulada — gate (${gate.reason})`);
+              skippedPaused++;
+              continue;
+            }
           }
           customerName = (cust as any)?.name || null;
           billValue = (cust as any)?.electricity_bill_value ?? null;

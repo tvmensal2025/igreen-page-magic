@@ -16,6 +16,7 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -355,6 +356,18 @@ Deno.serve(async (req) => {
       if (before !== targets.length) {
         console.log(`[dnc] removidos ${before - targets.length} alvo(s) por Não Perturbe / do_not_contact`);
       }
+    }
+
+    // Gate único (fail-closed) — reforça voice_dnc + do_not_contact por telefone/customer.
+    for (let i = targets.length - 1; i >= 0; i--) {
+      const t = targets[i];
+      const gate = await assertCanContact(admin, {
+        customerId: (t as { customer_id?: string | null }).customer_id,
+        phone: t.phone,
+        consultantId,
+        channel: "voice",
+      });
+      if (!gate.allowed) targets.splice(i, 1);
     }
   }
 

@@ -3,6 +3,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhatsAppSender } from "../_shared/whatsapp-api.ts";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 interface Body {
   phone: string;
@@ -49,6 +50,18 @@ Deno.serve(async (req) => {
     if (!/^https?:\/\//.test(mediaUrl)) return json({ error: "URL de mídia inválida" }, 400);
 
     const admin = createClient(supabaseUrl, serviceKey);
+
+    const suppression = await assertCanContact(admin, {
+      phone,
+      consultantId,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      return json({
+        error: "Lead em lista de não contato — envio bloqueado.",
+        reason: suppression.reason,
+      }, 403);
+    }
 
     // ── Roteamento: Whapi (super admin) vs Evolution (demais consultores) ──
     const { data: settingsRows } = await admin.from("settings").select("key,value");

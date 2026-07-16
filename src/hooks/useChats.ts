@@ -8,6 +8,8 @@ export interface ChatItem {
   remoteJid: string;
   sendTargetJid?: string;
   name: string;
+  /** Nome do perfil WhatsApp (quando disponível). */
+  pushName?: string | null;
   lastMessage: string;
   lastMessageTimestamp: number;
   unreadCount: number;

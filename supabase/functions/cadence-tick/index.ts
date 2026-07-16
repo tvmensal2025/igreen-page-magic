@@ -16,10 +16,12 @@ import {
 } from "../_shared/voice-dialer/velip.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 /** Maps cadence stage → automation_toggles.key (per-stage kill switches). */
@@ -172,6 +174,13 @@ async function dispatchWhatsApp(
 
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
 
+  const gate = await assertBotOutboundAllowed(supabase, {
+    customerId: row.customer_id,
+    phone: cust.phone_whatsapp,
+    consultantId: row.consultant_id,
+  });
+  if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
+
   const ch = await resolveChannelForCustomer(supabase, row.customer_id, {
     evolutionUrl: env.evolutionUrl,
     evolutionKey: env.evolutionKey,
@@ -287,6 +296,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
     if (!(await isAutomationEnabled(supabase, "cadence_engine"))) {
       await logSkipped(supabase, "cadence_engine");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "cadence_engine" }), { status: 200, headers: { "Content-Type": "application/json" } });

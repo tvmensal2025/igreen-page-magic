@@ -873,7 +873,10 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     if (typeof window === "undefined") return [];
     try {
       const cached = sessionStorage.getItem(`network_cache_${consultantId}`);
-      return cached ? (JSON.parse(cached) as NetworkMember[]) : [];
+      if (!cached) return [];
+      const parsed = JSON.parse(cached) as NetworkMember[];
+      // Sem telefone / data de nascimento no cache (PII).
+      return parsed.map((m) => ({ ...m, phone: null, data_nascimento: null }));
     } catch { return []; }
   });
   const [loading, setLoading] = useState(true);
@@ -1016,7 +1019,10 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
         }
         if (!pageError) {
           setMembers(allRows);
-          try { sessionStorage.setItem(`network_cache_${consultantId}`, JSON.stringify(allRows)); } catch { /* quota */ }
+          try {
+            const cacheSafe = allRows.map((m) => ({ ...m, phone: null, data_nascimento: null }));
+            sessionStorage.setItem(`network_cache_${consultantId}`, JSON.stringify(cacheSafe));
+          } catch { /* quota */ }
           return;
         }
         lastError = pageError;

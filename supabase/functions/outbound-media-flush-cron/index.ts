@@ -30,11 +30,14 @@ import { jsonLog } from "../_shared/audit.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import type { PendingOutboundItem } from "../_shared/pending-outbound-media.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const BATCH_SIZE = 10;
@@ -67,6 +70,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
   // Task 34: libera reservas órfãs em ai_slot_dispatch_log (>30s sem confirm).
   // Best-effort: erro no sweeper não bloqueia o batch principal.
   try {
@@ -127,6 +133,25 @@ async function processRow(supabase: SupabaseClient, row: PendingRow): Promise<bo
 
   if (!remoteJid || items.length === 0) {
     // Row mal-formada — marca succeeded para tirar do índice e segue.
+    await supabase.from("pending_outbound_media")
+      .update({ succeeded_at: new Date().toISOString() })
+      .eq("id", row.id);
+    return true;
+  }
+
+  // Hard gate LGPD: não despacha mídia pendente para lead em DNC.
+  const suppression = await assertCanContact(supabase, {
+    customerId: row.customer_id,
+    consultantId: row.consultant_id,
+    channel: "whatsapp",
+  });
+  if (!suppression.allowed) {
+    jsonLog("info", "pending_outbound_media_skipped_dnc", {
+      pending_id: row.id,
+      customer_id: row.customer_id,
+      reason: suppression.reason,
+    });
+    // Marca succeeded para não reintentar eternamente.
     await supabase.from("pending_outbound_media")
       .update({ succeeded_at: new Date().toISOString() })
       .eq("id", row.id);

@@ -21,11 +21,13 @@ import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const TERMINAL_STEPS = new Set([
@@ -50,6 +52,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
     // Toggle próprio (antes pegava carona em process_followups — impossível
     // desligar um sem o outro). Nasce OFF; ligar na Central de Agendamentos.
     if (!(await isAutomationEnabled(supabase, "bot_followup_checker"))) {
@@ -98,6 +103,13 @@ Deno.serve(async (req) => {
       if (TERMINAL_STEPS.has(c.conversation_step || "")) continue;
       if (!c.phone_whatsapp) continue;
       if (!(await gateProactiveTouch(supabase, c.id, "bot_followup_checker"))) continue;
+
+      const gate = await assertBotOutboundAllowed(supabase, {
+        customerId: c.id,
+        phone: c.phone_whatsapp,
+        consultantId: c.consultant_id,
+      });
+      if (!gate.allowed) continue;
 
       const firstName = (c.name || "").split(" ")[0] || "";
       const fallback = firstName

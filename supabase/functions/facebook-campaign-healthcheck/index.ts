@@ -6,15 +6,74 @@
 //
 // Pode ser invocado:
 //   - via cron horário (sem body) → varre pending_review + recoverable
+//     Auth OBRIGATÓRIA (fail-closed): x-service-secret | x-internal-secret | Bearer service_role
 //   - via cliente com { campaign_id } → tenta UMA específica (botão "tentar reativar")
+//     Auth: JWT do consultor (authConsultant)
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { isManualPause, isManualStop, isConsultantLocked, isRecoverableAutoPause } from "../_shared/campaign-pause.ts";
 import { validateCampaignActivationBudget } from "../_shared/validate-campaign-activation.ts";
 import { validateRodizioActivation } from "../_shared/validate-rodizio-activation.ts";
 
+const cronCorsHeaders = {
+  ...corsHeaders,
+  "Access-Control-Allow-Headers":
+    `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret, x-internal-secret`,
+};
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+/**
+ * Auth do modo cron/varredura (sem campaign_id). Fail-closed (AUD-004).
+ * Aceita o mesmo trio dos outros crons: service secret, embed/internal, service_role.
+ * Sem grace — varredura pública com verify_jwt=false não pode passar.
+ */
+async function isCronCaller(req: Request, admin: ReturnType<typeof adminClient>): Promise<boolean> {
+  const serviceSecret = (Deno.env.get("SERVICE_SHARED_SECRET") ?? "").trim();
+  const headerService = (req.headers.get("x-service-secret") ?? "").trim();
+  if (serviceSecret && headerService && timingSafeEqual(headerService, serviceSecret)) {
+    return true;
+  }
+
+  let expectedInternal = (Deno.env.get("EMBED_INTERNAL_SECRET") ?? "").trim();
+  if (!expectedInternal) {
+    try {
+      const { data } = await admin
+        .from("settings")
+        .select("value")
+        .eq("key", "embed_internal_token")
+        .maybeSingle();
+      expectedInternal = String((data as { value?: string } | null)?.value || "")
+        .replace(/^"|"$/g, "")
+        .trim();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  const headerInternal = (req.headers.get("x-internal-secret") ?? "").trim();
+  if (expectedInternal && headerInternal && timingSafeEqual(headerInternal, expectedInternal)) {
+    return true;
+  }
+
+  const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.toLowerCase().startsWith("bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+  if (serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey)) {
+    return true;
+  }
+
+  return false;
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cronCorsHeaders });
   try {
     const body = await req.json().catch(() => ({}));
     const targetCampaignId = body?.campaign_id as string | undefined;
@@ -26,6 +85,12 @@ Deno.serve(async (req) => {
       if (!auth) return j({ error: "Unauthorized" }, 401);
       const result = await reactivateOne(admin, targetCampaignId, auth.id, { allowManual: true });
       return j(result);
+    }
+
+    // Cron mode -> exige secret/service_role/internal (AUD-004). Sem isso qualquer
+    // caller público com verify_jwt=false poderia varrer e reativar campanhas.
+    if (!(await isCronCaller(req, admin))) {
+      return j({ error: "Unauthorized" }, 401);
     }
 
     // Cron mode -> NÃO inclui paused genérico. Só pending_review + paused com
@@ -168,5 +233,5 @@ async function reactivateOne(
 }
 
 function j(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  return new Response(JSON.stringify(body), { status, headers: { ...cronCorsHeaders, "Content-Type": "application/json" } });
 }

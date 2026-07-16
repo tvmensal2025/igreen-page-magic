@@ -13,6 +13,7 @@ import { jsonLog, captureError } from "../_shared/audit.ts";
 import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 
 const corsHeaders = {
@@ -196,13 +197,42 @@ Deno.serve(async (req: Request) => {
       // RLS check: customer pertence ao consultor
       const { data: customer } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, conversation_step, consultant_id, electricity_bill_value")
+        .select("id, name, phone_whatsapp, conversation_step, consultant_id, electricity_bill_value, do_not_contact")
         .eq("id", customer_id)
         .eq("consultant_id", consultantId)
         .maybeSingle();
       if (!customer) {
         return new Response(JSON.stringify({ error: "Customer not found or forbidden" }), {
           status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Hard gate LGPD: nunca reaquecer lead em lista de não contato.
+      const suppression = await assertCanContact(supabase, {
+        customerId: customer_id,
+        consultantId,
+        phone: (customer as { phone_whatsapp?: string }).phone_whatsapp,
+        channel: "reheat",
+      });
+      if (!suppression.allowed) {
+        await logSend(supabase, {
+          customer_id,
+          consultant_id: consultantId,
+          template_id: template_id ?? null,
+          conversation_step: String((customer as { conversation_step?: string }).conversation_step || "unknown"),
+          message_text: String(message_text || "").slice(0, 500),
+          trigger_type: "manual",
+          status: "failed",
+          error_reason: "do_not_contact",
+        });
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "do_not_contact",
+          message: "Lead em lista de não contato — reaquecimento bloqueado.",
+          reason: suppression.reason,
+        }), {
+          status: 403,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -303,7 +333,7 @@ Deno.serve(async (req: Request) => {
       // Carrega customers de uma vez (RLS)
       const { data: customers } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, conversation_step, consultant_id, electricity_bill_value")
+        .select("id, name, phone_whatsapp, conversation_step, consultant_id, electricity_bill_value, do_not_contact")
         .in("id", customer_ids)
         .eq("consultant_id", consultantId);
 
@@ -331,6 +361,30 @@ Deno.serve(async (req: Request) => {
       const failures: { customer_id: string; reason: string }[] = [];
 
       for (const customer of customers as any[]) {
+        // Hard gate LGPD por lead (fail-closed via assertCanContact).
+        const suppression = await assertCanContact(supabase, {
+          customerId: customer.id,
+          consultantId,
+          phone: customer.phone_whatsapp,
+          channel: "reheat",
+        });
+        if (!suppression.allowed) {
+          failed++;
+          failures.push({ customer_id: customer.id, reason: "do_not_contact" });
+          await logSend(supabase, {
+            customer_id: customer.id,
+            consultant_id: consultantId,
+            template_id: null,
+            conversation_step: customer.conversation_step || "unknown",
+            message_text: "",
+            trigger_type: "batch",
+            status: "failed",
+            error_reason: "do_not_contact",
+            batch_id: finalBatchId,
+          });
+          continue;
+        }
+
         const step = customer.conversation_step || "unknown";
         const overrideMsg = template_overrides?.[step];
         const tpl = tplByStep.get(step);
