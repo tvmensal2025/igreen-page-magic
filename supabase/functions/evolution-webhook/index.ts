@@ -1466,9 +1466,10 @@ Deno.serve(async (req) => {
 
 
     // ─── 6) Log inbound ────────────────────────────────────────────────
+    let inboundLogId: string | null = null;
     {
       const meta = inboundConvMeta();
-      await supabase.from("conversations").insert({
+      const { data: inboundIns } = await supabase.from("conversations").insert({
         customer_id: customer.id,
         message_direction: "inbound",
         message_text: meta.message_text,
@@ -1476,8 +1477,158 @@ Deno.serve(async (req) => {
         media_id: meta.media_id,
         conversation_step: customer.conversation_step,
         external_message_id: messageId || null,
-      });
+      }).select("id").maybeSingle();
+      inboundLogId = (inboundIns as { id?: string } | null)?.id ?? null;
     }
+
+    // ─── 6.media) Download + last_inbound ANTES de bot_paused / bot-off ──
+    // Sem isso, handoff/kill-switch retornava sem MinIO nem last_inbound_media_*,
+    // e o feed da Captação ficava sem preview/anexar (paridade Whapi).
+    // ─── 6.media) Download media (if any) ───────────────────────────────
+    let fileUrl: string | null = null;
+    let fileBase64: string | null = null;
+    let inboundMediaMinioUrl: string | null = null;
+    // Task 14 (whatsapp-flow-reliability-fix): rastrear falhas de download
+    // explicitamente e responder ao cliente em vez de silenciar. Quando o
+    // download falha completamente (sem base64 e sem URL), registramos em
+    // `inbound_media_failures`, mandamos reply de cortesia e MANTEMOS o step
+    // atual — antes a thread continuava com `fileBase64=null` e o handler
+    // perguntava por foto de novo, ou pior, ficava mudo.
+    let mediaDownloadFailed = false;
+    if (isFile) {
+      console.log("📥 Baixando mídia via Evolution API (getBase64FromMediaMessage)...");
+      fileBase64 = await sender.downloadMedia(key, message);
+      if (fileBase64) {
+        const mimeType = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+        // OOM-FIX 2026-06-28: NÃO construir mais `data:${mime};base64,${fileBase64}` aqui.
+        // Essa string duplica o heap (base64 + data URL viviam juntos) e era a causa
+        // principal dos `Memory limit exceeded` no Edge Function (256MB).
+        // Os handlers do bot-flow já fazem fallback inteligente: usam fileBase64 quando
+        // existe e só caem em fileUrl quando ele começa com "http" (URL real).
+        fileUrl = null;
+        console.log(`✅ Mídia baixada via Evolution (${mimeType}, b64 len: ${fileBase64.length})`);
+
+        // Pre-declarado fora do try para o catch poder usar no enqueue de retry.
+        const kind: "image" | "audio" | "video" | "document" =
+          mimeType.startsWith("image/") ? "image"
+          : mimeType.startsWith("audio/") ? "audio"
+          : mimeType.startsWith("video/") ? "video"
+          : "document";
+
+        // Background: upload to MinIO em whatsapp/{consultor}/{jid}/{kind}/{ts}.{ext}
+        // Não bloqueia o fluxo do bot; apenas registra a URL pública para o histórico.
+        // Task 15 (whatsapp-flow-reliability-fix): em falha de upload, enfileirar
+        // em `inbound_media_retry` com base64 + mime para o cron de retry.
+        // O fluxo do bot continua normalmente porque o OCR já tem o base64 em mãos.
+        try {
+          const { uploadToMinioPath, base64ToBytes, buildConsultantSlug, sanitizeJid, normalizeName, extFromMime } =
+            await import("../_shared/minio-upload.ts");
+          const slug = buildConsultantSlug(consultorId || instanceData.consultant_id, nomeRepresentante);
+          const jid = sanitizeJid(remoteJid || phone);
+          const ext = extFromMime(mimeType);
+          const objectKey = `whatsapp/${slug}/${jid}/${kind}/${Date.now()}.${ext}`;
+          const bytes = base64ToBytes(fileBase64);
+          const upRes = await uploadToMinioPath(bytes, mimeType, objectKey);
+          inboundMediaMinioUrl = upRes.url;
+          console.log(`📦✅ inbound media → MinIO: ${upRes.url.substring(0, 100)}`);
+          // Anexa a URL na conversa inbound + last_inbound (paridade Whapi / Captação)
+          try {
+            const convId = inboundLogId || (await supabase.from("conversations")
+              .select("id").eq("customer_id", customer.id).eq("message_direction", "inbound")
+              .order("created_at", { ascending: false }).limit(1).maybeSingle()).data?.id;
+            if (convId) {
+              await supabase.from("conversations").update({
+                message_text: `[${kind}] ${upRes.url}`,
+                message_type: kind,
+              }).eq("id", convId);
+            }
+          } catch (e) { /* ignore */ }
+          try {
+            await supabase.from("customers").update({
+              last_inbound_media_url: upRes.url,
+              last_inbound_media_mime: mimeType,
+              last_inbound_media_kind: kind,
+              last_inbound_media_message_id: messageId || null,
+              last_inbound_media_at: new Date().toISOString(),
+            }).eq("id", customer.id);
+          } catch (e: any) {
+            console.warn(`⚠️ [evolution] Falha ao persistir last_inbound_media: ${e?.message}`);
+          }
+        } catch (uploadErr: any) {
+          console.warn(`📦⚠️ inbound media MinIO falhou — enfileirando retry: ${uploadErr?.message}`);
+          // Task 15: enqueue retry em `inbound_media_retry` para o cron processar.
+          // base64 + mime ficam disponíveis para upload posterior. TTL default 1h.
+          try {
+            await supabase.from("inbound_media_retry").insert({
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              media_kind: kind,
+              base64: fileBase64,
+              mime_type: mimeType,
+            });
+            jsonLog("info", "inbound_media_retry_enqueued", {
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              media_kind: kind,
+              reason: uploadErr?.message ?? "minio_upload_failed",
+            });
+          } catch (enqueueErr: any) {
+            console.error("[inbound-media-retry] enqueue falhou:", enqueueErr?.message);
+          }
+        }
+      } else {
+        // Task 14: download retornou null. Tenta URL direta como fallback.
+        // Se também não houver URL, registra falha persistente, responde ao
+        // cliente e marca para preservar o step atual lá embaixo.
+        fileUrl = extractMediaUrl(message);
+        if (fileUrl) {
+          console.warn("⚠️ downloadMedia falhou, usando URL direta como fallback:", fileUrl.substring(0, 80));
+          try {
+            const _kind = hasDocument ? "document" : (hasVideo ? "video" : (hasImage ? "image" : (hasAudio ? "audio" : "other")));
+            const _mime = imageMessage?.mimetype || documentMessage?.mimetype || audioMessage?.mimetype || null;
+            await supabase.from("customers").update({
+              last_inbound_media_url: fileUrl,
+              last_inbound_media_mime: _mime,
+              last_inbound_media_kind: _kind,
+              last_inbound_media_message_id: messageId || null,
+              last_inbound_media_at: new Date().toISOString(),
+            }).eq("id", customer.id);
+          } catch (e: any) {
+            console.warn(`⚠️ [evolution] Falha last_inbound (url fallback): ${e?.message}`);
+          }
+        } else {
+          mediaDownloadFailed = true;
+          console.error("❌ Falha total ao baixar mídia — sem base64 e sem URL");
+          jsonLog("warn", "evolution_media_lost", {
+            customer_id: customer.id,
+            consultant_id: instanceData.consultant_id,
+            message_id: messageId,
+            v2_flag: v2Flag,
+            reason: "download_returned_null_no_fallback_url",
+          });
+          try {
+            await supabase.from("inbound_media_failures").insert({
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              reason: "download_returned_null_no_fallback_url",
+              raw_payload: {
+                has_image: hasImage,
+                has_document: hasDocument,
+                image_mime: imageMessage?.mimetype ?? null,
+                document_mime: documentMessage?.mimetype ?? null,
+                key: key ?? null,
+              },
+            });
+          } catch (logErr: any) {
+            console.error("[inbound-media-failures] insert falhou:", logErr?.message);
+          }
+        }
+      }
+    }
+
 
     // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
     try {
@@ -1651,18 +1802,7 @@ Deno.serve(async (req) => {
         ? "Kill switch global (bot_global_enabled=false)"
         : "IA do consultor desligada";
       console.log(`🛑 [bot-off] ${why} — inbound sem auto-reply customer=${customer.id}`);
-      try {
-        await supabase.from("conversations").insert({
-          customer_id: customer.id,
-          message_direction: "inbound",
-          message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : hasVideo ? "[vídeo]" : "[mensagem]"),
-          message_type: hasAudio ? "audio" : hasDocument ? "document" : hasVideo ? "video" : (hasImage ? "image" : "text"),
-          external_message_id: messageId || null,
-          conversation_step: customer.conversation_step,
-        });
-      } catch (e) {
-        console.warn("[bot-off] insert inbound falhou:", (e as Error).message);
-      }
+      // Inbound já gravado no passo 6 (+ mídia em 6.media). Não duplicar.
       const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
       if (notifyTo) {
         const kind = hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
@@ -1680,127 +1820,6 @@ Deno.serve(async (req) => {
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    }
-
-    // ─── 7) Download media (if any) ────────────────────────────────────
-    let fileUrl: string | null = null;
-    let fileBase64: string | null = null;
-    let inboundMediaMinioUrl: string | null = null;
-    // Task 14 (whatsapp-flow-reliability-fix): rastrear falhas de download
-    // explicitamente e responder ao cliente em vez de silenciar. Quando o
-    // download falha completamente (sem base64 e sem URL), registramos em
-    // `inbound_media_failures`, mandamos reply de cortesia e MANTEMOS o step
-    // atual — antes a thread continuava com `fileBase64=null` e o handler
-    // perguntava por foto de novo, ou pior, ficava mudo.
-    let mediaDownloadFailed = false;
-    if (isFile) {
-      console.log("📥 Baixando mídia via Evolution API (getBase64FromMediaMessage)...");
-      fileBase64 = await sender.downloadMedia(key, message);
-      if (fileBase64) {
-        const mimeType = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        // OOM-FIX 2026-06-28: NÃO construir mais `data:${mime};base64,${fileBase64}` aqui.
-        // Essa string duplica o heap (base64 + data URL viviam juntos) e era a causa
-        // principal dos `Memory limit exceeded` no Edge Function (256MB).
-        // Os handlers do bot-flow já fazem fallback inteligente: usam fileBase64 quando
-        // existe e só caem em fileUrl quando ele começa com "http" (URL real).
-        fileUrl = null;
-        console.log(`✅ Mídia baixada via Evolution (${mimeType}, b64 len: ${fileBase64.length})`);
-
-        // Pre-declarado fora do try para o catch poder usar no enqueue de retry.
-        const kind: "image" | "audio" | "video" | "document" =
-          mimeType.startsWith("image/") ? "image"
-          : mimeType.startsWith("audio/") ? "audio"
-          : mimeType.startsWith("video/") ? "video"
-          : "document";
-
-        // Background: upload to MinIO em whatsapp/{consultor}/{jid}/{kind}/{ts}.{ext}
-        // Não bloqueia o fluxo do bot; apenas registra a URL pública para o histórico.
-        // Task 15 (whatsapp-flow-reliability-fix): em falha de upload, enfileirar
-        // em `inbound_media_retry` com base64 + mime para o cron de retry.
-        // O fluxo do bot continua normalmente porque o OCR já tem o base64 em mãos.
-        try {
-          const { uploadToMinioPath, base64ToBytes, buildConsultantSlug, sanitizeJid, normalizeName, extFromMime } =
-            await import("../_shared/minio-upload.ts");
-          const slug = buildConsultantSlug(consultorId || instanceData.consultant_id, nomeRepresentante);
-          const jid = sanitizeJid(remoteJid || phone);
-          const ext = extFromMime(mimeType);
-          const objectKey = `whatsapp/${slug}/${jid}/${kind}/${Date.now()}.${ext}`;
-          const bytes = base64ToBytes(fileBase64);
-          const upRes = await uploadToMinioPath(bytes, mimeType, objectKey);
-          inboundMediaMinioUrl = upRes.url;
-          console.log(`📦✅ inbound media → MinIO: ${upRes.url.substring(0, 100)}`);
-          // Anexa a URL na última conversa inbound deste customer (best effort)
-          try {
-            const { data: lastConv } = await supabase.from("conversations")
-              .select("id").eq("customer_id", customer.id).eq("message_direction", "inbound")
-              .order("created_at", { ascending: false }).limit(1).maybeSingle();
-            if (lastConv?.id) {
-              await supabase.from("conversations").update({
-                message_text: `[${kind}] ${upRes.url}`,
-                message_type: kind,
-              }).eq("id", lastConv.id);
-            }
-          } catch (e) { /* ignore */ }
-        } catch (uploadErr: any) {
-          console.warn(`📦⚠️ inbound media MinIO falhou — enfileirando retry: ${uploadErr?.message}`);
-          // Task 15: enqueue retry em `inbound_media_retry` para o cron processar.
-          // base64 + mime ficam disponíveis para upload posterior. TTL default 1h.
-          try {
-            await supabase.from("inbound_media_retry").insert({
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              media_kind: kind,
-              base64: fileBase64,
-              mime_type: mimeType,
-            });
-            jsonLog("info", "inbound_media_retry_enqueued", {
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              media_kind: kind,
-              reason: uploadErr?.message ?? "minio_upload_failed",
-            });
-          } catch (enqueueErr: any) {
-            console.error("[inbound-media-retry] enqueue falhou:", enqueueErr?.message);
-          }
-        }
-      } else {
-        // Task 14: download retornou null. Tenta URL direta como fallback.
-        // Se também não houver URL, registra falha persistente, responde ao
-        // cliente e marca para preservar o step atual lá embaixo.
-        fileUrl = extractMediaUrl(message);
-        if (fileUrl) {
-          console.warn("⚠️ downloadMedia falhou, usando URL direta como fallback:", fileUrl.substring(0, 80));
-        } else {
-          mediaDownloadFailed = true;
-          console.error("❌ Falha total ao baixar mídia — sem base64 e sem URL");
-          jsonLog("warn", "evolution_media_lost", {
-            customer_id: customer.id,
-            consultant_id: instanceData.consultant_id,
-            message_id: messageId,
-            v2_flag: v2Flag,
-            reason: "download_returned_null_no_fallback_url",
-          });
-          try {
-            await supabase.from("inbound_media_failures").insert({
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              reason: "download_returned_null_no_fallback_url",
-              raw_payload: {
-                has_image: hasImage,
-                has_document: hasDocument,
-                image_mime: imageMessage?.mimetype ?? null,
-                document_mime: documentMessage?.mimetype ?? null,
-                key: key ?? null,
-              },
-            });
-          } catch (logErr: any) {
-            console.error("[inbound-media-failures] insert falhou:", logErr?.message);
-          }
-        }
-      }
     }
 
     // Task 14: se a mídia foi perdida em definitivo, manda reply de cortesia

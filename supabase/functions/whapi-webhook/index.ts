@@ -2024,6 +2024,9 @@ Deno.serve(async (req) => {
     // ─── Download media ────────────────────────────────────────────────
     let fileUrl: string | null = whapiFileUrl || null;
     let fileBase64: string | null = whapiFileBase64 || null;
+    // URL durável p/ Captação ("Do chat") — preferir http original; data: só se não houver link.
+    const durableInboundMediaUrl =
+      (whapiFileUrl && String(whapiFileUrl).startsWith("http")) ? String(whapiFileUrl) : null;
 
     // Se Whapi enviou link mas não base64, baixar
     if (isFile && !fileBase64 && fileUrl && fileUrl.startsWith("http")) {
@@ -2061,13 +2064,16 @@ Deno.serve(async (req) => {
     }
 
     // ─── Persistir SEMPRE a última mídia recebida (mesmo IA manual / silentMode) ──
-    // Permite que "Captura conta" / "Captura documento" reaproveite o arquivo depois.
-    if (isFile && customer?.id && (fileUrl || fileBase64)) {
+    // Preferir URL http (Whapi CDN) — evita gravar data: gigante em customers.
+    if (isFile && customer?.id && (durableInboundMediaUrl || fileUrl || fileBase64)) {
       try {
         const _mime = imageMessage?.mimetype || documentMessage?.mimetype || videoMessage?.mimetype || audioMessage?.mimetype || null;
         const _kind = hasDocument ? "document" : (hasVideo ? "video" : (hasImage ? "image" : (hasAudio ? "audio" : "other")));
+        const persistUrl = durableInboundMediaUrl
+          || (fileUrl && String(fileUrl).startsWith("http") ? fileUrl : null)
+          || (fileUrl && String(fileUrl).startsWith("data:") ? fileUrl : null);
         await supabase.from("customers").update({
-          last_inbound_media_url: fileUrl || null,
+          last_inbound_media_url: persistUrl,
           last_inbound_media_mime: _mime,
           last_inbound_media_kind: _kind,
           last_inbound_media_message_id: messageId || null,

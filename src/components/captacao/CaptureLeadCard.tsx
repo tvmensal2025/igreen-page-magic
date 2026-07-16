@@ -103,7 +103,7 @@ export function CaptureLeadCard({
       const fields = isClub ? CLUB_FIELDS : CAPTURE_FIELDS;
       const last = [...fields].reverse().find((f) => {
         if (f.key === "phone_whatsapp") return !!resolvePortalWhatsapp(customer);
-        const v = (customer as Record<string, unknown>)[f.key];
+        const v = (customer as unknown as Record<string, unknown>)[f.key];
         return v !== null && v !== undefined && String(v).trim() !== "";
       });
       if (last) {
@@ -131,7 +131,7 @@ export function CaptureLeadCard({
       }
       return;
     }
-    const v = customer ? (customer as Record<string, unknown>)[key] : "";
+    const v = customer ? (customer as unknown as Record<string, unknown>)[key] : "";
     setEditValue(v != null ? String(v) : "");
   };
 
@@ -240,7 +240,7 @@ export function CaptureLeadCard({
     const isIdField = !!opts.isIdField || key === "portal_idconsultor_override";
     const v = isPhoneField
       ? resolvePortalWhatsapp(customer)
-      : (customer as Record<string, unknown>)[key];
+      : (customer as unknown as Record<string, unknown>)[key];
     const displayId = isIdField
       ? (v !== null && v !== undefined && String(v).trim() !== "" && Number(v) > 0
         ? String(v)

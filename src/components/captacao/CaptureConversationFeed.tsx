@@ -143,7 +143,25 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
       });
     };
     void loadCustomerMeta();
-    return () => { mounted = false; };
+    const onDocs = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as { customerId?: string } | undefined;
+      if (detail?.customerId && detail.customerId !== customerId) return;
+      void loadCustomerMeta();
+    };
+    window.addEventListener("captacao:docs-updated", onDocs);
+    const channel = supabase
+      .channel(`captacao-feed-last-inbound-${customerId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "customers", filter: `id=eq.${customerId}` },
+        () => { void loadCustomerMeta(); },
+      )
+      .subscribe();
+    return () => {
+      mounted = false;
+      window.removeEventListener("captacao:docs-updated", onDocs);
+      void supabase.removeChannel(channel);
+    };
   }, [customerId]);
 
   const loadMore = useCallback(async () => {
@@ -433,6 +451,36 @@ function MessageBody({
     setLoading(true);
     setError(null);
     try {
+      const resolveHttpOrData = async (raw: string): Promise<string | null> => {
+        if (raw.startsWith("data:")) {
+          setDataUrl(raw);
+          return raw;
+        }
+        if (raw.startsWith("http")) {
+          const dl = await whapiDownloadMedia({ url: raw });
+          if (dl?.base64) {
+            const url = `data:${dl.mimetype || "application/octet-stream"};base64,${dl.base64}`;
+            setDataUrl(url);
+            return url;
+          }
+          // MinIO / CDN público às vezes abre direto no browser
+          setDataUrl(raw);
+          return raw;
+        }
+        return null;
+      };
+
+      // 0) Evolution: message_text = "[image] https://..."
+      {
+        const m = String(row.message_text || "").match(
+          /^\[(image|document|video|audio|sticker)\]\s+(https?:\/\/\S+)/i,
+        );
+        if (m?.[2]) {
+          const got = await resolveHttpOrData(m[2]);
+          if (got) return got;
+        }
+      }
+
       // 1) media_id Whapi (não-UUID) → proxy
       if (row.media_id && !looksLikeUuid(row.media_id)) {
         const r = await whapiDownloadMedia({ mediaId: row.media_id });
@@ -451,21 +499,8 @@ function MessageBody({
           .eq("id", row.media_id)
           .maybeSingle();
         if (lib?.url) {
-          if (String(lib.url).startsWith("data:")) {
-            setDataUrl(String(lib.url));
-            return String(lib.url);
-          }
-          const dl = await whapiDownloadMedia({ url: String(lib.url) });
-          if (dl?.base64) {
-            const url = `data:${dl.mimetype || "application/octet-stream"};base64,${dl.base64}`;
-            setDataUrl(url);
-            return url;
-          }
-          // storage nosso às vezes abre direto
-          if (String(lib.url).includes("supabase.co/storage/")) {
-            setDataUrl(String(lib.url));
-            return String(lib.url);
-          }
+          const got = await resolveHttpOrData(String(lib.url));
+          if (got) return got;
         }
       }
 
@@ -477,24 +512,14 @@ function MessageBody({
         row.external_message_id &&
         lastInbound.messageId === row.external_message_id
       ) {
-        if (lastInbound.url.startsWith("data:")) {
-          setDataUrl(lastInbound.url);
-          return lastInbound.url;
-        }
-        const dl = await whapiDownloadMedia({ url: lastInbound.url });
-        if (dl?.base64) {
-          const url = `data:${dl.mimetype || "application/octet-stream"};base64,${dl.base64}`;
-          setDataUrl(url);
-          return url;
-        }
+        const got = await resolveHttpOrData(lastInbound.url);
+        if (got) return got;
       }
 
-      // 4) Último recurso inbound sem id: se for a msg mais recente de mídia e há last_inbound
+      // 4) Último recurso inbound sem id: last_inbound http/data
       if (inbound && !row.media_id && lastInbound.url && (type === "image" || type === "document" || type === lastInbound.kind)) {
-        if (lastInbound.url.startsWith("data:")) {
-          setDataUrl(lastInbound.url);
-          return lastInbound.url;
-        }
+        const got = await resolveHttpOrData(lastInbound.url);
+        if (got) return got;
       }
 
       setError("Mídia indisponível");
@@ -506,7 +531,7 @@ function MessageBody({
       setLoading(false);
       triedRef.current = true;
     }
-  }, [row.media_id, row.external_message_id, dataUrl, loading, inbound, lastInbound, type]);
+  }, [row.media_id, row.external_message_id, row.message_text, dataUrl, loading, inbound, lastInbound, type]);
 
   // Auto-carrega imagens / stickers / documentos (PDF preview)
   useEffect(() => {

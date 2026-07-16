@@ -1078,7 +1078,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           customerId={customerId}
           phone={phoneNumber || customerPhone}
           channel="whatsapp"
-          leadLabel={chat?.pushName || phoneNumber}
+          leadLabel={(chat as { pushName?: string | null } | null)?.pushName || phoneNumber}
           onDone={() => {
             setDoNotContact(true);
             setBotPaused(true);

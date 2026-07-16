@@ -124,6 +124,10 @@ export function useCaptureAttach() {
         } catch { /* ignore */ }
 
         // Boleto bancário só anexa — sem OCR de conta/documento.
+        // Verso sozinho: OCR de doc precisa da frente (mesma guarda dos tiles).
+        if (key === "document_back_url") {
+          return pub.publicUrl;
+        }
         if (key !== "electricity_boleto_photo_url") {
           const kind = key === "electricity_bill_photo_url" ? "bill" : "doc";
           try {
