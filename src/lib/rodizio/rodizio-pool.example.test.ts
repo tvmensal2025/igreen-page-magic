@@ -32,7 +32,7 @@ const PARTNER_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
 const PARTNER_C = "cccccccc-cccc-cccc-cccc-cccccccccccc";
 
 describe("Tarefa 5.3 — com rodizio_enabled, cria pool ligada à campanha", () => {
-  it("cria 1 pool ligada à campanha e ao consultor dono, ativa", () => {
+  it("cria 1 pool ligada à campanha e ao consultor dono, habilitada e aguardando ativação", () => {
     const plan = buildRodizioPoolPlan({
       input: { rodizio_enabled: true, rodizio_partner_ids: [PARTNER_A, PARTNER_B] },
       campaignId: CAMPAIGN_ID,
@@ -41,12 +41,15 @@ describe("Tarefa 5.3 — com rodizio_enabled, cria pool ligada à campanha", () 
     });
 
     // Plano não nulo = uma pool será criada (Requisito 6.1).
+    // is_enabled=true grava a configuração; is_active só fica true quando a
+    // campanha Meta confirmar status active (trigger sync_pool_active_with_campaign).
     expect(plan).not.toBeNull();
     expect(plan!.pool).toEqual({
       campaign_id: CAMPAIGN_ID,
       consultant_id: CONSULTANT_ID,
       label: LABEL,
-      is_active: true,
+      is_enabled: true,
+      is_active: false,
     });
   });
 

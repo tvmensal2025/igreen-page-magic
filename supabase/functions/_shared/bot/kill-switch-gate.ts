@@ -10,9 +10,10 @@
 //   - linha ausente   → enabled = true   (fail-open)
 //   - erro de leitura → enabled = true   (fail-open)
 //
-// Quando `enabled === false`, o webhook silencia globalmente: ZERO outbound e
-// resposta neutra 200. Quando `enabled === true` (inclusive nos ramos de
-// fail-open), o processamento segue normalmente.
+// Quando `enabled === false`, o webhook NÃO envia outbound automático, mas
+// continua gravando inbound e avisando o consultor; a resposta neutra 200 usa
+// `bot_globally_disabled_inbound_saved`. Quando `enabled === true` (inclusive
+// nos ramos de fail-open), o processamento completo segue normalmente.
 //
 // IMPORTANTE: este arquivo NÃO deve importar nada específico de Deno/Supabase,
 // para permanecer importável tanto pelo runtime Deno quanto pelo Vitest.
@@ -55,5 +56,11 @@ export function evaluateKillSwitchGate(flag: FlagReadResult): KillSwitchDecision
   return { enabled, outboundAllowed: enabled };
 }
 
-/** Resposta neutra retornada pelo webhook quando o kill switch desliga tudo. */
-export const BOT_GLOBALLY_DISABLED_RESPONSE = { ok: true, msg: "bot_globally_disabled" } as const;
+/**
+ * Resposta neutra quando o kill switch bloqueia outbound automático.
+ * Semântica de produto (jul/2026): inbound foi salvo; só o auto-reply parou.
+ */
+export const BOT_GLOBALLY_DISABLED_RESPONSE = {
+  ok: true,
+  msg: "bot_globally_disabled_inbound_saved",
+} as const;

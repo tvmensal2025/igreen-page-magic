@@ -16,9 +16,9 @@
 // Honestidade sobre o escopo: isto NÃO sobe a edge function Deno inteira. Ele
 // confirma o ACOPLAMENTO end-to-end da DECISÃO de gating: a guarda do webhook
 // chama `isBotGloballyEnabled(supabase)` e, quando o resultado é `false`,
-// retorna `{ ok: true, msg: "bot_globally_disabled" }` (200) ANTES de qualquer
-// outbound. A presença/posição literal da guarda no handler é coberta pelo
-// smoke estático da task 1.3.
+// bloqueia outbound e responde
+// `{ ok: true, msg: "bot_globally_disabled_inbound_saved" }` (200).
+// Em produção o webhook ainda grava inbound antes dessa resposta.
 
 import { describe, it, expect, beforeEach } from "vitest";
 
@@ -97,7 +97,7 @@ function makeMockSender() {
 // Réplica da GUARDA real do evolution-webhook (index.ts ~linha 87):
 //
 //   if (!(await isBotGloballyEnabled(supabase))) {
-//     return Response 200 { ok: true, msg: "bot_globally_disabled" }  // zero outbound
+//     return Response 200 { ok: true, msg: "bot_globally_disabled_inbound_saved" }
 //   }
 //   // ... segue: parse + processamento + outbound
 //
@@ -151,7 +151,7 @@ describe("Tarefa 9.2 — kill switch off → ZERO outbound no Evolution (R1.1, R
     // Sucesso neutro 200 (nunca 5xx) com o shape canônico.
     expect(res.status).toBe(200);
     expect(res.body).toEqual(BOT_GLOBALLY_DISABLED_RESPONSE);
-    expect(res.body).toEqual({ ok: true, msg: "bot_globally_disabled" });
+    expect(res.body).toEqual({ ok: true, msg: "bot_globally_disabled_inbound_saved" });
 
     // A query montada bate com o contrato do helper.
     expect(supabase._debug().selected).toBe("bot_global_enabled");
