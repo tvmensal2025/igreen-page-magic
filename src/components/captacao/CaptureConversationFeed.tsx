@@ -5,6 +5,7 @@ import { whapiDownloadMedia } from "@/services/whapiApi";
 import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CaptureAttachActions } from "@/components/captacao/CaptureAttachActions";
+import { parseConversationEmbeddedMediaUrl } from "@/lib/captacao/conversationMediaUrl";
 import { toast } from "sonner";
 
 interface Props {
@@ -472,11 +473,9 @@ function MessageBody({
 
       // 0) Evolution: message_text = "[image] https://..."
       {
-        const m = String(row.message_text || "").match(
-          /^\[(image|document|video|audio|sticker)\]\s+(https?:\/\/\S+)/i,
-        );
-        if (m?.[2]) {
-          const got = await resolveHttpOrData(m[2]);
+        const embedded = parseConversationEmbeddedMediaUrl(row.message_text);
+        if (embedded?.url) {
+          const got = await resolveHttpOrData(embedded.url);
           if (got) return got;
         }
       }
