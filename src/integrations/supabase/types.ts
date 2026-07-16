@@ -2238,8 +2238,6 @@ export type Database = {
         Row: {
           created_at: string
           ibge_code: number
-          lat: number | null
-          lng: number | null
           name: string
           name_normalized: string
           uf: string
@@ -2247,8 +2245,6 @@ export type Database = {
         Insert: {
           created_at?: string
           ibge_code: number
-          lat?: number | null
-          lng?: number | null
           name: string
           name_normalized: string
           uf: string
@@ -2256,8 +2252,6 @@ export type Database = {
         Update: {
           created_at?: string
           ibge_code?: number
-          lat?: number | null
-          lng?: number | null
           name?: string
           name_normalized?: string
           uf?: string
@@ -3284,6 +3278,7 @@ export type Database = {
           bot_engine_mode: string
           cadastro_url: string
           cerebro_ativo: string
+          club_cadastro_url: string | null
           conversational_flow_enabled: boolean
           created_at: string | null
           display_name: string | null
@@ -3303,7 +3298,6 @@ export type Database = {
           igreen_portal_email: string | null
           igreen_portal_password: string | null
           licenciada_cadastro_url: string | null
-          club_cadastro_url: string | null
           license: string
           name: string
           notification_phone: string | null
@@ -3332,6 +3326,7 @@ export type Database = {
           bot_engine_mode?: string
           cadastro_url: string
           cerebro_ativo?: string
+          club_cadastro_url?: string | null
           conversational_flow_enabled?: boolean
           created_at?: string | null
           display_name?: string | null
@@ -3351,7 +3346,6 @@ export type Database = {
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
           licenciada_cadastro_url?: string | null
-          club_cadastro_url?: string | null
           license: string
           name: string
           notification_phone?: string | null
@@ -3380,6 +3374,7 @@ export type Database = {
           bot_engine_mode?: string
           cadastro_url?: string
           cerebro_ativo?: string
+          club_cadastro_url?: string | null
           conversational_flow_enabled?: boolean
           created_at?: string | null
           display_name?: string | null
@@ -3399,7 +3394,6 @@ export type Database = {
           igreen_portal_email?: string | null
           igreen_portal_password?: string | null
           licenciada_cadastro_url?: string | null
-          club_cadastro_url?: string | null
           license?: string
           name?: string
           notification_phone?: string | null
@@ -4059,6 +4053,14 @@ export type Database = {
           cashback_igreen: string | null
           cep: string | null
           chat_cleared_at: string | null
+          club_created_at: string | null
+          club_dry_run: boolean | null
+          club_error: string | null
+          club_error_kind: string | null
+          club_payload: Json | null
+          club_response: Json | null
+          club_status: string | null
+          club_updated_at: string | null
           commission_rate: number | null
           concessionaria: string | null
           consultant_id: string | null
@@ -4311,6 +4313,14 @@ export type Database = {
           cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          club_created_at?: string | null
+          club_dry_run?: boolean | null
+          club_error?: string | null
+          club_error_kind?: string | null
+          club_payload?: Json | null
+          club_response?: Json | null
+          club_status?: string | null
+          club_updated_at?: string | null
           commission_rate?: number | null
           concessionaria?: string | null
           consultant_id?: string | null
@@ -4563,6 +4573,14 @@ export type Database = {
           cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          club_created_at?: string | null
+          club_dry_run?: boolean | null
+          club_error?: string | null
+          club_error_kind?: string | null
+          club_payload?: Json | null
+          club_response?: Json | null
+          club_status?: string | null
+          club_updated_at?: string | null
           commission_rate?: number | null
           concessionaria?: string | null
           consultant_id?: string | null
@@ -4878,6 +4896,280 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      daily_reheat_kit: {
+        Row: {
+          bina_notes: string | null
+          call_tts_fallback: string | null
+          consultant_id: string
+          created_at: string
+          sms_na_text: string | null
+          sms_retry_text: string | null
+          updated_at: string
+          voice_audio_clip_id: string | null
+          wa_audio_fri_url: string | null
+          wa_audio_mon_url: string | null
+          wa_audio_sat_url: string | null
+          wa_audio_thu_url: string | null
+          wa_audio_tue_url: string | null
+          wa_audio_wed_url: string | null
+          wa_open_text: string | null
+        }
+        Insert: {
+          bina_notes?: string | null
+          call_tts_fallback?: string | null
+          consultant_id: string
+          created_at?: string
+          sms_na_text?: string | null
+          sms_retry_text?: string | null
+          updated_at?: string
+          voice_audio_clip_id?: string | null
+          wa_audio_fri_url?: string | null
+          wa_audio_mon_url?: string | null
+          wa_audio_sat_url?: string | null
+          wa_audio_thu_url?: string | null
+          wa_audio_tue_url?: string | null
+          wa_audio_wed_url?: string | null
+          wa_open_text?: string | null
+        }
+        Update: {
+          bina_notes?: string | null
+          call_tts_fallback?: string | null
+          consultant_id?: string
+          created_at?: string
+          sms_na_text?: string | null
+          sms_retry_text?: string | null
+          updated_at?: string
+          voice_audio_clip_id?: string | null
+          wa_audio_fri_url?: string | null
+          wa_audio_mon_url?: string | null
+          wa_audio_sat_url?: string | null
+          wa_audio_thu_url?: string | null
+          wa_audio_tue_url?: string | null
+          wa_audio_wed_url?: string | null
+          wa_open_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_reheat_kit_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_kit_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_kit_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_kit_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_kit_voice_audio_clip_id_fkey"
+            columns: ["voice_audio_clip_id"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_reheat_queue: {
+        Row: {
+          consultant_id: string | null
+          created_at: string
+          customer_id: string
+          cycle_date: string
+          id: string
+          planned_actions: Json
+          queue: string
+          run_id: string | null
+          skip_reason: string | null
+          status: string
+          step: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id?: string | null
+          created_at?: string
+          customer_id: string
+          cycle_date: string
+          id?: string
+          planned_actions?: Json
+          queue: string
+          run_id?: string | null
+          skip_reason?: string | null
+          status?: string
+          step?: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string
+          cycle_date?: string
+          id?: string
+          planned_actions?: Json
+          queue?: string
+          run_id?: string | null
+          skip_reason?: string | null
+          status?: string
+          step?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "daily_reheat_queue_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_queue_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_queue_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_queue_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_queue_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "daily_reheat_queue_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "daily_reheat_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      daily_reheat_runs: {
+        Row: {
+          candidates_a: number
+          candidates_b: number
+          dry_run: boolean
+          id: string
+          meta: Json
+          run_at: string
+          skipped_cap: number
+          skipped_guards: number
+          would_call: number
+          would_send_whapi: number
+          would_sms: number
+        }
+        Insert: {
+          candidates_a?: number
+          candidates_b?: number
+          dry_run?: boolean
+          id?: string
+          meta?: Json
+          run_at?: string
+          skipped_cap?: number
+          skipped_guards?: number
+          would_call?: number
+          would_send_whapi?: number
+          would_sms?: number
+        }
+        Update: {
+          candidates_a?: number
+          candidates_b?: number
+          dry_run?: boolean
+          id?: string
+          meta?: Json
+          run_at?: string
+          skipped_cap?: number
+          skipped_guards?: number
+          would_call?: number
+          would_send_whapi?: number
+          would_sms?: number
+        }
+        Relationships: []
+      }
+      daily_reheat_settings: {
+        Row: {
+          cold_min_age_hours: number
+          cooldown_hours: number
+          daily_whapi_cap: number
+          enabled: boolean
+          flow_variant: string
+          id: string
+          live_dispatch_enabled: boolean
+          pilot_consultant_ids: string[]
+          priority_queue: string
+          queue_a_silence_hours: number
+          queue_a_wait_minutes: number
+          updated_at: string
+          weekdays_only: boolean
+          window_end_brt: string
+          window_start_brt: string
+        }
+        Insert: {
+          cold_min_age_hours?: number
+          cooldown_hours?: number
+          daily_whapi_cap?: number
+          enabled?: boolean
+          flow_variant?: string
+          id?: string
+          live_dispatch_enabled?: boolean
+          pilot_consultant_ids?: string[]
+          priority_queue?: string
+          queue_a_silence_hours?: number
+          queue_a_wait_minutes?: number
+          updated_at?: string
+          weekdays_only?: boolean
+          window_end_brt?: string
+          window_start_brt?: string
+        }
+        Update: {
+          cold_min_age_hours?: number
+          cooldown_hours?: number
+          daily_whapi_cap?: number
+          enabled?: boolean
+          flow_variant?: string
+          id?: string
+          live_dispatch_enabled?: boolean
+          pilot_consultant_ids?: string[]
+          priority_queue?: string
+          queue_a_silence_hours?: number
+          queue_a_wait_minutes?: number
+          updated_at?: string
+          weekdays_only?: boolean
+          window_end_brt?: string
+          window_start_brt?: string
+        }
+        Relationships: []
       }
       engine_logs: {
         Row: {
@@ -7396,6 +7688,136 @@ export type Database = {
           },
         ]
       }
+      lead_research_sweep_cities: {
+        Row: {
+          city: string
+          created_at: string
+          deduped: number
+          error: string | null
+          found: number
+          id: string
+          ingested: number
+          processed_at: string | null
+          skipped: number
+          status: string
+          sweep_id: string
+          uf: string
+        }
+        Insert: {
+          city: string
+          created_at?: string
+          deduped?: number
+          error?: string | null
+          found?: number
+          id?: string
+          ingested?: number
+          processed_at?: string | null
+          skipped?: number
+          status?: string
+          sweep_id: string
+          uf: string
+        }
+        Update: {
+          city?: string
+          created_at?: string
+          deduped?: number
+          error?: string | null
+          found?: number
+          id?: string
+          ingested?: number
+          processed_at?: string | null
+          skipped?: number
+          status?: string
+          sweep_id?: string
+          uf?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_research_sweep_cities_sweep_id_fkey"
+            columns: ["sweep_id"]
+            isOneToOne: false
+            referencedRelation: "lead_research_sweeps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_research_sweeps: {
+        Row: {
+          category: string
+          consultant_id: string
+          created_at: string
+          deduped: number
+          done_cities: number
+          errors: number
+          found_phones: number
+          id: string
+          ingested: number
+          status: string
+          total_cities: number
+          uf: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          consultant_id: string
+          created_at?: string
+          deduped?: number
+          done_cities?: number
+          errors?: number
+          found_phones?: number
+          id?: string
+          ingested?: number
+          status?: string
+          total_cities?: number
+          uf: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          consultant_id?: string
+          created_at?: string
+          deduped?: number
+          done_cities?: number
+          errors?: number
+          found_phones?: number
+          id?: string
+          ingested?: number
+          status?: string
+          total_cities?: number
+          uf?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_research_sweeps_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "lead_research_sweeps_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_research_sweeps_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_research_sweeps_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           consultant_id: string
@@ -8785,6 +9207,93 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      rodizio_assignments: {
+        Row: {
+          assigned_at: string
+          campaign_id: string
+          consultant_id: string
+          customer_id: string
+          id: string
+          partner_id: string
+          pool_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          campaign_id: string
+          consultant_id: string
+          customer_id: string
+          id?: string
+          partner_id: string
+          pool_id: string
+        }
+        Update: {
+          assigned_at?: string
+          campaign_id?: string
+          consultant_id?: string
+          customer_id?: string
+          id?: string
+          partner_id?: string
+          pool_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rodizio_assignments_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "referral_partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rodizio_assignments_pool_id_fkey"
+            columns: ["pool_id"]
+            isOneToOne: false
+            referencedRelation: "rodizio_pools"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       rodizio_pool_members: {
         Row: {
@@ -11076,6 +11585,7 @@ export type Database = {
       consultants_public: {
         Row: {
           cadastro_url: string | null
+          club_cadastro_url: string | null
           created_at: string | null
           facebook_pixel_id: string | null
           google_analytics_id: string | null
@@ -11090,6 +11600,7 @@ export type Database = {
         }
         Insert: {
           cadastro_url?: string | null
+          club_cadastro_url?: string | null
           created_at?: string | null
           facebook_pixel_id?: string | null
           google_analytics_id?: string | null
@@ -11104,6 +11615,7 @@ export type Database = {
         }
         Update: {
           cadastro_url?: string | null
+          club_cadastro_url?: string | null
           created_at?: string | null
           facebook_pixel_id?: string | null
           google_analytics_id?: string | null
@@ -11410,6 +11922,13 @@ export type Database = {
           step_key: string
         }[]
       }
+      bind_customer_campaign: {
+        Args: { p_campaign_id: string; p_customer_id: string }
+        Returns: {
+          campaign_id: string
+          outcome: string
+        }[]
+      }
       bump_ai_cost: {
         Args: {
           p_consultant_id: string
@@ -11507,6 +12026,19 @@ export type Database = {
         Args: { _andamento: string; _approved_at: string; _status: string }
         Returns: string
       }
+      configure_rodizio_pool: {
+        Args: {
+          p_campaign_id: string
+          p_enabled: boolean
+          p_label?: string
+          p_partner_ids: string[]
+        }
+        Returns: {
+          enabled: boolean
+          members: number
+          pool_id: string
+        }[]
+      }
       confirm_media_send: {
         Args: { p_ok: boolean; p_res_id: string }
         Returns: undefined
@@ -11519,16 +12051,16 @@ export type Database = {
         Args: { p_consultant: string; p_tokens?: number }
         Returns: boolean
       }
+      count_captured_leads_by_channel: {
+        Args: { p_consultant_id: string }
+        Returns: Json
+      }
       count_inbound_messages: {
         Args: { p_customer_ids: string[] }
         Returns: {
           cnt: number
           customer_id: string
         }[]
-      }
-      count_captured_leads_by_channel: {
-        Args: { p_consultant_id: string }
-        Returns: Json
       }
       create_empty_bot_flow_variant: {
         Args: { _consultant_id: string; _name?: string; _variant: string }
@@ -11709,6 +12241,37 @@ export type Database = {
       is_team_member: {
         Args: { _leader: string; _member: string }
         Returns: boolean
+      }
+      lead_research_sweep_bump: {
+        Args: {
+          p_deduped?: number
+          p_errors?: number
+          p_found?: number
+          p_inc_done?: boolean
+          p_ingested?: number
+          p_sweep_id: string
+        }
+        Returns: {
+          category: string
+          consultant_id: string
+          created_at: string
+          deduped: number
+          done_cities: number
+          errors: number
+          found_phones: number
+          id: string
+          ingested: number
+          status: string
+          total_cities: number
+          uf: string
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "lead_research_sweeps"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       lint_bot_flow_consistency: {
         Args: { _consultant_id?: string }
@@ -11901,26 +12464,6 @@ export type Database = {
         Args: { _approve: boolean; _note?: string; _submission_id: string }
         Returns: undefined
       }
-      bind_customer_campaign: {
-        Args: { p_campaign_id: string; p_customer_id: string }
-        Returns: {
-          campaign_id: string | null
-          outcome: string
-        }[]
-      }
-      configure_rodizio_pool: {
-        Args: {
-          p_campaign_id: string
-          p_enabled: boolean
-          p_label?: string
-          p_partner_ids: string[]
-        }
-        Returns: {
-          enabled: boolean
-          members: number
-          pool_id: string
-        }[]
-      }
       rodizio_assign_lead: {
         Args: { p_campaign_id: string; p_customer_id: string }
         Returns: {
@@ -12008,6 +12551,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      unaccent: { Args: { "": string }; Returns: string }
       update_sale_status_with_note: {
         Args: {
           p_note?: string
