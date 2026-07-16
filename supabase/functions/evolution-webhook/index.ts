@@ -510,7 +510,14 @@ Deno.serve(async (req) => {
     }
 
 
-    const messageId = body.data?.key?.id || "";
+    const {
+      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isFile, isButton, mediaKind,
+      imageMessage, documentMessage, audioMessage, key, message,
+    } = parsed;
+    // messageText pode ser sobrescrito pela transcrição automática quando o
+    // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
+    let messageText: string = parsed.messageText;
+    const messageId = String(key?.id || parsed.messageId || body.data?.key?.id || "");
     // Type cast: dedupe.ts pins @supabase/supabase-js@2.49.4 while this file
     // pins @2; the runtime is identical but TS sees two protected-property
     // shapes. Same workaround used elsewhere in this file (line 141).
@@ -526,15 +533,6 @@ Deno.serve(async (req) => {
       message_id: messageId,
       v2_flag: v2Flag,
     });
-
-    const {
-      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isFile, isButton, mediaKind,
-      imageMessage, documentMessage, audioMessage, key, message,
-    } = parsed;
-    // messageText pode ser sobrescrito pela transcrição automática quando o
-    // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
-    let messageText: string = parsed.messageText;
-    const messageId = String(key?.id || parsed.messageId || "");
     const inboundConvMeta = () => resolveInboundConversationMeta({
       hasAudio,
       hasImage,

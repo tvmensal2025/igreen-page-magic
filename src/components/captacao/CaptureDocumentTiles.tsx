@@ -188,7 +188,7 @@ export function CaptureDocumentTiles({
     }
   };
 
-  const useLastFromChat = async (key: DocKey) => {
+  const attachLastFromChat = async (key: DocKey) => {
     if (!lastInboundUrl) {
       toast({ title: "Nenhuma mídia recente no chat", variant: "destructive", duration: 2500 });
       return;
@@ -304,7 +304,7 @@ export function CaptureDocumentTiles({
                   type="button"
                   disabled={isBusy}
                   title="Usar última foto/PDF recebida no WhatsApp"
-                  onClick={() => void useLastFromChat(s.key)}
+                  onClick={() => void attachLastFromChat(s.key)}
                   className="inline-flex items-center justify-center gap-0.5 rounded text-[8px] font-semibold text-primary hover:bg-primary/10 py-0.5 disabled:opacity-50"
                 >
                   <Paperclip className="w-2.5 h-2.5" />
