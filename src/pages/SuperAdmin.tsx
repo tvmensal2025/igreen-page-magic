@@ -80,7 +80,8 @@ const SuperAdmin = () => {
   const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
-  const { isAdmin, loading: roleLoading } = useUserRole(userId);
+  // Gate alinhado a SuperAdminRemoteSupport: só is_super_admin (não role "admin").
+  const { isSuperAdmin, loading: roleLoading } = useUserRole(userId);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -100,17 +101,17 @@ const SuperAdmin = () => {
 
   useEffect(() => {
     if (authLoading || roleLoading || !userId) return;
-    if (!isAdmin) {
+    if (!isSuperAdmin) {
       if (!accessDeniedToastShownRef.current) {
         accessDeniedToastShownRef.current = true;
-        toast({ title: "Acesso negado", description: "Você não tem permissão de administrador.", variant: "destructive" });
+        toast({ title: "Acesso negado", description: "Você não tem permissão de super administrador.", variant: "destructive" });
       }
       navigate("/admin", { replace: true });
       return;
     }
     accessDeniedToastShownRef.current = false;
     loadConsultants();
-  }, [authLoading, isAdmin, roleLoading, userId, navigate, toast]);
+  }, [authLoading, isSuperAdmin, roleLoading, userId, navigate, toast]);
 
   const loadConsultants = async () => {
     setLoadingData(true);
@@ -241,7 +242,7 @@ const SuperAdmin = () => {
     navigate("/auth");
   };
 
-  if (authLoading || roleLoading || (!isAdmin && userId)) {
+  if (authLoading || roleLoading || (!isSuperAdmin && userId)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background">
         <div className="relative">

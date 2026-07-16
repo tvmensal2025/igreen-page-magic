@@ -10,22 +10,22 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const token = String(body.token ?? "");
-    const snapshotId = String(body.snapshotId ?? "");
-    if (!token && !snapshotId) return json({ error: "token ou snapshotId obrigatório" }, 400);
+    const token = String(body.token ?? "").trim();
+    // AUD-011: snapshotId sozinho era IDOR. Exige public_token da proposta.
+    if (!token) {
+      return json({ error: "token obrigatório" }, 400);
+    }
 
     const admin = getAdminClient("solar-design-public");
 
-    let resolvedSnapshotId = snapshotId;
-    if (token) {
-      const { data: proposal } = await admin
-        .from("proposals")
-        .select("solar_snapshot_id, status")
-        .eq("public_token", token)
-        .maybeSingle();
-      if (!proposal?.solar_snapshot_id) return json({ solar: null });
-      resolvedSnapshotId = proposal.solar_snapshot_id;
-    }
+    const { data: proposal } = await admin
+      .from("proposals")
+      .select("solar_snapshot_id, status")
+      .eq("public_token", token)
+      .maybeSingle();
+    if (!proposal?.solar_snapshot_id) return json({ solar: null });
+
+    const resolvedSnapshotId = proposal.solar_snapshot_id;
 
     const { data: snap } = await admin
       .from("solar_design_snapshots")

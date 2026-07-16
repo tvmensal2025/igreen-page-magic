@@ -16,6 +16,7 @@ import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,6 +127,16 @@ Deno.serve(async (req) => {
         }
 
         if (!(await gateProactiveTouch(supabase, c.id, "process_followups"))) {
+          skipCount++;
+          continue;
+        }
+
+        const gate = await assertBotOutboundAllowed(supabase, {
+          customerId: c.id,
+          phone: c.phone_whatsapp,
+          consultantId: c.consultant_id,
+        });
+        if (!gate.allowed) {
           skipCount++;
           continue;
         }

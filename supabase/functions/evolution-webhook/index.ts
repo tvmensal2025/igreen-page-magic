@@ -111,15 +111,23 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Validação de origem em modo GRACE (log-only).
-  // Mesmo motivo do whapi-webhook: se o secret estiver setado sem o provedor
-  // enviar o header/query, o 401 engolia inbound e travava o cliente.
+  // Validação de origem: por padrão GRACE (log-only), igual Whapi.
+  // Enforce só com ENFORCE_WEBHOOK_ORIGIN=true — evita derrubar inbound se
+  // EVOLUTION_WEBHOOK_SECRET existir no Edge mas a URL ainda não manda ?secret=.
   const originAuth = verifyWebhookOrigin(req, "EVOLUTION_WEBHOOK_SECRET");
   if (!originAuth.ok) {
+    const enforce =
+      (Deno.env.get("ENFORCE_WEBHOOK_ORIGIN") || "").trim().toLowerCase() === "true";
     console.warn(
-      "[evolution-webhook] origem sem secret (grace/log-only, NÃO bloqueia):",
+      `[evolution-webhook] origem sem secret (${enforce ? "ENFORCE → 401" : "grace/log-only, NÃO bloqueia"}):`,
       originAuth.reason,
     );
+    if (enforce) {
+      return new Response(JSON.stringify({ ok: false, error: "unauthorized_webhook", reason: originAuth.reason }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   }
 
   // Lock state hoisted to function scope so the outer `finally` can guarantee

@@ -24,10 +24,12 @@ import {
   type UnavailableChannel,
 } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const MAX_RETRIES = 10;
@@ -187,10 +189,11 @@ async function bucketB(supabase: any) {
   const cutoff = new Date(Date.now() - 30_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, name, otp_code, portal_retry_count, last_otp_dispatch_at, consultant_id")
+    .select("id, name, otp_code, portal_retry_count, last_otp_dispatch_at, consultant_id, do_not_contact, phone_whatsapp")
     .not("otp_code", "is", null)
     .not("portal2_idcliente", "is", null)
     .is("portal2_otp_validated_at", null)
+    .eq("do_not_contact", false)
     .lt("otp_received_at", cutoff)
     .order("otp_received_at", { ascending: true })
     .limit(BATCH_LIMIT);
@@ -270,6 +273,13 @@ async function bucketB(supabase: any) {
             r.name || r.id,
           );
         } else {
+          const gate = await assertBotOutboundAllowed(supabase, {
+            customerId: r.id,
+            consultantId: r.consultant_id,
+          });
+          if (!gate.allowed) {
+            continue;
+          }
           const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
           const msg =
             `${firstName ? firstName + ", " : ""}seu código de verificação expirou ⏰\n\n` +
@@ -314,9 +324,10 @@ async function bucketC(supabase: any) {
   const cutoff = new Date(Date.now() - 60_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, portal2_idcliente, consultant_id, phone_whatsapp, name, link_facial, link_facial_sent_at, updated_at, portal2_otp_validated_at")
+    .select("id, portal2_idcliente, consultant_id, phone_whatsapp, name, link_facial, link_facial_sent_at, updated_at, portal2_otp_validated_at, do_not_contact")
     .not("portal2_idcliente", "is", null)
     .not("portal2_otp_validated_at", "is", null)
+    .eq("do_not_contact", false)
     .or("link_facial.is.null,link_facial_sent_at.is.null")
     .lt("updated_at", cutoff)
     .limit(BATCH_LIMIT);
@@ -393,6 +404,12 @@ async function bucketC(supabase: any) {
           console.warn(`[watchdog C] quota bloqueada ${channel.instanceName}: ${quota.reason}`);
           continue;
         }
+        const gate = await assertBotOutboundAllowed(supabase, {
+          customerId: r.id,
+          phone: r.phone_whatsapp,
+          consultantId: r.consultant_id,
+        });
+        if (!gate.allowed) continue;
         const digits = String(r.phone_whatsapp).replace(/\D/g, "");
         if (!digits) continue;
         const jid = `${digits}@s.whatsapp.net`;
@@ -523,6 +540,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
   const started = Date.now();
   try {
     const [a, b, c, d] = await Promise.all([

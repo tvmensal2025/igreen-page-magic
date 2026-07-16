@@ -11,6 +11,14 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+
+const cronCorsHeaders = {
+  ...corsHeaders,
+  "Access-Control-Allow-Headers":
+    `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret, x-internal-secret`,
+};
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 
 const MAX_CAMPAIGNS_PER_TICK = 5;
@@ -155,6 +163,9 @@ Deno.serve(async (req) => {
   }
 
   const supabase = createClient(supabaseUrl, serviceKey);
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, cronCorsHeaders);
+
     if (!(await isAutomationEnabled(supabase, "bulk_campaigns_runner"))) {
       await logSkipped(supabase, "bulk_campaigns_runner");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bulk_campaigns_runner" }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -299,6 +310,19 @@ Deno.serve(async (req) => {
         await supabase.from("bulk_campaign_targets").update({
           status: "failed",
           error: "do_not_contact",
+          sent_at: new Date().toISOString(),
+        }).eq("id", t.id).eq("status", "queued");
+        continue;
+      }
+
+      const gate = await assertBotOutboundAllowed(supabase, {
+        phone: t.phone,
+        consultantId: camp.consultant_id,
+      });
+      if (!gate.allowed) {
+        await supabase.from("bulk_campaign_targets").update({
+          status: "failed",
+          error: gate.reason || "suppressed",
           sent_at: new Date().toISOString(),
         }).eq("id", t.id).eq("status", "queued");
         continue;

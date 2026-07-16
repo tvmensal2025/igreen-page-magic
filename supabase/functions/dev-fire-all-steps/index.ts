@@ -2,6 +2,7 @@
 // para o cliente de teste 5511971254913. Travado por número para evitar abuso.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const TEST_PHONE = "5511971254913";
 
@@ -18,6 +19,8 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     const body = await req.json().catch(() => ({}));
     const customerId: string | undefined = body?.customerId;

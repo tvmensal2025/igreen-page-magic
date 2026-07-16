@@ -17,13 +17,8 @@ import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const STAGE1_MIN = 10;       // mínimo 10 min idle p/ não pisar em conversa ativa
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 const STAGE3_MIN = 24 * 60;  // 24h → abandono
 const MAX_RESCUES_PER_RUN = 30;
 const COOLDOWN_AFTER_RESCUE_MIN = 45;
@@ -80,6 +75,9 @@ Deno.serve(async (req) => {
 
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+  const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
 
     if (!(await isBotGloballyEnabled(supabase))) {
       return new Response(JSON.stringify({ skipped: "bot_globally_disabled" }), {
@@ -132,6 +130,7 @@ Deno.serve(async (req) => {
         .lt("last_bot_reply_at", cutoff)
         .in("conversation_step", Array.from(RESCUABLE_STEPS))
         .eq("bot_paused", false)
+        .eq("do_not_contact", false)
         .is("assigned_human_id", null)
         // Respeita pausa programada (postpone-intent: "te mando amanhã").
         // Sem isso, rescue dispara mesmo após cliente pedir tempo.
@@ -272,6 +271,13 @@ Deno.serve(async (req) => {
         if (!(await gateProactiveTouch(supabase, lead.id, "bot_stuck_recovery"))) {
           continue;
         }
+
+        const gate = await assertBotOutboundAllowed(supabase, {
+          customerId: lead.id,
+          phone: lead.phone_whatsapp,
+          consultantId: lead.consultant_id,
+        });
+        if (!gate.allowed) continue;
 
         const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");

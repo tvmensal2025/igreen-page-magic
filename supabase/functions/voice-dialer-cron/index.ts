@@ -16,6 +16,7 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const MAX_CAMPAIGNS = 5;
 const MAX_CALLS_PER_CAMPAIGN = 10;
@@ -230,6 +231,34 @@ Deno.serve(async (req) => {
         .select("id")
         .maybeSingle();
       if (!claimed) continue;
+
+      const suppression = await assertCanContact(admin, {
+        phone: t.phone,
+        consultantId: camp.consultant_id,
+        channel: "voice",
+      });
+      if (!suppression.allowed) {
+        await admin
+          .from("voice_campaign_targets")
+          .update({
+            status: "failed",
+            error: suppression.reason || "do_not_contact",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("id", t.id);
+        await admin.from("voice_call_logs").insert({
+          campaign_id: camp.id,
+          target_id: t.id,
+          consultant_id: camp.consultant_id,
+          to_phone: t.phone,
+          status: "failed",
+          error: suppression.reason || "do_not_contact",
+          raw: { skipped: "dnc" },
+          velip_raw: {},
+        });
+        failedNow++;
+        continue;
+      }
 
       const dest = toVelipBRDest(t.phone) || t.phone;
       const call = dispatchKind === "tts"

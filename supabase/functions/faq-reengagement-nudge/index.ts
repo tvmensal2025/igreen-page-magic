@@ -23,15 +23,17 @@ import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAttendanceTerminalStep } from "../_shared/attendance-flow.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
+import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
 const NUDGE_COOLDOWN_HOURS = 4;
 const MAX_LEADS_PER_RUN = 30;
 
-serve(async (_req: Request) => {
+serve(async (req: Request) => {
   if (isQuietHoursBRT()) {
     return new Response(JSON.stringify({ ok: true, skipped: "quiet_hours" }), { status: 200 });
   }
@@ -39,6 +41,8 @@ serve(async (_req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const supabase = createClient(supabaseUrl, supabaseKey);
+  const cronAuth = await assertCronAuth(req, supabase);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason);
 
   // Antes este cron enviava SEM nenhum kill switch — nem o global nem um
   // toggle próprio. Agora respeita os dois (toggle novo nasce OFF; ligar na
@@ -105,6 +109,13 @@ serve(async (_req: Request) => {
       }
 
       if (!(await gateProactiveTouch(supabase, lead.id, "faq_reengagement_nudge"))) continue;
+
+      const gate = await assertBotOutboundAllowed(supabase, {
+        customerId: lead.id,
+        phone: lead.phone_whatsapp,
+        consultantId: lead.consultant_id,
+      });
+      if (!gate.allowed) continue;
 
       const channel = await resolveChannelForCustomer(supabase, lead.id, env);
       if (isUnavailable(channel)) {
