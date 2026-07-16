@@ -207,6 +207,14 @@ verify_jwt = false
 [functions.lead-research]
 verify_jwt = true
 
+# Enfileira varredura UF (JWT do consultor). Worker = lead-research-sweep-cron.
+[functions.lead-research-sweep]
+verify_jwt = true
+
+# Varredura automática cidade a cidade (fila → OSM → captured_leads). Sem JWT (pg_cron).
+[functions.lead-research-sweep-cron]
+verify_jwt = false
+
 # Seleção de leads → cria campanha de Disparo PRO (bulk_campaigns).
 # Autenticada: o consultor logado dispara para os próprios leads.
 [functions.leads-to-campaign]
@@ -228,5 +236,11 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.speed-to-lead-check]
+verify_jwt = false
+
+[functions.daily-reheat-cron]
+verify_jwt = false
+
+[functions.finalize-club]
 verify_jwt = false
 

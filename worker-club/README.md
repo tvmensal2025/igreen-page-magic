@@ -16,7 +16,11 @@ Não é Portal 2. Não usa `api-green-connection`, HMAC, OCR, OTP nem colunas
 
 ## Fonte da verdade
 
-**[`CLUB-OFICIAL.md`](./CLUB-OFICIAL.md)** — mapeado 2026-07-15.
+- **[`CLUB-OFICIAL.md`](./CLUB-OFICIAL.md)** — API e fluxo (mapa oficial)
+- **[`DADOS-OBRIGATORIOS.md`](./DADOS-OBRIGATORIOS.md)** — campos mínimos para cadastrar PF
+- **[`APP-LINKS-CLIENTE.md`](./APP-LINKS-CLIENTE.md)** — Play Store / App Store para enviar ao cliente
+- **[`EASYPANEL.md`](./EASYPANEL.md)** — deploy no Easypanel
+
 
 ## Stack
 

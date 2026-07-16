@@ -351,7 +351,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
               </AccordionTrigger>
               <AccordionContent className="px-3 pb-3 space-y-1 text-xs text-muted-foreground">
                 <div>• <strong>Distribuidora:</strong> {defaults?.distribuidora?.nome || "será deduzida da cidade"}</div>
-                <div>• <strong>Idade:</strong> {defaults?.age_min || 30}–{defaults?.age_max || 65} anos · todos os gêneros</div>
+                <div>• <strong>Idade:</strong> {defaults?.age_min || 30}–{defaults?.age_max || 60} anos · todos os gêneros</div>
                 <div>• <strong>Posicionamentos:</strong> Advantage+ (Meta otimiza)</div>
                 <div>• <strong>Mensagem inicial WhatsApp:</strong> "{defaults?.initial_message || "Olá! Quero economizar."}"</div>
                 <div>• <strong>Headline e descrição:</strong> vêm com a copy escolhida</div>

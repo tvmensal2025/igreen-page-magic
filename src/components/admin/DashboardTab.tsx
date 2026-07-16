@@ -462,7 +462,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       </div>
 
       <Suspense fallback={<div className="h-40 rounded-xl bg-muted/40 animate-pulse" />}>
-        <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} />
+        <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} consultantId={userId} />
       </Suspense>
 
       <TopConsumersCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} onOpenChat={onOpenChat} />

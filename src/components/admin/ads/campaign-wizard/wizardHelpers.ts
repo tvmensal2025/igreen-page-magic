@@ -15,6 +15,8 @@ export const FORMAT_SPEC: Record<AdFormat, { label: string; w: number; h: number
 };
 
 export const PER_FORMAT_LIMIT = 4;
+/** Máximo de cidades por campanha — 1 é o ideal para CPL; 2 é teto duro. */
+export const MAX_CITIES_PER_CAMPAIGN = 2;
 export const COPY_LIMITS = { headline: 30, primary: 90, description: 25 } as const;
 export const INITIAL_MSG_LIMIT = 160;
 

@@ -368,9 +368,12 @@ async function processLead(job) {
       msgLower.includes('cliente já cadastrado') ||
       msgLower.includes('cliente ja cadastrado');
     if (isAlreadyRegistered && supabase && customer_id) {
+      // conversation_step=registered_igreen (não cadastro_em_analise): o painel
+      // PortalStatusTracker tratava cadastro_em_analise como "Abrindo portal…"
+      // e ficava travado sem botão de escape.
       await supabase.from('customers').update({
         status: 'registered_igreen',
-        conversation_step: 'cadastro_em_analise',
+        conversation_step: 'registered_igreen',
         portal2_status: 'already_registered',
         portal2_error: String(e.message ?? '').slice(0, 2000),
         portal2_error_kind: kind,

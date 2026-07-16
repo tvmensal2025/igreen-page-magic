@@ -3,18 +3,9 @@
 // Testes de EXEMPLO + SMOKE ESTÁTICO para REQ 1 (kill switch global no
 // Evolution) — Tarefa 1.3.
 //
-// Cobre:
-//   1. Exemplo (Critério 1.2): com `bot_global_enabled=true`, o gate resolve
-//      como HABILITADO (enabled=true / outboundAllowed=true) e o handler segue
-//      ALÉM da guarda — verificado para 1–2 eventos representativos, reusando o
-//      módulo PURO de gating criado na task 1.2
-//      (`_shared/bot/kill-switch-gate.ts`), o mesmo exercido pelo property test.
-//   2. Smoke estático (Critério 1.4): lendo o fonte de
-//      `evolution-webhook/index.ts`, a guarda `isBotGloballyEnabled` está no
-//      TOPO do handler — ANTES de `req.json()` e ANTES da guarda por-consultor
-//      `isConsultantAIDisabled` — retorna a resposta neutra
-//      `{ ok: true, msg: "bot_globally_disabled" }`, e tem PARIDADE de semântica
-//      com `whapi-webhook/index.ts`.
+// Semântica atual (jul/2026): OFF = zero outbound automático, MAS o webhook
+// continua o pipeline (grava inbound + avisa consultor) e responde
+// `{ ok: true, msg: "bot_globally_disabled_inbound_saved" }`.
 //
 // _Requirements: 1.2, 1.4_
 
@@ -29,10 +20,6 @@ import {
   type FlagReadResult,
 } from "../../supabase/functions/_shared/bot/kill-switch-gate";
 
-// ---------------------------------------------------------------------------
-// Localização dos fontes (resolvido a partir deste arquivo de teste).
-// ---------------------------------------------------------------------------
-
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../..");
 const EVOLUTION_WEBHOOK = path.join(
@@ -44,12 +31,6 @@ const WHAPI_WEBHOOK = path.join(
   "supabase/functions/whapi-webhook/index.ts",
 );
 
-// ---------------------------------------------------------------------------
-// Réplica enxuta do ponto de decisão da guarda (task 1.1): avalia o gate e, se
-// desabilitado, retorna a resposta neutra SEM outbound; se habilitado, "segue
-// além da guarda" e processa o evento (registrado pelo flag `proceeded`).
-// ---------------------------------------------------------------------------
-
 function simulateGuard(flag: FlagReadResult, event: unknown) {
   const decision = evaluateKillSwitchGate(flag);
   if (!decision.outboundAllowed) {
@@ -60,7 +41,6 @@ function simulateGuard(flag: FlagReadResult, event: unknown) {
       response: BOT_GLOBALLY_DISABLED_RESPONSE,
     };
   }
-  // Segue ALÉM da guarda: o handler continua o processamento normal.
   return {
     decision,
     proceeded: true,
@@ -69,14 +49,9 @@ function simulateGuard(flag: FlagReadResult, event: unknown) {
   };
 }
 
-/** Estado da flag lido com sucesso e habilitado (`bot_global_enabled=true`). */
 function flagEnabled(): FlagReadResult {
   return { kind: "ok", row: { bot_global_enabled: true } };
 }
-
-// ---------------------------------------------------------------------------
-// 1) Exemplo (Critério 1.2) — flag=true → handler segue além da guarda.
-// ---------------------------------------------------------------------------
 
 describe("REQ 1 — Exemplo: bot_global_enabled=true segue além da guarda (Critério 1.2)", () => {
   it("evento de mensagem representativo: enabled=true, outboundAllowed=true, prossegue", () => {
@@ -90,10 +65,8 @@ describe("REQ 1 — Exemplo: bot_global_enabled=true segue além da guarda (Crit
 
     expect(result.decision.enabled).toBe(true);
     expect(result.decision.outboundAllowed).toBe(true);
-    // O handler segue ALÉM da guarda e processa o evento normalmente.
     expect(result.proceeded).toBe(true);
     expect(result.processedEvent).toBe(event);
-    // Quando habilitado, a resposta NUNCA é a resposta neutra de silêncio.
     expect(result.response).not.toEqual(BOT_GLOBALLY_DISABLED_RESPONSE);
   });
 
@@ -112,11 +85,7 @@ describe("REQ 1 — Exemplo: bot_global_enabled=true segue além da guarda (Crit
   });
 });
 
-// ---------------------------------------------------------------------------
-// 2) Smoke estático (Critério 1.4) — guarda no topo + paridade com o whapi.
-// ---------------------------------------------------------------------------
-
-describe("REQ 1 — Smoke estático: guarda no topo do evolution-webhook (Critério 1.4)", () => {
+describe("REQ 1 — Smoke estático: kill switch no evolution-webhook (Critério 1.4)", () => {
   const evoSrc = readFileSync(EVOLUTION_WEBHOOK, "utf8");
 
   it("importa e aplica a guarda isBotGloballyEnabled", () => {
@@ -126,13 +95,14 @@ describe("REQ 1 — Smoke estático: guarda no topo do evolution-webhook (Crité
     expect(evoSrc).toContain("isBotGloballyEnabled(supabase as any)");
   });
 
-  it("retorna a resposta neutra { ok: true, msg: \"bot_globally_disabled\" }", () => {
-    expect(evoSrc).toContain('msg: "bot_globally_disabled"');
-    // A negação `!(await isBotGloballyEnabled(...))` é o gatilho do early-return.
-    expect(evoSrc).toContain("if (!(await isBotGloballyEnabled(supabase as any)))");
+  it("responde bot_globally_disabled_inbound_saved (inbound salvo, outbound bloqueado)", () => {
+    expect(evoSrc).toContain('msg: !botGlobalOutboundEnabled ? "bot_globally_disabled_inbound_saved"');
+    expect(evoSrc).toContain("const botGlobalOutboundEnabled = await isBotGloballyEnabled(supabase as any)");
+    // Não há mais early-return no topo que engolia o inbound.
+    expect(evoSrc).not.toContain("if (!(await isBotGloballyEnabled(supabase as any)))");
   });
 
-  it("a guarda fica ANTES de isConsultantAIDisabled (kill switch global precede o per-consultor)", () => {
+  it("a leitura do kill switch fica ANTES de isConsultantAIDisabled", () => {
     const idxServe = evoSrc.indexOf("Deno.serve(");
     const idxGuard = evoSrc.indexOf("isBotGloballyEnabled(supabase as any)");
     const idxConsultantGuard = evoSrc.indexOf(
@@ -151,36 +121,32 @@ describe("REQ 1 — Paridade de semântica com whapi-webhook (Critério 1.4)", (
   const evoSrc = readFileSync(EVOLUTION_WEBHOOK, "utf8");
   const whapiSrc = readFileSync(WHAPI_WEBHOOK, "utf8");
 
-  it("o whapi-webhook aplica a MESMA guarda e a MESMA resposta neutra", () => {
-    expect(whapiSrc).toContain("if (!(await isBotGloballyEnabled(supabase as any)))");
-    expect(whapiSrc).toContain('msg: "bot_globally_disabled"');
+  it("o whapi-webhook aplica a MESMA guarda e a MESMA resposta de inbound salvo", () => {
+    expect(whapiSrc).toContain("const botGlobalOutboundEnabled = await isBotGloballyEnabled(supabase as any)");
+    expect(whapiSrc).toContain('msg: "bot_globally_disabled_inbound_saved"');
+    expect(whapiSrc).not.toContain("if (!(await isBotGloballyEnabled(supabase as any)))");
   });
 
-  it("whapi: guarda precede parse do body; evolution: guarda precede isConsultantAIDisabled", () => {
+  it("ambos leem o kill switch cedo e bloqueiam outbound só depois de persistir inbound", () => {
     const evoGuard = evoSrc.indexOf("isBotGloballyEnabled(supabase as any)");
     const evoConsultantGuard = evoSrc.indexOf("isConsultantAIDisabled(supabase as any");
+    const evoInboundSaved = evoSrc.indexOf("bot_globally_disabled_inbound_saved");
     const whapiGuard = whapiSrc.indexOf("isBotGloballyEnabled(supabase as any)");
-    // Whapi passou de req.json() para req.text() + JSON.parse (body vazio / parse seguro).
-    const whapiBodyParse = (() => {
-      const textIdx = whapiSrc.indexOf("await req.text()");
-      if (textIdx >= 0) return textIdx;
-      return whapiSrc.indexOf("await req.json()");
-    })();
+    const whapiInboundSaved = whapiSrc.indexOf("bot_globally_disabled_inbound_saved");
 
     expect(evoGuard).toBeGreaterThanOrEqual(0);
     expect(whapiGuard).toBeGreaterThanOrEqual(0);
-    expect(whapiBodyParse).toBeGreaterThanOrEqual(0);
-    // Whapi: guarda antes do parsing do corpo.
-    expect(whapiGuard).toBeLessThan(whapiBodyParse);
-    // Evolution: ACK/conexão parseiam o body cedo; kill switch silencia só o fluxo conversacional.
     expect(evoGuard).toBeLessThan(evoConsultantGuard);
+    expect(evoGuard).toBeLessThan(evoInboundSaved);
+    expect(whapiGuard).toBeLessThan(whapiInboundSaved);
   });
 
-  it("a resposta neutra dos dois webhooks tem o MESMO shape do módulo puro", () => {
-    // O módulo puro é a fonte de verdade do shape; ambos os webhooks o espelham.
-    expect(BOT_GLOBALLY_DISABLED_RESPONSE).toEqual({ ok: true, msg: "bot_globally_disabled" });
-    const neutralLiteral = '{ ok: true, msg: "bot_globally_disabled" }';
-    expect(evoSrc).toContain(neutralLiteral);
-    expect(whapiSrc).toContain(neutralLiteral);
+  it("a resposta neutra dos dois webhooks espelha o shape do módulo puro", () => {
+    expect(BOT_GLOBALLY_DISABLED_RESPONSE).toEqual({
+      ok: true,
+      msg: "bot_globally_disabled_inbound_saved",
+    });
+    expect(evoSrc).toContain("bot_globally_disabled_inbound_saved");
+    expect(whapiSrc).toContain("bot_globally_disabled_inbound_saved");
   });
 });

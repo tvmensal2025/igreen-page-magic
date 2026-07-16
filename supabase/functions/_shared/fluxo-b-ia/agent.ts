@@ -16,6 +16,7 @@
 
 import { aiChatCascade } from "../ai-gateway.ts";
 import { lookupKnowledge } from "../knowledge-lookup.ts";
+import { formatFaqReply } from "../format-reply.ts";
 import { FLUXO_B_PERSONA } from "./persona.ts";
 import { buscarRespostaDiretaFaq } from "./faq-direct.ts";
 import { trackAIUsage } from "../ai-cost-tracker.ts";
@@ -105,6 +106,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     ).catch(() => null);
     if (direta) {
       console.log(`[fluxo-b-ia] resposta DIRETA do FAQ (sem LLM) intent="${direta.intentName}" trigger="${direta.triggerMatched}"`);
+      const textoFmt = formatFaqReply(direta.texto);
       if (!input.dryRun) {
         await supabase.from("customers").update({
           last_bot_reply_at: new Date().toISOString(),
@@ -115,18 +117,18 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
         // registra o inbound na entrada, antes de chamar este handler. Gravar de
         // novo causava linhas duplicadas em `conversations` (mesmo
         // external_message_id, ~5s de diferença = latência do LLM).
-        const enviado = await input.enviarTexto(direta.texto).catch(() => false);
-        if (!enviado) return { respondeu: false, texto: direta.texto, acoes: [] };
+        const enviado = await input.enviarTexto(textoFmt).catch(() => false);
+        if (!enviado) return { respondeu: false, texto: textoFmt, acoes: [] };
         await supabase.from("conversations").insert({
           customer_id: customerId,
           message_direction: "outbound",
-          message_text: direta.texto,
+          message_text: textoFmt,
           message_type: "text",
         });
       }
       return {
         respondeu: true,
-        texto: direta.texto,
+        texto: textoFmt,
         acoes: [],
         modelUsed: "faq-direct",
         rag: { source: "bot_flow_qa", confidence: 1 },
@@ -293,7 +295,8 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     return { respondeu: false, texto: "", acoes };
   }
 
-
+  // Pós-processamento visual: parágrafos, negrito WhatsApp, sem CTA de cadastro.
+  const textoFmt = formatFaqReply(texto);
 
   // 6) Side-effects (skip em dryRun)
   if (!input.dryRun) {
@@ -322,13 +325,13 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     // diferença = latência do LLM). Aqui só gravamos o outbound.
 
     // 7) Envia para o cliente
-    const enviado = await input.enviarTexto(texto).catch(() => false);
-    if (!enviado) return { respondeu: false, texto, acoes, modelUsed: llm.modelUsed };
+    const enviado = await input.enviarTexto(textoFmt).catch(() => false);
+    if (!enviado) return { respondeu: false, texto: textoFmt, acoes, modelUsed: llm.modelUsed };
 
     await supabase.from("conversations").insert({
       customer_id: customerId,
       message_direction: "outbound",
-      message_text: texto,
+      message_text: textoFmt,
       message_type: "text",
     });
 
@@ -337,7 +340,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
     // histórico + 1 (o turno atual).
     try {
       const inboundCount = historyMessages.filter((m) => m.role === "user").length + 1;
-      const historicoFmt = [...historyMessages, { role: "user" as const, content: userTurn }, { role: "assistant" as const, content: texto }]
+      const historicoFmt = [...historyMessages, { role: "user" as const, content: userTurn }, { role: "assistant" as const, content: textoFmt }]
         .map((m) => `${m.role === "user" ? "Lead" : assistantName}: ${m.content}`)
         .join("\n");
       void maybeUpdateSummary({
@@ -354,7 +357,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
 
   return {
     respondeu: true,
-    texto,
+    texto: textoFmt,
     acoes,
     modelUsed: llm.modelUsed,
     rag: rag?.found ? { source: rag.source, confidence: rag.confidence } : null,

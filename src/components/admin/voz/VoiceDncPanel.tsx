@@ -1,15 +1,24 @@
 /**
  * Lista Não Perturbe (DNC) — números bloqueados para ligação/SMS Velip.
+ * Mostra nome (CRM), motivo, origem (manual vs automático) e busca.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { Loader2, Plus, ShieldBan, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, ShieldBan, Trash2, MessageSquare } from "lucide-react";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";
+import type { VozCustomer } from "./VozContactPickerDialog";
+import { resolveNameByPhone } from "./voiceContactResolve";
+import { dncSourceLabel } from "./voiceOutcomeLabels";
+import {
+  crmClosingSummary,
+  resolveCrmByPhoneOrId,
+  statusCrmLabel,
+} from "./voiceCrmContext";
 
 interface DncRow {
   id: string;
@@ -21,6 +30,8 @@ interface DncRow {
 
 interface Props {
   consultantId: string;
+  customers?: VozCustomer[];
+  onOpenChat?: (phone: string) => void;
 }
 
 function digitsOnly(raw: string): string {
@@ -39,10 +50,28 @@ function formatPhone(raw: string): string {
   return raw;
 }
 
-export function VoiceDncPanel({ consultantId }: Props) {
+function reasonLabel(reason: string | null | undefined): string {
+  const r = String(reason || "").trim();
+  if (!r) return "—";
+  const lower = r.toLowerCase();
+  if (lower.includes("bk") || lower.includes("do_not_disturb") || lower.includes("não perturbe")) {
+    return "Não perturbe (retorno Velip)";
+  }
+  if (lower.includes("ik") || lower.includes("nonexistent") || lower.includes("inexistente")) {
+    return "Número inexistente";
+  }
+  if (lower.includes("invalid") || lower.includes("inválido") || lower.includes("ek")) {
+    return "Número inválido";
+  }
+  if (lower === "manual") return "Bloqueio manual";
+  return r;
+}
+
+export function VoiceDncPanel({ consultantId, customers = [], onOpenChat }: Props) {
   const [rows, setRows] = useState<DncRow[]>([]);
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -62,6 +91,34 @@ export function VoiceDncPanel({ consultantId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const enriched = useMemo(() => {
+    return rows.map((r) => {
+      const crm = resolveCrmByPhoneOrId(r.phone, null, customers);
+      const name = crm?.name?.trim() || resolveNameByPhone(r.phone, customers);
+      return { ...r, displayName: name, crm };
+    });
+  }, [rows, customers]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return enriched;
+    const digits = q.replace(/\D/g, "");
+    return enriched.filter((r) => {
+      const name = (r.displayName || "").toLowerCase();
+      const phone = r.phone.replace(/\D/g, "");
+      const reason = (r.reason || "").toLowerCase();
+      return (
+        name.includes(q) ||
+        reason.includes(q) ||
+        (digits.length >= 3 && phone.includes(digits)) ||
+        formatPhone(r.phone).toLowerCase().includes(q)
+      );
+    });
+  }, [enriched, search]);
+
+  const autoCount = enriched.filter((r) => r.source === "velip_callback").length;
+  const manualCount = enriched.length - autoCount;
 
   const add = async () => {
     const dest = digitsOnly(phone);
@@ -100,11 +157,11 @@ export function VoiceDncPanel({ consultantId }: Props) {
   return (
     <VozCampaignShell
       title="Não Perturbe (DNC)"
-      subtitle="Números aqui não recebem ligação nem SMS via Velip. Bloqueios da operadora entram automaticamente."
+      subtitle="Bloqueados do CRM: nome, etapa/status, motivo e origem. Não recebem ligação nem SMS."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
-            {rows.length} número(s) bloqueado(s)
+            {enriched.length} bloqueado(s) · {manualCount} manual · {autoCount} automático
           </span>
           <Button
             onClick={() => void add()}
@@ -138,16 +195,27 @@ export function VoiceDncPanel({ consultantId }: Props) {
         </div>
       </VozSection>
 
-      <VozSection title="Lista">
+      <VozSection title="Lista de bloqueados">
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+            placeholder="Buscar por nome, telefone ou motivo…"
+          />
+        </div>
         {loading ? (
           <div className="flex justify-center py-6">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum número na lista ainda.</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {rows.length === 0 ? "Nenhum número na lista ainda." : "Nenhum resultado para a busca."}
+          </p>
         ) : (
           <ul className="space-y-2">
-            {rows.map((r) => (
+            {filtered.map((r) => (
               <li
                 key={r.id}
                 className="flex items-center gap-2 rounded-[var(--pe-radius)] border px-3 py-2 text-sm"
@@ -156,13 +224,34 @@ export function VoiceDncPanel({ consultantId }: Props) {
                 <ShieldBan className="h-4 w-4 shrink-0" style={{ color: "var(--pe-emerald)" }} />
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate" style={{ color: "var(--pe-text)" }}>
-                    {formatPhone(r.phone)}
+                    {r.displayName || formatPhone(r.phone)}
+                    {r.crm?.status ? (
+                      <Badge variant="secondary" className="ml-2 text-[10px]">
+                        {statusCrmLabel(r.crm.status)}
+                      </Badge>
+                    ) : null}
                   </p>
                   <p className="text-[11px] truncate" style={{ color: "var(--pe-text-muted)" }}>
-                    {r.reason || "—"} · {r.source || "manual"}
+                    {r.displayName ? `${formatPhone(r.phone)} · ` : ""}
+                    {r.crm ? `${crmClosingSummary(r.crm)} · ` : ""}
+                    {reasonLabel(r.reason)}
+                    {" · "}
+                    {new Date(r.created_at).toLocaleString("pt-BR")}
                   </p>
                 </div>
-                <Badge variant="secondary">{r.source === "velip_callback" ? "auto" : "manual"}</Badge>
+                <Badge variant={r.source === "velip_callback" ? "destructive" : "secondary"}>
+                  {dncSourceLabel(r.source)}
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 px-2"
+                  title="Abrir chat no WhatsApp"
+                  disabled={!onOpenChat}
+                  onClick={() => onOpenChat?.(r.phone)}
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"

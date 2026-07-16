@@ -31,7 +31,7 @@ interface NominatimResult {
 
 export function AddressRadiusPicker({ value, onChange }: Props) {
   const [query, setQuery] = useState("");
-  const [radius, setRadius] = useState(3);
+  const [radius, setRadius] = useState(10);
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
   const [loadingSugg, setLoadingSugg] = useState(false);
   const [pending, setPending] = useState<RadiusPoint | null>(null);

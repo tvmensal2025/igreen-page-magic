@@ -52,7 +52,12 @@ describe("runAttendanceBatch", () => {
     expect(supabase.functions.invoke).not.toHaveBeenCalled();
   });
 
-  it("pula protocolo quando já iniciado e sem mídia → skipped", async () => {
+  it("reabre protocolo com restart quando já iniciado e sem mídia", async () => {
+    vi.mocked(supabase.functions.invoke).mockResolvedValue({
+      data: { ok: true, protocol: "IG-1" },
+      error: null,
+    } as any);
+
     const results = await runAttendanceBatch({
       consultantId: "c1",
       instanceName: "inst",
@@ -68,8 +73,19 @@ describe("runAttendanceBatch", () => {
       imageUrl: null,
       delayMs: 0,
     });
-    expect(results[0].status).toBe("skipped");
-    expect(supabase.functions.invoke).not.toHaveBeenCalled();
+
+    expect(supabase.functions.invoke).toHaveBeenCalledWith(
+      "start-customer-attendance",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          customerId: "a",
+          consultantId: "c1",
+          restart: true,
+        }),
+      }),
+    );
+    expect(results[0].status).toBe("ok");
+    expect(results[0].detail).toMatch(/reaberto/i);
   });
 
   it("respeita AbortSignal e marca restantes como Parado", async () => {

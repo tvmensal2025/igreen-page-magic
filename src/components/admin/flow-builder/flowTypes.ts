@@ -214,6 +214,7 @@ const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
   C: "Fluxo C (vídeo inicial)",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
+  F: "CEMIG 2",
   M: "Fluxo MG",
 };
 export const VARIANT_LABEL: Record<Variant, string> = ALL_VARIANTS.reduce(

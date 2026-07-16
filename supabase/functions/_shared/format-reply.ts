@@ -102,6 +102,9 @@ const BOLD_TERMS: string[] = [
   "economia",
 ];
 
+/** Marcas/siglas que devem sair sempre na grafia canônica dentro do *negrito*. */
+const CANONICAL_BOLD = new Set(["iGreen", "ANEEL", "CNPJ", "LGPD"]);
+
 export function emphasizeKeyTerms(text: string): string {
   if (!text) return text;
   let out = text;
@@ -113,29 +116,58 @@ export function emphasizeKeyTerms(text: string): string {
     out = out.replace(rx, (m, pre, hit) => {
       if (done) return m;
       done = true;
-      return `${pre}*${hit}*`;
+      const label = CANONICAL_BOLD.has(term) ? term : hit;
+      return `${pre}*${label}*`;
     });
   }
   return out;
 }
 
 /**
+ * Parágrafo inteiro que é só CTA agressivo / botão fantasma.
+ */
+const PUSHY_PARA_START =
+  /^(?:👇\s*)?(?:Posso seguir com|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)|Bora (?:deixar tudo pronto|cadastrar|ativar)|Faz sentido pra você seguir|Vamos seguir com (?:o )?seu cadastro|[ÉEe] s[oó] tocar|escolher uma das op)/iu;
+
+/**
+ * Frase final pushy no mesmo parágrafo (ex.: "... todo mês. Posso seguir com o seu cadastro para já darmos...?").
+ * Cobre as variantes reais vistas em produção.
+ */
+const PUSHY_TRAILING_SENTENCE =
+  /(?:^|(?<=[.!?…]))\s*(?:👇\s*)?(?:Posso seguir com[^.!?\n]{0,160}|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)[^.!?\n]{0,100}|Bora (?:deixar tudo pronto|cadastrar|ativar)[^.!?\n]{0,80}|Faz sentido pra você seguir[^.!?\n]{0,80}|Vamos seguir com (?:o )?seu cadastro[^.!?\n]{0,80}|[ÉEe] s[oó] tocar[^.!?\n]{0,80}|escolher uma das op[cç][oõ]es[^.!?\n]{0,60})\?[^\S\n]*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]*)?\s*$/iu;
+
+/**
  * Remove CTAs agressivos de cadastro E CTAs fantasma de botão
  * ("clique nas opções acima" quando não há botão reemitido).
  */
-const PUSHY_CADASTRO_RX =
-  /(?:\n+\s*)?(?:👇\s*)?(?:Posso seguir com (?:o )?seu cadastro(?: agora)?(?:\??(?:\s*Leva \d+ minutos?\.)?)?|Posso seguir com o cadastro(?: agora)?\??|Posso seguir com você[^.?\n]*|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)(?: o)?(?: seu)? cadastro[^.?\n]*\??|Bora (?:deixar tudo pronto|cadastrar|ativar)[^.?\n]*\??|Faz sentido pra você seguir com o cadastro\??|Quer (?:ativar|cadastrar)(?: o benefício)?(?: agora)?\??|Vamos seguir com seu cadastro!?|(?:[ée] s[oó] tocar (?:numa|em uma) das op[cç][oõ]es acima)|(?:escolher uma das op[cç][oõ]es abaixo))\.?(?:\s*)?$/iu;
-
 export function stripPushyCadastroCta(text: string): string {
   const original = String(text || "").trim();
   if (!original) return "";
   let t = original;
-  // Pode haver 2 CTAs empilhados — limpa em loop curto
+
+  // 1) Remove parágrafos finais que são só CTA / botão fantasma.
   for (let i = 0; i < 4; i++) {
-    const next = t.replace(PUSHY_CADASTRO_RX, "").trim();
+    const paras = t.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    if (paras.length < 2) break;
+    const last = paras[paras.length - 1];
+    if (
+      PUSHY_PARA_START.test(last) ||
+      /op[cç][oõ]es (?:acima|abaixo)/i.test(last) ||
+      /^👇/.test(last)
+    ) {
+      t = paras.slice(0, -1).join("\n\n").trim();
+      continue;
+    }
+    break;
+  }
+
+  // 2) Remove frase pushy colada no fim do último parágrafo.
+  for (let i = 0; i < 3; i++) {
+    const next = t.replace(PUSHY_TRAILING_SENTENCE, "").trim();
     if (next === t) break;
     t = next;
   }
+
   // Nunca silencia o lead: se a mensagem era SÓ o CTA, mantém o original.
   return t || original;
 }
@@ -161,25 +193,13 @@ export function hasSoftClose(text: string): boolean {
 }
 
 /**
- * Quebra "parede de texto" em parágrafos curtos e arejados para WhatsApp.
- * Não apaga conteúdo — só insere \n\n entre ideias.
+ * Quebra um bloco único (sem \n\n internos) em parágrafos por frase.
  */
-export function prettifyFaqLayout(text: string): string {
-  let t = String(text || "").trim();
+function breakWallBlock(block: string): string {
+  const t = block.trim();
   if (!t) return "";
-
-  // Separadores de lista já legíveis → preserva e só limpa espaços
-  if (/^\s*[-•*]/.test(t) || /\n\s*[-•*]/.test(t)) {
-    return normalizeSpacing(
-      t
-        .replace(/\n\s*[-•*]\s*/g, "\n• ")
-        .replace(/^\s*[-*]\s*/gm, "• "),
-    );
-  }
-
-  // Já tem parágrafo → só normaliza (mantém ar entre blocos)
-  if (t.includes("\n")) return normalizeSpacing(t);
-
+  // Já tem quebras internas (lista / linhas curtas) → preserva
+  if (t.includes("\n")) return t;
   // Curto: uma ideia só — não força quebra
   if (t.length < 120) return t;
 
@@ -200,16 +220,33 @@ export function prettifyFaqLayout(text: string): string {
     }
   }
   if (buf.trim()) paras.push(buf.trim());
+  return paras.join("\n\n");
+}
 
-  // Última frase-pergunta / soft close → parágrafo próprio
-  if (paras.length >= 2) {
-    const last = paras[paras.length - 1];
-    if (/\?\s*$/.test(last) || /abaixo|quando quiser|outra dúvida/i.test(last)) {
-      // já separado
-    }
+/**
+ * Quebra "parede de texto" em parágrafos curtos e arejados para WhatsApp.
+ * Não apaga conteúdo — só insere \n\n entre ideias.
+ *
+ * Importante: mesmo quando já existe um `\n\n` (ex.: soft-close / CTA),
+ * ainda quebra paredes longas nos outros blocos — evita o bug em que
+ * "textão + \n\n + CTA" passava sem arejar o textão.
+ */
+export function prettifyFaqLayout(text: string): string {
+  let t = String(text || "").trim();
+  if (!t) return "";
+
+  // Separadores de lista já legíveis → preserva e só limpa espaços
+  if (/^\s*[-•]/.test(t) || /\n\s*[-•]/.test(t)) {
+    return normalizeSpacing(
+      t
+        .replace(/\n\s*[-•*]\s*/g, "\n• ")
+        .replace(/^\s*[-*]\s*/gm, "• "),
+    );
   }
 
-  return paras.join("\n\n");
+  const blocks = t.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const pretty = blocks.map((b) => breakWallBlock(b));
+  return normalizeSpacing(pretty.join("\n\n"));
 }
 
 export interface FormatReplyOptions {

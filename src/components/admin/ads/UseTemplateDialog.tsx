@@ -63,12 +63,12 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
     const firstAllowed = (template?.target_cidades?.length
       ? preset.cidades.filter((c) => template!.target_cidades!.includes(c))
       : preset.cidades)[0];
-    setSelectedCity(firstAllowed || "__all__");
+    setSelectedCity(firstAllowed || "");
   }, [preset, template]);
 
   const previewCopy = useMemo(() => {
     if (!template || !preset) return null;
-    const cidadeShown = selectedCity !== "__all__" ? selectedCity : (preset.cidades[0] || "sua cidade");
+    const cidadeShown = selectedCity || preset.cidades[0] || "sua cidade";
     const fill = (s: string) => (s || "")
       .split("{cidade}").join(cidadeShown)
       .split("{distribuidora}").join(preset.nome)
@@ -121,21 +121,24 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
         if (hits.length) localStorage.setItem(cacheKey(preset.id), JSON.stringify({ ts: Date.now(), cities: hits }));
       }
       if (!hits?.length) throw new Error("Não consegui carregar as cidades");
-      let cities = hits.slice(0, 80);
-      if (selectedCity !== "__all__") {
-        const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-        const target = norm(selectedCity);
-        const filtered = cities.filter((c) => norm(c.name) === target);
-        if (filtered.length) cities = filtered;
+      if (!selectedCity) throw new Error("Selecione 1 cidade para publicar (melhor CPL).");
+      const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      const target = norm(selectedCity);
+      let cities = hits.filter((c) => norm(c.name) === target).slice(0, 1);
+      if (!cities.length) {
+        // Fallback: 1ª cidade do preset se o nome não bater exatamente.
+        cities = hits.slice(0, 1);
       }
 
-      const suggestedBudgetCents = Math.max(1000, template!.suggested_daily_budget_cents);
+      const suggestedBudgetCents = Math.max(2500, template!.suggested_daily_budget_cents);
       const suggestedDurationDays = 7;
       setStepLog("Validando alcance no Facebook...");
       const pf = await preflightCampaign({
         cities: cities.map((c) => ({ key: c.key, name: c.name })),
         daily_budget_cents: suggestedBudgetCents,
         duration_days: suggestedDurationDays,
+        age_min: template!.age_min,
+        age_max: template!.age_max,
       });
       if (!pf.ok) {
         throw new Error(pf.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
@@ -147,7 +150,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
       setStepLog("Publicando campanha...");
       await createCampaign({
         template_id: template!.id,
-        name: `${template!.title} — ${preset.nome}${selectedCity !== "__all__" ? ` (${selectedCity})` : ""}`,
+        name: `${template!.title} — ${preset.nome} (${cities[0]?.name || selectedCity})`,
         cities: cities.map((c) => ({ key: c.key, name: c.name })),
         daily_budget_cents: suggestedBudgetCents,
         duration_days: suggestedDurationDays,
@@ -155,8 +158,8 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
         headline: template!.headline,
         primary_text: template!.primary_text,
         description: template!.description_text || undefined,
-        age_min: template!.age_min,
-        age_max: template!.age_max,
+        age_min: template!.age_min ?? 30,
+        age_max: Math.min(template!.age_max ?? 60, 60),
         distribuidora: preset.nome,
       });
       toast({ title: "Campanha publicada!", description: "Em revisão pelo Facebook." });
@@ -237,11 +240,6 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
                 Cidade do anúncio
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <button type="button" onClick={() => setSelectedCity("__all__")}
-                  title="Avançado: orçamento será diluído entre muitas cidades. CPL costuma ficar mais alto."
-                  className={`text-xs px-3 py-1.5 rounded-full border transition ${selectedCity === "__all__" ? "bg-warning/20 text-warning dark:text-warning border-warning/60" : "bg-card hover:bg-warning/10 border-border"}`}>
-                  ⚠ Todas ({presetCities.length}) — avançado
-                </button>
                 {presetCities.map((c) => (
                   <button key={c} type="button" onClick={() => setSelectedCity(c)}
                     className={`text-xs px-3 py-1.5 rounded-full border transition ${selectedCity === c ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-primary/10 border-border"}`}>
@@ -250,7 +248,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
                 ))}
               </div>
               <div className="text-[10px] text-muted-foreground">
-                Recomendado: 1 cidade por campanha pra baixar o CPL. Use "Todas" só se seu orçamento for ≥ R$ 80/dia.
+                1 cidade por campanha — baixa o CPL e melhora a conversão.
               </div>
             </div>
 
@@ -265,7 +263,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
             </div>
 
             <div className="text-xs space-y-1 rounded border border-primary/30 bg-primary/5 p-3">
-              <div>📍 <strong>{preset?.nome}</strong> — {selectedCity === "__all__" ? `${presetCities.length} cidades` : selectedCity}</div>
+              <div>📍 <strong>{preset?.nome}</strong> — {selectedCity || "escolha 1 cidade"}</div>
               <div>💰 <strong>R$ {(Math.max(1000, template.suggested_daily_budget_cents) / 100).toFixed(0)}/dia</strong>, por 7 dias</div>
               <div>👥 Idade {template.age_min}-{template.age_max}, LAL da plataforma + exclusão de clientes ativos</div>
               <div>📱 Clientes interessados chegam direto no seu WhatsApp configurado</div>

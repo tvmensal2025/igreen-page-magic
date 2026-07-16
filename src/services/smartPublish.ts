@@ -137,13 +137,12 @@ export async function smartPublish(opts: {
   }
   if (!hits?.length) throw new Error("Não consegui carregar cidades dessa distribuidora");
 
-  // Heurística simples: começa pela 1ª cidade do preset (já ordenadas por porte).
-  // Se audiência <80k, expande pra 2 cidades; se >2M, mantém só capital.
+  // Heurística: 1 cidade por campanha (CPL). Não expandir para 3 cidades.
   let chosen: CityHit[] = [hits[0]];
 
   // Preserva a sugestão do template: orçamento baixo demais pode impedir a
   // Meta de aprender. O backend valida a cobertura real da carteira.
-  const suggestedBudgetCents = Math.max(1000, template.suggested_daily_budget_cents);
+  const suggestedBudgetCents = Math.max(2500, template.suggested_daily_budget_cents);
   const suggestedDurationDays = 7;
   log("validate", "Validando alcance no Facebook...");
   let reach: { lower: number; upper: number } | undefined;
@@ -152,23 +151,14 @@ export async function smartPublish(opts: {
       cities: chosen.map((c) => ({ key: c.key, name: c.name })),
       daily_budget_cents: suggestedBudgetCents,
       duration_days: suggestedDurationDays,
+      age_min: template.age_min,
+      age_max: template.age_max,
     });
     if (!pf.ok) {
       throw new Error(pf.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
     }
     reach = pf.reach || undefined;
-    if (reach && reach.lower < 80_000 && hits.length > 1) {
-      chosen = hits.slice(0, Math.min(3, hits.length));
-      const pf2 = await preflightCampaign({
-        cities: chosen.map((c) => ({ key: c.key, name: c.name })),
-        daily_budget_cents: suggestedBudgetCents,
-        duration_days: suggestedDurationDays,
-      });
-      if (!pf2.ok) {
-        throw new Error(pf2.blockers.join(" | ") || "A pré-validação bloqueou a publicação.");
-      }
-      reach = pf2.reach || reach;
-    } else if (reach && reach.upper > 2_000_000) {
+    if (reach && reach.upper > 2_000_000) {
       chosen = [hits[0]];
     }
     if (reach && reach.lower < 50_000) {
@@ -203,8 +193,8 @@ export async function smartPublish(opts: {
     headline: template.headline,
     primary_text: template.primary_text,
     description: template.description_text || undefined,
-    age_min: template.age_min,
-    age_max: template.age_max,
+    age_min: template.age_min ?? 30,
+    age_max: Math.min(template.age_max ?? 60, 60),
     distribuidora: preset.nome,
   });
 

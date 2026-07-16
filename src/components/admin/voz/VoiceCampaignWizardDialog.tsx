@@ -43,6 +43,8 @@ import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
 import { decodeAudioBlob, encodeMp3 } from "@/lib/audioProcessing";
 import type { BulkContact } from "@/types/whatsapp";
 import { VozContactPickerPanel, type VozCustomer } from "./VozContactPickerDialog";
+import { crmClosingSummary, resolveCrmByPhoneOrId, statusCrmLabel } from "./voiceCrmContext";
+import { velipOutcomeLabel } from "./voiceOutcomeLabels";
 
 type VelipMode = "auto" | "single" | "batch";
 type WizardStep = 1 | 2 | 3 | 4;
@@ -76,6 +78,7 @@ interface TargetRow {
   status: string;
   error: string | null;
   attempts: number;
+  velip_status?: string | null;
 }
 
 const STEPS: { n: WizardStep; label: string; icon: typeof Users }[] = [
@@ -204,7 +207,7 @@ export function VoiceCampaignWizardDialog({
         .maybeSingle(),
       (supabase as any)
         .from("voice_campaign_targets")
-        .select("id, phone, name, status, error, attempts")
+        .select("id, phone, name, status, error, attempts, velip_status")
         .eq("campaign_id", campaignId)
         .order("created_at", { ascending: true })
         .limit(500),
@@ -765,22 +768,43 @@ export function VoiceCampaignWizardDialog({
                     {filteredTargets.length === 0 ? (
                       <p className="p-4 text-center text-xs text-muted-foreground">Nada para mostrar</p>
                     ) : (
-                      filteredTargets.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center gap-2 px-3 py-1.5 border-b text-xs last:border-0"
-                          style={{ borderColor: "var(--pe-border)" }}
-                        >
-                          <Badge variant="outline" className="text-[10px] shrink-0">{t.status}</Badge>
-                          <span className="flex-1 truncate" style={{ color: "var(--pe-text)" }}>{t.name || "—"}</span>
-                          <span className="font-mono text-muted-foreground">{t.phone}</span>
-                          {t.error && (
-                            <span className="text-destructive text-[10px] truncate max-w-[120px]" title={t.error}>
-                              {t.error}
-                            </span>
-                          )}
-                        </div>
-                      ))
+                      filteredTargets.map((t) => {
+                        const crm = resolveCrmByPhoneOrId(t.phone, null, customers);
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex flex-col gap-0.5 px-3 py-1.5 border-b text-xs last:border-0"
+                            style={{ borderColor: "var(--pe-border)" }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px] shrink-0">
+                                {t.velip_status
+                                  ? velipOutcomeLabel(t.velip_status)
+                                  : t.status}
+                              </Badge>
+                              {crm?.status && (
+                                <Badge variant="secondary" className="text-[10px] shrink-0">
+                                  {statusCrmLabel(crm.status)}
+                                </Badge>
+                              )}
+                              <span className="flex-1 truncate" style={{ color: "var(--pe-text)" }}>
+                                {t.name || crm?.name || "—"}
+                              </span>
+                              <span className="font-mono text-muted-foreground">{t.phone}</span>
+                              {t.error && (
+                                <span className="text-destructive text-[10px] truncate max-w-[120px]" title={t.error}>
+                                  {t.error}
+                                </span>
+                              )}
+                            </div>
+                            {crm && (
+                              <p className="text-[10px] truncate pl-0.5" style={{ color: "var(--pe-text-muted)" }}>
+                                {crmClosingSummary(crm)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </>

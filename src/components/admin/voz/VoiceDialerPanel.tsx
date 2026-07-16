@@ -14,7 +14,8 @@ import { normalizeBrazilPhone } from "@/lib/phone";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import type { VozCustomer } from "./VozContactPickerDialog";
 import { VoiceCampaignWizardDialog } from "./VoiceCampaignWizardDialog";
-import { firstName, resolveNameByPhone } from "./voiceContactResolve";
+import { firstName, resolveCustomerByPhone, resolveNameByPhone } from "./voiceContactResolve";
+import { crmClosingSummary } from "./voiceCrmContext";
 
 interface Props {
   consultantId: string;
@@ -42,9 +43,13 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [monitorId, setMonitorId] = useState<string | null>(null);
 
-  const testPhoneName = useMemo(
-    () => resolveNameByPhone(testPhone, customers),
+  const testCrm = useMemo(
+    () => resolveCustomerByPhone(testPhone, customers),
     [testPhone, customers],
+  );
+  const testPhoneName = useMemo(
+    () => testCrm?.name?.trim() || resolveNameByPhone(testPhone, customers),
+    [testCrm, testPhone, customers],
   );
 
   const loadCampaigns = useCallback(async () => {
@@ -124,7 +129,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
     <>
       <VozCampaignShell
         title="Ligação telefônica"
-        subtitle="Número da empresa (Velip) · áudio ~20s · acompanhe a campanha num modal, como o disparo automático."
+        subtitle="Follow-up com leads do CRM · áudio ~20s · acompanhe no modal como o disparo automático."
         footer={
           <div className="flex flex-wrap items-center justify-between gap-2 w-full">
             <span className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
@@ -162,10 +167,17 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
                   onChange={(e) => setTestPhone(e.target.value)}
                 />
                 {testPhoneName && (
-                  <p className="text-[11px] font-medium" style={{ color: "var(--pe-emerald-strong)" }}>
-                    Contato: {testPhoneName}
-                    {firstName(testPhoneName) ? ` · fala com ${firstName(testPhoneName)}` : ""}
-                  </p>
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] font-medium" style={{ color: "var(--pe-emerald-strong)" }}>
+                      Contato CRM: {testPhoneName}
+                      {firstName(testPhoneName) ? ` · fala com ${firstName(testPhoneName)}` : ""}
+                    </p>
+                    {testCrm && (
+                      <p className="text-[10px] line-clamp-2" style={{ color: "var(--pe-text-muted)" }}>
+                        {crmClosingSummary(testCrm)}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
               <Button

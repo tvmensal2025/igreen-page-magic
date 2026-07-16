@@ -136,6 +136,9 @@ export interface CampaignBindResult {
 /**
  * Fixa source_campaign_id sob FOR UPDATE e devolve a campanha realmente
  * persistida. Em conflito, não sobrescreve a primeira origem gravada.
+ *
+ * Se a RPC ainda não existir no banco (migration pendente), faz CAS legado
+ * com `.is("source_campaign_id", null)` para não zerar a atribuição no webhook.
  */
 export async function bindCustomerCampaign(
   supabase: SupabaseClient,
@@ -148,7 +151,12 @@ export async function bindCustomerCampaign(
       p_campaign_id: campaignId,
     });
     if (error) {
-      return { outcome: "rpc_error", campaignId: null, errorMessage: error.message };
+      const msg = String(error.message || "");
+      if (isMissingRpcError(msg)) {
+        console.warn("[bind-campaign] RPC ausente — fallback CAS legado:", msg);
+        return await bindCustomerCampaignLegacy(supabase, customerId, campaignId);
+      }
+      return { outcome: "rpc_error", campaignId: null, errorMessage: msg };
     }
     const pick = Array.isArray(data) ? data[0] : data;
     const rawOutcome = typeof pick?.outcome === "string" ? pick.outcome : "rpc_error";
@@ -166,6 +174,88 @@ export async function bindCustomerCampaign(
         ? pick.campaign_id.trim()
         : null;
     return { outcome, campaignId: persistedCampaignId };
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (isMissingRpcError(msg)) {
+      console.warn("[bind-campaign] RPC ausente (exceção) — fallback CAS legado:", msg);
+      return await bindCustomerCampaignLegacy(supabase, customerId, campaignId);
+    }
+    return {
+      outcome: "rpc_error",
+      campaignId: null,
+      errorMessage: msg,
+    };
+  }
+}
+
+function isMissingRpcError(message: string): boolean {
+  return /could not find the function|function .* does not exist|PGRST202|42883/i.test(message);
+}
+
+/** CAS legado: só grava se source_campaign_id ainda estiver nulo. */
+async function bindCustomerCampaignLegacy(
+  supabase: SupabaseClient,
+  customerId: string,
+  campaignId: string,
+): Promise<CampaignBindResult> {
+  try {
+    const { data: row, error: readError } = await supabase
+      .from("customers")
+      .select("source_campaign_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (readError) {
+      return { outcome: "rpc_error", campaignId: null, errorMessage: readError.message };
+    }
+    if (!row) {
+      return { outcome: "customer_missing", campaignId: null };
+    }
+    const current =
+      typeof (row as { source_campaign_id?: string | null }).source_campaign_id === "string"
+        ? String((row as { source_campaign_id: string }).source_campaign_id)
+        : null;
+    if (current === campaignId) {
+      return { outcome: "already_bound", campaignId: current };
+    }
+    if (current) {
+      return { outcome: "campaign_conflict", campaignId: current };
+    }
+
+    const { data: updated, error: writeError } = await supabase
+      .from("customers")
+      .update({
+        source_campaign_id: campaignId,
+        lead_source: "meta_ads",
+      })
+      .eq("id", customerId)
+      .is("source_campaign_id", null)
+      .select("source_campaign_id")
+      .maybeSingle();
+
+    if (writeError) {
+      return { outcome: "rpc_error", campaignId: null, errorMessage: writeError.message };
+    }
+    const persisted =
+      typeof (updated as { source_campaign_id?: string | null } | null)?.source_campaign_id === "string"
+        ? String((updated as { source_campaign_id: string }).source_campaign_id)
+        : null;
+    if (persisted === campaignId) {
+      return { outcome: "bound", campaignId: persisted };
+    }
+
+    // Corrida: outra mensagem gravou primeiro.
+    const { data: again } = await supabase
+      .from("customers")
+      .select("source_campaign_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    const after =
+      typeof (again as { source_campaign_id?: string | null } | null)?.source_campaign_id === "string"
+        ? String((again as { source_campaign_id: string }).source_campaign_id)
+        : null;
+    if (after === campaignId) return { outcome: "already_bound", campaignId: after };
+    if (after) return { outcome: "campaign_conflict", campaignId: after };
+    return { outcome: "rpc_error", campaignId: null, errorMessage: "legacy_bind_failed" };
   } catch (e) {
     return {
       outcome: "rpc_error",

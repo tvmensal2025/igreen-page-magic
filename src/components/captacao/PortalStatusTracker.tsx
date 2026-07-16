@@ -106,15 +106,46 @@ function friendlyPortalError(raw: string): string {
   return raw;
 }
 
+/** Terminal de sucesso do portal — cobre o short-circuit "já cadastrado" do worker. */
+function isPortalDone(row: Row | null): boolean {
+  if (!row) return false;
+  const step = String(row.conversation_step || "").toLowerCase();
+  const status = String(row.status || "").toLowerCase();
+  const portal2 = String(row.portal2_status || "").toLowerCase();
+  if (portal2 === "already_registered") return true;
+  if (
+    status === "registered_igreen" ||
+    status === "cadastro_concluido" ||
+    status === "complete" ||
+    status === "approved" ||
+    status === "active"
+  ) {
+    return true;
+  }
+  if (step === "cadastro_concluido" || step === "registered_igreen") return true;
+  // Worker/callback grava step=cadastro_em_analise + status terminal — não é "abrindo portal".
+  if (
+    step === "cadastro_em_analise" &&
+    !["awaiting_otp", "portal_submitting", "validating_otp", "aguardando_otp", "validando_otp"].includes(status)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function PortalStatusTracker({ customerId, consultantId, onRetry, defaultCollapsed = false }: Props) {
   const [row, setRow] = useState<Row | null>(null);
   const [trace, setTrace] = useState<PortalTrace | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [resending, setResending] = useState(false);
+  const [dismissing, setDismissing] = useState(false);
+  const [markingRegistered, setMarkingRegistered] = useState(false);
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
     setCollapsed(defaultCollapsed);
+    setDismissed(false);
   }, [customerId, defaultCollapsed]);
 
   useEffect(() => {
@@ -153,8 +184,11 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
   }, [customerId]);
 
   const step = String(row?.conversation_step || row?.status || "").toLowerCase();
-  const needsHuman = row?.portal2_status === "needs_human";
-  const isDone = step === "cadastro_concluido" || step === "registered_igreen";
+  const status = String(row?.status || "").toLowerCase();
+  const portal2Status = String(row?.portal2_status || "").toLowerCase();
+  const needsHuman = portal2Status === "needs_human";
+  const isAlreadyRegistered = portal2Status === "already_registered";
+  const isDone = isPortalDone(row);
 
   // Só trata como fase de portal quando já houve envio / trilha do portal.
   // Durante a captação (ex.: aguard_conta) um error_message de log do bot
@@ -163,6 +197,8 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
     !!row?.finalized_at ||
     ACTIVE_STEPS.has(step) ||
     needsHuman ||
+    isAlreadyRegistered ||
+    isDone ||
     row?.portal2_status === "failed" ||
     (trace?.status === "failed" && !!trace?.error);
 
@@ -178,16 +214,36 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
     (trace?.status === "failed" && !!trace?.error) ||
     (inPortalPhase && !!usableErrorMessage && !isDone);
 
-  const visible = inPortalPhase || hasPortalError;
+  const visible = (inPortalPhase || hasPortalError) && !dismissed;
   if (!visible) return null;
 
   const isOffline = step === "worker_offline" || step === "automation_failed";
-  const isOtp = step === "aguardando_otp" || step === "awaiting_otp";
-  const isSign = step === "aguardando_assinatura" || step === "awaiting_signature";
-  const isValidating = step === "validando_otp" || step === "validating_otp";
+  const isOtp =
+    step === "aguardando_otp" ||
+    step === "awaiting_otp" ||
+    status === "aguardando_otp" ||
+    status === "awaiting_otp";
+  const isSign =
+    step === "aguardando_assinatura" ||
+    step === "awaiting_signature" ||
+    status === "aguardando_assinatura" ||
+    status === "awaiting_signature";
+  const isValidating =
+    step === "validando_otp" ||
+    step === "validating_otp" ||
+    status === "validando_otp" ||
+    status === "validating_otp";
 
   // Banner de erro do portal tem prioridade máxima (cobre duplicate phone/cpf, etc.)
   const showError = hasPortalError && !isDone;
+  const isBusySubmitting =
+    !isDone &&
+    !showError &&
+    !isOtp &&
+    !isSign &&
+    !isValidating &&
+    !isOffline &&
+    (step === "portal_submitting" || step === "finalizando" || status === "portal_submitting");
 
   let icon = <Loader2 className="w-4 h-4 animate-spin text-warning" />;
   let title = "Abrindo portal no navegador da VPS…";
@@ -196,6 +252,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
   else if (isOtp) { icon = <KeyRound className="w-4 h-4 text-warning" />; title = "Código enviado ao WhatsApp do cliente — aguardando digitar"; tone = "border-warning/40 bg-warning/10 text-warning"; }
   else if (isValidating) { icon = <Loader2 className="w-4 h-4 animate-spin text-info" />; title = "Validando código no portal…"; tone = "border-info/40 bg-info/10 text-info"; }
   else if (isSign) { icon = <ScanFace className="w-4 h-4 text-primary" />; title = "Link de selfie enviado ao cliente"; tone = "border-primary/40 bg-primary/10 text-primary"; }
+  else if (isAlreadyRegistered) { icon = <CheckCircle2 className="w-4 h-4 text-primary" />; title = "Cliente já cadastrado no iGreen ✅"; tone = "border-primary/40 bg-primary/10 text-primary"; }
   else if (isDone) { icon = <CheckCircle2 className="w-4 h-4 text-primary" />; title = "Cadastro concluído ✅"; tone = "border-primary/40 bg-primary/10 text-primary"; }
   else if (isOffline) { icon = <AlertTriangle className="w-4 h-4 text-destructive" />; title = "Portal momentaneamente offline"; tone = "border-destructive/40 bg-destructive/10 text-stone-600"; }
 
@@ -222,6 +279,49 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
     } catch (e: any) {
       sonnerToast.error(e?.message || "Falha ao reenviar link");
     } finally { setResending(false); }
+  };
+
+  /** Consultor confirma que o cliente já está no iGreen — destrava o banner. */
+  const markAlreadyRegistered = async () => {
+    if (markingRegistered) return;
+    setMarkingRegistered(true);
+    try {
+      const { error } = await supabase
+        .from("customers")
+        .update({
+          status: "registered_igreen",
+          conversation_step: "registered_igreen",
+          portal2_status: "already_registered",
+          error_message: null,
+        } as never)
+        .eq("id", customerId);
+      if (error) throw error;
+      setRow((prev) =>
+        prev
+          ? {
+              ...prev,
+              status: "registered_igreen",
+              conversation_step: "registered_igreen",
+              portal2_status: "already_registered",
+              error_message: null,
+            }
+          : prev,
+      );
+      sonnerToast.success("Marcado como já cadastrado no iGreen");
+    } catch (e: any) {
+      sonnerToast.error(e?.message || "Falha ao marcar como cadastrado");
+    } finally {
+      setMarkingRegistered(false);
+    }
+  };
+
+  /** Só esconde o banner nesta sessão (não altera o lead). */
+  const dismissBanner = async () => {
+    if (dismissing) return;
+    setDismissing(true);
+    setDismissed(true);
+    setDismissing(false);
+    sonnerToast.info("Acompanhamento do portal dispensado");
   };
 
   const copy = async (txt: string, label: string) => {
@@ -284,9 +384,23 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
         <div className="flex items-center gap-2">
           <CheckCircle2 className="w-6 h-6 text-primary animate-pulse" />
           <div className="flex-1">
-            <p className="text-sm font-black text-primary tracking-wide leading-tight">🎉 Cadastro aprovado pela iGreen!</p>
-            <p className="text-[11px] text-primary/90 leading-tight">Cadastro concluído no portal. Após a sincronização da carteira, ele aparece em Clientes ativos.</p>
+            <p className="text-sm font-black text-primary tracking-wide leading-tight">
+              {isAlreadyRegistered ? "✅ Cliente já cadastrado no iGreen" : "🎉 Cadastro aprovado pela iGreen!"}
+            </p>
+            <p className="text-[11px] text-primary/90 leading-tight">
+              {isAlreadyRegistered
+                ? "O portal reconheceu que este CPF/cliente já existe. Não é preciso reenviar."
+                : "Cadastro concluído no portal. Após a sincronização da carteira, ele aparece em Clientes ativos."}
+            </p>
           </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[10px] shrink-0"
+            onClick={() => setDismissed(true)}
+          >
+            Fechar
+          </Button>
         </div>
         {row?.igreen_code && (
           <div className="mt-2 flex items-center gap-2 rounded bg-primary/40 px-2 py-1.5">
@@ -319,6 +433,28 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
             {retrying ? <Loader2 className="w-3 h-3 animate-spin" /> : <><RefreshCw className="w-3 h-3 mr-1" />Reenviar ao portal</>}
           </Button>
         )}
+        {isBusySubmitting && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[10px]"
+              disabled={markingRegistered}
+              onClick={markAlreadyRegistered}
+            >
+              {markingRegistered ? <Loader2 className="w-3 h-3 animate-spin" /> : "Já cadastrado"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[10px]"
+              disabled={dismissing}
+              onClick={dismissBanner}
+            >
+              Dispensar
+            </Button>
+          </>
+        )}
         <Button
           size="icon"
           variant="ghost"
@@ -332,6 +468,11 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
       </div>
       {!collapsed && (
       <>
+      {isBusySubmitting && (
+        <p className="mt-1.5 opacity-80 leading-snug">
+          Se o portal já reconheceu o cliente, use <span className="font-semibold">Já cadastrado</span> para destravar.
+        </p>
+      )}
       {isOtp && row?.otp_code && (
         <div className="mt-1.5 flex items-center gap-1.5">
           <span className="opacity-80">Código recebido:</span>

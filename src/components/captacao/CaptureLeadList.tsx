@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 import { VirtualList } from "@/components/ui/VirtualList";
 import { hasValidBatchPhone } from "@/components/captacao/runAttendanceBatch";
+import { CloseAttendanceBatchDialog } from "@/components/captacao/CloseAttendanceBatchDialog";
 import {
   LeadOriginEditorDialog,
   type LeadOriginSaved,
@@ -178,8 +179,8 @@ export function CaptureLeadList({
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [period, setPeriod] = useState<CapturePeriodKey>("60d");
-  const [closingAll, setClosingAll] = useState(false);
-  const [closingProgress, setClosingProgress] = useState<{ done: number; total: number } | null>(null);
+  const [closeBatchOpen, setCloseBatchOpen] = useState(false);
+  const [closeBatchLeads, setCloseBatchLeads] = useState<CaptureBatchLead[]>([]);
   /** unread por lead (client-side, apoiado em localStorage cap_last_seen_*) */
   const [unread, setUnread] = useState<Record<string, number>>({});
   /** flag para “piscar” a borda do card quando entra msg nova */
@@ -579,11 +580,21 @@ export function CaptureLeadList({
     setSelectedIds(new Set(filtered.map((l) => l.id)));
   };
 
+  const selectAllOnTab = () => {
+    const tabLeads = activeTab === "atendimento" ? emAtendimento : emEspera;
+    setSelectedIds(new Set(tabLeads.map((l) => l.id)));
+  };
+
   const selectWithoutAttendance = () => {
     setSelectedIds(new Set(filtered.filter((l) => !l.welcome_sent_at || !!l.attendance_rating_requested_at).map((l) => l.id)));
   };
 
   const clearSelection = () => setSelectedIds(new Set());
+
+  const tabSelectableCount = activeTab === "atendimento" ? emAtendimento.length : emEspera.length;
+  const allOnTabSelected =
+    tabSelectableCount > 0 &&
+    (activeTab === "atendimento" ? emAtendimento : emEspera).every((l) => selectedIds.has(l.id));
 
   const openBatch = () => {
     if (!onOpenBatch) return;
@@ -604,7 +615,7 @@ export function CaptureLeadList({
 
   const closeAllAttendances = async () => {
     const targets = allInAttendance;
-    if (targets.length === 0 || closingAll) return;
+    if (targets.length === 0 || closeBatchOpen) return;
 
     if (!whatsappConnected) {
       toast.error("WhatsApp desconectado — reconecte para finalizar e enviar a pesquisa");
@@ -613,20 +624,21 @@ export function CaptureLeadList({
 
     const withPhone = targets.filter((l) => hasValidBatchPhone(l.phone_whatsapp));
     const withoutPhone = targets.length - withPhone.length;
-    const delaySec = 5;
-    const etaMin = Math.ceil((withPhone.length * delaySec) / 60);
+    const delaySec = 12;
+    const secPerLead = 40; // envio Whapi (2 msgs + fila) + pausa
+    const etaMin = Math.ceil((withPhone.length * secPerLead) / 60);
 
     const ok = await confirm({
       title: `Finalizar ${targets.length} atendimento${targets.length === 1 ? "" : "s"}?`,
       description: [
         `Cada cliente receberá a mensagem de encerramento e a pesquisa de satisfação (1–5).`,
         withPhone.length > 0
-          ? `Envio um a um, com ~${delaySec}s de intervalo (~${etaMin} min para ${withPhone.length}).`
+          ? `Envio 1 a 1, com pausa de ~${delaySec}s entre leads (fila WhatsApp). Estimativa: ~${etaMin} min para ${withPhone.length}.`
           : null,
         withoutPhone > 0
-          ? `${withoutPhone} sem telefone válido serão pulados.`
+          ? `${withoutPhone} sem telefone válido serão fechados sem WhatsApp.`
           : null,
-        `Só continue se quiser enviar para todos agora.`,
+        `Você acompanhará cada envio e a pausa anti-ban em tempo real.`,
       ].filter(Boolean).join("\n\n"),
       confirmText: withPhone.length > 0 ? `Enviar e fechar (${withPhone.length})` : "Fechar sem envio",
       cancelText: "Cancelar",
@@ -646,102 +658,8 @@ export function CaptureLeadList({
       if (!ok2) return;
     }
 
-    setClosingAll(true);
-    setClosingProgress({ done: 0, total: withPhone.length });
-    const toastId = "close-all-attendance";
-    let okCount = 0;
-    let skipped = withoutPhone;
-    let failed = 0;
-    let stoppedEarly: string | null = null;
-
-    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-    try {
-      if (withPhone.length === 0) {
-        // Sem telefone: só marca fechado no banco (não há canal para pesquisa).
-        const now = new Date().toISOString();
-        const ids = targets.map((l) => l.id);
-        const { error } = await supabase
-          .from("customers")
-          .update({ attendance_ended_at: now })
-          .in("id", ids)
-          .eq("consultant_id", consultantId);
-        if (error) throw error;
-        toast.success("Atendimentos fechados (sem WhatsApp — sem telefone)");
-      } else {
-        toast.loading(`Finalizando 0/${withPhone.length}…`, { id: toastId });
-        for (let i = 0; i < withPhone.length; i++) {
-          const lead = withPhone[i];
-          setClosingProgress({ done: i, total: withPhone.length });
-          toast.loading(`Finalizando ${i + 1}/${withPhone.length}…`, { id: toastId });
-
-          try {
-            const { data, error } = await supabase.functions.invoke("end-customer-attendance", {
-              body: { customerId: lead.id, consultantId },
-            });
-            const body = (data ?? {}) as {
-              ok?: boolean;
-              skipped?: string;
-              fixHint?: string;
-              message?: string;
-              error?: string;
-            };
-            if (error && !data) throw error;
-
-            if (body.ok === false) {
-              failed++;
-              const hint = body.fixHint || "";
-              if (hint === "channel_unavailable" || hint === "instance_offline" || hint === "rate_limit") {
-                stoppedEarly = body.message || hint;
-                skipped += withPhone.length - i - 1;
-                break;
-              }
-            } else if (body.skipped === "already_rated" || body.skipped === "rating_pending") {
-              skipped++;
-            } else {
-              okCount++;
-            }
-          } catch (e) {
-            failed++;
-            console.error("[captacao] closeAllAttendances", lead.id, e);
-          }
-
-          setClosingProgress({ done: i + 1, total: withPhone.length });
-          if (i < withPhone.length - 1 && !stoppedEarly) {
-            await sleep(delaySec * 1000);
-          }
-        }
-
-        toast.dismiss(toastId);
-        const parts = [
-          okCount > 0 ? `${okCount} finalizado(s)` : null,
-          skipped > 0 ? `${skipped} pulado(s)` : null,
-          failed > 0 ? `${failed} falha(s)` : null,
-        ].filter(Boolean);
-        if (stoppedEarly) {
-          toast.warning(`Parado cedo: ${stoppedEarly}`, {
-            description: parts.join(" · ") || undefined,
-          });
-        } else if (failed > 0 && okCount === 0) {
-          toast.error("Nenhum atendimento finalizado", { description: parts.join(" · ") });
-        } else {
-          toast.success("Lote de finalização concluído", { description: parts.join(" · ") });
-        }
-      }
-
-      try {
-        window.dispatchEvent(new CustomEvent("captacao:batch-finished"));
-      } catch { /* ignore */ }
-      await load();
-    } catch (e) {
-      toast.dismiss(toastId);
-      toast.error("Erro ao finalizar atendimentos", {
-        description: e instanceof Error ? e.message : String(e),
-      });
-    } finally {
-      setClosingAll(false);
-      setClosingProgress(null);
-    }
+    setCloseBatchLeads(targets);
+    setCloseBatchOpen(true);
   };
 
   return (
@@ -816,17 +734,17 @@ export function CaptureLeadList({
               variant="outline"
               className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
               onClick={() => void closeAllAttendances()}
-              disabled={closingAll}
+              disabled={closeBatchOpen}
               title="Finaliza todos com mensagem de encerramento + pesquisa (1 a 1, com intervalo)"
             >
-              {closingAll ? (
+              {closeBatchOpen ? (
                 <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
               ) : (
                 <LogOut className="w-3 h-3 shrink-0" />
               )}
               <span className="truncate">
-                {closingProgress
-                  ? `${closingProgress.done}/${closingProgress.total}`
+                {closeBatchOpen
+                  ? "Finalizando…"
                   : `Fechar todos (${allInAttendance.length})`}
               </span>
             </Button>
@@ -852,30 +770,52 @@ export function CaptureLeadList({
 
 
         {selectMode && (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={allOnTabSelected ? "secondary" : "default"}
+              className="h-7 px-2.5 text-[11px] gap-1"
+              onClick={allOnTabSelected ? clearSelection : selectAllOnTab}
+              disabled={tabSelectableCount === 0}
+              title={
+                activeTab === "atendimento"
+                  ? "Seleciona todos em atendimento nesta aba"
+                  : "Seleciona todos em espera nesta aba"
+              }
+            >
+              <CheckSquare className="w-3 h-3 shrink-0" />
+              {allOnTabSelected
+                ? "Limpar seleção"
+                : `Selecionar todos (${tabSelectableCount})`}
+            </Button>
             <button
               type="button"
-              className="text-[10px] font-medium text-primary hover:underline"
+              className="text-[10px] font-medium text-primary hover:underline px-1"
               onClick={selectAllFiltered}
             >
-              Todos do período
+              Todo o período
             </button>
             <span className="text-[10px] text-muted-foreground">·</span>
             <button
               type="button"
-              className="text-[10px] font-medium text-primary hover:underline"
+              className="text-[10px] font-medium text-primary hover:underline px-1"
               onClick={selectWithoutAttendance}
             >
               Só sem atendimento
             </button>
-            <span className="text-[10px] text-muted-foreground">·</span>
-            <button
-              type="button"
-              className="text-[10px] font-medium text-muted-foreground hover:underline"
-              onClick={clearSelection}
-            >
-              Limpar
-            </button>
+            {selectedVisibleCount > 0 && (
+              <>
+                <span className="text-[10px] text-muted-foreground">·</span>
+                <button
+                  type="button"
+                  className="text-[10px] font-medium text-muted-foreground hover:underline px-1"
+                  onClick={clearSelection}
+                >
+                  Limpar
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -1010,6 +950,24 @@ export function CaptureLeadList({
           onSaved={(saved) => {
             applyOriginSaved(originLead.id, saved);
             setOriginLead(null);
+          }}
+        />
+      )}
+
+      {closeBatchOpen && (
+        <CloseAttendanceBatchDialog
+          open={closeBatchOpen}
+          onOpenChange={(o) => {
+            setCloseBatchOpen(o);
+            if (!o) setCloseBatchLeads([]);
+          }}
+          consultantId={consultantId}
+          leads={closeBatchLeads}
+          onFinished={() => {
+            try {
+              window.dispatchEvent(new CustomEvent("captacao:batch-finished"));
+            } catch { /* ignore */ }
+            void load();
           }}
         />
       )}

@@ -83,9 +83,11 @@ function markRestSkipped(results: BatchLeadResult[], fromIndex: number) {
 async function startAttendanceForLead(
   customerId: string,
   consultantId: string,
-): Promise<"sent" | "already" | { fallback: string }> {
+  opts?: { restart?: boolean },
+): Promise<"sent" | "restarted" | "already" | { fallback: string }> {
+  const restart = opts?.restart === true;
   const { data, error } = await supabase.functions.invoke("start-customer-attendance", {
-    body: { customerId, consultantId },
+    body: { customerId, consultantId, restart },
   });
   const body = (data ?? null) as {
     ok?: boolean;
@@ -107,7 +109,7 @@ async function startAttendanceForLead(
     throw new Error(body.message || body.detail || body.error || "Falha no protocolo");
   }
   if (body?.skipped === "already_sent") return "already";
-  return "sent";
+  return restart ? "restarted" : "sent";
 }
 
 async function scheduleAutoClose(customerId: string, minutes: number) {
@@ -179,14 +181,16 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
     const phone = String(lead.phone_whatsapp);
     const parts: string[] = [];
     let failed = false;
-    let onlySkippedProtocol = false;
     let anythingSent = false;
 
     try {
       assertNotAborted();
 
-      if (startAttendance && !lead.welcome_sent_at) {
-        const outcome = await startAttendanceForLead(lead.id, consultantId);
+      if (startAttendance) {
+        // Já iniciado e sem resposta: encerra a ficha silenciosamente (sem pesquisa)
+        // via restart e abre um atendimento novo.
+        const restart = !!lead.welcome_sent_at;
+        const outcome = await startAttendanceForLead(lead.id, consultantId, { restart });
         assertNotAborted();
         if (outcome === "already") {
           parts.push("já iniciado");
@@ -197,14 +201,15 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
           results[i] = { id: lead.id, status: "skipped", detail: `Envie manualmente: ${outcome.fallback}` };
           emit();
           continue;
+        } else if (outcome === "restarted") {
+          parts.push("reaberto");
+          lead.welcome_sent_at = new Date().toISOString();
+          anythingSent = true;
         } else {
           parts.push("protocolo");
           lead.welcome_sent_at = new Date().toISOString();
           anythingSent = true;
         }
-      } else if (startAttendance && lead.welcome_sent_at) {
-        onlySkippedProtocol = true;
-        parts.push("protocolo pulado");
       }
 
       if (audioUrl) {
@@ -271,12 +276,10 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
 
       if (parts.length === 0) {
         results[i] = { id: lead.id, status: "skipped", detail: "Nada a enviar" };
-      } else if (onlySkippedProtocol && !anythingSent) {
-        results[i] = { id: lead.id, status: "skipped", detail: "Já iniciado" };
       } else {
         results[i] = { id: lead.id, status: "ok", detail: parts.join(" · ") };
         // Auto-close só se algo foi realmente enviado.
-        if (autoCloseAfterMin > 0) {
+        if (autoCloseAfterMin > 0 && anythingSent) {
           try {
             await scheduleAutoClose(lead.id, autoCloseAfterMin);
             results[i].detail = `${results[i].detail} · auto-fechar ${autoCloseAfterMin}min`;

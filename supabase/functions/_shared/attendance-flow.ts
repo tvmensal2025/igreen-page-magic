@@ -491,13 +491,46 @@ export async function sendAttendanceRatingRequest(
   const channel = resolved.channel;
 
   const jid = `${digits}@s.whatsapp.net`;
+  // Chaves ESTÁVEIS (sem Date.now): retry/timeout/lote não reenviam a mesma msg.
   const sendCtx = {
     customerId,
     consultantId: consultantId || "",
     stepId: "manual:end_attendance",
-    idempotencyKey: `attendance-end:${customerId}:${Date.now()}`,
+    idempotencyKey: `attendance-end:${customerId}`,
     supabase,
   };
+
+  // Outbounds desta finalização (closing + rating usam o mesmo step).
+  const { data: recentOut } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("customer_id", customerId)
+    .eq("message_direction", "outbound")
+    .eq("conversation_step", ATTENDANCE_RATING_STEP)
+    .gte("created_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .limit(3);
+
+  const outboundCount = Array.isArray(recentOut) ? recentOut.length : 0;
+
+  // Já enviou closing+rating mas o flag não gravou → só marca e sai (anti-dupe).
+  if (outboundCount >= 2) {
+    const now = new Date().toISOString();
+    await supabase
+      .from("customers")
+      .update({
+        attendance_ended_at: now,
+        attendance_rating_requested_at: now,
+        conversation_step: ATTENDANCE_RATING_STEP,
+        bot_paused: false,
+        bot_paused_reason: null,
+        bot_paused_until: null,
+        bot_paused_at: null,
+      })
+      .eq("id", customerId)
+      .is("attendance_rating_requested_at", null)
+      .then(() => {}, () => {});
+    return { ok: true, skipped: "rating_pending" };
+  }
 
   const closing = await resolveAttendanceTpl(
     supabase,
@@ -505,20 +538,24 @@ export async function sendAttendanceRatingRequest(
     "attendance_closing",
     buildAttendanceClosingText(),
   );
-  const r1 = await channel.adapter.sendText(jid, closing, sendCtx as never);
-  if (!r1.ok) {
-    return { ok: false, code: "send_failed_closing", detail: (r1 as { detail?: string }).detail };
-  }
-  await registerSend(supabase, channel.instanceName).catch(() => {});
-  await supabase.from("conversations").insert({
-    customer_id: customerId,
-    message_direction: "outbound",
-    message_text: closing,
-    message_type: "text",
-    conversation_step: ATTENDANCE_RATING_STEP,
-  }).then(() => {}, () => {});
 
-  await new Promise((r) => setTimeout(r, 900));
+  // Já tem encerramento (rating falhou antes) → não reenvia closing.
+  if (outboundCount === 0) {
+    const r1 = await channel.adapter.sendText(jid, closing, sendCtx as never);
+    if (!r1.ok) {
+      return { ok: false, code: "send_failed_closing", detail: (r1 as { detail?: string }).detail };
+    }
+    await registerSend(supabase, channel.instanceName).catch(() => {});
+    await supabase.from("conversations").insert({
+      customer_id: customerId,
+      message_direction: "outbound",
+      message_text: closing,
+      message_type: "text",
+      conversation_step: ATTENDANCE_RATING_STEP,
+    }).then(() => {}, () => {});
+
+    await new Promise((r) => setTimeout(r, 900));
+  }
 
   const prompt = await resolveAttendanceTpl(
     supabase,
@@ -528,7 +565,8 @@ export async function sendAttendanceRatingRequest(
   );
   const r2 = await channel.adapter.sendText(jid, prompt, {
     ...sendCtx,
-    idempotencyKey: `attendance-rating:${customerId}:${Date.now()}`,
+    stepId: "manual:end_attendance_rating",
+    idempotencyKey: `attendance-rating:${customerId}`,
   } as never);
   if (!r2.ok) {
     return { ok: false, code: "send_failed_rating", detail: (r2 as { detail?: string }).detail };
@@ -558,6 +596,7 @@ export async function sendAttendanceRatingRequest(
       bot_paused_at: null,
     })
     .eq("id", customerId)
+    .is("attendance_rating_requested_at", null)
     .then(() => {}, () => {});
 
   return { ok: true };

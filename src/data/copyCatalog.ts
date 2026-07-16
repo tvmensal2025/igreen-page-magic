@@ -45,16 +45,16 @@ export const ANGLE_LABEL: Record<CopyAngle, string> = {
 
 // ─────────────────────────── HEADLINES (80) ───────────────────────────
 export const HEADLINES: CatalogItem[] = [
-  // economia_concreta (10)
-  { id: "h-ec-1", text: "Conta de luz 20% mais barata", angle: "economia_concreta", framework: "específico", score: 92 },
-  { id: "h-ec-2", text: "Pague até 25% menos na luz", angle: "economia_concreta", framework: "específico", score: 90 },
-  { id: "h-ec-3", text: "Economize R$ 1.200 por ano", angle: "economia_concreta", framework: "específico", score: 88 },
-  { id: "h-ec-4", text: "Conta {{distribuidora}} 20% menor", angle: "economia_concreta", framework: "específico", score: 94, needsDistribuidora: true },
+  // economia_concreta (10) — sem %/R$ (claims atraem curioso e encarecem CPL)
+  { id: "h-ec-1", text: "Simule se sua conta pode baixar", angle: "economia_concreta", framework: "específico", score: 92 },
+  { id: "h-ec-2", text: "Veja como pagar menos na luz", angle: "economia_concreta", framework: "específico", score: 90 },
+  { id: "h-ec-3", text: "Consulte economia na sua fatura", angle: "economia_concreta", framework: "específico", score: 88 },
+  { id: "h-ec-4", text: "Conta {{distribuidora}} pode baixar", angle: "economia_concreta", framework: "específico", score: 94, needsDistribuidora: true },
   { id: "h-ec-5", text: "Desconto direto no seu boleto", angle: "economia_concreta", framework: "benefício", score: 82 },
-  { id: "h-ec-6", text: "18% off todo mês na luz", angle: "economia_concreta", framework: "específico", score: 86 },
-  { id: "h-ec-7", text: "Menos R$ 150 na próxima fatura", angle: "economia_concreta", framework: "específico", score: 87 },
-  { id: "h-ec-8", text: "20% de desconto vitalício", angle: "economia_concreta", framework: "específico", score: 84 },
-  { id: "h-ec-9", text: "Conta cara? Corte 22% já", angle: "economia_concreta", framework: "direto", score: 83 },
+  { id: "h-ec-6", text: "Boleto de luz mais leve", angle: "economia_concreta", framework: "específico", score: 86 },
+  { id: "h-ec-7", text: "Alívio na próxima fatura", angle: "economia_concreta", framework: "específico", score: 87 },
+  { id: "h-ec-8", text: "Economia recorrente na luz", angle: "economia_concreta", framework: "específico", score: 84 },
+  { id: "h-ec-9", text: "Conta cara? Simule no zap", angle: "economia_concreta", framework: "direto", score: 83 },
   { id: "h-ec-10", text: "Fatura mais leve todo mês", angle: "economia_concreta", framework: "benefício", score: 76 },
 
   // dor_pas (10)
@@ -66,20 +66,20 @@ export const HEADLINES: CatalogItem[] = [
   { id: "h-dp-6", text: "Cansou de pagar caro?", angle: "dor_pas", framework: "PAS", score: 80 },
   { id: "h-dp-7", text: "Conta da {{distribuidora}} pesou?", angle: "dor_pas", framework: "PAS", score: 89, needsDistribuidora: true },
   { id: "h-dp-8", text: "Aumento na luz de novo?", angle: "dor_pas", framework: "PAS", score: 81 },
-  { id: "h-dp-9", text: "Sua fatura passou de R$ 300?", angle: "dor_pas", framework: "PAS", score: 86 },
+  { id: "h-dp-9", text: "Sua fatura pesou demais?", angle: "dor_pas", framework: "PAS", score: 86 },
   { id: "h-dp-10", text: "Refém da conta de luz?", angle: "dor_pas", framework: "PAS", score: 78 },
 
-  // prova_social (10)
-  { id: "h-ps-1", text: "+50 mil famílias economizam", angle: "prova_social", framework: "prova social", score: 85 },
-  { id: "h-ps-2", text: "Milhares já pagam menos", angle: "prova_social", framework: "prova social", score: 78 },
-  { id: "h-ps-3", text: "Escolha de 80 mil brasileiros", angle: "prova_social", framework: "prova social", score: 82 },
+  // prova_social (10) — sem números inventados
+  { id: "h-ps-1", text: "Famílias já pagam menos", angle: "prova_social", framework: "prova social", score: 85 },
+  { id: "h-ps-2", text: "Vizinhos já pagam menos", angle: "prova_social", framework: "prova social", score: 78 },
+  { id: "h-ps-3", text: "Escolha de quem quer economia", angle: "prova_social", framework: "prova social", score: 82 },
   { id: "h-ps-4", text: "Seus vizinhos já economizam", angle: "prova_social", framework: "prova social", score: 80 },
-  { id: "h-ps-5", text: "3 mil famílias em {{cidade}}", angle: "prova_social", framework: "prova social", score: 88 },
-  { id: "h-ps-6", text: "Todo mundo já mudou. E você?", angle: "prova_social", framework: "prova social", score: 79 },
+  { id: "h-ps-5", text: "Moradores de {{cidade}} consultam", angle: "prova_social", framework: "prova social", score: 88 },
+  { id: "h-ps-6", text: "Quem consultou já mudou", angle: "prova_social", framework: "prova social", score: 79 },
   { id: "h-ps-7", text: "Depoimentos reais no zap", angle: "prova_social", framework: "prova social", score: 74 },
-  { id: "h-ps-8", text: "9 em 10 recomendam", angle: "prova_social", framework: "prova social", score: 77 },
-  { id: "h-ps-9", text: "Famílias {{distribuidora}} aprovam", angle: "prova_social", framework: "prova social", score: 84, needsDistribuidora: true },
-  { id: "h-ps-10", text: "Mais de 100 mil já mudaram", angle: "prova_social", framework: "prova social", score: 81 },
+  { id: "h-ps-8", text: "Quem simula costuma seguir", angle: "prova_social", framework: "prova social", score: 77 },
+  { id: "h-ps-9", text: "Famílias {{distribuidora}} consultam", angle: "prova_social", framework: "prova social", score: 84, needsDistribuidora: true },
+  { id: "h-ps-10", text: "Cada vez mais gente muda", angle: "prova_social", framework: "prova social", score: 81 },
 
   // quebra_objecao (10)
   { id: "h-qo-1", text: "Pague menos sem obra nem taxa", angle: "quebra_objecao", framework: "objeção", score: 87 },
@@ -145,44 +145,44 @@ export const HEADLINES: CatalogItem[] = [
 // ─────────────────────────── PRIMARY TEXTS (80) ───────────────────────────
 // Regra: começam com HOOK curto (≤40 chars antes do 1º ponto) + CTA no final.
 export const PRIMARY_TEXTS: CatalogItem[] = [
-  // economia_concreta
-  { id: "p-ec-1", text: "Conta de luz 20% mais barata. Direto no boleto, sem obra. Fala no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 94 },
-  { id: "p-ec-2", text: "Sua fatura passou de R$ 300? Corte até 22% agora. Toca aqui.", angle: "economia_concreta", framework: "AIDA", score: 92 },
-  { id: "p-ec-3", text: "Menos R$ 150 por mês? Dá pra economizar até R$ 1.800 no ano. Simule no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 90 },
-  { id: "p-ec-4", text: "Cliente {{distribuidora}}? 20% off todo mês, sem obra. Chama no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 95, needsDistribuidora: true },
-  { id: "p-ec-5", text: "Boleto mais leve? Desconto de 18% direto na fatura. Toca aqui.", angle: "economia_concreta", framework: "benefício", score: 87 },
-  { id: "p-ec-6", text: "R$ 1.200 no bolso por ano. Sem instalar nada. Fala no zap 👇", angle: "economia_concreta", framework: "benefício", score: 89 },
-  { id: "p-ec-7", text: "Reduza 25% já na próxima. Simples, sem taxa. Toca aqui.", angle: "economia_concreta", framework: "AIDA", score: 88 },
-  { id: "p-ec-8", text: "Desconto vitalício de 20%. Zero taxa de adesão. Chama no zap 👇", angle: "economia_concreta", framework: "benefício", score: 90 },
-  { id: "p-ec-9", text: "Fatura passa de R$ 400? Baixe para R$ 320. Simule agora.", angle: "economia_concreta", framework: "AIDA", score: 86 },
-  { id: "p-ec-10", text: "Corte R$ 200/mês. Ativa em 30 dias. Fala no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 87 },
+  // economia_concreta — sem %/R$ (qualifica antes de prometer)
+  { id: "p-ec-1", text: "Quer saber se sua conta pode baixar? Simule no zap, sem obra. 👇", angle: "economia_concreta", framework: "AIDA", score: 94 },
+  { id: "p-ec-2", text: "Fatura pesada? Consulte se há economia na sua região. Toca aqui.", angle: "economia_concreta", framework: "AIDA", score: 92 },
+  { id: "p-ec-3", text: "Boleto mais leve pode ser possível. Simule sua conta no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 90 },
+  { id: "p-ec-4", text: "Cliente {{distribuidora}}? Consulte desconto no boleto, sem obra. 👇", angle: "economia_concreta", framework: "AIDA", score: 95, needsDistribuidora: true },
+  { id: "p-ec-5", text: "Boleto mais leve? Veja se sua região entra. Toca aqui.", angle: "economia_concreta", framework: "benefício", score: 87 },
+  { id: "p-ec-6", text: "Economia recorrente sem instalar nada. Simule no zap 👇", angle: "economia_concreta", framework: "benefício", score: 89 },
+  { id: "p-ec-7", text: "Quer aliviar a próxima fatura? Simples, sem taxa. Toca aqui.", angle: "economia_concreta", framework: "AIDA", score: 88 },
+  { id: "p-ec-8", text: "Desconto recorrente no boleto. Consulte no zap 👇", angle: "economia_concreta", framework: "benefício", score: 90 },
+  { id: "p-ec-9", text: "Conta alta todo mês? Simule se dá pra baixar. Toca aqui.", angle: "economia_concreta", framework: "AIDA", score: 86 },
+  { id: "p-ec-10", text: "Consulte economia na luz. Ativa após análise. Fala no zap 👇", angle: "economia_concreta", framework: "AIDA", score: 87 },
 
   // dor_pas
   { id: "p-dp-1", text: "Conta de luz subindo de novo? Desconto direto no boleto, sem obra. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 95 },
   { id: "p-dp-2", text: "Cansada de pagar caro? Energia limpa, conta leve. Chama agora 🌱", angle: "dor_pas", framework: "PAS", score: 90 },
-  { id: "p-dp-3", text: "Bandeira vermelha outra vez? Corte 22% da fatura. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 88 },
-  { id: "p-dp-4", text: "Sem fôlego com a luz? Desconto que entra na próxima. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 87 },
-  { id: "p-dp-5", text: "Fatura da {{distribuidora}} disparou? Reduza 20% já. Chama no zap 👇", angle: "dor_pas", framework: "PAS", score: 93, needsDistribuidora: true },
-  { id: "p-dp-6", text: "Cansou de bandeira vermelha? Preço fixo, sem susto. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 85 },
-  { id: "p-dp-7", text: "Não dá mais pra aguentar? Baixe 20% na próxima. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 84 },
-  { id: "p-dp-8", text: "Aumento em cima de aumento? Desconto que trava a conta. Chama agora.", angle: "dor_pas", framework: "PAS", score: 86 },
-  { id: "p-dp-9", text: "Sua conta pesou demais? Solução em 3 dias. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 83 },
-  { id: "p-dp-10", text: "A luz virou vilã? Corte 20% e siga tranquilo. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 82 },
+  { id: "p-dp-3", text: "Bandeira vermelha outra vez? Consulte economia no boleto. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 88 },
+  { id: "p-dp-4", text: "Sem fôlego com a luz? Desconto que entra após análise. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 87 },
+  { id: "p-dp-5", text: "Fatura da {{distribuidora}} disparou? Consulte no zap 👇", angle: "dor_pas", framework: "PAS", score: 93, needsDistribuidora: true },
+  { id: "p-dp-6", text: "Cansou de bandeira vermelha? Preço mais previsível. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 85 },
+  { id: "p-dp-7", text: "Não dá mais pra aguentar? Simule a próxima fatura. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 84 },
+  { id: "p-dp-8", text: "Aumento em cima de aumento? Veja se dá pra aliviar. Chama agora.", angle: "dor_pas", framework: "PAS", score: 86 },
+  { id: "p-dp-9", text: "Sua conta pesou demais? Consulte em poucos minutos. Fala no zap 👇", angle: "dor_pas", framework: "PAS", score: 83 },
+  { id: "p-dp-10", text: "A luz virou vilã? Simule economia e siga tranquilo. Toca aqui.", angle: "dor_pas", framework: "PAS", score: 82 },
 
   // prova_social
-  { id: "p-ps-1", text: "50 mil famílias já pagam menos. Você é o próximo? Fala no zap 👇", angle: "prova_social", framework: "prova social", score: 90 },
-  { id: "p-ps-2", text: "Seus vizinhos já cortaram 20%. Descubra como. Toca aqui.", angle: "prova_social", framework: "prova social", score: 87 },
-  { id: "p-ps-3", text: "80 mil brasileiros aprovam. Vem ver os depoimentos 👇", angle: "prova_social", framework: "prova social", score: 85 },
-  { id: "p-ps-4", text: "Em {{cidade}} são 3 mil famílias felizes. Bora ser a próxima? Fala no zap 👇", angle: "prova_social", framework: "prova social", score: 92 },
-  { id: "p-ps-5", text: "Todo mundo já mudou. E você? 20% off na luz. Toca aqui.", angle: "prova_social", framework: "prova social", score: 82 },
-  { id: "p-ps-6", text: "9 em cada 10 recomendam. Peça a simulação no zap 👇", angle: "prova_social", framework: "prova social", score: 84 },
-  { id: "p-ps-7", text: "Milhares de contas menores por mês. Descubra no zap 👇", angle: "prova_social", framework: "prova social", score: 83 },
-  { id: "p-ps-8", text: "Clientes {{distribuidora}} adoram. Depoimentos no zap 👇", angle: "prova_social", framework: "prova social", score: 88, needsDistribuidora: true },
-  { id: "p-ps-9", text: "100 mil famílias, 20% menos. Toca aqui e descubra.", angle: "prova_social", framework: "prova social", score: 86 },
-  { id: "p-ps-10", text: "Sua rua já economiza. Falta você. Chama no zap 👇", angle: "prova_social", framework: "prova social", score: 81 },
+  { id: "p-ps-1", text: "Famílias já pagam menos na luz. Quer consultar? Fala no zap 👇", angle: "prova_social", framework: "prova social", score: 90 },
+  { id: "p-ps-2", text: "Seus vizinhos já consultaram. Descubra se você também entra. Toca aqui.", angle: "prova_social", framework: "prova social", score: 87 },
+  { id: "p-ps-3", text: "Quem já mudou recomenda consultar. Veja os depoimentos 👇", angle: "prova_social", framework: "prova social", score: 85 },
+  { id: "p-ps-4", text: "Em {{cidade}} muita gente já consultou. Bora ser o próximo? 👇", angle: "prova_social", framework: "prova social", score: 92 },
+  { id: "p-ps-5", text: "Quem consultou costuma seguir. E você? Toca aqui.", angle: "prova_social", framework: "prova social", score: 82 },
+  { id: "p-ps-6", text: "Quem simula entende o desconto. Peça no zap 👇", angle: "prova_social", framework: "prova social", score: 84 },
+  { id: "p-ps-7", text: "Contas menores todo mês. Descubra se sua região entra 👇", angle: "prova_social", framework: "prova social", score: 83 },
+  { id: "p-ps-8", text: "Clientes {{distribuidora}} consultam no zap 👇", angle: "prova_social", framework: "prova social", score: 88, needsDistribuidora: true },
+  { id: "p-ps-9", text: "Cada vez mais famílias mudam. Toca aqui e descubra.", angle: "prova_social", framework: "prova social", score: 86 },
+  { id: "p-ps-10", text: "Sua rua já consulta. Falta você. Chama no zap 👇", angle: "prova_social", framework: "prova social", score: 81 },
 
   // quebra_objecao
-  { id: "p-qo-1", text: "Sem obra em casa. Sem taxa. 20% off todo mês. Fala no zap 👇", angle: "quebra_objecao", framework: "objeção", score: 90 },
+  { id: "p-qo-1", text: "Sem obra em casa. Sem taxa de adesão. Consulte no zap 👇", angle: "quebra_objecao", framework: "objeção", score: 90 },
   { id: "p-qo-2", text: "Zero placa no telhado. Zero fidelidade. Toca aqui.", angle: "quebra_objecao", framework: "objeção", score: 88 },
   { id: "p-qo-3", text: "Sem instalar nada. Sem trocar fiação. Fala no zap 👇", angle: "quebra_objecao", framework: "objeção", score: 87 },
   { id: "p-qo-4", text: "Sem análise de crédito. Sem investimento inicial. Chama no zap 👇", angle: "quebra_objecao", framework: "objeção", score: 86 },
@@ -304,8 +304,23 @@ function filterByContext(items: CatalogItem[], ctx: { distribuidora?: string | n
   return items.filter((i) => {
     if (i.needsDistribuidora && !ctx.distribuidora) return false;
     if (i.text.includes("{{cidade}}") && !ctx.cidade) return false;
+    // Claims numéricos atraem curioso e pioram CPL/conversão — fora do sample padrão.
+    if (isClaimHeavyCopy(i.text)) return false;
     return true;
   });
+}
+
+/** % / R$ / prova social inventada — Meta penaliza e o lead costuma ser fraco. */
+export function isClaimHeavyCopy(text: string): boolean {
+  const t = String(text || "");
+  return (
+    /\d+\s*%/.test(t) ||
+    /R\$\s*\d/i.test(t) ||
+    /\+\s*\d+\s*mil/i.test(t) ||
+    /\b\d+\s*mil\b/i.test(t) ||
+    /\b\d+\s*em\s*\d+\b/i.test(t) ||
+    /lei\s*14\.?300/i.test(t)
+  );
 }
 
 /**

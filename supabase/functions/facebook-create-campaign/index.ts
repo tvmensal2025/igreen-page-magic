@@ -202,6 +202,16 @@ Deno.serve(async (req) => {
     if ((!hasCities && !hasCustomLocations) || !body.daily_budget_cents || !hasCreative || !body.headline || !body.primary_text) {
       return new Response(JSON.stringify({ error: "Campos obrigatórios faltando (localização, criativo, headline ou texto)." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
+    // CPL: no máximo 2 municípios por campanha. 1 é o ideal.
+    const MAX_CITIES = 2;
+    if (hasCities && body.cities.length > MAX_CITIES) {
+      console.warn(`[fb-create] truncando ${body.cities.length} cidades → ${MAX_CITIES} (CPL)`);
+      body.cities = body.cities.slice(0, MAX_CITIES);
+    }
+    if (hasCustomLocations && body.custom_locations!.length > MAX_CITIES) {
+      console.warn(`[fb-create] truncando ${body.custom_locations!.length} raios → ${MAX_CITIES} (CPL)`);
+      body.custom_locations = body.custom_locations!.slice(0, MAX_CITIES);
+    }
     // Orçamento mínimo operacional; não há teto artificial. O saldo e o prazo
     // continuam limitando o gasto total antes de qualquer chamada à Meta.
     if (body.daily_budget_cents < 1000) {
@@ -504,10 +514,11 @@ Deno.serve(async (req) => {
     // como mais de 25 anos"). Solução oficial da Meta: manter age_min=25 no targeting
     // e passar a idade preferida (28) como SUGESTÃO via targeting_automation. Assim
     // continuamos priorizando 28+ sem quebrar a criação do adset.
-    const REQUESTED_AGE_MIN = body.age_min ?? 28;
+    const REQUESTED_AGE_MIN = body.age_min ?? 30;
     const ageMin = Math.min(REQUESTED_AGE_MIN, 25); // hard cap Meta Advantage+
     const ageMinSuggested = REQUESTED_AGE_MIN > 25 ? REQUESTED_AGE_MIN : null;
-    const ageMax = body.age_max ?? 65;
+    // Teto 60: energia solar / assinatura — corta 18–24 (curioso) sem apertar demais o topo.
+    const ageMax = Math.min(Math.max(body.age_max ?? 60, ageMin), 60);
     const today = new Date().toISOString().slice(0, 10);
     const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
     const locLabel = hasCustomLocations
@@ -681,9 +692,13 @@ Deno.serve(async (req) => {
       age_min: ageMin,
       age_max: ageMax,
       // Advantage+ Audience (padrão Meta v23+, opt-in explícito).
-      // Compatível com age_min customizado — Meta trata idade como non-negotiable constraint.
+      // age_min hard ≤25; age_max afunila qualidade. ageMinSuggested fica logado
+      // para telemetria (Meta rejeita age_min>25 com Advantage+).
       targeting_automation: { advantage_audience: 1 },
     };
+    if (ageMinSuggested) {
+      console.log(`[fb-create] age preference=${ageMinSuggested}+ hard_min=${ageMin} hard_max=${ageMax}`);
+    }
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
     // (recomendação oficial p/ CTWA, distribui em TODOS os elegíveis e otimiza CPL).
     // Modo manual: respeita lista do usuário (formato "fb:feed", "ig:reels", ...).

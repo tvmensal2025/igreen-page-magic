@@ -10,6 +10,7 @@ import {
   type CityHit,
 } from "@/services/facebookAds";
 import { DISTRIBUIDORAS_PRESETS, type DistribuidoraPreset } from "@/data/distribuidoraPresets";
+import { MAX_CITIES_PER_CAMPAIGN } from "../wizardHelpers";
 import type { WizardState } from "./useWizardState";
 
 const PRESET_CACHE_VERSION = "v1";
@@ -97,7 +98,14 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
   const addCity = useCallback((c: CityHit) => {
     patchFn((prev) => {
       if (prev.cities.find((x) => x.key === c.key)) return {};
-      if (prev.cities.length >= 200) { toast({ title: "Máximo de 200 cidades (limite Facebook)" }); return {}; }
+      if (prev.cities.length >= MAX_CITIES_PER_CAMPAIGN) {
+        toast({
+          title: `Máximo ${MAX_CITIES_PER_CAMPAIGN} cidades`,
+          description: "1 cidade por campanha baixa o CPL. Publique outra campanha para outra cidade.",
+          variant: "destructive",
+        });
+        return {};
+      }
       return {
         cities: [...prev.cities, c],
         cityOrigin: { ...prev.cityOrigin, [c.key]: "manual" },
@@ -118,7 +126,8 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
 
   const loadPresetCities = useCallback(async (p: DistribuidoraPreset, opts?: { silent?: boolean; budgetLeft?: number }): Promise<number> => {
     const ufPrimary = p.uf.split("/")[0];
-    const cap = opts?.budgetLeft ?? (200 - state.cities.length);
+    // CPL: preset adiciona só 1 cidade (a principal). Mais cidades = lead diluído/caro.
+    const cap = opts?.budgetLeft ?? 1;
     if (cap <= 0) return 0;
     try {
       let hits = readPresetCache(p.id);
@@ -146,7 +155,7 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
           selectedPresetIds,
         };
       });
-      if (!opts?.silent) toast({ title: `${p.nome} carregada`, description: `${added} cidades adicionadas (de ${p.cidades.length}). Bônus: ${p.bonusLabel}.` });
+      if (!opts?.silent) toast({ title: `${p.nome}`, description: `${added} cidade(s) — 1 por campanha melhora o CPL. Bônus: ${p.bonusLabel}.` });
       if (unresolved.length > 0) {
         const nomes = unresolved.slice(0, 5).map((u) => u.name).join(", ");
         toast({ title: `${unresolved.length} cidade(s) não encontradas no Meta`, description: `${nomes}${unresolved.length > 5 ? ` (+${unresolved.length - 5})` : ""}. Foram ignoradas pra evitar tráfego errado.` });
@@ -170,8 +179,25 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
       return;
     }
     patch({ presetLoading: true, presetLoadingId: p.id });
-    try { await loadPresetCities(p); } finally { patch({ presetLoading: false, presetLoadingId: null }); }
-  }, [state.selectedPresetIds, patch, patchFn, loadPresetCities]);
+    try {
+      const left = Math.max(0, MAX_CITIES_PER_CAMPAIGN - state.cities.length);
+      if (left <= 0) {
+        toast({
+          title: `Máximo ${MAX_CITIES_PER_CAMPAIGN} cidades`,
+          description: "Remova uma cidade ou publique outra campanha.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const added = await loadPresetCities(p, { budgetLeft: Math.min(1, left) });
+      if (added > 0) {
+        toast({
+          title: "1 cidade adicionada",
+          description: "Recomendado para CPL baixo. Busque outra cidade só se precisar.",
+        });
+      }
+    } finally { patch({ presetLoading: false, presetLoadingId: null }); }
+  }, [state.selectedPresetIds, state.cities.length, patch, patchFn, loadPresetCities, toast]);
 
   const clearAllCities = useCallback(() => {
     patch({ cities: [], cityOrigin: {}, selectedPresetIds: new Set(), cityFilter: "" });
