@@ -6,7 +6,7 @@
 //
 // Pode ser invocado:
 //   - via cron horário (sem body) → varre pending_review + recoverable
-//     Auth OBRIGATÓRIA: x-service-secret OU Bearer service_role
+//     Auth OBRIGATÓRIA (fail-closed): x-service-secret | x-internal-secret | Bearer service_role
 //   - via cliente com { campaign_id } → tenta UMA específica (botão "tentar reativar")
 //     Auth: JWT do consultor (authConsultant)
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
@@ -18,7 +18,7 @@ import { validateRodizioActivation } from "../_shared/validate-rodizio-activatio
 const cronCorsHeaders = {
   ...corsHeaders,
   "Access-Control-Allow-Headers":
-    `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret`,
+    `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret, x-internal-secret`,
 };
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -28,18 +28,48 @@ function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Auth do modo cron/varredura (sem campaign_id). Fail-closed. */
-function isCronCaller(req: Request): boolean {
-  const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") ?? "";
-  const headerSecret = req.headers.get("x-service-secret") ?? "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+/**
+ * Auth do modo cron/varredura (sem campaign_id). Fail-closed (AUD-004).
+ * Aceita o mesmo trio dos outros crons: service secret, embed/internal, service_role.
+ * Sem grace — varredura pública com verify_jwt=false não pode passar.
+ */
+async function isCronCaller(req: Request, admin: ReturnType<typeof adminClient>): Promise<boolean> {
+  const serviceSecret = (Deno.env.get("SERVICE_SHARED_SECRET") ?? "").trim();
+  const headerService = (req.headers.get("x-service-secret") ?? "").trim();
+  if (serviceSecret && headerService && timingSafeEqual(headerService, serviceSecret)) {
+    return true;
+  }
+
+  let expectedInternal = (Deno.env.get("EMBED_INTERNAL_SECRET") ?? "").trim();
+  if (!expectedInternal) {
+    try {
+      const { data } = await admin
+        .from("settings")
+        .select("value")
+        .eq("key", "embed_internal_token")
+        .maybeSingle();
+      expectedInternal = String((data as { value?: string } | null)?.value || "")
+        .replace(/^"|"$/g, "")
+        .trim();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+  const headerInternal = (req.headers.get("x-internal-secret") ?? "").trim();
+  if (expectedInternal && headerInternal && timingSafeEqual(headerInternal, expectedInternal)) {
+    return true;
+  }
+
+  const serviceRoleKey = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
   const authHeader = req.headers.get("authorization") ?? "";
   const bearer = authHeader.toLowerCase().startsWith("bearer ")
     ? authHeader.slice(7).trim()
     : "";
-  const okServiceSecret = !!(serviceSecret && timingSafeEqual(headerSecret, serviceSecret));
-  const okServiceRole = !!(serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey));
-  return okServiceSecret || okServiceRole;
+  if (serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey)) {
+    return true;
+  }
+
+  return false;
 }
 
 Deno.serve(async (req) => {
@@ -57,9 +87,9 @@ Deno.serve(async (req) => {
       return j(result);
     }
 
-    // Cron mode -> exige secret/service_role (AUD-004). Sem isso qualquer caller
-    // público com verify_jwt=false poderia varrer e reativar campanhas.
-    if (!isCronCaller(req)) {
+    // Cron mode -> exige secret/service_role/internal (AUD-004). Sem isso qualquer
+    // caller público com verify_jwt=false poderia varrer e reativar campanhas.
+    if (!(await isCronCaller(req, admin))) {
       return j({ error: "Unauthorized" }, 401);
     }
 
