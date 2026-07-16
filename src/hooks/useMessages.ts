@@ -134,6 +134,7 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.imageMessage.base64;
     mediaMimetype = m.imageMessage.mimetype || "image/jpeg";
     mediaCaption = m.imageMessage.caption;
+    whapiMediaId = m.imageMessage.mediaId || m.imageMessage.id || undefined;
     text = m.imageMessage.caption || "";
   } else if (m?.videoMessage) {
     mediaType = "video";
@@ -141,6 +142,7 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.videoMessage.base64;
     mediaMimetype = m.videoMessage.mimetype || "video/mp4";
     mediaCaption = m.videoMessage.caption;
+    whapiMediaId = m.videoMessage.mediaId || m.videoMessage.id || undefined;
     text = m.videoMessage.caption || "";
   } else if (m?.ptvMessage) {
     mediaType = "video";
@@ -148,12 +150,14 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.ptvMessage.base64;
     mediaMimetype = m.ptvMessage.mimetype || "video/mp4";
     mediaCaption = m.ptvMessage.caption;
+    whapiMediaId = m.ptvMessage.mediaId || m.ptvMessage.id || undefined;
     text = m.ptvMessage.caption || "";
   } else if (m?.audioMessage) {
     mediaType = "audio";
     mediaUrl = m.audioMessage.url;
     mediaBase64 = m.audioMessage.base64;
     mediaMimetype = m.audioMessage.mimetype || "audio/ogg; codecs=opus";
+    whapiMediaId = m.audioMessage.mediaId || m.audioMessage.id || undefined;
     text = "";
   } else if (m?.documentMessage) {
     mediaType = "document";
@@ -161,6 +165,7 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     mediaBase64 = m.documentMessage.base64;
     mediaMimetype = m.documentMessage.mimetype || "application/pdf";
     fileName = m.documentMessage.fileName;
+    whapiMediaId = m.documentMessage.mediaId || m.documentMessage.id || undefined;
     text = m.documentMessage.fileName || "";
   } else if (m?.stickerMessage) {
     mediaType = "sticker";
@@ -437,7 +442,21 @@ export function useMessages(
           const inFresh = mapped.some((x) => x.id === m.id);
           if (!inFresh) byId.set(m.id, m);
         }
-        for (const m of mapped) byId.set(m.id, m);
+        for (const m of mapped) {
+          const prevMsg = byId.get(m.id) || prev.find((p) => p.id === m.id);
+          // Preserva data: / base64 já baixados — o poll Whapi devolve URL Wasabi
+          // de novo e apagava o cache, gerando loop "Carregando imagem...".
+          if (prevMsg && (prevMsg.mediaUrl?.startsWith("data:") || prevMsg.mediaBase64)) {
+            byId.set(m.id, {
+              ...m,
+              mediaUrl: prevMsg.mediaUrl?.startsWith("data:") ? prevMsg.mediaUrl : m.mediaUrl,
+              mediaBase64: prevMsg.mediaBase64 || m.mediaBase64,
+              mediaMimetype: prevMsg.mediaMimetype || m.mediaMimetype,
+            });
+          } else {
+            byId.set(m.id, m);
+          }
+        }
         // Limpa otimistas expirados / cleared
         const merged = Array.from(byId.values()).filter((m) => {
           if (clearedAtMs > 0 && m.timestamp * 1000 < clearedAtMs) return false;
@@ -618,12 +637,10 @@ export function useMessages(
       if (msg.mediaUrl?.startsWith("data:")) return msg.mediaUrl;
 
       if (isWhapi) {
-        // Link público direto (Auto Download Whapi)
-        if (msg.mediaUrl && /^https?:\/\//i.test(msg.mediaUrl)) return msg.mediaUrl;
-
-        // Sem link: baixa via mediaId (GET /media/{id}) ou URL via proxy
+        // Sempre proxy: URLs Wasabi/CDN WhatsApp quebram no <img> (403) e no
+        // fetch do browser (CORS) — nunca devolver http cru como "pronto".
         const dl = await whapiDownloadMedia({
-          url: msg.mediaUrl,
+          url: msg.mediaUrl && /^https?:\/\//i.test(msg.mediaUrl) ? msg.mediaUrl : "",
           mediaId: msg.whapiMediaId,
         });
         if (dl?.base64) {
@@ -638,7 +655,9 @@ export function useMessages(
           );
           return dataUrl;
         }
-        return msg.mediaUrl || null;
+        // data: já tratado acima; http cru sem proxy = inutilizável no attach
+        if (msg.mediaUrl?.startsWith("data:")) return msg.mediaUrl;
+        return null;
       }
 
       if (!instanceName) return null;

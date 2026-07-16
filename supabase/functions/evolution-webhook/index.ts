@@ -14,6 +14,7 @@ declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
 import { createEvolutionSender, parseEvolutionMessage, extractMediaUrl } from "../_shared/evolution-api.ts";
+import { resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { computeIdempotencyKey } from "../_shared/idempotency.ts";
 import { computeMessageTextHash } from "../_shared/text-hash.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
@@ -527,12 +528,23 @@ Deno.serve(async (req) => {
     });
 
     const {
-      remoteJid, buttonId, hasImage, hasDocument, hasAudio, isFile, isButton, mediaKind,
+      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isFile, isButton, mediaKind,
       imageMessage, documentMessage, audioMessage, key, message,
     } = parsed;
     // messageText pode ser sobrescrito pela transcrição automática quando o
     // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
     let messageText: string = parsed.messageText;
+    const messageId = String(key?.id || parsed.messageId || "");
+    const inboundConvMeta = () => resolveInboundConversationMeta({
+      hasAudio,
+      hasImage,
+      hasDocument,
+      hasVideo: !!hasVideo,
+      isFile,
+      messageText,
+      // Evolution não tem mediaId Whapi — guarda o id da mensagem p/ correlacionar
+      mediaId: null,
+    });
 
     if (!messageText && !isFile && !isButton) {
       console.log("⏭️ Mensagem vazia");
@@ -1456,13 +1468,18 @@ Deno.serve(async (req) => {
 
 
     // ─── 6) Log inbound ────────────────────────────────────────────────
-    await supabase.from("conversations").insert({
-      customer_id: customer.id,
-      message_direction: "inbound",
-      message_text: isFile ? "[arquivo]" : messageText,
-      message_type: isFile ? "image" : "text",
-      conversation_step: customer.conversation_step,
-    });
+    {
+      const meta = inboundConvMeta();
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "inbound",
+        message_text: meta.message_text,
+        message_type: meta.message_type,
+        media_id: meta.media_id,
+        conversation_step: customer.conversation_step,
+        external_message_id: messageId || null,
+      });
+    }
 
     // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
     try {
@@ -1640,8 +1657,9 @@ Deno.serve(async (req) => {
         await supabase.from("conversations").insert({
           customer_id: customer.id,
           message_direction: "inbound",
-          message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : "[mensagem]"),
-          message_type: hasAudio ? "audio" : (hasImage || hasDocument ? "image" : "text"),
+          message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : hasVideo ? "[vídeo]" : "[mensagem]"),
+          message_type: hasAudio ? "audio" : hasDocument ? "document" : hasVideo ? "video" : (hasImage ? "image" : "text"),
+          external_message_id: messageId || null,
           conversation_step: customer.conversation_step,
         });
       } catch (e) {

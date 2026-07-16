@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from "react";
-import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap, XCircle } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap, XCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
 import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";
+import { CaptureAttachActions } from "@/components/captacao/CaptureAttachActions";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -43,38 +44,71 @@ function StatusIcon({ status, error }: { status?: number | string; error?: strin
   return null;
 }
 
+/** Só data: e Storage nosso são seguros no <img>/<audio> do browser.
+ * Wasabi / pps / mmg / media-gru dão 403 ou CORS — forçar loadMedia (proxy). */
 function isAccessibleUrl(url?: string): boolean {
   if (!url) return false;
   if (url.startsWith("data:")) return true;
-  if (url.startsWith("http") && !url.includes("mmg.whatsapp.net") && !url.includes("media-gru")) return true;
+  if (url.includes("supabase.co/storage/")) return true;
   return false;
 }
 
 function AudioPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
-  const [audioSrc, setAudioSrc] = useState<string | null>(
-    isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
-  );
+  const [audioSrc, setAudioSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  useEffect(() => { if (audioSrc) onLoaded?.(audioSrc); }, [audioSrc]);
-
-  const handleLoad = useCallback(async () => {
-    if (audioSrc || !onLoadMedia) return;
-    setLoading(true);
-    const src = await onLoadMedia(message.id);
-    if (src) setAudioSrc(src);
-    setLoading(false);
-  }, [audioSrc, onLoadMedia, message.id]);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
 
   useEffect(() => {
-    if (!audioSrc && onLoadMedia) {
-      handleLoad();
+    triedRef.current = false;
+    setFailed(false);
+    const accessible = isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null;
+    setAudioSrc(accessible);
+  }, [message.id]);
+
+  useEffect(() => {
+    if (isAccessibleUrl(message.mediaUrl) && message.mediaUrl !== audioSrc) {
+      setAudioSrc(message.mediaUrl!);
+      setFailed(false);
     }
-  }, []);
+  }, [message.mediaUrl, audioSrc]);
+
+  useEffect(() => { if (audioSrc) onLoaded?.(audioSrc); }, [audioSrc, onLoaded]);
+
+  const handleLoad = useCallback(async () => {
+    if (!onLoadMedia || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const src = await onLoadMedia(message.id);
+      if (src && isAccessibleUrl(src)) setAudioSrc(src);
+      else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+      triedRef.current = true;
+    }
+  }, [onLoadMedia, message.id, loading]);
+
+  useEffect(() => {
+    if (!audioSrc && onLoadMedia && !triedRef.current && !failed) {
+      triedRef.current = true;
+      void handleLoad();
+    }
+  }, [message.id, audioSrc, onLoadMedia, failed, handleLoad]);
 
   if (audioSrc) {
     return (
-      <audio controls className="max-w-full h-10" preload="auto">
+      <audio
+        controls
+        className="max-w-full h-10"
+        preload="auto"
+        onError={() => {
+          setAudioSrc(null);
+          setFailed(true);
+        }}
+      >
         <source src={audioSrc} type={message.mediaMimetype || "audio/ogg"} />
       </audio>
     );
@@ -85,7 +119,7 @@ function AudioPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
       variant="ghost"
       size="sm"
       className="gap-2 text-xs h-8"
-      onClick={handleLoad}
+      onClick={() => { triedRef.current = false; void handleLoad(); }}
       disabled={loading}
     >
       {loading ? (
@@ -94,35 +128,66 @@ function AudioPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
         <Play className="h-4 w-4" />
       )}
       <Mic className="h-3.5 w-3.5" />
-      Áudio
+      {failed ? "Tentar áudio de novo" : "Áudio"}
     </Button>
   );
 }
 
 
 function ImageViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
-  const [imgSrc, setImgSrc] = useState<string | null>(
-    isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
-  );
-  useEffect(() => { if (imgSrc) onLoaded?.(imgSrc); }, [imgSrc]);
+  const [imgSrc, setImgSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [loadAttempted, setLoadAttempted] = useState(false);
-
-  const handleLoad = useCallback(async () => {
-    if (imgSrc || !onLoadMedia || loadAttempted) return;
-    setLoadAttempted(true);
-    setLoading(true);
-    const src = await onLoadMedia(message.id);
-    if (src) setImgSrc(src);
-    setLoading(false);
-  }, [imgSrc, onLoadMedia, message.id, loadAttempted]);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
+  const msgIdRef = useRef(message.id);
 
   useEffect(() => {
-    if (!imgSrc && onLoadMedia) {
-      handleLoad();
+    msgIdRef.current = message.id;
+    triedRef.current = false;
+    setFailed(false);
+    setExpanded(false);
+    setImgSrc(isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null);
+  }, [message.id]);
+
+  // Se o poll/loadMedia promoveu mediaUrl para data:, usa sem resetar tentativa.
+  useEffect(() => {
+    if (isAccessibleUrl(message.mediaUrl)) {
+      setImgSrc(message.mediaUrl!);
+      setFailed(false);
     }
-  }, []);
+  }, [message.mediaUrl]);
+
+  useEffect(() => { if (imgSrc) onLoaded?.(imgSrc); }, [imgSrc, onLoaded]);
+
+  const handleLoad = useCallback(async () => {
+    if (!onLoadMedia || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const src = await onLoadMedia(message.id);
+      if (msgIdRef.current !== message.id) return;
+      if (src && isAccessibleUrl(src)) {
+        setImgSrc(src);
+      } else {
+        setFailed(true);
+      }
+    } catch {
+      if (msgIdRef.current === message.id) setFailed(true);
+    } finally {
+      if (msgIdRef.current === message.id) {
+        setLoading(false);
+        triedRef.current = true;
+      }
+    }
+  }, [onLoadMedia, message.id, loading]);
+
+  useEffect(() => {
+    if (!imgSrc && onLoadMedia && !triedRef.current && !failed && !loading) {
+      triedRef.current = true;
+      void handleLoad();
+    }
+  }, [message.id, imgSrc, onLoadMedia, failed, loading, handleLoad]);
 
   if (loading) {
     return (
@@ -143,6 +208,10 @@ function ImageViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
           loading="lazy"
           decoding="async"
           onClick={() => setExpanded(true)}
+          onError={() => {
+            setImgSrc(null);
+            setFailed(true);
+          }}
         />
         {expanded && (
           <div
@@ -161,74 +230,124 @@ function ImageViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
       variant="ghost"
       size="sm"
       className="gap-2 text-xs h-8"
-      onClick={handleLoad}
+      onClick={() => { triedRef.current = false; void handleLoad(); }}
       disabled={loading}
     >
       <Image className="h-4 w-4" />
-      📷 Carregar imagem
+      {failed ? "Tentar de novo" : "📷 Carregar imagem"}
     </Button>
   );
 }
 
 function VideoPlayer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
-  const [videoSrc, setVideoSrc] = useState<string | null>(
-    isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
-  );
-  useEffect(() => { if (videoSrc) onLoaded?.(videoSrc); }, [videoSrc]);
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const handleLoad = useCallback(async () => {
-    if (videoSrc || !onLoadMedia) return;
-    setLoading(true);
-    const src = await onLoadMedia(message.id);
-    if (src) setVideoSrc(src);
-    setLoading(false);
-  }, [videoSrc, onLoadMedia, message.id]);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
 
   useEffect(() => {
-    if (!videoSrc && onLoadMedia) {
-      handleLoad();
+    triedRef.current = false;
+    setFailed(false);
+    setVideoSrc(isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null);
+  }, [message.id]);
+
+  useEffect(() => {
+    if (isAccessibleUrl(message.mediaUrl)) {
+      setVideoSrc(message.mediaUrl!);
+      setFailed(false);
     }
-  }, []);
+  }, [message.mediaUrl]);
+
+  useEffect(() => { if (videoSrc) onLoaded?.(videoSrc); }, [videoSrc, onLoaded]);
+
+  const handleLoad = useCallback(async () => {
+    if (!onLoadMedia || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const src = await onLoadMedia(message.id);
+      if (src && isAccessibleUrl(src)) setVideoSrc(src);
+      else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+      triedRef.current = true;
+    }
+  }, [onLoadMedia, message.id, loading]);
+
+  useEffect(() => {
+    if (!videoSrc && onLoadMedia && !triedRef.current && !failed) {
+      triedRef.current = true;
+      void handleLoad();
+    }
+  }, [message.id, videoSrc, onLoadMedia, failed, handleLoad]);
 
   if (videoSrc) {
     return (
-      <video controls className="rounded max-w-full max-h-60 mb-1" preload="metadata">
+      <video
+        controls
+        className="rounded max-w-full max-h-60 mb-1"
+        preload="metadata"
+        onError={() => { setVideoSrc(null); setFailed(true); }}
+      >
         <source src={videoSrc} type={message.mediaMimetype || "video/mp4"} />
       </video>
     );
   }
 
   return (
-    <Button variant="ghost" size="sm" className="gap-2 text-xs h-8" onClick={handleLoad} disabled={loading}>
+    <Button variant="ghost" size="sm" className="gap-2 text-xs h-8" onClick={() => { triedRef.current = false; void handleLoad(); }} disabled={loading}>
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Video className="h-4 w-4" />}
-      🎥 Carregar vídeo
+      {failed ? "Tentar vídeo de novo" : "🎥 Carregar vídeo"}
     </Button>
   );
 }
 
 function DocumentViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null>; onLoaded?: (url: string) => void }) {
-  const [docSrc, setDocSrc] = useState<string | null>(
-    isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
-  );
+  const [docSrc, setDocSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
   const isPdf = message.mediaMimetype?.includes("pdf") || message.fileName?.endsWith(".pdf");
 
-  useEffect(() => { if (docSrc) onLoaded?.(docSrc); }, [docSrc]);
-
-  const handleLoad = useCallback(async () => {
-    if (docSrc || !onLoadMedia) return;
-    setLoading(true);
-    const src = await onLoadMedia(message.id);
-    if (src) setDocSrc(src);
-    setLoading(false);
-  }, [docSrc, onLoadMedia, message.id]);
+  useEffect(() => {
+    triedRef.current = false;
+    setFailed(false);
+    setDocSrc(isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null);
+  }, [message.id]);
 
   useEffect(() => {
-    if (!docSrc && onLoadMedia) {
-      handleLoad();
+    if (isAccessibleUrl(message.mediaUrl)) {
+      setDocSrc(message.mediaUrl!);
+      setFailed(false);
     }
-  }, []);
+  }, [message.mediaUrl]);
+
+  useEffect(() => { if (docSrc) onLoaded?.(docSrc); }, [docSrc, onLoaded]);
+
+  const handleLoad = useCallback(async () => {
+    if (!onLoadMedia || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const src = await onLoadMedia(message.id);
+      if (src && isAccessibleUrl(src)) setDocSrc(src);
+      else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+      triedRef.current = true;
+    }
+  }, [onLoadMedia, message.id, loading]);
+
+  useEffect(() => {
+    if (!docSrc && onLoadMedia && !triedRef.current && !failed) {
+      triedRef.current = true;
+      void handleLoad();
+    }
+  }, [message.id, docSrc, onLoadMedia, failed, handleLoad]);
 
   if (docSrc && isPdf) {
     return (
@@ -256,40 +375,71 @@ function DocumentViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessa
   }
 
   return (
-    <Button variant="ghost" size="sm" className="gap-2 text-xs h-8" onClick={handleLoad} disabled={loading}>
+    <Button variant="ghost" size="sm" className="gap-2 text-xs h-8" onClick={() => { triedRef.current = false; void handleLoad(); }} disabled={loading}>
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-      📄 {message.fileName || "Documento"}
+      {failed ? "Tentar de novo" : `📄 ${message.fileName || "Documento"}`}
     </Button>
   );
 }
 
 function StickerViewer({ message, onLoadMedia }: { message: ChatMessage; onLoadMedia?: (id: string) => Promise<string | null> }) {
-  const [src, setSrc] = useState<string | null>(
-    isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null
-  );
+  const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const handleLoad = useCallback(async () => {
-    if (src || !onLoadMedia) return;
-    setLoading(true);
-    const result = await onLoadMedia(message.id);
-    if (result) setSrc(result);
-    setLoading(false);
-  }, [src, onLoadMedia, message.id]);
+  const [failed, setFailed] = useState(false);
+  const triedRef = useRef(false);
 
   useEffect(() => {
-    if (!src && onLoadMedia) {
-      handleLoad();
+    triedRef.current = false;
+    setFailed(false);
+    setSrc(isAccessibleUrl(message.mediaUrl) ? message.mediaUrl! : null);
+  }, [message.id]);
+
+  useEffect(() => {
+    if (isAccessibleUrl(message.mediaUrl)) {
+      setSrc(message.mediaUrl!);
+      setFailed(false);
     }
-  }, []);
+  }, [message.mediaUrl]);
+
+  const handleLoad = useCallback(async () => {
+    if (!onLoadMedia || loading) return;
+    setLoading(true);
+    setFailed(false);
+    try {
+      const result = await onLoadMedia(message.id);
+      if (result && isAccessibleUrl(result)) setSrc(result);
+      else setFailed(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+      triedRef.current = true;
+    }
+  }, [onLoadMedia, message.id, loading]);
+
+  useEffect(() => {
+    if (!src && onLoadMedia && !triedRef.current && !failed) {
+      triedRef.current = true;
+      void handleLoad();
+    }
+  }, [message.id, src, onLoadMedia, failed, handleLoad]);
 
   if (src) {
-    return <img src={src} alt="sticker" className="max-w-[150px] max-h-[150px]" loading="lazy" decoding="async" />;
+    return (
+      <img
+        src={src}
+        alt="sticker"
+        className="max-w-[150px] max-h-[150px]"
+        loading="lazy"
+        decoding="async"
+        onError={() => { setSrc(null); setFailed(true); }}
+      />
+    );
   }
 
   return (
-    <Button variant="ghost" size="sm" className="gap-1 text-xs h-8" onClick={handleLoad} disabled={loading}>
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "🏷️"} Sticker
+    <Button variant="ghost" size="sm" className="gap-1 text-xs h-8" onClick={() => { triedRef.current = false; void handleLoad(); }} disabled={loading}>
+      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "🏷️"} {failed ? "Tentar de novo" : "Sticker"}
     </Button>
   );
 }
@@ -367,6 +517,9 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
                   <DropdownMenuItem onClick={() => handleAttach("document_back_url")}>
                     <IdCard className="w-4 h-4 mr-2" /> Usar como RG/CNH (Verso)
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleAttach("electricity_boleto_photo_url")}>
+                    <Receipt className="w-4 h-4 mr-2" /> Usar como Boleto Bancário
+                  </DropdownMenuItem>
                   {(canSaveAsTemplate || canCopy) && <DropdownMenuSeparator />}
                 </>
               )}
@@ -394,6 +547,15 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
         {mediaType === "audio" && <AudioPlayer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "document" && <DocumentViewer message={message} onLoadMedia={onLoadMedia} onLoaded={setLoadedUrl} />}
         {mediaType === "sticker" && <StickerViewer message={message} onLoadMedia={onLoadMedia} />}
+
+        {canAttachToCapture && (
+          <CaptureAttachActions
+            onAttach={handleAttach}
+            tone="light"
+            compact
+            showBoleto
+          />
+        )}
 
         {interactiveHeader && (
           <div className="text-[11px] font-semibold text-foreground/90 mb-0.5">

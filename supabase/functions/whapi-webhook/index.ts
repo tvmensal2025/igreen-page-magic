@@ -11,7 +11,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
-import { createWhapiSender, parseWhapiMessage } from "../_shared/whapi-api.ts";
+import { createWhapiSender, parseWhapiMessage, resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
@@ -223,11 +223,22 @@ Deno.serve(async (req) => {
 
 
     const {
-      remoteJid, hasImage, hasDocument, hasAudio,
-      imageMessage, documentMessage, audioMessage, key, message,
+      remoteJid, hasImage, hasDocument, hasAudio, hasVideo,
+      imageMessage, documentMessage, audioMessage, videoMessage, key, message,
       fileBase64: whapiFileBase64, fileUrl: whapiFileUrl, fromName,
+      mediaId: inboundMediaId,
     } = parsed;
     let { messageText, isFile, isButton, buttonId, messageId } = parsed;
+
+    const inboundConvMeta = () => resolveInboundConversationMeta({
+      hasAudio,
+      hasImage,
+      hasDocument,
+      hasVideo: !!hasVideo,
+      isFile,
+      messageText,
+      mediaId: inboundMediaId || null,
+    });
 
     // ─── Aprovação de cadastro por "SIM" do super admin ────────────────
     // Se o super admin responder "SIM" (ou "SIM <nome>") no WhatsApp, aprova
@@ -1504,12 +1515,15 @@ Deno.serve(async (req) => {
     const forceBotForLead = (customer as any)?.bot_force_enabled === true;
 
     if (globalAiDisabled === true && !isFile && !inActiveCapture && !forceBotForLead) {
+      const meta = inboundConvMeta();
       await supabase.from("conversations").insert({
         customer_id: customer.id,
         message_direction: "inbound",
-        message_text: messageText || (hasAudio ? "[áudio]" : "[arquivo]"),
-        message_type: hasAudio ? "audio" : "text",
+        message_text: meta.message_text || (hasAudio ? "[áudio]" : "[arquivo]"),
+        message_type: meta.message_type,
+        media_id: meta.media_id,
         conversation_step: customer.conversation_step,
+        external_message_id: messageId || null,
       });
       console.log(`🛑 [global-off-silent] IA manual — inbound texto/áudio salvo sem resposta customer=${customer.id} step="${currentStep}"`);
       {
@@ -1530,18 +1544,21 @@ Deno.serve(async (req) => {
 
     // Kill switch global OFF: grava inbound, avisa consultor, não responde.
     if (!botGlobalOutboundEnabled && !forceBotForLead) {
+      const meta = inboundConvMeta();
       await supabase.from("conversations").insert({
         customer_id: customer.id,
         message_direction: "inbound",
-        message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : "[arquivo]"),
-        message_type: hasAudio ? "audio" : (isFile ? "image" : "text"),
+        message_text: meta.message_text,
+        message_type: meta.message_type,
+        media_id: meta.media_id,
         conversation_step: customer.conversation_step,
+        external_message_id: messageId || null,
       });
       const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || superAdminConsultantId;
       if (notifyTo) {
-        const kind = hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
+        const kind = hasVideo ? "image" : hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
         const preview = messageText
-          || (kind === "image" ? "[imagem]" : kind === "audio" ? "[áudio]" : kind === "document" ? "[documento]" : "[mensagem]");
+          || (hasVideo ? "[vídeo]" : kind === "image" ? "[imagem]" : kind === "audio" ? "[áudio]" : kind === "document" ? "[documento]" : "[mensagem]");
         const { notifyInboundWhileBotOff } = await import("../_shared/notify-consultant.ts");
         notifyInboundWhileBotOff(notifyTo, customer as any, preview, {
           kind: kind as any,
@@ -1600,9 +1617,9 @@ Deno.serve(async (req) => {
         await supabase.from("conversations").insert({
           customer_id: customer.id,
           message_direction: "inbound",
-          message_text: messageText || (hasAudio ? "[áudio]" : "[arquivo]"),
-          message_type: hasAudio ? "audio" : (isFile ? "image" : "text"),
+          ...inboundConvMeta(),
           conversation_step: customer.conversation_step,
+          external_message_id: messageId || null,
         });
         const _pausedUntil = (customer as any).bot_paused_until && new Date((customer as any).bot_paused_until) > new Date();
         const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (_pausedUntil ? "paused_until" : "manual"));
@@ -1613,12 +1630,12 @@ Deno.serve(async (req) => {
         {
           const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id;
           if (notifyTo) {
-            const kind = hasImage ? "image"
+            const kind = hasVideo ? "image" : hasImage ? "image"
               : hasAudio ? "audio"
               : hasDocument ? "document"
               : "text";
             const preview = messageText
-              || (kind === "image" ? "[imagem]"
+              || (hasVideo ? "[vídeo]" : kind === "image" ? "[imagem]"
                 : kind === "audio" ? "[áudio]"
                 : kind === "document" ? "[documento]"
                 : "[mensagem]");
@@ -1732,13 +1749,13 @@ Deno.serve(async (req) => {
     }
 
     // ─── Log inbound (audio: marcamos como [áudio] e atualizamos depois com a transcrição) ──
-    const inboundLogText = hasAudio ? "[áudio]" : (isFile ? "[arquivo]" : messageText);
-    const inboundLogType = hasAudio ? "audio" : (isFile ? "image" : "text");
+    const inboundMeta = inboundConvMeta();
     const { data: inboundLog } = await supabase.from("conversations").insert({
       customer_id: customer.id,
       message_direction: "inbound",
-      message_text: inboundLogText,
-      message_type: inboundLogType,
+      message_text: inboundMeta.message_text,
+      message_type: inboundMeta.message_type,
+      media_id: inboundMeta.media_id,
       conversation_step: customer.conversation_step,
       external_message_id: messageId || null,
     }).select("id").maybeSingle();
@@ -2032,7 +2049,7 @@ Deno.serve(async (req) => {
             for (let j = 0; j < chunk.length; j++) binary += String.fromCharCode(chunk[j]);
           }
           fileBase64 = btoa(binary);
-          const mime = audioMessage?.mimetype || imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+          const mime = audioMessage?.mimetype || imageMessage?.mimetype || documentMessage?.mimetype || videoMessage?.mimetype || "application/octet-stream";
           fileUrl = `data:${mime};base64,${fileBase64}`;
           console.log(`✅ Mídia Whapi baixada (${mime}, b64 len: ${fileBase64.length})`);
         } else {
@@ -2047,8 +2064,8 @@ Deno.serve(async (req) => {
     // Permite que "Captura conta" / "Captura documento" reaproveite o arquivo depois.
     if (isFile && customer?.id && (fileUrl || fileBase64)) {
       try {
-        const _mime = imageMessage?.mimetype || documentMessage?.mimetype || null;
-        const _kind = hasDocument ? "document" : (hasImage ? "image" : "other");
+        const _mime = imageMessage?.mimetype || documentMessage?.mimetype || videoMessage?.mimetype || audioMessage?.mimetype || null;
+        const _kind = hasDocument ? "document" : (hasVideo ? "video" : (hasImage ? "image" : (hasAudio ? "audio" : "other")));
         await supabase.from("customers").update({
           last_inbound_media_url: fileUrl || null,
           last_inbound_media_mime: _mime,
