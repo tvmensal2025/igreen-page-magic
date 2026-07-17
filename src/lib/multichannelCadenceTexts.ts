@@ -1360,13 +1360,13 @@ Estou concluindo esta sequência para não ficar insistindo. Você prefere mante
     timing: "Dia 10 · depois da ligação · se não atender",
     canGenerateAudio: false,
     notes: "Depois disso o atendimento fica pausado e só volta a ser contactado após 21 dias.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*.
 
-Como não consegui falar com você, vou pausar este atendimento.
+Como não consegui falar com você, vou *pausar seu atendimento* — sem excluir seu cadastro. ⏸️
 
-Quando quiser retomar, use uma opção abaixo ou responda SAIR para não receber novos contatos.`,
+👇 *Escolha abaixo* como prefere seguir (ou responda SAIR para não receber mais contatos):`,
     buttons: [
-      { id: "analyze", title: "ANALISAR" },
+      { id: "analyze", title: "Quero analisar" },
       { id: "call_me", title: "Pode me ligar" },
       { id: "stop", title: "Encerrar" },
     ],
