@@ -1309,11 +1309,11 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     canGenerateAudio: false,
     notes:
       "3 botões de faixa. Se precisar de foto, ligação ou encerrar, usa o passo seguinte.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Para verificar seu caso, não precisa escrever uma mensagem grande.
+Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*. ⚡
 
-Qual faixa da sua conta?`,
+*Qual faixa está sua conta hoje?* 👇`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
