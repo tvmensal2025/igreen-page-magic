@@ -86,10 +86,10 @@ export function VelipHealthBanner() {
   const critical = saldo != null && avgDay > 0 && saldo < avgDay * 3;
 
   const toneClass = critical
-    ? "border-destructive/40 bg-destructive/10 text-destructive"
+    ? "border-destructive/50 bg-destructive/10 text-destructive"
     : lowBalance
-      ? "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
-      : "border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200";
+      ? "border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+      : "border-emerald-600/60 bg-white text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-50 dark:border-emerald-400/50";
 
   return (
     <div className={`rounded-md border px-3 py-2.5 text-xs ${toneClass}`}>

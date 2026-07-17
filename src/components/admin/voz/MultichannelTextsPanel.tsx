@@ -146,8 +146,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     (async () => {
       const local = loadLibrary(consultantId);
       const remote = await loadCadenceLibraryRemote(consultantId).catch(() => null);
-      const fromFlow = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
-        () => ({}),
+      const fromFlow: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
+        () => ({} as Partial<SavedCadenceLibrary>),
       );
       // Prioridade: fluxo WhatsApp (produção) > remoto > localStorage.
       const merged: SavedCadenceLibrary = {
