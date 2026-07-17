@@ -16,16 +16,14 @@ const corsHeaders = {
 const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
 const MODEL_V3 = "eleven_v3";
 
-// Ajustes fonéticos para PT-BR no ElevenLabs v3:
-// - "iGreen" -> "iGrín" (evita leitura em inglês "ai-grín")
-// - masculino: "díga" força a pronúncia correta da palavra "diga" no TTS
+// Texto A2 (corpo) — PT-BR natural. "iGreen" e "Rafael" sem ajustes fonéticos.
 const BODY_TEXT_BY_GENDER: Record<"masculino" | "feminino", string> = {
-  feminino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
+  feminino: `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
 
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
-  masculino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGrín Energia.
+Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`,
+  masculino: `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
 
-Para eu montar a simulação, me díga quanto você está gastando por mês na conta de luz.`,
+Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`,
 };
 
 // Voice settings v3 alinhado ao corpo A2 (mesmo perfil natural PT-BR).
