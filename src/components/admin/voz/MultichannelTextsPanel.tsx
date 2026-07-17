@@ -826,9 +826,9 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             onChange={(e) => setPreviewBill(e.target.value)}
             placeholder="500 ou 500,00"
           />
-          {!billParsed.ok && (
+          {billParsed.ok === false && (
             <p className="text-[10px] text-destructive max-w-[140px] leading-tight">
-              {billParsed.reason}
+              {billParsed.message}
             </p>
           )}
         </div>

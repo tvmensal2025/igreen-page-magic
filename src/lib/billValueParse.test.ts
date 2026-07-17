@@ -54,13 +54,13 @@ describe("parseAverageBillValue — pede correção", () => {
   it("350,0000", () => {
     const r = parseAverageBillValue("350,0000");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe("too_many_decimals");
+    if (r.ok === false) expect(r.reason).toBe("too_many_decimals");
   });
 
   it("350.0000", () => {
     const r = parseAverageBillValue("350.0000");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe("too_many_decimals");
+    if (r.ok === false) expect(r.reason).toBe("too_many_decimals");
   });
 
   it("vazio", () => {
@@ -70,7 +70,7 @@ describe("parseAverageBillValue — pede correção", () => {
   it("fora da faixa", () => {
     const r = parseAverageBillValue("10");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toBe("out_of_range");
+    if (r.ok === false) expect(r.reason).toBe("out_of_range");
   });
 });
 

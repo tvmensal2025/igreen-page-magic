@@ -13,6 +13,8 @@ import {
   voiceSettingsForNameGreet,
   voiceSettingsForEdgePad,
   MODEL_V3,
+  MODEL_V2,
+  type TtsModelId,
 } from "@/lib/ttsEnhanceV3";
 
 /** Sofia (ElevenLabs) — voz profissional padrão do portal (áudio WA + ligação). */
@@ -21,6 +23,10 @@ export const VOICE_SOFIA_PROFESSIONAL = "EJV7H2baGt5ab95tOoSG";
 /** v13: Olá... Nome... + edge pad em todos os cortes. */
 const CACHE_VERSION = 13;
 const TTS_BUCKET = "tts-cache";
+
+function resolveTtsModel(id?: string): TtsModelId {
+  return id === MODEL_V2 ? MODEL_V2 : MODEL_V3;
+}
 
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
@@ -196,7 +202,7 @@ export async function generateSofiaSegment(opts: {
   /** Respiro início/fim em cortes fixos/M/F. */
   edgePad?: boolean;
 }): Promise<TtsGenerateResult> {
-  const modelId = opts.modelId ?? MODEL_V3;
+  const modelId = resolveTtsModel(opts.modelId);
   const isName = opts.namePause ?? isNameGreetPhrase(opts.text);
   const edgePad = isName ? false : (opts.edgePad ?? true);
   const spoken = prepareTtsSegment(opts.text.trim(), modelId, {

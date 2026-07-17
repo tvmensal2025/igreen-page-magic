@@ -16,6 +16,11 @@
 
 import { mergeApprovedA2Audios } from "@/lib/multichannelApprovedAudios";
 
+/** replaceAll compatível com lib ES2020 do projeto. */
+function tplReplace(text: string, needle: string, value: string): string {
+  return text.split(needle).join(value);
+}
+
 /** Abertura oficial — áudio WA e ligação (Sofia). */
 export const SOFIA_OPENING =
   "Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.";
@@ -521,23 +526,24 @@ export function renderCadenceBody(
       : "…");
   const telefone =
     (opts.telefone ?? opts.telefoneMascarado ?? "").trim() || "(11) 9••••-••••";
-  return body
-    .replaceAll("{{nome}}", nome)
-    .replaceAll("{{frase_disponibilidade}}", phrase)
-    .replaceAll("{{abertura_sofia}}", SOFIA_OPENING)
-    .replaceAll("{{valor_formatado}}", valor)
-    .replaceAll("{{valor_conta}}", valor)
-    .replaceAll("{{economia_min}}", opts.economiaMin ?? "…")
-    .replaceAll("{{economia_max}}", opts.economiaMax ?? "…")
-    .replaceAll("{{economia_range}}", economiaRange)
-    .replaceAll("{{telefone}}", telefone)
-    .replaceAll("{{telefone_mascarado}}", telefone)
-    .replaceAll("{{link_facial}}", opts.linkFacial ?? "")
-    .replaceAll("{{bem_vindo}}", g.bem_vindo)
-    .replaceAll("{{o_a}}", g.o_a)
-    .replaceAll("{{do_da}}", g.do_da)
-    .replaceAll("{{ao_a}}", g.ao_a)
-    .replaceAll("{{querido_a}}", g.querido_a);
+  return [
+    ["{{nome}}", nome],
+    ["{{frase_disponibilidade}}", phrase],
+    ["{{abertura_sofia}}", SOFIA_OPENING],
+    ["{{valor_formatado}}", valor],
+    ["{{valor_conta}}", valor],
+    ["{{economia_min}}", opts.economiaMin ?? "…"],
+    ["{{economia_max}}", opts.economiaMax ?? "…"],
+    ["{{economia_range}}", economiaRange],
+    ["{{telefone}}", telefone],
+    ["{{telefone_mascarado}}", telefone],
+    ["{{link_facial}}", opts.linkFacial ?? ""],
+    ["{{bem_vindo}}", g.bem_vindo],
+    ["{{o_a}}", g.o_a],
+    ["{{do_da}}", g.do_da],
+    ["{{ao_a}}", g.ao_a],
+    ["{{querido_a}}", g.querido_a],
+  ].reduce((acc, [k, v]) => tplReplace(acc, k, v), body);
 }
 
 /**
