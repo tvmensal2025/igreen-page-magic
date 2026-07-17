@@ -1618,8 +1618,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } catch (_) { /* noop */ }
 
       let sent = false;
-      let videoFailed = false;
-      let hadVideo = false;
       let buttonsSent = false;
       for (let i = 0; i < items.length; i++) {
         const it = items[i];
@@ -1661,7 +1659,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const m = it.media;
         if (!m?.url) continue;
         const kind = ["audio", "video", "image"].includes(it.kind) ? it.kind : "document";
-        if (kind === "video") hadVideo = true;
 
         const canSend = await canSendMediaOnce(supabase, {
           consultantId: customer.consultant_id,
@@ -1707,33 +1704,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               conversation_step: stepKey,
             });
             if (!isLast) await sleepForMedia(kind, Number(m.duration_sec || 0) || null);
-          } else if (kind === "video") {
-            videoFailed = true;
           }
         } catch (e) {
-          if (kind === "video") videoFailed = true;
           console.warn(`[dispatch:${stepKey}] envio de ${kind} falhou:`, (e as any)?.message);
-        }
-      }
-
-      // F10 — Fallback variant C → B quando o vídeo inicial falha.
-      // Critério: variant=C, slot tinha vídeo, vídeo falhou e nada foi entregue.
-      // Promove o customer para B e re-dispara o mesmo step.
-      const _variant = (customer as any)?.flow_variant || "A";
-      if (_variant === "C" && hadVideo && videoFailed && !sent) {
-        console.warn(`[dispatch:${stepKey}] [variant-c] video failed, fallback to B`, {
-          customerId: customer.id,
-          stepKey,
-        });
-        try {
-          await supabase
-            .from("customers")
-            .update({ flow_variant: "B", updated_at: new Date().toISOString() })
-            .eq("id", customer.id);
-          (customer as any).flow_variant = "B";
-          return await dispatchStepFromFlow(stepKey, extraVars);
-        } catch (e) {
-          console.warn(`[dispatch:${stepKey}] fallback C→B falhou:`, (e as any)?.message);
         }
       }
 

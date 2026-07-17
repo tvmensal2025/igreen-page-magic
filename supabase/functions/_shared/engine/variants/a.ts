@@ -239,6 +239,5 @@ export const variantA: VariantStrategy = {
   },
 };
 
-// Internal helper for the runner's variant-C short-circuit. Public so
-// other variant modules (B, D) can build idempotency keys consistently.
+// Helpers compartilhados pelos demais módulos de variantes.
 export type { BotFlow, BotFlowStep, ChannelCapabilities, EngineConfig };

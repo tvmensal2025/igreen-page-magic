@@ -252,25 +252,7 @@ function runEngineInner(input: EngineInput): EngineOutput {
     didResetStep = true;
   }
 
-  // ─── Step 2: variant C short-circuit ─────────────────────────────────
-  if (input.flow.variant === "C") {
-    const ctx = makeFallbackContext(input, {
-      ...step,
-      fallback: { ...step.fallback, mode: "humano", handoff_reason: "variant_c_not_supported" },
-    });
-    const r = humanoHandler.handle(ctx);
-    return {
-      outbound: r.outbound,
-      stateUpdate: r.stateUpdate,
-      logs: [
-        ...enterLogs,
-        makeLog("engine_variant_unsupported", input, step.id, { variant: "C" }),
-        ...r.logs,
-      ],
-    };
-  }
-
-  // ─── Step 3: capture extraction ──────────────────────────────────────
+  // ─── Step 2: capture extraction ──────────────────────────────────────
   let captured: Record<string, unknown> = {};
   const captureLogs: StructuredLog[] = [];
   try {
