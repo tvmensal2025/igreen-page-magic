@@ -18,10 +18,15 @@ const MODEL_V3 = "eleven_v3";
 
 // Ajustes fonéticos para PT-BR no ElevenLabs v3:
 // - "iGreen" -> "iGrín" (evita leitura em inglês "ai-grín")
-// - "Rafael Ferreira" com acento tônico claro
-const BODY_TEXT = `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGrín Energia.
+// - masculino: "díga" força a pronúncia correta da palavra "diga" no TTS
+const BODY_TEXT_BY_GENDER: Record<"masculino" | "feminino", string> = {
+  feminino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
 
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`;
+Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
+  masculino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGrín Energia.
+
+Para eu montar a simulação, me díga quanto você está gastando por mês na conta de luz.`,
+};
 
 // Voice settings v3 alinhado ao corpo A2 (mesmo perfil natural PT-BR).
 const VOICE_SETTINGS_V3 = {
@@ -50,6 +55,7 @@ Deno.serve(async (req) => {
   let body: { gender?: string };
   try { body = await req.json(); } catch { body = {}; }
   const gender = body.gender === "feminino" ? "feminino" : "masculino";
+  const ttsText = BODY_TEXT_BY_GENDER[gender];
 
   try {
     const elRes = await fetch(
@@ -61,7 +67,7 @@ Deno.serve(async (req) => {
           "xi-api-key": ELEVENLABS_KEY,
         },
         body: JSON.stringify({
-          text: BODY_TEXT,
+          text: ttsText,
           model_id: MODEL_V3,
           language_code: "pt",
           voice_settings: VOICE_SETTINGS_V3,
@@ -101,7 +107,7 @@ Deno.serve(async (req) => {
     if (upErr) throw upErr;
 
     const { data: pub } = admin.storage.from("tts-cache").getPublicUrl(path);
-    return new Response(JSON.stringify({ ok: true, gender, url: pub.publicUrl, bytes: audioBuf.byteLength }), {
+    return new Response(JSON.stringify({ ok: true, gender, url: pub.publicUrl, bytes: audioBuf.byteLength, text: ttsText }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

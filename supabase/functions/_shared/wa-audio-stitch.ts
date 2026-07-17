@@ -36,7 +36,7 @@ export const A2_BODY_TEXT: Record<SpeechGender, string> = {
 Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
   masculino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
 
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
+Para eu montar a simulação, me díga quanto você está gastando por mês na conta de luz.`,
 };
 
 export const A3_BODY_TEXT = `Deixa eu te explicar de um jeito simples como funciona o benefício.
