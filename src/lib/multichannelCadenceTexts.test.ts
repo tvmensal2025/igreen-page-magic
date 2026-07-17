@@ -56,7 +56,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(audio?.body).toContain("{{nome}}");
     expect(audio?.body).toMatch(/Olá,\s*\{\{nome\}\}/);
     expect(audio?.body).toMatch(/gestor da iGreen/i);
-    expect(audio?.body).toMatch(/simulação|conta de luz/i);
+    expect(audio?.body).toMatch(/economizar|conta de luz/i);
     expect(audio?.audioSegments?.[0]?.text).toMatch(/Olá/i);
     expect(audio?.audioSegments?.some((s) => s.id === "a2_activate")).toBe(false);
     expect(text?.body).toContain("{{nome}}");
@@ -132,10 +132,10 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
         ]);
         for (const g of ["feminino", "masculino"] as const) {
           const filtered = filterSegmentsForGender(segs, g);
-          const maxSegs = t.key === "a2_audio_activate_name" ? 4 : 2;
+          const maxSegs = 2;
           expect(filtered.length, `${t.key}:${g}`).toBeLessThanOrEqual(maxSegs);
           const names = filtered.filter((s) => s.kind === "name" || s.kind === "with_name");
-          const maxNames = t.key === "a2_audio_activate_name" ? 2 : 1;
+          const maxNames = 1;
           expect(names.length, `${t.key}:${g}`).toBeLessThanOrEqual(maxNames);
           if (names.length === 1) {
             expect(["name", "with_name"]).toContain(filtered[0]?.kind);
@@ -159,7 +159,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     }
   });
 
-  it("passo 2 usa Olá+nome + corpos M/F; passo 3 só nome + explicação (sem Então)", () => {
+  it("passo 2 Olá+nome + corpos M/F; passos 3/4a só nome + corpo fixo", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
@@ -195,7 +195,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a5b?.pairedAudioKey).toBe("a5_audio_club_benefits");
   });
 
-  it("nome falado isolado no passo 3; passo 2 usa Olá+nome", () => {
+  it("passo 2 usa Olá+nome; passos 3 e 4a só o nome", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     expect(a2?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Olá, {{nome}}.");
@@ -224,7 +224,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const m = a2?.audioSegments?.find((s) => s.genderVariant === "masculino")?.text ?? "";
     expect(f).toMatch(/gestor da iGreen/i);
     expect(m).toMatch(/gestor da iGreen/i);
-    expect(f).toMatch(/Rafael Ferreira Dias/i);
+    expect(f).toMatch(/Rafael, gestor/i);
     expect(f).not.toContain("{{bem_vindo}}");
     expect(m).not.toContain("{{bem_vindo}}");
     expect(cadenceAudioUrlKey("a2_audio_activate_name", "feminino")).toBe(

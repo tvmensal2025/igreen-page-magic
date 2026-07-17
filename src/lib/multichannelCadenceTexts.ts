@@ -21,13 +21,13 @@ function tplReplace(text: string, needle: string, value: string): string {
   return text.split(needle).join(value);
 }
 
-/** Abertura oficial — áudio WA e ligação (Sofia). */
+/** Abertura oficial — áudio WA (corpo fixo A2, igual ao salvo no painel/biblioteca). */
 export const SOFIA_OPENING =
-  "Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.";
+  "Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.";
 
 export const A2_BODY_EXPLAIN = `${SOFIA_OPENING}
 
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`;
+Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`;
 
 /** Cumprimento curto + abertura (para colar no início do roteiro). */
 export function sofiaAudioLead(opts: { withName?: boolean } = {}): string {
@@ -696,13 +696,17 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     key: "a2_audio_activate_name",
     group: "A",
     channel: "whatsapp_audio",
-    title: "2a — Áudio: Olá+{{nome}} · nome · Sofia/Rafael",
+    title: "2a — Áudio: Olá+{{nome}} · Sofia/Rafael",
     timing: "Após nome salvo · antes de pedir valor",
     canGenerateAudio: true,
     notes:
-      "2 cortes: 1) Olá+Nome (variável · PT-BR) 2) corpo FIXO M/F (já gerado no painel). Motor NÃO regenera corpo.",
+      "2 cortes: 1) Olá+Nome (variável · PT-BR · cache 200+ nomes) 2) corpo FIXO M/F (sem {{nome}} · já gerado no painel). Motor NÃO regenera corpo.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável · PT-BR)" },
+      {
+        ...SEG_NAME_GREET,
+        id: "a2_name",
+        label: "1 · Olá + nome (único corte variável · PT-BR)",
+      },
       {
         id: "a2_body_feminino",
         kind: "fixed",

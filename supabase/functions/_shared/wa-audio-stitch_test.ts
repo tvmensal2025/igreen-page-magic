@@ -11,6 +11,13 @@ const A2_SPEC = {
   bodyText: () => "",
 };
 
+const A2_NOME_ONLY = {
+  baseSlot: "a2_audio_activate_name",
+  introMode: "nome_only" as const,
+  genderedBody: true,
+  bodyText: () => "",
+};
+
 const A3_SPEC = {
   baseSlot: "a3_explain_with_buttons",
   introMode: "nome_only" as const,
@@ -25,9 +32,14 @@ const A5_SPEC = {
   bodyText: () => "",
 };
 
-Deno.test("buildStitchSlotCandidates: A2 ola_greet usa só ola6 (2 cortes)", () => {
+Deno.test("buildStitchSlotCandidates: A2 ola_greet usa ola6 (Olá+nome + corpo)", () => {
   const slots = buildStitchSlotCandidates(A2_SPEC, "masculino", "lucas");
   assertEquals(slots, ["stitch:a2_audio_activate_name:ola6:masculino:lucas"]);
+});
+
+Deno.test("buildStitchSlotCandidates: A2 nome_only usa n5 (legado)", () => {
+  const slots = buildStitchSlotCandidates(A2_NOME_ONLY, "masculino", "lucas");
+  assertEquals(slots, ["stitch:a2_audio_activate_name:n5:masculino:lucas"]);
 });
 
 Deno.test("buildStitchSlotCandidates: A3 só n5 (nome PT-BR ancorado)", () => {

@@ -3509,16 +3509,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         } else {
           // UUID/step_key órfão (passo deletado, fluxo trocado ou step de OUTRO consultor)
           console.warn(`[custom-step-resolver] step "${step}" não encontrado no fluxo ativo — tentando recuperar`);
-          // 🛡️ FIX 2026-06-06: se já temos a conta e o lead respondeu algo
-          // afirmativo (1/sim/cadastrar/...), avança para pedir documento em
-          // vez de cair em welcome.
-          const _afterBill = !!(customer as any)?.electricity_bill_value;
+          // 🛡️ FIX 2026-06-06: step órfão + resposta afirmativa → retoma pelo
+          // estado REAL do lead (foto/OCR/confirmação), não só electricity_bill_value
+          // (estimativa da simulação rápida não conta como conta enviada).
           const _t = String(messageText || "").trim().toLowerCase();
           const _afirm = /^(1|sim|s|ok|claro|quero|cadastrar|cadastrar.?me|quero\s+me\s+cadastrar|continuar|bora|vamos)\b/.test(_t)
             || /^(btn_)?(quero_cadastrar|cadastrar)\b/.test(String(buttonId || "").toLowerCase());
-          if (_afterBill && _afirm) {
-            console.log(`[custom-step-resolver] órfão+afirm → avançando para aguardando_doc_auto`);
-            step = "aguardando_doc_auto";
+          if (_afirm) {
+            const resumed = resolveResumeStep(customer);
+            console.log(`[custom-step-resolver] órfão+afirm → resume ${resumed} (hasBillData=${hasBillData(customer)})`);
+            step = resumed;
           } else {
             if (!stepIsUuid) {
               await dispatchStepFromFlow(step).catch(() => false);

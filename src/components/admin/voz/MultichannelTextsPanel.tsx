@@ -74,6 +74,21 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
+/** Stitches nome+corpo ficam stale quando o corpo fixo é regerado no painel. */
+async function deactivatePersonalizedStitches(
+  consultantId: string,
+  cadenceKey: string,
+): Promise<void> {
+  const prefix = `stitch:${cadenceKey}:`;
+  const { error } = await supabase
+    .from("ai_media_library")
+    .update({ active: false, updated_at: new Date().toISOString() })
+    .eq("consultant_id", consultantId)
+    .like("slot_key", `${prefix}%`)
+    .eq("active", true);
+  if (error) console.warn("[multichannel] desativar stitches:", error.message);
+}
+
 const GROUP_TABS: { id: CadenceGroup | "all"; label: string }[] = [
   { id: "A", label: "Grupo A" },
   { id: "B", label: "Grupo B" },
@@ -567,7 +582,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           [storageKey]: String((clip as { id: string }).id),
         };
 
-        // Corpo fixo (sem nome) — motor Whapi costura "Olá, {nome}." em runtime.
+        // Corpo fixo (sem nome) — motor costura Olá+nome (passo 2) ou só nome (3/4a) em runtime.
         const bodySegs = segsForRun.filter((s) => s.kind !== "name");
         if (bodySegs.length > 0 && hasSegments) {
           const bodySpoken = bodySegs
@@ -611,6 +626,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             totalCuts += bodyResult.total;
 
             if (consultantId) {
+              const bodyTextContent = bodySpoken.join("\n\n").trim();
               try {
                 await supabase
                   .from("ai_media_library")
@@ -624,6 +640,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   kind: "audio",
                   label: `Sofia corpo · ${selected.title}${genderLabel}`.slice(0, 120),
                   url: bodyUrl,
+                  text_content: bodyTextContent.slice(0, 8000),
                   active: true,
                   send_order: 0,
                   is_draft: false,
@@ -631,6 +648,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   delay_before_ms: 0,
                   priority: 10,
                 });
+                await deactivatePersonalizedStitches(consultantId, selected.key);
               } catch (bodyMirrorErr) {
                 console.warn("[multichannel] corpo ai_media_library:", bodyMirrorErr);
               }
@@ -992,10 +1010,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                               Passo 4 (benefício): <strong>só o nome</strong> no início → corpo
                               fixo do clube (sem Olá de novo).
                             </>
+                          ) : selected?.key === "a2_audio_activate_name" ? (
+                            <>
+                              Passo 2: <strong>Olá + nome</strong> (1 corte variável) → corpo fixo
+                              Sofia/Rafael gestor (M/F). Reutiliza cache de 200+ nomes.
+                            </>
                           ) : (
                             <>
-                              Passo 2: <strong>Olá + nome</strong> → <strong>só o nome</strong> →{" "}
-                              corpo fixo Sofia/Rafael gestor. Passo 3: só o nome + explicação.
+                              Passo 3: só o nome + explicação fixa. Passo 4a: só o nome + clube.
                             </>
                           )}
                         </p>
@@ -1069,13 +1091,13 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                               <p className="text-[10px] text-muted-foreground mt-1 font-sans">
                                 {nameLead ? (
                                   <>
-                                    TTS com pausa: “{nameLead}... {firstNome}...” — Olá + nome
-                                    no mesmo corte (passo 2).
+                                    TTS com pausa: “{nameLead}... {firstNome}...” — Olá + nome no
+                                    mesmo corte (passo 2 · cache por nome).
                                   </>
                                 ) : (
                                   <>
-                                    Só o nome (passo 3). Em seguida vem a explicação fixa — sem
-                                    “Então”.
+                                    Só o nome (passos 3 e 4a). Em seguida vem o corpo fixo salvo no
+                                    painel — sem Olá nem “Então”.
                                   </>
                                 )}
                               </p>

@@ -29,14 +29,14 @@ const SOFIA_MODEL = SOFIA_MODEL_V3;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
-/** Textos fixos do corpo A2 (espelho do catálogo multicanal). Sem “Seja bem-vindo(a)” — isso fica no Olá+nome. */
+/** Corpo A2 aprovado no painel (ai_media_library __body_*). Nome vai em corte separado. */
+const A2_BODY_CANONICAL = `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
+
+Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`;
+
 export const A2_BODY_TEXT: Record<SpeechGender, string> = {
-  feminino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
-
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
-  masculino: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
-
-Para eu montar a simulação, me díga quanto você está gastando por mês na conta de luz.`,
+  feminino: A2_BODY_CANONICAL,
+  masculino: A2_BODY_CANONICAL,
 };
 
 export const A3_BODY_TEXT = `Deixa eu te explicar de um jeito simples como funciona o benefício.
@@ -75,7 +75,7 @@ type PersonalizeSpec = {
 const SPECS: Record<string, PersonalizeSpec> = {
   a2_audio_activate_name: {
     baseSlot: "a2_audio_activate_name",
-    // Passo 2: “Olá, Nome.” (PT-BR) + corpo FIXO M/F (2 cortes).
+    // Passo 2: Olá+nome (ptbr2/ola6 · 200+ nomes) + corpo FIXO M/F — passos 3/4a usam só nome.
     introMode: "ola_greet",
     genderedBody: true,
     bodyText: (g) => A2_BODY_TEXT[g],
@@ -275,20 +275,103 @@ export function buildStitchSlotCandidates(
   return [canonical];
 }
 
+function bodySlotForSpec(spec: PersonalizeSpec, gender: SpeechGender): string {
+  return spec.genderedBody
+    ? `${spec.baseSlot}__body_${gender}`
+    : `${spec.baseSlot}__body`;
+}
+
+async function slotUpdatedAtMs(
+  admin: any,
+  consultantId: string,
+  slotKey: string,
+): Promise<number | null> {
+  const { data } = await admin
+    .from("ai_media_library")
+    .select("updated_at, created_at")
+    .eq("consultant_id", consultantId)
+    .eq("slot_key", slotKey)
+    .eq("active", true)
+    .maybeSingle();
+  if (!data) return null;
+  const raw = data.updated_at || data.created_at;
+  if (!raw) return null;
+  const ms = new Date(String(raw)).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Stitch completo fica inválido se corpo ou intro nome foram regerados depois. */
+async function isStitchCacheFresh(
+  admin: any,
+  consultantId: string,
+  stitchSlotKey: string,
+  spec: PersonalizeSpec,
+  gender: SpeechGender,
+  nameNorm: string,
+): Promise<boolean> {
+  const stitchMs = await slotUpdatedAtMs(admin, consultantId, stitchSlotKey);
+  if (!stitchMs) return false;
+
+  const bodyMs = await slotUpdatedAtMs(
+    admin,
+    consultantId,
+    bodySlotForSpec(spec, gender),
+  );
+  if (bodyMs != null && stitchMs < bodyMs) return false;
+
+  if (spec.introMode === "nome_only") {
+    for (const introKey of buildIntroSlotCandidates("nome", nameNorm)) {
+      const introMs = await slotUpdatedAtMs(admin, consultantId, introKey);
+      if (introMs != null && stitchMs < introMs) return false;
+    }
+  } else {
+    for (const introKey of buildIntroSlotCandidates("ola", nameNorm)) {
+      const introMs = await slotUpdatedAtMs(admin, consultantId, introKey);
+      if (introMs != null && stitchMs < introMs) return false;
+    }
+  }
+
+  // ola6 legado: nunca reutilizar após A2 passar a nome_only (n5).
+  if (/:ola6:/.test(stitchSlotKey) && spec.introMode === "nome_only") return false;
+
+  return true;
+}
+
 async function findCachedStitchUrl(
   admin: any,
   consultantId: string,
   slotCandidates: string[],
+  freshness?: {
+    spec: PersonalizeSpec;
+    gender: SpeechGender;
+    nameNorm: string;
+  },
 ): Promise<{ url: string; slotKey: string; fromLegacy: boolean } | null> {
-  const hit = await findCachedMediaUrl(admin, consultantId, slotCandidates);
-  if (!hit) return null;
-  // Lote 16/07 / ola3/n3/ola4 = legado; ola5/n4 = canônico (voz unificada + texto oficial).
-  const fromLegacy = !/:ola5:|:n4:/.test(hit.slotKey);
-  return {
-    url: hit.url,
-    slotKey: hit.slotKey,
-    fromLegacy,
-  };
+  for (const candidate of slotCandidates) {
+    const hit = await findCachedMediaUrl(admin, consultantId, [candidate]);
+    if (!hit) continue;
+    if (freshness) {
+      const fresh = await isStitchCacheFresh(
+        admin,
+        consultantId,
+        hit.slotKey,
+        freshness.spec,
+        freshness.gender,
+        freshness.nameNorm,
+      );
+      if (!fresh) {
+        console.log(`[wa-stitch] stitch stale slot=${hit.slotKey} — remontando do corpo salvo`);
+        continue;
+      }
+    }
+    const fromLegacy = !/:ola5:|:n4:|:n5:/.test(hit.slotKey);
+    return {
+      url: hit.url,
+      slotKey: hit.slotKey,
+      fromLegacy,
+    };
+  }
+  return null;
 }
 
 /**
@@ -310,35 +393,32 @@ export async function probePersonalizedWaAudioCache(
   const gender = inferSpeechGender(display);
   const nameNorm = normalizeCallName(display);
   const candidates = buildStitchSlotCandidates(spec, gender, nameNorm);
-  const stitchHit = await findCachedStitchUrl(admin, opts.consultantId, candidates);
+  const freshCtx = { spec, gender, nameNorm };
+  const stitchHit = await findCachedStitchUrl(admin, opts.consultantId, candidates, freshCtx);
   if (stitchHit) return true;
 
-  const bodySlot = spec.genderedBody
-    ? `${spec.baseSlot}__body_${gender}`
-    : `${spec.baseSlot}__body`;
+  const bodySlot = bodySlotForSpec(spec, gender);
   const bodyUrl = await findActiveUrl(admin, opts.consultantId, bodySlot);
   if (!bodyUrl) return false;
 
-  // A2 ola_greet: Olá+nome (variável) + corpo FIXO M/F. Sem “só o nome” no meio.
-  if (spec.baseSlot === "a2_audio_activate_name" && spec.introMode === "ola_greet") {
-    const olaHit = await findCachedMediaUrl(
-      admin,
-      opts.consultantId,
-      buildIntroSlotCandidates("ola", nameNorm),
-    );
-    const bodySlot = `${spec.baseSlot}__body_${gender}`;
-    const bodyUrl = await findActiveUrl(admin, opts.consultantId, bodySlot);
-    return !!(olaHit && bodyUrl);
-  }
-
-  // A2/A3 nome_only: intro:nome (sem Olá). ola_greet legado: intro:ola.
+  // Todos os passos A2/A3/A5: intro:nome:ptbr3 + corpo FIXO __body_* (salvo no painel).
   if (spec.introMode === "nome_only") {
     const nomeHit = await findCachedMediaUrl(
       admin,
       opts.consultantId,
       buildIntroSlotCandidates("nome", nameNorm),
     );
-    return !!nomeHit;
+    return !!(nomeHit && bodyUrl);
+  }
+
+  // A2 ola_greet: intro:ola:ptbr2 + corpo FIXO __body_* (200+ nomes em cache).
+  if (spec.baseSlot === "a2_audio_activate_name" && spec.introMode === "ola_greet") {
+    const olaHit = await findCachedMediaUrl(
+      admin,
+      opts.consultantId,
+      buildIntroSlotCandidates("ola", nameNorm),
+    );
+    return !!(olaHit && bodyUrl);
   }
 
   const olaHit = await findCachedMediaUrl(
@@ -481,11 +561,13 @@ export async function pickSafePersonalizedWaAudio(
     customerName: opts.customerName,
   });
 
-  // 1) Stitch completo já na biblioteca (245+ MP3 Sofia) — URL direta, zero assembly/TTS.
+  // 1) Stitch completo — só se ainda bate com corpo/nome salvos no painel.
+  const freshCtx = { spec, gender, nameNorm };
   const directStitch = await findCachedStitchUrl(
     admin,
     opts.consultantId,
     buildStitchSlotCandidates(spec, gender, nameNorm),
+    freshCtx,
   );
   if (directStitch) {
     // Usa URL do lote Sofia direto — NÃO promove para ola3 (evita recriar slot TTS).
@@ -935,7 +1017,7 @@ export async function warmPersonalizedWaAudio(
 /**
  * Resolve URL final personalizada.
  * A2: “Olá, Nome.” (PT-BR) + corpo FIXO M/F (2 cortes)
- * A3/A5: só o nome (PT-BR) + corpo FIXO
+ * A2: Olá+nome (PT-BR) + corpo FIXO · A3/A5: só o nome + corpo FIXO
  * Em runtime SÓ gera Olá+nome e/ou Nome — nunca regenera o corpo fixo.
  */
 export async function resolvePersonalizedWaAudio(
@@ -959,7 +1041,12 @@ export async function resolvePersonalizedWaAudio(
   const slotCandidates = buildStitchSlotCandidates(spec, gender, nameNorm);
 
   try {
-    const cachedHit = await findCachedStitchUrl(admin, opts.consultantId, slotCandidates);
+    const cachedHit = await findCachedStitchUrl(
+      admin,
+      opts.consultantId,
+      slotCandidates,
+      { spec, gender, nameNorm },
+    );
     if (cachedHit) {
       console.log(
         `[wa-stitch] cache hit slot=${cachedHit.slotKey} name=${display} legacy=${cachedHit.fromLegacy}`,
