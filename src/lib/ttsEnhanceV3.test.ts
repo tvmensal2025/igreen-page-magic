@@ -23,18 +23,19 @@ describe("enhanceScriptForV3", () => {
     expect(enhanceScriptForV3("Olá.... mundo")).toBe("Olá. mundo");
   });
 
-  it("namePause separa Olá do nome e fecha calmo", () => {
+  it("namePause separa Olá do nome e vira chamada", () => {
     const out = enhanceScriptForV3("Olá, Maria.", { namePause: true });
-    expect(out).toBe("Olá... Maria...");
+    expect(out).toBe("Olá... Maria!");
     expect(out).not.toContain("[short pause]");
     expect(out).not.toContain("....");
   });
 
-  it("namePause separa Então do nome e fecha calmo (passo 3)", () => {
+  it("namePause separa Então do nome e vira chamada (passo 3)", () => {
     const out = enhanceScriptForV3("Então, Maria.", { namePause: true });
-    expect(out).toBe("Então... Maria...");
-    expect(formatNameGreetForTts("Então, João.")).toBe("Então... João...");
+    expect(out).toBe("Então... Maria!");
+    expect(formatNameGreetForTts("Então, João.")).toBe("Então... João!");
   });
+
 
   it("edgePad coloca respiro no início e no fim", () => {
     const out = enhanceScriptForV3("Seja muito bem-vinda.", { edgePad: true });
