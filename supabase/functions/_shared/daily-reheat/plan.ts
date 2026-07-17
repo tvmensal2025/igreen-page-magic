@@ -1,7 +1,9 @@
 /**
- * daily-reheat — helpers de seleção (Fase 0: só planejamento).
- * NÃO envia WhatsApp / SMS / ligação.
+ * daily-reheat — seleção de candidatos + fila due (máquina de estados).
+ * Este módulo NÃO envia; o cron/dispatch decide live vs dry.
  */
+
+import { firstStep, stepDef, type CycleQueue } from "./cycle.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -265,37 +267,25 @@ export async function planDailyReheat(
       return;
     }
 
-    if (queue === "A") {
-      rawPlans.push({
-        customer_id: c.id,
-        consultant_id: c.consultant_id,
-        queue: "A",
-        step: "open",
-        phone_tail: phoneTail(c.phone_whatsapp),
-        name: c.name,
-        planned_actions: ["open_attendance", "send_audio", "start_flow"],
-        would_consume_whapi: true,
-        would_call: false,
-        would_sms: false,
-        reason: `novo_wait_${settings.queue_a_wait_minutes}min`,
-        guards: [],
-      });
-    } else {
-      rawPlans.push({
-        customer_id: c.id,
-        consultant_id: c.consultant_id,
-        queue: "B",
-        step: "call1",
-        phone_tail: phoneTail(c.phone_whatsapp),
-        name: c.name,
-        planned_actions: ["call", "open_attendance", "send_audio"],
-        would_consume_whapi: true,
-        would_call: true,
-        would_sms: false,
-        reason: `frio_age_${settings.cold_min_age_hours}h`,
-        guards: [],
-      });
-    }
+    const q = queue as CycleQueue;
+    const first = firstStep(q);
+    rawPlans.push({
+      customer_id: c.id,
+      consultant_id: c.consultant_id,
+      queue: q,
+      step: first.id,
+      phone_tail: phoneTail(c.phone_whatsapp),
+      name: c.name,
+      planned_actions: [...first.actions],
+      would_consume_whapi: first.would_consume_whapi,
+      would_call: first.would_call,
+      would_sms: first.would_sms,
+      reason:
+        q === "A"
+          ? `novo_wait_${settings.queue_a_wait_minutes}min`
+          : `frio_age_${settings.cold_min_age_hours}h`,
+      guards: [],
+    });
   };
 
   for (const c of rowsA || []) consider(c, "A");
@@ -348,3 +338,79 @@ export async function planDailyReheat(
     scannedB: (rowsB || []).length,
   };
 }
+
+/**
+ * Itens da fila já inscritos cujo next_action_at chegou — um passo por tick.
+ */
+export async function loadDueQueuePlans(
+  supabase: SB,
+  opts: { cycleDate: string; limit?: number } = { cycleDate: cycleDateBRT() },
+): Promise<CandidatePlan[]> {
+  const limit = opts.limit ?? 40;
+  const nowIso = new Date().toISOString();
+  const { data: rows } = await supabase
+    .from("daily_reheat_queue")
+    .select(
+      "customer_id, consultant_id, queue, step, planned_actions, status, next_action_at",
+    )
+    .eq("cycle_date", opts.cycleDate)
+    .in("status", ["planned", "claimed"])
+    .lte("next_action_at", nowIso)
+    .order("next_action_at", { ascending: true })
+    .limit(limit);
+
+  if (!rows?.length) return [];
+
+  const ids = rows.map((r: any) => r.customer_id);
+  const { data: custs } = await supabase
+    .from("customers")
+    .select("id, name, phone_whatsapp, do_not_contact, bot_paused, assigned_human_id")
+    .in("id", ids);
+  const byId = new Map((custs || []).map((c: any) => [c.id, c]));
+
+  const plans: CandidatePlan[] = [];
+  for (const r of rows as any[]) {
+    const c = byId.get(r.customer_id);
+    if (!c) continue;
+    if (c.do_not_contact || c.bot_paused || c.assigned_human_id) {
+      await supabase
+        .from("daily_reheat_queue")
+        .update({
+          status: "skipped",
+          skip_reason: c.do_not_contact
+            ? "do_not_contact"
+            : c.bot_paused
+              ? "bot_paused"
+              : "assigned_human",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_id", r.customer_id)
+        .eq("cycle_date", opts.cycleDate);
+      continue;
+    }
+
+    const queue = (r.queue === "B" ? "B" : "A") as CycleQueue;
+    const def = stepDef(queue, String(r.step || "")) || firstStep(queue);
+    const actions =
+      Array.isArray(r.planned_actions) && r.planned_actions.length > 0
+        ? (r.planned_actions as PlannedAction[])
+        : [...def.actions];
+
+    plans.push({
+      customer_id: r.customer_id,
+      consultant_id: r.consultant_id,
+      queue,
+      step: def.id,
+      phone_tail: phoneTail(c.phone_whatsapp),
+      name: c.name,
+      planned_actions: actions,
+      would_consume_whapi: def.would_consume_whapi,
+      would_call: def.would_call,
+      would_sms: def.would_sms,
+      reason: `due_step_${def.id}`,
+      guards: [],
+    });
+  }
+  return plans;
+}
+

@@ -1,14 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Mic, Image as ImageIcon, Video, Trash2, Upload, ArrowUp, ArrowDown, Loader2, Library, Check } from "lucide-react";
+import { Mic, Image as ImageIcon, Video, Trash2, Upload, ArrowUp, ArrowDown, Loader2, Library, Check, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
 import AudioPlayer from "@/components/admin/media/AudioPlayer";
 import { prettyStepLabel } from "@/lib/posVenda/format";
+import {
+  cadenceBodyAudioUrlKey,
+  isSofiaStitchMediaSlot,
+  loadLibrary,
+  sofiaUploadTargetSlot,
+  stepMediaLookupKeys,
+} from "@/lib/multichannelCadenceTexts";
+import { APPROVED_A2_AUDIOS } from "@/lib/multichannelApprovedAudios";
 
 type Kind = "audio" | "image" | "video";
 type Media = {
@@ -78,7 +86,9 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   const confirm = useConfirm();
   const [items, setItems] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
-  const [order, setOrder] = useState<("audio" | "image" | "video" | "text")[]>(initialOrder ?? DEFAULT_ORDER);
+  const [order, setOrder] = useState<("audio" | "image" | "video" | "text")[]>(
+    initialOrder && initialOrder.length ? initialOrder : DEFAULT_ORDER,
+  );
   const [savingOrder, setSavingOrder] = useState(false);
   const fileInputs = useRef<Record<Kind, HTMLInputElement | null>>({ audio: null, image: null, video: null });
   const [uploading, setUploading] = useState<Kind | null>(null);
@@ -86,13 +96,28 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   const [libraryItems, setLibraryItems] = useState<Media[]>([]);
   const [loadingLibrary, setLoadingLibrary] = useState(false);
   const [linking, setLinking] = useState<string | null>(null);
-  // 🔧 Draft local de remoções (2026-05-28): cliques no lixo só MARCAM
-  // como pendente. O bot continua usando a mídia até o consultor clicar
-  // em "Salvar alterações". Evita exclusões acidentais que mudam o fluxo
-  // em produção sem aviso.
   const [pendingDeletes, setPendingDeletes] = useState<Set<string>>(new Set());
   const [savingDraft, setSavingDraft] = useState(false);
+  const [syncingSofia, setSyncingSofia] = useState(false);
   const hasPendingChanges = pendingDeletes.size > 0;
+
+  const primarySlot = slotKeys[0] || stepKey || "";
+  const lookupKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const sk of slotKeys) {
+      for (const k of stepMediaLookupKeys(sk)) keys.add(k);
+    }
+    if (stepKey) {
+      for (const k of stepMediaLookupKeys(stepKey)) keys.add(k);
+    }
+    return Array.from(keys);
+  }, [slotKeys.join("|"), stepKey]);
+  const isSofiaStitch = isSofiaStitchMediaSlot(primarySlot) || isSofiaStitchMediaSlot(stepKey);
+  /** C = Sofia Multicanal: edita mídia livremente. B legado ainda compartilha com A. */
+  const mediaLockedShared = variant === "B";
+  const audioUploadSlot = isSofiaStitch
+    ? sofiaUploadTargetSlot(primarySlot || stepKey, "feminino")
+    : primarySlot;
 
   async function openLibrary(kind: Kind) {
     setPickerKind(kind);
@@ -112,7 +137,10 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   }
 
   async function linkFromLibrary(m: Media) {
-    const slotKey = slotKeys[0];
+    const slotKey =
+      m.kind === "audio" && isSofiaStitch
+        ? sofiaUploadTargetSlot(primarySlot || stepKey, "feminino")
+        : slotKeys[0];
     if (!slotKey) return;
     setLinking(m.id);
     // Permite múltiplas mídias por passo: NÃO desativa as existentes.
@@ -157,7 +185,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   const [readOnlySync, setReadOnlySync] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!slotKeys.length) {
+    if (!lookupKeys.length) {
       setItems([]);
       setLoading(false);
       return;
@@ -203,20 +231,22 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
           .select("id, kind, label, url, storage_path, slot_key, send_order, duration_sec, delay_before_ms, original_size_bytes, final_size_bytes, transcript")
           .eq("consultant_id", ownerId)
           .eq("active", true)
-          .in("slot_key", slotKeys)
+          .in("slot_key", lookupKeys)
           .order("send_order", { ascending: true }),
         supabase.from("consultants").select("flow_step_media_order").eq("id", ownerId).maybeSingle(),
       ]);
       if (!error) setItems((data as Media[]) ?? []);
-      // Carrega ordem salva da UI (consultants.flow_step_media_order[stepKey]) — sem isso, o painel sempre mostra o default.
+      // Ordem: 1) salva no consultor 2) media_order do passo (initialOrder) 3) default
       const map = (cons?.flow_step_media_order as Record<string, string[]> | null) ?? {};
       const saved = map?.[stepKey];
-      if (Array.isArray(saved) && saved.length === 4) {
+      if (Array.isArray(saved) && saved.length >= 2) {
         setOrder(saved as ("audio" | "image" | "video" | "text")[]);
+      } else if (initialOrder && initialOrder.length >= 2) {
+        setOrder(initialOrder);
       }
       setLoading(false);
     })();
-  }, [consultantId, stepKey, slotKeys.join("|")]);
+  }, [consultantId, stepKey, lookupKeys.join("|"), variant]);
 
   function group(kind: Kind) {
     return items.filter(i => i.kind === kind);
@@ -353,9 +383,8 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   }
 
   async function removeMedia(m: Media) {
-    const isShared = variant === "B" || variant === "C";
-    if (isShared) {
-      toast.error("Mídias são compartilhadas entre A/B/C. Remova pela aba A. Na B, áudios já são ignorados automaticamente.");
+    if (mediaLockedShared) {
+      toast.error("Mídias são compartilhadas entre A/B. Remova pela aba A. Na B, áudios já são ignorados automaticamente.");
       return;
     }
     // 🔧 Draft local: NÃO apaga do banco aqui. Só marca como pendente.
@@ -372,6 +401,95 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
     }
     setPendingDeletes(prev => new Set(prev).add(m.id));
     toast.info(`"${m.label}" marcada para remoção. Clique em *Salvar alterações* para confirmar.`);
+  }
+
+  /** Garante corpos A2 (M/F) e A3 na library — evita painel vazio / falso erro. */
+  async function syncSofiaCadenceAudios() {
+    if (readOnlySync || mediaLockedShared) {
+      toast.error("Personalize o fluxo (modo custom) antes de sincronizar áudios.");
+      return;
+    }
+    setSyncingSofia(true);
+    try {
+      let inserted = 0;
+      const targets: Array<{ slot: string; url: string; label: string }> = [];
+      if (
+        primarySlot.includes("a2") ||
+        stepKey.includes("a2") ||
+        lookupKeys.some((k) => k.startsWith("a2_"))
+      ) {
+        for (const a of APPROVED_A2_AUDIOS) {
+          const bodySlot = sofiaUploadTargetSlot("a2_audio_activate_name", a.gender);
+          targets.push({
+            slot: bodySlot,
+            url: a.audioUrl,
+            label: a.label,
+          });
+        }
+      }
+      // A3: corpo fixo gerado no painel Multicanal (localStorage → __body).
+      if (
+        primarySlot.includes("a3") ||
+        stepKey.includes("a3") ||
+        lookupKeys.some((k) => k.startsWith("a3_"))
+      ) {
+        const lib = loadLibrary(consultantId);
+        const bodyKey = cadenceBodyAudioUrlKey("a3_explain_with_buttons");
+        const bodyUrl =
+          lib.audioUrls[bodyKey] ||
+          lib.audioUrls[cadenceBodyAudioUrlKey("a3_audio_explain")] ||
+          null;
+        if (bodyUrl) {
+          targets.push({
+            slot: bodyKey,
+            url: bodyUrl,
+            label: "Sofia corpo · explicação (passo 3)",
+          });
+        }
+      }
+      for (const t of targets) {
+        const { data: existing } = await supabase
+          .from("ai_media_library")
+          .select("id")
+          .eq("consultant_id", consultantId)
+          .eq("slot_key", t.slot)
+          .eq("active", true)
+          .limit(1)
+          .maybeSingle();
+        if (existing?.id) continue;
+        const { data: row, error } = await supabase
+          .from("ai_media_library")
+          .insert({
+            consultant_id: consultantId,
+            kind: "audio",
+            label: t.label.slice(0, 120),
+            slot_key: t.slot,
+            url: t.url,
+            active: true,
+            is_public: false,
+            send_order: 10 + inserted,
+            delay_before_ms: 0,
+          })
+          .select("id, kind, label, url, storage_path, slot_key, send_order, duration_sec, delay_before_ms, original_size_bytes, final_size_bytes")
+          .maybeSingle();
+        if (error) throw error;
+        if (row) {
+          setItems((prev) => [...prev, row as Media]);
+          inserted++;
+        }
+      }
+      if (inserted === 0) {
+        toast.message(
+          "Áudios Sofia já estavam no passo (ou gere o passo 3 em Voz → Textos Multicanal).",
+        );
+      } else {
+        toast.success(`${inserted} áudio(s) Sofia sincronizado(s) neste passo.`);
+      }
+    } catch (e: any) {
+      toast.error("Falha ao sincronizar: " + (e?.message || String(e)));
+    } finally {
+      setSyncingSofia(false);
+    }
   }
 
   // Aplica todas as remoções pendentes no banco quando o consultor clica
@@ -487,6 +605,11 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
               <div className="text-xs font-medium truncate">{m.label}</div>
               <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 flex-wrap">
                 <span>ordem: {m.send_order}</span>
+                {m.slot_key ? (
+                  <span className="font-mono truncate max-w-[140px]" title={m.slot_key}>
+                    · {m.slot_key}
+                  </span>
+                ) : null}
                 {m.duration_sec ? <span>· {m.duration_sec}s</span> : null}
                 {m.final_size_bytes ? (
                   m.original_size_bytes && m.original_size_bytes > m.final_size_bytes ? (
@@ -512,9 +635,9 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
               size="icon"
               className="h-7 w-7 no-underline"
               onClick={() => removeMedia(m)}
-              disabled={variant === "B" || variant === "C"}
+              disabled={mediaLockedShared}
               title={
-                (variant === "B" || variant === "C")
+                mediaLockedShared
                   ? "Mídias são compartilhadas. Remova pela aba A."
                   : pendingDeletes.has(m.id)
                     ? "Desfazer remoção"
@@ -558,7 +681,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
   function renderKindBlock(kind: Kind) {
     const list = group(kind);
     const Icon = KIND_ICON[kind];
-    const slotForUpload = slotKeys[0];
+    const slotForUpload = kind === "audio" ? audioUploadSlot : primarySlot;
     return (
       <div key={kind} className="space-y-2">
         <div className="flex items-center justify-between">
@@ -612,10 +735,32 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
             }}
           />
         </div>
+        {kind === "audio" && isSofiaStitch && list.length > 0 && (
+          <p className="text-[10px] text-muted-foreground px-1">
+            Cortes Sofia: o motor costura <strong>o nome</strong> em runtime + estes corpos
+            fixos. Slot de upload: <code className="text-[9px]">{audioUploadSlot}</code>
+          </p>
+        )}
         {list.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{list.map(renderMediaItem)}</div>
         ) : (
-          <div className="text-xs text-muted-foreground italic px-1">Nenhum {kind} cadastrado.</div>
+          <div className="text-xs text-muted-foreground italic px-1 space-y-1">
+            <div>Nenhum {kind} cadastrado.</div>
+            {kind === "audio" && isSofiaStitch && (
+              <div className="not-italic text-amber-700 dark:text-amber-400 space-y-1">
+                <p>
+                  Isto <strong>não</strong> significa que o WhatsApp fica sem áudio. O passo 3
+                  costura <strong>só o nome</strong> + corpo em tempo real (a prévia com Maria
+                  fica desligada de propósito).
+                </p>
+                <p>
+                  Gere o corpo em <strong>Voz → Textos Multicanal</strong> (passo 3 → Gerar
+                  áudio) ou use <strong>Sincronizar Sofia</strong> se o corpo já estiver no
+                  painel.
+                </p>
+              </div>
+            )}
+          </div>
         )}
       </div>
     );
@@ -629,7 +774,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
     );
   }
 
-  if (!slotKeys.length) return null;
+  if (!lookupKeys.length) return null;
 
   return (
     <div className="mt-3 pt-3 border-t border-border/60 space-y-4">
@@ -641,9 +786,27 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
         </div>
       )}
       <fieldset disabled={readOnlySync} className={readOnlySync ? "opacity-70 pointer-events-none select-none" : ""}>
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-semibold">Mídias deste passo</h4>
-        {hasPendingChanges && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {(isSofiaStitch || lookupKeys.some((k) => k.startsWith("a2_") || k.startsWith("a5_"))) && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs gap-1"
+              disabled={syncingSofia || readOnlySync || mediaLockedShared}
+              onClick={() => void syncSofiaCadenceAudios()}
+            >
+              {syncingSofia ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              Sincronizar Sofia
+            </Button>
+          )}
+          {hasPendingChanges && (
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="border-warning/60 text-warning dark:text-warning text-[10px]">
               {pendingDeletes.size} alteração(ões) pendente(s)
@@ -667,16 +830,42 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
               Salvar alterações
             </Button>
           </div>
-        )}
+          )}
+        </div>
       </div>
+
+      {isSofiaStitch && (
+        <div className="rounded-md border border-primary/30 bg-primary/5 p-2 text-[11px] text-muted-foreground space-y-1">
+          <p>
+            <strong className="text-foreground">Áudio Sofia com cortes:</strong> o WhatsApp recebe
+            o nome costurado em tempo real + corpo fixo (M/F no passo 2; só o nome no passo 3).
+            Os arquivos abaixo são os corpos — pode trocar/enviar/remover à vontade.
+          </p>
+          <p className="text-[10px]">
+            Também edite o roteiro em <strong>Voz → Textos Multicanal</strong> e regenere Sofia.
+          </p>
+        </div>
+      )}
 
       {(["audio", "image", "video"] as Kind[]).map(renderKindBlock)}
 
-      {/* R5 (2026-06-05): badge quando a ordem inclui um slot sem mídia uploadada — o webhook
-          pode despachar o slot e enviar "nada" (ou pior, uma URL órfã residual). */}
+      {/* R5: aviso só se falta mídia de verdade. Em stitch Sofia, corpos __body_* contam como áudio. */}
       {(() => {
         const presentKinds = new Set(items.filter(m => !pendingDeletes.has(m.id)).map(m => m.kind));
-        const missingSlots = order.filter(s => s !== "text" && !presentKinds.has(s as Kind));
+        const hasSofiaAudio =
+          presentKinds.has("audio") ||
+          (isSofiaStitch &&
+            items.some(
+              (m) =>
+                m.kind === "audio" &&
+                !pendingDeletes.has(m.id) &&
+                String(m.slot_key || "").includes("__body"),
+            ));
+        const missingSlots = order.filter((s) => {
+          if (s === "text") return false;
+          if (s === "audio" && (hasSofiaAudio || isSofiaStitch)) return false;
+          return !presentKinds.has(s as Kind);
+        });
         if (missingSlots.length === 0) return null;
         return (
           <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
@@ -724,7 +913,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, initia
           ))}
         </div>
         <p className="text-[10px] text-muted-foreground mt-2">
-          Define em que ordem a Camila envia as mídias e o texto deste passo.
+          Define em que ordem o bot envia as mídias e o texto deste passo.
         </p>
       </div>
 

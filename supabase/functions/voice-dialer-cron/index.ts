@@ -8,7 +8,6 @@ import {
   getCallStatus,
   inCallWindow,
   interpretStatus,
-  makeTTSCall,
   outcomeToTargetStatus,
   playAudioFile,
   toCtid,
@@ -16,6 +15,7 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { resolvePersonalizedCallAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const MAX_CAMPAIGNS = 5;
@@ -160,6 +160,7 @@ Deno.serve(async (req) => {
       windowEnd?: string;
       weekdaysOnly?: boolean;
       scheduledExact?: boolean;
+      personalize_name?: boolean;
     };
     if (!cfg.scheduledExact && !inCallWindow(cfg)) {
       report.push({ campaign_id: camp.id, skipped: "outside_window" });
@@ -167,26 +168,26 @@ Deno.serve(async (req) => {
     }
 
     const dispatchKind = ((camp as { dispatch_kind?: string }).dispatch_kind || "audio") as "audio" | "tts";
-    const ttsText = String((camp as { tts_text?: string }).tts_text || "").trim();
     const callerId = ((camp as { caller_id?: string }).caller_id || undefined) as string | undefined;
 
-    // Resolve audio_id Velip (só se dispatchKind === "audio")
+    // Regra Sofia: nunca discar com TTS Velip — só áudio (ElevenLabs).
+    if (dispatchKind === "tts") {
+      report.push({ campaign_id: camp.id, skipped: "sofia_required_no_velip_tts" });
+      continue;
+    }
+
+    // Resolve audio_id Velip
     let audioId: string | null = null;
-    if (dispatchKind === "audio") {
-      if (camp.audio_clip_id) {
-        const { data: clip } = await admin
-          .from("voice_audio_clips")
-          .select("velip_audio_id")
-          .eq("id", camp.audio_clip_id)
-          .maybeSingle();
-        audioId = clip?.velip_audio_id ?? null;
-      }
-      if (!audioId) {
-        report.push({ campaign_id: camp.id, skipped: "no_velip_audio_id" });
-        continue;
-      }
-    } else if (!ttsText) {
-      report.push({ campaign_id: camp.id, skipped: "no_tts_text" });
+    if (camp.audio_clip_id) {
+      const { data: clip } = await admin
+        .from("voice_audio_clips")
+        .select("velip_audio_id")
+        .eq("id", camp.audio_clip_id)
+        .maybeSingle();
+      audioId = clip?.velip_audio_id ?? null;
+    }
+    if (!audioId) {
+      report.push({ campaign_id: camp.id, skipped: "no_velip_audio_id" });
       continue;
     }
 
@@ -261,9 +262,36 @@ Deno.serve(async (req) => {
       }
 
       const dest = toVelipBRDest(t.phone) || t.phone;
-      const call = dispatchKind === "tts"
-        ? await makeTTSCall({ to: dest, ttsText, ctid: toCtid(t.id), timeLimitSec: 60, callerId })
-        : await playAudioFile({ to: dest, audioId: audioId!, ctid: toCtid(t.id), timeLimitSec: 40, callerId });
+
+      let dialAudioId = audioId;
+      let stitchMeta: Record<string, unknown> | null = null;
+      if (
+        dispatchKind === "audio" &&
+        Boolean(cfg.personalize_name) &&
+        camp.audio_clip_id
+      ) {
+        const st = await resolvePersonalizedCallAudio(admin, {
+          consultantId: camp.consultant_id,
+          bodyClipId: String(camp.audio_clip_id),
+          rawName: (t as { name?: string | null }).name,
+          fallbackToBody: true,
+        });
+        stitchMeta = {
+          stitch_ok: st.ok,
+          stitch_cached: st.cached ?? false,
+          stitch_fallback_body: st.fallback_body ?? false,
+          stitch_error: st.error ?? null,
+        };
+        if (st.ok && st.velip_audio_id) dialAudioId = st.velip_audio_id;
+      }
+
+      const call = await playAudioFile({
+        to: dest,
+        audioId: dialAudioId!,
+        ctid: toCtid(t.id),
+        timeLimitSec: 40,
+        callerId,
+      });
 
       if (!call.ok) {
         failedNow++;
@@ -282,7 +310,7 @@ Deno.serve(async (req) => {
           to_phone: dest,
           status: "failed",
           error: call.error ?? null,
-          raw: call.raw ?? {},
+          raw: { ...(call.raw as object ?? {}), ...(stitchMeta || {}) },
           velip_raw: call.raw ?? {},
         });
         continue;
@@ -297,10 +325,10 @@ Deno.serve(async (req) => {
         campaign_id: camp.id,
         target_id: t.id,
         consultant_id: camp.consultant_id,
-        velip_call_id: call.cd_id ?? null,
         to_phone: dest,
         status: "dialing",
-        raw: call.raw ?? {},
+        velip_call_id: call.cd_id ?? null,
+        raw: { ...(call.raw as object ?? {}), ...(stitchMeta || {}) },
         velip_raw: call.raw ?? {},
       });
       await new Promise((r) => setTimeout(r, 400));

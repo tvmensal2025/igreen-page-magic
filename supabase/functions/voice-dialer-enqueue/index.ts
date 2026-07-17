@@ -8,7 +8,6 @@ import { resolveCaller } from "../_shared/caller-auth.ts";
 import {
   createDestinationBase,
   createCampaign as velipCreateCampaign,
-  makeTTSCall,
   playAudioFile,
   toCtid,
   toVelipBRDest,
@@ -32,6 +31,8 @@ interface Body {
   campaign_name?: string;
   audio_clip_id?: string | null;
   audio_url?: string | null;
+  /** Velip content id já costurado (teste Sofia personalizado). */
+  velip_audio_id?: string | null;
   scheduled_at?: string | null;
   config?: Record<string, unknown>;
   phones?: TargetIn[];
@@ -40,6 +41,8 @@ interface Body {
   max_targets?: number;
   max_attempts?: number;
   test_phone?: string | null;
+  /** Nome do lead no teste (aparece no target / logs). */
+  test_name?: string | null;
   velip_mode?: "single" | "batch";
   /** 'audio' (default) ou 'tts' */
   dispatch_kind?: "audio" | "tts";
@@ -134,7 +137,14 @@ Deno.serve(async (req) => {
   }
 
   const action = body.action ?? "create_campaign";
-  const dispatchKind: "audio" | "tts" = body.dispatch_kind === "tts" ? "tts" : "audio";
+  // Regra iGreen: ligação = áudio Sofia (ElevenLabs). TTS Velip (robótico) bloqueado.
+  if (body.dispatch_kind === "tts") {
+    return json(422, {
+      error: "sofia_required",
+      message:
+        "Ligações usam só a voz Sofia (áudio do Estúdio / teste Sofia). TTS Velip foi desativado.",
+    });
+  }
 
   // ─── Teste: 1 ligação imediata ───────────────────────────────────────────
   if (action === "test_call") {
@@ -143,14 +153,21 @@ Deno.serve(async (req) => {
 
     let audioId: string | undefined;
     let audioUrl: string | null = null;
-    if (dispatchKind === "audio") {
-      if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
+    const directVelipId = typeof body.velip_audio_id === "string" ? body.velip_audio_id.trim() : "";
+    if (directVelipId) {
+      audioId = directVelipId;
+      audioUrl = typeof body.audio_url === "string" ? body.audio_url : null;
+    } else {
+      if (!body.audio_clip_id) {
+        return json(422, {
+          error: "sofia_required",
+          message: "Informe um áudio Sofia (clip). TTS Velip não é permitido.",
+        });
+      }
       const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
       if ("error" in aud) return json(502, { error: aud.error });
       audioId = aud.audio_id;
       audioUrl = aud.audio_url;
-    } else {
-      if (!body.tts_text?.trim()) return json(400, { error: "missing_tts_text" });
     }
 
     const { data: campaign, error: campErr } = await admin
@@ -158,14 +175,14 @@ Deno.serve(async (req) => {
       .insert({
         consultant_id: consultantId,
         name: body.campaign_name?.trim() || "Teste de ligação",
-        audio_clip_id: dispatchKind === "audio" ? body.audio_clip_id : null,
+        audio_clip_id: body.audio_clip_id ?? null,
         audio_url: audioUrl,
-        dispatch_kind: dispatchKind,
-        tts_text: body.tts_text ?? null,
-        tts_voice: body.tts_voice ?? null,
+        dispatch_kind: "audio",
+        tts_text: null,
+        tts_voice: null,
         caller_id: body.caller_id ?? null,
         dtmf_questions: Array.isArray(body.dtmf_questions) ? body.dtmf_questions : [],
-        config: { ...(body.config ?? {}), test: true, weekdaysOnly: false, windowStart: "00:00", windowEnd: "23:59" },
+        config: { ...(body.config ?? {}), test: true, weekdaysOnly: false, windowStart: "00:00", windowEnd: "23:59", sofia_only: true },
         status: "running",
         total: 1,
         started_at: new Date().toISOString(),
@@ -178,7 +195,12 @@ Deno.serve(async (req) => {
 
     const { data: target, error: tgtErr } = await admin
       .from("voice_campaign_targets")
-      .insert({ campaign_id: campaign.id, phone: dest, name: "Teste", status: "queued" })
+      .insert({
+        campaign_id: campaign.id,
+        phone: dest,
+        name: body.test_name?.trim() || "Teste",
+        status: "queued",
+      })
       .select("id")
       .single();
 
@@ -187,26 +209,53 @@ Deno.serve(async (req) => {
       return json(500, { error: tgtErr?.message ?? "target_insert_failed" });
     }
 
-    const callOpts = {
-      to: dest,
-      ctid: toCtid(target.id),
-      timeLimitSec: 60,
-      callerId: body.caller_id,
-    };
-    const call = dispatchKind === "tts"
-      ? await makeTTSCall({ ...callOpts, ttsText: body.tts_text! })
-      : await playAudioFile({ ...callOpts, audioId });
-
-    if (!call.ok) {
+    if (!audioId) {
       await admin
         .from("voice_campaign_targets")
-        .update({ status: "failed", error: call.error ?? "velip_error", finished_at: new Date().toISOString() })
+        .update({ status: "failed", error: "sofia_required", finished_at: new Date().toISOString() })
         .eq("id", target.id);
       await admin
         .from("voice_campaigns")
         .update({ status: "finished", failed: 1, dialed: 1, finished_at: new Date().toISOString() })
         .eq("id", campaign.id);
-      return json(502, { error: "velip_call_failed", detail: call.error, raw: call.raw });
+      return json(422, {
+        error: "sofia_required",
+        message: "Áudio Sofia obrigatório para discar.",
+      });
+    }
+
+    const callOpts = {
+      to: dest,
+      ctid: toCtid(target.id),
+      timeLimitSec: 60,
+      callerId: body.caller_id,
+      // Teste manual: libera Procon (BK_PROCON#250). Campanhas em massa NÃO usam free.
+      free: true,
+    };
+    const call = await playAudioFile({ ...callOpts, audioId });
+
+    if (!call.ok) {
+      const detail = call.error ?? "velip_error";
+      const friendly =
+        /BK_PROCON/i.test(detail)
+          ? "Número bloqueado no Procon (lista não-perturbe). No teste já enviamos free=1 — se persistir, confira o número na Velip."
+          : /#250\b/.test(detail)
+            ? "Velip recusou a ligação (código 250). Pode ser saldo, Procon ou falha do provedor."
+            : detail;
+      await admin
+        .from("voice_campaign_targets")
+        .update({ status: "failed", error: detail, finished_at: new Date().toISOString() })
+        .eq("id", target.id);
+      await admin
+        .from("voice_campaigns")
+        .update({ status: "finished", failed: 1, dialed: 1, finished_at: new Date().toISOString() })
+        .eq("id", campaign.id);
+      return json(502, {
+        error: "velip_call_failed",
+        detail,
+        message: friendly,
+        raw: call.raw,
+      });
     }
 
     await admin
@@ -232,15 +281,15 @@ Deno.serve(async (req) => {
 
   // ─── create_campaign ─────────────────────────────────────────────────────
 
-  let aud: { audio_id: string; audio_url: string } | null = null;
-  if (dispatchKind === "audio") {
-    if (!body.audio_clip_id) return json(400, { error: "missing_audio_clip_id" });
-    const r = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
-    if ("error" in r) return json(502, { error: r.error });
-    aud = r;
-  } else {
-    if (!body.tts_text?.trim()) return json(400, { error: "missing_tts_text" });
+  if (!body.audio_clip_id) {
+    return json(422, {
+      error: "sofia_required",
+      message: "Campanha de ligação exige áudio Sofia (clip do Estúdio).",
+    });
   }
+  const aud = await ensureVelipAudioForClip(admin, body.audio_clip_id, consultantId);
+  if ("error" in aud) return json(502, { error: aud.error });
+  const campaignAudio = aud;
 
   const targets: TargetIn[] = [];
   const seen = new Set<string>();
@@ -392,7 +441,9 @@ Deno.serve(async (req) => {
 
   // A API de lote da Velip só é criada no envio imediato. Agendamentos são
   // sempre single para que o cron faça a discagem no horário programado.
-  const preferBatch = !scheduled && dispatchKind === "audio" && (
+  // Personalização por nome também força single (1 áudio costurado por alvo).
+  const personalizeName = Boolean(defaultConfig.personalize_name);
+  const preferBatch = !scheduled && !personalizeName && (
     body.velip_mode === "batch" ||
     (body.velip_mode !== "single" && targets.length >= 30)
   );
@@ -403,14 +454,14 @@ Deno.serve(async (req) => {
     .insert({
       consultant_id: consultantId,
       name: body.campaign_name?.trim() || "Campanha de ligação",
-      audio_clip_id: dispatchKind === "audio" ? body.audio_clip_id : null,
-      audio_url: aud?.audio_url ?? null,
-      dispatch_kind: dispatchKind,
-      tts_text: body.tts_text ?? null,
-      tts_voice: body.tts_voice ?? null,
+      audio_clip_id: body.audio_clip_id,
+      audio_url: campaignAudio.audio_url,
+      dispatch_kind: "audio",
+      tts_text: null,
+      tts_voice: null,
       caller_id: body.caller_id ?? null,
       dtmf_questions: Array.isArray(body.dtmf_questions) ? body.dtmf_questions : [],
-      config: defaultConfig,
+      config: { ...defaultConfig, sofia_only: true },
       status: scheduled ? "scheduled" : "running",
       scheduled_at: scheduled,
       started_at: scheduled ? null : new Date().toISOString(),
@@ -446,8 +497,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  // Modo batch (só para áudio + envio agora; TTS/agendamento seguem 'single')
-  if (velipMode === "batch" && !scheduled && dispatchKind === "audio" && aud) {
+  // Modo batch (envio agora; agendamento segue 'single')
+  if (velipMode === "batch" && !scheduled) {
     const { data: created } = await admin
       .from("voice_campaign_targets")
       .select("id, phone, name")
@@ -460,7 +511,7 @@ Deno.serve(async (req) => {
     }));
 
     // Se a Velip rejeitar a base/campanha (ex.: erro 230 do serviço de listas),
-    // degrada para modo `single`: o cron disca alvo a alvo via MakeTTSCall.
+    // degrada para modo `single`: o cron disca alvo a alvo via áudio Sofia.
     const fallbackToSingle = async (why: string | undefined) => {
       await admin
         .from("voice_campaigns")
@@ -482,7 +533,7 @@ Deno.serve(async (req) => {
 
     const cp = await velipCreateCampaign({
       baseId: base.base_id,
-      audioId: aud.audio_id,
+      audioId: campaignAudio.audio_id,
       name: campaign.id.slice(0, 30),
       ctid: toCtid(campaign.id),
     });

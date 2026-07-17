@@ -1450,7 +1450,15 @@ Deno.serve(async (req) => {
     // Paridade com whapi-webhook. Idempotente — só preenche slots vazios.
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
+        const _stepForName = stripPrefix((customer as any).conversation_step || "");
+        const multi = extractMultiField(messageText, {
+          allowSingleWordName:
+            !!(customer as any).name_ask_sent_at ||
+            ["ask_name", "aguardando_nome"].includes(_stepForName) ||
+            /ask_name|nome/i.test(_stepForName) ||
+            (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_stepForName) &&
+              !String((customer as any).name || "").trim()),
+        });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {
@@ -2568,14 +2576,14 @@ Deno.serve(async (req) => {
       //  - cadastro + freeform_question → Cérebro (sem mexer no estado)
       //  - cadastro + expected/mídia → determinístico (pula Cérebro)
       const _rodarCerebro = _isAtivoOrigin
-        || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M"))
+        || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F"))
         || (_emCadastro && _cadKind === "freeform_question" && _fbVarCerebro !== "A");
 
       if (!_rodarCerebro) {
         if (_emCadastro) {
           console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
-        } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M") {
-          console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+        } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F") {
+          console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo do construtor)`);
         }
       } else try {
         if (_isAtivoOrigin) {

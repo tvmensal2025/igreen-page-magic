@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Phone, History, MessageSquare, Users, BarChart3, HelpCircle, ShieldBan, RefreshCw } from "lucide-react";
+import { Loader2, Phone, History, MessageSquare, Users, BarChart3, HelpCircle, ShieldBan, RefreshCw, BookOpen } from "lucide-react";
 import { VoiceDialerPanel } from "@/components/admin/voz/VoiceDialerPanel";
 import { VoiceCallHistoryPanel } from "@/components/admin/voz/VoiceCallHistoryPanel";
 import { VoiceSmsPanel } from "@/components/admin/voz/VoiceSmsPanel";
@@ -17,6 +17,7 @@ import { VoiceDashboardPanel } from "@/components/admin/voz/VoiceDashboardPanel"
 import { VoiceDncPanel } from "@/components/admin/voz/VoiceDncPanel";
 import { VoiceHelpPanel } from "@/components/admin/voz/VoiceHelpPanel";
 import { VoiceCycleKitPanel } from "@/components/admin/voz/VoiceCycleKitPanel";
+import { MultichannelTextsPanel } from "@/components/admin/voz/MultichannelTextsPanel";
 import { VelipHealthBanner } from "@/components/admin/voz/VelipHealthBanner";
 import type { VozCustomer } from "@/components/admin/voz/VozContactPickerDialog";
 
@@ -112,12 +113,13 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
   }
 
   return (
-    <div className="max-w-5xl mx-auto w-full space-y-4">
+    <div className="max-w-7xl mx-auto w-full space-y-4">
       <div className="pe-page-header">
         <div>
           <h2 className="pe-page-title">Ligação · SMS</h2>
           <p className="pe-page-sub">
-            Áudios do ciclo diário ficam na aba <strong>Kit do Ciclo</strong> (seg–sáb + ligação + SMS).
+            Textos do plano multicanal em <strong>Textos Multicanal</strong>. Kit diário em{" "}
+            <strong>Programação do ciclo</strong>. Envio automático permanece desligado.
           </p>
         </div>
       </div>
@@ -130,7 +132,8 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
           <TabsTrigger value="sms" className="gap-2"><MessageSquare className="h-4 w-4" /> SMS</TabsTrigger>
           <TabsTrigger value="bases" className="gap-2"><Users className="h-4 w-4" /> Bases</TabsTrigger>
           <TabsTrigger value="dnc" className="gap-2"><ShieldBan className="h-4 w-4" /> Não Perturbe</TabsTrigger>
-          <TabsTrigger value="kit" className="gap-2"><RefreshCw className="h-4 w-4" /> Kit do Ciclo</TabsTrigger>
+          <TabsTrigger value="kit" className="gap-2"><RefreshCw className="h-4 w-4" /> Programação do ciclo</TabsTrigger>
+          <TabsTrigger value="textos" className="gap-2"><BookOpen className="h-4 w-4" /> Textos Multicanal</TabsTrigger>
           <TabsTrigger value="historico" className="gap-2"><History className="h-4 w-4" /> Histórico</TabsTrigger>
           <TabsTrigger value="painel" className="gap-2"><BarChart3 className="h-4 w-4" /> Painel</TabsTrigger>
           <TabsTrigger value="ajuda" className="gap-2"><HelpCircle className="h-4 w-4" /> Ajuda</TabsTrigger>
@@ -149,6 +152,9 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
         </TabsContent>
         <TabsContent value="kit" className="mt-4">
           <VoiceCycleKitPanel consultantId={consultantId} />
+        </TabsContent>
+        <TabsContent value="textos" className="mt-4">
+          <MultichannelTextsPanel consultantId={consultantId} />
         </TabsContent>
         <TabsContent value="historico" className="mt-4">
           <VoiceCallHistoryPanel consultantId={consultantId} customers={customers} onOpenChat={onOpenChat} />

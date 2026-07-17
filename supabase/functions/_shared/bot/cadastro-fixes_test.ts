@@ -47,6 +47,20 @@ Deno.test("nextSeparatedCadastroStep — boleto separado de finalizar", () => {
   assertEquals(nextSeparatedCadastroStep({ contaunica_answered: true }), "ask_finalizar");
 });
 
+Deno.test("nextSeparatedCadastroStep — Sofia a10 pula boleto → finalizando", () => {
+  assertEquals(
+    nextSeparatedCadastroStep({}, { fromStepKey: "a10_portal_otp_facial" }),
+    "finalizando",
+  );
+  assertEquals(
+    nextSeparatedCadastroStep(
+      { contaunica_answered: false },
+      { fromStepKey: "a10_portal_otp_facial" },
+    ),
+    "finalizando",
+  );
+});
+
 Deno.test("isPrePortalCadastroStep", () => {
   assertEquals(isPrePortalCadastroStep("ask_contaunica"), true);
   assertEquals(isPrePortalCadastroStep("ask_finalizar"), true);

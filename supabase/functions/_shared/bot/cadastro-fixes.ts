@@ -96,10 +96,33 @@ export function resumeAfterAddressEdit(customer: {
  *
  * Nunca pular 1→3 nem 2→3 automaticamente a partir de email/telefone/ativar.
  * Testes devem validar a ordem sem chamar o portal.
+ *
+ * Exceção Sofia Multicanal (a10_portal_otp_facial): pula ask_contaunica e
+ * ask_finalizar — boleto único implícito → finalizando/portal → OTP.
  */
-export function nextSeparatedCadastroStep(customer: {
-  contaunica_answered?: boolean | null;
-} | null | undefined): "ask_contaunica" | "ask_finalizar" {
+
+/** Passo 9 do Grupo A / Sofia — portal + OTP sem perguntar boleto. */
+export function isSofiaPortalOtpStep(stepKey: string | null | undefined): boolean {
+  return String(stepKey || "") === "a10_portal_otp_facial";
+}
+
+/** Prefill boleto único para Sofia a10 (sem perguntar ao lead). */
+export function sofiaPortalContaunicaPrefill(): {
+  contaunica: true;
+  contaunica_answered: true;
+} {
+  return { contaunica: true, contaunica_answered: true };
+}
+
+export function nextSeparatedCadastroStep(
+  customer: {
+    contaunica_answered?: boolean | null;
+  } | null | undefined,
+  opts?: { fromStepKey?: string | null },
+): "ask_contaunica" | "ask_finalizar" | "finalizando" {
+  if (isSofiaPortalOtpStep(opts?.fromStepKey)) {
+    return "finalizando";
+  }
   if (!customer || customer.contaunica_answered !== true) return "ask_contaunica";
   return "ask_finalizar";
 }

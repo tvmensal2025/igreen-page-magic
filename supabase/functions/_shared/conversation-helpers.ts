@@ -1,4 +1,5 @@
 import { wantsToAdvance } from "./bot/cadastro-intent.ts";
+import { requiresRgNumber } from "./document-type.ts";
 
 // ─── Normalização e validação pós-OCR documento ─────────────────────────
 export function normalizarRG(rg: string | undefined): string {
@@ -67,7 +68,8 @@ export function getNextMissingStep(
   if (!c.cpf) return "ask_cpf";
   // CPF com dígitos verificadores inválidos → pedir novamente
   if (c.cpf && !validarCPFDigitos(c.cpf)) return "ask_cpf";
-  if (!c.rg) return "ask_rg";
+  // RG novo / CIN: só CPF — NÃO pedir nº de Registro Geral
+  if (requiresRgNumber(c.document_type) && !c.rg) return "ask_rg";
   // Data placeholder (2000-01-01) ou vazia → pedir
   if (!c.data_nascimento || /^2000-01-01/.test(String(c.data_nascimento))) return "ask_birth_date";
   // Telefone só vale se foi CONFIRMADO pelo cliente (não basta existir phone_landline herdado)
@@ -147,7 +149,7 @@ export function getReplyForStep(step: string, c: any): string {
     case "ask_name": return "Qual é o seu *nome completo*?";
     case "ask_tipo_documento": return "Qual documento de identidade você vai enviar? Toque em uma opção:";
     case "ask_cpf": return "Qual o seu *CPF*? (apenas números)";
-    case "ask_rg": return "Qual o seu *RG*?";
+    case "ask_rg": return "Qual o seu *número do RG* (Registro Geral do RG antigo)?";
     case "ask_birth_date": return "Qual sua *data de nascimento*? (DD/MM/AAAA)";
     case "ask_phone_confirm": {
       let p = (c.phone_whatsapp || "").replace(/\D/g, "");

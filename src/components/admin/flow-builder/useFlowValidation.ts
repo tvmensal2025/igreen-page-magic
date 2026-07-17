@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { isSofiaStitchMediaSlot } from "@/lib/multichannelCadenceTexts";
 import { Step, getButtons, isOcrStep, isAiAnswerStep } from "./flowTypes";
 
 
@@ -559,7 +560,15 @@ export function useFlowValidation(steps: Step[], mediaCounts?: MediaCountsMap): 
     if (mediaCounts) {
       for (const s of steps) {
         if (!s.is_active || !s.slot_key) continue;
-        const c = mediaCounts[s.slot_key];
+        // Sofia A2/A3: áudio é costurado em runtime (nome + corpo __body_*).
+        // Contar só o slot principal gera falso "mídia não anexada" para sempre.
+        if (
+          isSofiaStitchMediaSlot(s.slot_key) ||
+          isSofiaStitchMediaSlot(s.step_key ?? "")
+        ) {
+          continue;
+        }
+        const c = mediaCounts[s.slot_key] ?? mediaCounts[s.step_key ?? ""];
         const total = c ? (c.audio + c.image + c.video) : 0;
         // Heurística: o passo "espera" mídia se a mensagem referencia áudio/
         // vídeo OU o slot_key sugere mídia. Sem arquivo => aviso.

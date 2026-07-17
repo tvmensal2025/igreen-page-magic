@@ -49,6 +49,9 @@ Deno.test("extractNome: erro de digitação de termo de domínio rejeitado via L
 Deno.test("extractNome: nomes legítimos ainda passam", () => {
   assertEquals(extractNome("sou Carlos"), "Carlos");
   assertEquals(extractNome("Ana Paula"), "Ana Paula");
+  // Prenomes comuns (ex.: consultor Rafael) NÃO podem bloquear o lead
+  assertEquals(extractNome("Rafael Ferreira"), "Rafael Ferreira");
+  assertEquals(extractNome("Rafael", { allowSingleWord: true }), "Rafael");
 });
 
 Deno.test("extractNome: frase de indicação do QR do Horacio NÃO vira nome", () => {

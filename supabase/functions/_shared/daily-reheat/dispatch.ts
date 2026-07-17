@@ -1,30 +1,36 @@
 /**
- * daily-reheat dispatch — Fase 1 (código pronto, cadeados OFF).
+ * daily-reheat dispatch — envio real só com cadeados ON.
  *
  * Só envia se TODOS forem true:
  *   1. automation_toggles.daily_reheat
  *   2. daily_reheat_settings.enabled
  *   3. daily_reheat_settings.live_dispatch_enabled
  *   4. app_settings.bot_global_enabled
- *   5. dryRun === false no cron
  *
- * Sem isso, NUNCA chama WhatsApp / Velip / SMS.
+ * Sem isso, o cron só planeja a fila (dry).
  */
 
 import { sendWelcomeHeader, sendAttendanceRatingRequest } from "../attendance-flow.ts";
 import { resolveChannelForCustomer } from "../channel-sender.ts";
 import {
-  makeTTSCall,
   playAudioFile,
   makeSMS,
   toVelipBRDest,
   toCtid,
   velipConfigured,
 } from "../voice-dialer/velip.ts";
+import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
 import { recordProactiveTouch } from "../retention-orchestrator.ts";
 import { isAutomationEnabled } from "../automation-gate.ts";
 import { isBotGloballyEnabled } from "../bot/global-flag.ts";
+import { assertCanContact } from "../contact-suppression.ts";
+import {
+  delayMinutesForTransition,
+  stepDef,
+  type CycleQueue,
+} from "./cycle.ts";
 import type { CandidatePlan, DailyReheatSettings, PlannedAction } from "./plan.ts";
+import { cycleDateBRT } from "./plan.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -39,11 +45,14 @@ export type CycleKit = {
   wa_audio_fri_url: string | null;
   wa_audio_sat_url: string | null;
   voice_audio_clip_id: string | null;
+  voice_audio_clip_id_retry: string | null;
+  personalize_name: boolean;
   call_tts_fallback: string | null;
   sms_na_text: string | null;
   sms_retry_text: string | null;
   bina_notes: string | null;
   velip_audio_id?: string | null;
+  velip_audio_id_retry?: string | null;
 };
 
 export type DispatchGates = {
@@ -87,16 +96,34 @@ export async function loadCycleKit(supabase: SB, consultantId: string): Promise<
   if (!data) return null;
 
   let velip_audio_id: string | null = null;
-  if (data.voice_audio_clip_id) {
-    const { data: clip } = await supabase
+  let velip_audio_id_retry: string | null = null;
+  const clipIds = [data.voice_audio_clip_id, data.voice_audio_clip_id_retry].filter(
+    (id: string | null | undefined): id is string => !!id,
+  );
+  if (clipIds.length) {
+    const { data: clips } = await supabase
       .from("voice_audio_clips")
-      .select("velip_audio_id")
-      .eq("id", data.voice_audio_clip_id)
-      .maybeSingle();
-    velip_audio_id = clip?.velip_audio_id ?? null;
+      .select("id, velip_audio_id")
+      .in("id", clipIds);
+    const byId = new Map(
+      (clips ?? []).map((c: { id: string; velip_audio_id: string | null }) => [
+        c.id,
+        c.velip_audio_id,
+      ]),
+    );
+    if (data.voice_audio_clip_id) velip_audio_id = byId.get(data.voice_audio_clip_id) ?? null;
+    if (data.voice_audio_clip_id_retry) {
+      velip_audio_id_retry = byId.get(data.voice_audio_clip_id_retry) ?? null;
+    }
   }
 
-  return { ...data, velip_audio_id } as CycleKit;
+  return {
+    ...data,
+    personalize_name: !!data.personalize_name,
+    voice_audio_clip_id_retry: data.voice_audio_clip_id_retry ?? null,
+    velip_audio_id,
+    velip_audio_id_retry,
+  } as CycleKit;
 }
 
 /** Áudio WA do dia (BRT). Dom → sábado. */
@@ -233,20 +260,56 @@ async function runCall(
   kit: CycleKit | null,
 ): Promise<ActionResult> {
   if (!velipConfigured()) return { action: "call", ok: false, detail: "velip_not_configured" };
-  const { cust, nome, consultor } = await loadNames(supabase, plan.customer_id, plan.consultant_id);
+  const { cust, nome } = await loadNames(supabase, plan.customer_id, plan.consultant_id);
   if (!cust?.phone_whatsapp) return { action: "call", ok: false, detail: "no_phone" };
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { action: "call", ok: false, detail: "invalid_phone" };
 
   const ctid = toCtid(`dreheat_${plan.customer_id.slice(0, 8)}_${Date.now()}`);
-  const tts =
-    kit?.call_tts_fallback?.trim() ||
-    `Olá ${nome}, aqui é ${consultor} da iGreen Energia. Tentei falar sobre a economia na conta de luz. Me retorne no WhatsApp.`;
+
+  const isRetry = plan.step === "retry";
+  const bodyClipId = isRetry
+    ? (kit?.voice_audio_clip_id_retry || kit?.voice_audio_clip_id || null)
+    : (kit?.voice_audio_clip_id || null);
+  const bodyVelipId = isRetry
+    ? (kit?.velip_audio_id_retry || kit?.velip_audio_id || null)
+    : (kit?.velip_audio_id || null);
+  const personalize = !!kit?.personalize_name;
 
   try {
-    const r = kit?.velip_audio_id
-      ? await playAudioFile({ to: dest, audioId: kit.velip_audio_id, ctid })
-      : await makeTTSCall({ to: dest, ttsText: renderVars(tts, { nome, consultor, protocolo: "" }), ctid });
+    let r;
+    if (bodyClipId && personalize) {
+      const st = await resolvePersonalizedCallAudio(supabase, {
+        consultantId: plan.consultant_id,
+        bodyClipId,
+        rawName: nome,
+        fallbackToBody: true,
+      });
+      if (st.ok && st.velip_audio_id) {
+        r = await playAudioFile({ to: dest, audioId: st.velip_audio_id, ctid });
+      } else if (bodyVelipId) {
+        r = await playAudioFile({ to: dest, audioId: bodyVelipId, ctid });
+      } else {
+        return { action: "call", ok: false, detail: "sofia_required_no_audio" };
+      }
+    } else if (bodyVelipId) {
+      r = await playAudioFile({ to: dest, audioId: bodyVelipId, ctid });
+    } else if (bodyClipId) {
+      // Clip sem velip_audio_id ainda — tenta stitch/corpo (Sofia); sem TTS Velip.
+      const st = await resolvePersonalizedCallAudio(supabase, {
+        consultantId: plan.consultant_id,
+        bodyClipId,
+        rawName: personalize ? nome : null,
+        fallbackToBody: true,
+      });
+      if (st.ok && st.velip_audio_id) {
+        r = await playAudioFile({ to: dest, audioId: st.velip_audio_id, ctid });
+      } else {
+        return { action: "call", ok: false, detail: "sofia_required_no_audio" };
+      }
+    } else {
+      return { action: "call", ok: false, detail: "sofia_required_no_clip" };
+    }
     if (!r.ok) return { action: "call", ok: false, detail: `velip:${r.error || "fail"}` };
     return { action: "call", ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
   } catch (e) {
@@ -343,6 +406,17 @@ export async function dispatchCandidate(
 ): Promise<{ ok: boolean; results: ActionResult[] }> {
   const results: ActionResult[] = [];
 
+  const contact = await assertCanContact(supabase, {
+    customerId: plan.customer_id,
+    channel: plan.would_call && !plan.would_consume_whapi ? "voice" : "whatsapp",
+  });
+  if (!contact.allowed) {
+    return {
+      ok: false,
+      results: [{ action: "wait", ok: false, detail: `dnc:${contact.reason}` }],
+    };
+  }
+
   for (const action of plan.planned_actions) {
     if (action === "wait") {
       results.push({ action, ok: true, detail: "wait_noop" });
@@ -379,6 +453,84 @@ export async function dispatchCandidate(
   return { ok, results };
 }
 
+async function advanceQueueAfterSuccess(
+  supabase: SB,
+  plan: CandidatePlan,
+  settings: DailyReheatSettings,
+): Promise<{ nextDueNow: CandidatePlan | null }> {
+  const cycleDate = cycleDateBRT();
+  const queue = plan.queue as CycleQueue;
+  const current = stepDef(queue, plan.step);
+  if (!current) {
+    await supabase
+      .from("daily_reheat_queue")
+      .update({ status: "done", updated_at: new Date().toISOString() })
+      .eq("customer_id", plan.customer_id)
+      .eq("cycle_date", cycleDate);
+    return { nextDueNow: null };
+  }
+
+  const nextId = current.next;
+  if (!nextId) {
+    await supabase
+      .from("daily_reheat_queue")
+      .update({
+        status: "done",
+        step: current.id,
+        planned_actions: [],
+        updated_at: new Date().toISOString(),
+      })
+      .eq("customer_id", plan.customer_id)
+      .eq("cycle_date", cycleDate);
+    return { nextDueNow: null };
+  }
+
+  const next = stepDef(queue, nextId);
+  if (!next) {
+    await supabase
+      .from("daily_reheat_queue")
+      .update({ status: "done", updated_at: new Date().toISOString() })
+      .eq("customer_id", plan.customer_id)
+      .eq("cycle_date", cycleDate);
+    return { nextDueNow: null };
+  }
+
+  const delayMin = delayMinutesForTransition(
+    queue,
+    current.id,
+    nextId,
+    settings.queue_a_silence_hours,
+  );
+  const nextAt = new Date(Date.now() + delayMin * 60_000).toISOString();
+
+  await supabase
+    .from("daily_reheat_queue")
+    .update({
+      status: "planned",
+      step: next.id,
+      planned_actions: next.actions,
+      next_action_at: nextAt,
+      skip_reason: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("customer_id", plan.customer_id)
+    .eq("cycle_date", cycleDate);
+
+  if (delayMin > 0) return { nextDueNow: null };
+
+  return {
+    nextDueNow: {
+      ...plan,
+      step: next.id,
+      planned_actions: [...next.actions],
+      would_consume_whapi: next.would_consume_whapi,
+      would_call: next.would_call,
+      would_sms: next.would_sms,
+      reason: `chain_${next.id}`,
+    },
+  };
+}
+
 export async function dispatchPlans(
   supabase: SB,
   plans: CandidatePlan[],
@@ -393,33 +545,44 @@ export async function dispatchPlans(
   let dispatched = 0;
   let failed = 0;
   const details: Array<{ customer_id: string; ok: boolean; results: ActionResult[] }> = [];
+  const cycleDate = cycleDateBRT();
 
-  for (const plan of plans) {
-    const cid = plan.consultant_id || "";
-    if (!kitCache.has(cid)) {
-      kitCache.set(cid, cid ? await loadCycleKit(supabase, cid) : null);
-    }
-    const kit = kitCache.get(cid) ?? null;
-    const r = await dispatchCandidate(supabase, plan, settings, kit, env);
-    details.push({ customer_id: plan.customer_id, ok: r.ok, results: r.results });
-    if (r.ok) {
+  for (const initial of plans) {
+    let plan: CandidatePlan | null = initial;
+    let hops = 0;
+    while (plan && hops < 8) {
+      hops++;
+      const cid = plan.consultant_id || "";
+      if (!kitCache.has(cid)) {
+        kitCache.set(cid, cid ? await loadCycleKit(supabase, cid) : null);
+      }
+      const kit = kitCache.get(cid) ?? null;
+
+      await supabase
+        .from("daily_reheat_queue")
+        .update({ status: "claimed", updated_at: new Date().toISOString() })
+        .eq("customer_id", plan.customer_id)
+        .eq("cycle_date", cycleDate)
+        .in("status", ["planned", "claimed"]);
+
+      const r = await dispatchCandidate(supabase, plan, settings, kit, env);
+      details.push({ customer_id: plan.customer_id, ok: r.ok, results: r.results });
+      if (!r.ok) {
+        failed++;
+        await supabase
+          .from("daily_reheat_queue")
+          .update({
+            status: "blocked",
+            skip_reason: r.results.find((x) => !x.ok)?.detail || "dispatch_failed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("customer_id", plan.customer_id)
+          .eq("cycle_date", cycleDate);
+        break;
+      }
       dispatched++;
-      await supabase
-        .from("daily_reheat_queue")
-        .update({ status: "done", step: plan.step, updated_at: new Date().toISOString() })
-        .eq("customer_id", plan.customer_id)
-        .eq("cycle_date", new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()));
-    } else {
-      failed++;
-      await supabase
-        .from("daily_reheat_queue")
-        .update({
-          status: "blocked",
-          skip_reason: r.results.find((x) => !x.ok)?.detail || "dispatch_failed",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("customer_id", plan.customer_id)
-        .eq("cycle_date", new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date()));
+      const { nextDueNow } = await advanceQueueAfterSuccess(supabase, plan, settings);
+      plan = nextDueNow;
     }
   }
 

@@ -794,7 +794,16 @@ Deno.serve(async (req) => {
     // pra `self_introduced` (mais forte que freeform_multi).
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
+        const _stepForName = stripPrefix((customer as any).conversation_step || "");
+        const multi = extractMultiField(messageText, {
+          allowSingleWordName:
+            !!(customer as any).name_ask_sent_at ||
+            ["ask_name", "aguardando_nome"].includes(_stepForName) ||
+            /ask_name|nome/i.test(_stepForName) ||
+            // Em passo de fluxo (UUID) sem nome ainda: aceita 1 palavra (Sofia a1).
+            (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_stepForName) &&
+              !String((customer as any).name || "").trim()),
+        });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {
@@ -2850,8 +2859,15 @@ Deno.serve(async (req) => {
         : null;
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
 
-      if ((_fbVarCerebro === "D" || _fbVarCerebro === "M") && !_isAtivoOrigin) {
-        console.log(`[fluxo-d-bypass] customer=${customer.id} — IA pulada (fluxo com botões)`);
+      // Variantes scriptadas do Flow Builder (Camila): NÃO passam pelo Cérebro.
+      // Sem isso, número de teste (ex.: 11971254913) ativa o Cérebro com
+      // respondeu=true e reply vazio → early-return e o fluxo C nunca inicia.
+      // B = Vendedora IA (continua no caminho IA). D/M/C/E/F = roteiro do builder.
+      if (
+        (_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" ||
+          _fbVarCerebro === "E" || _fbVarCerebro === "F") && !_isAtivoOrigin
+      ) {
+        console.log(`[fluxo-script-bypass] customer=${customer.id} variant=${_fbVarCerebro} — IA pulada (fluxo do construtor)`);
       } else if (_fbVarCerebro === "A" && _emCadastro && !_isAtivoOrigin) {
         console.log(`[fluxo-a-bypass] customer=${customer.id} step=${stepBefore} — cadastro determinístico, Cérebro pulado`);
       } else if (_isAtivoOrigin) {

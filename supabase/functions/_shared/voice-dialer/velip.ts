@@ -89,6 +89,21 @@ function velipEnvelope(json: Record<string, unknown>): Record<string, unknown> {
   return ret && typeof ret === "object" ? (ret as Record<string, unknown>) : json;
 }
 
+/** Normaliza `status` da Velip (string | {0: "..."} | array). */
+function normalizeVelipStatus(raw: unknown): string | undefined {
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (Array.isArray(raw) && raw.length > 0) {
+    const first = raw[0];
+    return typeof first === "string" ? first : String(first ?? "");
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    const v = o["0"] ?? o.status ?? Object.values(o)[0];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
 async function velipPost(
   path: string,
   form: URLSearchParams | FormData,
@@ -117,11 +132,7 @@ async function velipPost(
     const env = velipEnvelope(json);
     const scRaw = env.status_code ?? json.status_code;
     const status_code = typeof scRaw === "number" ? scRaw : Number(scRaw ?? NaN);
-    const status = typeof env.status === "string"
-      ? env.status
-      : typeof json.status === "string"
-        ? json.status
-        : undefined;
+    const status = normalizeVelipStatus(env.status) ?? normalizeVelipStatus(json.status);
     const ok = res.ok && (Number.isFinite(status_code) ? status_code === 0 : true);
     return {
       ok,
@@ -228,6 +239,11 @@ export interface MakeCallOpts {
   /** Formato YYYY-MM-DD HH:MM:SS (fuso Velip) — vira `block` (não discar antes de). */
   scheduledAt?: string;
   callerId?: string;
+  /**
+   * `free=1` libera destino da lista Procon (BK_PROCON).
+   * Usar só em testes manuais — campanhas em massa seguem a política da conta.
+   */
+  free?: boolean;
 }
 
 export interface MakeCallResult extends RawResp {
@@ -238,11 +254,12 @@ function baseCallForm(opts: MakeCallOpts): URLSearchParams {
   const form = new URLSearchParams();
   form.set("dest", opts.to);
   form.set("ctid", toCtid(opts.ctid));
-  // Nomes oficiais MakeTTSCall: `timelimit`, `block`, `callerid`.
+  // Nomes oficiais MakeTTSCall: `timelimit`, `block`, `callerid`, `free`.
   if (opts.timeLimitSec) form.set("timelimit", String(opts.timeLimitSec));
   if (opts.scheduledAt) form.set("block", opts.scheduledAt);
   const bina = opts.callerId ?? Deno.env.get("VELIP_CALLER_ID")?.trim();
   if (bina) form.set("callerid", bina);
+  if (opts.free) form.set("free", "1");
   return form;
 }
 

@@ -2974,7 +2974,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           else if (stype === "capture_email") step = "ask_email";
           else if (stype === "confirm_phone") step = "ask_phone_confirm";
           else if (stype === "finalizar_cadastro") {
-            step = nextSeparatedCadastroStep(customer as any);
+            step = nextSeparatedCadastroStep(customer as any, {
+              fromStepKey: (stepRow as any)?.step_key,
+            });
+            if (String((stepRow as any)?.step_key || "") === "a10_portal_otp_facial") {
+              updates.contaunica = true;
+              updates.contaunica_answered = true;
+            }
           }
 
           // 🛡️ Guarda ordem do funil: NUNCA pedir documento antes da conta+simulação.
@@ -3302,7 +3308,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               else if (ntype === "capture_email") { nextStepValue = "ask_email"; _isCapture = true; }
               else if (ntype === "confirm_phone") { nextStepValue = "ask_phone_confirm"; _isCapture = true; }
               else if (ntype === "finalizar_cadastro") {
-                nextStepValue = nextSeparatedCadastroStep(customer as any);
+                nextStepValue = nextSeparatedCadastroStep(customer as any, {
+                  fromStepKey: current?.step_key,
+                });
+                if (String(current?.step_key || "") === "a10_portal_otp_facial") {
+                  (customer as any).contaunica = true;
+                  (customer as any).contaunica_answered = true;
+                }
               }
               // 🛡️ Skip-guard: se o capture seguinte já tem o dado, avança direto.
               if (_isCapture && shouldSkipAskStep(nextStepValue, customer)) {

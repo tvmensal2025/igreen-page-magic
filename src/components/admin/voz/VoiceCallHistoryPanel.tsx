@@ -537,7 +537,7 @@ export function VoiceCallHistoryPanel({ consultantId, customers = [], onOpenChat
                   <Detail label="Nome" value={displayName(selectedTarget, customers)} />
                   <Detail label="Telefone" value={formatPhone(selectedTarget.phone)} />
                   <Detail label="Resultado ligação" value={statusLabel(selectedTarget.status)} />
-                  <Detail label="Motivo Velip" value={velipOutcomeLabel(selectedTarget.velip_status)} />
+                  <Detail label="Resultado" value={velipOutcomeLabel(selectedTarget.velip_status)} />
                   <Detail
                     label="Duração"
                     value={formatDurationSec(durationByTarget[selectedTarget.id])}
@@ -550,7 +550,6 @@ export function VoiceCallHistoryPanel({ consultantId, customers = [], onOpenChat
                   <Detail label="Custo" value={fmtBRL(selectedTarget.velip_cost)} />
                   <Detail label="Última discagem" value={formatWhen(selectedTarget.dialed_at)} />
                   <Detail label="Finalizada" value={formatWhen(selectedTarget.finished_at)} />
-                  <Detail label="ID Velip" value={selectedTarget.velip_call_id || "—"} mono />
                   {(() => {
                     const crm = resolveCrmByPhoneOrId(
                       selectedTarget.phone,
@@ -627,8 +626,7 @@ export function VoiceCallHistoryPanel({ consultantId, customers = [], onOpenChat
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
-                          ID {log.velip_call_id || "—"}
-                          {log.answered_by ? ` · atendido por ${log.answered_by}` : ""}
+                          {log.answered_by ? `Atendido por ${log.answered_by}` : "Sem atendimento registrado"}
                         </p>
                       </button>
                     </li>
@@ -815,41 +813,39 @@ function LogDialog({ log, onClose }: { log: CallLogRow | null; onClose: () => vo
     <Dialog open={!!log} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="painel-elite max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Detalhe do evento</DialogTitle>
-          <DialogDescription>Dados recebidos e armazenados para auditoria.</DialogDescription>
+          <DialogTitle>Detalhe da ligação</DialogTitle>
+          <DialogDescription>Resumo do que aconteceu nesta chamada.</DialogDescription>
         </DialogHeader>
         {log && (
           <dl className="grid grid-cols-2 gap-2">
             <Detail label="Quando" value={formatWhen(log.created_at)} />
-            <Detail label="Status" value={statusLabel(log.status)} />
-            <Detail label="Motivo Velip" value={velipOutcomeLabel(log.velip_status)} />
+            <Detail label="Situação" value={statusLabel(log.status)} />
+            <Detail label="Resultado" value={velipOutcomeLabel(log.velip_status)} />
             <Detail label="Duração" value={formatDurationSec(log.velip_time_sec ?? log.duration_sec)} />
-            <Detail label="Destino" value={formatPhone(log.to_phone)} />
-            <Detail label="Origem (BINA)" value={formatPhone(log.from_phone)} />
+            <Detail label="Telefone" value={formatPhone(log.to_phone)} />
+            <Detail label="Número que aparece" value={formatPhone(log.from_phone)} />
             <Detail label="Atendido por" value={log.answered_by || "—"} />
             <Detail
               label="Custo"
               value={log.velip_cost != null ? fmtBRL(log.velip_cost) : log.price || "—"}
             />
             <Detail
-              label="Saldo após"
+              label="Saldo depois"
               value={log.velip_saldo_after != null ? fmtBRL(log.velip_saldo_after) : "—"}
             />
             <Detail
-              label="Preço/min"
+              label="Preço por minuto"
               value={log.price_per_min != null ? fmtBRL(log.price_per_min) : "—"}
             />
-            <Detail label="Código Velip" value={normalizeVelipCode(log.velip_status) || "—"} mono />
-            <Detail label="ID Velip" value={log.velip_call_id || "—"} mono />
             {log.error && (
               <div className="col-span-2">
-                <Detail label="Erro" value={log.error} />
+                <Detail label="Problema" value={log.error} />
               </div>
             )}
             {log.velip_dtmf && Object.keys(log.velip_dtmf).length > 0 && (
               <div className="col-span-2">
                 <Detail
-                  label="DTMF"
+                  label="Teclas digitadas"
                   value={Object.entries(log.velip_dtmf)
                     .map(([k, v]) => `${k}=${v}`)
                     .join(" · ")}
@@ -857,16 +853,6 @@ function LogDialog({ log, onClose }: { log: CallLogRow | null; onClose: () => vo
                 />
               </div>
             )}
-            <div className="col-span-2">
-              <dt className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
-                Payload completo
-              </dt>
-              <dd>
-                <pre className="max-h-52 overflow-auto rounded-md border bg-muted/40 p-3 text-[10px]">
-                  {JSON.stringify(log.velip_raw ?? log.raw ?? {}, null, 2)}
-                </pre>
-              </dd>
-            </div>
           </dl>
         )}
       </DialogContent>

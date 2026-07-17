@@ -11,7 +11,7 @@ export function VoiceHelpPanel() {
     >
       <VozSection title="O que este módulo faz">
         <ul className="list-disc pl-5 space-y-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
-          <li>Ligações PSTN via Velip com áudio gravado (MP3) ou voz sintetizada (TTS).</li>
+          <li>Ligações PSTN via Velip com áudio Sofia (ElevenLabs). TTS Velip desativado.</li>
           <li>SMS outbound (manual, fallback após “não atendeu”, e cadência automática se ligada).</li>
           <li>Bases de contatos reutilizáveis e lista Não Perturbe (DNC).</li>
           <li>Histórico e painel com custo/status das ligações.</li>

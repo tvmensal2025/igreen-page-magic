@@ -1,9 +1,13 @@
 /**
  * AudioStudio — Estúdio de áudio iGreen.
  *
- * Duas variantes:
+ * Variantes:
  *   - Mutirão (cidade, rua, horário, sorteio)
  *   - Comércio (nome do comércio, cidade, endereço, horário)
+ *   - Texto livre (corpo fixo + nome opcional só na frente)
+ *
+ * Vozes ElevenLabs: Sofia, Diego, Rafael — selecionáveis no header.
+ * Modelo: sempre Eleven v3 (expressivo).
  *
  * Cada áudio gerado é salvo em `audio_library` (privado) e pode ser publicado
  * para que qualquer consultor reaproveite via busca por cidade.
@@ -18,6 +22,7 @@ import {
   Volume2, Loader2, Play, Pause, Download,
   RotateCcw, Music, MapPin, Clock, Navigation, Gift,
   Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2, Send,
+  FileText, User, Phone,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -27,26 +32,51 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useUserRole } from "@/hooks/useUserRole";
 import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@/lib/audioProcessing";
+import {
+  MODEL_V3,
+  type TtsModelId,
+  prepareTtsSegment,
+  voiceSettingsForModel,
+} from "@/lib/ttsEnhanceV3";
 import { AudioWhatsAppPopover } from "./AudioWhatsAppPopover";
 import { uploadMedia } from "@/services/minioUpload";
 
 // ─── ElevenLabs via proxy ─────────────────────────────────────────────────────
-const VOICE_ID = "rpNe0HOx7heUulPiOEaG";
-const MODEL_ID = "eleven_multilingual_v2";
+const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
+const VOICE_DIEGO = "rpNe0HOx7heUulPiOEaG";
+const VOICE_RAFAEL = "9qVywhT8Ja45eyJbO8lc";
+const VOICES = [
+  { id: VOICE_SOFIA, label: "Sofia" },
+  { id: VOICE_DIEGO, label: "Diego" },
+  { id: VOICE_RAFAEL, label: "Rafael" },
+] as const;
+type VoiceId = (typeof VOICES)[number]["id"];
+
+function isKnownVoiceId(id: string | undefined | null): id is VoiceId {
+  return VOICES.some((v) => v.id === id);
+}
+
+function voiceLabelOf(id: string | null | undefined): string {
+  return VOICES.find((v) => v.id === id)?.label ?? "Sofia";
+}
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
 // ─── Cache TTS ───────────────────────────────────────────────────────────────
-const CACHE_VERSION = 6;
+// v10: enhance v3 sem pausas gigantes (sem .... / [short pause])
+const CACHE_VERSION = 10;
 const TTS_BUCKET    = "tts-cache";
 
 const cacheMap = new Map<string, Blob>();
 
-function hashText(text: string): string {
+function hashText(text: string, voiceId: string, modelId: string): string {
   const n = text.trim().toLowerCase();
   let h = 0;
   for (let i = 0; i < n.length; i++) { h = ((h << 5) - h) + n.charCodeAt(i); h |= 0; }
-  return `v${CACHE_VERSION}_${Math.abs(h)}_${n.length}`;
+  const vShort = (voiceId || "novoice").slice(0, 8);
+  const mShort = (modelId || "nomodel").replace(/^eleven_/, "").slice(0, 12);
+  return `v${CACHE_VERSION}_${vShort}_${mShort}_${Math.abs(h)}_${n.length}`;
 }
 
 let idbDb: IDBDatabase | null = null;
@@ -129,13 +159,17 @@ async function concatMp3Blobs(blobs: Blob[]): Promise<Blob> {
   for (let i = 1; i < blobs.length; i++) parts.push(await stripId3(blobs[i]));
   return new Blob(parts, { type: "audio/mpeg" });
 }
-export async function purgeCachedTTS(text: string): Promise<void> {
-  const hash = hashText(text);
+export async function purgeCachedTTS(
+  text: string,
+  voiceId: string = VOICE_SOFIA,
+  modelId: string = MODEL_V3,
+): Promise<void> {
+  const hash = hashText(text, voiceId, modelId);
   cacheMap.delete(hash);
   await idbDelete(hash);
 }
-async function getCachedTTS(text: string): Promise<Blob | null> {
-  const hash = hashText(text);
+async function getCachedTTS(text: string, voiceId: string, modelId: string): Promise<Blob | null> {
+  const hash = hashText(text, voiceId, modelId);
   if (cacheMap.has(hash)) {
     const b = cacheMap.get(hash)!;
     if (await isValidMp3(b)) return b;
@@ -164,8 +198,8 @@ async function getCachedTTS(text: string): Promise<Blob | null> {
   } catch {}
   return null;
 }
-async function setCachedTTS(text: string, blob: Blob): Promise<void> {
-  const hash = hashText(text);
+async function setCachedTTS(text: string, blob: Blob, voiceId: string, modelId: string): Promise<void> {
+  const hash = hashText(text, voiceId, modelId);
   if (!(await isValidMp3(blob))) {
     console.warn("[tts-cache] blob inválido, não vou cachear");
     return;
@@ -411,7 +445,7 @@ function horarioCurto(h: string): string {
 }
 
 // ─── Templates ───────────────────────────────────────────────────────────────
-type Kind = "mutirao" | "comercio";
+type Kind = "mutirao" | "comercio" | "livre";
 type RefTipo = "proximo" | "em_frente";
 type SorteioTipo = "dinheiro" | "vale" | "cesta" | "custom";
 
@@ -464,11 +498,14 @@ interface AudioRow {
   is_public: boolean;
   play_count: number;
   created_at: string;
+  voice_id?: string | null;
 }
 
 interface AudioDraft {
   savedAt: number;
   kind: Kind;
+  voiceId?: VoiceId;
+  modelId?: TtsModelId;
   cidade: string;
   rua: string;
   numero: string;
@@ -485,6 +522,8 @@ interface AudioDraft {
   sorteioLocal: string;
   sorteioDescricao: string;
   sorteioCustom: string;
+  livreTexto?: string;
+  livreNome?: string;
 }
 
 function readAudioDraft(): Partial<AudioDraft> | null {
@@ -510,7 +549,16 @@ export function AudioStudio({ userId }: { userId: string }) {
   const initialDraft = initialDraftRef.current;
 
   // Tab variante
-  const [kind, setKind] = useState<Kind>(() => initialDraft?.kind === "comercio" ? "comercio" : "mutirao");
+  const [kind, setKind] = useState<Kind>(() => {
+    const k = initialDraft?.kind;
+    if (k === "comercio" || k === "livre" || k === "mutirao") return k;
+    return "mutirao";
+  });
+  const [voiceId, setVoiceId] = useState<VoiceId>(() =>
+    isKnownVoiceId(initialDraft?.voiceId) ? initialDraft.voiceId : VOICE_SOFIA,
+  );
+  // Regra: sempre eleven_v3 (melhor expressividade; v2 só existe no código legado).
+  const [modelId] = useState<TtsModelId>(MODEL_V3);
 
   // Form (compartilhado entre as duas variantes)
   const [cidade,     setCidade]     = useState(() => initialDraft?.cidade ?? "");
@@ -524,6 +572,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [referencia, setReferencia] = useState(() => initialDraft?.referencia ?? "");
   const [autoCorrecao, setAutoCorrecao] = useState(() => typeof initialDraft?.autoCorrecao === "boolean" ? initialDraft.autoCorrecao : true);
 
+  // Texto livre: corpo fixo + nome opcional só na frente
+  const [livreTexto, setLivreTexto] = useState(() => initialDraft?.livreTexto ?? "");
+  const [livreNome, setLivreNome] = useState(() => initialDraft?.livreNome ?? "");
+
   // Sorteio (só mutirão)
   const [sorteioAtivo,     setSorteioAtivo]     = useState(() => Boolean(initialDraft?.sorteioAtivo));
   const [sorteioTipo,      setSorteioTipo]      = useState<SorteioTipo>(() => initialDraft?.sorteioTipo ?? "dinheiro");
@@ -534,6 +586,7 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   // Player
   const [generating, setGenerating] = useState(false);
+  const [exportingCall, setExportingCall] = useState(false);
   const [audioUrl,   setAudioUrl]   = useState<string | null>(null);
   const [audioBlob,  setAudioBlob]  = useState<Blob | null>(null);
   const [audioBlobVinheta, setAudioBlobVinheta] = useState<Blob | null>(null);
@@ -583,16 +636,17 @@ export function AudioStudio({ userId }: { userId: string }) {
   useEffect(() => {
     try {
       const draft: AudioDraft = {
-        savedAt: Date.now(), kind, cidade, rua, numero, bairro, placeName,
+        savedAt: Date.now(), kind, voiceId, modelId, cidade, rua, numero, bairro, placeName,
         horaInicio, horaFim, refTipo, referencia, autoCorrecao,
         sorteioAtivo, sorteioTipo, sorteioValor, sorteioLocal, sorteioDescricao, sorteioCustom,
+        livreTexto, livreNome,
       };
       localStorage.setItem(AUDIO_DRAFT_KEY, JSON.stringify(draft));
     } catch {}
   }, [
-    kind, cidade, rua, numero, bairro, placeName, horaInicio, horaFim, refTipo,
+    kind, voiceId, modelId, cidade, rua, numero, bairro, placeName, horaInicio, horaFim, refTipo,
     referencia, autoCorrecao, sorteioAtivo, sorteioTipo, sorteioValor,
-    sorteioLocal, sorteioDescricao, sorteioCustom,
+    sorteioLocal, sorteioDescricao, sorteioCustom, livreTexto, livreNome,
   ]);
 
   // ─── Texto preview ────────────────────────────────────────────────────────
@@ -619,19 +673,40 @@ export function AudioStudio({ userId }: { userId: string }) {
   // independentemente — partes fixas (FIXO_*) são geradas uma única vez na vida
   // toda; cidade/horário/rua reaproveitam quando repetidos. Concatenamos os
   // MP3s no final. Economiza 60–80% dos tokens em uso normal.
-  let segments: string[] = [];
-  if (kind === "mutirao") {
+  // Texto livre: só o nome na frente é dinâmico; o corpo fica cacheado.
+  const livreCorpoP = fix(livreTexto.trim());
+  const livreNomeFirst = fix(livreNome.trim()).split(/\s+/)[0] || "";
+  const livreNomeSeg = livreNomeFirst ? `Olá, ${livreNomeFirst}.` : "";
+
+  let segmentsRaw: string[] = [];
+  if (kind === "livre") {
+    segmentsRaw = livreNomeSeg
+      ? (livreCorpoP ? [livreNomeSeg, livreCorpoP] : [livreNomeSeg])
+      : (livreCorpoP ? [livreCorpoP] : []);
+  } else if (kind === "mutirao") {
     const trecho1 = cidadeP ? `Atenção, moradores e comerciantes de ${cidadeP} e região!` : "Atenção, moradores e comerciantes de [cidade] e região!";
-    segments = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL];
-    if (sorteioTexto) segments.push(sorteioTexto);
+    segmentsRaw = [trecho1, FIXO_MUTIRAO, `na ${ruaP || "[rua]"}.`, horarioP, FIXO_FINAL];
+    if (sorteioTexto) segmentsRaw.push(sorteioTexto);
   } else {
     const trecho1 = cidadeP ? `Atenção, moradores de ${cidadeP} e região!` : "Atenção, moradores de [cidade] e região!";
     const ondeFrag = placeP
       ? `${contraiEm(placeP)} ${placeP}${ruaP ? `, ${localizadoConcordado(placeP)} na ${ruaP}` : ""}.`
       : (ruaP ? `na ${ruaP}.` : "[nome do comércio].");
-    segments = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
+    segmentsRaw = [trecho1, FIXO_COMERCIO, ondeFrag, horarioP, FIXO_FINAL];
   }
+
+  // v3: enhance por segmento (espaços/reticências/tags) antes do cache key
+  const segments = segmentsRaw.map((seg, i) => {
+    const isNameSeg = kind === "livre" && !!livreNomeSeg && i === 0 && seg === livreNomeSeg;
+    const isOpen = i === 0 && (kind === "mutirao" || kind === "comercio");
+    return prepareTtsSegment(seg, modelId, {
+      namePause: isNameSeg,
+      excitedOpen: isOpen && modelId === MODEL_V3,
+    });
+  });
   const textoPreview = segments.join(" ");
+  const voiceLabel = voiceLabelOf(voiceId);
+  const modelLabel = modelId === MODEL_V3 ? "v3" : "v2";
 
   // ─── Geração TTS ──────────────────────────────────────────────────────────
   const ttsGenerate = async (text: string): Promise<Blob> => {
@@ -645,7 +720,12 @@ export function AudioStudio({ userId }: { userId: string }) {
         "Authorization": `Bearer ${token}`,
         "apikey": SUPABASE_PUBLISHABLE_KEY,
       },
-      body: JSON.stringify({ text, voice_id: VOICE_ID, model_id: MODEL_ID }),
+      body: JSON.stringify({
+        text,
+        voice_id: voiceId,
+        model_id: modelId,
+        voice_settings: voiceSettingsForModel(modelId),
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => null);
@@ -660,10 +740,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   };
 
   const getOrGenerate = async (text: string): Promise<Blob> => {
-    const cached = await getCachedTTS(text);
+    const cached = await getCachedTTS(text, voiceId, modelId);
     if (cached) return cached;
     const blob = await ttsGenerate(text);
-    await setCachedTTS(text, blob);
+    await setCachedTTS(text, blob, voiceId, modelId);
     return blob;
   };
 
@@ -678,7 +758,7 @@ export function AudioStudio({ userId }: { userId: string }) {
       for (const seg of segs) {
         const trimmed = seg.trim();
         if (!trimmed) continue;
-        const cached = await getCachedTTS(trimmed);
+        const cached = await getCachedTTS(trimmed, voiceId, modelId);
         if (cached) {
           blobs.push(cached);
           reused++;
@@ -686,7 +766,7 @@ export function AudioStudio({ userId }: { userId: string }) {
         }
         const fresh = await ttsGenerate(trimmed);
         if (!(await isValidMp3(fresh))) throw new Error("Segmento TTS inválido");
-        await setCachedTTS(trimmed, fresh);
+        await setCachedTTS(trimmed, fresh, voiceId, modelId);
         blobs.push(fresh);
       }
       if (blobs.length === 0) throw new Error("Nenhum segmento gerado");
@@ -816,15 +896,16 @@ export function AudioStudio({ userId }: { userId: string }) {
         const { data: inserted } = await supabase.from("audio_library").insert({
           consultant_id: userId,
           kind,
-          city: cidadeP,
-          street: ruaP,
-          time_slot: `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`,
-          place_name: placeP,
-          script_text: textoPreview,
+          city: kind === "livre" ? (livreNomeFirst || "texto livre") : cidadeP,
+          street: kind === "livre" ? "" : ruaP,
+          time_slot: kind === "livre" ? "" : `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`,
+          place_name: kind === "livre" ? "" : placeP,
+          script_text: kind === "livre" ? livreCorpoP : textoPreview,
           audio_url: src.audio_url,
           audio_url_vinheta: src.audio_url_vinheta,
           audio_hash: fullHash,
           is_public: false,
+          voice_id: voiceId,
         }).select("*").single();
         const ok = await applyReusedRow((inserted as AudioRow) || src);
         if (ok) {
@@ -841,16 +922,27 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   // ─── Geração principal + persistência ─────────────────────────────────────
   const handleGenerate = async () => {
-    if (!cidade.trim()) { toast({ title: "Preencha o nome da cidade", variant: "destructive" }); return; }
-    if (kind === "mutirao" && !rua.trim()) { toast({ title: "Preencha a rua ou local do mutirão", variant: "destructive" }); return; }
-    if (kind === "comercio" && !placeName.trim()) { toast({ title: "Preencha o nome do comércio", variant: "destructive" }); return; }
+    if (kind === "livre") {
+      if (!livreTexto.trim() && !livreNome.trim()) {
+        toast({ title: "Digite o texto ou um nome para gerar", variant: "destructive" });
+        return;
+      }
+      if (!livreTexto.trim()) {
+        toast({ title: "Digite o corpo do texto (o nome fica só na frente)", variant: "destructive" });
+        return;
+      }
+    } else {
+      if (!cidade.trim()) { toast({ title: "Preencha o nome da cidade", variant: "destructive" }); return; }
+      if (kind === "mutirao" && !rua.trim()) { toast({ title: "Preencha a rua ou local do mutirão", variant: "destructive" }); return; }
+      if (kind === "comercio" && !placeName.trim()) { toast({ title: "Preencha o nome do comércio", variant: "destructive" }); return; }
+    }
 
     try { sessionStorage.setItem(AUDIO_GENERATING_KEY, String(Date.now())); } catch {}
     setGenerating(true);
     stopAudio();
     try {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
-      if (await tryReuseExisting(hashText(textoPreview))) return;
+      if (await tryReuseExisting(hashText(textoPreview, voiceId, modelId))) return;
 
       // Gera por segmentos (cache reaproveita trechos repetidos). Fallback
       // automático pra chamada única se algo der errado.
@@ -860,9 +952,11 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioBlob(mp3Blob);
       setAudioUrl(URL.createObjectURL(mp3Blob));
 
-      // Gera também a versão COM vinheta (se a vinheta estiver disponível) para
-      // salvar as duas no histórico de uma vez.
-      const vinhetaBlob = await montarComVinheta(mp3Blob);
+      // Vinheta só no Mutirão (comércio / texto livre ficam sem).
+      let vinhetaBlob: Blob | null = null;
+      if (kind === "mutirao") {
+        vinhetaBlob = await montarComVinheta(mp3Blob);
+      }
       setAudioBlobVinheta(vinhetaBlob);
 
       const row = await saveToLibrary(mp3Blob, textoPreview, vinhetaBlob);
@@ -873,12 +967,12 @@ export function AudioStudio({ userId }: { userId: string }) {
         setLastPublicUrlVinheta(row.audio_url_vinheta);
       }
       toast({
-        title: vinhetaBlob
-          ? "✅ Áudio salvo com e sem vinheta!"
-          : "✅ Áudio gerado (sem vinheta)",
-        description: vinhetaBlob
-          ? undefined
-          : "Arquivo de vinheta não encontrado — apenas a versão sem vinheta foi salva.",
+        title: kind === "mutirao"
+          ? (vinhetaBlob ? "✅ Áudio salvo com e sem vinheta!" : "✅ Áudio gerado (sem vinheta)")
+          : "✅ Áudio gerado!",
+        description: kind === "mutirao" && !vinhetaBlob
+          ? "Arquivo de vinheta não encontrado — apenas a versão sem vinheta foi salva."
+          : undefined,
       });
       loadLibrary();
     } catch (e: any) {
@@ -892,7 +986,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   const saveToLibrary = async (blob: Blob, scriptText: string, vinhetaBlob?: Blob | null): Promise<AudioRow | null> => {
     try {
       const uploadAudio = async (audio: Blob, suffix: string): Promise<string> => {
-        const slug = `${kind}-${cidadeP || "audio"}-${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}-${suffix}`;
+        const slugBase = kind === "livre"
+          ? `livre-${(livreNomeFirst || "corpo").slice(0, 24)}`
+          : `${kind}-${cidadeP || "audio"}-${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`;
+        const slug = `${slugBase}-${suffix}`;
         const file = new File([audio], `${slug}.mp3`, { type: "audio/mpeg" });
         try {
           const result = await uploadMedia(file, undefined, {
@@ -926,9 +1023,14 @@ export function AudioStudio({ userId }: { userId: string }) {
 
       const ruaNome = fix(expandirEndereco(rua)).replace(/^(Rua|Avenida|Alameda|Travessa|Praça|Rodovia|Estrada)\s+/i, "");
       const hora  = `${horarioCurto(horaInicio)}-${horarioCurto(horaFim)}`;
-      const nome  = kind === "mutirao"
-        ? `${cidadeP || "áudio"} - ${ruaNome}${bairro.trim() ? ` (${fix(bairro.trim())})` : ""} - ${hora}`
-        : `${cidadeP || "áudio"} - ${placeP}${ruaNome ? ` (${ruaNome})` : ""} - ${hora}`;
+      const nome  = kind === "livre"
+        ? `Texto livre${livreNomeFirst ? ` — ${livreNomeFirst}` : ""} · ${voiceLabel}`
+        : kind === "mutirao"
+          ? `${cidadeP || "áudio"} - ${ruaNome}${bairro.trim() ? ` (${fix(bairro.trim())})` : ""} - ${hora}`
+          : `${cidadeP || "áudio"} - ${placeP}${ruaNome ? ` (${ruaNome})` : ""} - ${hora}`;
+
+      // Corpo salvo sem o nome (reutilizável); hash do áudio gerado (com nome se houver).
+      const scriptToSave = kind === "livre" ? livreCorpoP : scriptText;
 
       // Catálogo de mídia (mantém comportamento atual de aparecer na biblioteca do painel)
       await supabase.from("ai_media_library").insert({
@@ -940,15 +1042,16 @@ export function AudioStudio({ userId }: { userId: string }) {
       const { data, error } = await supabase.from("audio_library").insert({
         consultant_id: userId,
         kind,
-        city: cidadeP,
-        street: ruaP,
-        time_slot: hora,
-        place_name: placeP,
-        script_text: scriptText,
+        city: kind === "livre" ? (livreNomeFirst || "texto livre") : cidadeP,
+        street: kind === "livre" ? "" : ruaP,
+        time_slot: kind === "livre" ? "" : hora,
+        place_name: kind === "livre" ? "" : placeP,
+        script_text: scriptToSave,
         audio_url: audioPublicUrl,
         audio_url_vinheta: vinhetaUrl,
-        audio_hash: hashText(scriptText),
+        audio_hash: hashText(textoPreview, voiceId, modelId),
         is_public: false,
+        voice_id: voiceId,
       }).select("*").single();
       if (error) throw error;
       return data as AudioRow;
@@ -966,6 +1069,66 @@ export function AudioStudio({ userId }: { userId: string }) {
     setLastIsPublic(true);
     toast({ title: "🌎 Publicado na biblioteca pública!" });
     loadLibrary();
+  };
+
+  /** Exporta só o corpo (sem nome) como clipe de ligação para o discador. */
+  const exportToCallClip = async () => {
+    if (kind !== "livre" || !livreCorpoP.trim()) {
+      toast({ title: "Gere um Texto livre com corpo antes", variant: "destructive" });
+      return;
+    }
+    setExportingCall(true);
+    try {
+      const bodySeg = prepareTtsSegment(livreCorpoP, modelId, {});
+      const bodyBlob = await getOrGenerate(bodySeg);
+      const slug = `call-body-${Date.now()}`;
+      const file = new File([bodyBlob], `${slug}.mp3`, { type: "audio/mpeg" });
+      let audioUrl: string;
+      try {
+        const up = await uploadMedia(file, undefined, {
+          scope: "admin",
+          consultant_id: userId,
+          kind: "audio",
+          slug,
+        });
+        audioUrl = up.url;
+      } catch {
+        const path = `${userId}/${slug}.mp3`;
+        const { error: upErr } = await supabase.storage.from("ai-agent-media").upload(path, bodyBlob, {
+          upsert: false, contentType: "audio/mpeg",
+        });
+        if (upErr) throw upErr;
+        audioUrl = supabase.storage.from("ai-agent-media").getPublicUrl(path).data.publicUrl;
+      }
+
+      const { data, error } = await supabase.functions.invoke("voice-call-stitch", {
+        body: {
+          action: "export_body",
+          audio_url: audioUrl,
+          name: `Corpo · ${voiceLabel} · ${livreCorpoP.slice(0, 40)}`,
+          voice_id: voiceId,
+          model_id: modelId,
+          source_audio_library_id: lastRowId,
+        },
+      });
+      if (error) throw error;
+      if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+      const clipId = (data as { clip?: { id?: string } })?.clip?.id;
+      toast({
+        title: "Pronto para ligações",
+        description: clipId
+          ? `Clipe ${clipId.slice(0, 8)}… disponível no wizard Ligação (personalizar nome).`
+          : "Clipe exportado para o discador.",
+      });
+    } catch (e: unknown) {
+      toast({
+        title: "Falha ao exportar para ligações",
+        description: e instanceof Error ? e.message : "Erro",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingCall(false);
+    }
   };
 
   const togglePublishRow = async (row: AudioRow) => {
@@ -1042,6 +1205,12 @@ export function AudioStudio({ userId }: { userId: string }) {
   const handleDownload = async () => {
     if (!audioBlob) return;
     try {
+      if (kind !== "mutirao") {
+        const slug = (kind === "livre" ? livreNomeFirst : cidade.trim().toLowerCase().replace(/\s+/g, "_")) || "audio";
+        downloadBlob(audioBlob, `${kind}_${slug}.mp3`);
+        toast({ title: "✅ Áudio baixado" });
+        return;
+      }
       let comBlob = audioBlobVinheta;
       if (!comBlob) {
         toast({ title: "Montando versão com vinheta…" });
@@ -1059,7 +1228,7 @@ export function AudioStudio({ userId }: { userId: string }) {
     }
   };
 
-  const kindLabel = kind === "mutirao" ? "Mutirão" : "Comércio";
+  const kindLabel = kind === "mutirao" ? "Mutirão" : kind === "comercio" ? "Comércio" : "Texto livre";
 
   return (
     <div
@@ -1085,40 +1254,77 @@ export function AudioStudio({ userId }: { userId: string }) {
               Estúdio de Áudio
             </h1>
             <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              Gere, ouça e distribua áudios por cidade — toda geração já fica salva com e sem vinheta.
+              Gere, ouça e distribua áudios — Mutirão salva com e sem vinheta.
             </p>
           </div>
           <div className="hidden md:flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Voz Diego
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Voz {voiceLabel}
             </span>
             <span className="px-2.5 py-1 rounded-full bg-muted/40 border border-border/40">
-              ElevenLabs · Multilingual v2
+              ElevenLabs · {modelId === MODEL_V3 ? "v3" : "Multilingual v2"}
             </span>
           </div>
         </div>
 
-        <div className="relative border-t border-border/50 px-3 sm:px-4 pt-3 pb-3 flex gap-2">
-          {([
-            { id: "mutirao", label: "Mutirão", icon: Megaphone },
-            { id: "comercio", label: "Comércio", icon: Store },
-          ] as { id: Kind; label: string; icon: typeof Megaphone }[]).map((t) => {
-            const Icon = t.icon;
-            const active = kind === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setKind(t.id)}
-                className={`flex-1 sm:flex-none sm:min-w-[160px] h-11 px-4 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-                  active
-                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
-                    : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/30"
-                }`}
-              >
-                <Icon className="w-4 h-4" /> {t.label}
-              </button>
-            );
-          })}
+        <div className="relative border-t border-border/50 px-3 sm:px-4 pt-3 pb-3 space-y-2">
+          <div className="flex gap-2">
+            {([
+              { id: "mutirao", label: "Mutirão", icon: Megaphone },
+              { id: "comercio", label: "Comércio", icon: Store },
+              { id: "livre", label: "Texto livre", icon: FileText },
+            ] as { id: Kind; label: string; icon: typeof Megaphone }[]).map((t) => {
+              const Icon = t.icon;
+              const active = kind === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setKind(t.id)}
+                  className={`flex-1 sm:flex-none sm:min-w-[140px] h-11 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                    active
+                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
+                      : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/30"
+                  }`}
+                >
+                  <Icon className="w-4 h-4" /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Voz</span>
+            <div className="flex gap-1.5 flex-1">
+              {VOICES.map((v) => {
+                const active = voiceId === v.id;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => setVoiceId(v.id)}
+                    className={`flex-1 h-9 px-3 rounded-lg text-xs font-semibold transition-all ${
+                      active
+                        ? "bg-foreground text-background"
+                        : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Modelo</span>
+            <div className="flex gap-1.5 flex-1">
+              <span className="flex-1 h-9 px-3 rounded-lg text-xs font-semibold inline-flex items-center justify-center bg-primary text-primary-foreground">
+                v3 expressivo
+              </span>
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
+            Sempre v3 (ritmo natural). Áudios novos usam eleven_v3.
+          </p>
         </div>
       </header>
 
@@ -1126,9 +1332,44 @@ export function AudioStudio({ userId }: { userId: string }) {
       <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
         {/* ═══ LADO ESQUERDO — formulário ═══ */}
         <section className="space-y-3">
-          <SectionTitle icon={Navigation} label="Roteiro" hint="Preencha os dados do anúncio" />
+          <SectionTitle
+            icon={Navigation}
+            label="Roteiro"
+            hint={kind === "livre" ? "Texto livre + nome opcional na frente" : "Preencha os dados do anúncio"}
+          />
 
           <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3 shadow-sm">
+            {kind === "livre" ? (
+              <>
+                <Field icon={User} label="Nome (só na frente — opcional na prévia)">
+                  <Input
+                    value={livreNome}
+                    onChange={(e) => setLivreNome(e.target.value)}
+                    placeholder="Ex: Maria"
+                    className="bg-background border-border/60 h-11 text-base"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1.5">
+                    Gera &quot;Olá, {"{Nome}"}.&quot; na frente. O corpo abaixo fica salvo e reutilizável (só o nome consome crédito de novo).
+                  </p>
+                </Field>
+                <Field icon={FileText} label="Texto do áudio (corpo fixo)">
+                  <Textarea
+                    value={livreTexto}
+                    onChange={(e) => setLivreTexto(e.target.value)}
+                    placeholder="Escreva o texto que será falado depois do nome…"
+                    className="bg-background border-border/60 text-sm min-h-36"
+                  />
+                </Field>
+                <div className="flex items-center justify-between pt-2 border-t border-border/40">
+                  <div>
+                    <p className="text-xs font-semibold text-foreground">Correção automática</p>
+                    <p className="text-[10px] text-muted-foreground">Acentos e abreviações</p>
+                  </div>
+                  <Toggle on={autoCorrecao} onChange={() => setAutoCorrecao(!autoCorrecao)} />
+                </div>
+              </>
+            ) : (
+              <>
             {kind === "comercio" && (
               <Field icon={Store} label="Nome do comércio">
                 <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Ex: Padaria Central" className="bg-background border-border/60 h-11 text-base" />
@@ -1200,6 +1441,8 @@ export function AudioStudio({ userId }: { userId: string }) {
               </div>
               <Toggle on={autoCorrecao} onChange={() => setAutoCorrecao(!autoCorrecao)} />
             </div>
+              </>
+            )}
           </div>
 
           {kind === "mutirao" && (
@@ -1324,14 +1567,21 @@ export function AudioStudio({ userId }: { userId: string }) {
                       className="text-base font-bold truncate text-foreground"
                       style={{ fontFamily: "'Bricolage Grotesque', sans-serif" }}
                     >
-                      {kindLabel} — {cidade || "cidade"}
+                      {kindLabel} — {kind === "livre" ? (livreNomeFirst || "corpo") : (cidade || "cidade")}
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
-                      Voz Diego · prévia sem vinheta
+                      Voz {voiceLabel} · modelo {modelLabel}
+                      {kind === "mutirao" ? " · prévia sem vinheta" : ""}
                     </p>
                     <div className="flex gap-1.5 mt-1.5">
-                      <Badge>sem vinheta</Badge>
-                      {(audioBlobVinheta || lastPublicUrlVinheta) && <Badge tone="primary">com vinheta</Badge>}
+                      {kind === "mutirao" ? (
+                        <>
+                          <Badge>sem vinheta</Badge>
+                          {(audioBlobVinheta || lastPublicUrlVinheta) && <Badge tone="primary">com vinheta</Badge>}
+                        </>
+                      ) : (
+                        <Badge>áudio</Badge>
+                      )}
                     </div>
                   </div>
                   <button
@@ -1349,26 +1599,26 @@ export function AudioStudio({ userId }: { userId: string }) {
                   className="w-full h-12 font-semibold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Download className="w-4 h-4" />
-                  Baixar áudio (com e sem vinheta)
+                  {kind === "mutirao" ? "Baixar áudio (com e sem vinheta)" : "Baixar áudio"}
                 </Button>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className={`grid gap-2 ${kind === "mutirao" && lastPublicUrlVinheta ? "grid-cols-2" : "grid-cols-1"}`}>
                   {lastPublicUrl ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrl}
-                      label={`${kindLabel} — ${cidade || "cidade"}`}
+                      label={`${kindLabel} — ${kind === "livre" ? (livreNomeFirst || "corpo") : (cidade || "cidade")}`}
                       trigger={
                         <Button variant="outline" className="h-10 text-xs gap-1.5 rounded-xl w-full">
-                          <Send className="w-3.5 h-3.5" /> WhatsApp (sem)
+                          <Send className="w-3.5 h-3.5" /> {kind === "mutirao" ? "WhatsApp (sem)" : "WhatsApp"}
                         </Button>
                       }
                     />
                   ) : (
                     <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
-                      <Send className="w-3.5 h-3.5" /> WhatsApp (sem)
+                      <Send className="w-3.5 h-3.5" /> {kind === "mutirao" ? "WhatsApp (sem)" : "WhatsApp"}
                     </Button>
                   )}
-                  {lastPublicUrlVinheta ? (
+                  {kind === "mutirao" && lastPublicUrlVinheta ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrlVinheta}
                       label={`${kindLabel} — ${cidade || "cidade"} (com vinheta)`}
@@ -1378,12 +1628,28 @@ export function AudioStudio({ userId }: { userId: string }) {
                         </Button>
                       }
                     />
-                  ) : (
+                  ) : kind === "mutirao" ? (
                     <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
                       <Music className="w-3.5 h-3.5" /> WhatsApp (com)
                     </Button>
-                  )}
+                  ) : null}
                 </div>
+
+                {kind === "livre" && livreCorpoP.trim() && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={exportToCallClip}
+                    disabled={exportingCall || generating}
+                    className="w-full h-10 text-xs gap-2 rounded-xl"
+                  >
+                    {exportingCall ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Exportando corpo…</>
+                    ) : (
+                      <><Phone className="w-3.5 h-3.5" /> Usar em ligações (corpo 1x)</>
+                    )}
+                  </Button>
+                )}
 
                 {lastRowId && (
                   <Button
@@ -1457,7 +1723,9 @@ export function AudioStudio({ userId }: { userId: string }) {
 
               {(libTab === "mine" ? myAudios : libTab === "public" ? publicAudios : allAudios).map((row) => {
                 const isOpen = expandedRowId === row.id;
-                const rowLabel = `${row.kind === "comercio" ? "Comércio" : "Mutirão"} — ${row.city || "cidade"}`;
+                const rowLabel = `${
+                  row.kind === "comercio" ? "Comércio" : row.kind === "livre" ? "Texto livre" : "Mutirão"
+                } — ${row.city || "cidade"}`;
                 return (
                   <div
                     key={row.id}
@@ -1490,8 +1758,10 @@ export function AudioStudio({ userId }: { userId: string }) {
                           {!row.is_public && libTab === "mine" && <Lock className="inline w-3 h-3 text-muted-foreground shrink-0" />}
                         </p>
                         <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                          {row.kind === "comercio" && row.place_name ? `${row.place_name} · ` : ""}
-                          {row.street || "—"} · {row.time_slot}
+                          {row.kind === "livre"
+                            ? (row.script_text || "Texto livre")
+                            : `${row.kind === "comercio" && row.place_name ? `${row.place_name} · ` : ""}${row.street || "—"} · ${row.time_slot}`}
+                          {row.voice_id ? ` · ${voiceLabelOf(row.voice_id)}` : ""}
                         </p>
                         {libTab === "public" && row.play_count > 0 && (
                           <p className="text-[10px] text-primary font-medium mt-0.5">

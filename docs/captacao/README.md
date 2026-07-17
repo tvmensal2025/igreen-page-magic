@@ -25,6 +25,10 @@ B2B, dados públicos de empresas.
 
 ## 2. Visão geral (o desenho)
 
+> Identidade (RG antigo / RG novo·CIN / CNH): ver [`DOCUMENTOS-RG-CNH-CIN.md`](./DOCUMENTOS-RG-CNH-CIN.md).  
+> **RG novo 2026 / CIN = só CPF — não pedir número de RG.**  
+> Ordem final: [`ORDEM-OTP-ANTES-FACIAL.md`](./ORDEM-OTP-ANTES-FACIAL.md) — **OTP primeiro, facial depois**.
+
 ```
 [Meta Lead Ads]  ─┐
 [TikTok LeadGen] ─┤

@@ -27,7 +27,7 @@ export type ActivateCustomerLike = {
 };
 
 const ACTIVATE_RX =
-  /\b(ativar(\s+o)?\s+benef[ií]cio|ativar|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar)\b/i;
+  /\b(ativar(\s+o)?\s+benef[ií]cio|ativar|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar|activate|register|quero\s+ativar)\b/i;
 
 const SIMULATE_RX =
   /\b(simular(\s+economia)?|quero\s+simular|quero_simular|simula[cç][aã]o|simular_completa|simular_rapida)\b/i;

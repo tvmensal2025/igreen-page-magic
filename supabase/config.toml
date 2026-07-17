@@ -235,6 +235,12 @@ verify_jwt = false
 [functions.voice-dialer-health]
 verify_jwt = false
 
+[functions.voice-call-stitch]
+verify_jwt = true
+
+[functions.wa-audio-prewarm]
+verify_jwt = false
+
 [functions.speed-to-lead-check]
 verify_jwt = false
 

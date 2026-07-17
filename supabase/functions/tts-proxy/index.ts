@@ -14,8 +14,33 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
 const ELEVENLABS_KEY = Deno.env.get("ELEVENLABS_API_KEY") || "";
-const DEFAULT_VOICE   = "rpNe0HOx7heUulPiOEaG"; // Diego PT-BR
-const DEFAULT_MODEL   = "eleven_multilingual_v2";
+const DEFAULT_VOICE   = "EJV7H2baGt5ab95tOoSG"; // Voz oficial iGreen (áudio + ligação)
+const DEFAULT_MODEL   = "eleven_v3";
+const MODEL_V3 = "eleven_v3";
+const MODEL_V2 = "eleven_multilingual_v2";
+
+const VOICE_SETTINGS_V2: Record<string, unknown> = {
+  stability: 0.9,
+  similarity_boost: 1.0,
+  style: 0.45,
+  use_speaker_boost: true,
+  speed: 1.0,
+};
+
+/** Natural (~0.5): pontuação e audio tags respondem melhor no v3. */
+const VOICE_SETTINGS_V3: Record<string, unknown> = {
+  stability: 0.5,
+  similarity_boost: 0.75,
+  style: 0.0,
+  use_speaker_boost: true,
+  speed: 1.0,
+};
+
+function defaultVoiceSettings(modelId: string): Record<string, unknown> {
+  return modelId === MODEL_V3 || modelId === "eleven_v3"
+    ? { ...VOICE_SETTINGS_V3 }
+    : { ...VOICE_SETTINGS_V2 };
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -48,7 +73,13 @@ Deno.serve(async (req) => {
     );
   }
 
-  let body: { text?: string; voice_id?: string; model_id?: string; voice_settings?: Record<string, unknown> };
+  let body: {
+    text?: string;
+    voice_id?: string;
+    model_id?: string;
+    voice_settings?: Record<string, unknown>;
+    language_code?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -66,13 +97,9 @@ Deno.serve(async (req) => {
 
   const voiceId = body.voice_id || DEFAULT_VOICE;
   const modelId = body.model_id || DEFAULT_MODEL;
-  const voiceSettings = body.voice_settings ?? {
-    stability: 0.9,
-    similarity_boost: 1.0,
-    style: 0.45,
-    use_speaker_boost: true,
-    speed: 1.0,
-  };
+  const voiceSettings = body.voice_settings ?? defaultVoiceSettings(modelId);
+  // Default PT-BR — nomes isolados sem isso saem com sotaque espanhol.
+  const languageCode = (body.language_code || "pt").trim() || "pt";
 
   try {
     const elRes = await fetch(
@@ -83,7 +110,12 @@ Deno.serve(async (req) => {
           "Content-Type": "application/json",
           "xi-api-key": ELEVENLABS_KEY,
         },
-        body: JSON.stringify({ text, model_id: modelId, voice_settings: voiceSettings }),
+        body: JSON.stringify({
+          text,
+          model_id: modelId,
+          language_code: languageCode,
+          voice_settings: voiceSettings,
+        }),
       },
     );
 

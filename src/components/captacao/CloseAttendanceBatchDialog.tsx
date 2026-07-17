@@ -18,8 +18,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";
-import { hasValidBatchPhone } from "@/components/captacao/runAttendanceBatch";
+import {
+  hasValidBatchPhone,
+  type BatchLeadTarget,
+} from "@/components/captacao/runAttendanceBatch";
 
 type CloseStatus = "pending" | "running" | "ok" | "skipped" | "failed" | "queued_stop";
 
@@ -43,7 +45,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   consultantId: string;
-  leads: CaptureBatchLead[];
+  leads: BatchLeadTarget[];
   delaySec?: number;
   onFinished?: () => void;
 }
@@ -296,7 +298,7 @@ export function CloseAttendanceBatchDialog({
     el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [currentId]);
 
-  const patchResult = (id: string, patch: Partial<CloseLeadResult>, snapshot: CaptureBatchLead[]) => {
+  const patchResult = (id: string, patch: Partial<CloseLeadResult>, snapshot: BatchLeadTarget[]) => {
     setResults((prev) => {
       const map = new Map(prev.map((r) => [r.id, r]));
       const cur = map.get(id) ?? { id, status: "pending" as const };

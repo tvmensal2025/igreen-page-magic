@@ -137,7 +137,9 @@ const STOPWORDS_NOME = new Set([
   "recomendou","recomendado","recomenda","recomendar","recomendação","recomendacao",
   "indicou","indicado","indica","indicar","indicação","indicacao",
   "mandou","mandado","manda","mandar",
-  "horacio","horácio","nilma","rafael",
+  // NÃO listar nomes próprios comuns (rafael, etc.): o lead pode se chamar
+  // assim. Indicação do QR ("horacio te recomendou") já é bloqueada no hard-block
+  // no topo de extractNome — não precisa blacklist de prenome.
 ]);
 
 

@@ -1590,6 +1590,7 @@ export type Database = {
           street: string
           time_slot: string
           updated_at: string
+          voice_id: string | null
         }
         Insert: {
           audio_hash?: string
@@ -1607,6 +1608,7 @@ export type Database = {
           street?: string
           time_slot?: string
           updated_at?: string
+          voice_id?: string | null
         }
         Update: {
           audio_hash?: string
@@ -1614,6 +1616,7 @@ export type Database = {
           audio_url_vinheta?: string | null
           city?: string
           consultant_id?: string
+          voice_id?: string | null
           created_at?: string
           id?: string
           is_public?: boolean
@@ -10086,10 +10089,14 @@ export type Database = {
           created_at: string
           duration_sec: number | null
           id: string
+          is_call_body: boolean
+          model_id: string | null
           name: string
+          source_audio_library_id: string | null
           updated_at: string
           velip_audio_id: string | null
           velip_uploaded_at: string | null
+          voice_id: string | null
         }
         Insert: {
           audio_url: string
@@ -10097,10 +10104,14 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          is_call_body?: boolean
+          model_id?: string | null
           name?: string
+          source_audio_library_id?: string | null
           updated_at?: string
           velip_audio_id?: string | null
           velip_uploaded_at?: string | null
+          voice_id?: string | null
         }
         Update: {
           audio_url?: string
@@ -10108,10 +10119,59 @@ export type Database = {
           created_at?: string
           duration_sec?: number | null
           id?: string
+          is_call_body?: boolean
+          model_id?: string | null
           name?: string
+          source_audio_library_id?: string | null
           updated_at?: string
           velip_audio_id?: string | null
           velip_uploaded_at?: string | null
+          voice_id?: string | null
+        }
+        Relationships: []
+      }
+      voice_call_renders: {
+        Row: {
+          body_clip_id: string
+          consultant_id: string
+          created_at: string
+          display_name: string | null
+          final_audio_url: string | null
+          id: string
+          intro_audio_url: string | null
+          model_id: string
+          name_normalized: string
+          updated_at: string
+          velip_audio_id: string | null
+          voice_id: string
+        }
+        Insert: {
+          body_clip_id: string
+          consultant_id: string
+          created_at?: string
+          display_name?: string | null
+          final_audio_url?: string | null
+          id?: string
+          intro_audio_url?: string | null
+          model_id?: string
+          name_normalized: string
+          updated_at?: string
+          velip_audio_id?: string | null
+          voice_id: string
+        }
+        Update: {
+          body_clip_id?: string
+          consultant_id?: string
+          created_at?: string
+          display_name?: string | null
+          final_audio_url?: string | null
+          id?: string
+          intro_audio_url?: string | null
+          model_id?: string
+          name_normalized?: string
+          updated_at?: string
+          velip_audio_id?: string | null
+          voice_id?: string
         }
         Relationships: []
       }

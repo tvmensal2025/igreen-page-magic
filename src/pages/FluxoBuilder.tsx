@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap, Sparkles } from "lucide-react";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -25,6 +25,7 @@ import StepCoachPanel from "@/components/admin/flow-builder/StepCoachPanel";
 import FlowTourOverlay, { tourPendente } from "@/components/admin/flow-builder/FlowTourOverlay";
 import FlowHealthDialog from "@/components/admin/flow-builder/FlowHealthDialog";
 import TemplateGalleryDialog from "@/components/admin/flow-builder/TemplateGalleryDialog";
+import FlowTemplatesDialog from "@/components/admin/flow-builder/FlowTemplatesDialog";
 import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
@@ -75,6 +76,7 @@ export default function FluxoBuilder() {
   });
 
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [healthOpen, setHealthOpen] = useState(false);
   const [tourOpen, setTourOpen] = useState(false);
@@ -323,6 +325,25 @@ export default function FluxoBuilder() {
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>Galeria</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5"
+                          disabled={!flowId || syncMode === "public"}
+                          onClick={() => setTemplatesOpen(true)}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Sofia / templates</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {syncMode === "public"
+                          ? "Personalize o fluxo antes de aplicar o template Sofia"
+                          : "Aplicar Sofia Multicanal (Grupo A) ou outros templates"}
+                      </TooltipContent>
                     </Tooltip>
                     
                     <Tooltip>
@@ -646,6 +667,18 @@ export default function FluxoBuilder() {
         consultantId={userId}
         existingVariants={existingVariants}
         onSelectVariant={setEditingVariant}
+      />
+      <FlowTemplatesDialog
+        open={templatesOpen}
+        onOpenChange={setTemplatesOpen}
+        flowId={flowId}
+        currentMaxPosition={steps.reduce((m, s) => Math.max(m, s.position || 0), 0)}
+        onApplied={() => void loadData(editingVariant)}
+        preferTemplateId={
+          editingVariant === "C" || /sofia|multicanal/i.test(flowNames[editingVariant] || "")
+            ? "sofia_ativacao_multicanal"
+            : null
+        }
       />
       <FlowHealthDialog
         open={healthOpen}

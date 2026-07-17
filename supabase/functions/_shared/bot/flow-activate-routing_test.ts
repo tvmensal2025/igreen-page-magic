@@ -47,6 +47,8 @@ const steps = [
 Deno.test("isActivateIntent vs isSimulateIntent", () => {
   assertEquals(isActivateIntent("Ativar o benefício", null), true);
   assertEquals(isActivateIntent(null, "cadastrar"), true);
+  assertEquals(isActivateIntent(null, "activate"), true);
+  assertEquals(isActivateIntent(null, "register"), true);
   assertEquals(isActivateIntent("quero simular", null), false);
   assertEquals(isSimulateIntent("quero simular", null), true);
   assertEquals(isSimulateIntent("3", "ativar"), false);

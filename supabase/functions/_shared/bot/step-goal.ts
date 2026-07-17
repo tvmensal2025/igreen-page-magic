@@ -35,7 +35,7 @@ export function legacyStepTail(step: string, customer: any): string {
   const map: Record<string, string> = {
     ask_name: `${v}qual é o seu *nome completo*?`,
     ask_cpf: `${v}qual é o seu *CPF*? (apenas números)`,
-    ask_rg: `${v}qual é o seu *RG*?`,
+    ask_rg: `${v}qual é o seu *número do RG* (Registro Geral do RG antigo)?`,
     ask_birth_date: `${v}qual sua *data de nascimento*? (DD/MM/AAAA)`,
     ask_phone: `${v}me confirma seu *telefone* (com DDD)?`,
     ask_phone_confirm: `${v}me confirma seu *telefone* (com DDD)?`,
