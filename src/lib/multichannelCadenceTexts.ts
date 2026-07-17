@@ -1323,7 +1323,7 @@ Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*. ⚡
     title: "Dia 7 — Outras opções (foto, ligar ou encerrar)",
     timing: "Dia 7 · depois das 10h30 · só se precisar",
     canGenerateAudio: false,
-    body: `{{nome}}, ou prefere outra opção?`,
+    body: `*{{nome}}*, ou prefere outra opção? 👇`,
     buttons: [...NEXT_ACTION_BUTTONS],
   },
   {
