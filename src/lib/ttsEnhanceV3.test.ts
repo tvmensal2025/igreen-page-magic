@@ -62,15 +62,16 @@ describe("enhanceScriptForV3", () => {
 });
 
 describe("formatNameGreetForTts", () => {
-  it("Olá, Nome. → Olá... Nome...", () => {
-    expect(formatNameGreetForTts("Olá, João.")).toBe("Olá... João...");
+  it("Olá, Nome. → Olá... Nome!", () => {
+    expect(formatNameGreetForTts("Olá, João.")).toBe("Olá... João!");
   });
 });
 
 describe("prepareTtsSegment", () => {
   it("v2 com namePause ainda formata cumprimento", () => {
-    expect(prepareTtsSegment("Olá, Ana.", MODEL_V2, { namePause: true })).toBe("Olá... Ana...");
+    expect(prepareTtsSegment("Olá, Ana.", MODEL_V2, { namePause: true })).toBe("Olá... Ana!");
   });
+
 
   it("v3 aplica enhance", () => {
     expect(prepareTtsSegment("Atenção!", MODEL_V3, { excitedOpen: true })).toMatch(/^\[excited\]/);
