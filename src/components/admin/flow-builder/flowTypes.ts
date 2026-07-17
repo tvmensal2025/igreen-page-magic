@@ -127,6 +127,10 @@ export type Step = {
    * migration; engine de runtime ignora.
    */
   layout?: StepLayout | null;
+  /** Clip Sofia para step_type=make_call (voice_audio_clips). */
+  voice_audio_clip_id?: string | null;
+  /** Costura intro Olá,{Nome}. no make_call / ligação. */
+  personalize_name?: boolean;
 };
 
 export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; hint: string }[] = [
@@ -221,9 +225,9 @@ export const GUIDED_CAPTURE_OPTIONS: GuidedCaptureOption[] = [
 ];
 
 const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
-  A: "CEMIG",
+  A: "Sofia Multicanal (Grupo A)",
   B: "Fluxo B (IA livre)",
-  C: "Sofia Multicanal",
+  C: "Fluxo C (legado)",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
   F: "CEMIG 2",

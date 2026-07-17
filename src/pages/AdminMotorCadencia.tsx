@@ -25,14 +25,24 @@ type StageKey = (typeof STAGES)[number];
 const STAGE_META: Record<StageKey, { channel: "whatsapp" | "voice" | "sms"; label: string }> = {
   COLD_1: { channel: "whatsapp", label: "WhatsApp reaquecimento 1" },
   COLD_2: { channel: "whatsapp", label: "WhatsApp reaquecimento 2" },
-  CALL_1: { channel: "voice",    label: "Ligação Velip 1 (TTS ou áudio)" },
+  CALL_1: { channel: "voice",    label: "Ligação Sofia 1 (áudio ElevenLabs)" },
   SMS_1:  { channel: "sms",      label: "SMS de resgate 1" },
   COLD_3: { channel: "whatsapp", label: "WhatsApp reaquecimento 3" },
-  CALL_2: { channel: "voice",    label: "Ligação Velip 2" },
+  CALL_2: { channel: "voice",    label: "Ligação Sofia 2" },
   SMS_2:  { channel: "sms",      label: "SMS de resgate 2" },
   COLD_4: { channel: "whatsapp", label: "WhatsApp reaquecimento 4" },
-  CALL_3: { channel: "voice",    label: "Ligação Velip 3 (última chance)" },
+  CALL_3: { channel: "voice",    label: "Ligação Sofia 3 (última chance)" },
 };
+
+const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
+
+interface VoiceClipOpt {
+  id: string;
+  name: string | null;
+  velip_audio_id: string | null;
+  is_call_body: boolean | null;
+  voice_id: string | null;
+}
 
 interface StageRow {
   id?: string;
@@ -43,6 +53,8 @@ interface StageRow {
   media_url: string | null;
   media_type: string | null;
   velip_audio_id: string | null;
+  voice_audio_clip_id: string | null;
+  personalize_name: boolean;
   max_per_lead: number;
   window_start_hour: number | null;
   window_end_hour: number | null;
@@ -79,6 +91,7 @@ export default function AdminMotorCadencia() {
   const [ticking, setTicking] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const [metrics, setMetrics] = useState<Array<{ stage: string; channel: string; sent: number; failed: number; unique_leads: number; responded_leads: number }>>([]);
+  const [clips, setClips] = useState<VoiceClipOpt[]>([]);
 
 
   useEffect(() => { void load(); }, []);
@@ -90,15 +103,29 @@ export default function AdminMotorCadencia() {
 
   async function load() {
     setLoading(true);
-    const [{ data: settings }, { data: cfgs }, { data: leadStats }, { data: recentLogs }] = await Promise.all([
+    const [{ data: settings }, { data: cfgs }, { data: leadStats }, { data: recentLogs }, { data: clipRows }] = await Promise.all([
       supabase.from("app_settings").select("cadence_engine_enabled, cadence_window").eq("id", "global").maybeSingle(),
       supabase.from("cadence_stage_config").select("*").is("consultant_id", null).in("stage", STAGES as unknown as string[]),
       supabase.from("lead_cadence_state").select("stage").limit(5000),
       supabase.from("cadence_action_log").select("stage, channel, status, detail, created_at").order("created_at", { ascending: false }).limit(20),
+      supabase
+        .from("voice_audio_clips")
+        .select("id, name, velip_audio_id, is_call_body, voice_id")
+        .order("updated_at", { ascending: false })
+        .limit(80),
     ]);
 
     setEnabled(!!settings?.cadence_engine_enabled);
     setWindow({ ...DEFAULT_WINDOW, ...((settings?.cadence_window as any) || {}) });
+
+    const list = ((clipRows as VoiceClipOpt[]) || []).slice().sort((a, b) => {
+      const score = (c: VoiceClipOpt) =>
+        (c.voice_id === VOICE_SOFIA ? 4 : 0) +
+        (c.is_call_body ? 2 : 0) +
+        (c.velip_audio_id ? 1 : 0);
+      return score(b) - score(a);
+    });
+    setClips(list);
 
     const map = {} as Record<StageKey, StageRow>;
     for (const s of STAGES) {
@@ -107,6 +134,9 @@ export default function AdminMotorCadencia() {
         ? {
             ...found, stage: s,
             message_text: found.message_text || "",
+            velip_audio_id: found.velip_audio_id ?? null,
+            voice_audio_clip_id: (found as any).voice_audio_clip_id ?? null,
+            personalize_name: !!(found as any).personalize_name,
             max_per_lead: (found as any).max_per_lead ?? 0,
             window_start_hour: (found as any).window_start_hour ?? null,
             window_end_hour: (found as any).window_end_hour ?? null,
@@ -115,6 +145,7 @@ export default function AdminMotorCadencia() {
         : {
             stage: s, enabled: true, delay_hours: 24, message_text: "",
             media_url: null, media_type: "text", velip_audio_id: null,
+            voice_audio_clip_id: null, personalize_name: false,
             max_per_lead: 0, window_start_hour: null, window_end_hour: null, window_days: null,
           };
     }
@@ -218,6 +249,8 @@ export default function AdminMotorCadencia() {
           media_url: row.media_url,
           media_type: row.media_type || "text",
           velip_audio_id: row.velip_audio_id,
+          voice_audio_clip_id: row.voice_audio_clip_id,
+          personalize_name: !!row.personalize_name,
           max_per_lead: row.max_per_lead || 0,
           window_start_hour: row.window_start_hour,
           window_end_hour: row.window_end_hour,
@@ -371,7 +404,7 @@ export default function AdminMotorCadencia() {
                     </div>
                   </div>
                   <Textarea rows={3}
-                    placeholder={meta.channel === "voice" ? "Texto que a locutora vai falar (TTS)..." : meta.channel === "sms" ? "Texto do SMS (até 160 caracteres)..." : "Texto da mensagem..."}
+                    placeholder={meta.channel === "voice" ? "Roteiro de referência (não dispara TTS Velip — use clip Sofia abaixo)..." : meta.channel === "sms" ? "Texto do SMS (até 160 caracteres)..." : "Texto da mensagem..."}
                     value={row.message_text}
                     onChange={e => setStages({ ...stages, [s]: { ...row, message_text: e.target.value } })} />
 
@@ -391,8 +424,60 @@ export default function AdminMotorCadencia() {
                   )}
 
                   {meta.channel === "voice" && (
-                    <Input placeholder="Velip audio_id (opcional — se vazio usa TTS acima)" value={row.velip_audio_id || ""}
-                      onChange={e => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })} />
+                    <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5">
+                      <Label className="text-xs">Áudio Sofia (ElevenLabs → Velip)</Label>
+                      <select
+                        className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        value={row.voice_audio_clip_id || ""}
+                        onChange={(e) => {
+                          const id = e.target.value || null;
+                          const clip = clips.find((c) => c.id === id);
+                          setStages({
+                            ...stages,
+                            [s]: {
+                              ...row,
+                              voice_audio_clip_id: id,
+                              velip_audio_id: clip?.velip_audio_id || row.velip_audio_id,
+                            },
+                          });
+                        }}
+                      >
+                        <option value="">Selecione clip Sofia (Estúdio / Multicanal)</option>
+                        {clips.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {(c.name || c.id.slice(0, 8)) +
+                              (c.voice_id === VOICE_SOFIA ? " · Sofia" : "") +
+                              (c.is_call_body ? " · corpo" : "") +
+                              (c.velip_audio_id ? " · no Velip" : " · falta upload Velip")}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-start gap-2">
+                        <Switch
+                          checked={!!row.personalize_name}
+                          onCheckedChange={(v) => setStages({ ...stages, [s]: { ...row, personalize_name: v } })}
+                          id={`pers-${s}`}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <Label htmlFor={`pers-${s}`} className="text-xs">Personalizar com nome</Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            Costura &quot;Olá, {"{Nome}"}.&quot; (cache; só gasta ElevenLabs se ainda não existir).
+                          </p>
+                        </div>
+                      </div>
+                      <Input
+                        className="h-8 text-xs"
+                        placeholder="velip_audio_id legado (preenchido ao escolher clip)"
+                        value={row.velip_audio_id || ""}
+                        onChange={(e) => setStages({ ...stages, [s]: { ...row, velip_audio_id: e.target.value || null } })}
+                      />
+                      {!row.voice_audio_clip_id && !row.velip_audio_id && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                          Sem clip Sofia nem velip_audio_id — a ligação não sai (TTS Velip bloqueado).
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   {/* Limites e janela específicos do estágio */}

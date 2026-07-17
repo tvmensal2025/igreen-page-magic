@@ -35,6 +35,7 @@ import {
 import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaPrefill } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
+import { handleMakeCallStep } from "../../../_shared/bot/make-call-step.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -78,6 +79,8 @@ interface DbStep {
   fallback: DbFallback | null;
   auto_detect_doc_type: boolean | null;
   media_order?: string[] | null;
+  voice_audio_clip_id?: string | null;
+  personalize_name?: boolean | null;
 }
 
 // Re-exporta CADASTRO_STEPS do _shared para que evolution-webhook/index.ts
@@ -107,7 +110,7 @@ async function loadFlow(supabase: any, consultantId: string, variant: string = "
 
     const { data: steps, error: stepsErr } = await supabase
       .from("bot_flow_steps")
-      .select("id, step_key, step_type, message_text, wait_for, text_delay_ms, slot_key, is_active, position, transitions, captures, fallback, auto_detect_doc_type, media_order")
+      .select("id, step_key, step_type, message_text, wait_for, text_delay_ms, slot_key, is_active, position, transitions, captures, fallback, auto_detect_doc_type, media_order, voice_audio_clip_id, personalize_name")
       .eq("flow_id", flowId)
       .order("position", { ascending: true });
     if (stepsErr) {
@@ -502,7 +505,7 @@ async function sendStepMedia(
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
 
   // Multicanal A2/A3: NUNCA enviar MP3 da prévia (Maria/Rodrigo).
-  // Aceleração: se o áudio demorar >1.2s e houver texto, manda o texto já.
+  // Aguarda stitch (cache ou geração) e respeita media_order — sem early-text.
   let earlyTextSent = false;
   try {
     const { isPersonalizedWaAudioSlot, pickSafePersonalizedWaAudio } = await import(
@@ -512,54 +515,28 @@ async function sendStepMedia(
       const nonAudio = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
       medias = nonAudio;
 
-      const audioPromise = pickSafePersonalizedWaAudio(ctx.supabase, {
-        consultantId,
-        slotKey: String(slotKey),
-        customerName: (ctx.customer as any)?.name,
-        timeoutMs: 12_000,
-      });
+      const presenceKeepAlive = setInterval(() => {
+        ctx.sender.sendPresence(ctx.remoteJid, "recording", 10).catch(() => {});
+      }, 8_000);
+      try {
+        await ctx.sender.sendPresence(ctx.remoteJid, "recording", 12);
+      } catch (_) { /* cosmético */ }
 
-      const hasText = !!(textPayload && textPayload.text.trim());
-      const earlyMs = 1_200;
-      const raced = hasText
-        ? await Promise.race([
-          audioPromise.then((r) => ({ tag: "audio" as const, r })),
-          new Promise<{ tag: "early" }>((resolve) =>
-            setTimeout(() => resolve({ tag: "early" }), earlyMs),
-          ),
-        ])
-        : { tag: "audio" as const, r: await audioPromise };
-
-      if (raced.tag === "early" && textPayload) {
-        const earlyText = textPayload;
-        try {
-          if (!isMockMode() && !isFlowInstantMode() && earlyText.delayMs > 0) {
-            await new Promise((r) => setTimeout(r, Math.min(earlyText.delayMs, 3_000)));
-          }
-          await ctx.sender.sendText(ctx.remoteJid, earlyText.text);
-          earlyTextSent = true;
-          console.log(
-            `[sendStepMedia] early-text slot=${slotKey} (áudio ainda gerando · evita demora percebida)`,
-          );
-          try {
-            if (ctx.customer?.id) {
-              await ctx.supabase.from("conversations").insert({
-                customer_id: ctx.customer.id,
-                message_direction: "outbound",
-                message_text: earlyText.text,
-                message_type: "text",
-                conversation_step: step.step_key,
-              });
-            }
-          } catch { /* noop */ }
-        } catch (e) {
-          console.warn(`[sendStepMedia] early-text falhou:`, (e as Error)?.message);
-        }
+      let safe: Awaited<ReturnType<typeof pickSafePersonalizedWaAudio>>;
+      try {
+        safe = await pickSafePersonalizedWaAudio(ctx.supabase, {
+          consultantId,
+          slotKey: String(slotKey),
+          customerName: (ctx.customer as any)?.name,
+          // Nome digitado agora: gera Olá+corpo em paralelo; 90s evita skip no 1º nome.
+          timeoutMs: 90_000,
+        });
+      } finally {
+        clearInterval(presenceKeepAlive);
       }
 
-      const safe = raced.tag === "audio" ? raced.r : await audioPromise;
-
-      if (safe.ok && safe.url) {
+      // Só stitch Sofia completo (nome personalizado). Nunca corpo-only / TTS genérico.
+      if (safe.ok && safe.url && safe.mode === "stitch") {
         medias = [
           ...nonAudio,
           {
@@ -1513,17 +1490,42 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       Object.assign(ctx.customer as any, captureUpdates);
     }
 
-    // Pré-aquece áudio A2 assim que o nome chega — passo 2 tende a achar cache.
+    // A2: "gravando…" imediato ao receber o nome; reenvia a cada ~8s enquanto monta o stitch.
     if (captureUpdates.name && consultantId) {
       try {
-        const { prefetchPersonalizedWaAudio } = await import("../../../_shared/wa-audio-stitch.ts");
-        prefetchPersonalizedWaAudio(ctx.supabase, {
+        await ctx.sender.sendPresence(ctx.remoteJid, "recording", 12);
+      } catch (_) { /* cosmético */ }
+      try {
+        const { probePersonalizedWaAudioCache, warmPersonalizedWaAudio } = await import(
+          "../../../_shared/wa-audio-stitch.ts"
+        );
+        const cached = await probePersonalizedWaAudioCache(ctx.supabase, {
           consultantId,
           slotKey: "a2_audio_activate_name",
           customerName: captureUpdates.name,
         });
+        const presenceKeepAlive = !cached
+          ? setInterval(() => {
+            ctx.sender.sendPresence(ctx.remoteJid, "recording", 10).catch(() => {});
+          }, 8_000)
+          : null;
+        try {
+          const warmed = await warmPersonalizedWaAudio(ctx.supabase, {
+            consultantId,
+            slotKey: "a2_audio_activate_name",
+            customerName: captureUpdates.name,
+          });
+          console.log(
+            `[wa-stitch] warm on name="${captureUpdates.name}" a2_ok=${warmed.ok} a2_cached=${warmed.cached} intros+stitch`,
+          );
+        } finally {
+          if (presenceKeepAlive) clearInterval(presenceKeepAlive);
+        }
+        try {
+          await ctx.sender.sendPresence(ctx.remoteJid, "recording", 10);
+        } catch (_) { /* cosmético */ }
       } catch (e) {
-        console.warn("[prefetch a2]", (e as Error)?.message || e);
+        console.warn("[warm a2]", (e as Error)?.message || e);
       }
     }
     if (captureUpdates.electricity_bill_value != null && consultantId && (ctx.customer as any)?.name) {
@@ -1709,12 +1711,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     });
   }
 
-  const cls = await classifyIntent(
-    ctx.messageText,
-    stepKey as ConversationalStep,
-    ctx.geminiApiKey,
-    { customerId: ctx.customer?.id, consultantId: consultantId || null, traceId: ctx.messageId },
-  );
+  const cls = hasCapture
+    ? {
+        intent: "outro" as const,
+        confidence: 0.99,
+        source: "regex" as const,
+        action: "execute" as const,
+      }
+    : await classifyIntent(
+        ctx.messageText,
+        stepKey as ConversationalStep,
+        ctx.geminiApiKey,
+        { customerId: ctx.customer?.id, consultantId: consultantId || null, traceId: ctx.messageId },
+      );
+  if (hasCapture) {
+    console.log(`[conversational] classify skip (hasCapture=${captureIntents.join(",")}) — fluxo determinístico`);
+  }
 
   const stepButtons = extractStepButtons(currentStep);
   const _stepTypeStr = String(currentStep.step_type || "message");
@@ -2086,6 +2098,34 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     st: DbStep,
     asReply: boolean,
   ): Promise<{ replyText: string; inlineSent: boolean }> => {
+    // Passo make_call: dry-run por padrão (toggles OFF). Não gasta Velip/ElevenLabs.
+    if (String(st.step_type || "") === "make_call") {
+      const callRes = await handleMakeCallStep({
+        supabase: ctx.supabase,
+        consultantId: consultantId || ctx.customer.consultant_id,
+        customerId: ctx.customer.id,
+        customerName: (ctx.customer as any).name ?? null,
+        phoneWhatsapp: (ctx.customer as any).phone_whatsapp ?? null,
+        stepKey: st.step_key,
+        voiceAudioClipId: st.voice_audio_clip_id,
+        personalizeName: !!st.personalize_name,
+      });
+      console.log(
+        `[conversational] make_call step=${st.step_key} ok=${callRes.ok} dryRun=${callRes.dryRun} detail=${callRes.detail}`,
+      );
+      const note = callRes.dryRun
+        ? ""
+        : (renderStepText(st) || "");
+      if (note && asReply) return { replyText: note, inlineSent: false };
+      if (note) {
+        try {
+          await ctx.sender.sendText(ctx.remoteJid, note);
+        } catch { /* noop */ }
+        return { replyText: "", inlineSent: true };
+      }
+      return { replyText: "", inlineSent: true };
+    }
+
     const text = renderStepText(st);
     const textDelay = Math.max(0, Math.min(60000, st.text_delay_ms ?? 1500));
 
@@ -2171,10 +2211,19 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     // Texto entra inline (na posição certa) em qualquer caso, EXCETO quando:
     // - é o reply final E não há ordem configurada (mantém comportamento legado: texto vira reply)
-    // - é o reply final E a ordem termina em "text" (texto fica por último → vira reply)
+    // - é o reply final E a ordem termina em "text" SEM áudio antes
+    // A2 [audio, text]: texto SEMPRE inline após áudio (text_delay_ms = 4s).
     const orderEndsWithText = Array.isArray(configuredOrder) && configuredOrder.length > 0
       && configuredOrder[configuredOrder.length - 1] === "text";
-    const sendTextInline = !!text && (!asReply || !orderEndsWithText && !!configuredOrder);
+    const audioThenText = Array.isArray(configuredOrder)
+      && configuredOrder.includes("audio")
+      && configuredOrder.includes("text")
+      && configuredOrder.indexOf("audio") < configuredOrder.indexOf("text");
+    const sendTextInline = !!text && (
+      !asReply
+      || audioThenText
+      || (!orderEndsWithText && !!configuredOrder)
+    );
 
     let mediaResult: { mediaSent: boolean | null; textSentInline: boolean } =
       { mediaSent: false, textSentInline: false };

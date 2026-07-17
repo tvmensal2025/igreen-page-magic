@@ -55,13 +55,41 @@ export function isSimulateIntent(messageText?: string | null, buttonId?: string 
   return SIMULATE_RX.test(blob);
 }
 
-/** Já tem base de conta para pular simulação e ir ao documento. */
+/** Já tem base de conta para pular simulação e ir ao documento (Fluxo D / valor rápido). */
 export function hasBillReady(customer: ActivateCustomerLike | null | undefined): boolean {
   if (!customer) return false;
   if (customer.bill_data_confirmed_at) return true;
   if (customer.electricity_bill_photo_url) return true;
   const v = Number(customer.electricity_bill_value);
   return Number.isFinite(v) && v > 0;
+}
+
+/** Fluxo Sofia a6: foto da conta é obrigatória — valor da simulação não substitui. */
+export function flowRequiresBillPhoto(steps: ActivateStepLike[]): boolean {
+  return activeSteps(steps).some((s) => /^a6_|ask_bill_photo/i.test(String(s.step_key || "")));
+}
+
+/** Evidência real de fatura (foto confirmada / OCR) — não conta só o valor digitado. */
+export function hasRealBillEvidence(customer: ActivateCustomerLike | null | undefined): boolean {
+  if (!customer) return false;
+  if (customer.bill_data_confirmed_at) return true;
+  const url = String(customer.electricity_bill_photo_url || "").trim();
+  return !!(url && url !== "evolution-media:pending");
+}
+
+/**
+ * Conta “pronta” para ATIVAR/Cadastrar:
+ * - Sofia a6 → exige foto/OCR real (bug 5511971254913: valor 900 pulava a6)
+ * - Fluxo D → valor digitado ou foto contam (hasBillReady)
+ */
+export function billReadyForActivate(
+  steps: ActivateStepLike[],
+  customer: ActivateCustomerLike | null | undefined,
+): boolean {
+  if (!customer) return false;
+  if (customer.bill_data_confirmed_at) return true;
+  if (flowRequiresBillPhoto(steps)) return hasRealBillEvidence(customer);
+  return hasBillReady(customer);
 }
 
 function activeSteps(steps: ActivateStepLike[]): ActivateStepLike[] {
@@ -139,7 +167,7 @@ export function pickActivateDestination(
   const docs = byType(list, "capture_documento");
   const contas = byType(list, "capture_conta");
 
-  if (hasBillReady(customer) && docs[0]) return docs[0];
+  if (billReadyForActivate(list, customer) && docs[0]) return docs[0];
 
   const contaCadastro =
     contas.find((s) => String(s.step_key || "") === "d_simular_pedir_conta") ||
@@ -170,7 +198,7 @@ export function rewriteActivateAwayFromSimPath(
 
   // Documento sem conta pronta → conta de CADASTRO (não pular foto da conta)
   if (type === "capture_documento" || type === "capture_doc") {
-    if (!hasBillReady(customer)) return pickActivateDestination(steps, customer);
+    if (!billReadyForActivate(steps, customer)) return pickActivateDestination(steps, customer);
     return null;
   }
 
@@ -190,13 +218,7 @@ export function rewriteActivateAwayFromSimPath(
   }
 
   // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento.
-  // Sofia a6: valor digitado no a2 (simulação) ≠ foto OCR — não pular a6.
-  if (type === "capture_conta" && isCadastroContaStep(intended, steps) && hasBillReady(customer)) {
-    const sofiaNeedsPhoto =
-      /^a6_|ask_bill_photo/i.test(key) &&
-      !customer?.electricity_bill_photo_url &&
-      !customer?.bill_data_confirmed_at;
-    if (sofiaNeedsPhoto) return null;
+  if (type === "capture_conta" && isCadastroContaStep(intended, steps) && billReadyForActivate(steps, customer)) {
     return pickActivateDestination(steps, customer);
   }
 

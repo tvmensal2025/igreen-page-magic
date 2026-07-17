@@ -33,6 +33,7 @@ const AdminPortalMonitor = lazy(() => import("./pages/AdminPortalMonitor"));
 const AdminProtocolsPage = lazy(() => import("./pages/AdminProtocolsPage"));
 const AdminMotorCadencia = lazy(() => import("./pages/AdminMotorCadencia"));
 const AdminAgendamentosCentral = lazy(() => import("./pages/AdminAgendamentosCentral"));
+const AdminSofiaNameAudios = lazy(() => import("./pages/AdminSofiaNameAudios"));
 const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
 const AjudaPage = lazy(() => import("./pages/AjudaPage"));
 const AdminTourEditor = lazy(() => import("./pages/AdminTourEditor"));
@@ -107,6 +108,7 @@ const App = () => (
               <Route path="/admin/clientes-igreen" element={<Navigate to="/admin/whatsapp-clients?tab=igreen" replace />} />
               <Route path="/clientes-igreen" element={<Navigate to="/admin/whatsapp-clients?tab=igreen" replace />} />
               <Route path="/admin/fluxos" element={<ProtectedRoute><FluxoBuilder /></ProtectedRoute>} />
+              <Route path="/admin/sofia-audios" element={<ProtectedRoute><AdminSofiaNameAudios /></ProtectedRoute>} />
               <Route path="/admin/fluxo-b" element={<ProtectedRoute><AdminFluxoB /></ProtectedRoute>} />
               <Route path="/admin/saude-bot" element={<ProtectedRoute><SaudeBot /></ProtectedRoute>} />
               <Route path="/admin/saude-producao" element={<ProtectedRoute><SaudeProducao /></ProtectedRoute>} />

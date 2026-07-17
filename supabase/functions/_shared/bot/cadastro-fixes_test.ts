@@ -63,15 +63,23 @@ Deno.test("nextSeparatedCadastroStep — Sofia a10 pula boleto → finalizando",
   );
 });
 
-Deno.test("nextSeparatedCadastroStep — variant C pula boleto → finalizando", () => {
+Deno.test("nextSeparatedCadastroStep — variant C legado pula boleto → finalizando", () => {
   assertEquals(nextSeparatedCadastroStep({ flow_variant: "C" }), "finalizando");
   assertEquals(nextSeparatedCadastroStep({ flow_variant: "c", contaunica_answered: false }), "finalizando");
 });
 
-Deno.test("getNextMissingStep — Sofia C após a9 vai direto a finalizando", () => {
+Deno.test("nextSeparatedCadastroStep — Grupo A (passo a*) pula boleto → finalizando", () => {
+  assertEquals(
+    nextSeparatedCadastroStep({ flow_variant: "A", conversation_step: "a10_portal_otp_facial" }),
+    "finalizando",
+  );
+});
+
+Deno.test("getNextMissingStep — Sofia A (Grupo A) após a9 vai direto a finalizando", () => {
   assertEquals(
     getNextMissingStep({
-      flow_variant: "C",
+      flow_variant: "A",
+      conversation_step: "a10_portal_otp_facial",
       name: "Maria Silva",
       cpf: "52998224725",
       rg: "123456789",
@@ -97,6 +105,12 @@ Deno.test("isPrePortalCadastroStep", () => {
   assertEquals(isPrePortalCadastroStep("ask_contaunica"), true);
   assertEquals(isPrePortalCadastroStep("ask_finalizar"), true);
   assertEquals(isPrePortalCadastroStep("finalizando"), false);
+});
+
+Deno.test("isSofiaMulticanalCustomer — variante A é Sofia (Grupo A)", () => {
+  assertEquals(isSofiaMulticanalCustomer({ flow_variant: "A" }), true);
+  assertEquals(isSofiaMulticanalCustomer({ flow_variant: "C" }), true);
+  assertEquals(isSofiaMulticanalCustomer({ flow_variant: "D" }), false);
 });
 
 Deno.test("looksLikeSpamBlast", () => {

@@ -19,7 +19,85 @@ import {
 } from "./flowTypes";
 import { supabase } from "@/integrations/supabase/client";
 
+const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
 
+function MakeCallClipBinder({
+  consultantId,
+  clipId,
+  personalize,
+  onClipChange,
+  onPersonalizeChange,
+}: {
+  consultantId: string;
+  clipId: string | null;
+  personalize: boolean;
+  onClipChange: (id: string | null) => void;
+  onPersonalizeChange: (v: boolean) => void;
+}) {
+  const [clips, setClips] = useState<
+    Array<{ id: string; name: string | null; velip_audio_id: string | null; is_call_body: boolean | null; voice_id: string | null }>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("voice_audio_clips")
+        .select("id, name, velip_audio_id, is_call_body, voice_id")
+        .eq("consultant_id", consultantId)
+        .order("updated_at", { ascending: false })
+        .limit(50);
+      if (cancelled) return;
+      const list = (data || []).slice().sort((a: any, b: any) => {
+        const score = (c: any) =>
+          (c.voice_id === VOICE_SOFIA ? 4 : 0) +
+          (c.is_call_body ? 2 : 0) +
+          (c.velip_audio_id ? 1 : 0);
+        return score(b) - score(a);
+      });
+      setClips(list as any);
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId]);
+
+  return (
+    <div className="space-y-2 rounded-lg border border-border/70 bg-muted/20 p-3">
+      <Label className="text-sm">Áudio Sofia da ligação</Label>
+      <Select
+        value={clipId || "__none__"}
+        onValueChange={(v) => onClipChange(v === "__none__" ? null : v)}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder="Selecione o clip" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__none__">Nenhum (obrigatório para ligar)</SelectItem>
+          {clips.map((c) => (
+            <SelectItem key={c.id} value={c.id}>
+              {(c.name || c.id.slice(0, 8)) +
+                (c.voice_id === VOICE_SOFIA ? " · Sofia" : "") +
+                (c.is_call_body ? " · corpo" : "") +
+                (c.velip_audio_id ? " · Velip" : "")}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <div className="flex items-start gap-2">
+        <Switch checked={personalize} onCheckedChange={onPersonalizeChange} id="make-call-pers" className="mt-0.5" />
+        <div>
+          <Label htmlFor="make-call-pers" className="text-xs">Personalizar com nome</Label>
+          <p className="text-[11px] text-muted-foreground">
+            Costura &quot;Olá, {"{Nome}"}.&quot; (só gasta ElevenLabs se não houver cache).
+          </p>
+        </div>
+      </div>
+      <p className="text-[11px] text-amber-700 dark:text-amber-300">
+        Runtime fail-closed: sem <code>bot_global_enabled</code> + toggle{" "}
+        <code>bot_flow_make_call</code> só registra dry-run (não disca).
+      </p>
+    </div>
+  );
+}
 
 interface Props {
   step: Step | null;
@@ -266,6 +344,16 @@ export default function StepInspector({
                 {STEP_TYPE_OPTIONS.find((o) => o.value === step.step_type)?.hint}
               </p>
             </div>
+
+            {step.step_type === "make_call" && (
+              <MakeCallClipBinder
+                consultantId={consultantId}
+                clipId={step.voice_audio_clip_id ?? null}
+                personalize={!!step.personalize_name}
+                onClipChange={(id) => onPatch({ voice_audio_clip_id: id })}
+                onPersonalizeChange={(v) => onPatch({ personalize_name: v })}
+              />
+            )}
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -518,6 +606,8 @@ export default function StepInspector({
                 consultantId={consultantId}
                 stepKey={step.step_key ?? ""}
                 slotKeys={[step.slot_key]}
+                messageText={step.message_text ?? ""}
+                onMessageTextChange={(next) => onPatch({ message_text: next })}
                 variant={variant}
                 initialOrder={
                   Array.isArray(step.media_order) && step.media_order.length

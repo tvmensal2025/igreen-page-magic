@@ -23,7 +23,11 @@ function tplReplace(text: string, needle: string, value: string): string {
 
 /** Abertura oficial — áudio WA e ligação (Sofia). */
 export const SOFIA_OPENING =
-  "Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.";
+  "Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.";
+
+export const A2_BODY_EXPLAIN = `${SOFIA_OPENING}
+
+Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`;
 
 /** Cumprimento curto + abertura (para colar no início do roteiro). */
 export function sofiaAudioLead(opts: { withName?: boolean } = {}): string {
@@ -108,8 +112,8 @@ export const SEG_SOFIA_OPENING: AudioSegment = {
 };
 
 /**
- * Padrão A2 / A3 WhatsApp: só o primeiro nome (variável).
- * “Olá” / “Então” ficam em corte FIXO separado. Cache `intro:nome:ptbr2:{norm}`.
+ * Padrão A2 WhatsApp: “Olá, Nome.” no 1º corte; na explicação só o nome de novo.
+ * Cache `intro:ola:ptbr2:{norm}` + `intro:nome:ptbr3:{norm}` (PT-BR ancorado). A3 usa SEG_NAME_ONLY.
  */
 export const SEG_NAME_ONLY: AudioSegment = {
   id: "name_only",
@@ -120,7 +124,7 @@ export const SEG_NAME_ONLY: AudioSegment = {
 };
 
 /**
- * Ligações / cadências B/C (script falado junto): “Olá, {Nome}.”
+ * Passo 2 WhatsApp: “Olá, {Nome}.” (1º corte). Passo 3 usa SEG_NAME_ONLY.
  */
 export const SEG_NAME_GREET: AudioSegment = {
   id: "name_greet_ola",
@@ -130,7 +134,7 @@ export const SEG_NAME_GREET: AudioSegment = {
   reusable: true,
 };
 
-/** Corte fixo do passo 2 — “Olá” (1x no cache, sem nome). */
+/** @deprecated Ligações / cadências B. WhatsApp A2 usa SEG_NAME_GREET. */
 export const SEG_OLA_LEAD: AudioSegment = {
   id: "a2_ola_lead",
   kind: "fixed",
@@ -267,6 +271,51 @@ export function isSofiaStitchMediaSlot(slotOrStepKey: string): boolean {
   );
 }
 
+/**
+ * Passos com editor Sofia na aba Mídias.
+ * - Perfis conhecidos (bill/explain/club)
+ * - Ou qualquer passo com {{nome}} (padrão Sofia: variável + fixo)
+ */
+export type SofiaEditableProfile = "bill" | "explain" | "club" | "generic";
+
+export function resolveSofiaStepProfile(
+  slotOrStepKey: string,
+  stepKeyExtra = "",
+): SofiaEditableProfile | null {
+  const k = `${slotOrStepKey || ""} ${stepKeyExtra || ""}`.toLowerCase();
+  if (
+    k.includes("a2_audio_activate_name") ||
+    k.includes("a2_text_ask_bill")
+  ) {
+    return "bill";
+  }
+  if (k.includes("a3_explain") || k.includes("a3_audio")) {
+    return "explain";
+  }
+  if (k.includes("a5_audio_club") || k.includes("a5b_after_club")) {
+    return "club";
+  }
+  return null;
+}
+
+/** Detecta placeholder {{nome}} no texto do passo. */
+export function messageHasSofiaNomeVar(messageText: string | null | undefined): boolean {
+  return /\{\{\s*nome\s*\}\}/i.test(String(messageText || ""));
+}
+
+/**
+ * Quando mostrar o editor Sofia:
+ * perfil conhecido OU mensagem com {{nome}} (padrão em qualquer passo).
+ */
+export function isSofiaEditableStep(
+  slotOrStepKey: string,
+  stepKeyExtra = "",
+  messageText?: string | null,
+): boolean {
+  if (resolveSofiaStepProfile(slotOrStepKey, stepKeyExtra) != null) return true;
+  return messageHasSofiaNomeVar(messageText);
+}
+
 /** Slot alvo ao enviar áudio manual no painel (corpo fixo, não prévia com nome). */
 export function sofiaUploadTargetSlot(slotOrStepKey: string, gender: SpeechGender = "feminino"): string {
   const k = String(slotOrStepKey || "");
@@ -276,7 +325,9 @@ export function sofiaUploadTargetSlot(slotOrStepKey: string, gender: SpeechGende
   if (k === "a3_explain_with_buttons" || k === "a3_audio_explain") {
     return cadenceBodyAudioUrlKey("a3_explain_with_buttons");
   }
-  if (k === "a5b_after_club_buttons") return "a5_audio_club_benefits";
+  if (k === "a5b_after_club_buttons" || k === "a5_audio_club_benefits") {
+    return "a5_audio_club_benefits";
+  }
   return k || slotOrStepKey;
 }
 
@@ -645,52 +696,31 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     key: "a2_audio_activate_name",
     group: "A",
     channel: "whatsapp_audio",
-    title: "2a — Áudio: bem-vindo/bem-vinda {{nome}} + pedir valor",
+    title: "2a — Áudio: Olá+{{nome}} · nome · Sofia/Rafael",
     timing: "Após nome salvo · antes de pedir valor",
     canGenerateAudio: true,
     notes:
-      "2 áudios finais (feminino + masculino). Corte variável: Olá + nome. Corpos fixos bem-vinda / bem-vindo.",
+      "2 cortes: 1) Olá+Nome (variável · PT-BR) 2) corpo FIXO M/F (já gerado no painel). Motor NÃO regenera corpo.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável · compartilhado)" },
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável · PT-BR)" },
       {
         id: "a2_body_feminino",
         kind: "fixed",
         genderVariant: "feminino",
-        label: "2 · Corpo feminino (bem-vinda · fixo · cache)",
-        text: `Seja muito bem-vinda.
-
-Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
-
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
+        label: "2 · Corpo feminino (fixo · cache · sem nome)",
+        text: A2_BODY_EXPLAIN,
       },
       {
         id: "a2_body_masculino",
         kind: "fixed",
         genderVariant: "masculino",
-        label: "3 · Corpo masculino (bem-vindo · fixo · cache)",
-        text: `Seja muito bem-vindo.
-
-Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
-
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
+        label: "3 · Corpo masculino (fixo · cache · sem nome)",
+        text: A2_BODY_EXPLAIN,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      {
-        text: `Seja muito bem-vinda.
-
-Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
-
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
-      },
-      {
-        text: `Seja muito bem-vindo.
-
-Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
-
-Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`,
-      },
+      { text: A2_BODY_EXPLAIN },
     ]),
   },
   {
@@ -698,11 +728,11 @@ Para eu montar a simulação, me diga quanto você está gastando por mês na co
     group: "A",
     channel: "whatsapp_text",
     title: "2b — Texto: ativar {{nome}} + pedir valor (aguardar)",
-    timing: "Junto com áudio 2a · AGUARDA digitar o valor",
+    timing: "4s após áudio 2a · AGUARDA digitar o valor",
     canGenerateAudio: false,
     pairedAudioKey: "a2_audio_activate_name",
     notes:
-      "Ordem: áudio 2a ACIMA → este texto. AGUARDA valor. Sem botões. Após valor → passo 3.",
+      "Ordem: áudio 2a ACIMA → espera 4s → este texto. AGUARDA valor. Sem botões. Após valor → passo 3. Nunca pular este texto.",
     body: `{{nome}}, conseguimos ativar o seu benefício!
 
 Para eu calcular a economia, me diga *quanto você paga por mês* na conta de energia.
@@ -713,12 +743,12 @@ Pode ser só o número — por exemplo: 350 ou 850,00.`,
     key: "a3_explain_with_buttons",
     group: "A",
     channel: "whatsapp_buttons",
-    title: "3 — Texto + áudio ({{nome}}) + botões",
-    timing: "Assim que o valor for digitado · texto → áudio → botões",
+    title: "3 — Áudio (nome+explicação) + texto com botões",
+    timing: "Após valor digitado · áudio → 4s → texto + botões",
     canGenerateAudio: true,
-    audioPlacement: "after_text",
-      notes:
-      "Um passo só: 1) texto com desconto 2) áudio: nome + explicação (sem Então) 3) botões.",
+    audioPlacement: "before_text",
+    notes:
+      "Ordem: 1) áudio Nome+explicação (corpo FIXO) 2) 4s 3) texto economia + botões (Saber mais / Ativar / Humano). Sem Olá de novo.",
     body: `Perfeito, {{nome}}!
 
 Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.
@@ -731,12 +761,12 @@ O que você prefere agora?`,
       {
         ...SEG_NAME_ONLY,
         id: "a3_name",
-        label: "1 · Só o nome (variável · cache por nome)",
+        label: "1 · Só o nome (variável · PT-BR · cache por nome)",
       },
       {
         id: "a3_body",
         kind: "fixed",
-        label: "2 · Explicação + “É simples” (fixo · cache)",
+        label: "2 · Explicação + “É simples” (fixo · cache · sem nome)",
         text: `Deixa eu te explicar de um jeito simples como funciona o benefício.
 
 Nossas fazendas solares geram energia todos os dias e injetam na rede da sua distribuidora — CEMIG, CPFL, Copel e outras.
@@ -805,15 +835,21 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
     key: "a5_audio_club_benefits",
     group: "A",
     channel: "whatsapp_audio",
-    title: "4a — Áudio clube (acima dos botões 4b)",
-    timing: "Após botão Saber mais benefício · sem Olá de novo",
+    title: "4a — Áudio clube (nome + benefício)",
+    timing: "Após Saber mais benefício · áudio → 4s → 4b",
     canGenerateAudio: true,
-    notes: "1 bloco fixo (sem Olá). Ordem: áudio ACIMA → 4b.",
+    notes:
+      "2 cortes: 1) só o Nome (PT-BR) 2) corpo FIXO do clube/benefício (sem {{nome}}). Ordem: áudio ACIMA → 4b.",
     audioSegments: [
+      {
+        ...SEG_NAME_ONLY,
+        id: "a5_name",
+        label: "1 · Só o nome (variável · PT-BR · cache por nome)",
+      },
       {
         id: "a5_body",
         kind: "fixed",
-        label: "1 · Corpo do áudio (fixo · cache)",
+        label: "2 · Corpo do clube / benefício (fixo · cache · sem nome)",
         text: `Eu sempre gosto de lembrar que o benefício vai muito além da economia na conta de energia.
 
 Ao ativar, você também passa a ter acesso a um clube de benefícios com mais de 30 mil estabelecimentos parceiros em todo o Brasil.
@@ -824,6 +860,7 @@ Ou seja: você economiza na energia e ainda pode economizar em várias despesas 
       },
     ],
     body: joinAudioSegmentTexts([
+      { text: "{{nome}}." },
       {
         text: `Eu sempre gosto de lembrar que o benefício vai muito além da economia na conta de energia.
 
@@ -834,18 +871,20 @@ Um dos benefícios mais utilizados é o desconto em farmácias, que pode chegar 
 Ou seja: você economiza na energia e ainda pode economizar em várias despesas do dia a dia.`,
       },
     ]),
-
   },
   {
     key: "a5b_after_club_buttons",
     group: "A",
     channel: "whatsapp_buttons",
-    title: "4b — Após clube: Cadastrar / Falar com humano",
-    timing: "Logo após o áudio do clube (áudio ACIMA)",
+    title: "4b — Texto + Cadastrar / Falar com humano",
+    timing: "4s após áudio 4a · AGUARDA clique",
     canGenerateAudio: false,
     pairedAudioKey: "a5_audio_club_benefits",
-    notes: "Ordem: áudio 4a ACIMA → este texto + botões. Cadastrar → foto. Humano → handoff.",
-    body: `{{nome}}, quer seguir com o cadastro para ativar o seu benefício?`,
+    notes:
+      "Nunca pular. Ordem: áudio 4a → 4s → este texto + botões. Cadastrar → passo 5 (foto conta). Humano → handoff.",
+    body: `📋 *{{nome}}*, vamos ativar seu benefício?
+
+Toque em *Cadastrar* para continuar 👇`,
     buttons: [...AFTER_CLUB_BUTTONS],
   },
   {
@@ -855,11 +894,15 @@ Ou seja: você economiza na energia e ainda pode economizar em várias despesas 
     title: "5 — Pedir foto da conta (OCR)",
     timing: "Após Cadastrar ou Quero ativar",
     canGenerateAudio: false,
-    body: `Perfeito, {{nome}}!
+    body: `✅ *Perfeito, {{nome}}!*
 
-Para seguir com a ativação, me envie uma foto nítida da sua conta de luz mais recente (a página com o valor e os dados da unidade).
+📸 *Agora me envie a foto da sua conta de luz*
 
-Assim consigo validar os dados automaticamente e continuar o seu atendimento, {{nome}}.`,
+• Página com o *valor* e os *dados da unidade*
+• Foto *nítida*, sem reflexos
+• Pode ser a fatura mais recente
+
+Assim valido tudo automaticamente e seguimos com a ativação 💚`,
   },
   {
     key: "a7_ask_document",
@@ -870,13 +913,15 @@ Assim consigo validar os dados automaticamente e continuar o seu atendimento, {{
     canGenerateAudio: false,
     notes:
       "Motor: CNH = só frente. RG = frente + verso obrigatório. OCR lê nome/CPF/RG/nascimento; se faltar CPF, pede digitar.",
-    body: `Obrigado, {{nome}}.
+    body: `📄 *Próximo passo, {{nome}}!*
 
-Agora me envie a foto do seu documento:
-• *CNH* → só a *frente*
-• *RG* → *frente e verso* (obrigatório)
+Me envie a foto do seu *documento com foto*:
 
-Preciso das fotos nítidas para ler os dados e continuar a ativação.`,
+🪪 *CNH* → só a *frente*
+
+🆔 *RG* → *frente e verso* (obrigatório)
+
+Preciso das fotos *nítidas* para continuar seu cadastro ✅`,
   },
   {
     key: "a8_ask_email",
@@ -886,9 +931,11 @@ Preciso das fotos nítidas para ler os dados e continuar a ativação.`,
     timing: "Após documento",
     canGenerateAudio: false,
     notes: "Mesmo padrão do fluxo D (ask_email / step-goal): e-mail = acesso ao app iGreen Club.",
-    body: `{{nome}}, me passa seu *e-mail* 📧
+    body: `📧 *{{nome}}*, qual é o seu *e-mail*?
 
-_É por ele que você vai acessar o app *iGreen Club* 📱 (cashback, faturas e indicações)._`,
+É por ele que você acessa o app *iGreen Club* 📱
+
+_(cashback, faturas e indicações)_`,
   },
   {
     key: "a9_confirm_phone",
@@ -899,9 +946,11 @@ _É por ele que você vai acessar o app *iGreen Club* 📱 (cashback, faturas e 
     canGenerateAudio: false,
     notes:
       "Após telefone: passo 9 (portal + digitar OTP). Só DEPOIS do OTP validado → passo 10 (link da facial). Sem 9a/9b.",
-    body: `{{nome}}, só para confirmar: o telefone deste WhatsApp é o melhor para contato?
+    body: `📱 *{{nome}}*, só confirmar:
 
-Número: {{telefone}}`,
+O telefone deste WhatsApp é o melhor para contato?
+
+*Número:* {{telefone}}`,
     buttons: [
       { id: "phone_ok", title: "Sim, este número" },
       { id: "phone_other", title: "Quero outro" },
@@ -917,13 +966,15 @@ Número: {{telefone}}`,
     canGenerateAudio: false,
     notes:
       "Ordem obrigatória: 1) envia cadastro ao portal 2) cliente digita o OTP aqui 3) só então passo 10 com link da facial. NÃO enviar facial neste passo.",
-    body: `Pronto, {{nome}}!
+    body: `🎉 *Pronto, {{nome}}!*
 
-Já temos todos os dados. Vou enviar o seu cadastro ao portal agora.
+Já temos todos os dados ✅
 
-Em seguida você recebe um *código OTP*. Digite esse código aqui no WhatsApp para eu confirmar 👇
+Vou enviar seu cadastro ao portal agora.
 
-_(O link da validação facial só vem depois que o OTP estiver certo.)_`,
+📲 Em seguida você recebe um *código OTP* — digite aqui no WhatsApp 👇
+
+_(O link da validação facial só vem *depois* do OTP correto.)_`,
   },
   {
     key: "a11_facial_link",
@@ -934,13 +985,13 @@ _(O link da validação facial só vem depois que o OTP estiver certo.)_`,
     canGenerateAudio: false,
     notes:
       "Nunca antes do OTP. Sistema envia o link da selfie/facial após otp_validated. Placeholder {{link_facial}} quando disponível.",
-    body: `OTP confirmado, {{nome}}! ✅
+    body: `✅ *OTP confirmado, {{nome}}!*
 
-Último passo: abra o *link* 👇
+Último passo — abra o *link* 👇
 
 {{link_facial}}
 
-Clique em *Assinar documentos* — o sistema vai pedir a *validação facial* para comprovar que é você.`,
+Toque em *Assinar documentos* e faça a *validação facial* para comprovar que é você 🪪`,
   },
   {
     key: "a10_title_transfer_sp",
@@ -1686,7 +1737,7 @@ export function resolveAudioSegments(
   const overrides = lib.segmentBodies[tpl.key] ?? {};
   return base.map((s) => ({
     ...s,
-    text: overrides[s.id] ?? s.text,
+    text: (overrides[s.id]?.trim() ? overrides[s.id] : s.text),
   }));
 }
 

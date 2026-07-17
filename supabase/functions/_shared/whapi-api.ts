@@ -137,15 +137,16 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
 
   async function sendPresence(
     remoteJid: string,
-    presence: "typing" | "recording" | "paused" = "typing",
+    presence: "typing" | "recording" | "paused" | "composing" = "typing",
     delaySec = 3,
   ): Promise<boolean> {
     const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+    const whapiPresence = presence === "composing" ? "typing" : presence;
     return sendWithRetry("send_presence", () =>
       fetchWithTimeout(`${url}/presences/${encodeURIComponent(to)}`, {
         method: "PUT",
         headers,
-        body: JSON.stringify({ presence, delay: Math.max(1, Math.min(25, delaySec)) }),
+        body: JSON.stringify({ presence: whapiPresence, delay: Math.max(1, Math.min(25, delaySec)) }),
         timeout: TIMEOUT_WHAPI,
       })
     );
@@ -231,21 +232,38 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
   ): Promise<boolean> {
     const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
     const isAudio = mediatype === "audio" || mediatype === "voice";
-    // Type widened para `string` para permitir comparação dinâmica com
-    // "messages/audio" (alternativa de endpoint para áudio WebM/Opus que
-    // o Whapi rejeita em messages/voice). Antes era literal union, o que
-    // gerava TS2367 nas comparações `endpoint !== "messages/audio"`.
-    const endpoint: string = mediatype === "video" ? "messages/video"
-      : mediatype === "image" ? "messages/image"
-      : isAudio ? "messages/voice"
-      : "messages/document";
     const urlPreview = String(mediaUrl || "").slice(-60);
 
     const cleanPath = (() => {
       try { return new URL(mediaUrl).pathname; } catch (_) { return mediaUrl.split("?")[0] || "media"; }
     })();
     const fileName = decodeURIComponent(cleanPath.split("/").pop() || (isAudio ? "audio.webm" : "media"));
-    const contentType = isAudio ? "audio/webm"
+    const lowerName = fileName.toLowerCase();
+
+    // Sofia lote = MP3. Antes tudo ia como audio/webm → Whapi/WA aceitava 200
+    // mas o áudio não tocava no celular. Detectar mime real pela extensão.
+    const detectAudioMime = (): string => {
+      if (/\.mp3($|\?)/i.test(lowerName) || /\.mp3($|\?)/i.test(mediaUrl)) return "audio/mpeg";
+      if (/\.m4a($|\?)/i.test(lowerName) || /\.m4a($|\?)/i.test(mediaUrl)) return "audio/mp4";
+      if (/\.ogg($|\?)/i.test(lowerName) || /\.ogg($|\?)/i.test(mediaUrl)) return "audio/ogg; codecs=opus";
+      if (/\.opus($|\?)/i.test(lowerName)) return "audio/ogg; codecs=opus";
+      if (/\.webm($|\?)/i.test(lowerName) || /\.webm($|\?)/i.test(mediaUrl)) return "audio/webm";
+      return "audio/webm"; // legado gravador browser
+    };
+    const audioMime = isAudio ? detectAudioMime() : "";
+    const isMp3Family = audioMime === "audio/mpeg" || audioMime === "audio/mp4";
+
+    // Type widened para `string` para permitir comparação dinâmica com
+    // "messages/audio" (alternativa de endpoint para áudio WebM/Opus que
+    // o Whapi rejeita em messages/voice). Antes era literal union, o que
+    // gerava TS2367 nas comparações `endpoint !== "messages/audio"`.
+    // MP3 Sofia: messages/voice ainda funciona se o Whapi converter, mas
+    // json_url sozinho costuma "ok" sem entregar — preferimos upload bytes.
+    const endpoint: string = mediatype === "video" ? "messages/video"
+      : mediatype === "image" ? "messages/image"
+      : isAudio ? "messages/voice"
+      : "messages/document";
+    const contentType = isAudio ? audioMime
       : mediatype === "video" ? "video/mp4"
       : mediatype === "image" ? "image/jpeg"
       : "application/octet-stream";
@@ -261,7 +279,16 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
           return null;
         }
         const bytes = new Uint8Array(await mediaRes.arrayBuffer());
-        const mime = mediaRes.headers.get("content-type") || contentType;
+        const headerMime = (mediaRes.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+        // Preferir mime da extensão (MP3) sobre header genérico; não forçar webm em mpeg.
+        let mime = contentType;
+        if (headerMime.startsWith("audio/") && !isMp3Family) {
+          mime = mediaRes.headers.get("content-type") || contentType;
+        } else if (headerMime === "audio/mpeg" || headerMime === "audio/mp3") {
+          mime = "audio/mpeg";
+        } else if (isAudio) {
+          mime = audioMime || contentType;
+        }
         console.log(`📥 [whapi:sendMedia] mídia baixada (${bytes.byteLength} bytes, ${mime})`);
         cachedDownload = { bytes, mime };
         return cachedDownload;
@@ -377,7 +404,8 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     // Anti-ban: fila espaçadora ANTES da presence/upload (slot cobre a mensagem toda).
     await awaitWhapiSendSlot(to, { kind: `send_media_${mediatype}` });
 
-    // Presence realista antes do upload:
+    // Presence “gravando…” / “digitando…” — intencional: o lead vê status humano
+    // antes da mídia chegar. Não encurtar para áudio cacheado Sofia.
     // - Áudio: "gravando" pelo tempo real do arquivo (+1s buffer), entre 4s e 25s.
     // - Imagem/Vídeo: "digitando" 4-6s aleatório (humano).
     // Aguardamos o presence subir + pequena pausa para o status aparecer ANTES da mídia.
@@ -389,31 +417,65 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     } catch (_) { /* segue mesmo se presence falhar */ }
     await new Promise((r) => setTimeout(r, 700 + Math.floor(Math.random() * 400))); // 0.7-1.1s
 
-    console.log(`📤 [whapi:sendMedia] -> ${to} (${mediatype} via ${endpoint}, presence=${presenceSec}s) url=…${urlPreview}`);
+    console.log(
+      `📤 [whapi:sendMedia] -> ${to} (${mediatype} via ${endpoint}, mime=${contentType}, mp3=${isMp3Family}, presence=${presenceSec}s) url=…${urlPreview}`,
+    );
 
-    // 1ª tentativa: JSON com URL (rápido quando funciona)
-    const initialBody: Record<string, unknown> = isAudio
-      ? { to, media: mediaUrl }
-      : { to, media: mediaUrl, caption };
-    const firstAttempt = await tryJsonSend("json_url", endpoint, initialBody);
-    if (firstAttempt === true) {
-      console.log(`✅ [whapi:sendMedia] ok via json_url (${mediatype} ${endpoint})`);
+    // MP3 Sofia: json_url em messages/voice costuma retornar 200 sem o áudio
+    // tocar no celular. Preferir upload (base64/multipart) com mime real para
+    // o conversor do Whapi processar o arquivo de verdade.
+    const tryJsonUrl = async (path: string): Promise<boolean | "timeout_optimistic"> => {
+      if (isAudio) {
+        return await tryJsonSend("json_url", path, { to, media: mediaUrl, mime_type: contentType });
+      }
+      return await tryJsonSend("json_url", path, { to, media: mediaUrl, caption });
+    };
+
+    if (!isMp3Family) {
+      const firstAttempt = await tryJsonUrl(endpoint);
+      if (firstAttempt === true) {
+        console.log(`✅ [whapi:sendMedia] ok via json_url (${mediatype} ${endpoint})`);
+        return true;
+      }
+      if (firstAttempt === "timeout_optimistic") {
+        console.log(`✅ [whapi:sendMedia] assumido entregue após timeout (${mediatype} ${endpoint})`);
+        return true;
+      }
+    } else {
+      console.log(`ℹ️ [whapi:sendMedia] MP3 detectado — pulando json_url; upload com mime ${contentType}`);
+    }
+
+    // JSON Base64 com mime real (MP3 → audio/mpeg; webm → audio/webm)
+    if (await sendJsonBase64(endpoint, contentType, "json_base64_real")) {
+      console.log(`✅ [whapi:sendMedia] ok via json_base64_real (${mediatype} ${endpoint} ${contentType})`);
       return true;
     }
-    if (firstAttempt === "timeout_optimistic") {
-      // Não tentar fallback: o Whapi provavelmente entregou e um 2º envio duplicaria.
-      console.log(`✅ [whapi:sendMedia] assumido entregue após timeout (${mediatype} ${endpoint})`);
-      return true;
+
+    // MP3: messages/audio com audio/mpeg (player de áudio no WA — ouve mesmo sem PTT)
+    if (isMp3Family) {
+      if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_endpoint")) {
+        console.log(`✅ [whapi:sendMedia] ok via json_base64_mp3 (messages/audio)`);
+        return true;
+      }
+      if (await sendMultipart(endpoint)) {
+        console.log(`✅ [whapi:sendMedia] ok via multipart voice (${contentType})`);
+        return true;
+      }
+      if (await sendMultipart("messages/audio")) {
+        console.log(`✅ [whapi:sendMedia] ok via multipart messages/audio`);
+        return true;
+      }
+      // Último recurso: json_url (pode falhar no celular, mas tenta)
+      const lateUrl = await tryJsonUrl(endpoint);
+      if (lateUrl === true || lateUrl === "timeout_optimistic") {
+        console.log(`✅ [whapi:sendMedia] ok via json_url tardio (mp3)`);
+        return true;
+      }
+      console.log(`❌ [whapi:sendMedia] resultado=false (mp3 via ${endpoint})`);
+      return false;
     }
 
-    // 2ª: JSON Base64 declarando o mime real
-    const realMime = isAudio ? "audio/webm" : contentType;
-    if (await sendJsonBase64(endpoint, realMime, "json_base64_real")) {
-      console.log(`✅ [whapi:sendMedia] ok via json_base64_real (${mediatype} ${endpoint})`);
-      return true;
-    }
-
-    // 3ª: Para áudio WebM/Opus → tentar alias OGG/Opus (mesmo codec, container aceito pelo WhatsApp)
+    // WebM/Opus legado → alias OGG/Opus
     if (isAudio) {
       if (await sendJsonBase64(endpoint, "audio/ogg; codecs=opus", "json_base64_ogg_alias")) {
         console.log(`✅ [whapi:sendMedia] ok via json_base64_ogg_alias (${mediatype} ${endpoint})`);
@@ -425,7 +487,6 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       }
     }
 
-    // 4ª: multipart como último recurso
     if (await sendMultipart(endpoint)) {
       console.log(`✅ [whapi:sendMedia] ok via multipart (${mediatype} ${endpoint})`);
       return true;

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap, Sparkles } from "lucide-react";
+import { Plus, Loader2, Play, LayoutTemplate, TrendingUp, GraduationCap, Sparkles, Volume2 } from "lucide-react";
 
 import {
   DndContext, DragEndEvent, PointerSensor, useSensor, useSensors, closestCenter,
@@ -36,6 +36,7 @@ import {
   Step, Variant, VARIANT_LABEL,
   parseTransitions, parseCaptures, parseFallback,
 } from "@/components/admin/flow-builder/flowTypes";
+import { stepMediaLookupKeys } from "@/lib/multichannelCadenceTexts";
 import ViewToggle, { type ViewMode } from "@/components/admin/flow-builder/ViewToggle";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
@@ -83,9 +84,13 @@ export default function FluxoBuilder() {
   const [guidedOpen, setGuidedOpen] = useState(false);
   const [listQuery, setListQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
+  /** Contagem de mídias ativas por slot_key (inclui corpos Sofia __body_* no passo A2/A3). */
+  const [mediaCounts, setMediaCounts] = useState<
+    Record<string, { audio: number; image: number; video: number }>
+  >({});
 
   const { isNarrow } = useViewportWidth();
-  const validation = useFlowValidation(steps);
+  const validation = useFlowValidation(steps, mediaCounts);
   const flowConflicts = useFlowConflicts(steps);
   const { isSuperAdmin } = useUserRole(userId);
   const [showOnlyConflicts, setShowOnlyConflicts] = useState(false);
@@ -154,11 +159,57 @@ export default function FluxoBuilder() {
         fallback: parseFallback(s.fallback, s.transitions)
       })).sort((a: any, b: any) => a.position - b.position);
       setSteps(mappedSteps);
+
+      // Conta mídias ativas (corpos Sofia A2/A3 entram no slot do passo).
+      try {
+        const slotKeys = new Set<string>();
+        const lookupToPrimary = new Map<string, string>();
+        for (const s of mappedSteps as Step[]) {
+          const primary = s.slot_key || s.step_key || "";
+          if (!primary) continue;
+          slotKeys.add(primary);
+          for (const k of stepMediaLookupKeys(primary)) {
+            lookupToPrimary.set(k, primary);
+            slotKeys.add(k);
+          }
+          if (s.step_key && s.step_key !== primary) {
+            for (const k of stepMediaLookupKeys(s.step_key)) {
+              lookupToPrimary.set(k, primary);
+              slotKeys.add(k);
+            }
+          }
+        }
+        const mediaOwnerId = (flow as any).consultant_id || user.id;
+        if (slotKeys.size > 0) {
+          const { data: mediaRows } = await supabase
+            .from("ai_media_library")
+            .select("kind, slot_key")
+            .eq("consultant_id", mediaOwnerId)
+            .eq("active", true)
+            .in("slot_key", Array.from(slotKeys));
+          const counts: Record<string, { audio: number; image: number; video: number }> = {};
+          for (const row of mediaRows || []) {
+            const sk = String((row as any).slot_key || "");
+            const primary = lookupToPrimary.get(sk) || sk;
+            if (!counts[primary]) counts[primary] = { audio: 0, image: 0, video: 0 };
+            const kind = String((row as any).kind || "").toLowerCase();
+            if (kind === "audio" || kind === "image" || kind === "video") {
+              counts[primary][kind as "audio" | "image" | "video"] += 1;
+            }
+          }
+          setMediaCounts(counts);
+        } else {
+          setMediaCounts({});
+        }
+      } catch {
+        setMediaCounts({});
+      }
     } else {
       setFlowId(null);
       setSyncMode("public");
       setIsPublicTemplate(false);
       setSteps([]);
+      setMediaCounts({});
     }
     
     const { data: allFlows } = await supabase.from("bot_flows")
@@ -346,6 +397,20 @@ export default function FluxoBuilder() {
                       </TooltipContent>
                     </Tooltip>
                     
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5"
+                          onClick={() => navigate("/admin/sofia-audios")}
+                        >
+                          <Volume2 className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Áudios nome</span>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Ouvir, aprovar ou excluir Olá+nome e só nome (Sofia)</TooltipContent>
+                    </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setSimulatorOpen(true)} disabled={!steps.length}>
@@ -556,6 +621,11 @@ export default function FluxoBuilder() {
                             selected={inspectorId === s.id}
                             isStart={i === 0 && !listQuery && typeFilter.size === 0}
                             isLast={i === filteredSteps.length - 1}
+                            mediaCount={
+                              (s.slot_key && mediaCounts[s.slot_key]) ||
+                              (s.step_key && mediaCounts[s.step_key]) ||
+                              undefined
+                            }
                             conflicts={flowConflicts.byStep.get(s.id)}
                             onSelect={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
                             onEdit={() => { setInspectorId(s.id); setInspectorTab("conteudo"); }}
@@ -600,7 +670,7 @@ export default function FluxoBuilder() {
                       consultantSlug={""}
                       flowId={flowId}
                       editingVariant={editingVariant}
-                      mediaCounts={{}}
+                      mediaCounts={mediaCounts}
                       validation={validation}
                       readOnly={isNarrow || crud.readOnlyHerdado}
                       onSelectStep={setInspectorId}
@@ -675,7 +745,7 @@ export default function FluxoBuilder() {
         currentMaxPosition={steps.reduce((m, s) => Math.max(m, s.position || 0), 0)}
         onApplied={() => void loadData(editingVariant)}
         preferTemplateId={
-          editingVariant === "C" || /sofia|multicanal/i.test(flowNames[editingVariant] || "")
+          editingVariant === "A" || /sofia|multicanal/i.test(flowNames[editingVariant] || "")
             ? "sofia_ativacao_multicanal"
             : null
         }

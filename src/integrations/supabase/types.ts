@@ -1881,6 +1881,8 @@ export type Database = {
           updated_at: string
           wait_for: string
           wait_seconds: number
+          voice_audio_clip_id: string | null
+          personalize_name: boolean
         }
         Insert: {
           auto_detect_doc_type?: boolean
@@ -1913,6 +1915,8 @@ export type Database = {
           updated_at?: string
           wait_for?: string
           wait_seconds?: number
+          voice_audio_clip_id?: string | null
+          personalize_name?: boolean
         }
         Update: {
           auto_detect_doc_type?: boolean
@@ -1945,6 +1949,8 @@ export type Database = {
           updated_at?: string
           wait_for?: string
           wait_seconds?: number
+          voice_audio_clip_id?: string | null
+          personalize_name?: boolean
         }
         Relationships: [
           {
@@ -2424,9 +2430,11 @@ export type Database = {
           media_type: string | null
           media_url: string | null
           message_text: string | null
+          personalize_name: boolean
           stage: string
           updated_at: string
           velip_audio_id: string | null
+          voice_audio_clip_id: string | null
           window_days: number[] | null
           window_end_hour: number | null
           window_start_hour: number | null
@@ -2441,9 +2449,11 @@ export type Database = {
           media_type?: string | null
           media_url?: string | null
           message_text?: string | null
+          personalize_name?: boolean
           stage: string
           updated_at?: string
           velip_audio_id?: string | null
+          voice_audio_clip_id?: string | null
           window_days?: number[] | null
           window_end_hour?: number | null
           window_start_hour?: number | null
@@ -2458,9 +2468,11 @@ export type Database = {
           media_type?: string | null
           media_url?: string | null
           message_text?: string | null
+          personalize_name?: boolean
           stage?: string
           updated_at?: string
           velip_audio_id?: string | null
+          voice_audio_clip_id?: string | null
           window_days?: number[] | null
           window_end_hour?: number | null
           window_start_hour?: number | null

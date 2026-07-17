@@ -775,7 +775,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             <h3 className="text-base font-semibold">Biblioteca Multicanal — Whapi + Sofia TTS</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
               Áudios Sofia em cortes (voz profissional obrigatória); só o <strong>nome novo</strong>{" "}
-              gasta crédito. No 2a: 2 áudios (bem-vindo / bem-vinda). Envio automático OFF.
+              gasta crédito. No 2a: 2 corpos (feminino / masculino). Envio automático OFF.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -813,8 +813,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="feminino">Feminino (bem-vinda)</SelectItem>
-              <SelectItem value="masculino">Masculino (bem-vindo)</SelectItem>
+              <SelectItem value="feminino">Feminino (corpo)</SelectItem>
+              <SelectItem value="masculino">Masculino (corpo)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -987,10 +987,15 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                               = <strong>só o nome</strong> + explicação até{" "}
                               <strong>“É simples”</strong> (sem Então).
                             </>
+                          ) : selected?.key === "a5_audio_club_benefits" ? (
+                            <>
+                              Passo 4 (benefício): <strong>só o nome</strong> no início → corpo
+                              fixo do clube (sem Olá de novo).
+                            </>
                           ) : (
                             <>
-                              Só <strong>1 corte com o nome</strong> no início (quando houver). O
-                              resto é <strong>1 bloco fixo</strong> no cache.
+                              Passo 2: <strong>Olá + nome</strong> → <strong>só o nome</strong> →{" "}
+                              corpo fixo Sofia/Rafael gestor. Passo 3: só o nome + explicação.
                             </>
                           )}
                         </p>
@@ -1316,7 +1321,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                         <div key={g} className="space-y-1">
                           <div className="flex items-center justify-between gap-2">
                             <Badge variant={g === previewGender ? "default" : "outline"}>
-                              {g === "feminino" ? "Feminino · bem-vinda" : "Masculino · bem-vindo"}
+                              {g === "feminino" ? "Feminino · corpo fixo" : "Masculino · corpo fixo"}
                             </Badge>
                             {clipId && (
                               <span className="text-[10px] font-mono text-muted-foreground truncate">

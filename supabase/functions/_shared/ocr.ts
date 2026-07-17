@@ -155,6 +155,142 @@ export async function baixarImagem(
   return null;
 }
 
+/** Resolve bytes de mídia inbound para OCR (conta ou documento). */
+export async function resolveOcrImageForInbound(opts: {
+  fileBase64?: string | null;
+  fileUrl?: string | null;
+  mediaMessage?: any;
+  customer?: Record<string, unknown> | null;
+  pendingUpdates?: Record<string, unknown> | null;
+  fetchAuthBearer?: string | null;
+  context?: "bill" | "document";
+}): Promise<{ b64: string; mime: string; source: string; resolvedUrl: string | null } | null> {
+  const cm = opts.mediaMessage;
+  const cust = { ...(opts.customer || {}), ...(opts.pendingUpdates || {}) };
+  const mimeDefault = cm?.mimetype || "image/jpeg";
+  const ctx = opts.context || "bill";
+  const logTag = ctx === "document" ? "resolveOcrImageForDoc" : "resolveOcrImageForBill";
+
+  const fromB64 = (b64: string, source: string, mime = mimeDefault) => {
+    const clean = String(b64 || "").trim();
+    if (clean.length < 100) return null;
+    return { b64: clean, mime, source, resolvedUrl: null as string | null };
+  };
+
+  if (opts.fileBase64) {
+    const hit = fromB64(opts.fileBase64, "fileBase64");
+    if (hit) return hit;
+  }
+
+  if (ctx === "bill" && cust.bill_base64) {
+    const hit = fromB64(String(cust.bill_base64), "bill_base64");
+    if (hit) return hit;
+  }
+  if (ctx === "document") {
+    for (const field of ["document_front_base64", "document_back_base64"] as const) {
+      if (cust[field]) {
+        const hit = fromB64(String(cust[field]), field);
+        if (hit) return hit;
+      }
+    }
+  }
+
+  const urlFieldsBill = [
+    opts.fileUrl,
+    cust.electricity_bill_photo_url,
+    cust.last_inbound_media_url,
+  ];
+  const urlFieldsDoc = [
+    opts.fileUrl,
+    cust.document_front_url,
+    cust.document_back_url,
+    cust.last_inbound_media_url,
+  ];
+  const urlFields = ctx === "document" ? urlFieldsDoc : urlFieldsBill;
+
+  const dataCandidates = urlFields
+    .map((v) => String(v || "").trim())
+    .filter((u) => u.startsWith("data:"));
+
+  for (const dataUrl of dataCandidates) {
+    const img = await baixarImagem(dataUrl, undefined, cm);
+    if (img) {
+      return { ...img, source: "data_url", resolvedUrl: dataUrl };
+    }
+  }
+
+  const httpCandidates = urlFields
+    .map((v) => String(v || "").trim())
+    .filter((u) => /^https?:\/\//i.test(u));
+
+  for (const httpUrl of httpCandidates) {
+    try {
+      const headers: Record<string, string> = {};
+      const isWhapi = /(?:^|\/\/)(?:[a-z0-9.-]+\.)?whapi\.cloud\b/i.test(httpUrl);
+      const bearer = String(opts.fetchAuthBearer || Deno.env.get("WHAPI_TOKEN") || "").trim();
+      if (isWhapi && bearer) headers.Authorization = `Bearer ${bearer}`;
+
+      const imgRes = await fetchWithTimeout(httpUrl, { timeout: TIMEOUT_FETCH_IMAGE, headers });
+      if (!imgRes.ok) {
+        console.warn(`[${logTag}] HTTP ${imgRes.status} url=${httpUrl.slice(0, 80)}`);
+        continue;
+      }
+      const buf = await imgRes.arrayBuffer();
+      const u8 = new Uint8Array(buf);
+      if (u8.length < 500) {
+        console.warn(`[${logTag}] imagem pequena demais (${u8.length}b)`);
+        continue;
+      }
+      const mime = imgRes.headers.get("content-type") || mimeDefault;
+      let bin = "";
+      for (let i = 0; i < u8.length; i += 8192) {
+        bin += String.fromCharCode(...u8.subarray(i, Math.min(i + 8192, u8.length)));
+      }
+      console.log(`[${logTag}] OK via HTTP (${u8.length}b)`);
+      return { b64: btoa(bin), mime, source: "http_fetch", resolvedUrl: httpUrl };
+    } catch (e) {
+      console.warn(`[${logTag}] fetch falhou:`, (e as Error).message);
+    }
+  }
+
+  const legacyUrl = ctx === "document"
+    ? (opts.fileUrl || String(cust.document_front_url || cust.document_back_url || "") || null)
+    : (opts.fileUrl || String(cust.electricity_bill_photo_url || "") || null);
+  const legacyB64 = opts.fileBase64
+    || (ctx === "document"
+      ? String(cust.document_front_base64 || cust.document_back_base64 || "") || undefined
+      : String(cust.bill_base64 || "") || undefined);
+
+  const legacy = await baixarImagem(legacyUrl, legacyB64, cm);
+  if (legacy) {
+    return { ...legacy, source: "baixarImagem_legacy", resolvedUrl: legacyUrl };
+  }
+  return null;
+}
+
+/** @deprecated alias — use resolveOcrImageForInbound({ context: "bill" }) */
+export async function resolveOcrImageForBill(opts: {
+  fileBase64?: string | null;
+  fileUrl?: string | null;
+  mediaMessage?: any;
+  customer?: Record<string, unknown> | null;
+  pendingUpdates?: Record<string, unknown> | null;
+  fetchAuthBearer?: string | null;
+}): Promise<{ b64: string; mime: string; source: string; resolvedUrl: string | null } | null> {
+  return resolveOcrImageForInbound({ ...opts, context: "bill" });
+}
+
+export async function resolveOcrImageForDocument(opts: {
+  fileBase64?: string | null;
+  fileUrl?: string | null;
+  mediaMessage?: any;
+  customer?: Record<string, unknown> | null;
+  pendingUpdates?: Record<string, unknown> | null;
+  fetchAuthBearer?: string | null;
+}): Promise<{ b64: string; mime: string; source: string; resolvedUrl: string | null } | null> {
+  return resolveOcrImageForInbound({ ...opts, context: "document" });
+}
+
 // ─── OCR Conta de Energia via Gemini 2.5 Flash ──────────────────────────
 export async function ocrContaEnergia(
   imagemUrl: string | null,

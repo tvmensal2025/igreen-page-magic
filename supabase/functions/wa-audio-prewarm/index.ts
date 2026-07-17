@@ -12,11 +12,14 @@
  *   include_platform?: true,
  *   include_common?: true,
  *   names?: string[],
+ *   mode?: "full" | "ola_only" | "nome_only" | "name_only",
+ *   // ola_only = intro:ola “Olá, Nome.” (A2) · nome_only = intro:nome (A3) · full = stitch
  *   limit?: number,   // default 20 (timeout edge)
  *   offset?: number,
  *   dry_run?: boolean
  * }
  *
+ * Default: se slots forem A2/A3 (ou omitidos com intenção de stitch), mode=full.
  * Auth: JWT consultor ou service_role.
  */
 
@@ -28,7 +31,7 @@ import {
   COMMON_MASCULINE_FIRST_NAMES,
   NAME_PREWARM_STOPWORDS,
 } from "../_shared/brazilian-common-names.ts";
-import { resolvePersonalizedWaAudio, ensureNameOnlyIntroMp3 } from "../_shared/wa-audio-stitch.ts";
+import { resolvePersonalizedWaAudio, ensureNameIntroPairCache, ensureNameOnlyIntroMp3, ensureOlaGreetIntroMp3 } from "../_shared/wa-audio-stitch.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -109,19 +112,44 @@ Deno.serve(async (req) => {
 
   const includeCommon = body.include_common !== false;
   const dryRun = body.dry_run === true;
-  /** name_only = só MP3 do nome (sem Olá) · full = stitch A2/A3 */
-  const mode = String(body.mode || "name_only") === "full" ? "full" : "name_only";
-  // name_only: por padrão SÓ nomes comuns BR (evita CRM estranho tipo Rosterlane).
-  // full / stitch: mantém plataforma se não desligar.
-  const includePlatform = mode === "name_only"
-    ? body.include_platform === true
-    : body.include_platform !== false;
-  const limit = Math.max(1, Math.min(mode === "name_only" ? 40 : 30, Number(body.limit) || (mode === "name_only" ? 25 : 20)));
-  const offset = Math.max(0, Number(body.offset) || 0);
-  const slots = (Array.isArray(body.slots) && body.slots.length
+  const requestedSlots = Array.isArray(body.slots) && body.slots.length
     ? body.slots.map((s) => String(s))
-    : mode === "name_only"
+    : null;
+  /**
+   * ola_only = “Olá, Nome.” (intro:ola · A2) · nome_only = só nome (intro:nome · A3)
+   * full = stitch A2/A3 completo · name_only = alias legado → ola_only
+   */
+  const modeRaw = String(body.mode || "").trim();
+  const mode: "full" | "ola_only" | "nome_only" = modeRaw === "full"
+    ? "full"
+    : modeRaw === "nome_only"
+    ? "nome_only"
+    : modeRaw === "ola_only" || modeRaw === "name_only" || !modeRaw
+    ? "ola_only"
+    : "ola_only";
+  // Plataforma só se pedir explicitamente (evita nomes estranhos do CRM).
+  const includePlatform = body.include_platform === true;
+  const limit = Math.max(
+    1,
+    Math.min(
+      mode === "full" ? 15 : 40,
+      Number(body.limit) || (mode === "full" ? 10 : 25),
+    ),
+  );
+  const offset = Math.max(0, Number(body.offset) || 0);
+  const forceBatch = body.force_batch === true;
+  if (mode === "nome_only" && limit > 5 && !forceBatch && extraNames.length === 0) {
+    return json(400, {
+      error: "nome_only_batch_blocked",
+      hint: "Máx 5 nomes por lote sem force_batch. Use a página /admin/sofia-audios para aprovar um a um.",
+    });
+  }
+  const slots = (requestedSlots
+    ? requestedSlots
+    : mode === "nome_only"
     ? ["intro:nome"]
+    : mode === "ola_only"
+    ? ["intro:ola"]
     : [...DEFAULT_SLOTS]) as string[];
   const extraNames = Array.isArray(body.names)
     ? body.names.map((n) => String(n))
@@ -175,7 +203,51 @@ Deno.serve(async (req) => {
   }> = [];
 
   for (const name of slice) {
-    if (mode === "name_only") {
+    if (mode === "ola_only") {
+      try {
+        // Se stitch A2 Sofia (lote) já existe → nunca gerar TTS de intro.
+        const { probePersonalizedWaAudioCache } = await import("../_shared/wa-audio-stitch.ts");
+        const stitchReady = await probePersonalizedWaAudioCache(admin, {
+          consultantId,
+          slotKey: "a2_audio_activate_name",
+          customerName: name,
+        });
+        if (stitchReady) {
+          results.push({
+            name,
+            slot: "intro:ola",
+            ok: true,
+            cached: true,
+            mode: "cache_hit_stitch",
+          });
+          continue;
+        }
+        const r = await ensureOlaGreetIntroMp3(admin, {
+          consultantId,
+          customerName: name,
+        });
+        results.push({
+          name,
+          slot: "intro:ola",
+          ok: !!r.ok,
+          cached: r.cached,
+          error: r.error,
+          mode: r.ok ? (r.cached ? "cache_hit" : "generated") : "failed",
+        });
+      } catch (e) {
+        results.push({
+          name,
+          slot: "intro:ola",
+          ok: false,
+          error: (e as Error)?.message || "error",
+          mode: "failed",
+        });
+      }
+      await new Promise((r) => setTimeout(r, 200));
+      continue;
+    }
+
+    if (mode === "nome_only") {
       try {
         const r = await ensureNameOnlyIntroMp3(admin, {
           consultantId,
@@ -204,6 +276,10 @@ Deno.serve(async (req) => {
 
     for (const slot of slots) {
       try {
+        await ensureNameIntroPairCache(admin, {
+          consultantId,
+          customerName: name,
+        });
         const r = await resolvePersonalizedWaAudio(admin, {
           consultantId,
           slotKey: slot,

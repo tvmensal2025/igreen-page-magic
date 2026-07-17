@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   hasBillReady,
+  billReadyForActivate,
   isActivateIntent,
   isSimulateIntent,
   isCadastroContaStep,
@@ -63,6 +64,61 @@ Deno.test("hasBillReady", () => {
 Deno.test("isCadastroContaStep", () => {
   assertEquals(isCadastroContaStep(steps[0], steps), false);
   assertEquals(isCadastroContaStep(steps[2], steps), true);
+});
+
+Deno.test("pickActivateDestination — Sofia valor digitado vai a6 não doc", () => {
+  const sofia = [
+    {
+      id: "a6",
+      step_key: "a6_ask_bill_photo",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "a7" }],
+    },
+    {
+      id: "a7",
+      step_key: "a7_ask_doc_photo",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const d = pickActivateDestination(sofia, { electricity_bill_value: 900 });
+  assertEquals(d?.step_key, "a6_ask_bill_photo");
+});
+
+Deno.test("pickActivateDestination — Sofia COM foto vai doc", () => {
+  const sofia = [
+    {
+      id: "a6",
+      step_key: "a6_ask_bill_photo",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "a7" }],
+    },
+    {
+      id: "a7",
+      step_key: "a7_ask_doc_photo",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const d = pickActivateDestination(sofia, {
+    electricity_bill_value: 900,
+    electricity_bill_photo_url: "https://x/bill.jpg",
+  });
+  assertEquals(d?.step_key, "a7_ask_doc_photo");
+});
+
+Deno.test("billReadyForActivate — Sofia valor ≠ conta pronta", () => {
+  const sofia = [
+    { id: "a6", step_key: "a6_ask_bill_photo", step_type: "capture_conta", is_active: true },
+    { id: "a7", step_key: "a7_ask_doc_photo", step_type: "capture_documento", is_active: true },
+  ];
+  assertEquals(billReadyForActivate(sofia, { electricity_bill_value: 900 }), false);
+  assertEquals(
+    billReadyForActivate(sofia, { electricity_bill_photo_url: "https://x/b.jpg" }),
+    true,
+  );
 });
 
 Deno.test("pickActivateDestination — com conta vai doc", () => {

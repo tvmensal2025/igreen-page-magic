@@ -54,7 +54,10 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const audio = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const text = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_text_ask_bill_value");
     expect(audio?.body).toContain("{{nome}}");
+    expect(audio?.body).toMatch(/Olá,\s*\{\{nome\}\}/);
+    expect(audio?.body).toMatch(/gestor da iGreen/i);
     expect(audio?.body).toMatch(/simulação|conta de luz/i);
+    expect(audio?.audioSegments?.[0]?.text).toMatch(/Olá/i);
     expect(audio?.audioSegments?.some((s) => s.id === "a2_activate")).toBe(false);
     expect(text?.body).toContain("{{nome}}");
     expect(text?.body).toMatch(/ativar o seu benefício/i);
@@ -129,9 +132,11 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
         ]);
         for (const g of ["feminino", "masculino"] as const) {
           const filtered = filterSegmentsForGender(segs, g);
-          expect(filtered.length, `${t.key}:${g}`).toBeLessThanOrEqual(2);
+          const maxSegs = t.key === "a2_audio_activate_name" ? 4 : 2;
+          expect(filtered.length, `${t.key}:${g}`).toBeLessThanOrEqual(maxSegs);
           const names = filtered.filter((s) => s.kind === "name" || s.kind === "with_name");
-          expect(names.length, `${t.key}:${g}`).toBeLessThanOrEqual(1);
+          const maxNames = t.key === "a2_audio_activate_name" ? 2 : 1;
+          expect(names.length, `${t.key}:${g}`).toBeLessThanOrEqual(maxNames);
           if (names.length === 1) {
             expect(["name", "with_name"]).toContain(filtered[0]?.kind);
             expect(filtered[1]?.kind, `${t.key}:${g}`).toBe("fixed");
@@ -158,17 +163,22 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
-    expect(a2?.audioSegments?.length).toBe(3);
+    expect(a2?.audioSegments?.length).toBe(4);
     expect(a2?.audioSegments?.[0]?.kind).toBe("name");
     expect(a2?.audioSegments?.[0]?.text).toBe("Olá, {{nome}}.");
+    expect(a2?.audioSegments?.[1]?.kind).toBe("name");
+    expect(a2?.audioSegments?.[1]?.text).toBe("{{nome}}.");
     expect(a2?.audioSegments?.filter((s) => s.genderVariant).length).toBe(2);
     expect(a3?.audioSegments?.length).toBe(2);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
     expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}.");
     expect(a3?.audioSegments?.[1]?.kind).toBe("fixed");
     expect(a3?.audioSegments?.some((s) => /então/i.test(s.text))).toBe(false);
-    expect(a5?.audioSegments?.length).toBe(1);
-    expect(a5?.audioSegments?.some((s) => s.kind === "name")).toBe(false);
+    expect(a5?.audioSegments?.length).toBe(2);
+    expect(a5?.audioSegments?.[0]?.kind).toBe("name");
+    expect(a5?.audioSegments?.[0]?.text).toBe("{{nome}}.");
+    expect(a5?.audioSegments?.[1]?.kind).toBe("fixed");
+    expect(a5?.audioSegments?.some((s) => s.kind === "name")).toBe(true);
   });
 
   it("spokenSegmentText Então, Nome. (legado)", () => {
@@ -210,12 +220,13 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(out).toBe("Olá, Maria.");
   });
 
-  it("2a tem corpos fixos bem-vinda e bem-vindo (2 áudios)", () => {
+  it("2a tem corpos fixos Sofia/Rafael gestor (2 áudios M/F)", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const f = a2?.audioSegments?.find((s) => s.genderVariant === "feminino")?.text ?? "";
     const m = a2?.audioSegments?.find((s) => s.genderVariant === "masculino")?.text ?? "";
-    expect(f).toMatch(/bem-vinda/i);
-    expect(m).toMatch(/bem-vindo/i);
+    expect(f).toMatch(/gestor da iGreen/i);
+    expect(m).toMatch(/gestor da iGreen/i);
+    expect(f).toMatch(/Rafael Ferreira Dias/i);
     expect(f).not.toContain("{{bem_vindo}}");
     expect(m).not.toContain("{{bem_vindo}}");
     expect(cadenceAudioUrlKey("a2_audio_activate_name", "feminino")).toBe(

@@ -82,11 +82,16 @@ import {
   isSofiaMulticanalCustomer,
   sofiaCadastroPersistPatch,
 } from "../../_shared/bot/cadastro-fixes.ts";
+import {
+  advanceSofiaToDocumentAfterBill,
+  isSofiaPostBillCadastro,
+} from "../../_shared/bot/sofia-post-bill-routing.ts";
 
 import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
-import { ocrContaEnergia, ocrDocumentoFrenteVerso } from "../../_shared/ocr.ts";
+import { ocrContaEnergia, ocrDocumentoFrenteVerso, resolveOcrImageForBill, resolveOcrImageForDocument } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
 import { detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
+import { salvageIfDocumentMisroutedAtBillOcr } from "../../_shared/bot/salvage-doc-at-bill-ocr.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
 import { isMockMode, isCustomerSandbox, shouldBypassQuietHours, shouldUseFastClock } from "../../_shared/test-mode.ts";
@@ -3882,19 +3887,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         // ocrContaEnergia (Gemini), igual ao fluxo de produção. Isso garante que
         // o painel "Conta de luz (OCR)" mostre os dados reais da imagem enviada.
         console.log("📡 Chamando OCR Gemini para conta:", fileUrl?.substring(0, 100));
-        // Garante bytes: se não temos base64 mas temos URL HTTP, baixa on-demand
-        let ocrBase64 = fileBase64 || undefined;
-        if (!ocrBase64 && fileUrl && /^https?:\/\//i.test(fileUrl)) {
-          const fetched = await fetchUrlToBase64(fileUrl);
-          if (fetched?.base64) {
-            ocrBase64 = fetched.base64;
-            if (!mediaMsg.mimetype) (mediaMsg as any).mimetype = fetched.mime;
-            console.log(`📥 OCR base64 baixado on-demand: ${ocrBase64.length} bytes`);
-          }
+        const resolvedImg = await resolveOcrImageForBill({
+          fileBase64,
+          fileUrl,
+          mediaMessage: mediaMsg,
+          customer,
+          pendingUpdates: updates,
+          fetchAuthBearer: Deno.env.get("WHAPI_TOKEN") || null,
+        });
+        if (!resolvedImg) {
+          console.error("❌ OCR conta: sem bytes de imagem (fileBase64/url/customer)");
+          updates.conversation_step = "aguardando_conta";
+          reply = "⚠️ Não consegui abrir a foto da conta. Envie de novo como *imagem* ou *PDF*, bem nítida 📸";
+          break;
+        }
+        const ocrBase64 = resolvedImg.b64;
+        const ocrFileUrl = resolvedImg.resolvedUrl || fileUrl;
+        if (resolvedImg.source !== "fileBase64") {
+          console.log(`📥 OCR imagem via ${resolvedImg.source} (${ocrBase64.length}b)`);
         }
         // Timeout de 25s para o OCR (evita travar "Analisando...")
         const ocrData: any = await Promise.race([
-          ocrContaEnergia(fileUrl, geminiApiKey, ocrBase64, mediaMsg),
+          ocrContaEnergia(ocrFileUrl, geminiApiKey, ocrBase64, mediaMsg),
           new Promise((_, rej) => setTimeout(() => rej(new Error("OCR_TIMEOUT_25s")), 25_000)),
         ]);
         console.log("📊 OCR Conta resultado:", JSON.stringify(ocrData).substring(0, 400));
@@ -3903,6 +3917,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const confianca = typeof d.confianca === "number" ? d.confianca : 100;
           if (confianca < OCR_CONFIDENCE_THRESHOLD) {
             jsonLog("warn", "OCR conta abaixo do threshold", { customer_id: customer.id, confianca, threshold: OCR_CONFIDENCE_THRESHOLD });
+            const salvagedReply = await salvageIfDocumentMisroutedAtBillOcr({
+              supabase,
+              customer,
+              updates,
+              ocrBase64,
+              mediaMsg,
+              fileUrl,
+              geminiApiKey,
+              messageId,
+            });
+            if (salvagedReply) {
+              reply = salvagedReply;
+              break;
+            }
             const tries = (customer.ocr_conta_attempts || 0) + 1;
             updates.ocr_conta_attempts = tries;
             const { retryText, escalate } = await resolveOcrFallback(supabase, customer.id, customer.consultant_id, "capture_conta", tries,
@@ -3922,6 +3950,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             .filter((v) => v && String(v).trim().length > 0);
           if (criticos.length < 3) {
             jsonLog("warn", "OCR conta com poucos campos válidos", { customer_id: customer.id, validos: criticos.length });
+            const salvagedReply = await salvageIfDocumentMisroutedAtBillOcr({
+              supabase,
+              customer,
+              updates,
+              ocrBase64,
+              mediaMsg,
+              fileUrl,
+              geminiApiKey,
+              messageId,
+            });
+            if (salvagedReply) {
+              reply = salvagedReply;
+              break;
+            }
             const tries = (customer.ocr_conta_attempts || 0) + 1;
             updates.ocr_conta_attempts = tries;
             const { retryText, escalate } = await resolveOcrFallback(supabase, customer.id, customer.consultant_id, "capture_conta", tries,
@@ -4032,6 +4074,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             break;
           }
 
+          // Sofia A: conta validada → documento direto (sem confirmar SIM / sem re-explicar a3).
+          if (await advanceSofiaToDocumentAfterBill({
+            customer,
+            updates,
+            dispatchStep: (k, v) => dispatchStepFromFlow(k, v),
+            logPrefix: "ocr-bill/whapi",
+          })) {
+            reply = "";
+            break;
+          }
+
           updates.conversation_step = "confirmando_dados_conta";
 
           // 🧪 testMode: pula a fila de revisão do consultor e envia a confirmação direto
@@ -4065,6 +4118,20 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
         } else {
           console.error("❌ OCR conta falhou:", ocrData.erro);
+          const salvagedReply = await salvageIfDocumentMisroutedAtBillOcr({
+            supabase,
+            customer,
+            updates,
+            ocrBase64,
+            mediaMsg,
+            fileUrl,
+            geminiApiKey,
+            messageId,
+          });
+          if (salvagedReply) {
+            reply = salvagedReply;
+            break;
+          }
           const tries = (customer.ocr_conta_attempts || 0) + 1;
           updates.ocr_conta_attempts = tries;
           const { retryText, escalate } = await resolveOcrFallback(supabase, customer.id, customer.consultant_id, "capture_conta", tries,
@@ -4099,6 +4166,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       console.log(`[post-confirm-conta] ENTER resp="${resp}" customer=${customer.id}`);
       if (resp === "sim_conta" || resp === "sim" || resp === "s" || resp === "1" || resp === "ok" || resp === "correto" || resp === "✅") {
+        // Sofia A: SIM na conta → documento (nunca re-dispacha economia a3).
+        if (await advanceSofiaToDocumentAfterBill({
+          customer,
+          updates,
+          dispatchStep: (k, v) => dispatchStepFromFlow(k, v),
+          logPrefix: "post-confirm-conta/whapi",
+        })) {
+          reply = "";
+          break;
+        }
         // 🛡️ SAFETY: todo o dispatch pós-SIM roda em try/catch. Se qualquer
         // passo (CHAIN, success_goto, finalizar) lançar, o lead recebe um
         // texto de continuidade em vez de ficar mudo, e gravamos error_message
@@ -4414,7 +4491,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             // o CTA e mandar "Show! ..." junto com a simulação. Aguarda a resposta
             // no step REAL enviado para honrar o goto_step_id configurado.
             const _waitForCta = (updates as any).__last_chain_had_buttons === true;
-            if (_waitForCta) {
+            if (_waitForCta && !isSofiaPostBillCadastro({ ...customer, ...updates })) {
               const waitStep = (updates as any).__post_bill_wait_step_id || "ask_quero_cadastrar";
               console.log(`[post-confirm-conta] chain final é interativa → aguardando resposta em ${waitStep} (não disparando capture_documento agora)`);
               updates.conversation_step = waitStep;
@@ -4580,6 +4657,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       const mime = imageMessage?.mimetype || documentMessage?.mimetype || "image/jpeg";
+      const resolvedDocImg = await resolveOcrImageForDocument({
+        fileBase64,
+        fileUrl,
+        mediaMessage: documentMessage || imageMessage,
+        customer,
+        pendingUpdates: updates,
+        fetchAuthBearer: Deno.env.get("WHAPI_TOKEN") || null,
+      });
+      if (!resolvedDocImg) {
+        reply = "⚠️ Não consegui abrir a foto do documento. Envie de novo como *imagem* ou *PDF*, bem nítida 📸";
+        break;
+      }
+      const docFileBase64 = resolvedDocImg.b64;
+      const docFileUrl = resolvedDocImg.resolvedUrl || fileUrl
+        || `data:${resolvedDocImg.mime};base64,${docFileBase64}`;
+
       let detectedType: "cnh" | "rg_novo" | "rg_antigo" | "outro" = "rg_antigo";
       let detectConfidence = 0;
       let detectSource: string = "fallback";
@@ -4590,9 +4683,9 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       try {
         const det = await detectDocumentTypeDetailed({
-          base64: fileBase64 || undefined,
+          base64: docFileBase64,
           mimeType: mime,
-          imageUrl: fileUrl?.startsWith("http") ? fileUrl : undefined,
+          imageUrl: docFileUrl.startsWith("http") ? docFileUrl : undefined,
           geminiApiKey,
         });
         detectedType = det.tipo;
@@ -4620,22 +4713,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
 
       // Salva a frente recebida (sempre — independente da confiança da detecção).
-      if (fileBase64) {
-        updates.document_front_url = `data:${mime};base64,${fileBase64}`;
-        updates.document_front_base64 = fileBase64;
+      if (docFileBase64) {
+        updates.document_front_url = `data:${mime};base64,${docFileBase64}`;
+        updates.document_front_base64 = docFileBase64;
         updates.media_message_id = messageId || null;
         updates.media_storage = "inline";
         const _custId = customer.id;
         uploadMediaToMinio({
-          fileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
+          fileBase64: docFileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
           customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_frente",
         }).then(async (minioUrl) => {
           if (minioUrl) {
             await supabase.from("customers").update({ document_front_url: minioUrl, media_storage: "minio" }).eq("id", _custId);
           }
         }).catch((e) => console.warn(`📦⚠️ [BG] MinIO doc_frente falhou: ${e?.message}`));
-      } else if (fileUrl) {
-        updates.document_front_url = fileUrl.startsWith("http") ? fileUrl : "evolution-media:pending";
+      } else if (docFileUrl) {
+        updates.document_front_url = docFileUrl.startsWith("http") ? docFileUrl : "evolution-media:pending";
       }
 
       // ⚠️ FIX 2026-05-30: NÃO perguntar "RG ou CNH" quando a confiança da
@@ -4658,13 +4751,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
       // Roda OCR da frente já agora (mesma lógica do aguardando_doc_frente)
       try {
-        const docFrenteUrl = fileUrl || updates.document_front_url || "evolution-media:pending";
+        const docFrenteUrl = docFileUrl || updates.document_front_url || "evolution-media:pending";
         const ocrData = await ocrDocumentoFrenteVerso(
           docFrenteUrl,
           treatAsCnh ? "nao_aplicavel" : (customer.document_back_url || ""),
           treatAsCnh ? "CNH" : (detectedType === "rg_novo" ? "RG_NOVO" : "RG_ANTIGO"),
           geminiApiKey,
-          fileBase64 || undefined,
+          docFileBase64,
           documentMessage || imageMessage,
           undefined,
         );

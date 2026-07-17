@@ -150,7 +150,6 @@ export async function resolvePersonalizedCallAudio(
     .from("voice_audio_clips")
     .select("id, audio_url, name, velip_audio_id, voice_id, model_id, consultant_id")
     .eq("id", opts.bodyClipId)
-    .eq("consultant_id", opts.consultantId)
     .maybeSingle();
   const clip = clipRaw as VoiceClipRow | null;
 
@@ -237,16 +236,61 @@ export async function resolvePersonalizedCallAudio(
   }
 }
 
+/**
+ * Resolve o `velip_audio_id` final para discar — único ponto de entrada
+ * para cadência, cron (personalize), reheat e make_call.
+ *
+ * - personalize=false → só garante corpo no Velip (sem ElevenLabs).
+ * - personalize=true  → stitch Olá,{Nome} + corpo (cache voice_call_renders;
+ *   ElevenLabs só se ainda não houver render).
+ * - Sem clipId → devolve velipAudioId legado se existir.
+ */
+export async function resolveCallDialAudio(
+  admin: AdminClient,
+  opts: {
+    consultantId: string;
+    clipId?: string | null;
+    legacyVelipAudioId?: string | null;
+    rawName?: string | null;
+    personalize?: boolean;
+  },
+): Promise<StitchResult> {
+  const clipId = (opts.clipId || "").trim();
+  const legacy = (opts.legacyVelipAudioId || "").trim();
+
+  if (!clipId) {
+    if (legacy) return { ok: true, velip_audio_id: legacy, fallback_body: true, cached: true };
+    return { ok: false, error: "no_clip_and_no_legacy_velip" };
+  }
+
+  if (opts.personalize) {
+    return resolvePersonalizedCallAudio(admin, {
+      consultantId: opts.consultantId,
+      bodyClipId: clipId,
+      rawName: opts.rawName,
+      fallbackToBody: true,
+    });
+  }
+
+  const ensured = await ensureBodyClipOnVelip(admin, clipId, opts.consultantId);
+  if (ensured.ok) {
+    return { ok: true, velip_audio_id: ensured.audio_id, fallback_body: true, cached: true };
+  }
+  if (legacy) {
+    return { ok: true, velip_audio_id: legacy, fallback_body: true, cached: true, error: ensured.error };
+  }
+  return { ok: false, error: ensured.error };
+}
+
 export async function ensureBodyClipOnVelip(
   admin: AdminClient,
   clipId: string,
-  consultantId: string,
+  _consultantId: string,
 ): Promise<{ ok: true; audio_id: string } | { ok: false; error: string }> {
   const { data: clipRaw } = await admin
     .from("voice_audio_clips")
     .select("id, audio_url, name, velip_audio_id")
     .eq("id", clipId)
-    .eq("consultant_id", consultantId)
     .maybeSingle();
   const clip = clipRaw as Pick<VoiceClipRow, "id" | "audio_url" | "name" | "velip_audio_id"> | null;
   if (!clip?.audio_url) return { ok: false, error: "clip_not_found" };

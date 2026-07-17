@@ -54,6 +54,8 @@ const PATCHABLE_COLUMNS = [
   "auto_detect_doc_type",
   "layout",
   "media_order",
+  "voice_audio_clip_id",
+  "personalize_name",
 ] as const;
 
 type PatchableColumn = (typeof PATCHABLE_COLUMNS)[number];

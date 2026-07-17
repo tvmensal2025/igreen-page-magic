@@ -28,9 +28,9 @@ interface VariantInfo {
 }
 
 const VARIANT_META: Record<string, { label: string; description: string }> = {
-  A: { label: "Fluxo A — CEMIG (cadastro direto)", description: "Vai direto em 'envie sua conta de luz'. Use para campanhas muito qualificadas." },
+  A: { label: "Fluxo A — Sofia Multicanal (Grupo A)", description: "10 passos oficiais: nome → valor → ativar → OCR → portal OTP + facial. Áudio Sofia TTS." },
   B: { label: "Fluxo B — IA livre (Camila)", description: "IA conduz toda a conversa até pedir a foto da conta." },
-  C: { label: "Fluxo C — Sofia Multicanal", description: "10 passos Grupo A: nome → valor → ativar → OCR → portal OTP + facial. Áudio Sofia TTS." },
+  C: { label: "Fluxo C — legado (pausado)", description: "Variante antiga da Sofia. Use o Fluxo A (Grupo A) como base." },
   D: { label: "Fluxo D — Botões guiados", description: "Roteiro fixo conversacional. Roteia para CEMIG quando lead pede cadastro." },
   M: { label: "Fluxo M — MG (Minas Gerais)", description: "Fluxo público mantido pelo Super Admin. Simulação com desconto 10–28%." },
   E: { label: "Fluxo E — Personalizado", description: "Fluxo customizado pelo consultor." },

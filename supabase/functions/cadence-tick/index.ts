@@ -14,6 +14,7 @@ import {
   playAudioFile, makeSMS,
   toVelipBRDest, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { resolveCallDialAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
@@ -44,6 +45,8 @@ interface StageConfig {
   media_url: string | null;
   media_type: string | null;
   velip_audio_id: string | null;
+  voice_audio_clip_id: string | null;
+  personalize_name: boolean;
   max_per_lead: number | null;
   window_start_hour: number | null;
   window_end_hour: number | null;
@@ -55,7 +58,7 @@ async function loadStageConfig(
   consultantId: string | null,
   stage: string,
 ): Promise<StageConfig | null> {
-  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, max_per_lead, window_start_hour, window_end_hour, window_days";
+  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, voice_audio_clip_id, personalize_name, max_per_lead, window_start_hour, window_end_hour, window_days";
   if (consultantId) {
     const { data } = await supabase
       .from("cadence_stage_config")
@@ -245,15 +248,25 @@ async function dispatchVoiceCall(
 
   const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${Date.now()}`);
 
-  // Regra Sofia: ligação só com áudio pré-gravado (velip_audio_id). Sem TTS Velip.
-  if (!cfg.velip_audio_id) {
-    return { ok: false, detail: "sofia_required_no_audio" };
+  // Regra Sofia: clip ElevenLabs → Velip. Sem TTS robótico Velip.
+  const resolved = await resolveCallDialAudio(supabase, {
+    consultantId: row.consultant_id,
+    clipId: cfg.voice_audio_clip_id,
+    legacyVelipAudioId: cfg.velip_audio_id,
+    rawName: cust?.name,
+    personalize: Boolean(cfg.personalize_name),
+  });
+  if (!resolved.ok || !resolved.velip_audio_id) {
+    return { ok: false, detail: `sofia_required_no_audio:${resolved.error || "missing"}` };
   }
 
   try {
-    const r = await playAudioFile({ to: dest, audioId: cfg.velip_audio_id, ctid });
+    const r = await playAudioFile({ to: dest, audioId: resolved.velip_audio_id, ctid });
     if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
-    return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
+    const stitchTag = cfg.personalize_name
+      ? (resolved.cached ? ":stitched_cached" : ":stitched_new")
+      : "";
+    return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}${stitchTag}` };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }

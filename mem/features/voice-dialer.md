@@ -131,6 +131,54 @@ Idempotente — chama sempre que passar.
 
 Default de todos os toggles: **OFF**.
 
+### Áudio Sofia na cadência (wiring 2026-07-17)
+
+- Preferir `cadence_stage_config.voice_audio_clip_id` (clip ElevenLabs em `voice_audio_clips`).
+- `personalize_name` costura intro `"Olá, {Nome}."` via `resolveCallDialAudio` → `voice_call_renders` (ElevenLabs só se não houver cache).
+- `velip_audio_id` permanece como fallback legado.
+- UI: Admin → Motor Cadência — seletor de clip Sofia (TTS Velip bloqueado).
+
+### Passo `make_call` no construtor
+
+- Colunas: `bot_flow_steps.voice_audio_clip_id`, `personalize_name`.
+- Runtime (Whapi/Evolution conversational): `handleMakeCallStep` em `_shared/bot/make-call-step.ts`.
+- Fail-closed: exige `bot_global_enabled` **e** `automation_toggles.bot_flow_make_call` (default **OFF**).
+- Com OFF: só log `would_make_call` (dry-run; **não** disca, **não** chama ElevenLabs).
+- Com ON: enfileira campanha single (`voice_campaigns` + target queued) — o cron disca; não há `MakeTTSCall` síncrono no webhook.
+
+### Checklist prontidão (sem gastar API)
+
+```bash
+# SQL read-only — gaps de clip / kills / make_call sem áudio
+# Rodar no SQL Editor: scripts/voice-call-readiness.sql
+```
+
+### Mapa dos caminhos
+
+| Caminho | ElevenLabs | Stitch nome | Disca via | Gate |
+|---------|------------|-------------|-----------|------|
+| Manual enqueue / ScheduleCall | UI `tts-proxy` | cron se `personalize_name` | cron `playAudioFile` | JWT consultor |
+| Daily reheat | kit clip | `runCall` | `playAudioFile` | 4 cadeados OFF |
+| Cadência CALL_* | `voice_audio_clip_id` | `personalize_name` | `dispatchVoiceCall` | cadence_* OFF |
+| Bot `make_call` | clip do passo | opcional | enqueue → cron | bot + `bot_flow_make_call` OFF |
+
+```mermaid
+flowchart TD
+  CLIP[voice_audio_clips Sofia]
+  ST[resolveCallDialAudio]
+  RENDER[voice_call_renders]
+  PLAY[playAudioFile MakeTTSCall]
+  CLIP --> ST
+  ST --> RENDER
+  ST --> PLAY
+  MAN[Manual enqueue] --> CRON[voice-dialer-cron]
+  CRON --> PLAY
+  CAD[cadence-tick] --> ST
+  DR[daily-reheat] --> ST
+  BOT[make_call dry-run default] -.->|live OFF| LOG[would_make_call]
+  BOT -->|live ON| MAN
+```
+
 ## Segurança
 
 - `voice-dialer-webhook`: `?auth=` obrigatório; soft‑check dos IPs Velip (`35.232.103.91`, `35.184.30.236`).

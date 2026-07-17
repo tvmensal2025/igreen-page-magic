@@ -101,11 +101,29 @@ export function resumeAfterAddressEdit(customer: {
  * ask_finalizar — boleto único implícito → finalizando/portal → OTP.
  */
 
-/** Fluxo C = Sofia Multicanal (10 passos Grupo A). */
-export function isSofiaMulticanalCustomer(
-  c: { flow_variant?: string | null } | null | undefined,
+/** Passos do Grupo A / Sofia Multicanal (a1_ask_name, a2_*, a10_portal_otp_facial…). */
+export function isSofiaMulticanalConversationStep(
+  step: string | null | undefined,
 ): boolean {
-  return String(c?.flow_variant || "").toUpperCase() === "C";
+  return /^a\d+_/i.test(String(step || "").trim());
+}
+
+/**
+ * Sofia Multicanal (Grupo A): variante A é a base desde 2026-07-17.
+ * Variante C permanece só para leads legados até migração completa.
+ */
+export function isSofiaMulticanalCustomer(
+  c: {
+    flow_variant?: string | null;
+    conversation_step?: string | null;
+  } | null | undefined,
+): boolean {
+  if (!c) return false;
+  const variant = String(c.flow_variant || "").toUpperCase();
+  // Grupo A = Sofia Multicanal (base desde 2026-07-17); C = legado.
+  if (variant === "A" || variant === "C") return true;
+  if (isSofiaMulticanalConversationStep(c.conversation_step)) return true;
+  return false;
 }
 
 /** Passo 9 do Grupo A / Sofia — portal + OTP sem perguntar boleto. */
@@ -169,6 +187,7 @@ export function nextSeparatedCadastroStep(
   customer: {
     contaunica_answered?: boolean | null;
     flow_variant?: string | null;
+    conversation_step?: string | null;
   } | null | undefined,
   opts?: { fromStepKey?: string | null },
 ): "ask_contaunica" | "ask_finalizar" | "finalizando" {
