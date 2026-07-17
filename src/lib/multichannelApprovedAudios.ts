@@ -31,12 +31,12 @@ export const APPROVED_A2_AUDIOS: ApprovedCadenceAudio[] = [
   {
     key: "a2_audio_activate_name__masculino",
     gender: "masculino",
-    clipId: "regen-2026-07-17-masculino-v4-diga-fonetico",
+    clipId: "regen-2026-07-17-masculino-v5-igreen-rafael",
     audioUrl:
-      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/masculino-1784309886250.mp3",
+      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/masculino-1784311291451.mp3",
     publicPath: "/multichannel/a2/bem-vindo.mp3",
-    generatedAt: "2026-07-17T17:38:06.000Z",
-    label: "2a masculino · bem-vindo (regen v4 díga fonético)",
+    generatedAt: "2026-07-17T18:01:32.000Z",
+    label: "2a masculino · iGreen + Rafael (texto revisto)",
   },
 ];
 
