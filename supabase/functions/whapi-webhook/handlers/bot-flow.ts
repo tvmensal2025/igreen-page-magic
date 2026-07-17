@@ -1681,7 +1681,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           console.warn(`[dispatch:${stepKey}] envio dos botões (fallback) falhou:`, (e as any)?.message);
         }
       }
-      }
       return sent;
     } catch (e) {
       console.warn(`[dispatch:${stepKey}] erro geral:`, (e as any)?.message);
