@@ -16,7 +16,10 @@ const corsHeaders = {
 const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
 const MODEL_V3 = "eleven_v3";
 
-const BODY_TEXT = `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGreen Energia.
+// Ajustes fonéticos para PT-BR no ElevenLabs v3:
+// - "iGreen" -> "iGrín" (evita leitura em inglês "ai-grín")
+// - "Rafael Ferreira" com acento tônico claro
+const BODY_TEXT = `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, gestor da iGrín Energia.
 
 Para eu montar a simulação, me diga quanto você está gastando por mês na conta de luz.`;
 
