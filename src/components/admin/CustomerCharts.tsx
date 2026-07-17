@@ -60,7 +60,7 @@ export function CustomerCharts({ filteredMetrics: _filteredMetrics, topLicenciad
 
         {/* Ciclo diário — no lugar do Status (2 pizzas grandes: Novo | Frio) */}
         <div className="lg:col-span-3 min-w-0">
-          <ReheatCyclePizza consultantId={consultantId} />
+          <ReheatCyclePizza consultantId={consultantId} admin={!consultantId} />
         </div>
       </div>
     </div>
