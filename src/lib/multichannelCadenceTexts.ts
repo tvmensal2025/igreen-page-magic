@@ -1298,7 +1298,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 6 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, além da economia há novas infos e benefícios. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, ha novidades e beneficios extras alem da economia. Confira no WhatsApp. SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
