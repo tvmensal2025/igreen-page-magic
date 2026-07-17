@@ -37,6 +37,7 @@ const AdminSofiaNameAudios = lazy(() => import("./pages/AdminSofiaNameAudios"));
 const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
 const AjudaPage = lazy(() => import("./pages/AjudaPage"));
 const AdminTourEditor = lazy(() => import("./pages/AdminTourEditor"));
+const AdminChecklist = lazy(() => import("./pages/AdminChecklist"));
 
 const NotFound = lazy(() => import("./pages/NotFound"));
 
