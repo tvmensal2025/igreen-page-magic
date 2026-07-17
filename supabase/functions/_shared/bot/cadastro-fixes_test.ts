@@ -9,7 +9,9 @@ import {
   looksLikeSpamBlast,
   nextSeparatedCadastroStep,
   isPrePortalCadastroStep,
+  isSofiaMulticanalCustomer,
 } from "./cadastro-fixes.ts";
+import { getNextMissingStep } from "../conversation-helpers.ts";
 
 Deno.test("looksLikeEmail", () => {
   assertEquals(looksLikeEmail("Jujugatinha2910@gmail.com"), true);
@@ -57,6 +59,36 @@ Deno.test("nextSeparatedCadastroStep — Sofia a10 pula boleto → finalizando",
       { contaunica_answered: false },
       { fromStepKey: "a10_portal_otp_facial" },
     ),
+    "finalizando",
+  );
+});
+
+Deno.test("nextSeparatedCadastroStep — variant C pula boleto → finalizando", () => {
+  assertEquals(nextSeparatedCadastroStep({ flow_variant: "C" }), "finalizando");
+  assertEquals(nextSeparatedCadastroStep({ flow_variant: "c", contaunica_answered: false }), "finalizando");
+});
+
+Deno.test("getNextMissingStep — Sofia C após a9 vai direto a finalizando", () => {
+  assertEquals(
+    getNextMissingStep({
+      flow_variant: "C",
+      name: "Maria Silva",
+      cpf: "52998224725",
+      rg: "123456789",
+      data_nascimento: "01/01/1990",
+      phone_landline: "(11) 99999-8888",
+      phone_contact_confirmed: true,
+      email: "maria@test.com",
+      address_number: "123",
+      address_complement: null,
+      distribuidora: "ENEL SP",
+      numero_instalacao: "9876543210",
+      electricity_bill_value: 350,
+      document_front_url: "https://example.com/doc.jpg",
+      document_type: "CNH",
+      document_back_url: "nao_aplicavel",
+      contaunica_answered: false,
+    }),
     "finalizando",
   );
 });

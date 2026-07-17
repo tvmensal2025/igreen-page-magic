@@ -2168,6 +2168,11 @@ Deno.serve(async (req) => {
     // Compat reversa: UUIDs/"passo_xxx" sem prefixo são tratados como flow.
     let rawStep = customer.conversation_step || null;
     let stepBefore = stripPrefix(rawStep);
+    const originalFlowStep =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stepBefore)
+      || stepBefore.startsWith("passo_")
+        ? stepBefore
+        : null;
     (customer as any).conversation_step = stepBefore;
 
     // ─── 7.5) GUARD DE RETOMADA DE CADASTRO ──────────────────────────────
@@ -2325,46 +2330,44 @@ Deno.serve(async (req) => {
       if (_looksLikeFlowStep && !_isCadastroStepGuard) {
         try {
           const variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-          // Aceita steps do fluxo do consultor OU do template PÚBLICO da mesma
-          // variante quando o consultor está em sync_mode='public' (resolveFlowId
-          // redireciona o roteamento para o público, então conversation_step
-          // pode apontar para UUIDs de steps do template).
-          const { data: ownFlow } = await supabase
-            .from("bot_flows")
-            .select("id, sync_mode")
-            .eq("consultant_id", instanceData.consultant_id)
-            .eq("variant", variant)
+          const flowOwnerId = String((customer as any)?.consultant_id || instanceData.consultant_id || "");
+          const { data: stepRow } = await supabase
+            .from("bot_flow_steps")
+            .select("id, flow_id, is_active")
+            .eq("id", _stepRaw)
             .eq("is_active", true)
             .maybeSingle();
-          const allowedFlowIds: string[] = [];
-          if ((ownFlow as any)?.id) allowedFlowIds.push((ownFlow as any).id);
-          const ownSync = String((ownFlow as any)?.sync_mode ?? "public").toLowerCase();
-          if (!ownFlow || ownSync === "public") {
-            const { data: pubFlow } = await supabase
-              .from("bot_flows")
-              .select("id")
-              .eq("is_public", true)
-              .eq("is_active", true)
-              .eq("variant", variant)
-              .maybeSingle();
-            if ((pubFlow as any)?.id) allowedFlowIds.push((pubFlow as any).id);
-          }
           let found = false;
-          if (allowedFlowIds.length > 0) {
-            const { data: stepLookup } = await supabase
+          if (stepRow?.flow_id) {
+            const { data: flowRow } = await supabase
+              .from("bot_flows")
+              .select("id, variant, consultant_id, is_active, is_public")
+              .eq("id", stepRow.flow_id)
+              .maybeSingle();
+            const fv = String((flowRow as any)?.variant || "").toUpperCase();
+            const active = !!(flowRow as any)?.is_active;
+            const ownerOk =
+              String((flowRow as any)?.consultant_id || "") === flowOwnerId ||
+              !!(flowRow as any)?.is_public;
+            found = active && fv === variant && ownerOk;
+          }
+          if (!found && flowOwnerId) {
+            const { data: byKey } = await supabase
               .from("bot_flow_steps")
-              .select("id")
-              .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+              .select("id, bot_flows!inner(variant, is_active, consultant_id)")
+              .eq("step_key", _stepRaw)
               .eq("is_active", true)
-              .in("flow_id", allowedFlowIds)
+              .eq("bot_flows.is_active", true)
+              .eq("bot_flows.consultant_id", flowOwnerId)
+              .eq("bot_flows.variant", variant)
               .limit(1);
-            found = Array.isArray(stepLookup) && stepLookup.length > 0;
+            found = Array.isArray(byKey) && byKey.length > 0;
           }
           if (!found) {
             console.warn(
               `🩹 [step-mismatch-cure] customer=${customer.id} step="${_stepRaw}" ` +
-              `variant=${variant} → step não pertence ao fluxo desta variant. ` +
-              `Resetando para welcome.`
+              `variant=${variant} owner=${flowOwnerId.slice(0, 8)} → step não pertence ao fluxo. ` +
+              `Resetando para welcome (lead será restartado pelo firstActive).`
             );
             try {
               await supabase.from("customers")
@@ -2379,7 +2382,7 @@ Deno.serve(async (req) => {
               try {
                 await supabase.from("bot_step_transitions").insert({
                   customer_id: customer.id,
-                  consultant_id: instanceData.consultant_id,
+                  consultant_id: flowOwnerId || instanceData.consultant_id,
                   from_step: _stepRaw,
                   to_step: "welcome",
                   reason: `step_variant_mismatch:${variant}`,
@@ -2457,8 +2460,11 @@ Deno.serve(async (req) => {
               .eq("is_active", true);
             if ((count || 0) > 0) {
               engine = "flow";
-              (customer as any).conversation_step = null;
-              console.log(`🚀 [router] forçado para flow (consultor=${instanceData.consultant_id}, step legado="${stepBefore}")`);
+              const keepFlowStep = !!originalFlowStep;
+              if (!keepFlowStep) {
+                (customer as any).conversation_step = null;
+              }
+              console.log(`🚀 [router] forçado para flow (consultor=${instanceData.consultant_id}, step legado="${stepBefore}", keepStep=${keepFlowStep})`);
             }
           }
         } catch (e) {
@@ -2466,6 +2472,16 @@ Deno.serve(async (req) => {
         }
       }
       engineUsed = engine;
+
+      if (engine === "flow" && originalFlowStep) {
+        const memStep = stripPrefix(String((customer as any).conversation_step || ""));
+        if (!memStep || memStep === "welcome" || memStep === "menu_inicial") {
+          console.log(
+            `🔒 [router] restaurando step do fluxo "${originalFlowStep}" (mem="${memStep || "null"}")`,
+          );
+          (customer as any).conversation_step = originalFlowStep;
+        }
+      }
 
       // ─── Engine v3 gate (Task 29 — flow-engine-v3-rewrite) ──────────
       // When `consultants.use_engine_v3 = true`, the v3 engine takes

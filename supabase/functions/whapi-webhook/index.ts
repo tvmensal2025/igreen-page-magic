@@ -2234,6 +2234,13 @@ Deno.serve(async (req) => {
     // Compat reversa: UUIDs/"passo_xxx" sem prefixo são tratados como flow.
     let rawStep = customer.conversation_step || null;
     let stepBefore = stripPrefix(rawStep); // valor cru consumido pelos engines
+    // UUID/passo_xxx do DB no início do turno — imutável; protege contra step-mismatch
+    // ou router que zeram conversation_step em memória mas routeEngine ainda viu flow.
+    const originalFlowStep =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stepBefore)
+      || stepBefore.startsWith("passo_")
+        ? stepBefore
+        : null;
 
     // Sincroniza o customer em memória com o valor cru — engines mantêm sua lógica intacta.
     (customer as any).conversation_step = stepBefore;
@@ -2507,21 +2514,47 @@ Deno.serve(async (req) => {
       if (_looksLikeFlowStep && !_isCadastroStepGuard) {
         try {
           const variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-          // Lookup: este step existe em algum fluxo ativo deste consultor com esta variant?
-          const { data: stepLookup } = await supabase
+          // Dono do fluxo = consultor do LEAD (não o superadmin do canal Whapi).
+          // Usar só superAdminConsultantId gerava falso positivo de mismatch e
+          // resetava para welcome a cada turno — Sofia C travava no a3.
+          const flowOwnerId = String((customer as any)?.consultant_id || superAdminConsultantId || "");
+          const { data: stepRow } = await supabase
             .from("bot_flow_steps")
-            .select("id, flow_id, is_active, bot_flows!inner(variant, is_active, consultant_id)")
-            .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+            .select("id, flow_id, is_active")
+            .eq("id", _stepRaw)
             .eq("is_active", true)
-            .eq("bot_flows.is_active", true)
-            .eq("bot_flows.consultant_id", superAdminConsultantId)
-            .eq("bot_flows.variant", variant)
-            .limit(1);
-          const found = Array.isArray(stepLookup) && stepLookup.length > 0;
+            .maybeSingle();
+          let found = false;
+          if (stepRow?.flow_id) {
+            const { data: flowRow } = await supabase
+              .from("bot_flows")
+              .select("id, variant, consultant_id, is_active, is_public")
+              .eq("id", stepRow.flow_id)
+              .maybeSingle();
+            const fv = String((flowRow as any)?.variant || "").toUpperCase();
+            const active = !!(flowRow as any)?.is_active;
+            const ownerOk =
+              String((flowRow as any)?.consultant_id || "") === flowOwnerId ||
+              !!(flowRow as any)?.is_public;
+            found = active && fv === variant && ownerOk;
+          }
+          // Fallback: step_key no fluxo do consultor (UUID órfão republicado)
+          if (!found && flowOwnerId) {
+            const { data: byKey } = await supabase
+              .from("bot_flow_steps")
+              .select("id, bot_flows!inner(variant, is_active, consultant_id)")
+              .eq("step_key", _stepRaw)
+              .eq("is_active", true)
+              .eq("bot_flows.is_active", true)
+              .eq("bot_flows.consultant_id", flowOwnerId)
+              .eq("bot_flows.variant", variant)
+              .limit(1);
+            found = Array.isArray(byKey) && byKey.length > 0;
+          }
           if (!found) {
             console.warn(
               `🩹 [step-mismatch-cure] customer=${customer.id} step="${_stepRaw}" ` +
-              `variant=${variant} → step não pertence ao fluxo desta variant. ` +
+              `variant=${variant} owner=${flowOwnerId.slice(0, 8)} → step não pertence ao fluxo. ` +
               `Resetando para welcome (lead será restartado pelo firstActive).`
             );
             try {
@@ -2537,7 +2570,7 @@ Deno.serve(async (req) => {
               try {
                 await supabase.from("bot_step_transitions").insert({
                   customer_id: customer.id,
-                  consultant_id: superAdminConsultantId,
+                  consultant_id: flowOwnerId || superAdminConsultantId,
                   from_step: _stepRaw,
                   to_step: "welcome",
                   reason: `step_variant_mismatch:${variant}`,
@@ -2636,10 +2669,12 @@ Deno.serve(async (req) => {
               .eq("is_active", true);
             if ((count || 0) > 0) {
               engine = "flow";
-              // Limpa o step legado para que runConversationalFlow restarte
-              // no firstActive do Fluxo da Camila — sem bounce, sem mistura.
-              (customer as any).conversation_step = null;
-              console.log(`🚀 [router] forçado para flow (consultor=${superAdminConsultantId}, variant=${variant}, step legado="${stepBefore}")`);
+              // Só limpa step legado (welcome/null) — NUNCA UUID ativo do fluxo custom.
+              const keepFlowStep = !!originalFlowStep;
+              if (!keepFlowStep) {
+                (customer as any).conversation_step = null;
+              }
+              console.log(`🚀 [router] forçado para flow (consultor=${superAdminConsultantId}, variant=${variant}, step legado="${stepBefore}", keepStep=${keepFlowStep})`);
             } else {
               console.warn(`[router] flow ${activeFlow.id} (variant=${variant}) sem steps ativos — mantendo sys`);
             }
@@ -2652,6 +2687,18 @@ Deno.serve(async (req) => {
       }
 
       engineUsed = engine;
+
+      // 🔒 Restaura UUID do fluxo se algum guard (step-mismatch/router) rebaixou
+      // para welcome/null em memória — evita restart welcome→a3 a cada inbound.
+      if (engine === "flow" && originalFlowStep) {
+        const memStep = stripPrefix(String((customer as any).conversation_step || ""));
+        if (!memStep || memStep === "welcome" || memStep === "menu_inicial") {
+          console.log(
+            `🔒 [router] restaurando step do fluxo "${originalFlowStep}" (mem="${memStep || "null"}")`,
+          );
+          (customer as any).conversation_step = originalFlowStep;
+        }
+      }
 
       // 🤫 Em silentMode (IA manual + arquivo recebido), o pipeline precisa
       // rodar (download, OCR, updates) mas NUNCA enviar texto/botões/mídia

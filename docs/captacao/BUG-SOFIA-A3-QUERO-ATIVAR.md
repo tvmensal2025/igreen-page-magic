@@ -1,9 +1,20 @@
 # BUG — Sofia Multicanal: a3 não avança com “Quero ativar”
 
-> **Status:** aberto · evidência em produção (sandbox) · precisa de correção por outra IA  
+> **Status:** deployado · a3→a6 OK · variant C pula boleto/complemento→finalizando (a10) · 2026-07-17  
 > **Prioridade:** alta (bloqueia cadastro → portal/facial)  
 > **Data:** 2026-07-17  
 > **Projeto:** `zlzasfhcxcznaprrragl` · consultor Rafael Ferreira
+
+---
+
+## Correção aplicada
+
+1. **Transição determinística ANTES de FAQ/orch** (`whapi` + `evolution` conversational): botão/frase do passo (ex. `activate` / “Quero ativar”) casa cedo e **não** pode ser engolida por `tem_duvida` → IA / FAQ que reemitia o a3.
+2. **`stripPrefix` defensivo** no entry do conversational (evita restart quando chega `flow:<uuid>`).
+3. **`rewriteActivateAwayFromSimPath`**: no Sofia `a6_ask_bill_photo`, valor digitado no a2 **não** conta como conta pronta (exige foto ou `bill_data_confirmed_at`).
+4. **`sync_bot_flow_c_from_a`**: não sobrescreve C quando é Sofia Multicanal.
+
+Deploy necessário: `whapi-webhook` + `evolution-webhook` (+ migration `20260717160000_protect_sofia_c_from_a_sync` se a RPC existir em prod).
 
 ---
 

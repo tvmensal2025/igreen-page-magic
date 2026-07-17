@@ -79,6 +79,8 @@ import {
   resumeAfterAddressEdit,
   looksLikeSpamBlast,
   nextSeparatedCadastroStep,
+  isSofiaMulticanalCustomer,
+  sofiaCadastroPersistPatch,
 } from "../../_shared/bot/cadastro-fixes.ts";
 
 import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
@@ -6024,6 +6026,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // AUTO-FINALIZAÇÃO (BLOCO ESPECIAL — extraído verbatim do index.ts antigo)
   // ═══════════════════════════════════════════════════════════════════
   if (updates.conversation_step === "finalizando") {
+    Object.assign(updates, sofiaCadastroPersistPatch({ ...customer, ...updates }));
+
     // Gate: não finaliza sem escolha de boleto (unificado ⇔ transferir titularidade)
     {
       const pref = missingPreferenceStep({ ...customer, ...updates });
@@ -6197,11 +6201,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const { error: saveError } = await supabase.from("customers").update(updates).eq("id", customer.id).select();
       if (saveError) console.error(`❌ ERRO ao salvar updates antes do portal:`, saveError);
 
+      if (isSofiaMulticanalCustomer({ ...customer, ...updates })) {
+        try {
+          const _first = String(merged.name || "").split(/\s+/)[0] || "Cliente";
+          const ok = await dispatchStepFromFlow("a10_portal_otp_facial", {
+            "{nome}": _first,
+            "{{nome}}": _first,
+            "{representante}": nomeRepresentante || "",
+            "{{representante}}": nomeRepresentante || "",
+          });
+          if (ok) (updates as any).__inline_sent = true;
+        } catch (e) {
+          console.warn("[sofia-a10] dispatchStepFromFlow falhou:", (e as Error)?.message || e);
+        }
+      }
+
+      if (!(updates as any).__inline_sent) {
       await sendText(remoteJid,
         "✅ *Todos os dados coletados com sucesso!* 🎉\n\n" +
         "⏳ Estamos processando seu cadastro no portal...\n\n" +
         "📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!"
       );
+      }
 
       console.log(`✅ Lead completo: ${merged.name} (${merged.id}) - disparando worker-portal`);
 

@@ -189,8 +189,14 @@ export function rewriteActivateAwayFromSimPath(
     return pickActivateDestination(steps, customer);
   }
 
-  // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento
+  // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento.
+  // Sofia a6: valor digitado no a2 (simulação) ≠ foto OCR — não pular a6.
   if (type === "capture_conta" && isCadastroContaStep(intended, steps) && hasBillReady(customer)) {
+    const sofiaNeedsPhoto =
+      /^a6_|ask_bill_photo/i.test(key) &&
+      !customer?.electricity_bill_photo_url &&
+      !customer?.bill_data_confirmed_at;
+    if (sofiaNeedsPhoto) return null;
     return pickActivateDestination(steps, customer);
   }
 

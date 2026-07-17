@@ -977,7 +977,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       note: "quiet hours não bloqueia resposta a inbound",
     });
   }
-  let stepKey = (ctx.customer.conversation_step || "welcome") as string;
+  // Defensivo: index.ts já faz stripPrefix, mas reinícios / testes / paths
+  // paralelos podem chegar com `flow:<uuid>` — sem strip o lookup falha e o
+  // restart reemite o a3 sem casar "Quero ativar" (BUG-SOFIA-A3).
+  const { stripPrefix: _stripStep } = await import("../../../_shared/bot/step-namespace.ts");
+  let stepKey = _stripStep(ctx.customer.conversation_step || "welcome");
   _currentTurnCustomerId = (ctx.customer?.id as string) || null;
   _currentTurnMessageText = (ctx.messageText as string) || "";
 
@@ -1276,6 +1280,17 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     cpf: (ctx.customer as any).cpf,
   };
   _setTurnStepQuestion(currentStep?.message_text || "", _turnVars);
+  const stepOutboundMatches = (stored: string, step: DbStep): boolean => {
+    const s = String(stored || "");
+    if (!s) return false;
+    const keys = new Set([
+      step.id,
+      step.step_key,
+      `flow:${step.id}`,
+      `flow:${step.step_key}`,
+    ]);
+    return keys.has(s);
+  };
   if (!currentStep) {
     // Unknown/legacy step → restart no primeiro step ativo.
     // REGRA DE OURO: SEMPRE seguir o /admin/fluxos. NUNCA inventar texto.
@@ -1303,18 +1318,46 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         const recentSteps = new Set(((recentOut as any[]) || [])
           .map(r => String((r as any).conversation_step || ""))
           .filter(Boolean));
-        if (recentSteps.has(firstActive.step_key)) {
-          console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound do firstActive=${firstActive.step_key} já enviada nos últimos 30min — pulando restart e tratando msg como input do passo atual`);
-          // Aponta currentStep para firstActive em memória (sem persistir)
-          // pra que o restante do motor processe o input contra ele
-          // (transitions, captures, fallback ai_answer).
-          currentStep = firstActive;
-          stepKey = firstActive.id;
-          _setTurnStepQuestion(firstActive.message_text || "", _turnVars);
+        const landingForDup = resolveLandingStep(firstActive) || firstActive;
+        const recentOnFlow = ((recentOut as any[]) || []).some((r) =>
+          stepOutboundMatches(String((r as any).conversation_step || ""), firstActive)
+          || stepOutboundMatches(String((r as any).conversation_step || ""), landingForDup)
+        );
+        if (
+          recentOnFlow
+          || recentSteps.has(firstActive.step_key)
+          || recentSteps.has(firstActive.id)
+          || recentSteps.has(`flow:${firstActive.id}`)
+        ) {
+          console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound recente do fluxo — pulando restart e processando input no landing=${landingForDup.step_key}`);
+          currentStep = landingForDup;
+          stepKey = landingForDup.id;
+          _setTurnStepQuestion(landingForDup.message_text || "", _turnVars);
         }
       }
     } catch (e) {
       console.warn(`[conversational] anti-welcome-duplicado check falhou: ${(e as Error)?.message}`);
+    }
+  }
+  if (!currentStep) {
+    const landingProbe = resolveLandingStep(firstActiveRaw) || firstActiveRaw;
+    const probeButtons = extractStepButtons(landingProbe);
+    const activateInput = isActivateIntent(ctx.messageText, ctx.buttonId);
+    const deterministicProbe = matchTransitionShared({
+      transitions: landingProbe.transitions ?? [],
+      buttonId: ctx.buttonId,
+      messageText: ctx.messageText,
+      buttons: probeButtons,
+      intents: [],
+    });
+    if (activateInput || deterministicProbe) {
+      console.log(
+        `[conversational] 🛡️ skip restart-cascade — input determinístico no landing=${landingProbe.step_key} ` +
+        `(activate=${activateInput} transition=${!!deterministicProbe})`,
+      );
+      currentStep = landingProbe;
+      stepKey = landingProbe.id;
+      _setTurnStepQuestion(landingProbe.message_text || "", _turnVars);
     }
   }
   if (!currentStep) {
@@ -1584,9 +1627,38 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (captureUpdates.cpf) captureIntents.push("informou_cpf");
   const hasCapture = captureIntents.length > 0;
 
+  // 🔒 Transição DETERMINÍSTICA cedo (botão/frase) — ANTES de FAQ/orch.
+  // Sem isso, "Quero ativar" / botão activate no a3 Sofia podia cair em
+  // tem_duvida→orch ou FAQ, reemitir a3 e nunca chamar matchTransition
+  // (docs/captacao/BUG-SOFIA-A3-QUERO-ATIVAR.md).
+  const earlyStepButtons = extractStepButtons(currentStep);
+  const earlyTransition = matchTransitionShared({
+    transitions: currentStep.transitions ?? [],
+    buttonId: ctx.buttonId,
+    messageText: ctx.messageText,
+    buttons: earlyStepButtons,
+    intents: captureIntents,
+  });
+  const hasDeterministicTransition = !!earlyTransition;
+  // Frase/botão de ATIVAR também não pode ir pra FAQ/orch (mesmo se transition
+  // ainda não casou — ex. tipografia estranha; o bloco 1.25 resolve destino).
+  const skipAiDetour =
+    hasDeterministicTransition ||
+    isActivateIntent(ctx.messageText, ctx.buttonId);
+  if (hasDeterministicTransition) {
+    console.log(
+      `[conversational] 🔒 transição cedo step="${currentStep.step_key}" ` +
+      `btn=${ctx.buttonId || "—"} msg="${(ctx.messageText || "").slice(0, 40)}" ` +
+      `→ goto=${earlyTransition?.goto_step_id || earlyTransition?.goto_special || "?"}`,
+    );
+  }
+
   // ─── Q&A FAQ matching ───────────────────────────────────────────────
   // Pula se a mensagem produziu captura legítima — captura tem prioridade.
-  const qaHit = hasCapture ? null : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
+  // Também pula se já casou transição configurada (botão/frase do passo).
+  const qaHit = (hasCapture || skipAiDetour)
+    ? null
+    : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
     const qaText = formatFaqReply(renderTemplate(qaHit.text || "", {
@@ -1899,7 +1971,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // e conversation_summary injetados. Sempre responde quando há reply
   // (mesmo com shouldHandoff) — silenciar a pergunta fazia o lead voltar
   // para "me manda a conta" sem resposta, frustrando a conversa.
-  if (cls.intent === "tem_duvida" && !hasCapture) {
+  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour) {
     try {
       // Histórico recente para contexto do orquestrador
       const { data: hist } = await ctx.supabase
@@ -2041,7 +2113,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // configurada → d_pedir_conta. Regra de ouro: o consultor configurou →
   // o fluxo segue. IA é só fallback.
   const candidateIntents = [cls.intent, ...detectRegexIntents(ctx.messageText || ""), ...captureIntents];
-  const transition = matchTransitionShared({
+  // Reusa earlyTransition (botão/frase) se já casou; senão rematch com intents da IA.
+  const transition = earlyTransition || matchTransitionShared({
     transitions: currentStep.transitions ?? [],
     buttonId: ctx.buttonId,
     messageText: ctx.messageText,

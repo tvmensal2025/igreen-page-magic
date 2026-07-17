@@ -1,7 +1,9 @@
 /**
- * Variante C — exatamente a mesma estratégia de execução da Variante A.
+ * Variante C — mesma *estratégia de render* da Variante A/D (media_order,
+ * botões, synthesize).
  *
- * O seletor do motor resolve A para `variantD`; por isso C reutiliza a mesma
- * implementação, garantindo os mesmos textos, mídias, botões e transições.
+ * Conteúdo do fluxo é independente: na UI, C = "Sofia — Ativação Multicanal"
+ * (10 passos Grupo A). NÃO confundir com `sync_bot_flow_c_from_a`, que clona
+ * passos do Fluxo A e é bloqueado quando C já é Sofia.
  */
 export { variantD as variantC } from "./d.ts";
