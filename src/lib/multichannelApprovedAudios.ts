@@ -31,12 +31,12 @@ export const APPROVED_A2_AUDIOS: ApprovedCadenceAudio[] = [
   {
     key: "a2_audio_activate_name__masculino",
     gender: "masculino",
-    clipId: "regen-2026-07-17-masculino",
+    clipId: "regen-2026-07-17-masculino-v3-fonetico",
     audioUrl:
-      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/masculino-1784308188179.mp3",
+      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/masculino-1784308670894.mp3",
     publicPath: "/multichannel/a2/bem-vindo.mp3",
-    generatedAt: "2026-07-17T17:09:48.000Z",
-    label: "2a masculino · bem-vindo (regen v2)",
+    generatedAt: "2026-07-17T17:17:51.000Z",
+    label: "2a masculino · bem-vindo (regen v3 fonético)",
   },
 ];
 
