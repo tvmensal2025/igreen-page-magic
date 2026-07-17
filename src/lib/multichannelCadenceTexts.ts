@@ -1212,7 +1212,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "Dia 0 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, reabri sua análise de economia. Deixei as infos no WhatsApp. Para sair, responda SAIR.`,
+    body: `Rafael | iGreen: {{nome}}, reabri sua analise de economia. Deixei tudo pronto no WhatsApp. Responder SAIR encerra.`,
   },
   {
     key: "b4_call_1",
