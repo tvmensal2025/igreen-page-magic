@@ -141,9 +141,9 @@ export function ensureSoftEdges(text: string): string {
 }
 
 /**
- * Cumprimento / chamada com nome: espaço após a palavra-guia + final calmo.
- * “Olá, Maria.” → “Olá... Maria...”
- * “Então, Maria.” → “Então... Maria...”
+ * Cumprimento / chamada com nome: respiro na palavra-guia + chamada no nome.
+ * “Olá, Maria.” → “Olá... Maria!”
+ * “Então, Maria.” → “Então... Maria!”
  * Nunca cola o nome no início/fim do corte (evita cortar sílaba).
  */
 export function formatNameGreetForTts(text: string): string {
@@ -152,11 +152,12 @@ export function formatNameGreetForTts(text: string): string {
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : "Então";
     const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
-    if (nome) return `${lead}... ${nome}...`;
+    if (nome) return `${lead}... ${nome}!`;
   }
   t = t.replace(/[.!?…]+$/u, "").trim();
-  return t ? `${t}...` : t;
+  return t ? `${t}!` : t;
 }
+
 
 /**
  * Aprimora um segmento de texto para síntese com eleven_v3.
