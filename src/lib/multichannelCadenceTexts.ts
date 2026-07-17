@@ -1137,19 +1137,19 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     notes:
       "Versão para quem pediu informação há bastante tempo. Não diga que há atendimento pendente se não houver histórico.",
-    body: `Olá, {{nome}}, tudo bem?
+    body: `Olá, *{{nome}}*! 👋
 
-Aqui é o Rafael Ferreira Dias.
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
 
-Há algum tempo você pediu informações sobre economia na conta de energia e surgiram novidades na forma de iniciar a análise.
+Faz um tempo que você pediu informações sobre *economia na conta de luz* — e agora ficou *muito mais simples* começar. ⚡
 
-Agora conseguimos começar usando apenas o valor médio da conta.
+✅ Iniciamos sua análise *só com o valor médio da conta*.
 
 {{frase_disponibilidade}}
 
-Sua conta fica em qual faixa?
+*Em qual faixa está sua conta hoje?* 👇
 
-Para não receber novos contatos, responda SAIR.`,
+_Para não receber mais contatos, responda SAIR._`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
