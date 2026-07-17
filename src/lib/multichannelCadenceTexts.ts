@@ -1192,15 +1192,15 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou entrando em contato porque você já pediu informações sobre economia na conta de energia e queremos apresentar uma forma mais simples de retomar sua análise com o Rafael.
+Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com o Rafael.
 
-Agora conseguimos começar apenas pelo valor médio da sua conta.
+Conseguimos iniciar apenas com o valor médio da sua conta. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Não existe pagamento ao consultor, Pix ou depósito para iniciar a análise. Responda por aqui com o valor aproximado que o Rafael acompanha você.` },
+Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que o Rafael segue com você.` },
     ]),
 
   },
