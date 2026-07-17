@@ -310,7 +310,7 @@ export async function syncCadenceLibraryToBotFlow(
 
     const { error: upErr } = await supabase
       .from("bot_flow_steps")
-      .update(patch)
+      .update(patch as never)
       .eq("id", step.id);
 
     if (upErr) {
