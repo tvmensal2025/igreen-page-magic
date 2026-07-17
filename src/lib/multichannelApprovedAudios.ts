@@ -31,12 +31,12 @@ export const APPROVED_A2_AUDIOS: ApprovedCadenceAudio[] = [
   {
     key: "a2_audio_activate_name__masculino",
     gender: "masculino",
-    clipId: "6568766e-bcab-4959-b27d-ab01d7e1deb9",
+    clipId: "regen-2026-07-17-masculino",
     audioUrl:
-      "https://igreen-minio.d9v63q.easypanel.host/igreen/public/media/multichannel-a2_audio_activate_name_masculino_1784229112562.mp3",
+      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/masculino-1784308188179.mp3",
     publicPath: "/multichannel/a2/bem-vindo.mp3",
-    generatedAt: "2026-07-16T19:11:52.680Z",
-    label: "2a masculino · bem-vindo",
+    generatedAt: "2026-07-17T17:09:48.000Z",
+    label: "2a masculino · bem-vindo (regen v2)",
   },
 ];
 
