@@ -45,7 +45,12 @@ import {
   validateWhapiButtons,
 } from "@/lib/multichannelCadenceTexts";
 import { estimateSavingsRange, parseAverageBillValue } from "@/lib/billValueParse";
-import { syncCadenceLibraryToBotFlow } from "@/lib/syncCadenceToBotFlow";
+import {
+  attachVoiceClipToCadenceSteps,
+  loadCadenceLibraryFromBotFlow,
+  loadCadenceLibraryRemote,
+  publishCadenceLibrary,
+} from "@/lib/syncCadenceToBotFlow";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -132,11 +137,113 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [lastGenStats, setLastGenStats] = useState<string | null>(null);
   const [nameInCache, setNameInCache] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setLib(loadLibrary(consultantId));
+    let cancelled = false;
+    (async () => {
+      const local = loadLibrary(consultantId);
+      const remote = await loadCadenceLibraryRemote(consultantId).catch(() => null);
+      const fromFlow = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
+        () => ({}),
+      );
+      // Prioridade: fluxo WhatsApp (produção) > remoto > localStorage.
+      const merged: SavedCadenceLibrary = {
+        ...emptyLibrary(),
+        ...local,
+        ...(remote || {}),
+        bodies: {
+          ...local.bodies,
+          ...(remote?.bodies || {}),
+          ...(fromFlow.bodies || {}),
+        },
+        buttons: {
+          ...local.buttons,
+          ...(remote?.buttons || {}),
+          ...(fromFlow.buttons || {}),
+        },
+        audioUrls: {
+          ...local.audioUrls,
+          ...(remote?.audioUrls || {}),
+        },
+        audioClipIds: {
+          ...local.audioClipIds,
+          ...(remote?.audioClipIds || {}),
+          ...(fromFlow.audioClipIds || {}),
+        },
+        segmentBodies: {
+          ...local.segmentBodies,
+          ...(remote?.segmentBodies || {}),
+        },
+        segmentApproved: {
+          ...local.segmentApproved,
+          ...(remote?.segmentApproved || {}),
+        },
+        approved: {
+          ...local.approved,
+          ...(remote?.approved || {}),
+        },
+        version: 2,
+        updatedAt: new Date().toISOString(),
+      };
+      if (!cancelled) {
+        setLib(merged);
+        saveLibrary(consultantId, merged);
+        setHydrated(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [consultantId]);
+
+  /** Espelha no fluxo WhatsApp sem o usuário precisar editar código. */
+  const publishNow = useCallback(
+    async (nextLib: SavedCadenceLibrary, opts?: { quiet?: boolean }) => {
+      saveLibrary(consultantId, nextLib);
+      const result = await publishCadenceLibrary(consultantId, nextLib, "A");
+      if (!opts?.quiet) {
+        if (result.errors.length) {
+          toast({
+            title: "Falha ao publicar no WhatsApp",
+            description: result.errors.slice(0, 2).join(" · "),
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Publicado no fluxo WhatsApp",
+            description:
+              result.updated.length > 0
+                ? `${result.updated.length} passo(s) atualizados (texto + botões).`
+                : "Nada a sincronizar neste fluxo.",
+          });
+        }
+      }
+      return result;
+    },
+    [consultantId, toast],
+  );
+
+  const schedulePublish = useCallback(
+    (nextLib: SavedCadenceLibrary) => {
+      saveLibrary(consultantId, nextLib);
+      if (publishTimerRef.current) clearTimeout(publishTimerRef.current);
+      publishTimerRef.current = setTimeout(() => {
+        void publishNow(nextLib, { quiet: true }).catch((e) =>
+          console.warn("[multichannel] auto-publish:", (e as Error)?.message),
+        );
+      }, 1200);
+    },
+    [consultantId, publishNow],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (publishTimerRef.current) clearTimeout(publishTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     setAudioUrl((prev) => {
@@ -260,10 +367,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
   const setDraft = (body: string) => {
     if (!selected || (hasSegments && !isMixedMessageAudio)) return;
-    setLib((prev) => ({
-      ...prev,
-      bodies: { ...prev.bodies, [selected.key]: body },
-    }));
+    setLib((prev) => {
+      const next = {
+        ...prev,
+        bodies: { ...prev.bodies, [selected.key]: body },
+      };
+      if (hydrated) schedulePublish(next);
+      return next;
+    });
   };
 
   const insertIntoDraft = (
@@ -380,10 +491,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
   const setButtons = (buttons: CadenceButton[]) => {
     if (!selected) return;
-    setLib((prev) => ({
-      ...prev,
-      buttons: { ...prev.buttons, [selected.key]: buttons.slice(0, WHAPI_MAX_BUTTONS) },
-    }));
+    setLib((prev) => {
+      const next = {
+        ...prev,
+        buttons: { ...prev.buttons, [selected.key]: buttons.slice(0, WHAPI_MAX_BUTTONS) },
+      };
+      if (hydrated) schedulePublish(next);
+      return next;
+    });
   };
 
   const updateButton = (idx: number, patch: Partial<CadenceButton>) => {
@@ -432,23 +547,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     }
     setSaving(true);
     try {
-      saveLibrary(consultantId, lib);
-      const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, "A");
-      if (sync.errors.length) {
-        toast({
-          title: "Salvo no navegador, mas falhou no fluxo",
-          description: sync.errors.slice(0, 2).join(" · "),
-          variant: "destructive",
-        });
-        return;
-      }
-      toast({
-        title: "Textos e botões no fluxo WhatsApp",
-        description:
-          sync.updated.length > 0
-            ? `${sync.updated.length} passo(s) atualizados no bot (Grupo A).`
-            : "Nenhum passo correspondente no fluxo ativo.",
-      });
+      await publishNow(lib);
     } catch (e: unknown) {
       toast({
         title: "Falha ao salvar",
@@ -713,6 +812,21 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       setLib(next);
       saveLibrary(consultantId, next);
 
+      // Clip principal → passo do fluxo (referência do painel).
+      const primaryClip =
+        nextClipIds[selected.key] ||
+        nextClipIds[cadenceAudioUrlKey(selected.key, previewGender)] ||
+        nextClipIds[cadenceAudioUrlKey(selected.key, "feminino")] ||
+        null;
+      if (primaryClip && consultantId) {
+        await attachVoiceClipToCadenceSteps(
+          consultantId,
+          selected.key,
+          primaryClip,
+          "A",
+        ).catch((e) => console.warn("[multichannel] attach clip:", (e as Error)?.message));
+      }
+
       // Espelha no ai_media_library.
       // A2/A3: NÃO gravar MP3 com nome da prévia no slot do fluxo (Rodrigo/Maria).
       // Corpos __body_* já foram gravados acima. A5 (sem nome) espelha normalmente.
@@ -733,8 +847,6 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             });
           }
         }
-        // Variantes M/F completas ficam só na biblioteca JSON do painel (prévia),
-        // não no slot de produção do fluxo.
         for (const entry of mirrorEntries) {
           try {
             await supabase
@@ -756,19 +868,24 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
               delay_before_ms: 0,
               priority: 10,
             });
-          } catch (mirrorErr) {
-            console.warn("[multichannel] espelho ai_media_library falhou:", mirrorErr);
+          } catch (bodyMirrorErr) {
+            console.warn("[multichannel] espelho ai_media_library:", bodyMirrorErr);
           }
         }
       }
 
+      // Texto + botões + clips → fluxo WhatsApp (fonte da verdade).
+      await publishNow(next, { quiet: true }).catch((e) =>
+        console.warn("[multichannel] publish pós-gerar:", (e as Error)?.message),
+      );
+
       toast({
         title: genderAudioVariants
-          ? "Áudios feminino e masculino gerados"
-          : "Áudio Sofia gerado e salvo",
+          ? "Áudios gerados e publicados no fluxo"
+          : "Áudio Sofia gerado e publicado no fluxo",
         description: genderAudioVariants
-          ? "2 MP3 + corpos sem nome · motor costura o nome real no WhatsApp."
-          : `${totalReused} cache · ${totalGenerated} novos · ligado ao fluxo. Campanha OFF.`,
+          ? "2 MP3 + corpos · texto/botões sincronizados no WhatsApp."
+          : `${totalReused} cache · ${totalGenerated} novos · fluxo atualizado.`,
       });
     } catch (e: unknown) {
       toast({
