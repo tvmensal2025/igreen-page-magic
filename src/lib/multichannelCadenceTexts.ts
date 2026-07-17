@@ -1160,7 +1160,9 @@ _Para não receber mais contatos, responda SAIR._`,
     timing: "Dia 0 · depois das 09h30 · só se precisar",
     canGenerateAudio: false,
     notes: "Oferece continuar de outro jeito: enviar foto, pedir ligação ou encerrar.",
-    body: `{{nome}}, prefere continuar de outro jeito?`,
+    body: `*{{nome}}*, prefere continuar de outra forma? 👇
+
+Escolha a opção mais prática pra você:`,
     buttons: [...NEXT_ACTION_BUTTONS],
   },
   {
