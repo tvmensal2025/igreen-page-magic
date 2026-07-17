@@ -68,7 +68,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const audioLegacy = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_audio_explain");
     expect(a3?.canGenerateAudio).toBe(true);
-    expect(a3?.audioPlacement).toBe("after_text");
+    expect(a3?.audioPlacement).toBe("before_text");
     expect(a3?.pairedAudioKey).toBeUndefined();
     expect(a3?.buttons?.map((b) => b.id)).toEqual(
       AFTER_EXPLAIN_BUTTONS.map((b) => b.id),
@@ -159,15 +159,13 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     }
   });
 
-  it("passo 2 usa Olá+nome; passo 3 só nome + explicação (sem Então)", () => {
+  it("passo 2 usa Olá+nome + corpos M/F; passo 3 só nome + explicação (sem Então)", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
-    expect(a2?.audioSegments?.length).toBe(4);
+    expect(a2?.audioSegments?.length).toBe(3);
     expect(a2?.audioSegments?.[0]?.kind).toBe("name");
     expect(a2?.audioSegments?.[0]?.text).toBe("Olá, {{nome}}.");
-    expect(a2?.audioSegments?.[1]?.kind).toBe("name");
-    expect(a2?.audioSegments?.[1]?.text).toBe("{{nome}}.");
     expect(a2?.audioSegments?.filter((s) => s.genderVariant).length).toBe(2);
     expect(a3?.audioSegments?.length).toBe(2);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
@@ -297,7 +295,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
 
   it("render passo 3: valor_conta + economia_range", () => {
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
-    expect(a3?.audioPlacement).toBe("after_text");
+    expect(a3?.audioPlacement).toBe("before_text");
     const out = renderCadenceBody(a3!.body, {
       nome: "Maria",
       valorConta: "500",
