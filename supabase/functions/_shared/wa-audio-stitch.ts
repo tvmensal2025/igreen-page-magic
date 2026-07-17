@@ -146,7 +146,7 @@ async function uploadMp3(
   slug: string,
 ): Promise<string> {
   const fd = new FormData();
-  fd.append("file", new Blob([bytes], { type: "audio/mpeg" }), `${slug}.mp3`);
+  fd.append("file", new Blob([bytes as BlobPart], { type: "audio/mpeg" }), `${slug}.mp3`);
   fd.append("scope", "admin");
   fd.append("consultant_id", consultantId);
   fd.append("kind", "audio");

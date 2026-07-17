@@ -11,7 +11,8 @@ import {
   extractValor, extractValorPermissivo, extractTelefone, extractCPF, extractNome, detectRegexIntents,
 } from "../../../_shared/captureExtractors.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../../_shared/step-media-order.ts";
-import { isTestMode } from "../../../_shared/test-mode.ts";
+import { isMockMode, isTestMode } from "../../../_shared/test-mode.ts";
+import { isFlowInstantMode } from "../../../_shared/flow-pace.ts";
 // rules-engine removido em Sprint 2.5 (bot_flow_rules = 0 linhas, código morto)
 import { answerFaqWithAI } from "../../../_shared/ai-faq-answerer.ts";
 import { ensureAudioTranscript } from "../../../_shared/audio-transcript.ts";
@@ -530,11 +531,12 @@ async function sendStepMedia(
         : { tag: "audio" as const, r: await audioPromise };
 
       if (raced.tag === "early" && textPayload) {
+        const earlyText = textPayload;
         try {
-          if (!isMockMode() && !isFlowInstantMode() && textPayload.delayMs > 0) {
-            await new Promise((r) => setTimeout(r, Math.min(textPayload.delayMs, 3_000)));
+          if (!isMockMode() && !isFlowInstantMode() && earlyText.delayMs > 0) {
+            await new Promise((r) => setTimeout(r, Math.min(earlyText.delayMs, 3_000)));
           }
-          await ctx.sender.sendText(ctx.remoteJid, textPayload.text);
+          await ctx.sender.sendText(ctx.remoteJid, earlyText.text);
           earlyTextSent = true;
           console.log(
             `[sendStepMedia] early-text slot=${slotKey} (áudio ainda gerando · evita demora percebida)`,
@@ -544,7 +546,7 @@ async function sendStepMedia(
               await ctx.supabase.from("conversations").insert({
                 customer_id: ctx.customer.id,
                 message_direction: "outbound",
-                message_text: textPayload.text,
+                message_text: earlyText.text,
                 message_type: "text",
                 conversation_step: step.step_key,
               });

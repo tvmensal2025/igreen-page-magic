@@ -116,7 +116,7 @@ function splitLeadingTag(text: string): { tag: string; body: string } {
  * Perguntas (?) mantêm o ponto de interrogação no fim.
  */
 export function ensureSoftEdges(text: string): string {
-  let t = normalizeSpaces(text);
+  const t = normalizeSpaces(text);
   if (!t) return t;
 
   const { tag, body } = splitLeadingTag(t);

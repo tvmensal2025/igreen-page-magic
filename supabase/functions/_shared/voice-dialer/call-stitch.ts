@@ -8,6 +8,21 @@ import { uploadAudioFile } from "./velip.ts";
 
 export type AdminClient = ReturnType<typeof createClient>;
 
+interface VoiceClipRow {
+  id: string;
+  audio_url: string;
+  name: string | null;
+  velip_audio_id: string | null;
+  voice_id: string | null;
+  model_id: string | null;
+  consultant_id: string;
+}
+
+interface VoiceRenderRow {
+  id: string;
+  velip_audio_id: string | null;
+}
+
 const DEFAULT_VOICE = "EJV7H2baGt5ab95tOoSG";
 const DEFAULT_MODEL = "eleven_v3";
 
@@ -131,12 +146,13 @@ export async function resolvePersonalizedCallAudio(
   const display = firstNameFrom(opts.rawName);
   const nameNorm = normalizeCallName(display);
 
-  const { data: clip } = await admin
+  const { data: clipRaw } = await admin
     .from("voice_audio_clips")
     .select("id, audio_url, name, velip_audio_id, voice_id, model_id, consultant_id")
     .eq("id", opts.bodyClipId)
     .eq("consultant_id", opts.consultantId)
     .maybeSingle();
+  const clip = clipRaw as VoiceClipRow | null;
 
   if (!clip?.audio_url) return { ok: false, error: "body_clip_not_found" };
 
@@ -150,7 +166,7 @@ export async function resolvePersonalizedCallAudio(
     return { ok: false, error: "no_name_and_no_body_velip" };
   }
 
-  const { data: existing } = await admin
+  const { data: existingRaw } = await admin
     .from("voice_call_renders")
     .select("id, velip_audio_id")
     .eq("body_clip_id", opts.bodyClipId)
@@ -158,6 +174,7 @@ export async function resolvePersonalizedCallAudio(
     .eq("voice_id", voiceId)
     .eq("model_id", modelId)
     .maybeSingle();
+  const existing = existingRaw as VoiceRenderRow | null;
 
   if (existing?.velip_audio_id) {
     return {
@@ -184,7 +201,7 @@ export async function resolvePersonalizedCallAudio(
     const up = await uploadAudioFile(merged, slug, "audio/mpeg");
     if (!up.ok || !up.audio_id) throw new Error(up.error || "velip_upload_failed");
 
-    const { data: upserted, error: upErr } = await admin
+    const { data: upsertedRaw, error: upErr } = await admin
       .from("voice_call_renders")
       .upsert(
         {
@@ -203,6 +220,7 @@ export async function resolvePersonalizedCallAudio(
       .maybeSingle();
 
     if (upErr) console.warn("[call-stitch] upsert warn:", upErr.message);
+    const upserted = upsertedRaw as VoiceRenderRow | null;
 
     return {
       ok: true,
@@ -224,12 +242,13 @@ export async function ensureBodyClipOnVelip(
   clipId: string,
   consultantId: string,
 ): Promise<{ ok: true; audio_id: string } | { ok: false; error: string }> {
-  const { data: clip } = await admin
+  const { data: clipRaw } = await admin
     .from("voice_audio_clips")
     .select("id, audio_url, name, velip_audio_id")
     .eq("id", clipId)
     .eq("consultant_id", consultantId)
     .maybeSingle();
+  const clip = clipRaw as Pick<VoiceClipRow, "id" | "audio_url" | "name" | "velip_audio_id"> | null;
   if (!clip?.audio_url) return { ok: false, error: "clip_not_found" };
   if (clip.velip_audio_id) return { ok: true, audio_id: clip.velip_audio_id };
   try {

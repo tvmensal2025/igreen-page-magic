@@ -513,12 +513,13 @@ async function sendStepMedia(
         : { tag: "audio" as const, r: await audioPromise };
 
       if (raced.tag === "early" && textPayload) {
+        const earlyText = textPayload;
         // Cliente recebe o texto do painel imediatamente; áudio chega em seguida.
         try {
-          if (!isMockMode() && !isFlowInstantMode() && textPayload.delayMs > 0) {
-            await new Promise((r) => setTimeout(r, Math.min(textPayload.delayMs, 3_000)));
+          if (!isMockMode() && !isFlowInstantMode() && earlyText.delayMs > 0) {
+            await new Promise((r) => setTimeout(r, Math.min(earlyText.delayMs, 3_000)));
           }
-          await ctx.sender.sendText(ctx.remoteJid, textPayload.text);
+          await ctx.sender.sendText(ctx.remoteJid, earlyText.text);
           earlyTextSent = true;
           console.log(
             `[sendStepMedia] early-text slot=${slotKey} (áudio ainda gerando · evita demora percebida)`,
@@ -528,7 +529,7 @@ async function sendStepMedia(
               await ctx.supabase.from("conversations").insert({
                 customer_id: ctx.customer.id,
                 message_direction: "outbound",
-                message_text: textPayload.text,
+                message_text: earlyText.text,
                 message_type: "text",
                 conversation_step: step.step_key,
               });
