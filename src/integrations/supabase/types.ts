@@ -1616,7 +1616,6 @@ export type Database = {
           audio_url_vinheta?: string | null
           city?: string
           consultant_id?: string
-          voice_id?: string | null
           created_at?: string
           id?: string
           is_public?: boolean
@@ -1627,6 +1626,7 @@ export type Database = {
           street?: string
           time_slot?: string
           updated_at?: string
+          voice_id?: string | null
         }
         Relationships: []
       }
@@ -1867,6 +1867,7 @@ export type Database = {
           message_text: string | null
           pause_on_holiday: boolean
           pause_on_weekend: boolean
+          personalize_name: boolean
           persuasive_text: string | null
           position: number
           respect_business_hours: boolean
@@ -1879,10 +1880,9 @@ export type Database = {
           transitions: Json
           transitions_backup_pre_v2: Json | null
           updated_at: string
+          voice_audio_clip_id: string | null
           wait_for: string
           wait_seconds: number
-          voice_audio_clip_id: string | null
-          personalize_name: boolean
         }
         Insert: {
           auto_detect_doc_type?: boolean
@@ -1901,6 +1901,7 @@ export type Database = {
           message_text?: string | null
           pause_on_holiday?: boolean
           pause_on_weekend?: boolean
+          personalize_name?: boolean
           persuasive_text?: string | null
           position?: number
           respect_business_hours?: boolean
@@ -1913,10 +1914,9 @@ export type Database = {
           transitions?: Json
           transitions_backup_pre_v2?: Json | null
           updated_at?: string
+          voice_audio_clip_id?: string | null
           wait_for?: string
           wait_seconds?: number
-          voice_audio_clip_id?: string | null
-          personalize_name?: boolean
         }
         Update: {
           auto_detect_doc_type?: boolean
@@ -1935,6 +1935,7 @@ export type Database = {
           message_text?: string | null
           pause_on_holiday?: boolean
           pause_on_weekend?: boolean
+          personalize_name?: boolean
           persuasive_text?: string | null
           position?: number
           respect_business_hours?: boolean
@@ -1947,10 +1948,9 @@ export type Database = {
           transitions?: Json
           transitions_backup_pre_v2?: Json | null
           updated_at?: string
+          voice_audio_clip_id?: string | null
           wait_for?: string
           wait_seconds?: number
-          voice_audio_clip_id?: string | null
-          personalize_name?: boolean
         }
         Relationships: [
           {
@@ -1958,6 +1958,13 @@ export type Database = {
             columns: ["flow_id"]
             isOneToOne: false
             referencedRelation: "bot_flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bot_flow_steps_voice_audio_clip_id_fkey"
+            columns: ["voice_audio_clip_id"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
             referencedColumns: ["id"]
           },
         ]
@@ -2505,6 +2512,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_config_voice_audio_clip_id_fkey"
+            columns: ["voice_audio_clip_id"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -4918,10 +4932,12 @@ export type Database = {
           call_tts_fallback: string | null
           consultant_id: string
           created_at: string
+          personalize_name: boolean
           sms_na_text: string | null
           sms_retry_text: string | null
           updated_at: string
           voice_audio_clip_id: string | null
+          voice_audio_clip_id_retry: string | null
           wa_audio_fri_url: string | null
           wa_audio_mon_url: string | null
           wa_audio_sat_url: string | null
@@ -4935,10 +4951,12 @@ export type Database = {
           call_tts_fallback?: string | null
           consultant_id: string
           created_at?: string
+          personalize_name?: boolean
           sms_na_text?: string | null
           sms_retry_text?: string | null
           updated_at?: string
           voice_audio_clip_id?: string | null
+          voice_audio_clip_id_retry?: string | null
           wa_audio_fri_url?: string | null
           wa_audio_mon_url?: string | null
           wa_audio_sat_url?: string | null
@@ -4952,10 +4970,12 @@ export type Database = {
           call_tts_fallback?: string | null
           consultant_id?: string
           created_at?: string
+          personalize_name?: boolean
           sms_na_text?: string | null
           sms_retry_text?: string | null
           updated_at?: string
           voice_audio_clip_id?: string | null
+          voice_audio_clip_id_retry?: string | null
           wa_audio_fri_url?: string | null
           wa_audio_mon_url?: string | null
           wa_audio_sat_url?: string | null
@@ -5000,6 +5020,13 @@ export type Database = {
             referencedRelation: "voice_audio_clips"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "daily_reheat_kit_voice_audio_clip_id_retry_fkey"
+            columns: ["voice_audio_clip_id_retry"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
+            referencedColumns: ["id"]
+          },
         ]
       }
       daily_reheat_queue: {
@@ -5009,6 +5036,7 @@ export type Database = {
           customer_id: string
           cycle_date: string
           id: string
+          next_action_at: string
           planned_actions: Json
           queue: string
           run_id: string | null
@@ -5023,6 +5051,7 @@ export type Database = {
           customer_id: string
           cycle_date: string
           id?: string
+          next_action_at?: string
           planned_actions?: Json
           queue: string
           run_id?: string | null
@@ -5037,6 +5066,7 @@ export type Database = {
           customer_id?: string
           cycle_date?: string
           id?: string
+          next_action_at?: string
           planned_actions?: Json
           queue?: string
           run_id?: string | null
@@ -10651,51 +10681,6 @@ export type Database = {
         }
         Relationships: []
       }
-      voice_call_renders: {
-        Row: {
-          body_clip_id: string
-          consultant_id: string
-          created_at: string
-          display_name: string | null
-          final_audio_url: string | null
-          id: string
-          intro_audio_url: string | null
-          model_id: string
-          name_normalized: string
-          updated_at: string
-          velip_audio_id: string | null
-          voice_id: string
-        }
-        Insert: {
-          body_clip_id: string
-          consultant_id: string
-          created_at?: string
-          display_name?: string | null
-          final_audio_url?: string | null
-          id?: string
-          intro_audio_url?: string | null
-          model_id?: string
-          name_normalized: string
-          updated_at?: string
-          velip_audio_id?: string | null
-          voice_id: string
-        }
-        Update: {
-          body_clip_id?: string
-          consultant_id?: string
-          created_at?: string
-          display_name?: string | null
-          final_audio_url?: string | null
-          id?: string
-          intro_audio_url?: string | null
-          model_id?: string
-          name_normalized?: string
-          updated_at?: string
-          velip_audio_id?: string | null
-          voice_id?: string
-        }
-        Relationships: []
-      }
       voice_call_logs: {
         Row: {
           answered_by: string | null
@@ -10785,6 +10770,59 @@ export type Database = {
             columns: ["target_id"]
             isOneToOne: false
             referencedRelation: "voice_campaign_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_call_renders: {
+        Row: {
+          body_clip_id: string
+          consultant_id: string
+          created_at: string
+          display_name: string | null
+          final_audio_url: string | null
+          id: string
+          intro_audio_url: string | null
+          model_id: string
+          name_normalized: string
+          updated_at: string
+          velip_audio_id: string | null
+          voice_id: string
+        }
+        Insert: {
+          body_clip_id: string
+          consultant_id: string
+          created_at?: string
+          display_name?: string | null
+          final_audio_url?: string | null
+          id?: string
+          intro_audio_url?: string | null
+          model_id?: string
+          name_normalized: string
+          updated_at?: string
+          velip_audio_id?: string | null
+          voice_id: string
+        }
+        Update: {
+          body_clip_id?: string
+          consultant_id?: string
+          created_at?: string
+          display_name?: string | null
+          final_audio_url?: string | null
+          id?: string
+          intro_audio_url?: string | null
+          model_id?: string
+          name_normalized?: string
+          updated_at?: string
+          velip_audio_id?: string | null
+          voice_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_call_renders_body_clip_id_fkey"
+            columns: ["body_clip_id"]
+            isOneToOne: false
+            referencedRelation: "voice_audio_clips"
             referencedColumns: ["id"]
           },
         ]
@@ -12501,6 +12539,10 @@ export type Database = {
         Args: { _customer_id: string }
         Returns: undefined
       }
+      remap_bot_flow_step_refs: {
+        Args: { _id_map: Json; _value: Json }
+        Returns: Json
+      }
       remote_support_topic_session: {
         Args: { _topic: string }
         Returns: string
@@ -12588,6 +12630,10 @@ export type Database = {
       sweep_orphan_media_reservations: {
         Args: { p_max_age_seconds?: number }
         Returns: number
+      }
+      sync_bot_flow_c_from_a: {
+        Args: { _consultant_id: string }
+        Returns: string
       }
       sync_flow_from_public: {
         Args: { _consultant_id: string; _variant: string }
