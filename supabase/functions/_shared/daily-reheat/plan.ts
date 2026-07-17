@@ -317,6 +317,16 @@ export async function planDailyReheat(
   const plans: CandidatePlan[] = [];
   let skippedCap = 0;
 
+  // Reserva ~30% do cap para Fila A ("sempre traz novos") quando A não é a única fila
+  // e a prioridade não é A_only. Assim, mesmo com backlog frio, lead novo sempre entra.
+  const reserveForA =
+    settings.priority_queue === "A_only" || settings.priority_queue === "B_only"
+      ? 0
+      : Math.floor(settings.daily_whapi_cap * 0.3);
+  let usedByB = 0;
+
+  const remainingA = () => order.filter((p) => p.queue === "A" && !plans.includes(p)).length;
+
   for (const p of order) {
     if (!p.would_consume_whapi) {
       plans.push(p);
@@ -326,8 +336,14 @@ export async function planDailyReheat(
       skippedCap++;
       continue;
     }
+    // Se este consome Whapi, é B, e ainda há leads A esperando + reserva não atendida → segura o slot
+    if (p.queue === "B" && remainingA() > 0 && slotsLeft <= reserveForA - usedByB) {
+      skippedCap++;
+      continue;
+    }
     plans.push(p);
     slotsLeft--;
+    if (p.queue === "B") usedByB++;
   }
 
   return {

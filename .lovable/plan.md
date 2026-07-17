@@ -1,71 +1,89 @@
 
-# Diagnóstico — 5511971254913 (ROZANA MAZOCK DIAS)
+## Objetivo
 
-Este é um **relatório de análise**, não plano de código. Nenhuma alteração é necessária no momento; só sinalizo 1 ponto de atenção no final.
+Ativar de verdade o card **Ciclo diário** (`/admin` — pizzas Fila A / Fila B) **reaproveitando 100%** o que já existe:
 
-## 1. Qual variante ela seguiu?
+- Motor de cadência "Zero Lead Perdido" (`cadence-tick` + `cadence_stage_config` + `lead_cadence_state`, 9 estágios COLD/CALL/SMS)
+- Biblioteca Multicanal (Grupo A/B, TTS Sofia, cortes aprovados) em `MultichannelTextsPanel`
+- Cron em lote `daily-reheat-cron` + `daily_reheat_settings/queue/kit`
+- CRM automático e Variante de ligação já configurados em Voz → Kit
 
-**Variante A — Sofia Multicanal (Grupo A / cadastro pós-conta direto).**
+Nada de motor paralelo. O card vira **cockpit único** que orquestra e mostra o que os dois motores (unitário + lote) já rodam.
 
-- `customers.flow_variant = 'A'`
-- `conversation_step = 'aguardando_doc_auto'`
-- `origin_channel = 'whapi'`
+## Como o ecossistema atual se encaixa (verificado)
 
-Ou seja: entrou pelo Whapi, caiu no funil Sofia-A (`a1_→a7_`), passou pela conta e já foi despachada automaticamente para o passo **a7_ask_document** (sem re-explicar economia — que é exatamente o comportamento de `advanceSofiaToDocumentAfterBill` em `bot/sofia-post-bill-routing.ts`).
-
-## 2. Áudio do nome com `!` — vale pra quem não tem nome no banco?
-
-**Sim, vale para todo mundo, sempre que houver nome.** O `!` foi colocado nas duas funções que geram TTS de nome:
-
-- `formatNameGreetForTts()` — usado quando é saudação completa: `"Olá... Fernandinho!"`
-- `buildNameOnlyTtsText()` — usado quando é só o nome costurado antes do corpo: `"Fernandinho!"`
-
-Ambas recebem o nome de forma dinâmica (parâmetro), então não depende de estar salvo no banco antes — assim que o nome existir em memória (OCR, digitado, capturado), o TTS renderiza com `!` e o cache de áudio por nome passa a servir todo mundo com aquele nome.
-
-**Ponto de atenção:** o cache já existente (áudios gerados antes do fix, com `.` no final) continua valendo até expirar/regravar. Se quiser forçar re-render agora, dá pra invalidar `voice_name_clips` desses nomes — mas é opcional.
-
-## 3. Por que "não leu o OCR"?
-
-**Leu.** Todos os campos do OCR estão preenchidos no banco:
-
-| Campo | Valor |
-|---|---|
-| `bill_holder_name` | ROZANA MAZOCK DIAS |
-| `name` | ROZANA MAZOCK DIAS |
-| `numero_instalacao` | 80886601830 |
-| `media_consumo` | 441 kWh |
-| `electricity_bill_value` | R$ 484,88 |
-
-**O que confunde:** `ocr_done = false`. Isso é um flag desatualizado — o passo Sofia-A confirma automaticamente via `bill_data_confirmed_at` + `bill_data_confirmation_by = 'auto_sofia'` e não seta `ocr_done`. Não bloqueia o fluxo (o `hasBillData` do `conversation-helpers` já considera `numero_instalacao ≥ 7 dígitos` como válido, então o resume funciona). É cosmético.
-
-## 4. Vai chegar ao Portal + OTP + Facial sem erro?
-
-**Vai, desde que ela complete os próximos passos.** Estado atual e o que falta:
-
-```
-✅ a1-a5  identificação + conta OCR                (feito)
-✅ a6     confirmação de dados da conta            (auto, auto_sofia)
-⏳ a7     documento (RG/CNH/CIN)                   ← ELA ESTÁ AQUI
-⏳ a8     confirmar telefone (portal2_celular_alt) 
-⏳ a9     submit portal + pedir OTP
-⏳ a10    OTP validado (portal-otp-watchdog)
-⏳ a11    link facial (Assinar documentos)
+```text
+Lead chega ──► cadence-tick (per-lead)          ─┐
+                stages: COLD_1..4/CALL_1..3/SMS_*  │   Ambos leem:
+                usa cadence_stage_config +         ├──► • textos Multicanal (Grupo A/B)
+                    variante Sofia + Multicanal    │     • cadence_stage_config.message_text
+                                                   │     • voice_audio_clip_id do stage
+Lote 09–18:30 ─► daily-reheat-cron (batch)      ─┘     • daily_reheat_kit (áudio do dia)
+                Fila A (novo <24h) / Fila B (frio)
+                planeja + despacha WhatsApp/Voz/SMS
+                grava daily_reheat_queue por step
 ```
 
-Faltando no banco: `cpf`, `doc_holder_name`, `portal2_celular_alt`. Isso é normal — vai ser preenchido pelos passos a7/a8.
+O que está **desligado hoje**: `daily_reheat_settings.enabled=false`, `live_dispatch_enabled=false`, `daily_whapi_cap=10`, e os 5 toggles em `automation_toggles` (`daily_reheat`, `cadence_engine`, `send_scheduled_messages`, `process_followups`, `speed_to_lead_sla`) todos OFF. **Não falta código — falta acionar.**
 
-### Checagens que dão OK para o Portal 2:
+## O que vou entregar
 
-- **Telefone**: `phone_whatsapp = 5511971254913` (13 dígitos, DDD 11 válido). `resolvePortalWhatsapp` vai usar esse valor até ela confirmar/trocar em a8. Regressão do caso Osmar não afeta (DDD 11, nada de 12 dígitos ambíguos).
-- **Gate IA_REPROVADA_CONTA**: não vai disparar — não é `contaunica` neste lead, e mesmo se fosse, o fix recente pede boleto bancário quando `transferir_titularidade=true`.
-- **Gate IA_CONTA_ILEGIVEL**: 4/4 campos presentes (nome, instalação, mês implícito no valor, valor) → passa folgado no `≥2 de 4`.
-- **Nome consistency**: `name_mismatch_flag=false`, `bill_holder_name` travado como fonte confiável — quando o RG for lido, o `checkHolderMatch` roda; se bater "Rozana Mazock Dias" no RG, segue direto; se não bater, entra `confirmar_titularidade` (não bloqueia, só ramifica).
-- **OTP**: `portal-otp-watchdog` está rodando e saudável (log 15:29 `ok:true`). Assim que o portal disparar o código no WhatsApp da cliente, ela digita, o watchdog valida e o passo a10→a11 (facial) libera automaticamente.
+### 1. Cockpit de controle inline no card "Ciclo diário"
 
-### Risco real neste lead: **nenhum bloqueador técnico.**
+No próprio `ReheatCyclePizza.tsx`, adicionar uma barra superior com:
 
-O único risco é humano — ela precisa (a) mandar a foto do documento em a7, (b) confirmar o telefone em a8. Se ela abandonar antes disso, o **Motor de Cadência** (que hoje está com toggle OFF nas automações) não vai reengajar.
+- **3 cadeados (Switches)** que gravam:
+  - "Motor de cadência" → `automation_toggles.cadence_engine.enabled` (dispara o motor unitário 24/7)
+  - "Ciclo diário em lote" → `automation_toggles.daily_reheat.enabled` + `daily_reheat_settings.enabled`
+  - "Envio ao vivo" → `daily_reheat_settings.live_dispatch_enabled`
+- **Input "Limite diário WhatsApp"** → `daily_reheat_settings.daily_whapi_cap` (default **60**, mín 10, máx 200)
+- **Select "Prioridade"** → `daily_reheat_settings.priority_queue` (`A_then_B` / `B_then_A` / `balanced`)
+- **Badge de status** exibido pelo retorno do cron: `Ao vivo` · `Só planejando` · `Fora da janela` · `Quiet hours`
+- **Botão "Rodar ciclo agora"** → invoca `daily-reheat-cron` (já faz replanejar + despachar due imediatamente)
+- **2 atalhos** para não duplicar edição:
+  - "Editar mensagens / áudios" → abre `/admin` aba Voz → Multicanal (`MultichannelTextsPanel`)
+  - "Configurar estágios" → abre `/admin/motor` (janelas, delay, max_per_lead)
 
-## Recomendação (opcional, não é código)
+Nada de nova página, nada de novo esquema de dados.
 
-Se quiser garantir que essa lead específica não trave por causa do toggle OFF, ligar `cadence_engine` + `process_followups` em `automation_toggles` — mas isso é decisão sua, não faz parte deste diagnóstico.
+### 2. Contagem por etapa (fila visível em cada fatia)
+
+O card hoje só mostra total por fila e destaca a etapa modal. Vou trocar por contagem real por fatia, **agregando as duas fontes**:
+
+- Fila A (novo): agregar `daily_reheat_queue` do dia por `step` (fatias `arrive/wait5/open/flow/wait2h/call1/retry/sms/close`).
+- Fila B (frio): agregar `daily_reheat_queue.step` **+** `lead_cadence_state.stage` (COLD_*/CALL_*/SMS_*) mapeado para as 6 fatias correspondentes — assim o cockpit mostra também os leads do motor unitário, não só os empacotados no lote.
+- Cada fatia recebe um **badge numérico** com a contagem; abaixo da pizza, uma linha compacta tipo `Liga 2 · Abre 1 · Retry 3 · SMS 0 · Espera 8 · Fecha 4`.
+- Refresh a cada 30s + após clicar "Rodar ciclo agora" ou mudar qualquer switch.
+
+### 3. Ciclagem "sempre com novos"
+
+- `cycle_date` do `daily_reheat_queue` já rotaciona todo dia — replanejar no primeiro tick BRT do dia seguinte já traz o batch novo.
+- Ao ligar o cadeado "Ciclo diário em lote", garantir um schedule `pg_cron` chamando `daily-reheat-cron` a cada 10 min entre `window_start_brt` e `window_end_brt` em dias úteis (via `supabase--insert`, não migração — carrega `EMBED_INTERNAL_SECRET`). Se o schedule já existir, não duplico.
+- Ajuste mínimo em `_shared/daily-reheat/plan.ts`: quando `priority_queue='A_then_B'`, **reservar ~30% do `daily_whapi_cap` para Fila A** antes de consumir com Fila B. Garante lead novo sempre entrando mesmo com backlog frio grande. Zero mudança de contrato.
+
+### 4. Amarração com CRM e variante de ligação
+
+Nada a criar — só expor no cockpit:
+
+- CRM automático: `cadence-tick` continua tocando as 9 etapas por lead. Um badge "CRM: N leads em cadência hoje" (contagem de `lead_cadence_state` com `next_action_at <= today`) fica no topo do card, linkando `/admin/motor`.
+- Variante de ligação: já resolvida em `daily_reheat_kit.voice_audio_clip_id` e `cadence_stage_config.voice_audio_clip_id`. Botão "Colocar áudios" (já existe) permanece; adicionar um chip mostrando o clip ativo do dia (`weekday → wa_audio_*_url`).
+
+## Arquivos afetados
+
+- `src/components/admin/ReheatCyclePizza.tsx` — cockpit inline + contagem por fatia + integração com `automation_toggles` e `daily_reheat_settings`.
+- `supabase/functions/_shared/daily-reheat/plan.ts` — reserva 30% do cap para Fila A quando prioridade for `A_then_B`.
+- (Runtime, sem código novo) `supabase--insert` para UPSERT em `daily_reheat_settings`, `automation_toggles` e um schedule `pg_cron` se ausente.
+
+## Fora de escopo (protegido)
+
+- **Não** mexo em `cadence-tick`, nem em `_shared/cadence-engine.ts`, nem em `_shared/cadence-hooks.ts`.
+- **Não** mexo em `MultichannelTextsPanel` nem no schema `cadence_stage_config`/`multichannel*`.
+- **Não** duplico textos, áudios ou stages — tudo é lido das tabelas já existentes.
+- **Não** crio página nova; tudo dentro do card em `/admin`.
+
+## Verificação pós-implementação
+
+1. Ligar os 3 switches → `daily_whapi_cap=60` → "Rodar ciclo agora" → checar `daily_reheat_runs` mais recente com `meta.live=true` e `dispatched>0`.
+2. Conferir pizza: contagens por fatia batem com `SELECT queue, step, count(*) FROM daily_reheat_queue WHERE cycle_date=today GROUP BY 1,2` + `SELECT stage, count(*) FROM lead_cadence_state GROUP BY 1`.
+3. Desligar "Envio ao vivo" → badge vira "Só planejando"; `daily_reheat_runs.dry_run=true`.
+4. Trocar prioridade para `B_then_A` → próximo run mostra fila B saturada antes de A na `meta.sample`.
