@@ -21,12 +21,12 @@ export const APPROVED_A2_AUDIOS: ApprovedCadenceAudio[] = [
   {
     key: "a2_audio_activate_name__feminino",
     gender: "feminino",
-    clipId: "13a612d7-7ef6-4ccd-b3f1-9d0c1779c412",
+    clipId: "regen-2026-07-17-feminino-v5-igreen-rafael",
     audioUrl:
-      "https://igreen-minio.d9v63q.easypanel.host/igreen/public/media/multichannel-a2_audio_activate_name_feminino_1784229103848.mp3",
+      "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/tts-cache/multichannel-a2/feminino-1784311300557.mp3",
     publicPath: "/multichannel/a2/bem-vinda.mp3",
-    generatedAt: "2026-07-16T19:11:44.214Z",
-    label: "2a feminino · bem-vinda",
+    generatedAt: "2026-07-17T18:01:42.000Z",
+    label: "2a feminino · iGreen + Rafael (texto revisto)",
   },
   {
     key: "a2_audio_activate_name__masculino",
