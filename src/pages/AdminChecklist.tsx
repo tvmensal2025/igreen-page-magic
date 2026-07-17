@@ -183,20 +183,21 @@ export default function AdminChecklist() {
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-6 space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Checklist de configuração</h1>
-        <p className="text-muted-foreground mt-1">
-          Siga cada item e marque como feito. Ao final de tudo, um único botão liga as automações.
+    <div className="mx-auto max-w-5xl p-6 md:p-8 space-y-8">
+      <div className="space-y-2">
+        <h1 className="text-4xl font-bold tracking-tight">✅ Checklist de configuração</h1>
+        <p className="text-muted-foreground text-base leading-relaxed max-w-2xl">
+          Siga <strong className="text-foreground">cada item na ordem</strong> e marque como feito ao concluir.
+          No <strong className="text-foreground">final de tudo</strong>, um único botão liga as automações com segurança.
         </p>
       </div>
 
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
+      <Card className="p-6 md:p-7 space-y-5">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-sm text-muted-foreground">Progresso</div>
-            <div className="text-2xl font-semibold">
-              {completed} <span className="text-muted-foreground text-base">de {total}</span>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Progresso geral</div>
+            <div className="text-3xl font-bold mt-1">
+              {completed} <span className="text-muted-foreground text-lg font-normal">de {total} concluídos</span>
             </div>
           </div>
           <div className="flex gap-2">
@@ -204,21 +205,24 @@ export default function AdminChecklist() {
               {showDone ? "Ocultar concluídos" : "Ver concluídos"}
             </Button>
             <Button variant="outline" size="sm" onClick={reset} disabled={completed === 0}>
-              <RotateCcw className="w-4 h-4 mr-1" />
+              <RotateCcw className="w-4 h-4 mr-1.5" />
               Reabrir
             </Button>
           </div>
         </div>
-        <Progress value={pct} className="h-2" />
+        <Progress value={pct} className="h-2.5" />
 
-        <div className="mt-5 flex items-center justify-between rounded-lg border p-4 bg-muted/30">
-          <div>
-            <div className="font-medium flex items-center gap-2">
-              <Power className={allDone ? "text-emerald-500 w-4 h-4" : "text-muted-foreground w-4 h-4"} />
-              Ligar todas as automações críticas
+        <div className="flex items-center justify-between gap-4 rounded-xl border p-5 bg-muted/40">
+          <div className="space-y-1">
+            <div className="font-semibold flex items-center gap-2 text-base">
+              <Power className={allDone ? "text-emerald-500 w-5 h-5" : "text-muted-foreground w-5 h-5"} />
+              🚀 Ligar todas as automações críticas
             </div>
-            <div className="text-sm text-muted-foreground">
-              Libera <code className="text-xs">cadence-tick</code>, <code className="text-xs">daily-reheat-cron</code>, inbounds WhatsApp, voz e SMS.
+            <div className="text-sm text-muted-foreground leading-relaxed">
+              Ativa <code className="text-xs px-1.5 py-0.5 rounded bg-background border">cadence-tick</code>,{" "}
+              <code className="text-xs px-1.5 py-0.5 rounded bg-background border">daily-reheat-cron</code>,{" "}
+              <strong className="text-foreground">inbounds WhatsApp</strong>,{" "}
+              <strong className="text-foreground">voz</strong> e <strong className="text-foreground">SMS</strong>.
             </div>
           </div>
           <Button
@@ -236,59 +240,63 @@ export default function AdminChecklist() {
       {loading ? (
         <div className="text-muted-foreground text-sm">Carregando…</div>
       ) : visible.length === 0 ? (
-        <Card className="p-10 text-center">
-          <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-3" />
-          <div className="text-xl font-semibold">Tudo configurado!</div>
-          <div className="text-muted-foreground mt-1">
-            Clique em "Ligar tudo agora" acima para ativar as automações.
+        <Card className="p-12 text-center space-y-3">
+          <CheckCircle2 className="w-14 h-14 text-emerald-500 mx-auto" />
+          <div className="text-2xl font-bold">🎉 Tudo configurado!</div>
+          <div className="text-muted-foreground max-w-md mx-auto">
+            Clique em <strong className="text-foreground">"Ligar tudo agora"</strong> acima para ativar as automações.
           </div>
         </Card>
       ) : (
-        Object.entries(grouped).map(([groupKey, items]) => {
-          const g = GROUPS[groupKey as keyof typeof GROUPS];
-          const Icon = g.icon;
-          return (
-            <div key={groupKey} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-md ${g.bg} flex items-center justify-center`}>
-                  <Icon className={`w-4 h-4 ${g.color}`} />
+        <div className="space-y-8">
+          {Object.entries(grouped).map(([groupKey, items]) => {
+            const g = GROUPS[groupKey as keyof typeof GROUPS];
+            const Icon = g.icon;
+            return (
+              <div key={groupKey} className="space-y-3">
+                <div className="flex items-center gap-3 pb-1">
+                  <div className={`w-10 h-10 rounded-lg ${g.bg} flex items-center justify-center`}>
+                    <Icon className={`w-5 h-5 ${g.color}`} />
+                  </div>
+                  <h2 className="font-bold text-lg tracking-tight">{g.label}</h2>
+                  <Badge variant="secondary" className="font-semibold">{items.length}</Badge>
                 </div>
-                <h2 className="font-semibold">{g.label}</h2>
-                <Badge variant="secondary">{items.length}</Badge>
-              </div>
-              <div className="space-y-2">
-                {items.map((it) => {
-                  const isDone = done.has(it.key);
-                  return (
-                    <Card
-                      key={it.key}
-                      className={`p-4 flex items-start gap-3 transition ${
-                        isDone ? "opacity-60" : ""
-                      }`}
-                    >
-                      <Checkbox
-                        checked={isDone}
-                        onCheckedChange={(v) => toggle(it.key, Boolean(v))}
-                        className="mt-1"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className={`font-medium ${isDone ? "line-through" : ""}`}>
-                          {it.title}
+                <div className="space-y-3">
+                  {items.map((it) => {
+                    const isDone = done.has(it.key);
+                    return (
+                      <Card
+                        key={it.key}
+                        className={`p-5 flex items-start gap-4 transition hover:shadow-sm ${
+                          isDone ? "opacity-60" : ""
+                        }`}
+                      >
+                        <Checkbox
+                          checked={isDone}
+                          onCheckedChange={(v) => toggle(it.key, Boolean(v))}
+                          className="mt-1"
+                        />
+                        <div className="flex-1 min-w-0 space-y-1.5">
+                          <div className={`font-semibold text-base ${isDone ? "line-through" : ""}`}>
+                            {it.title}
+                          </div>
+                          <div className="text-sm text-muted-foreground leading-relaxed">
+                            {renderRich(it.desc)}
+                          </div>
                         </div>
-                        <div className="text-sm text-muted-foreground mt-0.5">{it.desc}</div>
-                      </div>
-                      <Button asChild variant="outline" size="sm">
-                        <Link to={it.link}>
-                          Abrir <ArrowRight className="w-3 h-3 ml-1" />
-                        </Link>
-                      </Button>
-                    </Card>
-                  );
-                })}
+                        <Button asChild variant="outline" size="sm" className="shrink-0">
+                          <Link to={it.link}>
+                            Abrir <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                          </Link>
+                        </Button>
+                      </Card>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
     </div>
   );
