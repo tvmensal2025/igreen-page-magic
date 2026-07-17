@@ -1113,19 +1113,19 @@ Para agilizar, me diga *seu primeiro nome*, por favor.`,
     canGenerateAudio: false,
     notes:
       "WhatsApp com 3 botões de faixa. Usa o nome que já está no CRM. Se precisar de foto/ligar/encerrar, segue o passo seguinte.",
-    body: `Olá, {{nome}}, tudo bem?
+    body: `Olá, *{{nome}}*! 👋
 
-Aqui é o Rafael Ferreira Dias.
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
 
-Estou reabrindo seu atendimento porque você já havia demonstrado interesse em reduzir sua conta de energia e surgiram novidades na forma de iniciar a análise.
+Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade: 🚀
 
-Agora conseguimos começar usando apenas o valor médio da conta.
+✅ Conseguimos iniciar sua análise *apenas com o valor médio da conta*. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Sua conta fica em qual faixa?
+*Em qual faixa está sua conta hoje?* 👇
 
-Para não receber novos contatos, responda SAIR.`,
+_Para não receber mais contatos, responda SAIR._`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
