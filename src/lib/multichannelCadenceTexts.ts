@@ -1346,9 +1346,9 @@ Estou concluindo esta sequência para não ficar insistindo. Você prefere mante
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou concluindo esta sequência de atendimento para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
+Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
     ]),
 
   },
