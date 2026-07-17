@@ -4005,6 +4005,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             updates.numero_instalacao = inst.length >= 7 ? inst : "";
           }
           updates.ocr_confianca = confianca;
+          updates.ocr_done = true;
           const valorParsed = d.valorConta ? parseFloat(d.valorConta) : 0;
           updates.electricity_bill_value = (valorParsed >= 30) ? valorParsed : 0;
           // Consumo médio (kWh) — usa OCR se disponível; senão estima pelo valor

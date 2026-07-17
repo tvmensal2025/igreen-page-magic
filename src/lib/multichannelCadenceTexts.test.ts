@@ -77,7 +77,9 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a3?.body).toContain("{{economia_range}}");
     expect(a3?.body).toContain("{{nome}}");
     expect(a3?.body).toMatch(/8% a 20%/i);
+    expect(a3?.body).toMatch(/\*O que você prefere agora\*?/i);
     expect(a3?.body).not.toMatch(/fazendas solares/i);
+    expect(a3?.body).not.toMatch(/Nenhum consultor pede depósito/i);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
     expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}.");
     expect(a3?.audioSegments?.some((s) => s.kind === "name" && s.text.includes("{{nome}}"))).toBe(

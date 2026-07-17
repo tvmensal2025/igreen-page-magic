@@ -45,6 +45,7 @@ import {
   validateWhapiButtons,
 } from "@/lib/multichannelCadenceTexts";
 import { estimateSavingsRange, parseAverageBillValue } from "@/lib/billValueParse";
+import { syncCadenceLibraryToBotFlow } from "@/lib/syncCadenceToBotFlow";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -417,7 +418,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const bad = MULTICHANNEL_CADENCE_TEMPLATES
       .map((t) => ({ t, v: validateWhapiButtons(resolveButtons(t, lib)) }))
       .filter((x) => !x.v.ok);
@@ -432,9 +433,21 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     setSaving(true);
     try {
       saveLibrary(consultantId, lib);
+      const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, "A");
+      if (sync.errors.length) {
+        toast({
+          title: "Salvo no navegador, mas falhou no fluxo",
+          description: sync.errors.slice(0, 2).join(" · "),
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
-        title: "Textos salvos",
-        description: "Rascunho no navegador. Envio automático continua desligado.",
+        title: "Textos e botões no fluxo WhatsApp",
+        description:
+          sync.updated.length > 0
+            ? `${sync.updated.length} passo(s) atualizados no bot (Grupo A).`
+            : "Nenhum passo correspondente no fluxo ativo.",
       });
     } catch (e: unknown) {
       toast({

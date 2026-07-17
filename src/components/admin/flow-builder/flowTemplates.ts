@@ -371,9 +371,9 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
         title: "3 — Texto + áudio ({{nome}}) + botões",
         icon: "msg",
         message_text:
-          "Perfeito, {{nome}}!\n\nCom base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.\n\nNão tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagamento para ativar.\n\nO que você prefere agora?",
+          "Perfeito, *{{nome}}*!\n\nCom base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.\n\n*O que você prefere agora*?",
         slot_key: "a3_explain_with_buttons",
-        media_order: ["text", "audio"],
+        media_order: ["audio", "text"],
         captures: [
           {
             field: "_buttons",

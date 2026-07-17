@@ -23,7 +23,7 @@ describe("sofia_ativacao_multicanal template", () => {
 
   it("passo 3: gotos por step_key + números Evolution", () => {
     const a3 = tpl.steps.find((s) => s.step_key === "a3_explain_with_buttons")!;
-    expect(a3.media_order).toEqual(["text", "audio"]);
+    expect(a3.media_order).toEqual(["audio", "text"]);
     const txs = a3.transitions ?? [];
     expect(txs.find((t) => t.goto_step_key === "a5b_after_club_buttons")?.trigger_phrases).toContain(
       "1",

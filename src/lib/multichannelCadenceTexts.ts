@@ -753,13 +753,11 @@ Pode ser só o número — por exemplo: 350 ou 850,00.`,
     audioPlacement: "before_text",
     notes:
       "Ordem: 1) áudio Nome+explicação (corpo FIXO) 2) 4s 3) texto economia + botões (Saber mais / Ativar / Humano). Sem Olá de novo.",
-    body: `Perfeito, {{nome}}!
+    body: `Perfeito, *{{nome}}*!
 
 Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.
 
-Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagamento para ativar.
-
-O que você prefere agora?`,
+*O que você prefere agora*?`,
     buttons: [...AFTER_EXPLAIN_BUTTONS],
     audioSegments: [
       {
