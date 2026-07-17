@@ -1238,13 +1238,13 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Você já havia demonstrado interesse em reduzir sua conta de energia e estamos revisando atendimentos que não foram concluídos. Agora conseguimos iniciar a análise usando apenas o valor médio da conta. Você prefere informar o valor agora ou receber a explicação pelo WhatsApp?
+Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
 
-Se demonstrar desconfiança: Entendo perfeitamente. Por isso reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
+Se demonstrar desconfiança: Entendo perfeitamente. Reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar.
 
-Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje antes das 18 horas ou amanhã pela manhã?` },
+Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas ou amanhã pela manhã?` },
     ]),
 
   },
