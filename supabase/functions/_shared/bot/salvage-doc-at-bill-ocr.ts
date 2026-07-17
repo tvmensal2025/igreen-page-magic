@@ -52,7 +52,7 @@ export async function maybeSalvageDocumentSentAsBill(opts: {
   };
   fileBase64?: string;
   mimeType: string;
-  fileUrl?: string;
+  fileUrl?: string | null;
   geminiApiKey: string | undefined;
   messageId?: string | null;
 }): Promise<{ salvaged: boolean; updates: Record<string, unknown>; reply?: string }> {
@@ -119,7 +119,7 @@ export async function salvageIfDocumentMisroutedAtBillOcr(ctx: {
   updates: Record<string, unknown>;
   ocrBase64?: string;
   mediaMsg?: { mimetype?: string };
-  fileUrl?: string;
+  fileUrl?: string | null;
   geminiApiKey: string | undefined;
   messageId?: string | null;
 }): Promise<string | null> {
