@@ -105,7 +105,37 @@ Deno.serve(async (req) => {
     if (upErr) throw upErr;
 
     const { data: pub } = admin.storage.from("tts-cache").getPublicUrl(path);
-    return new Response(JSON.stringify({ ok: true, gender, url: pub.publicUrl, bytes: audioBuf.byteLength, text: ttsText }), {
+    const publicUrl = pub.publicUrl;
+
+    // Promove no ai_media_library (desativa antigos, insere novo ativo) para o slot correspondente
+    const slotKey = `a2_audio_activate_name__body_${gender}`;
+    const RAFAEL_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
+    await admin.from("ai_media_library")
+      .update({ active: false })
+      .eq("slot_key", slotKey)
+      .eq("consultant_id", RAFAEL_ID);
+    const { error: insErr } = await admin.from("ai_media_library").insert({
+      consultant_id: RAFAEL_ID,
+      slot_key: slotKey,
+      kind: "audio",
+      label: `A2 corpo ${gender} (regen ${ts})`,
+      url: publicUrl,
+      storage_path: path,
+      text_content: ttsText,
+      active: true,
+      is_public: true,
+      priority: 100,
+    });
+    if (insErr) console.error("insert ai_media_library", insErr);
+
+    // Invalida stitches cacheados para esse gênero (força rebuild com o corpo novo)
+    const { error: delErr } = await admin.from("ai_media_library")
+      .delete()
+      .eq("consultant_id", RAFAEL_ID)
+      .like("slot_key", `stitch:a2_audio_activate_name:%:${gender}:%`);
+    if (delErr) console.error("delete stitches", delErr);
+
+    return new Response(JSON.stringify({ ok: true, gender, url: publicUrl, bytes: audioBuf.byteLength, text: ttsText, slot: slotKey }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
