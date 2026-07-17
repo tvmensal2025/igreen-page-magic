@@ -1098,13 +1098,11 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     canGenerateAudio: false,
     notes:
       "O lead já está no CRM (já mandou mensagem). Se o nome já estiver certo, pula esta etapa e vai direto para a reabertura. Sem botões — o cliente digita o nome.",
-    body: `Olá! Tudo bem?
+    body: `Olá! 👋 Aqui é o *Rafael Ferreira Dias*, da *iGreen Energia*.
 
-Aqui é o Rafael Ferreira Dias, da iGreen.
+Estou reabrindo seu atendimento sobre *economia na conta de luz*. ⚡
 
-Estou reabrindo um atendimento sobre economia na conta de energia.
-
-Para continuar, me diga seu primeiro nome, por favor.`,
+Para agilizar, me diga *seu primeiro nome*, por favor.`,
   },
   {
     key: "b1_wa_reopen",
