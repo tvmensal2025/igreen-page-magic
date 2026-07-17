@@ -13,7 +13,7 @@ function normalizeSpaces(text: string): string {
 }
 
 /**
- * “Olá, Maria.” → “Olá... Maria...” (ritmo calmo, sílabas não cortadas).
+ * “Olá, Maria.” → “Olá... Maria!” (respiro em "Olá..." + chamada expressiva no nome).
  */
 export function formatNameGreetForTts(text: string): string {
   let t = normalizeSpaces(text);
@@ -21,10 +21,10 @@ export function formatNameGreetForTts(text: string): string {
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
     const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
-    if (nome) return `${lead}... ${nome}...`;
+    if (nome) return `${lead}... ${nome}!`;
   }
   t = t.replace(/[.!?…]+$/u, "").trim();
-  return t ? `${t}...` : t;
+  return t ? `${t}!` : t;
 }
 
 /** Passo 2 — Olá + nome (eleven_v3 + language_code pt). */
@@ -33,13 +33,14 @@ export function buildOlaGreetTtsText(display: string): string {
 }
 
 /**
- * Passo 3/4 — só o nome no áudio final.
+ * Passo 3/4 — só o nome no áudio final, como chamada ("Nome!").
  * Texto enviado ao ElevenLabs: só o nome; PT-BR via previous_text/next_text no v2.
  */
 export function buildNameOnlyTtsText(display: string): string {
   const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
-  return nome ? `${nome}.` : "";
+  return nome ? `${nome}!` : "";
 }
+
 
 export const VOICE_SETTINGS_V3_GREET = {
   stability: 0.72,
