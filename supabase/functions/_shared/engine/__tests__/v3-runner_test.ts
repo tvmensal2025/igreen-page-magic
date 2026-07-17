@@ -165,15 +165,12 @@ Deno.test("unit: new lead with currentStepId=null enters firstActive step and em
   assert(out.outbound.length >= 0, "outbound must be defined");
 });
 
-Deno.test("unit: variant C short-circuits to handoff with engine_variant_unsupported log", () => {
-  const flow = makeFlow([makeStep()], "C");
-  const out = runEngine(makeInput({ flow }));
-  assertEquals(out.stateUpdate.status, "paused_system");
-  assert(out.logs.some((l) => l.kind === "engine_variant_unsupported"));
-  assert(out.logs.some((l) => l.kind === "engine_handoff"));
-  // Exactly one handoff alert sentinel (G5)
-  const alerts = out.logs.filter((l) => l.sideEffect?.kind === "insert_handoff_alert");
-  assertEquals(alerts.length, 1);
+Deno.test("unit: variant C executa exatamente como variant A", () => {
+  const step = makeStep();
+  const outA = runEngine(makeInput({ flow: makeFlow([step], "A") }));
+  const outC = runEngine(makeInput({ flow: makeFlow([step], "C") }));
+  assertEquals(outC, outA);
+  assert(!outC.logs.some((l) => l.kind === "engine_variant_unsupported"));
 });
 
 Deno.test("unit: invalid currentStepId triggers engine_invalid_step + reset to firstActive", () => {
@@ -354,16 +351,13 @@ Deno.test("PBT G3: at most one primary decision log per turn (no_match+safe_text
 // ─── PBT G4: variant fidelity (Task 21) ────────────────────────────────
 // PBT G4b removido: variant B não passa mais pelo runner V3.
 
-Deno.test("PBT G4d: variant C → handoff + variant_unsupported log", () => {
-  fc.assert(fc.property(
-    buildInputArb().map((i) => ({ ...i, flow: { ...i.flow, variant: "C" as const } })),
-    (input) => {
-      const out = runEngine(input);
-      const hasUnsupported = out.logs.some((l) => l.kind === "engine_variant_unsupported");
-      const isPaused = out.stateUpdate.status === "paused_system";
-      return hasUnsupported && isPaused;
-    },
-  ), { numRuns: 50 });
+Deno.test("PBT G4d: variant C produz exatamente a mesma saída da variant A", () => {
+  fc.assert(fc.property(buildInputArb(), (input) => {
+    const flowA = { ...input.flow, variant: "A" as const };
+    const flowC = { ...input.flow, variant: "C" as const };
+    return JSON.stringify(runEngine({ ...input, flow: flowC })) ===
+      JSON.stringify(runEngine({ ...input, flow: flowA }));
+  }), { numRuns: 50 });
 });
 
 // ─── PBT G5: single channel of escalation (Task 22) ─────────────────────

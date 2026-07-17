@@ -1,5 +1,5 @@
 // Gera texto persuasivo para um passo do fluxo usando Google Gemini oficial.
-// Considera variante (A=áudio+texto, B=só texto, C=vídeo+texto) e contexto.
+// A e C usam a mesma regra de áudio + texto; B continua sendo somente texto.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
@@ -88,13 +88,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const representante = (consultant as any)?.name || "iGreen Energy";
 
-    // Prompt por variante
+    // A e C compartilham exatamente a mesma regra: áudio + texto.
     const variantBrief =
       variant === "B"
         ? "VARIANTE B (sem áudio): Gere o TEXTO COMPLETO que substitui o áudio. Conteúdo completo do passo + CTA de fechamento forte e direto."
-        : variant === "C"
-        ? "VARIANTE C (vídeo + texto): Gere uma frase curta (1-2 linhas) que APOIA o vídeo de apresentação, conduzindo o lead para o próximo passo / fechamento."
-        : "VARIANTE A (áudio + texto): Gere uma frase CURTA (1-2 linhas) que COMPLEMENTA o áudio, reforçando o CTA de fechamento sem repetir o áudio.";
+        : "VARIANTE A/C (áudio + texto): Gere uma frase CURTA (1-2 linhas) que COMPLEMENTA o áudio, reforçando o CTA de fechamento sem repetir o áudio.";
 
     const contextLines = ((surround || []) as any[])
       .map((s) => `  - [pos ${s.position}] ${s.title || "(sem título)"}: ${(s.message_text || "").slice(0, 160)}`)

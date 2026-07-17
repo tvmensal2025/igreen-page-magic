@@ -44,20 +44,16 @@ export const arbStepType = fc.constantFrom<BotFlowStep["stepType"]>(
   "system_capture",
 );
 
-/**
- * Default variant pool — excludes "C" because variant C short-circuits
- * to handoff before reaching variant-fidelity properties (G4a, G4b,
- * G4c). Use `arbVariantWithC` when targeting the C-handoff property
- * (G4d, see Task 21).
- */
-export const arbVariant = fc.constantFrom<"A" | "B" | "D">("A", "B", "D");
-
-export const arbVariantWithC = fc.constantFrom<"A" | "B" | "C" | "D">(
+/** Pool de variantes suportadas pelo motor V3. A e C têm paridade total. */
+export const arbVariant = fc.constantFrom<"A" | "B" | "C" | "D">(
   "A",
   "B",
   "C",
   "D",
 );
+
+// Mantido como alias para os testes que explicitam todas as variantes.
+export const arbVariantWithC = arbVariant;
 
 export const arbFallbackMode = fc.constantFrom<FallbackSpec["mode"]>(
   "repeat",

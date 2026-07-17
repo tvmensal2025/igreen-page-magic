@@ -36,7 +36,6 @@ import type {
 import { variantA } from "./variants/a.ts";
 // variantB removido: Fluxo B é exclusivamente IA livre (Vendedora V2) e
 // nunca deve cair no step engine V3.
-import { variantC } from "./variants/c.ts";
 import { variantD } from "./variants/d.ts";
 
 // ─── matchTransition ────────────────────────────────────────────────────
@@ -308,12 +307,8 @@ export function hash(content: string): string {
 /**
  * Maps a flow's variant character to its `VariantStrategy` impl.
  *
- * Variant C is a sentinel: the runner short-circuits on `flow.variant
- * === "C"` BEFORE calling `buildStepOutbound` (design §2.2.4 + §2.7
- * step 2 "variant-C handoff"), so the C strategy's body never executes
- * during normal operation. Returning the sentinel here keeps the
- * function total — the runner's invariant is that `pickVariant` always
- * returns a non-null `VariantStrategy`.
+ * As variantes A e C compartilham exatamente a mesma estratégia operacional
+ * (`variantD`), preservando mídias, textos, botões e transições.
  */
 export function pickVariant(variant: "A" | "B" | "C" | "D" | "M"): VariantStrategy {
   switch (variant) {
@@ -326,7 +321,7 @@ export function pickVariant(variant: "A" | "B" | "C" | "D" | "M"): VariantStrate
     case "B":
       return variantA;
     case "C":
-      return variantC;
+      return variantD;
     case "D":
       return variantD;
     case "M":

@@ -63,9 +63,6 @@ function handoffMessageFor(reason: string | undefined): string {
   if (reason === "ai_limit_atingido") {
     return "Vou chamar alguém pra te ajudar com sua dúvida 🙌";
   }
-  if (reason === "variant_c_not_supported") {
-    return "Sua conexão precisa de atendimento humano. Já avisei o consultor 🙌";
-  }
   if (reason === "engine_v3_migration") {
     return "Para te atender melhor, vou chamar uma pessoa do time 🙌";
   }
