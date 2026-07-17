@@ -97,7 +97,7 @@ export async function synthesizeIntroMp3(opts: {
 }): Promise<Uint8Array> {
   const key = (Deno.env.get("ELEVENLABS_API_KEY") || "").trim();
   if (!key) throw new Error("ELEVENLABS_API_KEY_missing");
-  const text = `Olá, ${opts.displayName}.`;
+  const text = `Olá, ${opts.displayName}!`;
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${opts.voiceId}`, {
     method: "POST",
     headers: {
