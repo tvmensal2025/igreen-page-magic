@@ -1098,13 +1098,11 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     canGenerateAudio: false,
     notes:
       "O lead já está no CRM (já mandou mensagem). Se o nome já estiver certo, pula esta etapa e vai direto para a reabertura. Sem botões — o cliente digita o nome.",
-    body: `Olá! Tudo bem?
+    body: `Olá! 👋 Aqui é o *Rafael Ferreira Dias*, da *iGreen Energia*.
 
-Aqui é o Rafael Ferreira Dias, da iGreen.
+Estou reabrindo seu atendimento sobre *economia na conta de luz*. ⚡
 
-Estou reabrindo um atendimento sobre economia na conta de energia.
-
-Para continuar, me diga seu primeiro nome, por favor.`,
+Para agilizar, me diga *seu primeiro nome*, por favor.`,
   },
   {
     key: "b1_wa_reopen",
@@ -1115,19 +1113,19 @@ Para continuar, me diga seu primeiro nome, por favor.`,
     canGenerateAudio: false,
     notes:
       "WhatsApp com 3 botões de faixa. Usa o nome que já está no CRM. Se precisar de foto/ligar/encerrar, segue o passo seguinte.",
-    body: `Olá, {{nome}}, tudo bem?
+    body: `Olá, *{{nome}}*! 👋
 
-Aqui é o Rafael Ferreira Dias.
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
 
-Estou reabrindo seu atendimento porque você já havia demonstrado interesse em reduzir sua conta de energia e surgiram novidades na forma de iniciar a análise.
+Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade: 🚀
 
-Agora conseguimos começar usando apenas o valor médio da conta.
+✅ Conseguimos iniciar sua análise *apenas com o valor médio da conta*. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Sua conta fica em qual faixa?
+*Em qual faixa está sua conta hoje?* 👇
 
-Para não receber novos contatos, responda SAIR.`,
+_Para não receber mais contatos, responda SAIR._`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -1139,19 +1137,19 @@ Para não receber novos contatos, responda SAIR.`,
     canGenerateAudio: false,
     notes:
       "Versão para quem pediu informação há bastante tempo. Não diga que há atendimento pendente se não houver histórico.",
-    body: `Olá, {{nome}}, tudo bem?
+    body: `Olá, *{{nome}}*! 👋
 
-Aqui é o Rafael Ferreira Dias.
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
 
-Há algum tempo você pediu informações sobre economia na conta de energia e surgiram novidades na forma de iniciar a análise.
+Faz um tempo que você pediu informações sobre *economia na conta de luz* — e agora ficou *muito mais simples* começar. ⚡
 
-Agora conseguimos começar usando apenas o valor médio da conta.
+✅ Iniciamos sua análise *só com o valor médio da conta*.
 
 {{frase_disponibilidade}}
 
-Sua conta fica em qual faixa?
+*Em qual faixa está sua conta hoje?* 👇
 
-Para não receber novos contatos, responda SAIR.`,
+_Para não receber mais contatos, responda SAIR._`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -1162,7 +1160,9 @@ Para não receber novos contatos, responda SAIR.`,
     timing: "Dia 0 · depois das 09h30 · só se precisar",
     canGenerateAudio: false,
     notes: "Oferece continuar de outro jeito: enviar foto, pedir ligação ou encerrar.",
-    body: `{{nome}}, prefere continuar de outro jeito?`,
+    body: `*{{nome}}*, prefere continuar de outra forma? 👇
+
+Escolha a opção mais prática pra você:`,
     buttons: [...NEXT_ACTION_BUTTONS],
   },
   {
@@ -1179,28 +1179,28 @@ Para não receber novos contatos, responda SAIR.`,
         id: "b2_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou entrando em contato porque você já pediu informações sobre economia na conta de energia e queremos apresentar uma forma mais simples de retomar sua análise com o Rafael.
+Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com o Rafael.
 
-Agora conseguimos começar apenas pelo valor médio da sua conta.
+Conseguimos iniciar apenas com o valor médio da sua conta. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Não existe pagamento ao consultor, Pix ou depósito para iniciar a análise. Responda por aqui com o valor aproximado que o Rafael acompanha você.`,
+Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que o Rafael segue com você.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou entrando em contato porque você já pediu informações sobre economia na conta de energia e queremos apresentar uma forma mais simples de retomar sua análise com o Rafael.
+Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com o Rafael.
 
-Agora conseguimos começar apenas pelo valor médio da sua conta.
+Conseguimos iniciar apenas com o valor médio da sua conta. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Não existe pagamento ao consultor, Pix ou depósito para iniciar a análise. Responda por aqui com o valor aproximado que o Rafael acompanha você.` },
+Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que o Rafael segue com você.` },
     ]),
 
   },
@@ -1212,7 +1212,7 @@ Não existe pagamento ao consultor, Pix ou depósito para iniciar a análise. Re
     timing: "Dia 0 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, reabri sua análise de economia. Deixei as infos no WhatsApp. Para sair, responda SAIR.`,
+    body: `Rafael | iGreen: {{nome}}, reabri sua analise de economia. Deixei tudo pronto no WhatsApp. Responder SAIR encerra.`,
   },
   {
     key: "b4_call_1",
@@ -1227,24 +1227,24 @@ Não existe pagamento ao consultor, Pix ou depósito para iniciar a análise. Re
         id: "b4_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Você já havia demonstrado interesse em reduzir sua conta de energia e estamos revisando atendimentos que não foram concluídos. Agora conseguimos iniciar a análise usando apenas o valor médio da conta. Você prefere informar o valor agora ou receber a explicação pelo WhatsApp?
+Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
 
-Se demonstrar desconfiança: Entendo perfeitamente. Por isso reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
+Se demonstrar desconfiança: Entendo perfeitamente. Reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar.
 
-Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje antes das 18 horas ou amanhã pela manhã?`,
+Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas ou amanhã pela manhã?`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Você já havia demonstrado interesse em reduzir sua conta de energia e estamos revisando atendimentos que não foram concluídos. Agora conseguimos iniciar a análise usando apenas o valor médio da conta. Você prefere informar o valor agora ou receber a explicação pelo WhatsApp?
+Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
 
-Se demonstrar desconfiança: Entendo perfeitamente. Por isso reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
+Se demonstrar desconfiança: Entendo perfeitamente. Reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar.
 
-Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje antes das 18 horas ou amanhã pela manhã?` },
+Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas ou amanhã pela manhã?` },
     ]),
 
   },
@@ -1273,20 +1273,20 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje antes das 18 hora
         id: "d4_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou retornando porque enviamos uma atualização diferente das informações que você recebeu anteriormente. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
+Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
 
-Se estiver ocupado: Sem problema. Qual melhor dia e horário para retornarmos?`,
+Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou retornando porque enviamos uma atualização diferente das informações que você recebeu anteriormente. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
+Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
 
-Se estiver ocupado: Sem problema. Qual melhor dia e horário para retornarmos?` },
+Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?` },
     ]),
 
   },
@@ -1298,7 +1298,7 @@ Se estiver ocupado: Sem problema. Qual melhor dia e horário para retornarmos?` 
     timing: "Dia 6 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, além da economia há novas infos e benefícios. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, ha novidades e beneficios extras alem da economia. Confira no WhatsApp. SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
@@ -1309,11 +1309,11 @@ Se estiver ocupado: Sem problema. Qual melhor dia e horário para retornarmos?` 
     canGenerateAudio: false,
     notes:
       "3 botões de faixa. Se precisar de foto, ligação ou encerrar, usa o passo seguinte.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Para verificar seu caso, não precisa escrever uma mensagem grande.
+Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*. ⚡
 
-Qual faixa da sua conta?`,
+*Qual faixa está sua conta hoje?* 👇`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -1323,7 +1323,7 @@ Qual faixa da sua conta?`,
     title: "Dia 7 — Outras opções (foto, ligar ou encerrar)",
     timing: "Dia 7 · depois das 10h30 · só se precisar",
     canGenerateAudio: false,
-    body: `{{nome}}, ou prefere outra opção?`,
+    body: `*{{nome}}*, ou prefere outra opção? 👇`,
     buttons: [...NEXT_ACTION_BUTTONS],
   },
   {
@@ -1339,16 +1339,16 @@ Qual faixa da sua conta?`,
         id: "d10_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou concluindo esta sequência de atendimento para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.`,
+Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou concluindo esta sequência de atendimento para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
+Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
     ]),
 
   },
@@ -1360,13 +1360,13 @@ Estou concluindo esta sequência de atendimento para não ficar insistindo. Voc�
     timing: "Dia 10 · depois da ligação · se não atender",
     canGenerateAudio: false,
     notes: "Depois disso o atendimento fica pausado e só volta a ser contactado após 21 dias.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*.
 
-Como não consegui falar com você, vou pausar este atendimento.
+Como não consegui falar com você, vou *pausar seu atendimento* — sem excluir seu cadastro. ⏸️
 
-Quando quiser retomar, use uma opção abaixo ou responda SAIR para não receber novos contatos.`,
+👇 *Escolha abaixo* como prefere seguir (ou responda SAIR para não receber mais contatos):`,
     buttons: [
-      { id: "analyze", title: "ANALISAR" },
+      { id: "analyze", title: "Quero analisar" },
       { id: "call_me", title: "Pode me ligar" },
       { id: "stop", title: "Encerrar" },
     ],
