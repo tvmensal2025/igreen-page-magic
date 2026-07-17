@@ -1282,11 +1282,11 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
 
-Estou retornando porque enviamos uma atualização diferente das informações que você recebeu anteriormente. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
+Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
 
-Se estiver ocupado: Sem problema. Qual melhor dia e horário para retornarmos?` },
+Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?` },
     ]),
 
   },
