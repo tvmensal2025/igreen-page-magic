@@ -3,8 +3,7 @@
 
 -- 1) Rafael recebe 100% dos leads novos na variant C (Sofia).
 UPDATE public.consultants
-SET active_variants = ARRAY['C']::text[],
-    updated_at = now()
+SET active_variants = ARRAY['C']::text[]
 WHERE id = '0c2711ad-4836-41e6-afba-edd94f698ae3'
   AND active_variants IS DISTINCT FROM ARRAY['C']::text[];
 
