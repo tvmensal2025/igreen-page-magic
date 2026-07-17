@@ -838,6 +838,30 @@ export type Database = {
         }
         Relationships: []
       }
+      admin_setup_checklist: {
+        Row: {
+          done_at: string
+          id: string
+          item_key: string
+          note: string | null
+          user_id: string
+        }
+        Insert: {
+          done_at?: string
+          id?: string
+          item_key: string
+          note?: string | null
+          user_id: string
+        }
+        Update: {
+          done_at?: string
+          id?: string
+          item_key?: string
+          note?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       ai_agent_config: {
         Row: {
           consultant_id: string | null
