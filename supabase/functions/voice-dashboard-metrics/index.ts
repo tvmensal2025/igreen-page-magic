@@ -29,7 +29,14 @@ Deno.serve(async (req) => {
     .gte("created_at", since)
     .limit(5000);
 
-  const list = (logs as { status: string | null; velip_time_sec: number | null; duration_sec: number | null; velip_cost: number | null; created_at: string }[]) || [];
+  const list = (logs as {
+    status: string | null;
+    velip_status: string | null;
+    velip_time_sec: number | null;
+    duration_sec: number | null;
+    velip_cost: number | null;
+    created_at: string;
+  }[]) || [];
 
   const answered = list.filter((r) => ["completed", "answered"].includes((r.status || "").toLowerCase())).length;
   const no_answer = list.filter((r) => (r.status || "").toLowerCase() === "no_answer").length;
@@ -38,9 +45,10 @@ Deno.serve(async (req) => {
   const total_cost = list.reduce((s, r) => s + (Number(r.velip_cost) || 0), 0);
   const avg_duration_sec = durs.length ? Math.round(durs.reduce((a, b) => a + b, 0) / durs.length) : 0;
 
-  // por dia
+  // por dia + por hora + breakdown Velip (OK/NA/EK/CK/BK/IK)
   const byDayMap = new Map<string, { total: number; answered: number }>();
   const byHour = new Array<number>(24).fill(0);
+  const byVelipMap = new Map<string, number>();
   for (const r of list) {
     const d = new Date(r.created_at);
     const key = d.toISOString().slice(0, 10);
@@ -49,10 +57,15 @@ Deno.serve(async (req) => {
     if (["completed", "answered"].includes((r.status || "").toLowerCase())) cur.answered++;
     byDayMap.set(key, cur);
     byHour[d.getHours()]++;
+    const code = String(r.velip_status || "").toUpperCase().trim() || "PENDENTE";
+    byVelipMap.set(code, (byVelipMap.get(code) || 0) + 1);
   }
   const by_day = [...byDayMap.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
     .map(([day, v]) => ({ day: new Date(day).toLocaleDateString("pt-BR"), total: v.total, answered: v.answered }));
+  const by_velip = [...byVelipMap.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count);
 
   return json(200, {
     total_calls: list.length,
@@ -63,5 +76,6 @@ Deno.serve(async (req) => {
     total_cost,
     by_day,
     by_hour: byHour,
+    by_velip,
   });
 });

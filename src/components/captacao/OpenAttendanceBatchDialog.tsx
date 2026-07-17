@@ -124,8 +124,8 @@ function leadPill(lead: CaptureBatchLead, result?: BatchLeadResult) {
   }
   if (lead.welcome_sent_at) {
     return (
-      <span className="text-[10px] font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full">
-        Já iniciado
+      <span className="text-[10px] font-semibold text-warning bg-warning/10 px-2 py-0.5 rounded-full" title="Encerra a ficha atual sem pesquisa e abre um novo atendimento">
+        Reabre
       </span>
     );
   }
@@ -338,7 +338,7 @@ export function OpenAttendanceBatchDialog({
             prev.map((l) => {
               const r = batchResults.find((x) => x.id === l.id);
               if (!r || (r.status !== "ok" && r.status !== "skipped")) return l;
-              if (r.detail && /protocolo|já iniciado/i.test(r.detail) && !l.welcome_sent_at) {
+              if (r.detail && /protocolo|já iniciado|reaberto/i.test(r.detail) && !l.welcome_sent_at) {
                 return { ...l, welcome_sent_at: new Date().toISOString() };
               }
               return l;
@@ -691,7 +691,7 @@ export function OpenAttendanceBatchDialog({
                     Enviar saudação + protocolo padrão
                   </Label>
                   <p className="text-[10px] text-muted-foreground">
-                    Envia a frase de abertura do sistema (pula quem já iniciou). Sua mensagem vai depois.
+                    Quem já tem ficha aberta: encerra silenciosamente (sem pesquisa) e abre de novo. Sua mensagem vai depois.
                   </p>
                 </div>
                 <Switch

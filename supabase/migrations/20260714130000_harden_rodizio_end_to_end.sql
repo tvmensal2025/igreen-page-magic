@@ -4,6 +4,48 @@
 ALTER TABLE public.rodizio_pools
   ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
 
+-- Antes do UNIQUE(campaign_id): se existirem pools duplicadas, conserva a
+-- mais antiga (menor created_at / id) e remove as demais sem apagar membros
+-- órfãos — remapeia membros para a pool sobrevivente e só então exclui.
+DO $$
+DECLARE
+  r RECORD;
+  keeper uuid;
+  loser uuid;
+BEGIN
+  FOR r IN
+    SELECT campaign_id
+    FROM public.rodizio_pools
+    WHERE campaign_id IS NOT NULL
+    GROUP BY campaign_id
+    HAVING count(*) > 1
+  LOOP
+    SELECT id INTO keeper
+    FROM public.rodizio_pools
+    WHERE campaign_id = r.campaign_id
+    ORDER BY created_at NULLS LAST, id
+    LIMIT 1;
+
+    FOR loser IN
+      SELECT id
+      FROM public.rodizio_pools
+      WHERE campaign_id = r.campaign_id
+        AND id <> keeper
+    LOOP
+      UPDATE public.rodizio_pool_members m
+         SET pool_id = keeper
+       WHERE m.pool_id = loser
+         AND NOT EXISTS (
+           SELECT 1 FROM public.rodizio_pool_members x
+           WHERE x.pool_id = keeper AND x.partner_id = m.partner_id
+         );
+
+      DELETE FROM public.rodizio_pool_members WHERE pool_id = loser;
+      DELETE FROM public.rodizio_pools WHERE id = loser;
+    END LOOP;
+  END LOOP;
+END $$;
+
 -- Uma campanha possui uma única pool, ativa ou pausada. Além de preservar o
 -- contador, este índice é o arbiter do ON CONFLICT em configure_rodizio_pool.
 CREATE UNIQUE INDEX IF NOT EXISTS rodizio_pools_campaign_id_uniq

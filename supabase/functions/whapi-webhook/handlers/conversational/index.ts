@@ -33,7 +33,7 @@ import {
   resolveCanonicalNudgeChoice,
   isActivateIntent,
 } from "../../../_shared/bot/flow-activate-routing.ts";
-import { nextSeparatedCadastroStep } from "../../../_shared/bot/cadastro-fixes.ts";
+import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaPrefill } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 
@@ -320,7 +320,8 @@ function extractCaptures(messageText: string, configured: DbCapture[]): Extracte
   if (!messageText) return out;
   const enabled = new Set((configured || []).filter(c => c.enabled !== false).map(c => c.field));
   if (enabled.has("electricity_bill_value")) {
-    const v = extractValor(messageText);
+    // Permissivo: "200", "200 reais", "uns 200" — evita travar no passo do valor.
+    const v = extractValorPermissivo(messageText);
     if (v != null) out.electricity_bill_value = v;
   }
   if (enabled.has("phone_whatsapp")) {
@@ -333,8 +334,10 @@ function extractCaptures(messageText: string, configured: DbCapture[]): Extracte
   }
   // Nome: sempre tenta extrair (cliente pode se apresentar em qualquer step).
   // Guard real (lock por OCR/user_confirmed) fica no consumer (~linha 754).
+  // Quando o passo pede nome, aceita 1 palavra (ex.: "Rafael", "Maria").
   {
-    const n = extractNome(messageText);
+    const askName = enabled.has("name");
+    const n = extractNome(messageText, { allowSingleWord: askName });
     if (n) out.name = n;
   }
   return out;
@@ -452,7 +455,7 @@ async function sendStepMedia(
   const slotKey = step.slot_key || step.step_key || step.id;
   if (!slotKey) return { mediaSent: false, textSentInline: false };
 
-  const { data: mediaRows } = await ctx.supabase
+  let { data: mediaRows } = await ctx.supabase
     .from("ai_media_library")
     .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
     .eq("consultant_id", consultantId)
@@ -460,8 +463,124 @@ async function sendStepMedia(
     .eq("active", true)
     .order("send_order", { ascending: true });
 
+  // Sofia passo 3: painel antigo gravava em a3_audio_explain; fluxo usa
+  // a3_explain_with_buttons. Sem fallback o áudio some mesmo com TTS gerado.
+  if ((!mediaRows || mediaRows.length === 0) && slotKey === "a3_explain_with_buttons") {
+    const { data: aliasRows } = await ctx.supabase
+      .from("ai_media_library")
+      .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
+      .eq("consultant_id", consultantId)
+      .eq("slot_key", "a3_audio_explain")
+      .eq("active", true)
+      .order("send_order", { ascending: true });
+    if (aliasRows?.length) {
+      console.log(`[sendStepMedia] fallback slot a3_audio_explain → ${aliasRows.length} mídia(s)`);
+      mediaRows = aliasRows;
+    }
+  }
+
   const variant = (ctx.customer as any)?.flow_variant || "A";
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+
+  // Multicanal A2/A3: NUNCA enviar MP3 da prévia (Maria/Rodrigo).
+  // Aceleração: se o áudio demorar >1.2s e houver texto, manda o texto já
+  // (cliente não fica no vazio) e o áudio segue quando o stitch terminar.
+  let earlyTextSent = false;
+  try {
+    const { isPersonalizedWaAudioSlot, pickSafePersonalizedWaAudio } = await import(
+      "../../../_shared/wa-audio-stitch.ts"
+    );
+    if (isPersonalizedWaAudioSlot(slotKey)) {
+      const nonAudio = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
+      medias = nonAudio;
+
+      const audioPromise = pickSafePersonalizedWaAudio(ctx.supabase, {
+        consultantId,
+        slotKey: String(slotKey),
+        customerName: (ctx.customer as any)?.name,
+        timeoutMs: 12_000,
+      });
+
+      const hasText = !!(textPayload && textPayload.text.trim());
+      const earlyMs = 1_200;
+      const raced = hasText
+        ? await Promise.race([
+          audioPromise.then((r) => ({ tag: "audio" as const, r })),
+          new Promise<{ tag: "early" }>((resolve) =>
+            setTimeout(() => resolve({ tag: "early" }), earlyMs),
+          ),
+        ])
+        : { tag: "audio" as const, r: await audioPromise };
+
+      if (raced.tag === "early" && textPayload) {
+        const earlyText = textPayload;
+        // Cliente recebe o texto do painel imediatamente; áudio chega em seguida.
+        try {
+          if (!isMockMode() && !isFlowInstantMode() && earlyText.delayMs > 0) {
+            await new Promise((r) => setTimeout(r, Math.min(earlyText.delayMs, 3_000)));
+          }
+          await ctx.sender.sendText(ctx.remoteJid, earlyText.text);
+          earlyTextSent = true;
+          console.log(
+            `[sendStepMedia] early-text slot=${slotKey} (áudio ainda gerando · evita demora percebida)`,
+          );
+          try {
+            if (ctx.customer?.id) {
+              await ctx.supabase.from("conversations").insert({
+                customer_id: ctx.customer.id,
+                message_direction: "outbound",
+                message_text: earlyText.text,
+                message_type: "text",
+                conversation_step: step.step_key,
+              });
+            }
+          } catch { /* noop */ }
+        } catch (e) {
+          console.warn(`[sendStepMedia] early-text falhou:`, (e as Error)?.message);
+        }
+      }
+
+      const safe = raced.tag === "audio" ? raced.r : await audioPromise;
+
+      if (safe.ok && safe.url) {
+        medias = [
+          ...nonAudio,
+          {
+            id: null,
+            kind: "audio",
+            label: `sofia ${slotKey} · ${safe.displayName || ""} · ${safe.mode || "safe"}`,
+            url: String(safe.url),
+            slot_key: slotKey,
+            send_order: 0,
+            duration_sec: null,
+            delay_before_ms: 0,
+            transcript: null,
+          },
+        ];
+        console.log(
+          `[sendStepMedia] wa-audio SAFE slot=${slotKey} name=${safe.displayName} gender=${safe.gender} mode=${safe.mode} cached=${safe.cached}`,
+        );
+      } else {
+        console.warn(
+          `[sendStepMedia] wa-audio SKIP preview slot=${slotKey} err=${safe.error} — texto segue sem áudio (nunca Rodrigo)`,
+        );
+      }
+
+      // Se já mandou o texto cedo, não reinjeta no sequence.
+      if (earlyTextSent && textPayload) {
+        textPayload = null;
+      }
+    }
+  } catch (stitchErr) {
+    console.warn("[sendStepMedia] wa-stitch erro:", (stitchErr as Error)?.message || stitchErr);
+    try {
+      const { isPersonalizedWaAudioSlot } = await import("../../../_shared/wa-audio-stitch.ts");
+      if (isPersonalizedWaAudioSlot(slotKey)) {
+        medias = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
+      }
+    } catch { /* ignore */ }
+  }
+
   // Variante B: cada áudio vira um item de texto (transcript) na mesma posição.
   // Mantemos `kind: 'audio'` no item para que o slot "audio" do media_order
   // continue casando; o flag `_asText` faz a sequência empurrar como text item.
@@ -559,13 +678,15 @@ async function sendStepMedia(
     if (textItem) sequence.push(textItem);
   }
 
-  if (sequence.length === 0) return { mediaSent: false, textSentInline: false };
+  if (sequence.length === 0) return { mediaSent: false, textSentInline: earlyTextSent };
 
   let mediaSent = false;
   let mediaAttempted = false;
   let mediaFailed = false;
-  let textSentInline = false;
-  let prevForPause: { kind: string; duration_sec?: number | null } | null = null;
+  let textSentInline = earlyTextSent;
+  let prevForPause: { kind: string; duration_sec?: number | null } | null = earlyTextSent
+    ? { kind: "text" }
+    : null;
 
   for (let i = 0; i < sequence.length; i++) {
     const item = sequence[i];
@@ -857,7 +978,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       note: "quiet hours não bloqueia resposta a inbound",
     });
   }
-  let stepKey = (ctx.customer.conversation_step || "welcome") as string;
+  // Defensivo: index.ts já faz stripPrefix, mas reinícios / testes / paths
+  // paralelos podem chegar com `flow:<uuid>` — sem strip o lookup falha e o
+  // restart reemite o a3 sem casar "Quero ativar" (BUG-SOFIA-A3).
+  const { stripPrefix: _stripStep } = await import("../../../_shared/bot/step-namespace.ts");
+  let stepKey = _stripStep(ctx.customer.conversation_step || "welcome");
   _currentTurnCustomerId = (ctx.customer?.id as string) || null;
   _currentTurnMessageText = (ctx.messageText as string) || "";
 
@@ -1045,8 +1170,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // usado na captura de nome — linhas 665-669).
     if (stepCapturesField(s, field)) return true;
     if (field === "name") {
+      // slot_key tipo "a1_ask_name": underscore é word-char — \bnome\b NÃO casa.
       return /\bnome\b|\bchama\b/i.test(String((s as any).title || "")) ||
-             /\bnome\b/i.test(String((s as any).slot_key || ""));
+             /nome|ask_name/i.test(String((s as any).slot_key || ""));
     }
     return false;
   };
@@ -1083,19 +1209,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (captured.length === 0) return cur;
       const allFilled = captured.every((f) => isFieldAlreadyCaptured(f, ctx.customer));
       if (!allFilled) return cur;
-      // Regra de pulo: o passo de NOME pode ser pulado quando o nome já
-      // estiver capturado, MAS apenas se o passo não tiver mídia configurada
-      // (slot_key). Passos com áudio/vídeo de boas-vindas que também capturam
-      // nome devem ser exibidos mesmo assim — o áudio é o conteúdo principal.
-      const onlyAsksName = captured.length === 1 && captured[0] === "name";
-      const hasMediaSlot = !!(cur.slot_key && String(cur.slot_key).trim());
-      const hasText = !!(cur.message_text && String(cur.message_text).trim());
-      if (!onlyAsksName || hasMediaSlot) {
-        if (hasMediaSlot || hasText) {
-          console.log(`[skip-step] mantendo ${cur.step_key} (tem slot_key/texto) mesmo com captura preenchida`);
-          return cur;
-        }
-      }
+      // Dados do passo já preenchidos → SEMPRE pula.
+      // slot_key de catálogo (a1_ask_name / a2_audio_*) NÃO é motivo para re-perguntar.
       const next = dbSteps.find((s) => s.is_active && s.position > cur!.position);
       if (!next) return cur;
       console.log(`[skip-step] from=${cur.step_key} → to=${next.step_key} reason=${captured.join(",")}_already_captured`);
@@ -1166,6 +1281,17 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     cpf: (ctx.customer as any).cpf,
   };
   _setTurnStepQuestion(currentStep?.message_text || "", _turnVars);
+  const stepOutboundMatches = (stored: string, step: DbStep): boolean => {
+    const s = String(stored || "");
+    if (!s) return false;
+    const keys = new Set([
+      step.id,
+      step.step_key,
+      `flow:${step.id}`,
+      `flow:${step.step_key}`,
+    ]);
+    return keys.has(s);
+  };
   if (!currentStep) {
     // Unknown/legacy step → restart no primeiro step ativo.
     // REGRA DE OURO: SEMPRE seguir o /admin/fluxos. NUNCA inventar texto.
@@ -1193,18 +1319,46 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         const recentSteps = new Set(((recentOut as any[]) || [])
           .map(r => String((r as any).conversation_step || ""))
           .filter(Boolean));
-        if (recentSteps.has(firstActive.step_key)) {
-          console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound do firstActive=${firstActive.step_key} já enviada nos últimos 30min — pulando restart e tratando msg como input do passo atual`);
-          // Aponta currentStep para firstActive em memória (sem persistir)
-          // pra que o restante do motor processe o input contra ele
-          // (transitions, captures, fallback ai_answer).
-          currentStep = firstActive;
-          stepKey = firstActive.id;
-          _setTurnStepQuestion(firstActive.message_text || "", _turnVars);
+        const landingForDup = resolveLandingStep(firstActive) || firstActive;
+        const recentOnFlow = ((recentOut as any[]) || []).some((r) =>
+          stepOutboundMatches(String((r as any).conversation_step || ""), firstActive)
+          || stepOutboundMatches(String((r as any).conversation_step || ""), landingForDup)
+        );
+        if (
+          recentOnFlow
+          || recentSteps.has(firstActive.step_key)
+          || recentSteps.has(firstActive.id)
+          || recentSteps.has(`flow:${firstActive.id}`)
+        ) {
+          console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound recente do fluxo — pulando restart e processando input no landing=${landingForDup.step_key}`);
+          currentStep = landingForDup;
+          stepKey = landingForDup.id;
+          _setTurnStepQuestion(landingForDup.message_text || "", _turnVars);
         }
       }
     } catch (e) {
       console.warn(`[conversational] anti-welcome-duplicado check falhou: ${(e as Error)?.message}`);
+    }
+  }
+  if (!currentStep) {
+    const landingProbe = resolveLandingStep(firstActiveRaw) || firstActiveRaw;
+    const probeButtons = extractStepButtons(landingProbe);
+    const activateInput = isActivateIntent(ctx.messageText, ctx.buttonId);
+    const deterministicProbe = matchTransitionShared({
+      transitions: landingProbe.transitions ?? [],
+      buttonId: ctx.buttonId,
+      messageText: ctx.messageText,
+      buttons: probeButtons,
+      intents: [],
+    });
+    if (activateInput || deterministicProbe) {
+      console.log(
+        `[conversational] 🛡️ skip restart-cascade — input determinístico no landing=${landingProbe.step_key} ` +
+        `(activate=${activateInput} transition=${!!deterministicProbe})`,
+      );
+      currentStep = landingProbe;
+      stepKey = landingProbe.id;
+      _setTurnStepQuestion(landingProbe.message_text || "", _turnVars);
     }
   }
   if (!currentStep) {
@@ -1291,6 +1445,20 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         anyMediaSent = true;
       }
 
+      // Restart não passa por emitStep — marca name_ask_sent_at aqui.
+      try {
+        const asksNameNow =
+          String(cursor.step_type || "") === "capture_name" ||
+          (Array.isArray(cursor.captures) &&
+            cursor.captures.some((c: any) => c?.field === "name" && c?.enabled !== false)) ||
+          /nome|ask_name/i.test(String(cursor.slot_key || cursor.step_key || ""));
+        if (asksNameNow && ctx.customer?.id && !(ctx.customer as any).name_ask_sent_at) {
+          const ts = new Date().toISOString();
+          await ctx.supabase.from("customers").update({ name_ask_sent_at: ts }).eq("id", ctx.customer.id);
+          (ctx.customer as any).name_ask_sent_at = ts;
+        }
+      } catch (_) { /* best-effort */ }
+
       const stepHasContent = !!tpl || mediaSent === true || textSentInline;
       // Para se o step espera resposta do cliente.
       if (cursor.wait_for === "reply" || cursor.wait_for === "media") break;
@@ -1324,6 +1492,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // por uma pergunta FAQ com phrase "reais".
   // ---------------------------------------------------------------------------
   const captureUpdates: Record<string, any> = {};
+  /** true se resolveLandingStep avançou após captura neste turno (emite o pouso, não re-avança). */
+  let postCaptureLanded = false;
   try {
     const extracted = extractCaptures(ctx.messageText || "", currentStep.captures || []);
     if (extracted.electricity_bill_value != null) captureUpdates.electricity_bill_value = extracted.electricity_bill_value;
@@ -1364,12 +1534,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         .limit(1)
         .maybeSingle();
       const txt = String((lastOut as any)?.message_text || "");
-      lastOutboundWasNameQuestion = /qual\s+(?:é\s+)?(?:o\s+)?(?:seu\s+)?nome|como\s+(?:posso\s+)?(?:te\s+)?(?:chamar|chamo)|me\s+diz\s+(?:seu\s+)?nome/i.test(txt);
+      lastOutboundWasNameQuestion = /qual\s+(?:é\s+)?(?:o\s+)?(?:seu\s+)?nome|como\s+(?:posso\s+)?(?:te\s+)?(?:chamar|chamo)|me\s+diz(?:a)?\s+(?:seu\s+)?nome|informe\s+(?:seu\s+)?(?:primeiro\s+)?nome|agilizar\s+seu\s+atendimento/i.test(txt);
     } catch { /* best-effort */ }
     const stepIsAskName =
       lastOutboundWasNameQuestion ||
       /\bnome\b|\bchama\b/i.test(String((currentStep as any).title || "")) ||
-      /\bnome\b/i.test(String((currentStep as any).slot_key || "")) ||
+      /nome|ask_name/i.test(String((currentStep as any).slot_key || "")) ||
+      String(currentStep.step_type || "") === "capture_name" ||
       (Array.isArray(currentStep.captures) &&
         currentStep.captures.some((c: any) => c?.field === "name" && c?.enabled !== false));
     // Quando a pergunta foi de nome (passo atual OU última outbound), sobrescreve
@@ -1405,14 +1576,44 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       Object.assign(ctx.customer as any, captureUpdates);
     }
 
+    // Pré-aquece áudio A2 assim que o nome chega — passo 2 tende a achar cache.
+    if (captureUpdates.name && consultantId) {
+      try {
+        const { prefetchPersonalizedWaAudio } = await import("../../../_shared/wa-audio-stitch.ts");
+        prefetchPersonalizedWaAudio(ctx.supabase, {
+          consultantId,
+          slotKey: "a2_audio_activate_name",
+          customerName: captureUpdates.name,
+        });
+      } catch (e) {
+        console.warn("[prefetch a2]", (e as Error)?.message || e);
+      }
+    }
+    // Pré-aquece A3 quando o valor chega (corpo + “Então, {nome}”).
+    if (captureUpdates.electricity_bill_value != null && consultantId && (ctx.customer as any)?.name) {
+      try {
+        const { prefetchPersonalizedWaAudio } = await import("../../../_shared/wa-audio-stitch.ts");
+        prefetchPersonalizedWaAudio(ctx.supabase, {
+          consultantId,
+          slotKey: "a3_explain_with_buttons",
+          customerName: (ctx.customer as any).name,
+        });
+      } catch (e) {
+        console.warn("[prefetch a3]", (e as Error)?.message || e);
+      }
+    }
+
     // Após capturar, re-resolve landing step: se o próximo passo só perguntaria
     // o dado que acabou de chegar, pula automaticamente.
+    // Flag: se avançamos aqui, o bloco hasCapture deve EMITIR o passo pousado
+    // (ex.: a1 nome → a2 valor), NÃO avançar de novo (senão pula a2 → a3).
     if (Object.keys(captureUpdates).length > 0) {
       const advanced = resolveLandingStep(currentStep);
       if (advanced && advanced.id !== currentStep.id) {
         console.log(`[skip-step] post-capture: ${currentStep.step_key} → ${advanced.step_key}`);
         currentStep = advanced;
         stepKey = currentStep.id;
+        postCaptureLanded = true;
       }
     }
   } catch (e) {
@@ -1427,9 +1628,38 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (captureUpdates.cpf) captureIntents.push("informou_cpf");
   const hasCapture = captureIntents.length > 0;
 
+  // 🔒 Transição DETERMINÍSTICA cedo (botão/frase) — ANTES de FAQ/orch.
+  // Sem isso, "Quero ativar" / botão activate no a3 Sofia podia cair em
+  // tem_duvida→orch ou FAQ, reemitir a3 e nunca chamar matchTransition
+  // (docs/captacao/BUG-SOFIA-A3-QUERO-ATIVAR.md).
+  const earlyStepButtons = extractStepButtons(currentStep);
+  const earlyTransition = matchTransitionShared({
+    transitions: currentStep.transitions ?? [],
+    buttonId: ctx.buttonId,
+    messageText: ctx.messageText,
+    buttons: earlyStepButtons,
+    intents: captureIntents,
+  });
+  const hasDeterministicTransition = !!earlyTransition;
+  // Frase/botão de ATIVAR também não pode ir pra FAQ/orch (mesmo se transition
+  // ainda não casou — ex. tipografia estranha; o bloco 1.25 resolve destino).
+  const skipAiDetour =
+    hasDeterministicTransition ||
+    isActivateIntent(ctx.messageText, ctx.buttonId);
+  if (hasDeterministicTransition) {
+    console.log(
+      `[conversational] 🔒 transição cedo step="${currentStep.step_key}" ` +
+      `btn=${ctx.buttonId || "—"} msg="${(ctx.messageText || "").slice(0, 40)}" ` +
+      `→ goto=${earlyTransition?.goto_step_id || earlyTransition?.goto_special || "?"}`,
+    );
+  }
+
   // ─── Q&A FAQ matching ───────────────────────────────────────────────
   // Pula se a mensagem produziu captura legítima — captura tem prioridade.
-  const qaHit = hasCapture ? null : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
+  // Também pula se já casou transição configurada (botão/frase do passo).
+  const qaHit = (hasCapture || skipAiDetour)
+    ? null
+    : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
     const qaText = formatFaqReply(renderTemplate(qaHit.text || "", {
@@ -1742,7 +1972,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // e conversation_summary injetados. Sempre responde quando há reply
   // (mesmo com shouldHandoff) — silenciar a pergunta fazia o lead voltar
   // para "me manda a conta" sem resposta, frustrando a conversa.
-  if (cls.intent === "tem_duvida" && !hasCapture) {
+  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour) {
     try {
       // Histórico recente para contexto do orquestrador
       const { data: hist } = await ctx.supabase
@@ -1884,7 +2114,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // configurada → d_pedir_conta. Regra de ouro: o consultor configurou →
   // o fluxo segue. IA é só fallback.
   const candidateIntents = [cls.intent, ...detectRegexIntents(ctx.messageText || ""), ...captureIntents];
-  const transition = matchTransitionShared({
+  // Reusa earlyTransition (botão/frase) se já casou; senão rematch com intents da IA.
+  const transition = earlyTransition || matchTransitionShared({
     transitions: currentStep.transitions ?? [],
     buttonId: ctx.buttonId,
     messageText: ctx.messageText,
@@ -1906,13 +2137,19 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   };
 
   // Mapeia step_type especial → primeiro conversation_step do pipeline de cadastro
-  const stepTypeToCadastro = (st: string | null | undefined): string | null => {
+  const stepTypeToCadastro = (
+    st: string | null | undefined,
+    stepKey?: string | null,
+  ): string | null => {
     if (st === "capture_conta") return "aguardando_conta";
     if (st === "capture_documento") return "aguardando_doc_auto";
     if (st === "capture_email") return "ask_email";
     if (st === "confirm_phone") return "ask_phone_confirm";
     // SEPARADO: boleto → confirmar (nunca finalizando direto)
-    if (st === "finalizar_cadastro") return nextSeparatedCadastroStep(ctx.customer as any);
+    // Sofia a10: pula boleto/confirmação → finalizando (portal + OTP)
+    if (st === "finalizar_cadastro") {
+      return nextSeparatedCadastroStep(ctx.customer as any, { fromStepKey: stepKey });
+    }
     return null;
   };
 
@@ -1958,7 +2195,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // etc) — sem isso o anti-rep não detecta duplicidade quando o passo emite
       // texto E depois o handler legado registra a mesma outbound com o step
       // cadastro correspondente.
-      const _legacyMapped = stepTypeToCadastro(st.step_type);
+      const _legacyMapped = stepTypeToCadastro(st.step_type, st.step_key);
       const stepIds = new Set<string>([
         st.id,
         st.step_key,
@@ -1970,7 +2207,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (hit) {
         const ageSec = Math.round((Date.now() - new Date(hit.created_at).getTime()) / 1000);
         console.log(`[conversational] 🛡️ anti-rep emitStep ${st.step_key} (saiu há ${ageSec}s) — pulando reenvio`);
-        return { replyText: "", inlineSent: true };
+        // NÃO marcar inlineSent=true: isso silencia o _finalize e o lead fica sem resposta.
+        return { replyText: text || "", inlineSent: false };
       }
       if (text) {
         const normalizedText = text.trim().replace(/\s+/g, " ");
@@ -1989,11 +2227,25 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         if (duplicateText) {
           const ageSec = Math.round((Date.now() - new Date(duplicateText.created_at).getTime()) / 1000);
           console.log(`[conversational] 🛡️ anti-rep texto step=${st.step_key} (mesmo texto saiu há ${ageSec}s) — pulando reenvio`);
-          return { replyText: "", inlineSent: true };
+          return { replyText: "", inlineSent: false };
         }
       }
     } catch (_e) { /* best-effort */ }
 
+    // Marca name_ask_sent_at quando emitimos pedido de nome — libera "Maria" (1 palavra)
+    // no auto-capture do webhook e no extractNome.
+    try {
+      const asksNameNow =
+        String(st.step_type || "") === "capture_name" ||
+        (Array.isArray(st.captures) &&
+          st.captures.some((c: any) => c?.field === "name" && c?.enabled !== false)) ||
+        /nome|ask_name/i.test(String(st.slot_key || st.step_key || ""));
+      if (asksNameNow && ctx.customer?.id && !(ctx.customer as any).name_ask_sent_at) {
+        const ts = new Date().toISOString();
+        await ctx.supabase.from("customers").update({ name_ask_sent_at: ts }).eq("id", ctx.customer.id);
+        (ctx.customer as any).name_ask_sent_at = ts;
+      }
+    } catch (_) { /* best-effort */ }
 
     // Quando é reply final, o texto vai como reply (não inline). Quando é cascade
     // ou quando o consultor pediu texto antes da mídia, mandamos tudo inline aqui.
@@ -2169,7 +2421,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // text_delay_ms é aplicado dentro de emitStep (após mídia, antes do texto).
     // Não esperamos aqui pra não criar espera dupla antes da mídia.
 
-    const cadastroStep = stepTypeToCadastro(s.step_type);
+    const sofiaPortal = isSofiaPortalOtpStep(s.step_key);
+    let extraBag: Record<string, any> = {
+      ...(sofiaPortal ? sofiaPortalContaunicaPrefill() : {}),
+      ...extra,
+    };
+    const cadastroStep = stepTypeToCadastro(s.step_type, s.step_key);
     let nextConversationStep = cadastroStep || s.id;
 
     // Decide se este step vai cascatear (wait_for=none). Cascade segue fallback.goto
@@ -2211,7 +2468,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       try {
         await ctx.supabase
           .from("customers")
-          .update({ conversation_step: nextConversationStep, last_step_advanced_at: new Date().toISOString() })
+          .update({
+            conversation_step: nextConversationStep,
+            last_step_advanced_at: new Date().toISOString(),
+            ...(sofiaPortal ? sofiaPortalContaunicaPrefill() : {}),
+          })
           .eq("id", ctx.customer.id);
       } catch (_) { /* best-effort */ }
     }
@@ -2292,7 +2553,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         break;
       }
 
-      const cascadeCadastroStep = stepTypeToCadastro(nextStep.step_type);
+      const cascadeCadastroStep = stepTypeToCadastro(nextStep.step_type, nextStep.step_key);
       // Se o próximo passo parece pergunta, emite uma vez e para — não cascateia além.
       const nextIsQuestion = !cascadeCadastroStep && (_looksLikeQuestion(nextStep) || stepHasInteractiveWait(nextStep));
       const nextWillCascade = !cascadeCadastroStep && cursorCascades(nextStep)
@@ -2354,27 +2615,79 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     // 🔄 Reset de contadores de retry quando o lead avança para outro step.
     // Se o customer estava em retry-mode num step diferente do atual, zera
-    // contadores antes de persistir (Property 5 / Requirements 1.5, 4.3).
+    // contadores antes de persistir (Property 5 / Requirements 1.5,.4.3).
     const customerRetriesStep = String((ctx.customer as any).custom_step_retries_step || "");
     if (customerRetriesStep && customerRetriesStep !== s.id) {
       console.log(`[conversational] retry-counters-reset step=${s.step_key}`);
-      extra = {
-        ...extra,
+      extraBag = {
+        ...extraBag,
         custom_step_retries: 0,
         custom_step_retries_step: null,
       };
     }
 
+    // Sofia a10: após emitir o texto do portal+OTP, dispara o worker e fica em
+    // aguardando_otp (facial só depois do OTP — portal-otp-watchdog).
+    if (sofiaPortal && cadastroStep === "finalizando" && ctx.customer?.id) {
+      try {
+        const { dispatchPortalWorker } = await import("../../../_shared/portal-worker.ts");
+        await ctx.supabase.from("customers").update({
+          ...sofiaPortalContaunicaPrefill(),
+          status: "cadastro_portal",
+          conversation_step: "portal_submitting",
+        }).eq("id", ctx.customer.id);
+        const dr = await dispatchPortalWorker(ctx.supabase, ctx.customer.id);
+        console.log(
+          `[sofia-a10] portal dispatch ok=${dr.ok} mode=${dr.mode} status=${dr.status}`,
+        );
+        nextConversationStep = "aguardando_otp";
+        extraBag = {
+          ...extraBag,
+          ...sofiaPortalContaunicaPrefill(),
+          status: "awaiting_otp",
+          conversation_step: "aguardando_otp",
+        };
+        await ctx.supabase.from("customers").update({
+          conversation_step: "aguardando_otp",
+          status: "awaiting_otp",
+        }).eq("id", ctx.customer.id);
+      } catch (e) {
+        console.warn(`[sofia-a10] portal dispatch falhou:`, (e as Error)?.message || e);
+        nextConversationStep = "finalizando";
+        extraBag = { ...extraBag, ...sofiaPortalContaunicaPrefill(), conversation_step: "finalizando" };
+      }
+    }
+
     return {
       reply: replyText,
-      updates: { conversation_step: nextConversationStep, __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, __inline_sent: inlineSent || undefined, ...extra },
+      updates: { conversation_step: nextConversationStep, __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, __inline_sent: inlineSent || undefined, ...extraBag },
     };
   };
 
   // Global overrides: cadastro / humano só vencem se NÃO houver transição
   // configurada para esse input no passo atual. (Movido para depois de goToStep
   // por causa de TDZ — antes disso a função ainda não está inicializada.)
-  if (!transition && cls.intent === "quer_cadastrar") {
+  //
+  // 🛡️ Nunca atalho quer_cadastrar enquanto o passo pede dado (nome/valor/cpf)
+  // ou acabamos de capturar — LLM classificava "Rafael Ferreira" como
+  // quer_cadastrar e pulava Sofia nome→valor→explicação direto pra conta.
+  const stepAsksHardCapture = Array.isArray(currentStep?.captures)
+    && currentStep.captures.some((c: any) =>
+      c?.enabled !== false && ["name", "electricity_bill_value", "cpf", "phone_whatsapp"].includes(String(c?.field || ""))
+    );
+  const stepIsCaptureName = String(currentStep?.step_type || "") === "capture_name"
+    || /\bnome\b/i.test(String((currentStep as any)?.title || ""))
+    || /nome|ask_name/i.test(String(currentStep?.slot_key || ""));
+  const looksLikeNameReply = !!extractNome(ctx.messageText || "", {
+    allowSingleWord: stepIsCaptureName || stepAsksHardCapture,
+  });
+  const blockCadastroShortcut = hasCapture
+    || stepAsksHardCapture
+    || stepIsCaptureName
+    || looksLikeNameReply
+    || postCaptureLanded;
+
+  if (!transition && cls.intent === "quer_cadastrar" && !blockCadastroShortcut) {
     const dest = pickActivateDestination(dbSteps as any[], ctx.customer as any);
     if (dest) {
       return _finalize(stepKey, await goToStep(dest as DbStep, restoreDetourUpdates));
@@ -2385,6 +2698,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }),
       updates: { conversation_step: "aguardando_conta", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
     });
+  }
+  if (!transition && cls.intent === "quer_cadastrar" && blockCadastroShortcut) {
+    console.log(
+      `[conversational] quer_cadastrar ignorado (atalho bloqueado) step=${currentStep?.step_key} ` +
+      `hasCapture=${hasCapture} asksHard=${stepAsksHardCapture} nameLike=${looksLikeNameReply}`,
+    );
   }
   if (!transition && cls.intent === "quer_humano") {
     return _finalize(stepKey, {
@@ -2613,6 +2932,23 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // emitStep (10 min) protege contra duplicidade se já foi emitido nesta sessão.
   const emitCurrentBeforeGoto = async (cur: DbStep, next: DbStep) => {
     if (!cur || !next || cur.id === next.id) return;
+    // Não reemitir pergunta já respondida (nome/valor/cpf/tel).
+    const hardFields = ["name", "electricity_bill_value", "cpf", "phone_whatsapp"] as const;
+    const asked = hardFields.filter((f) =>
+      Array.isArray(cur.captures) &&
+      cur.captures.some((c: any) => c?.field === f && c?.enabled !== false)
+    );
+    const justCaptured = asked.filter((f) =>
+      (f === "name" && !!captureUpdates.name) ||
+      (f === "electricity_bill_value" && captureUpdates.electricity_bill_value != null) ||
+      (f === "cpf" && !!captureUpdates.cpf) ||
+      (f === "phone_whatsapp" && !!captureUpdates.phone_whatsapp) ||
+      isFieldAlreadyCaptured(f, ctx.customer)
+    );
+    if (asked.length > 0 && justCaptured.length === asked.length) {
+      console.log(`[emit-before-goto] skip "${cur.step_key}" — captura satisfeita (${asked.join(",")}), indo para "${next.step_key}"`);
+      return;
+    }
     const hasSlot = !!(cur.slot_key && String(cur.slot_key).trim());
     const hasText = !!(cur.message_text && String(cur.message_text).trim());
     if (!hasSlot && !hasText) return;
@@ -2645,19 +2981,30 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // (PREFERE fallback.goto_step_id — é o que o consultor configurou em /admin/fluxos).
   // Só cai pra próximo por posição como último recurso.
   if (hasCapture) {
+    // Pós-captura já pousou no próximo passo que AINDA precisa de resposta
+    // (ex.: nome capturado → landing em a2 pedir valor). Emite esse passo
+    // e PARA — não avance de novo por position (bug: nome → pulava valor).
+    if (postCaptureLanded) {
+      console.log(`[conversational] post-capture land → emitindo "${currentStep.step_key}" (sem re-advance)`);
+      return _finalize(stepKey, await goToStep(currentStep, restoreDetourUpdates));
+    }
     let nextByConfig: DbStep | undefined;
     // PRIORIDADE: fallback.success_goto_step_id (override pós-captura-sucesso configurado pelo admin)
     // → fallback.goto_step_id (modo goto tradicional)
+    // → transitions[default].goto_step_id
     // → próximo por position (último recurso).
     const successId = (currentStep.fallback as any)?.success_goto_step_id || null;
     const fbId = currentStep.fallback?.mode === "goto" ? currentStep.fallback.goto_step_id : null;
-    const preferredId = successId || fbId;
+    const defaultGoto = Array.isArray(currentStep.transitions)
+      ? currentStep.transitions.find((t: any) => t?.trigger_intent === "default" && t?.goto_step_id)?.goto_step_id
+      : null;
+    const preferredId = successId || fbId || defaultGoto || null;
     if (preferredId) nextByConfig = dbSteps.find((s) => s.is_active && s.id === preferredId);
     if (!nextByConfig) {
       nextByConfig = dbSteps.find((s) => s.is_active && s.position > currentStep.position);
     }
     if (nextByConfig) {
-      console.log(`[conversational] auto-advance por captura ${currentStep.step_key} → ${nextByConfig.step_key} (intents=${captureIntents.join(",")}, source=${successId ? "fallback.success_goto" : fbId ? "fallback.goto" : "position"})`);
+      console.log(`[conversational] auto-advance por captura ${currentStep.step_key} → ${nextByConfig.step_key} (intents=${captureIntents.join(",")}, source=${successId ? "fallback.success_goto" : fbId ? "fallback.goto" : defaultGoto ? "transition.default" : "position"})`);
       if (nextByConfig.step_key === "cadastro" || CADASTRO_STEPS.has(nextByConfig.step_key)) {
         const docStep = findActiveByType("capture_documento");
         if (docStep) return _finalize(stepKey, await goToStep(docStep, restoreDetourUpdates));

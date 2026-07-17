@@ -14,6 +14,7 @@ declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void };
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
 import { createEvolutionSender, parseEvolutionMessage, extractMediaUrl } from "../_shared/evolution-api.ts";
+import { resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { computeIdempotencyKey } from "../_shared/idempotency.ts";
 import { computeMessageTextHash } from "../_shared/text-hash.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
@@ -517,7 +518,14 @@ Deno.serve(async (req) => {
     }
 
 
-    const messageId = body.data?.key?.id || "";
+    const {
+      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isFile, isButton, mediaKind,
+      imageMessage, documentMessage, audioMessage, key, message,
+    } = parsed;
+    // messageText pode ser sobrescrito pela transcrição automática quando o
+    // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
+    let messageText: string = parsed.messageText;
+    const messageId = String(key?.id || parsed.messageId || body.data?.key?.id || "");
     // Type cast: dedupe.ts pins @supabase/supabase-js@2.49.4 while this file
     // pins @2; the runtime is identical but TS sees two protected-property
     // shapes. Same workaround used elsewhere in this file (line 141).
@@ -533,14 +541,16 @@ Deno.serve(async (req) => {
       message_id: messageId,
       v2_flag: v2Flag,
     });
-
-    const {
-      remoteJid, buttonId, hasImage, hasDocument, hasAudio, isFile, isButton, mediaKind,
-      imageMessage, documentMessage, audioMessage, key, message,
-    } = parsed;
-    // messageText pode ser sobrescrito pela transcrição automática quando o
-    // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
-    let messageText: string = parsed.messageText;
+    const inboundConvMeta = () => resolveInboundConversationMeta({
+      hasAudio,
+      hasImage,
+      hasDocument,
+      hasVideo: !!hasVideo,
+      isFile,
+      messageText,
+      // Evolution não tem mediaId Whapi — guarda o id da mensagem p/ correlacionar
+      mediaId: null,
+    });
 
     if (!messageText && !isFile && !isButton) {
       console.log("⏭️ Mensagem vazia");
@@ -1440,7 +1450,15 @@ Deno.serve(async (req) => {
     // Paridade com whapi-webhook. Idempotente — só preenche slots vazios.
     if (messageText && !isFile && customer) {
       try {
-        const multi = extractMultiField(messageText, { allowSingleWordName: !!(customer as any).name_ask_sent_at });
+        const _stepForName = stripPrefix((customer as any).conversation_step || "");
+        const multi = extractMultiField(messageText, {
+          allowSingleWordName:
+            !!(customer as any).name_ask_sent_at ||
+            ["ask_name", "aguardando_nome"].includes(_stepForName) ||
+            /ask_name|nome/i.test(_stepForName) ||
+            (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(_stepForName) &&
+              !String((customer as any).name || "").trim()),
+        });
         const patch = buildMultiFieldPatch(customer, multi);
         if (Object.keys(patch).length > 0) {
           if (patch.name) {
@@ -1464,13 +1482,169 @@ Deno.serve(async (req) => {
 
 
     // ─── 6) Log inbound ────────────────────────────────────────────────
-    await supabase.from("conversations").insert({
-      customer_id: customer.id,
-      message_direction: "inbound",
-      message_text: isFile ? "[arquivo]" : messageText,
-      message_type: isFile ? "image" : "text",
-      conversation_step: customer.conversation_step,
-    });
+    let inboundLogId: string | null = null;
+    {
+      const meta = inboundConvMeta();
+      const { data: inboundIns } = await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "inbound",
+        message_text: meta.message_text,
+        message_type: meta.message_type,
+        media_id: meta.media_id,
+        conversation_step: customer.conversation_step,
+        external_message_id: messageId || null,
+      }).select("id").maybeSingle();
+      inboundLogId = (inboundIns as { id?: string } | null)?.id ?? null;
+    }
+
+    // ─── 6.media) Download + last_inbound ANTES de bot_paused / bot-off ──
+    // Sem isso, handoff/kill-switch retornava sem MinIO nem last_inbound_media_*,
+    // e o feed da Captação ficava sem preview/anexar (paridade Whapi).
+    // ─── 6.media) Download media (if any) ───────────────────────────────
+    let fileUrl: string | null = null;
+    let fileBase64: string | null = null;
+    let inboundMediaMinioUrl: string | null = null;
+    // Task 14 (whatsapp-flow-reliability-fix): rastrear falhas de download
+    // explicitamente e responder ao cliente em vez de silenciar. Quando o
+    // download falha completamente (sem base64 e sem URL), registramos em
+    // `inbound_media_failures`, mandamos reply de cortesia e MANTEMOS o step
+    // atual — antes a thread continuava com `fileBase64=null` e o handler
+    // perguntava por foto de novo, ou pior, ficava mudo.
+    let mediaDownloadFailed = false;
+    if (isFile) {
+      console.log("📥 Baixando mídia via Evolution API (getBase64FromMediaMessage)...");
+      fileBase64 = await sender.downloadMedia(key, message);
+      if (fileBase64) {
+        const mimeType = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
+        // OOM-FIX 2026-06-28: NÃO construir mais `data:${mime};base64,${fileBase64}` aqui.
+        // Essa string duplica o heap (base64 + data URL viviam juntos) e era a causa
+        // principal dos `Memory limit exceeded` no Edge Function (256MB).
+        // Os handlers do bot-flow já fazem fallback inteligente: usam fileBase64 quando
+        // existe e só caem em fileUrl quando ele começa com "http" (URL real).
+        fileUrl = null;
+        console.log(`✅ Mídia baixada via Evolution (${mimeType}, b64 len: ${fileBase64.length})`);
+
+        // Pre-declarado fora do try para o catch poder usar no enqueue de retry.
+        const kind: "image" | "audio" | "video" | "document" =
+          mimeType.startsWith("image/") ? "image"
+          : mimeType.startsWith("audio/") ? "audio"
+          : mimeType.startsWith("video/") ? "video"
+          : "document";
+
+        // Background: upload to MinIO em whatsapp/{consultor}/{jid}/{kind}/{ts}.{ext}
+        // Não bloqueia o fluxo do bot; apenas registra a URL pública para o histórico.
+        // Task 15 (whatsapp-flow-reliability-fix): em falha de upload, enfileirar
+        // em `inbound_media_retry` com base64 + mime para o cron de retry.
+        // O fluxo do bot continua normalmente porque o OCR já tem o base64 em mãos.
+        try {
+          const { uploadToMinioPath, base64ToBytes, buildConsultantSlug, sanitizeJid, normalizeName, extFromMime } =
+            await import("../_shared/minio-upload.ts");
+          const slug = buildConsultantSlug(consultorId || instanceData.consultant_id, nomeRepresentante);
+          const jid = sanitizeJid(remoteJid || phone);
+          const ext = extFromMime(mimeType);
+          const objectKey = `whatsapp/${slug}/${jid}/${kind}/${Date.now()}.${ext}`;
+          const bytes = base64ToBytes(fileBase64);
+          const upRes = await uploadToMinioPath(bytes, mimeType, objectKey);
+          inboundMediaMinioUrl = upRes.url;
+          console.log(`📦✅ inbound media → MinIO: ${upRes.url.substring(0, 100)}`);
+          // Anexa a URL na conversa inbound + last_inbound (paridade Whapi / Captação)
+          try {
+            const convId = inboundLogId || (await supabase.from("conversations")
+              .select("id").eq("customer_id", customer.id).eq("message_direction", "inbound")
+              .order("created_at", { ascending: false }).limit(1).maybeSingle()).data?.id;
+            if (convId) {
+              await supabase.from("conversations").update({
+                message_text: `[${kind}] ${upRes.url}`,
+                message_type: kind,
+              }).eq("id", convId);
+            }
+          } catch (e) { /* ignore */ }
+          try {
+            await supabase.from("customers").update({
+              last_inbound_media_url: upRes.url,
+              last_inbound_media_mime: mimeType,
+              last_inbound_media_kind: kind,
+              last_inbound_media_message_id: messageId || null,
+              last_inbound_media_at: new Date().toISOString(),
+            }).eq("id", customer.id);
+          } catch (e: any) {
+            console.warn(`⚠️ [evolution] Falha ao persistir last_inbound_media: ${e?.message}`);
+          }
+        } catch (uploadErr: any) {
+          console.warn(`📦⚠️ inbound media MinIO falhou — enfileirando retry: ${uploadErr?.message}`);
+          // Task 15: enqueue retry em `inbound_media_retry` para o cron processar.
+          // base64 + mime ficam disponíveis para upload posterior. TTL default 1h.
+          try {
+            await supabase.from("inbound_media_retry").insert({
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              media_kind: kind,
+              base64: fileBase64,
+              mime_type: mimeType,
+            });
+            jsonLog("info", "inbound_media_retry_enqueued", {
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              media_kind: kind,
+              reason: uploadErr?.message ?? "minio_upload_failed",
+            });
+          } catch (enqueueErr: any) {
+            console.error("[inbound-media-retry] enqueue falhou:", enqueueErr?.message);
+          }
+        }
+      } else {
+        // Task 14: download retornou null. Tenta URL direta como fallback.
+        // Se também não houver URL, registra falha persistente, responde ao
+        // cliente e marca para preservar o step atual lá embaixo.
+        fileUrl = extractMediaUrl(message);
+        if (fileUrl) {
+          console.warn("⚠️ downloadMedia falhou, usando URL direta como fallback:", fileUrl.substring(0, 80));
+          try {
+            const _kind = hasDocument ? "document" : (hasVideo ? "video" : (hasImage ? "image" : (hasAudio ? "audio" : "other")));
+            const _mime = imageMessage?.mimetype || documentMessage?.mimetype || audioMessage?.mimetype || null;
+            await supabase.from("customers").update({
+              last_inbound_media_url: fileUrl,
+              last_inbound_media_mime: _mime,
+              last_inbound_media_kind: _kind,
+              last_inbound_media_message_id: messageId || null,
+              last_inbound_media_at: new Date().toISOString(),
+            }).eq("id", customer.id);
+          } catch (e: any) {
+            console.warn(`⚠️ [evolution] Falha last_inbound (url fallback): ${e?.message}`);
+          }
+        } else {
+          mediaDownloadFailed = true;
+          console.error("❌ Falha total ao baixar mídia — sem base64 e sem URL");
+          jsonLog("warn", "evolution_media_lost", {
+            customer_id: customer.id,
+            consultant_id: instanceData.consultant_id,
+            message_id: messageId,
+            v2_flag: v2Flag,
+            reason: "download_returned_null_no_fallback_url",
+          });
+          try {
+            await supabase.from("inbound_media_failures").insert({
+              customer_id: customer.id,
+              consultant_id: instanceData.consultant_id,
+              message_id: messageId,
+              reason: "download_returned_null_no_fallback_url",
+              raw_payload: {
+                has_image: hasImage,
+                has_document: hasDocument,
+                image_mime: imageMessage?.mimetype ?? null,
+                document_mime: documentMessage?.mimetype ?? null,
+                key: key ?? null,
+              },
+            });
+          } catch (logErr: any) {
+            console.error("[inbound-media-failures] insert falhou:", logErr?.message);
+          }
+        }
+      }
+    }
+
 
     // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
     try {
@@ -1644,17 +1818,7 @@ Deno.serve(async (req) => {
         ? "Kill switch global (bot_global_enabled=false)"
         : "IA do consultor desligada";
       console.log(`🛑 [bot-off] ${why} — inbound sem auto-reply customer=${customer.id}`);
-      try {
-        await supabase.from("conversations").insert({
-          customer_id: customer.id,
-          message_direction: "inbound",
-          message_text: messageText || (hasAudio ? "[áudio]" : hasImage ? "[imagem]" : hasDocument ? "[documento]" : "[mensagem]"),
-          message_type: hasAudio ? "audio" : (hasImage || hasDocument ? "image" : "text"),
-          conversation_step: customer.conversation_step,
-        });
-      } catch (e) {
-        console.warn("[bot-off] insert inbound falhou:", (e as Error).message);
-      }
+      // Inbound já gravado no passo 6 (+ mídia em 6.media). Não duplicar.
       const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
       if (notifyTo) {
         const kind = hasImage ? "image" : hasAudio ? "audio" : hasDocument ? "document" : "text";
@@ -1672,127 +1836,6 @@ Deno.serve(async (req) => {
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
-    }
-
-    // ─── 7) Download media (if any) ────────────────────────────────────
-    let fileUrl: string | null = null;
-    let fileBase64: string | null = null;
-    let inboundMediaMinioUrl: string | null = null;
-    // Task 14 (whatsapp-flow-reliability-fix): rastrear falhas de download
-    // explicitamente e responder ao cliente em vez de silenciar. Quando o
-    // download falha completamente (sem base64 e sem URL), registramos em
-    // `inbound_media_failures`, mandamos reply de cortesia e MANTEMOS o step
-    // atual — antes a thread continuava com `fileBase64=null` e o handler
-    // perguntava por foto de novo, ou pior, ficava mudo.
-    let mediaDownloadFailed = false;
-    if (isFile) {
-      console.log("📥 Baixando mídia via Evolution API (getBase64FromMediaMessage)...");
-      fileBase64 = await sender.downloadMedia(key, message);
-      if (fileBase64) {
-        const mimeType = imageMessage?.mimetype || documentMessage?.mimetype || "application/octet-stream";
-        // OOM-FIX 2026-06-28: NÃO construir mais `data:${mime};base64,${fileBase64}` aqui.
-        // Essa string duplica o heap (base64 + data URL viviam juntos) e era a causa
-        // principal dos `Memory limit exceeded` no Edge Function (256MB).
-        // Os handlers do bot-flow já fazem fallback inteligente: usam fileBase64 quando
-        // existe e só caem em fileUrl quando ele começa com "http" (URL real).
-        fileUrl = null;
-        console.log(`✅ Mídia baixada via Evolution (${mimeType}, b64 len: ${fileBase64.length})`);
-
-        // Pre-declarado fora do try para o catch poder usar no enqueue de retry.
-        const kind: "image" | "audio" | "video" | "document" =
-          mimeType.startsWith("image/") ? "image"
-          : mimeType.startsWith("audio/") ? "audio"
-          : mimeType.startsWith("video/") ? "video"
-          : "document";
-
-        // Background: upload to MinIO em whatsapp/{consultor}/{jid}/{kind}/{ts}.{ext}
-        // Não bloqueia o fluxo do bot; apenas registra a URL pública para o histórico.
-        // Task 15 (whatsapp-flow-reliability-fix): em falha de upload, enfileirar
-        // em `inbound_media_retry` com base64 + mime para o cron de retry.
-        // O fluxo do bot continua normalmente porque o OCR já tem o base64 em mãos.
-        try {
-          const { uploadToMinioPath, base64ToBytes, buildConsultantSlug, sanitizeJid, normalizeName, extFromMime } =
-            await import("../_shared/minio-upload.ts");
-          const slug = buildConsultantSlug(consultorId || instanceData.consultant_id, nomeRepresentante);
-          const jid = sanitizeJid(remoteJid || phone);
-          const ext = extFromMime(mimeType);
-          const objectKey = `whatsapp/${slug}/${jid}/${kind}/${Date.now()}.${ext}`;
-          const bytes = base64ToBytes(fileBase64);
-          const upRes = await uploadToMinioPath(bytes, mimeType, objectKey);
-          inboundMediaMinioUrl = upRes.url;
-          console.log(`📦✅ inbound media → MinIO: ${upRes.url.substring(0, 100)}`);
-          // Anexa a URL na última conversa inbound deste customer (best effort)
-          try {
-            const { data: lastConv } = await supabase.from("conversations")
-              .select("id").eq("customer_id", customer.id).eq("message_direction", "inbound")
-              .order("created_at", { ascending: false }).limit(1).maybeSingle();
-            if (lastConv?.id) {
-              await supabase.from("conversations").update({
-                message_text: `[${kind}] ${upRes.url}`,
-                message_type: kind,
-              }).eq("id", lastConv.id);
-            }
-          } catch (e) { /* ignore */ }
-        } catch (uploadErr: any) {
-          console.warn(`📦⚠️ inbound media MinIO falhou — enfileirando retry: ${uploadErr?.message}`);
-          // Task 15: enqueue retry em `inbound_media_retry` para o cron processar.
-          // base64 + mime ficam disponíveis para upload posterior. TTL default 1h.
-          try {
-            await supabase.from("inbound_media_retry").insert({
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              media_kind: kind,
-              base64: fileBase64,
-              mime_type: mimeType,
-            });
-            jsonLog("info", "inbound_media_retry_enqueued", {
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              media_kind: kind,
-              reason: uploadErr?.message ?? "minio_upload_failed",
-            });
-          } catch (enqueueErr: any) {
-            console.error("[inbound-media-retry] enqueue falhou:", enqueueErr?.message);
-          }
-        }
-      } else {
-        // Task 14: download retornou null. Tenta URL direta como fallback.
-        // Se também não houver URL, registra falha persistente, responde ao
-        // cliente e marca para preservar o step atual lá embaixo.
-        fileUrl = extractMediaUrl(message);
-        if (fileUrl) {
-          console.warn("⚠️ downloadMedia falhou, usando URL direta como fallback:", fileUrl.substring(0, 80));
-        } else {
-          mediaDownloadFailed = true;
-          console.error("❌ Falha total ao baixar mídia — sem base64 e sem URL");
-          jsonLog("warn", "evolution_media_lost", {
-            customer_id: customer.id,
-            consultant_id: instanceData.consultant_id,
-            message_id: messageId,
-            v2_flag: v2Flag,
-            reason: "download_returned_null_no_fallback_url",
-          });
-          try {
-            await supabase.from("inbound_media_failures").insert({
-              customer_id: customer.id,
-              consultant_id: instanceData.consultant_id,
-              message_id: messageId,
-              reason: "download_returned_null_no_fallback_url",
-              raw_payload: {
-                has_image: hasImage,
-                has_document: hasDocument,
-                image_mime: imageMessage?.mimetype ?? null,
-                document_mime: documentMessage?.mimetype ?? null,
-                key: key ?? null,
-              },
-            });
-          } catch (logErr: any) {
-            console.error("[inbound-media-failures] insert falhou:", logErr?.message);
-          }
-        }
-      }
     }
 
     // Task 14: se a mídia foi perdida em definitivo, manda reply de cortesia
@@ -2125,6 +2168,11 @@ Deno.serve(async (req) => {
     // Compat reversa: UUIDs/"passo_xxx" sem prefixo são tratados como flow.
     let rawStep = customer.conversation_step || null;
     let stepBefore = stripPrefix(rawStep);
+    const originalFlowStep =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stepBefore)
+      || stepBefore.startsWith("passo_")
+        ? stepBefore
+        : null;
     (customer as any).conversation_step = stepBefore;
 
     // ─── 7.5) GUARD DE RETOMADA DE CADASTRO ──────────────────────────────
@@ -2282,46 +2330,44 @@ Deno.serve(async (req) => {
       if (_looksLikeFlowStep && !_isCadastroStepGuard) {
         try {
           const variant = String((customer as any)?.flow_variant || "A").toUpperCase();
-          // Aceita steps do fluxo do consultor OU do template PÚBLICO da mesma
-          // variante quando o consultor está em sync_mode='public' (resolveFlowId
-          // redireciona o roteamento para o público, então conversation_step
-          // pode apontar para UUIDs de steps do template).
-          const { data: ownFlow } = await supabase
-            .from("bot_flows")
-            .select("id, sync_mode")
-            .eq("consultant_id", instanceData.consultant_id)
-            .eq("variant", variant)
+          const flowOwnerId = String((customer as any)?.consultant_id || instanceData.consultant_id || "");
+          const { data: stepRow } = await supabase
+            .from("bot_flow_steps")
+            .select("id, flow_id, is_active")
+            .eq("id", _stepRaw)
             .eq("is_active", true)
             .maybeSingle();
-          const allowedFlowIds: string[] = [];
-          if ((ownFlow as any)?.id) allowedFlowIds.push((ownFlow as any).id);
-          const ownSync = String((ownFlow as any)?.sync_mode ?? "public").toLowerCase();
-          if (!ownFlow || ownSync === "public") {
-            const { data: pubFlow } = await supabase
-              .from("bot_flows")
-              .select("id")
-              .eq("is_public", true)
-              .eq("is_active", true)
-              .eq("variant", variant)
-              .maybeSingle();
-            if ((pubFlow as any)?.id) allowedFlowIds.push((pubFlow as any).id);
-          }
           let found = false;
-          if (allowedFlowIds.length > 0) {
-            const { data: stepLookup } = await supabase
+          if (stepRow?.flow_id) {
+            const { data: flowRow } = await supabase
+              .from("bot_flows")
+              .select("id, variant, consultant_id, is_active, is_public")
+              .eq("id", stepRow.flow_id)
+              .maybeSingle();
+            const fv = String((flowRow as any)?.variant || "").toUpperCase();
+            const active = !!(flowRow as any)?.is_active;
+            const ownerOk =
+              String((flowRow as any)?.consultant_id || "") === flowOwnerId ||
+              !!(flowRow as any)?.is_public;
+            found = active && fv === variant && ownerOk;
+          }
+          if (!found && flowOwnerId) {
+            const { data: byKey } = await supabase
               .from("bot_flow_steps")
-              .select("id")
-              .or(`id.eq.${_stepRaw},step_key.eq.${_stepRaw}`)
+              .select("id, bot_flows!inner(variant, is_active, consultant_id)")
+              .eq("step_key", _stepRaw)
               .eq("is_active", true)
-              .in("flow_id", allowedFlowIds)
+              .eq("bot_flows.is_active", true)
+              .eq("bot_flows.consultant_id", flowOwnerId)
+              .eq("bot_flows.variant", variant)
               .limit(1);
-            found = Array.isArray(stepLookup) && stepLookup.length > 0;
+            found = Array.isArray(byKey) && byKey.length > 0;
           }
           if (!found) {
             console.warn(
               `🩹 [step-mismatch-cure] customer=${customer.id} step="${_stepRaw}" ` +
-              `variant=${variant} → step não pertence ao fluxo desta variant. ` +
-              `Resetando para welcome.`
+              `variant=${variant} owner=${flowOwnerId.slice(0, 8)} → step não pertence ao fluxo. ` +
+              `Resetando para welcome (lead será restartado pelo firstActive).`
             );
             try {
               await supabase.from("customers")
@@ -2336,7 +2382,7 @@ Deno.serve(async (req) => {
               try {
                 await supabase.from("bot_step_transitions").insert({
                   customer_id: customer.id,
-                  consultant_id: instanceData.consultant_id,
+                  consultant_id: flowOwnerId || instanceData.consultant_id,
                   from_step: _stepRaw,
                   to_step: "welcome",
                   reason: `step_variant_mismatch:${variant}`,
@@ -2414,8 +2460,11 @@ Deno.serve(async (req) => {
               .eq("is_active", true);
             if ((count || 0) > 0) {
               engine = "flow";
-              (customer as any).conversation_step = null;
-              console.log(`🚀 [router] forçado para flow (consultor=${instanceData.consultant_id}, step legado="${stepBefore}")`);
+              const keepFlowStep = !!originalFlowStep;
+              if (!keepFlowStep) {
+                (customer as any).conversation_step = null;
+              }
+              console.log(`🚀 [router] forçado para flow (consultor=${instanceData.consultant_id}, step legado="${stepBefore}", keepStep=${keepFlowStep})`);
             }
           }
         } catch (e) {
@@ -2423,6 +2472,16 @@ Deno.serve(async (req) => {
         }
       }
       engineUsed = engine;
+
+      if (engine === "flow" && originalFlowStep) {
+        const memStep = stripPrefix(String((customer as any).conversation_step || ""));
+        if (!memStep || memStep === "welcome" || memStep === "menu_inicial") {
+          console.log(
+            `🔒 [router] restaurando step do fluxo "${originalFlowStep}" (mem="${memStep || "null"}")`,
+          );
+          (customer as any).conversation_step = originalFlowStep;
+        }
+      }
 
       // ─── Engine v3 gate (Task 29 — flow-engine-v3-rewrite) ──────────
       // When `consultants.use_engine_v3 = true`, the v3 engine takes
@@ -2533,14 +2592,14 @@ Deno.serve(async (req) => {
       //  - cadastro + freeform_question → Cérebro (sem mexer no estado)
       //  - cadastro + expected/mídia → determinístico (pula Cérebro)
       const _rodarCerebro = _isAtivoOrigin
-        || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M"))
+        || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F"))
         || (_emCadastro && _cadKind === "freeform_question" && _fbVarCerebro !== "A");
 
       if (!_rodarCerebro) {
         if (_emCadastro) {
           console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
-        } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M") {
-          console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo com botões)`);
+        } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F") {
+          console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo do construtor)`);
         }
       } else try {
         if (_isAtivoOrigin) {

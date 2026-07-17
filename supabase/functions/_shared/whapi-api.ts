@@ -512,22 +512,73 @@ export function parseWhapiMessage(body: any) {
     messageText = msg.reply.list_reply.title || "";
   }
 
+  const pickMediaId = (...candidates: unknown[]): string | null => {
+    for (const c of candidates) {
+      if (typeof c === "string" && c.trim()) return c.trim();
+    }
+    return null;
+  };
+
   // Imagem
   const hasImage = msg.type === "image";
-  const imageMessage = hasImage ? { mimetype: msg.image?.mime_type || "image/jpeg", url: msg.image?.link } : null;
+  const imageMediaId = hasImage
+    ? pickMediaId(msg.image?.id, msg.image?.file_id, msg.image?.media_id)
+    : null;
+  const imageMessage = hasImage
+    ? {
+      mimetype: msg.image?.mime_type || "image/jpeg",
+      url: msg.image?.link,
+      mediaId: imageMediaId,
+      caption: msg.image?.caption || msg.image?.caption_text || "",
+    }
+    : null;
 
   // Documento
   const hasDocument = msg.type === "document";
-  const documentMessage = hasDocument ? { mimetype: msg.document?.mime_type || "application/pdf", url: msg.document?.link } : null;
+  const documentMediaId = hasDocument
+    ? pickMediaId(msg.document?.id, msg.document?.file_id, msg.document?.media_id)
+    : null;
+  const documentMessage = hasDocument
+    ? {
+      mimetype: msg.document?.mime_type || "application/pdf",
+      url: msg.document?.link,
+      mediaId: documentMediaId,
+      fileName: msg.document?.file_name || msg.document?.filename || undefined,
+    }
+    : null;
 
   // Áudio / Voice note (PTT)
   const hasAudio = msg.type === "voice" || msg.type === "audio" || !!msg.voice || !!msg.audio;
   const audioPayload = msg.voice || msg.audio || null;
+  const audioMediaId = hasAudio
+    ? pickMediaId(audioPayload?.id, audioPayload?.file_id, audioPayload?.media_id)
+    : null;
   const audioMessage = hasAudio
-    ? { mimetype: audioPayload?.mime_type || "audio/ogg", url: audioPayload?.link, ptt: msg.type === "voice" }
+    ? {
+      mimetype: audioPayload?.mime_type || "audio/ogg",
+      url: audioPayload?.link,
+      mediaId: audioMediaId,
+      ptt: msg.type === "voice",
+    }
     : null;
 
-  const isFile = hasImage || hasDocument || hasAudio;
+  // Vídeo
+  const hasVideo = msg.type === "video" || !!msg.video;
+  const videoPayload = msg.video || null;
+  const videoMediaId = hasVideo
+    ? pickMediaId(videoPayload?.id, videoPayload?.file_id, videoPayload?.media_id)
+    : null;
+  const videoMessage = hasVideo
+    ? {
+      mimetype: videoPayload?.mime_type || "video/mp4",
+      url: videoPayload?.link,
+      mediaId: videoMediaId,
+      caption: videoPayload?.caption || videoPayload?.caption_text || "",
+    }
+    : null;
+
+  const mediaId = imageMediaId || documentMediaId || audioMediaId || videoMediaId || null;
+  const isFile = hasImage || hasDocument || hasAudio || hasVideo;
   const isButton = !!buttonId;
 
   // Extrair base64 se disponível (Whapi pode enviar inline)
@@ -545,6 +596,14 @@ export function parseWhapiMessage(body: any) {
     fileBase64 = audioPayload.data || null;
     fileUrl = audioPayload.link || null;
   }
+  if (hasVideo && videoPayload) {
+    fileBase64 = videoPayload.data || null;
+    fileUrl = videoPayload.link || null;
+  }
+
+  // Caption de mídia vira texto legível no log quando não há body.
+  if (!messageText && hasImage && imageMessage?.caption) messageText = String(imageMessage.caption);
+  if (!messageText && hasVideo && videoMessage?.caption) messageText = String(videoMessage.caption);
 
   // Nome do remetente vindo do WhatsApp (pushName)
   const fromName: string | null = msg.from_name || msg.pushname || msg.notify_name || null;
@@ -557,18 +616,57 @@ export function parseWhapiMessage(body: any) {
     hasImage,
     hasDocument,
     hasAudio,
-    hasVideo: false,
+    hasVideo,
     isFile,
     isButton,
     imageMessage,
     documentMessage,
     audioMessage,
-    videoMessage: null,
+    videoMessage,
+    mediaId,
     key: { remoteJid, fromMe: false, id: msg.id || "" },
     message: msg,
     messageTimestamp: msg.timestamp,
     messageId: msg.id || "",
     fileBase64,
     fileUrl,
+  };
+}
+
+/** Metadados para gravar inbound em `conversations` com tipo/mídia corretos. */
+export function resolveInboundConversationMeta(p: {
+  hasAudio?: boolean;
+  hasImage?: boolean;
+  hasDocument?: boolean;
+  hasVideo?: boolean;
+  isFile?: boolean;
+  messageText?: string | null;
+  mediaId?: string | null;
+}): { message_type: string; message_text: string; media_id: string | null } {
+  const message_type = p.hasVideo
+    ? "video"
+    : p.hasAudio
+    ? "audio"
+    : p.hasDocument
+    ? "document"
+    : p.hasImage
+    ? "image"
+    : p.isFile
+    ? "image"
+    : "text";
+  const placeholders: Record<string, string> = {
+    video: "[vídeo]",
+    audio: "[áudio]",
+    document: "[documento]",
+    image: "[imagem]",
+  };
+  const trimmed = String(p.messageText || "").trim();
+  const message_text = message_type === "text"
+    ? trimmed
+    : (trimmed || placeholders[message_type] || "[arquivo]");
+  return {
+    message_type,
+    message_text,
+    media_id: p.mediaId || null,
   };
 }

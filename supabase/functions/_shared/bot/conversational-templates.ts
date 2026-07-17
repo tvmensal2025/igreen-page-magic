@@ -98,7 +98,16 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/^[\s,;:]+/gm, (s) => s.replace(/[,;:]/g, ""))
     .trim();
-  if (/\{\{\s*\w+\s*\}\}/.test(out)) return "";
+  // Não silenciar a mensagem inteira por placeholder residual — remove o
+  // {{var}} e segue. Antes: return "" fazia o lead travar sem resposta (ex.: a3).
+  if (/\{\{\s*\w+\s*\}\}/.test(out)) {
+    out = out
+      .replace(/\{\{\s*[^}]+\s*\}\}/g, "")
+      .replace(/\*\s*\*/g, "")
+      .replace(/[ \t]{2,}/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
   return out;
 }
 

@@ -519,6 +519,11 @@ export default function StepInspector({
                 stepKey={step.step_key ?? ""}
                 slotKeys={[step.slot_key]}
                 variant={variant}
+                initialOrder={
+                  Array.isArray(step.media_order) && step.media_order.length
+                    ? (step.media_order as ("audio" | "image" | "video" | "text")[])
+                    : undefined
+                }
               />
             ) : (
               <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">

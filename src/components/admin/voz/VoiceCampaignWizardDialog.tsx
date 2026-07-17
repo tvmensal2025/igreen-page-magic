@@ -43,6 +43,8 @@ import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
 import { decodeAudioBlob, encodeMp3 } from "@/lib/audioProcessing";
 import type { BulkContact } from "@/types/whatsapp";
 import { VozContactPickerPanel, type VozCustomer } from "./VozContactPickerDialog";
+import { crmClosingSummary, resolveCrmByPhoneOrId, statusCrmLabel } from "./voiceCrmContext";
+import { velipOutcomeLabel } from "./voiceOutcomeLabels";
 
 type VelipMode = "auto" | "single" | "batch";
 type WizardStep = 1 | 2 | 3 | 4;
@@ -76,6 +78,7 @@ interface TargetRow {
   status: string;
   error: string | null;
   attempts: number;
+  velip_status?: string | null;
 }
 
 const STEPS: { n: WizardStep; label: string; icon: typeof Users }[] = [
@@ -118,8 +121,6 @@ export function VoiceCampaignWizardDialog({
   const [recorder, setRecorder] = useState<any>(null);
 
   const [campaignName, setCampaignName] = useState("Campanha de ligação");
-  const [dispatchKind, setDispatchKind] = useState<"audio" | "tts">("audio");
-  const [ttsText, setTtsText] = useState("");
   const [callerId, setCallerId] = useState("");
   const [maxAttempts, setMaxAttempts] = useState(2);
   const [smsFallback, setSmsFallback] = useState("");
@@ -128,6 +129,8 @@ export function VoiceCampaignWizardDialog({
   const [windowStart, setWindowStart] = useState("09:00");
   const [windowEnd, setWindowEnd] = useState("18:00");
   const [weekdaysOnly, setWeekdaysOnly] = useState(true);
+  const [personalizeName, setPersonalizeName] = useState(true);
+  const [prewarming, setPrewarming] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const [activeCampaignId, setActiveCampaignId] = useState<string | null>(null);
@@ -140,14 +143,13 @@ export function VoiceCampaignWizardDialog({
     setStep(1);
     setContacts([]);
     setCampaignName("Campanha de ligação");
-    setDispatchKind("audio");
-    setTtsText("");
     setSmsFallback("");
     setVelipMode("auto");
     setScheduledAt("");
     setWindowStart("09:00");
     setWindowEnd("18:00");
     setWeekdaysOnly(true);
+    setPersonalizeName(true);
     setActiveCampaignId(null);
     setCampaign(null);
     setTargets([]);
@@ -204,7 +206,7 @@ export function VoiceCampaignWizardDialog({
         .maybeSingle(),
       (supabase as any)
         .from("voice_campaign_targets")
-        .select("id, phone, name, status, error, attempts")
+        .select("id, phone, name, status, error, attempts, velip_status")
         .eq("campaign_id", campaignId)
         .order("created_at", { ascending: true })
         .limit(500),
@@ -328,8 +330,7 @@ export function VoiceCampaignWizardDialog({
   };
 
   const canNextFrom1 = contacts.length > 0;
-  const canNextFrom2 =
-    dispatchKind === "audio" ? !!(audioUrl || clipId) : ttsText.trim().length > 0;
+  const canNextFrom2 = !!(audioUrl || clipId);
 
   const createCampaign = async () => {
     if (!canNextFrom1 || !canNextFrom2) return;
@@ -343,10 +344,10 @@ export function VoiceCampaignWizardDialog({
       const enqueueBody: Record<string, unknown> = {
         action: "create_campaign",
         campaign_name: campaignName.trim() || "Campanha de ligação",
-        audio_clip_id: dispatchKind === "audio" ? (clipId || null) : null,
-        audio_url: dispatchKind === "audio" ? audioUrl : null,
-        dispatch_kind: dispatchKind,
-        tts_text: dispatchKind === "tts" ? ttsText.trim() : null,
+        audio_clip_id: clipId || null,
+        audio_url: audioUrl,
+        dispatch_kind: "audio",
+        tts_text: null,
         caller_id: callerId.trim() || null,
         max_attempts: maxAttempts,
         sms_on_no_answer_text: smsFallback.trim() || null,
@@ -357,15 +358,45 @@ export function VoiceCampaignWizardDialog({
           windowEnd,
           weekdaysOnly,
           leaveVoicemail: false,
+          personalize_name: personalizeName,
+          sofia_only: true,
         },
       };
       if (velipMode !== "auto") enqueueBody.velip_mode = velipMode;
+      // Personalização por nome força single no enqueue
+      if (personalizeName) enqueueBody.velip_mode = "single";
       const data = await invokeEnqueue(enqueueBody);
       const cid = data.campaign_id as string;
       setActiveCampaignId(cid);
       setStep(4);
-      toast.success(`Campanha criada: ${data.total} alvos · modo ${data.velip_mode || "auto"}`);
+      toast.success(
+        `Campanha criada com ${data.total} contato${Number(data.total) === 1 ? "" : "s"}. Acompanhe na lista abaixo.`,
+      );
       onCampaignsChanged?.();
+      // Pré-aquece renders de nome (sem discar) — útil para lotes grandes
+      if (personalizeName && clipId) {
+        setPrewarming(true);
+        try {
+          const { data: pw, error: pwErr } = await supabase.functions.invoke("voice-call-stitch", {
+            body: {
+              action: "prewarm",
+              body_clip_id: clipId,
+              campaign_id: cid,
+              limit: 40,
+            },
+          });
+          if (pwErr) throw pwErr;
+          const remaining = Number((pw as { remaining?: number })?.remaining ?? 0);
+          toast.message(
+            `Pré-aquecimento: ${(pw as { created?: number })?.created ?? 0} novos · ${(pw as { cached?: number })?.cached ?? 0} cache` +
+              (remaining > 0 ? ` · restam ${remaining} (rode de novo se quiser)` : ""),
+          );
+        } catch (e) {
+          console.warn("[wizard] prewarm:", e);
+        } finally {
+          setPrewarming(false);
+        }
+      }
       await refreshMonitor(cid);
     } catch (e) {
       toast.error((e as Error).message);
@@ -469,30 +500,10 @@ export function VoiceCampaignWizardDialog({
 
           {step === 2 && (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" size="sm" variant={dispatchKind === "audio" ? "default" : "outline"} onClick={() => setDispatchKind("audio")}>
-                  Áudio gravado
-                </Button>
-                <Button type="button" size="sm" variant={dispatchKind === "tts" ? "default" : "outline"} onClick={() => setDispatchKind("tts")}>
-                  Texto (voz sintetizada)
-                </Button>
-              </div>
-
-              {dispatchKind === "tts" ? (
-                <div className="space-y-1.5">
-                  <Label>Texto que a voz vai falar</Label>
-                  <Textarea
-                    value={ttsText}
-                    onChange={(e) => setTtsText(e.target.value)}
-                    rows={4}
-                    placeholder="Olá {{nome}}, tudo bem? Sou consultor da iGreen…"
-                  />
-                  <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
-                    Use {"{{nome}}"} para personalizar. Até ~500 caracteres.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
+              <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
+                Regra: ligações usam só <strong>áudio Sofia</strong> (Estúdio). TTS Velip desativado.
+              </p>
+              <div className="space-y-3">
                   <div className="space-y-1.5">
                     <Label>Nome ao gravar / salvar novo</Label>
                     <Input value={clipName} onChange={(e) => setClipName(e.target.value)} placeholder="Ex: Follow-up 20s" />
@@ -527,7 +538,7 @@ export function VoiceCampaignWizardDialog({
                   </div>
                   {clips.length === 0 ? (
                     <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
-                      Nenhum áudio salvo ainda. Grave ou faça upload.
+                      Nenhum áudio salvo ainda. Grave ou faça upload (prefira Sofia do Estúdio).
                     </p>
                   ) : (
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -578,7 +589,6 @@ export function VoiceCampaignWizardDialog({
                     </div>
                   )}
                 </div>
-              )}
 
               <div className="space-y-1.5">
                 <Label>SMS automático se não atender (opcional)</Label>
@@ -647,6 +657,25 @@ export function VoiceCampaignWizardDialog({
                 <Switch checked={weekdaysOnly} onCheckedChange={setWeekdaysOnly} id="wiz-weekdays" />
                 <Label htmlFor="wiz-weekdays">Somente dias úteis</Label>
               </div>
+              <div className="flex items-start gap-2 rounded-lg border border-border/50 p-3 bg-muted/20">
+                  <Switch
+                    checked={personalizeName}
+                    onCheckedChange={setPersonalizeName}
+                    id="wiz-personalize"
+                    className="mt-0.5"
+                  />
+                  <div>
+                    <Label htmlFor="wiz-personalize">Personalizar com nome (Sofia)</Label>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Costura &quot;Olá, {"{Nome}"}.&quot; + áudio do corpo (cache 1x por nome). Força modo single.
+                    </p>
+                  </div>
+                </div>
+              {prewarming && (
+                <p className="text-xs text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Pré-aquecendo nomes…
+                </p>
+              )}
 
               <div className="grid grid-cols-3 gap-3">
                 <div className="rounded-[var(--pe-radius)] border p-3 text-center" style={{ borderColor: "var(--pe-emerald-20)", background: "var(--pe-emerald-10)" }}>
@@ -656,7 +685,7 @@ export function VoiceCampaignWizardDialog({
                 <div className="rounded-[var(--pe-radius)] border p-3 text-center" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}>
                   <p className="text-[10px] uppercase font-semibold" style={{ color: "var(--pe-text-muted)" }}>Mensagem</p>
                   <p className="text-sm font-bold mt-1" style={{ color: "var(--pe-text)" }}>
-                    {dispatchKind === "audio" ? "Áudio" : "TTS"}
+                    Áudio Sofia
                   </p>
                 </div>
                 <div className="rounded-[var(--pe-radius)] border p-3 text-center" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}>
@@ -677,9 +706,26 @@ export function VoiceCampaignWizardDialog({
                     <h4 className="font-semibold flex-1 truncate" style={{ color: "var(--pe-text)" }}>
                       {campaign?.name || "Campanha"}
                     </h4>
-                    {campaign && <Badge variant="secondary">{campaign.status}</Badge>}
+                    {campaign && (
+                      <Badge variant="secondary">
+                        {{
+                          running: "Em andamento",
+                          scheduled: "Agendada",
+                          finished: "Finalizada",
+                          paused: "Pausada",
+                          cancelled: "Cancelada",
+                          canceled: "Cancelada",
+                        }[campaign.status] || campaign.status}
+                      </Badge>
+                    )}
                     {campaign?.velip_mode && (
-                      <Badge variant="outline" className="text-[10px]">{campaign.velip_mode}</Badge>
+                      <Badge variant="outline" className="text-[10px]">
+                        {campaign.velip_mode === "single"
+                          ? "1 a 1"
+                          : campaign.velip_mode === "batch"
+                            ? "Em lote"
+                            : campaign.velip_mode}
+                      </Badge>
                     )}
                     <Button
                       type="button"
@@ -765,22 +811,50 @@ export function VoiceCampaignWizardDialog({
                     {filteredTargets.length === 0 ? (
                       <p className="p-4 text-center text-xs text-muted-foreground">Nada para mostrar</p>
                     ) : (
-                      filteredTargets.map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center gap-2 px-3 py-1.5 border-b text-xs last:border-0"
-                          style={{ borderColor: "var(--pe-border)" }}
-                        >
-                          <Badge variant="outline" className="text-[10px] shrink-0">{t.status}</Badge>
-                          <span className="flex-1 truncate" style={{ color: "var(--pe-text)" }}>{t.name || "—"}</span>
-                          <span className="font-mono text-muted-foreground">{t.phone}</span>
-                          {t.error && (
-                            <span className="text-destructive text-[10px] truncate max-w-[120px]" title={t.error}>
-                              {t.error}
-                            </span>
-                          )}
-                        </div>
-                      ))
+                      filteredTargets.map((t) => {
+                        const crm = resolveCrmByPhoneOrId(t.phone, null, customers);
+                        return (
+                          <div
+                            key={t.id}
+                            className="flex flex-col gap-0.5 px-3 py-1.5 border-b text-xs last:border-0"
+                            style={{ borderColor: "var(--pe-border)" }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px] shrink-0">
+                                {t.velip_status
+                                  ? velipOutcomeLabel(t.velip_status)
+                                  : ({
+                                      queued: "Na fila",
+                                      dialing: "Ligando",
+                                      answered: "Atendeu",
+                                      completed: "Concluído",
+                                      no_answer: "Não atendeu",
+                                      failed: "Falhou",
+                                    }[t.status] || t.status)}
+                              </Badge>
+                              {crm?.status && (
+                                <Badge variant="secondary" className="text-[10px] shrink-0">
+                                  {statusCrmLabel(crm.status)}
+                                </Badge>
+                              )}
+                              <span className="flex-1 truncate" style={{ color: "var(--pe-text)" }}>
+                                {t.name || crm?.name || "—"}
+                              </span>
+                              <span className="font-mono text-muted-foreground">{t.phone}</span>
+                              {t.error && (
+                                <span className="text-destructive text-[10px] truncate max-w-[120px]" title={t.error}>
+                                  {t.error}
+                                </span>
+                              )}
+                            </div>
+                            {crm && (
+                              <p className="text-[10px] truncate pl-0.5" style={{ color: "var(--pe-text-muted)" }}>
+                                {crmClosingSummary(crm)}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </>

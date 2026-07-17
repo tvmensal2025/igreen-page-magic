@@ -159,6 +159,17 @@ export const CAPACIDADES: CapacidadeItem[] = [
     dica: "Não misture com várias cutucadas ao mesmo tempo.",
   },
   {
+    id: "ciclo-diario",
+    nome: "Ciclo diário (lead novo / frio)",
+    oQueFaz:
+      "Fila A (novo) e Fila B (frio): abre WhatsApp, áudio, fluxo, ligação, SMS e fecha. Exige áudio no kit + live_dispatch.",
+    onde: "Dashboard (pizzas) + Voz → Programação do ciclo",
+    grupo: "automatico",
+    toggle: "daily_reheat",
+    risco: "avancado",
+    dica: "Só ligue com áudio no kit e piloto. Não misture com reactivation_cron no mesmo lead.",
+  },
+  {
     id: "cadencia",
     nome: "Sequência automática de etapas",
     oQueFaz: "Motor que manda uma sequência de mensagens conforme o estágio do lead.",

@@ -690,11 +690,11 @@ export function parseEvolutionMessage(body: any, instanceConnectedPhone?: string
   const videoMessage = message.videoMessage;
   const hasVideo = !!videoMessage;
 
-  // Task 12 do whatsapp-flow-reliability-fix: incluir áudio em isFile e expor
+  // Task 12 do whatsapp-flow-reliability-fix: incluir áudio/vídeo em isFile e expor
   // mediaKind para o webhook decidir transcrição automática (Task 17). Não
   // mexemos em hasImage/hasDocument para preservar contratos antigos. O webhook
   // que precisar do comportamento legado pode usar `hasImage || hasDocument`.
-  const isFile = hasImage || hasDocument || hasAudio;
+  const isFile = hasImage || hasDocument || hasAudio || hasVideo;
   const isButton = !!buttonId;
 
   // mediaKind: kind canônico do anexo. Null quando inbound é texto puro.

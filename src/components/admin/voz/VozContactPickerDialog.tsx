@@ -18,18 +18,23 @@ export interface VozCustomer {
   id: string;
   name: string;
   phone_whatsapp: string;
-  electricity_bill_value?: number;
-  status?: string;
+  electricity_bill_value?: number | null;
+  status?: string | null;
   devolutiva?: string | null;
+  andamento_igreen?: string | null;
+  conversation_step?: string | null;
+  pos_venda_stage?: string | null;
+  bot_paused?: boolean | null;
   registered_by_name?: string | null;
   last_inbound_at?: string | null;
+  last_bot_interaction_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
   customer_origin?: string | null;
 }
 
 const LEAD_SELECT =
-  "id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, registered_by_name, created_at, updated_at, customer_origin";
+  "id, name, phone_whatsapp, electricity_bill_value, status, devolutiva, andamento_igreen, conversation_step, pos_venda_stage, bot_paused, registered_by_name, last_bot_interaction_at, created_at, updated_at, customer_origin";
 
 function dedupeContacts(list: BulkContact[]): BulkContact[] {
   const seen = new Set<string>();

@@ -27,7 +27,7 @@ export type ActivateCustomerLike = {
 };
 
 const ACTIVATE_RX =
-  /\b(ativar(\s+o)?\s+benef[ií]cio|ativar|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar)\b/i;
+  /\b(ativar(\s+o)?\s+benef[ií]cio|ativar|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar|activate|register|quero\s+ativar)\b/i;
 
 const SIMULATE_RX =
   /\b(simular(\s+economia)?|quero\s+simular|quero_simular|simula[cç][aã]o|simular_completa|simular_rapida)\b/i;
@@ -189,8 +189,14 @@ export function rewriteActivateAwayFromSimPath(
     return pickActivateDestination(steps, customer);
   }
 
-  // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento
+  // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento.
+  // Sofia a6: valor digitado no a2 (simulação) ≠ foto OCR — não pular a6.
   if (type === "capture_conta" && isCadastroContaStep(intended, steps) && hasBillReady(customer)) {
+    const sofiaNeedsPhoto =
+      /^a6_|ask_bill_photo/i.test(key) &&
+      !customer?.electricity_bill_photo_url &&
+      !customer?.bill_data_confirmed_at;
+    if (sofiaNeedsPhoto) return null;
     return pickActivateDestination(steps, customer);
   }
 

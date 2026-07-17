@@ -156,3 +156,48 @@ Deno.test("stripPushyCadastroCta remove CTA fantasma de botão", () => {
   assertEquals(/op[cç][oõ]es acima/i.test(out), false);
   assertEquals(out.includes("90 dias"), true);
 });
+
+Deno.test("strip remove variante real: cadastro para já darmos + botão fantasma", () => {
+  const raw =
+    "Ótima pergunta, Jefferson! A primeira fatura com o seu desconto chega em média em até 90 dias após a aprovação do cadastro. Esse é o prazo para a distribuidora concluir a migração, e a partir daí a economia é automática todo mês. Posso seguir com o seu cadastro para já darmos o primeiro passo? 💚\n\n👇 Posso seguir com você — é só tocar numa das opções acima.";
+  const out = stripPushyCadastroCta(raw);
+  assertEquals(/posso seguir/i.test(out), false);
+  assertEquals(/op[cç][oõ]es acima/i.test(out), false);
+  assertEquals(/👇/.test(out), false);
+  assertEquals(out.includes("90 dias"), true);
+  assertEquals(out.includes("economia"), true);
+});
+
+Deno.test("prettifyFaqLayout areja parede mesmo quando já há \\n\\n no soft-close", () => {
+  const raw =
+    "Claro, Marlene! A iGreen funciona como energia por assinatura: você recebe desconto na conta de luz, sem obra, sem instalação e sem investimento inicial. A energia continua chegando pela mesma distribuidora, só que você passa a ter economia mensal na fatura.\n\nQualquer outra dúvida, é só perguntar.";
+  const out = prettifyFaqLayout(raw);
+  assertEquals(out.includes("\n\n"), true);
+  // O textão inicial deve ter sido quebrado — não pode ser um bloco único gigante
+  const firstBlock = out.split(/\n\s*\n/)[0];
+  assertEquals(firstBlock.length < 200, true);
+});
+
+Deno.test("formatFaqReply caso Jefferson (produção): arejado, negrito, sem CTA", () => {
+  const raw =
+    "Ótima pergunta, Jefferson! A primeira fatura com o seu desconto chega em média em até 90 dias após a aprovação do cadastro. Esse é o prazo para a distribuidora concluir a migração, e a partir daí a economia é automática todo mês. Posso seguir com o seu cadastro para já darmos o primeiro passo? 💚\n\n👇 Posso seguir com você — é só tocar numa das opções acima.";
+  const out = formatFaqReply(raw);
+  assertEquals(/\n\n/.test(out), true);
+  assertEquals(out.includes("*desconto*") || out.includes("*economia*"), true);
+  assertEquals(/posso seguir/i.test(out), false);
+  assertEquals(/op[cç][oõ]es acima/i.test(out), false);
+});
+
+Deno.test("emphasizeKeyTerms força grafia canônica iGreen", () => {
+  const out = emphasizeKeyTerms("a igreen oferece desconto");
+  assertEquals(out.includes("*iGreen*"), true);
+});
+
+Deno.test("prettifyFaqLayout preserva template já arejado com emojis", () => {
+  const nice =
+    "A iGreen aplica um desconto direto na sua conta de luz usando energia limpa de fazendas solares.\n\n🔌 Você continua recebendo da mesma distribuidora — nada muda no seu medidor.\n\n💸 A economia varia de 8% a 20% todo mês, sem fidelidade.\n\n✅ Zero custo pra entrar: a gente só ganha quando você economiza.";
+  const out = prettifyFaqLayout(nice);
+  assertEquals(out.includes("🔌"), true);
+  assertEquals(out.includes("💸"), true);
+  assertEquals(out.split(/\n\s*\n/).length >= 4, true);
+});

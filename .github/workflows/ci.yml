@@ -81,6 +81,7 @@ jobs:
             supabase/functions/_shared/grounding_test.ts \
             supabase/functions/_shared/bot/ \
             supabase/functions/_shared/whapi-api_sendbuttons_test.ts \
+            supabase/functions/_shared/whapi-api_inbound_meta_test.ts \
             supabase/functions/_shared/channels/idempotency-from-ctx_test.ts \
             supabase/functions/_shared/channels/adapter-idempotency_test.ts \
             supabase/functions/_shared/__tests__/config-toml-webhook-guard_test.ts

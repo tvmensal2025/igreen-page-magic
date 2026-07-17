@@ -37,13 +37,13 @@ export interface ExpressSuggestions {
   defaults: ExpressDefaults;
 }
 
-const DEFAULT_DAILY_BUDGET_CENTS = 1500;
+const DEFAULT_DAILY_BUDGET_CENTS = 2500;
 
 const FALLBACK: ExpressDefaults = {
   budget_cents: DEFAULT_DAILY_BUDGET_CENTS,
   duration_days: 7,
   age_min: 30,
-  age_max: 65,
+  age_max: 60,
   distribuidora: null,
   initial_message: "Olá! Quero saber como economizar na conta de luz.",
 };
@@ -101,10 +101,10 @@ async function loadWinnerDefaults(consultantId: string): Promise<Partial<Express
   const suggestedBudget = budgets.length ? avg(budgets) : DEFAULT_DAILY_BUDGET_CENTS;
   const durations = rows.map((r) => r.duration_days).filter((v): v is number => Number(v) > 0);
   return {
-    budget_cents: Math.max(1000, suggestedBudget),
+    budget_cents: Math.max(DEFAULT_DAILY_BUDGET_CENTS, suggestedBudget),
     duration_days: durations.length ? Math.max(3, Math.min(30, avg(durations))) : 7,
     age_min: ages.length ? Math.min(...ages.map(a => a.age_min!)) : undefined,
-    age_max: ages.length ? Math.max(...ages.map(a => a.age_max!)) : undefined,
+    age_max: ages.length ? Math.min(60, Math.max(...ages.map(a => a.age_max!))) : undefined,
   };
 }
 
@@ -156,7 +156,7 @@ export async function fetchExpressSuggestions(opts: {
     ...winners,
     distribuidora,
     initial_message: distribuidora
-      ? `Olá! Quero saber como economizar até 28% na conta da ${distribuidora.nome}.`
+      ? `Olá! Quero saber como economizar na conta da ${distribuidora.nome}.`
       : FALLBACK.initial_message,
   };
 

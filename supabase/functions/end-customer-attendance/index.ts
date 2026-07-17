@@ -54,7 +54,8 @@ Deno.serve(async (req) => {
       superadminConsultantId: channelEnv.superadminConsultantId,
     });
 
-    // Retry 1x em falha transiente de envio.
+    // Retry 1x só em falha de ENVIO. Com chaves estáveis + skip de closing
+    // parcial, não duplica mensagem no WhatsApp.
     if (!result.ok && (result.code === "send_failed_closing" || result.code === "send_failed_rating")) {
       await new Promise((r) => setTimeout(r, 800));
       result = await sendAttendanceRatingRequest(supabase, {
@@ -68,21 +69,50 @@ Deno.serve(async (req) => {
     if (!result.ok) {
       const code = String(result.code);
       const detail = String(result.detail || "");
+      const detailLc = detail.toLowerCase();
       let fixHint: string | null = null;
       let message = "Não foi possível finalizar automaticamente.";
+
+      // Canal fora do ar → lote deve parar. Falha pontual de número → continua.
+      const looksChannelDown = /offline|timeout|401|403|token|unauthorized|econnrefused|fetch failed|network|instance.?not|not.?connected|disconnected/i
+        .test(detailLc);
+
       if (code === "channel_unavailable") {
         fixHint = detail === "whapi_token_missing" ? "whapi_token" : "evolution_instance";
-        message = "Canal WhatsApp indisponível. Configure para enviar a pesquisa.";
+        message = detail === "whapi_token_missing"
+          ? "Token Whapi ausente. Configure o canal antes de enviar a pesquisa."
+          : "Canal WhatsApp indisponível. Conecte a instância para enviar a pesquisa.";
+      } else if (code === "rate_limited") {
+        fixHint = "rate_limit";
+        message = detail
+          ? `Limite de envio atingido (${detail}). Aguarde antes de continuar o lote.`
+          : "Limite de envio atingido (anti-ban). Aguarde antes de continuar o lote.";
       } else if (code === "send_failed_closing" || code === "send_failed_rating") {
-        fixHint = "instance_offline";
-        message = "Instância respondeu offline. Reconecte para reenviar a pesquisa.";
+        const etapa = code === "send_failed_closing" ? "mensagem de encerramento" : "pesquisa de satisfação";
+        if (looksChannelDown) {
+          fixHint = "instance_offline";
+          message = detail
+            ? `WhatsApp offline ao enviar ${etapa}: ${detail}`
+            : `WhatsApp offline ao enviar ${etapa}. Reconecte e tente de novo.`;
+        } else {
+          // Falha deste número (recusa Whapi, JID inválido, etc.) — não mata o lote inteiro.
+          fixHint = "retry";
+          message = detail
+            ? `Falha ao enviar ${etapa}: ${detail}`
+            : `Falha ao enviar ${etapa} para este número. WhatsApp recusou o envio.`;
+        }
       } else if (code === "no_phone") {
         fixHint = "phone";
         message = "Telefone do cliente inválido. Corrija para enviar a pesquisa.";
       } else if (code === "attendance_not_started") {
         fixHint = "start_first";
-        message = "Atendimento ainda não foi iniciado. Clique em Iniciar antes.";
+        message = "Atendimento ainda não foi iniciado neste lead. Inicie antes de finalizar.";
+      } else if (code === "customer_not_found") {
+        message = "Cliente não encontrado no banco.";
+      } else if (detail) {
+        message = `${message} (${detail})`;
       }
+
       return json({
         ok: false,
         error: code,

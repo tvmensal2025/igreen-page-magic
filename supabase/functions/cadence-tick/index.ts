@@ -1,7 +1,7 @@
 // cadence-tick — cron 5 min do motor "Zero Lead Perdido" (Fases 2 e 3).
 //
 // COLD_*  → WhatsApp (Evolution/Whapi)
-// CALL_*  → Ligação Velip (TTS ou áudio pré-gravado)
+// CALL_*  → Ligação Velip (áudio Sofia pré-gravado)
 // SMS_*   → SMS Velip
 // META    → placeholder para Fase 5
 
@@ -11,7 +11,7 @@ import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomer, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import {
-  makeTTSCall, playAudioFile, makeSMS,
+  playAudioFile, makeSMS,
   toVelipBRDest, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -238,19 +238,20 @@ async function dispatchVoiceCall(
   supabase: any, row: any, stage: Stage, cfg: StageConfig,
 ): Promise<{ ok: boolean; detail: string }> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
-  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  const { cust } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
-  const firstName = (cust.name || "").split(" ")[0] || "";
-  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
   const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${Date.now()}`);
 
+  // Regra Sofia: ligação só com áudio pré-gravado (velip_audio_id). Sem TTS Velip.
+  if (!cfg.velip_audio_id) {
+    return { ok: false, detail: "sofia_required_no_audio" };
+  }
+
   try {
-    const r = cfg.velip_audio_id
-      ? await playAudioFile({ to: dest, audioId: cfg.velip_audio_id, ctid })
-      : await makeTTSCall({ to: dest, ttsText: text, ctid });
+    const r = await playAudioFile({ to: dest, audioId: cfg.velip_audio_id, ctid });
     if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
     return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
   } catch (e) {

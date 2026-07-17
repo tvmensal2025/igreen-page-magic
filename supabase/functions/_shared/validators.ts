@@ -1,4 +1,4 @@
-import { isCNH } from "./document-type.ts";
+import { isCNH, requiresRgNumber } from "./document-type.ts";
 
 export interface ValidationResult {
   valid: boolean;
@@ -107,7 +107,16 @@ export function validateCustomerForPortal(customer: any): ValidationResult {
   }
   if (!customer.name || customer.name.trim().length < 3) errors.push("Nome inválido ou muito curto");
   if (!validateCPF(customer.cpf || "")) errors.push("CPF inválido");
-  if (!customer.rg || customer.rg.trim().length < 4) errors.push("RG inválido");
+  // RG novo / CIN: identidade = CPF — não exigir nº de Registro Geral
+  if (requiresRgNumber(customer.document_type)) {
+    if (!customer.rg || customer.rg.trim().length < 4) errors.push("RG inválido");
+  } else if (customer.rg) {
+    const rgDig = String(customer.rg).replace(/\D/g, "");
+    const cpfDig = String(customer.cpf || "").replace(/\D/g, "");
+    if (rgDig && cpfDig && rgDig === cpfDig) {
+      warnings.push("RG novo/CIN: campo RG igual ao CPF — ignorar (identidade = CPF)");
+    }
+  }
   const cepClean = (customer.cep || "").replace(/\D/g, "");
   if (cepClean.length !== 8) errors.push("CEP inválido (deve ter 8 dígitos)");
   if (!customer.address_street || customer.address_street.trim().length < 3) {

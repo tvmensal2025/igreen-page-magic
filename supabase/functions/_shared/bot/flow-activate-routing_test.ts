@@ -47,6 +47,8 @@ const steps = [
 Deno.test("isActivateIntent vs isSimulateIntent", () => {
   assertEquals(isActivateIntent("Ativar o benefício", null), true);
   assertEquals(isActivateIntent(null, "cadastrar"), true);
+  assertEquals(isActivateIntent(null, "activate"), true);
+  assertEquals(isActivateIntent(null, "register"), true);
   assertEquals(isActivateIntent("quero simular", null), false);
   assertEquals(isSimulateIntent("quero simular", null), true);
   assertEquals(isSimulateIntent("3", "ativar"), false);
@@ -99,11 +101,52 @@ Deno.test("rewrite — ativar o benefício no seletor → conta cadastro", () =>
   assertEquals(rewritten?.step_key, "d_simular_pedir_conta");
 });
 
-Deno.test("rewrite — com bill → documento", () => {
-  const rewritten = rewriteActivateAwayFromSimPath(steps[0], steps, { electricity_bill_value: 400 }, {
-    buttonId: "cadastrar",
+Deno.test("rewrite — Sofia a6 com valor digitado NÃO pula foto", () => {
+  const sofia = [
+    {
+      id: "a6",
+      step_key: "a6_ask_bill_photo",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "a7" }],
+    },
+    {
+      id: "a7",
+      step_key: "a7_ask_doc_photo",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const rewritten = rewriteActivateAwayFromSimPath(sofia[0], sofia, { electricity_bill_value: 350 }, {
+    buttonId: "activate",
+    messageText: "Quero ativar",
   });
-  assertEquals(rewritten?.step_key, "d_pedir_documento");
+  assertEquals(rewritten, null);
+});
+
+Deno.test("rewrite — Sofia a6 COM foto → documento", () => {
+  const sofia = [
+    {
+      id: "a6",
+      step_key: "a6_ask_bill_photo",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "a7" }],
+    },
+    {
+      id: "a7",
+      step_key: "a7_ask_doc_photo",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const rewritten = rewriteActivateAwayFromSimPath(
+    sofia[0],
+    sofia,
+    { electricity_bill_value: 350, electricity_bill_photo_url: "https://x/bill.jpg" },
+    { buttonId: "activate" },
+  );
+  assertEquals(rewritten?.step_key, "a7_ask_doc_photo");
 });
 
 Deno.test("rewrite — documento SEM conta → conta cadastro", () => {

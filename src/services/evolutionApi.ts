@@ -340,13 +340,13 @@ export async function findChats(instanceName: string): Promise<EvolutionChat[]> 
 export interface EvolutionMessageContent {
   conversation?: string;
   extendedTextMessage?: { text: string };
-  imageMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
-  documentMessage?: { url?: string; fileName?: string; mimetype?: string; base64?: string };
-  audioMessage?: { url?: string; mimetype?: string; ptt?: boolean; base64?: string };
-  videoMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
+  imageMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string; mediaId?: string; id?: string };
+  documentMessage?: { url?: string; fileName?: string; mimetype?: string; base64?: string; mediaId?: string; id?: string };
+  audioMessage?: { url?: string; mimetype?: string; ptt?: boolean; base64?: string; mediaId?: string; id?: string };
+  videoMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string; mediaId?: string; id?: string };
   // Vídeo redondo ("video note") — mesma forma do videoMessage.
-  ptvMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string };
-  stickerMessage?: { url?: string; mimetype?: string; base64?: string; mediaId?: string };
+  ptvMessage?: { url?: string; caption?: string; mimetype?: string; base64?: string; mediaId?: string; id?: string };
+  stickerMessage?: { url?: string; mimetype?: string; base64?: string; mediaId?: string; id?: string };
   // Contêineres que escondem o conteúdo real um nível abaixo (em `.message`).
   // Sem desembrulhar, a mensagem renderiza vazia no painel.
   ephemeralMessage?: { message?: EvolutionMessageContent };

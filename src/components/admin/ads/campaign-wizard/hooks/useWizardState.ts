@@ -158,7 +158,7 @@ const INITIAL_STATE: WizardState = {
   initialMsgDuplicate: false,
   initialMsgChecking: false,
   initialMsgVarying: false,
-  budget: 15,
+  budget: 25,
   duration: 7,
   placementMode: "auto",
   placements: ALL_PLACEMENTS,

@@ -96,10 +96,85 @@ export function resumeAfterAddressEdit(customer: {
  *
  * Nunca pular 1→3 nem 2→3 automaticamente a partir de email/telefone/ativar.
  * Testes devem validar a ordem sem chamar o portal.
+ *
+ * Exceção Sofia Multicanal (a10_portal_otp_facial): pula ask_contaunica e
+ * ask_finalizar — boleto único implícito → finalizando/portal → OTP.
  */
-export function nextSeparatedCadastroStep(customer: {
-  contaunica_answered?: boolean | null;
-} | null | undefined): "ask_contaunica" | "ask_finalizar" {
+
+/** Fluxo C = Sofia Multicanal (10 passos Grupo A). */
+export function isSofiaMulticanalCustomer(
+  c: { flow_variant?: string | null } | null | undefined,
+): boolean {
+  return String(c?.flow_variant || "").toUpperCase() === "C";
+}
+
+/** Passo 9 do Grupo A / Sofia — portal + OTP sem perguntar boleto. */
+export function isSofiaPortalOtpStep(stepKey: string | null | undefined): boolean {
+  return String(stepKey || "") === "a10_portal_otp_facial";
+}
+
+/**
+ * Defaults virtuais para routing Sofia C: boleto único implícito e complemento
+ * vazio quando já há número (OCR). Não altera o customer no banco — só o cálculo
+ * do próximo passo (`getNextMissingStep`).
+ */
+export function applySofiaCadastroRoutingDefaults<T extends Record<string, unknown>>(
+  c: T,
+): T {
+  if (!isSofiaMulticanalCustomer(c as { flow_variant?: string | null })) return c;
+  const out = { ...c } as T & {
+    contaunica?: boolean;
+    contaunica_answered?: boolean;
+    address_complement?: string | null;
+  };
+  if (out.contaunica_answered !== true) {
+    out.contaunica = true;
+    out.contaunica_answered = true;
+  }
+  if (
+    (out.address_complement === null || out.address_complement === undefined) &&
+    String((out as Record<string, unknown>).address_number || "").trim()
+  ) {
+    out.address_complement = "";
+  }
+  return out as T;
+}
+
+/** Patch para persistir defaults Sofia ao entrar em finalizando/portal. */
+export function sofiaCadastroPersistPatch(customer: {
+  flow_variant?: string | null;
+  address_complement?: string | null;
+  address_number?: string | null;
+}): Record<string, unknown> {
+  if (!isSofiaMulticanalCustomer(customer)) return {};
+  const patch: Record<string, unknown> = { ...sofiaPortalContaunicaPrefill() };
+  if (
+    (customer.address_complement === null || customer.address_complement === undefined) &&
+    String(customer.address_number || "").trim()
+  ) {
+    patch.address_complement = "";
+  }
+  return patch;
+}
+
+/** Prefill boleto único para Sofia a10 (sem perguntar ao lead). */
+export function sofiaPortalContaunicaPrefill(): {
+  contaunica: true;
+  contaunica_answered: true;
+} {
+  return { contaunica: true, contaunica_answered: true };
+}
+
+export function nextSeparatedCadastroStep(
+  customer: {
+    contaunica_answered?: boolean | null;
+    flow_variant?: string | null;
+  } | null | undefined,
+  opts?: { fromStepKey?: string | null },
+): "ask_contaunica" | "ask_finalizar" | "finalizando" {
+  if (isSofiaPortalOtpStep(opts?.fromStepKey) || isSofiaMulticanalCustomer(customer)) {
+    return "finalizando";
+  }
   if (!customer || customer.contaunica_answered !== true) return "ask_contaunica";
   return "ask_finalizar";
 }

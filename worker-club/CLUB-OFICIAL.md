@@ -31,8 +31,10 @@ Não há passo de pagamento na UI PF (boleto aparece só no sucesso **PJ**).
 > custo operacional; (B) achar endpoint/admin de cortesia fora desta SPA;
 > (C) liberar via Clube Certo / backoffice. **Não inventar flag.**
 
-App pós-cadastro PF: **iGreen Connect** (Play Store / App Store), não o site
-do Clube Certo (esse redirect é do fluxo PJ `company-creation`).
+App pós-cadastro PF: **iGreen Club** nas lojas
+([Play Store](https://play.google.com/store/apps/details?id=com.embarcadero.iGreenConnect) /
+[App Store](https://apps.apple.com/br/app/igreen-club/id6444493340)).
+Mensagens prontas: [`APP-LINKS-CLIENTE.md`](./APP-LINKS-CLIENTE.md).
 
 ---
 
@@ -177,8 +179,9 @@ Exibe nome do licenciado após `POST /auth/consultor`.
 Botão final: **FINALIZAR** → `POST /cliente/club`.
 
 **Sucesso PF (tela `sent`):**
-mensagem de boas-vindas + download do app iGreen Connect
-(Play Store / App Store). **Sem boleto na UI.**
+mensagem de boas-vindas + download do app **iGreen Club**
+(Play Store / App Store — ver [`APP-LINKS-CLIENTE.md`](./APP-LINKS-CLIENTE.md)).
+**Sem boleto na UI.**
 
 ### 4.3 PJ — 5 etapas
 

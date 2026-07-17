@@ -593,7 +593,7 @@ const AdminContent = () => {
           )}
 
           {userId && activeTab === "voz" && (
-            <VozTab consultantId={userId} />
+            <VozTab consultantId={userId} onOpenChat={handleOpenChatFromCustomer} />
           )}
 
           {activeTab === "academy" && (

@@ -69,15 +69,22 @@ Deno.serve(async (req) => {
   if (!msg && !hasMedia) return json(400, { error: "empty_message" });
 
   // Busca SÓ os leads do próprio consultor (defesa dupla: filtro + ownership).
-  const { data: leads, error: leadsErr } = await admin
-    .from("captured_leads")
-    .select("id, full_name, phone, city")
-    .eq("consultant_id", consultantId)
-    .in("id", leadIds)
-    .not("phone", "is", null);
-
-  if (leadsErr) return json(500, { error: leadsErr.message });
-  const validLeads = (leads ?? []).filter((l) => l.phone);
+  // .in() do PostgREST tem limite prático — busca em chunks de 500 ids.
+  const validLeads: Array<{ id: string; full_name: string | null; phone: string | null; city: string | null }> = [];
+  const ID_CHUNK = 500;
+  for (let i = 0; i < leadIds.length; i += ID_CHUNK) {
+    const slice = leadIds.slice(i, i + ID_CHUNK);
+    const { data: leads, error: leadsErr } = await admin
+      .from("captured_leads")
+      .select("id, full_name, phone, city")
+      .eq("consultant_id", consultantId)
+      .in("id", slice)
+      .not("phone", "is", null);
+    if (leadsErr) return json(500, { error: leadsErr.message });
+    for (const l of leads ?? []) {
+      if (l.phone) validLeads.push(l);
+    }
+  }
   if (validLeads.length === 0) return json(422, { error: "no_valid_leads_with_phone" });
 
   // Cria a campanha de Disparo PRO (mesma tabela que o painel usa).
@@ -104,20 +111,22 @@ Deno.serve(async (req) => {
     return json(500, { error: campErr?.message ?? "campaign_insert_failed" });
   }
 
-  // Insere os alvos. vars carrega nome/cidade para o render do bulk-scheduler.
-  const targets = validLeads.map((l) => ({
-    campaign_id: campaign.id,
-    phone: l.phone as string,
-    name: l.full_name ?? null,
-    vars: { city: l.city ?? null },
-    status: "queued",
-  }));
-
-  const { error: tgtErr } = await admin.from("bulk_campaign_targets").insert(targets);
-  if (tgtErr) {
-    // rollback best-effort da campanha pra não deixar campanha órfã sem alvos
-    await admin.from("bulk_campaigns").delete().eq("id", campaign.id);
-    return json(500, { error: tgtErr.message });
+  // Insere alvos em chunks (evita timeout em lotes grandes).
+  const TARGET_CHUNK = 500;
+  for (let i = 0; i < validLeads.length; i += TARGET_CHUNK) {
+    const slice = validLeads.slice(i, i + TARGET_CHUNK);
+    const targets = slice.map((l) => ({
+      campaign_id: campaign.id,
+      phone: l.phone as string,
+      name: l.full_name ?? null,
+      vars: { city: l.city ?? null },
+      status: "queued",
+    }));
+    const { error: tgtErr } = await admin.from("bulk_campaign_targets").insert(targets);
+    if (tgtErr) {
+      await admin.from("bulk_campaigns").delete().eq("id", campaign.id);
+      return json(500, { error: tgtErr.message });
+    }
   }
 
   return json(200, {

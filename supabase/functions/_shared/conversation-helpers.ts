@@ -1,4 +1,9 @@
 import { wantsToAdvance } from "./bot/cadastro-intent.ts";
+import {
+  applySofiaCadastroRoutingDefaults,
+  isSofiaMulticanalCustomer,
+} from "./bot/cadastro-fixes.ts";
+import { requiresRgNumber } from "./document-type.ts";
 
 // ─── Normalização e validação pós-OCR documento ─────────────────────────
 export function normalizarRG(rg: string | undefined): string {
@@ -63,57 +68,59 @@ export function getNextMissingStep(
   c: any,
   opts?: { consultorEmail?: string | null },
 ): string {
-  if (!c.name) return "ask_name";
-  if (!c.cpf) return "ask_cpf";
+  const raw = c;
+  const v = applySofiaCadastroRoutingDefaults(c || {});
+  let step: string;
+  if (!v.name) step = "ask_name";
+  else if (!v.cpf) step = "ask_cpf";
   // CPF com dígitos verificadores inválidos → pedir novamente
-  if (c.cpf && !validarCPFDigitos(c.cpf)) return "ask_cpf";
-  if (!c.rg) return "ask_rg";
+  else if (v.cpf && !validarCPFDigitos(v.cpf)) step = "ask_cpf";
+  // RG novo / CIN: só CPF — NÃO pedir nº de Registro Geral
+  else if (requiresRgNumber(v.document_type) && !v.rg) step = "ask_rg";
   // Data placeholder (2000-01-01) ou vazia → pedir
-  if (!c.data_nascimento || /^2000-01-01/.test(String(c.data_nascimento))) return "ask_birth_date";
+  else if (!v.data_nascimento || /^2000-01-01/.test(String(v.data_nascimento))) step = "ask_birth_date";
   // Telefone só vale se foi CONFIRMADO pelo cliente (não basta existir phone_landline herdado)
-  if (!c.phone_landline || c.phone_contact_confirmed !== true) return "ask_phone_confirm";
+  else if (!v.phone_landline || v.phone_contact_confirmed !== true) step = "ask_phone_confirm";
   // Email vazio, placeholder, do consultor ou de teste → pedir
-  const emailNormalized = String(c.email || "").trim().toLowerCase();
-  const consultorEmailNormalized = String(opts?.consultorEmail || "").trim().toLowerCase();
-  if (
-    !emailNormalized ||
-    /@lead\.igreen$/i.test(emailNormalized) ||
-    /@teste/i.test(emailNormalized) ||
-    /^teste@/i.test(emailNormalized) ||
-    /^noreply@/i.test(emailNormalized) ||
-    /^sem_email/i.test(emailNormalized) ||
-    (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
-  ) return "ask_email";
-  // F03: NUNCA devolver ask_cep ao lead (regra de produto).
-  // CEP ausente/genérico é resolvido por autoResolveCepIfNeeded (ViaCEP/mock).
-  // Mantemos os checks abaixo para documentação — sem return "ask_cep".
-  // if (!c.cep) → segue para número
-  // if (cep /000$/ sem endereço completo) → segue; autoResolve cobre
-  if (!c.address_number) return "ask_number";
-  // complemento é opcional, mas perguntar uma vez — nunca gravar e-mail aqui
-  if (c.address_complement === null || c.address_complement === undefined) return "ask_complement";
-  // Distribuidora e Nº de instalação normalmente vêm da conta de luz (OCR).
-  // Quando o OCR falha em lê-los, o lead ficava "completo" pro bot mas TRAVADO
-  // na ficha (que exige ambos). Agora pedimos por texto como fallback — só
-  // dispara quando realmente faltam (shouldSkipAsk pula quem já tem do OCR).
-  if (!c.distribuidora || String(c.distribuidora).trim().length < 2) return "ask_distribuidora";
-  if (!c.numero_instalacao || String(c.numero_instalacao).replace(/\D/g, "").length < 7) return "ask_installation_number";
-  // Valor da conta: ausente ou suspeito (< 30)
-  if (!c.electricity_bill_value || c.electricity_bill_value <= 0 || c.electricity_bill_value < 30) return "ask_bill_value";
-  // Documentos (frente/verso) já foram coletados no fluxo principal
-  if (!c.document_front_url) return "ask_doc_frente_manual";
-  // Verso só é exigido para RG. Normalizamos para suportar "CNH"/"cnh"/"Cnh" etc.
-  {
-    const dt = String(c.document_type || "").toLowerCase();
-    const isCnh = /cnh|habilita/.test(dt);
-    const verso = String(c.document_back_url || "").trim();
-    if (!isCnh && (!verso || verso === "nao_aplicavel")) return "ask_doc_verso_manual";
+  else {
+    const emailNormalized = String(v.email || "").trim().toLowerCase();
+    const consultorEmailNormalized = String(opts?.consultorEmail || "").trim().toLowerCase();
+    if (
+      !emailNormalized ||
+      /@lead\.igreen$/i.test(emailNormalized) ||
+      /@teste/i.test(emailNormalized) ||
+      /^teste@/i.test(emailNormalized) ||
+      /^noreply@/i.test(emailNormalized) ||
+      /^sem_email/i.test(emailNormalized) ||
+      (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
+    ) step = "ask_email";
+    // F03: NUNCA devolver ask_cep ao lead (regra de produto).
+    else if (!v.address_number) step = "ask_number";
+    // complemento é opcional — Sofia C trata como "" quando já há número (OCR)
+    else if (v.address_complement === null || v.address_complement === undefined) step = "ask_complement";
+    else if (!v.distribuidora || String(v.distribuidora).trim().length < 2) step = "ask_distribuidora";
+    else if (!v.numero_instalacao || String(v.numero_instalacao).replace(/\D/g, "").length < 7) {
+      step = "ask_installation_number";
+    } else if (!v.electricity_bill_value || v.electricity_bill_value <= 0 || v.electricity_bill_value < 30) {
+      step = "ask_bill_value";
+    } else if (!v.document_front_url) step = "ask_doc_frente_manual";
+    else {
+      const dt = String(v.document_type || "").toLowerCase();
+      const isCnh = /cnh|habilita/.test(dt);
+      const verso = String(v.document_back_url || "").trim();
+      if (!isCnh && (!verso || verso === "nao_aplicavel")) step = "ask_doc_verso_manual";
+      else if (v.contaunica_answered !== true) step = "ask_contaunica";
+      else step = "ask_finalizar";
+    }
   }
-  // Forma de cobrança (UX invertida vs portal): perguntamos boleto;
-  // unificado ⇒ transferir_titularidade+contaunica; separado ⇒ ambos false.
-  if (c.contaunica_answered !== true) return "ask_contaunica";
-  // Todos preenchidos → mostrar botão Finalizar
-  return "ask_finalizar";
+  // Sofia C: após a9 (telefone) vai direto ao portal — sem boleto nem botão Finalizar extra.
+  if (
+    isSofiaMulticanalCustomer(raw) &&
+    (step === "ask_contaunica" || step === "ask_transferir_titularidade" || step === "ask_finalizar")
+  ) {
+    return "finalizando";
+  }
+  return step;
 }
 
 /** Opções de botão para preferência de boleto (Whapi/Evolution). */
@@ -135,6 +142,7 @@ export function getPreferenceOptions(step: string): ReadonlyArray<{ id: string; 
  * Usado nos gates de ask_finalizar / finalizando.
  */
 export function missingPreferenceStep(c: any): "ask_contaunica" | null {
+  if (isSofiaMulticanalCustomer(c)) return null;
   if (c?.contaunica_answered !== true) return "ask_contaunica";
   return null;
 }
@@ -147,7 +155,7 @@ export function getReplyForStep(step: string, c: any): string {
     case "ask_name": return "Qual é o seu *nome completo*?";
     case "ask_tipo_documento": return "Qual documento de identidade você vai enviar? Toque em uma opção:";
     case "ask_cpf": return "Qual o seu *CPF*? (apenas números)";
-    case "ask_rg": return "Qual o seu *RG*?";
+    case "ask_rg": return "Qual o seu *número do RG* (Registro Geral do RG antigo)?";
     case "ask_birth_date": return "Qual sua *data de nascimento*? (DD/MM/AAAA)";
     case "ask_phone_confirm": {
       let p = (c.phone_whatsapp || "").replace(/\D/g, "");

@@ -137,6 +137,18 @@ export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; h
   { value: "capture_email", emoji: "📧", label: "Captar e-mail", hint: "Pede e-mail e confirma antes de seguir." },
   { value: "confirm_phone", emoji: "📱", label: "Confirmar telefone", hint: "Usa este WhatsApp ou outro?" },
   { value: "finalizar_cadastro", emoji: "🎉", label: "Finalizar cadastro", hint: "Envia ao portal, trata OTP e parabeniza." },
+  {
+    value: "send_sms",
+    emoji: "📩",
+    label: "Enviar SMS",
+    hint: "Opcional: dispara SMS neste ponto do fluxo (Velip). Encaixe onde quiser.",
+  },
+  {
+    value: "make_call",
+    emoji: "📞",
+    label: "Fazer ligação",
+    hint: "Opcional: agenda/dispara ligação (Sofia/Velip) neste ponto. Encaixe onde quiser.",
+  },
 ];
 
 // ─── Catálogo da Iris construtora, organizado por INTENÇÃO ───────────────────
@@ -211,9 +223,10 @@ export const GUIDED_CAPTURE_OPTIONS: GuidedCaptureOption[] = [
 const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
   A: "CEMIG",
   B: "Fluxo B (IA livre)",
-  C: "Fluxo C (vídeo inicial)",
+  C: "Sofia Multicanal",
   D: "Fluxo D (padrão Camila)",
   E: "Fluxo E (personalizado)",
+  F: "CEMIG 2",
   M: "Fluxo MG",
 };
 export const VARIANT_LABEL: Record<Variant, string> = ALL_VARIANTS.reduce(
@@ -234,6 +247,9 @@ export const BUTTON_PRESETS: { id: string; title: string; emoji: string }[] = [
   { id: "duvida", title: "Tenho dúvida", emoji: "🤔" },
   { id: "cadastrar", title: "Cadastrar agora", emoji: "📝" },
   { id: "humano", title: "Falar com humano", emoji: "👤" },
+  { id: "more_benefits", title: "Saber mais benefício", emoji: "🎁" },
+  { id: "activate", title: "Quero ativar", emoji: "✅" },
+  { id: "register", title: "Cadastrar", emoji: "📝" },
 ];
 
 export function parseTransitions(raw: unknown): Transition[] {

@@ -510,8 +510,13 @@ export async function responderComCerebro(
       });
     } catch (_) { /* best-effort */ }
 
+    // Se o gate liberou o Cérebro mas NÃO houve texto nem envio, NÃO marque
+    // respondeu=true — senão o webhook faz early-return e o fluxo scriptado
+    // (Camila / variante C) nunca inicia. Caso clássico: número de teste +
+    // reply vazio → lead fica em welcome sem outbound.
+    const deFatoRespondeu = temTexto || enviou || !!(resultado.outbound && resultado.outbound.length);
     return {
-      respondeu: true,
+      respondeu: deFatoRespondeu,
       flag,
       reply: temTexto ? reply : null,
       outbound: resultado.outbound ?? [],

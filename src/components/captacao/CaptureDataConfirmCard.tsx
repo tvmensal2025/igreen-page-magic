@@ -72,14 +72,27 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
     setBusy("self");
     try {
       const nowIso = new Date().toISOString();
-      await supabase.from("customers").update({
+      const holderKey = kind === "bill" ? "bill_holder_name" : "doc_holder_name";
+      const holderName = String(customer?.[holderKey] || "").trim();
+      const src = String(customer?.name_source || "").toLowerCase();
+      const protectedSrc = src === "manual" || src === "user_confirmed";
+      const patch: Record<string, unknown> = {
         [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: nowIso,
         [kind === "bill" ? "bill_data_confirmation_by" : "doc_data_confirmation_by"]: "consultant",
         // Limpa fila de revisão OCR pra o banner laranja "Revisar" sumir.
         ocr_review_pending: null,
         ocr_review_decided_at: nowIso,
         ocr_review_decided_by: "consultant",
-      } as any).eq("id", customer.id);
+      };
+      // Espelha nome OCR na ficha se ainda for WhatsApp/fake.
+      if (holderName && !protectedSrc) {
+        const cur = String(customer?.name || "").trim();
+        if (!cur || cur.toLowerCase() !== holderName.toLowerCase()) {
+          patch.name = holderName;
+          patch.name_source = kind === "bill" ? "ocr_conta" : "ocr_doc";
+        }
+      }
+      await supabase.from("customers").update(patch as any).eq("id", customer.id);
 
       // IMPORTANTE: confirmação interna do consultor NÃO dispara mensagem ao
       // cliente nem avança o fluxo do bot. Só o botão "Pedir cliente" (askClient)

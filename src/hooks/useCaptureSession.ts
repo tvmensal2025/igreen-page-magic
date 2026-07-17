@@ -7,6 +7,7 @@ import {
   type ClubValidationResult,
 } from "@/lib/captacao/clubValidation";
 import { resolvePortalWhatsapp, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
+import { lookupViaCep } from "@/lib/captacao/viaCep";
 
 /**
  * Lista canônica usada pela ficha + barra de progresso.
@@ -75,6 +76,11 @@ export interface CaptureCustomer {
   document_front_url: string | null;
   document_back_url: string | null;
   electricity_bill_photo_url: string | null;
+  electricity_boleto_photo_url?: string | null;
+  last_inbound_media_url?: string | null;
+  last_inbound_media_kind?: string | null;
+  last_inbound_media_message_id?: string | null;
+  last_inbound_media_at?: string | null;
   capture_mode: string | null;
   capture_started_at: string | null;
   conversation_step: string | null;
@@ -171,7 +177,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, referral_partner_id, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, do_not_contact, ocr_review_pending, ocr_review_started_at, created_at, referral_partners:referral_partner_id(nome, cli, partner_igreen_id), consultants:consultant_id(igreen_id, name)")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, referral_partner_id, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, electricity_boleto_photo_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_message_id, last_inbound_media_at, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, do_not_contact, ocr_review_pending, ocr_review_started_at, created_at, referral_partners:referral_partner_id(nome, cli, partner_igreen_id), consultants:consultant_id(igreen_id, name)")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);
@@ -179,6 +185,18 @@ export function useCaptureSession(customerId: string | null) {
   }, [customerId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // Anexar do feed/WhatsApp → força reload da ficha (OCR + URLs dos tiles)
+  useEffect(() => {
+    if (!customerId) return;
+    const onDocs = (e: Event) => {
+      const id = (e as CustomEvent<{ customerId?: string }>).detail?.customerId;
+      if (id && id !== customerId) return;
+      void load();
+    };
+    window.addEventListener("captacao:docs-updated", onDocs as EventListener);
+    return () => window.removeEventListener("captacao:docs-updated", onDocs as EventListener);
+  }, [customerId, load]);
 
   // Realtime subscription
   useEffect(() => {
@@ -366,6 +384,53 @@ export function useCaptureSession(customerId: string | null) {
     }
   }, [customerId, customer]);
 
+  /**
+   * CEP → ViaCEP → grava rua/bairro/cidade/UF (+ cep).
+   * Número da residência permanece manual.
+   * Retorna null se CEP inválido / não encontrado.
+   */
+  const applyCepAutofill = useCallback(async (cepRaw: string) => {
+    if (!customerId || !customer) return null;
+    const addr = await lookupViaCep(cepRaw);
+    if (!addr) return null;
+
+    const patch = {
+      cep: addr.cep,
+      address_street: addr.address_street || customer.address_street || null,
+      address_neighborhood: addr.address_neighborhood || customer.address_neighborhood || null,
+      address_city: addr.address_city || customer.address_city || null,
+      address_state: addr.address_state || customer.address_state || null,
+    };
+    const prev = {
+      cep: customer.cep ?? null,
+      address_street: customer.address_street ?? null,
+      address_neighborhood: customer.address_neighborhood ?? null,
+      address_city: customer.address_city ?? null,
+      address_state: customer.address_state ?? null,
+    };
+
+    setCustomer((c) => (c ? ({ ...c, ...patch } as CaptureCustomer) : c));
+    const { error } = await supabase
+      .from("customers")
+      .update(patch as never)
+      .eq("id", customerId);
+    if (error) {
+      setCustomer((c) => (c ? ({ ...c, ...prev } as CaptureCustomer) : c));
+      throw error;
+    }
+
+    const cepWasEmpty = !isFieldFilled(customer, "cep");
+    if (cepWasEmpty) {
+      await supabase.from("capture_field_events").insert({
+        consultant_id: customer.consultant_id,
+        customer_id: customerId,
+        field: "cep",
+        source: "viacep",
+      });
+    }
+    return addr;
+  }, [customerId, customer]);
+
   return {
     customer,
     loading,
@@ -384,6 +449,7 @@ export function useCaptureSession(customerId: string | null) {
     idconsultor,
     updateField,
     updateBoletoPreference,
+    applyCepAutofill,
     reload: load,
   };
 }

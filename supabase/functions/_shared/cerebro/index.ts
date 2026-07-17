@@ -51,6 +51,7 @@ import { validarMensagem } from "./guarda.ts"; // N5
 // envolvemos em try/catch para o turno nunca travar por causa do RAG.
 import { buscarContexto, formatChunks } from "./comum/rag.ts";
 import type { Etapa } from "./comum/types.ts";
+import { formatReply } from "../format-reply.ts";
 
 /** Teto de tempo de um turno (C3 do design). Estourou → handoff. */
 const TETO_TURNO_MS = 25_000;
@@ -190,7 +191,15 @@ async function executarTurno(
 
   // A mensagem só "sai" se a Guarda aprovar E houver texto. Caso contrário,
   // handoff com reply vazio (nada é enviado).
-  const textoFinal = guarda.aprovado ? guarda.textoFinal.trim() : "";
+  // Pós-guarda: formatação profissional (espaço, negrito WhatsApp, sem CTA pushy).
+  const textoFinal = guarda.aprovado
+    ? formatReply(guarda.textoFinal.trim(), {
+      emphasize: true,
+      faqLayout: true,
+      stripCadastroPush: true,
+      maxLen: 900,
+    })
+    : "";
   const enviar = textoFinal.length > 0;
 
   // ─── N8 — grava o estado atualizado (campo a campo) ─────────────────────

@@ -141,6 +141,10 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
         placement_mode: state.placementMode,
         placements: state.placementMode === "manual" ? state.placements : undefined,
         initial_message: state.initialMessage.trim() || undefined,
+        // Preferência 30–60: Advantage+ exige age_min≤25 no hard constraint;
+        // o servidor aplica o cap e usa age_max para afunilar qualidade.
+        age_min: 30,
+        age_max: 60,
         // Rodízio: envia os participantes na ordem da lista para o servidor
         // criar a pool. Sem o toggle, mantém o comportamento de destino único.
         ...(state.rodizioEnabled

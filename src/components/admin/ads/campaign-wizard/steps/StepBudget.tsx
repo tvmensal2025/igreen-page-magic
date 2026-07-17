@@ -20,14 +20,14 @@ interface Props {
 }
 
 const PRESETS = [
-  { id: "eco", label: "Teste inicial", budget: 15, days: 7, hint: "R$ 105 total · dá tempo para aprender", icon: "🌱" },
-  { id: "std", label: "Recomendado", budget: 25, days: 7, hint: "R$ 175 total · mais dados para otimizar", icon: "⭐" },
+  { id: "eco", label: "Teste curto", budget: 20, days: 5, hint: "R$ 100 total · só para validar criativo", icon: "🌱" },
+  { id: "std", label: "Recomendado", budget: 25, days: 7, hint: "R$ 175 total · melhor learning / CPL", icon: "⭐" },
   { id: "custom", label: "Personalizado", budget: 0, days: 0, hint: "você define valor e prazo", icon: "🎛️" },
 ] as const;
 
 export function StepBudget({ open, state, patch, patchFn }: Props) {
   const { budget, duration } = state;
-  const isEco = budget === 15 && duration === 7;
+  const isEco = budget === 20 && duration === 5;
   const isStd = budget === 25 && duration === 7;
   const isCustom = !isEco && !isStd;
   const [showPlacements, setShowPlacements] = useState(state.placementMode === "manual");
@@ -38,9 +38,9 @@ export function StepBudget({ open, state, patch, patchFn }: Props) {
   const total = duration === 0 ? `${budget * 30}/mês est.` : `${budget * duration}`;
 
   function selectPreset(id: string) {
-    if (id === "eco") patch({ budget: 15, duration: 7 });
+    if (id === "eco") patch({ budget: 20, duration: 5 });
     else if (id === "std") patch({ budget: 25, duration: 7 });
-    else patch({ budget: Math.max(15, budget), duration: Math.max(7, duration) });
+    else patch({ budget: Math.max(20, budget), duration: Math.max(5, duration) });
   }
 
   return (

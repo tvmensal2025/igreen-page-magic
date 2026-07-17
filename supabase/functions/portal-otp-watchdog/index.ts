@@ -413,11 +413,13 @@ async function bucketC(supabase: any) {
         const digits = String(r.phone_whatsapp).replace(/\D/g, "");
         if (!digits) continue;
         const jid = `${digits}@s.whatsapp.net`;
-        const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
+        const firstName = String(r.name || "").trim().split(/\s+/)[0] || "Cliente";
+        // Alinhado ao passo 10 Grupo A (a11_facial_link) — só após OTP.
         const text =
-          `${firstName ? firstName + ", " : ""}seu cadastro está quase pronto! 🎉\n\n` +
-          `Clique no link abaixo pra fazer o reconhecimento facial e assinar o contrato:\n\n` +
-          `${link}\n\n_Leva menos de 1 minuto._`;
+          `OTP confirmado, ${firstName}! ✅\n\n` +
+          `Último passo: abra o *link* 👇\n\n` +
+          `${link}\n\n` +
+          `Clique em *Assinar documentos* — o sistema vai pedir a *validação facial* para comprovar que é você.`;
         const sendCtx = {
           customerId: r.id,
           consultantId: r.consultant_id,

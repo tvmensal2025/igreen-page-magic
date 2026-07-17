@@ -429,24 +429,34 @@ function mapMessage(m: any, chatId: string) {
       url: m.image?.link,
       caption: m.image?.caption || m.caption || "",
       mimetype: m.image?.mime_type || "image/jpeg",
+      mediaId: m.image?.id || m.image?.file_id || undefined,
+      id: m.image?.id || undefined,
     };
   } else if (t === "video" || t === "gif" || t === "short") {
+    const v = m.video || m.gif || m.short;
     message.videoMessage = {
-      url: (m.video || m.gif || m.short)?.link,
-      caption: (m.video || m.gif || m.short)?.caption || m.caption || "",
-      mimetype: (m.video || m.gif || m.short)?.mime_type || "video/mp4",
+      url: v?.link,
+      caption: v?.caption || m.caption || "",
+      mimetype: v?.mime_type || "video/mp4",
+      mediaId: v?.id || v?.file_id || undefined,
+      id: v?.id || undefined,
     };
   } else if (t === "audio" || t === "voice") {
+    const a = m.audio || m.voice;
     message.audioMessage = {
-      url: (m.audio || m.voice)?.link,
-      mimetype: (m.audio || m.voice)?.mime_type || "audio/ogg; codecs=opus",
+      url: a?.link,
+      mimetype: a?.mime_type || "audio/ogg; codecs=opus",
       ptt: t === "voice",
+      mediaId: a?.id || a?.file_id || undefined,
+      id: a?.id || undefined,
     };
   } else if (t === "document") {
     message.documentMessage = {
       url: m.document?.link,
       fileName: m.document?.file_name || "documento",
       mimetype: m.document?.mime_type || "application/pdf",
+      mediaId: m.document?.id || m.document?.file_id || undefined,
+      id: m.document?.id || undefined,
     };
       } else if (t === "sticker") {
     message.stickerMessage = {
@@ -454,6 +464,7 @@ function mapMessage(m: any, chatId: string) {
       mimetype: m.sticker?.mime_type || "image/webp",
       // Media ID Whapi — permite GET /media/{id} quando não há link público
       mediaId: m.sticker?.id || undefined,
+      id: m.sticker?.id || undefined,
     };
   } else if (t === "location" || t === "live_location") {
     message.locationMessage = {

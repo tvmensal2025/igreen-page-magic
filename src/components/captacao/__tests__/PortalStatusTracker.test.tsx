@@ -36,6 +36,9 @@ vi.mock("@/integrations/supabase/client", () => {
           Promise.resolve({ data: mockState.customer, error: null }),
       }),
     }),
+    update: () => ({
+      eq: () => Promise.resolve({ data: null, error: null }),
+    }),
   };
   const tracesChain = {
     select: () => ({
@@ -244,6 +247,51 @@ describe("banner needs_human (intervenção humana)", () => {
     // banner é vermelho (tom de erro)
     const banner = container.firstElementChild as HTMLElement;
     expect(banner.className).toMatch(/destructive/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// already_registered — worker marca sucesso, UI não pode ficar em "Abrindo portal"
+// ---------------------------------------------------------------------------
+describe("cliente já cadastrado (already_registered)", () => {
+  it("portal2_status=already_registered + step legado cadastro_em_analise → sucesso (não spinner)", async () => {
+    renderTracker(
+      baseRow({
+        status: "registered_igreen",
+        conversation_step: "cadastro_em_analise",
+        portal2_status: "already_registered",
+        finalized_at: "2026-07-15T12:00:00Z",
+      }),
+    );
+    expect(await screen.findByText(/Cliente já cadastrado no iGreen/)).toBeInTheDocument();
+    expect(screen.queryByText(/Abrindo portal no navegador da VPS/)).not.toBeInTheDocument();
+  });
+
+  it("status=registered_igreen sozinho → sucesso mesmo com step portal_submitting", async () => {
+    renderTracker(
+      baseRow({
+        status: "registered_igreen",
+        conversation_step: "portal_submitting",
+        portal2_status: null,
+        finalized_at: "2026-07-15T12:00:00Z",
+      }),
+    );
+    expect(await screen.findByText(/Cadastro aprovado pela iGreen/)).toBeInTheDocument();
+    expect(screen.queryByText(/Abrindo portal no navegador da VPS/)).not.toBeInTheDocument();
+  });
+
+  it("portal_submitting travado → botões Já cadastrado e Dispensar", async () => {
+    renderTracker(
+      baseRow({
+        status: "portal_submitting",
+        conversation_step: "portal_submitting",
+        portal2_status: "submitting",
+        finalized_at: "2026-07-15T12:00:00Z",
+      }),
+    );
+    expect(await screen.findByText(/Abrindo portal no navegador da VPS/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Já cadastrado/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dispensar/ })).toBeInTheDocument();
   });
 });
 

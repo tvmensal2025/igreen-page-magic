@@ -79,6 +79,18 @@ SUPABASE_SERVICE_ROLE_KEY=sua_service_role_key
 CLUB_DEFAULT_CONSULTOR=124170
 ```
 
+### Ligar a Captação (UI) ao Worker Club
+
+No Supabase → `settings` (ou secrets da edge):
+
+| key | valor |
+|---|---|
+| `club_worker_url` | `https://igreen-worker-club.d9v63q.easypanel.host` |
+| `club_worker_secret` | o mesmo `WORKER_SECRET` do container |
+
+A edge `finalize-club` (botão da ficha Club) usa essas keys. Fallback de env: `CLUB_WORKER_URL` / `CLUB_WORKER_SECRET`.
+**Não** altera `portal2_worker_url`.
+
 ### Se o Cloudflare bloquear o IP do servidor
 
 Use o mesmo proxy residencial que o Portal usa nos probes (só neste serviço):
@@ -196,5 +208,6 @@ O bot / Portal 2 **não** chamam o Club automaticamente ainda. Ativação operac
 ## 9. Documentos oficiais
 
 - `CLUB-OFICIAL.md` — API e payload (fonte da verdade)
+- `DADOS-OBRIGATORIOS.md` — campos mínimos do cadastro PF
 - `README.md` — visão geral do worker
 - Este arquivo — **só Easypanel / ativação Club**

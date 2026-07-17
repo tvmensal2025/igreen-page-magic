@@ -103,6 +103,22 @@ BEGIN
     )
     RETURNING * INTO v_c_flow;
   ELSE
+    -- NÃO sobrescrever Sofia Multicanal (Grupo A / 10 passos) com clone do Fluxo A.
+    -- C é a variante oficial da Sofia; sync A→C só vale para C clone legado.
+    IF v_c_flow.name ILIKE '%sofia%'
+       OR EXISTS (
+         SELECT 1 FROM public.bot_flow_steps s
+         WHERE s.flow_id = v_c_flow.id
+           AND s.is_active = true
+           AND s.step_key IN ('a1_ask_name', 'a3_explain_with_buttons', 'a10_portal_otp_facial')
+       )
+    THEN
+      RAISE NOTICE
+        'sync_bot_flow_c_from_a: pulando consultor % — Fluxo C é Sofia Multicanal (%)',
+        _consultant_id, v_c_flow.id;
+      RETURN v_c_flow.id;
+    END IF;
+
     UPDATE public.bot_flows
     SET name = v_a_flow.name || ' (C)',
         strict_mode = v_a_flow.strict_mode,
