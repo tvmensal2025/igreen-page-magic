@@ -429,6 +429,33 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
       const v = parseMoneyBR(dados.valorConta);
       dados.valorConta = (v != null) ? v.toFixed(2) : "";
     }
+    // 2ª passada focada em VALOR quando a primeira falha ou devolve valor absurdo
+    // (< R$ 20 ou > R$ 20.000 pra B1 residencial).
+    {
+      const v0 = parseFloat(String(dados.valorConta || "0"));
+      if (!v0 || v0 < 20 || v0 > 20000) {
+        try {
+          console.log(`🔍 [ocr] valor faltando/absurdo (v=${v0}) — 2ª passada focada`);
+          const valorPrompt = `Encontre APENAS o VALOR TOTAL A PAGAR desta conta de luz brasileira. Procure por rótulos "TOTAL A PAGAR", "VALOR A PAGAR", "TOTAL DA FATURA", "VALOR TOTAL". Ignore valores de "consumo em R$", "bandeira", "impostos", "juros" isolados — quero o TOTAL final da fatura. Responda APENAS JSON: {"valor":"NNNN.NN"} em reais com ponto decimal, ou {"valor":""} se não encontrar.`;
+          const vRes = await callGeminiViaLovable(valorPrompt, img, { maxTokens: 128, responseJson: true });
+          if (vRes.ok) {
+            const vData = await vRes.json();
+            const vText = vData?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            const vMatch = vText.match(/\{[\s\S]*\}/);
+            if (vMatch) {
+              const parsed = JSON.parse(vMatch[0]);
+              const v = parseMoneyBR(String(parsed?.valor || ""));
+              if (v != null && v >= 20 && v <= 20000) {
+                dados.valorConta = v.toFixed(2);
+                console.log(`✅ [ocr] valor recuperado no 2º pass: R$ ${dados.valorConta}`);
+              }
+            }
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ [ocr] 2ª passada VALOR falhou: ${e?.message}`);
+        }
+      }
+    }
     // Consumo médio em kWh — só dígitos, aceita faixa 50..5000.
     if (dados.consumoMedio) {
       const raw = String(dados.consumoMedio).replace(/[^\d]/g, "");
