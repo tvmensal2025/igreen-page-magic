@@ -33,12 +33,14 @@ export function buildOlaGreetTtsText(display: string): string {
 }
 
 /**
- * Passo 3/4 — só o nome no áudio final, como chamada ("Nome!").
+ * Passo 3/4 — só o nome no áudio final, como chamada suave ("Nome,").
+ * Vírgula dá cadência de callout PT-BR (entonação descendente natural),
+ * evita o corte abrupto do "!" e conecta melhor com o corpo costurado depois.
  * Texto enviado ao ElevenLabs: só o nome; PT-BR via previous_text/next_text no v2.
  */
 export function buildNameOnlyTtsText(display: string): string {
   const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
-  return nome ? `${nome}!` : "";
+  return nome ? `${nome},` : "";
 }
 
 
@@ -50,10 +52,15 @@ export const VOICE_SETTINGS_V3_GREET = {
   speed: 0.92,
 } as const;
 
+/**
+ * Nome isolado: stability mais baixa dá entonação natural de chamada;
+ * similarity alta preserva o timbre da Sofia; style leve humaniza sem robotizar;
+ * speed 0.92 evita engolir a última sílaba.
+ */
 export const VOICE_SETTINGS_V2_NAME_ONLY = {
-  stability: 0.9,
-  similarity_boost: 1.0,
-  style: 0.45,
+  stability: 0.55,
+  similarity_boost: 0.9,
+  style: 0.35,
   use_speaker_boost: true,
-  speed: 0.95,
+  speed: 0.92,
 } as const;
