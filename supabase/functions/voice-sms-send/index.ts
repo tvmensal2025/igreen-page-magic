@@ -29,12 +29,37 @@ function firstName(name: string | null | undefined): string {
   return n.split(/\s+/)[0] || "";
 }
 
-/** Substitui {{nome}} / {nome}. Sem nome, limpa o placeholder sem ficar "Oi ,". */
-function renderSms(message: string, name: string | null | undefined): string {
+function normalizeConsultantPhone(raw: string | null | undefined): string {
+  let d = String(raw || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = `55${d}`;
+  return d;
+}
+
+/** Substitui {{nome}} / {{consultor_phone}} / {{link_wa}}. Garante wa.me do consultor. */
+function renderSms(
+  message: string,
+  name: string | null | undefined,
+  consultorPhone: string,
+): string {
   const nome = firstName(name);
-  let out = message
+  const phone = normalizeConsultantPhone(consultorPhone);
+  const linkWa = phone ? `wa.me/${phone}` : "";
+  let out = String(message || "").trim();
+  if (
+    out &&
+    !/wa\.me\//i.test(out) &&
+    !/\{\{\s*consultor_phone\s*\}\}/i.test(out) &&
+    !/\{\{\s*link_wa\s*\}\}/i.test(out)
+  ) {
+    out = `${out} wa.me/{{consultor_phone}}`;
+  }
+  out = out
     .replace(/\{\{\s*nome\s*\}\}/gi, nome)
-    .replace(/\{\s*nome\s*\}/gi, nome);
+    .replace(/\{\s*nome\s*\}/gi, nome)
+    .replace(/\{\{\s*link_wa\s*\}\}/gi, linkWa)
+    .replace(/\{\{\s*consultor_phone\s*\}\}/gi, phone)
+    .replace(/\{\{\s*consultor\s*\}\}/gi, "");
   if (!nome) {
     out = out
       .replace(/\bOi\s*,/gi, "Oi")
@@ -43,7 +68,10 @@ function renderSms(message: string, name: string | null | undefined): string {
       .replace(/\s{2,}/g, " ")
       .trim();
   }
-  return out.replace(/\s{2,}/g, " ").trim();
+  return out
+    .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 Deno.serve(async (req) => {
@@ -80,6 +108,23 @@ Deno.serve(async (req) => {
 
   const template = (body.message || "").trim();
   if (!template) return json(400, { error: "missing_message", message: "Escreva a mensagem do SMS." });
+
+  const { data: consultantRow } = await admin
+    .from("consultants")
+    .select("notification_phone, phone")
+    .eq("id", consultantId)
+    .maybeSingle();
+  const consultantPhone = normalizeConsultantPhone(
+    (consultantRow as { notification_phone?: string; phone?: string } | null)?.notification_phone ||
+      (consultantRow as { phone?: string } | null)?.phone ||
+      "",
+  );
+  if (!consultantPhone) {
+    return json(400, {
+      error: "consultant_phone_missing",
+      message: "Cadastre o WhatsApp do consultor (notification_phone) para o link wa.me do SMS.",
+    });
+  }
 
   const recipients: RecipientIn[] = [];
   const seen = new Set<string>();
@@ -151,7 +196,7 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const message = renderSms(template, rec.name);
+    const message = renderSms(template, rec.name, consultantPhone);
     if (!message) {
       failed++;
       results.push({ dest: rec.phone, ok: false, error: "empty_message_after_render" });

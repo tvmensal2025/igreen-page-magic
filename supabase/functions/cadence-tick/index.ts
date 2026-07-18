@@ -162,6 +162,23 @@ function renderTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
 }
 
+/** Todo SMS sai com wa.me do consultor clicável. */
+function ensureSmsWaLink(text: string, consultorPhone: string): string {
+  let t = String(text || "").trim();
+  if (!t) return t;
+  if (!/wa\.me\//i.test(t) && !/\{\{\s*consultor_phone\s*\}\}/i.test(t) && !/\{\{\s*link_wa\s*\}\}/i.test(t)) {
+    t = `${t} wa.me/{{consultor_phone}}`;
+  }
+  const phone = String(consultorPhone || "").replace(/\D/g, "");
+  const link = phone ? `wa.me/${phone}` : "";
+  return t
+    .replace(/\{\{\s*link_wa\s*\}\}/gi, link)
+    .replace(/\{\{\s*consultor_phone\s*\}\}/gi, phone)
+    .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 async function dispatchWhatsApp(
   supabase: any,
   env: { evolutionUrl?: string; evolutionKey?: string; whapiToken: string },
@@ -238,10 +255,12 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
   if (consultantId) {
     const { data: c } = await supabase
       .from("consultants")
-      .select("name, whatsapp_number, phone")
+      .select("name, display_name, notification_phone, phone")
       .eq("id", consultantId).maybeSingle();
-    consultantName = (c?.name || "").split(" ")[0] || "";
-    consultantPhone = String(c?.whatsapp_number || c?.phone || "").replace(/\D/g, "");
+    const display = String(c?.display_name || c?.name || "").trim();
+    consultantName = display.split(" ")[0] || display;
+    // WhatsApp do consultor: notification_phone (WA) tem prioridade sobre phone.
+    consultantPhone = String(c?.notification_phone || c?.phone || "").replace(/\D/g, "");
     // Garante DDI 55 para gerar link wa.me/ válido em número BR sem prefixo.
     if (consultantPhone && !consultantPhone.startsWith("55") && (consultantPhone.length === 10 || consultantPhone.length === 11)) {
       consultantPhone = `55${consultantPhone}`;
@@ -295,8 +314,15 @@ async function dispatchSMS(
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
   const firstName = (cust.name || "").split(" ")[0] || "";
-  const text = renderTemplate(cfg.message_text || "", { nome: firstName, consultor: consultantName, consultor_phone: consultantPhone });
+  let text = renderTemplate(cfg.message_text || "", {
+    nome: firstName,
+    consultor: consultantName,
+    consultor_phone: consultantPhone,
+    link_wa: consultantPhone ? `wa.me/${consultantPhone}` : "",
+  });
+  text = ensureSmsWaLink(text, consultantPhone);
   if (!text.trim()) return { ok: false, detail: "empty_message" };
+  if (!consultantPhone) return { ok: false, detail: "consultant_phone_missing" };
 
   try {
     // MakeSMSOpts espera `message` — com `text` o SMS sairia "undefined".

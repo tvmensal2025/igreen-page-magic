@@ -150,6 +150,9 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (PHONE_KEYS.has(key)) return phoneFmt;
     if (CPF_KEYS.has(key)) return cpfFmt;
     if (REP_PHONE_KEYS.has(key)) return repPhoneDigits;
+    if (key === "link_wa" || key === "wa_link" || key === "link_whatsapp") {
+      return repPhoneDigits ? `wa.me/${repPhoneDigits}` : "";
+    }
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
     const rates = discountRates(vars.variant);

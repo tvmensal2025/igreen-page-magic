@@ -31,6 +31,8 @@ import {
   hasGenderAudioVariants,
   joinAudioSegmentTexts,
   loadLibrary,
+  ensureSmsConsultorWaLink,
+  normalizeConsultantPhoneDigits,
   renderCadenceBody,
   resolveAudioSegments,
   resolveBody,
@@ -142,6 +144,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const [lastGenStats, setLastGenStats] = useState<string | null>(null);
   const [nameInCache, setNameInCache] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [consultantPhone, setConsultantPhone] = useState("");
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [testPhone, setTestPhone] = useState("");
@@ -150,6 +153,18 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const { data: cons } = await supabase
+        .from("consultants")
+        .select("notification_phone, phone")
+        .eq("id", consultantId)
+        .maybeSingle();
+      const phoneDigits = normalizeConsultantPhoneDigits(
+        (cons as { notification_phone?: string; phone?: string } | null)?.notification_phone ||
+          (cons as { phone?: string } | null)?.phone ||
+          "",
+      );
+      if (!cancelled) setConsultantPhone(phoneDigits);
+
       const local = loadLibrary(consultantId);
       const remote = await loadCadenceLibraryRemote(consultantId).catch(() => null);
       const fromFlow: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
@@ -348,10 +363,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     economiaRange: savings
       ? `R$ ${savings.minFormatted} a R$ ${savings.maxFormatted}`
       : undefined,
+    consultorPhone: consultantPhone || undefined,
   };
-  const preview = selected ? renderCadenceBody(draft, previewVars) : "";
+  const previewSource =
+    selected?.channel === "sms" ? ensureSmsConsultorWaLink(draft) : draft;
+  const preview = selected ? renderCadenceBody(previewSource, previewVars) : "";
   const avail = buildAvailabilityPhrase();
-  const smsLen = selected?.channel === "sms" ? smsCharCount(draft) : null;
+  const smsLen =
+    selected?.channel === "sms"
+      ? smsCharCount(draft, { consultorPhone: consultantPhone })
+      : null;
   const segmentsReady = selected ? allAudioSegmentsApproved(selected, lib) : false;
 
   useEffect(() => {

@@ -3,12 +3,14 @@ import {
   AFTER_CLUB_BUTTONS,
   AFTER_EXPLAIN_BUTTONS,
   MULTICHANNEL_CADENCE_TEMPLATES,
+  SMS_CONSULTOR_WA_LINK,
   WHAPI_MAX_BUTTONS,
   allAudioSegmentsApproved,
   assertCatalogWhapiSafe,
   cadenceAudioUrlKey,
   cadenceBodyAudioUrlKey,
   emptyLibrary,
+  ensureSmsConsultorWaLink,
   filterSegmentsForGender,
   hasGeneratedCadenceAudio,
   inferSpeechGender,
@@ -111,6 +113,28 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
   it("há slots opcionais de SMS e ligação para o construtor", () => {
     expect(MULTICHANNEL_CADENCE_TEMPLATES.some((t) => t.key === "a_optional_sms_slot")).toBe(true);
     expect(MULTICHANNEL_CADENCE_TEMPLATES.some((t) => t.key === "a_optional_call_slot")).toBe(true);
+  });
+
+  it("todo SMS do catálogo tem wa.me do consultor", () => {
+    const sms = MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => t.channel === "sms");
+    expect(sms.length).toBeGreaterThan(0);
+    for (const t of sms) {
+      expect(t.body, t.key).toMatch(/wa\.me\/\{\{\s*consultor_phone\s*\}\}/i);
+      const resolved = resolveBody(t, emptyLibrary());
+      expect(resolved, t.key).toContain(SMS_CONSULTOR_WA_LINK);
+      expect(
+        renderCadenceBody(resolved, { nome: "Maria", consultorPhone: "5511989000650" }),
+        t.key,
+      ).toContain("wa.me/5511989000650");
+    }
+  });
+
+  it("ensureSmsConsultorWaLink acrescenta link se faltar", () => {
+    expect(ensureSmsConsultorWaLink("Oi {{nome}}")).toBe(`Oi {{nome}} ${SMS_CONSULTOR_WA_LINK}`);
+    expect(ensureSmsConsultorWaLink(`Oi ${SMS_CONSULTOR_WA_LINK}`)).toBe(
+      `Oi ${SMS_CONSULTOR_WA_LINK}`,
+    );
+    expect(ensureSmsConsultorWaLink("Oi wa.me/")).toBe(`Oi ${SMS_CONSULTOR_WA_LINK}`);
   });
 
   it("áudios: no máx. 1 corte de nome + 1 corpo por gênero (ou só corpo)", () => {

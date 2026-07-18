@@ -177,12 +177,12 @@ Deno.serve(async (req) => {
           if ((cust as any)?.consultant_id) {
             const { data: consultant } = await supabase
               .from("consultants")
-              .select("name, whatsapp_number, phone")
+              .select("name, display_name, notification_phone, phone")
               .eq("id", (cust as any).consultant_id)
               .maybeSingle();
-            representante = (consultant as any)?.name || null;
+            representante = (consultant as any)?.display_name || (consultant as any)?.name || null;
             representantePhone = String(
-              (consultant as any)?.whatsapp_number || (consultant as any)?.phone || "",
+              (consultant as any)?.notification_phone || (consultant as any)?.phone || "",
             );
           }
         }

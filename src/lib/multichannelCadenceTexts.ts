@@ -563,6 +563,8 @@ export function renderCadenceBody(
     telefoneMascarado?: string;
     gender?: SpeechGender;
     linkFacial?: string;
+    /** Dígitos do WhatsApp do consultor (com DDI 55) → {{consultor_phone}} / {{link_wa}}. */
+    consultorPhone?: string;
   } = {},
 ): string {
   const nome = (opts.nome || "Cliente").trim() || "Cliente";
@@ -577,6 +579,8 @@ export function renderCadenceBody(
       : "…");
   const telefone =
     (opts.telefone ?? opts.telefoneMascarado ?? "").trim() || "(11) 9••••-••••";
+  const consultorPhone = normalizeConsultantPhoneDigits(opts.consultorPhone);
+  const linkWa = consultorPhone ? `wa.me/${consultorPhone}` : "wa.me/{{consultor_phone}}";
   return [
     ["{{nome}}", nome],
     ["{{frase_disponibilidade}}", phrase],
@@ -589,6 +593,9 @@ export function renderCadenceBody(
     ["{{telefone}}", telefone],
     ["{{telefone_mascarado}}", telefone],
     ["{{link_facial}}", opts.linkFacial ?? ""],
+    // Sem telefone: não apagar o placeholder (evita SMS com `wa.me/` quebrado na prévia).
+    ["{{consultor_phone}}", consultorPhone || "{{consultor_phone}}"],
+    ["{{link_wa}}", linkWa],
     ["{{bem_vindo}}", g.bem_vindo],
     ["{{o_a}}", g.o_a],
     ["{{do_da}}", g.do_da],
@@ -626,8 +633,41 @@ export function spokenSegmentText(
   return renderCadenceBody(seg.text, { ...opts, nome: first }).trim();
 }
 
-export function smsCharCount(body: string): number {
-  return renderCadenceBody(body, { nome: "Maria" }).length;
+/** Link WhatsApp clicável no SMS (resolvido no envio com o telefone do consultor). */
+export const SMS_CONSULTOR_WA_LINK = "wa.me/{{consultor_phone}}";
+
+/** Garante wa.me do consultor em todo SMS — sem depender de eu editar cada texto. */
+export function ensureSmsConsultorWaLink(body: string): string {
+  let t = String(body || "").trim();
+  if (!t) return t;
+  // Remove wa.me/ vazio/quebrado (sem dígitos nem placeholder).
+  t = t.replace(/(?:https?:\/\/)?wa\.me\/(?![\d+]|\{\{)/gi, "").replace(/\s{2,}/g, " ").trim();
+  if (
+    /wa\.me\/(?:[\d+]+|\{\{\s*consultor_phone\s*\}\})/i.test(t) ||
+    /\{\{\s*link_wa\s*\}\}/i.test(t) ||
+    /\{\{\s*consultor_phone\s*\}\}/i.test(t)
+  ) {
+    return t;
+  }
+  return `${t} ${SMS_CONSULTOR_WA_LINK}`.replace(/\s{2,}/g, " ").trim();
+}
+
+export function normalizeConsultantPhoneDigits(raw: string | null | undefined): string {
+  let d = String(raw || "").replace(/\D/g, "");
+  if (!d) return "";
+  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = `55${d}`;
+  return d;
+}
+
+export function smsCharCount(
+  body: string,
+  opts?: { consultorPhone?: string },
+): number {
+  const withLink = ensureSmsConsultorWaLink(body);
+  return renderCadenceBody(withLink, {
+    nome: "Maria",
+    consultorPhone: opts?.consultorPhone || "5511999999999",
+  }).length;
 }
 
 /**
@@ -1052,7 +1092,7 @@ Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém
     canGenerateAudio: false,
     maxChars: 160,
     notes: "Passo send_sms no construtor — não é obrigatório na sequência 1→2→3.",
-    body: `Sofia | iGreen: oi {{nome}}, deixei seu atendimento no WhatsApp para ativar o beneficio. Qualquer duvida e so responder.`,
+    body: `Sofia | iGreen: oi {{nome}}, ative seu beneficio no WhatsApp: wa.me/{{consultor_phone}}`,
   },
   {
     key: "a_optional_call_slot",
@@ -1207,7 +1247,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "Dia 0 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, reabri sua analise de economia. Deixei tudo pronto no WhatsApp. Responder SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, reabri sua analise. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b4_call_1",
@@ -1293,7 +1333,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 6 · envia às 11h30",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, ha novidades e beneficios extras alem da economia. Confira no WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, novidades e beneficios extras. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
@@ -1394,7 +1434,7 @@ Qual faixa da sua conta?`,
     theme: "simplified_analysis",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: {{nome}}, sua análise pode começar pelo valor médio. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | Energia: {{nome}}, analise pelo valor medio. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_cruise_wa",
@@ -1468,7 +1508,7 @@ Além da possibilidade de economia na conta de energia, existe uma novidade espe
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: novidade elegível: sorteio cabine cruzeiro p/ 2, conforme regulamento. Veja WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: sorteio cabine cruzeiro p/2 (regulamento). Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_tariff_flags_wa",
@@ -1497,7 +1537,7 @@ Quer análise inicial pelo valor médio? Qual faixa?`,
     theme: "tariff_flags",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: bandeiras podem aumentar a conta. Veja no WhatsApp como analisar. SAIR encerra.`,
+    body: `Rafael | Energia: bandeiras podem subir a conta. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_no_home_panels_wa",
@@ -1527,7 +1567,7 @@ A análise pode começar pelo valor médio. Como prefere?`,
     theme: "no_home_panels",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: a análise não exige placas em casa nem obra. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | Energia: sem placas nem obra. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_security_wa",
@@ -1555,7 +1595,7 @@ Como prefere seguir?`,
     theme: "security",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: não pedimos Pix ou pagamento ao consultor. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: nao pedimos Pix/pagamento. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_benefits_club_wa",
@@ -1585,7 +1625,7 @@ O que você quer conhecer?`,
     theme: "benefits_club",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: além da economia, há benefícios em parceiros. Veja o WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: economia + clube de parceiros. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_referral_cashback_wa",
@@ -1615,7 +1655,7 @@ O que você quer conhecer?`,
     theme: "referral_cashback",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: além da economia, há benefícios de indicação (regras vigentes). Veja WhatsApp. SAIR encerra.`,
+    body: `Rafael | iGreen: economia + indicacao (regras). Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_digital_app_wa",
@@ -1743,7 +1783,8 @@ export function resolveBody(tpl: CadenceTemplate, lib: SavedCadenceLibrary): str
   const saved = lib.bodies[tpl.key];
   const savedOk = typeof saved === "string" && saved.trim().length > 0;
   if (tpl.channel !== "whatsapp_audio" && tpl.channel !== "call_script") {
-    return savedOk ? saved : tpl.body;
+    const raw = savedOk ? saved : tpl.body;
+    return tpl.channel === "sms" ? ensureSmsConsultorWaLink(raw) : raw;
   }
   const segs = resolveAudioSegments(tpl, lib);
   if (segs.length) return joinAudioSegmentTexts(segs);

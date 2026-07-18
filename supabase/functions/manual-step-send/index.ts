@@ -620,10 +620,10 @@ Deno.serve(async (req) => {
     let _repPhone = "";
     try {
       const { data: _consultant } = await supabase
-        .from("consultants").select("name, whatsapp_number, phone").eq("id", body.consultantId).maybeSingle();
-      const _full = String((_consultant as any)?.name || "").trim();
+        .from("consultants").select("name, display_name, notification_phone, phone").eq("id", body.consultantId).maybeSingle();
+      const _full = String((_consultant as any)?.display_name || (_consultant as any)?.name || "").trim();
       _repName = _full.split(/\s+/)[0] || _full;
-      _repPhone = String((_consultant as any)?.whatsapp_number || (_consultant as any)?.phone || "");
+      _repPhone = String((_consultant as any)?.notification_phone || (_consultant as any)?.phone || "");
     } catch (_) { /* best-effort */ }
     // Fallback final — nunca deixar `representante` vazio chegar ao cliente.
     // Sem isso, o template "Sou a *assistente virtual* do *{{representante}}*"
