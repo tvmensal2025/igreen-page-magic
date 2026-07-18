@@ -150,7 +150,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       const fromFlow: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
         () => ({} as Partial<SavedCadenceLibrary>),
       );
-      // Prioridade: fluxo WhatsApp (produção) > remoto > localStorage.
+      const fromStage: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromStageConfig().catch(
+        () => ({} as Partial<SavedCadenceLibrary>),
+      );
+      // Prioridade: motor (Grupo B) + fluxo WhatsApp (Grupo A) > remoto > localStorage.
       const merged: SavedCadenceLibrary = {
         ...emptyLibrary(),
         ...local,
@@ -159,6 +162,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           ...local.bodies,
           ...(remote?.bodies || {}),
           ...(fromFlow.bodies || {}),
+          ...(fromStage.bodies || {}),
         },
         buttons: {
           ...local.buttons,
