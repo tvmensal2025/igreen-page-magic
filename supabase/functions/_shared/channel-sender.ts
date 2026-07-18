@@ -244,12 +244,22 @@ async function guardOk(supabase: any, instanceName: string, label: string): Prom
   return true;
 }
 
-export function ctx(consultantId: string, customerId: string, stage: string): SendContext {
+/**
+ * Contexto de envio com chave estável (sem Date.now).
+ * Mesma ação lógica → mesma chave → dedupe via outbound_message_log.
+ */
+export function ctx(
+  consultantId: string,
+  customerId: string,
+  stage: string,
+  stablePart?: string,
+): SendContext {
+  const base = `${consultantId}:${customerId}:${stage}`;
   return {
     customerId: customerId || "auto-progress",
     consultantId,
     stepId: `auto_progress:${stage}`,
-    idempotencyKey: `${consultantId}:${customerId}:${stage}:${Date.now()}`,
+    idempotencyKey: stablePart ? `${base}:${stablePart}` : base,
   };
 }
 

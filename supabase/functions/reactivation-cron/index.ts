@@ -98,8 +98,8 @@ export function isInsideWindow(
     if (!permiteFimDeSemana && (weekday === "Sat" || weekday === "Sun")) return false;
     return hour >= inicio && hour < fim;
   } catch {
-    // Fuso inválido → conserva default seguro: permite envio.
-    return true;
+    // Fuso inválido → fail-closed (não enviar).
+    return false;
   }
 }
 
@@ -392,6 +392,36 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         continue;
       }
 
+      // Reserva atômica ANTES do envio (status=pending). Unique inflight impede double-send.
+      let claimId: string | null = null;
+      try {
+        const { data: claimRow, error: claimErr } = await (supabase as any)
+          .from("reactivation_sends")
+          .insert({
+            customer_id: customer.id,
+            consultant_id: tpl.consultant_id,
+            template_id: tpl.id,
+            conversation_step: customer.conversation_step,
+            message_text: finalText,
+            trigger_type: "auto",
+            status: "pending",
+          })
+          .select("id")
+          .maybeSingle();
+        if (claimErr) {
+          const msg = String(claimErr.message || claimErr.code || "");
+          if (msg.includes("uq_reactivation_sends_inflight") || msg.includes("duplicate") || claimErr.code === "23505") {
+            continue; // outro worker já reservou
+          }
+          // Sem índice ainda: segue com insert best-effort (não bloqueia o dia).
+          console.warn("[reactivation-cron] claim pending falhou:", msg);
+        } else {
+          claimId = claimRow?.id ?? null;
+        }
+      } catch (e: any) {
+        console.warn("[reactivation-cron] claim pending exception:", e?.message);
+      }
+
       let ok = false;
       try {
         // Humaniza: digitando antes do envio.
@@ -408,20 +438,28 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
 
       if (ok) await recordProactiveTouch(supabase, customer.id, "reactivation_cron", { template_id: tpl.id });
 
-      // Registra envio.
+      // Finaliza reserva ou registra envio legado.
       try {
-        await (supabase as any).from("reactivation_sends").insert({
-          customer_id: customer.id,
-          consultant_id: tpl.consultant_id,
-          template_id: tpl.id,
-          conversation_step: customer.conversation_step,
-          message_text: finalText,
-          trigger_type: "auto",
-          status: ok ? "sent" : "failed",
-          error_reason: ok ? null : "evolution_send_failed",
-        });
+        if (claimId) {
+          await (supabase as any).from("reactivation_sends").update({
+            status: ok ? "sent" : "failed",
+            error_reason: ok ? null : "evolution_send_failed",
+            sent_at: new Date().toISOString(),
+          }).eq("id", claimId);
+        } else {
+          await (supabase as any).from("reactivation_sends").insert({
+            customer_id: customer.id,
+            consultant_id: tpl.consultant_id,
+            template_id: tpl.id,
+            conversation_step: customer.conversation_step,
+            message_text: finalText,
+            trigger_type: "auto",
+            status: ok ? "sent" : "failed",
+            error_reason: ok ? null : "evolution_send_failed",
+          });
+        }
       } catch (e: any) {
-        console.warn("[reactivation-cron] insert reactivation_sends falhou:", e?.message);
+        console.warn("[reactivation-cron] finalize reactivation_sends falhou:", e?.message);
       }
 
       // Registra em conversations para histórico (igual ao envio manual).
@@ -453,12 +491,12 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: Rea
   const stuckBoundary = new Date(Date.now() - settings.horas_ate_primeiro_followup * 3600 * 1000).toISOString();
   const debounceBoundary = new Date(Date.now() - settings.horas_entre_envios * 3600 * 1000).toISOString();
 
-  // IDs com envio recente (debounce configurável).
+  // IDs com envio recente (debounce configurável) — inclui pending inflight.
   const { data: recentSends } = await supabase
     .from("reactivation_sends")
     .select("customer_id")
     .eq("consultant_id", tpl.consultant_id)
-    .gte("sent_at", debounceBoundary);
+    .or(`sent_at.gte.${debounceBoundary},status.eq.pending`);
   const debounced = new Set(((recentSends as Array<{ customer_id: string }>) || []).map((r) => r.customer_id));
 
   // IDs que já atingiram o limite de envios automáticos para este template.

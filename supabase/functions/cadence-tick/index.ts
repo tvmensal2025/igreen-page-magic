@@ -42,6 +42,10 @@ import {
 } from "../_shared/cadence-availability.ts";
 import { syncCustomerToMetaAudience } from "../_shared/meta-audience-sync.ts";
 import { buttonsForStage, stageHasButtons } from "../_shared/cadence-stage-buttons.ts";
+import {
+  decideAudienceDdd,
+  loadCadenceAudienceConfig,
+} from "../_shared/audience-ddd.ts";
 
 type AvailLoader = (consultantId: string | null | undefined) => Promise<AvailabilityOverrides>;
 
@@ -372,7 +376,7 @@ async function dispatchWhatsApp(
     frase_disponibilidade: fraseDisponibilidade,
   });
   const jid = `${String(cust.phone_whatsapp).replace(/\D/g, "")}@s.whatsapp.net`;
-  const sendCtx = ctx(row.consultant_id || "system", row.customer_id, `cadence:${stage}`);
+  const sendCtx = ctx(row.consultant_id || "system", row.customer_id, `cadence:${stage}`, String(row.id || ""));
 
   try {
     const mtype = cfg.media_type || "text";
@@ -426,10 +430,18 @@ async function dispatchVoiceCall(
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
   const { cust } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+
+  const gate = await assertBotOutboundAllowed(supabase, {
+    customerId: row.customer_id,
+    phone: cust.phone_whatsapp,
+    consultantId: row.consultant_id,
+  });
+  if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
+
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
-  const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${Date.now()}`);
+  const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${stage}`);
 
   // Regra Sofia: clip ElevenLabs → Velip. Sem TTS robótico Velip.
   const resolved = await resolveCallDialAudio(supabase, {
@@ -461,6 +473,14 @@ async function dispatchSMS(
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
   const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+
+  const gate = await assertBotOutboundAllowed(supabase, {
+    customerId: row.customer_id,
+    phone: cust.phone_whatsapp,
+    consultantId: row.consultant_id,
+  });
+  if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
+
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
@@ -544,25 +564,56 @@ Deno.serve(async (req) => {
   const loadAvail = createAvailabilityLoader(supabase);
   const coldCap = await loadColdDailyCap(supabase);
   let coldTouchesToday = await countColdTouchesToday(supabase);
+  const audienceCfg = await loadCadenceAudienceConfig(supabase);
 
-  // Inclui PAUSED com next_action_at vencido (retoma após inbound).
-  // Exclui só WON (CLOSE_LOST / RETARGET_* / RECALL_* avançam na máquina).
-  const { data: due, error } = await supabase
-    .from("lead_cadence_state")
-    .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at")
-    .lte("next_action_at", now.toISOString())
-    .not("stage", "eq", "WON")
-    .order("next_action_at", { ascending: true })
-    .limit(100);
+  // Reabre claims órfãos (lease expirado) — best-effort; RPC pode ainda não existir.
+  try {
+    await supabase.rpc("reconcile_stuck_cadence_claims");
+  } catch { /* migration pendente */ }
 
-  if (error) return json({ error: error.message }, 500);
+  // Claim atômico (RPC). Fallback: SELECT + CAS em next_action_at (anti-duplicidade).
+  let due: any[] | null = null;
+  const { data: claimedRows, error: claimErr } = await supabase.rpc("claim_due_cadence", {
+    p_limit: 100,
+  });
+  if (!claimErr && Array.isArray(claimedRows)) {
+    due = claimedRows;
+  } else {
+    if (claimErr) {
+      console.warn("[cadence-tick] claim_due_cadence indisponível — fallback CAS", claimErr.message);
+    }
+    const { data: selected, error } = await supabase
+      .from("lead_cadence_state")
+      .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at, next_action_at, claim_token")
+      .lte("next_action_at", now.toISOString())
+      .not("stage", "eq", "WON")
+      .order("next_action_at", { ascending: true })
+      .limit(100);
+    if (error) return json({ error: error.message }, 500);
+    due = [];
+    for (const row of selected || []) {
+      const leaseUntil = new Date(now.getTime() + 15 * 60_000).toISOString();
+      const q = supabase
+        .from("lead_cadence_state")
+        .update({ next_action_at: leaseUntil })
+        .eq("id", row.id);
+      const cas = row.next_action_at
+        ? await q.eq("next_action_at", row.next_action_at).select("id, claim_token").maybeSingle()
+        : await q.select("id, claim_token").maybeSingle();
+      if (cas.data?.id) {
+        due.push({ ...row, next_action_at: leaseUntil, claim_token: cas.data.claim_token ?? row.claim_token });
+      }
+    }
+  }
+
   if (!due || due.length === 0) return json({ processed: 0, cold_cap: coldCap, cold_today: coldTouchesToday });
 
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
   const { data: custRows } = await supabase
     .from("customers")
-    .select("id, bot_paused, bot_paused_until, assigned_human_id, do_not_contact")
+    .select("id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact")
     .in("id", customerIds);
+  const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
   const blockedCustomers = new Set(
     (custRows || [])
       .filter((c: any) =>
@@ -573,17 +624,52 @@ Deno.serve(async (req) => {
       .map((c: any) => c.id),
   );
 
-  let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0;
+  let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0, audienceBlocked = 0;
+
+  /** Update que só aplica se ainda formos donos do claim (quando há token). */
+  async function finishRow(id: string, claimToken: string | null | undefined, patch: Record<string, unknown>) {
+    const body = claimToken
+      ? {
+        ...patch,
+        claim_token: null,
+        claimed_at: null,
+        lease_expires_at: null,
+      }
+      : patch;
+    let q = supabase.from("lead_cadence_state").update(body).eq("id", id);
+    if (claimToken) q = q.eq("claim_token", claimToken);
+    const { data } = await q.select("id").maybeSingle();
+    if (data?.id) return;
+    // Token ausente/mismatch ou colunas ainda não migradas — não deixa o lead preso.
+    await supabase.from("lead_cadence_state").update(patch).eq("id", id);
+  }
 
   for (const row of due) {
     let stage = row.stage as Stage;
+    const claimToken = row.claim_token as string | null | undefined;
+
+    // Público piloto (DDD): fora do DDD não envia; adia sem apagar.
+    const cust = custById.get(row.customer_id);
+    const aud = decideAudienceDdd(cust?.phone_whatsapp, audienceCfg);
+    if (aud.reason === "shadow_observe") {
+      console.log("[cadence-tick] audience_shadow", { customer_id: row.customer_id, ddd: aud.ddd, mode: aud.mode });
+    }
+    if (!aud.allowed) {
+      await finishRow(row.id, claimToken, {
+        next_action_at: new Date(now.getTime() + 6 * 3600_000).toISOString(),
+        paused_reason: aud.reason === "invalid_phone" ? "invalid_phone" : `outside_ddd_${aud.ddd}`,
+      });
+      audienceBlocked++;
+      deferred++;
+      continue;
+    }
 
     // Retomada pós-inbound: PAUSED vencido.
     // - Grupo C (paused_reason lead_responded:<STAGE>): retoma o mesmo estágio.
     // - Onda B / sem estágio salvo: reaquece em COLD_1 (comportamento antigo).
     if (stage === "PAUSED") {
       if (row.paused_until && new Date(row.paused_until) > now) {
-        await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
+        await finishRow(row.id, claimToken, { next_action_at: row.paused_until });
         deferred++; continue;
       }
       const reason = String(row.paused_reason || "");
@@ -601,27 +687,28 @@ Deno.serve(async (req) => {
         resumeStage === "COLD_1"
           ? (computeNextActionAt("GREETED", now)?.toISOString() ?? tomorrowMorningBRT())
           : tomorrowMorningBRT();
-      await supabase.from("lead_cadence_state").update({
+      await finishRow(row.id, claimToken, {
         stage: resumeStage,
         next_action_at: resumeAtIso,
         paused_until: null,
         paused_reason: null,
-      }).eq("id", row.id);
+      });
       resumed++;
       continue;
     }
 
     if (row.paused_until && new Date(row.paused_until) > now) {
-      await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
+      await finishRow(row.id, claimToken, { next_action_at: row.paused_until });
       deferred++; continue;
     }
     if (blockedCustomers.has(row.customer_id)) {
-      await supabase.from("lead_cadence_state")
-        .update({ next_action_at: new Date(now.getTime() + 6 * 3600_000).toISOString() })
-        .eq("id", row.id);
+      await finishRow(row.id, claimToken, {
+        next_action_at: new Date(now.getTime() + 6 * 3600_000).toISOString(),
+      });
       deferred++; continue;
     }
     if (!(await gateProactiveTouch(supabase, row.customer_id, "cadence_engine"))) {
+      // Mantém lease (já empurrado); não reabrir no mesmo tick.
       deferred++; continue;
     }
 
@@ -630,15 +717,15 @@ Deno.serve(async (req) => {
 
     // Cap 60 pessoas/dia — adia, nunca descarta.
     if (isColdOutreachStage(stage) && coldTouchesToday >= coldCap) {
-      await supabase.from("lead_cadence_state").update({
+      await finishRow(row.id, claimToken, {
         next_action_at: tomorrowMorningBRT(),
-      }).eq("id", row.id);
+      });
       deferred++; continue;
     }
 
     if (def.requiresBusinessHours && !isBusinessHour(now)) {
       const nextSlot = computeNextActionAt(stage, now);
-      await supabase.from("lead_cadence_state").update({ next_action_at: nextSlot?.toISOString() }).eq("id", row.id);
+      await finishRow(row.id, claimToken, { next_action_at: nextSlot?.toISOString() });
       deferred++; continue;
     }
     if (!shouldDispatch(stage, now)) { skipped++; continue; }
@@ -651,11 +738,11 @@ Deno.serve(async (req) => {
       if (engaged) {
         const cfgSkip = await loadStageConfig(supabase, row.consultant_id, def.next);
         const nextAt = computeNextActionAt(def.next, now, cfgSkip?.delay_hours);
-        await supabase.from("lead_cadence_state").update({
+        await finishRow(row.id, claimToken, {
           stage: def.next,
           next_action_at: nextAt?.toISOString() ?? null,
           paused_reason: null,
-        }).eq("id", row.id);
+        });
         await supabase.from("cadence_action_log").insert({
           customer_id: row.customer_id, consultant_id: row.consultant_id,
           stage, channel: "system", status: "queued",
@@ -680,9 +767,9 @@ Deno.serve(async (req) => {
       const stageToggle = STAGE_TOGGLE_KEY[stage];
       if (stageToggle && !(await isAutomationEnabled(supabase, stageToggle))) {
         // Fase longa OFF: adia 24h sem avançar (não perde o lead).
-        await supabase.from("lead_cadence_state").update({
+        await finishRow(row.id, claimToken, {
           next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
-        }).eq("id", row.id);
+        });
         await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
         deferred++; continue;
       }
@@ -718,9 +805,9 @@ Deno.serve(async (req) => {
         await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
         // Recall/ads OFF: adia (não perde). Onda curta / SMS tema OFF: avança sem enviar.
         if (stage.startsWith("RECALL_") || stage === "RETARGET_ADS_15D") {
-          await supabase.from("lead_cadence_state").update({
+          await finishRow(row.id, claimToken, {
             next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
-          }).eq("id", row.id);
+          });
           deferred++; continue;
         }
         detail = { ...detail, reason: "stage_toggle_off", key: stageToggle };
@@ -731,24 +818,24 @@ Deno.serve(async (req) => {
         cfgForDelay = cfg;
         if (!cfg || !cfg.enabled) {
           if (stage.startsWith("RECALL_") || stage === "RETARGET_ADS_15D") {
-            await supabase.from("lead_cadence_state").update({
+            await finishRow(row.id, claimToken, {
               next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
-            }).eq("id", row.id);
+            });
             deferred++; continue;
           }
           detail = { ...detail, reason: "config_disabled_or_missing" };
         } else if (!isInStageWindow(now, cfg)) {
-          await supabase.from("lead_cadence_state").update({
+          await finishRow(row.id, claimToken, {
             next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
-          }).eq("id", row.id);
+          });
           deferred++; continue;
         } else if (cfg.max_per_lead && cfg.max_per_lead > 0
                    && (await countChannelSends(supabase, row.customer_id, def.channel)) >= cfg.max_per_lead) {
-          await supabase.from("lead_cadence_state").update({
+          await finishRow(row.id, claimToken, {
             stage: "CLOSE_LOST",
             next_action_at: computeNextActionAt("CLOSE_LOST", now)?.toISOString() ?? null,
             paused_reason: "channel_limit_reached",
-          }).eq("id", row.id);
+          });
           await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
           skipped++; continue;
         } else {
@@ -782,9 +869,9 @@ Deno.serve(async (req) => {
     }
 
     if (status === "failed") {
-      await supabase.from("lead_cadence_state").update({
+      await finishRow(row.id, claimToken, {
         next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
-      }).eq("id", row.id);
+      });
       continue;
     }
 
@@ -794,13 +881,13 @@ Deno.serve(async (req) => {
     const attempts = (row.attempts_by_channel as Record<string, number>) ?? {};
     attempts[def.channel] = (attempts[def.channel] ?? 0) + 1;
 
-    await supabase.from("lead_cadence_state").update({
+    await finishRow(row.id, claimToken, {
       stage: def.next,
       last_action_at: now.toISOString(),
       next_action_at: nextAt?.toISOString() ?? null,
       attempts_by_channel: attempts,
       paused_until: null,
-    }).eq("id", row.id);
+    });
 
     if (def.next === "CLOSE_LOST") {
       await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
@@ -817,6 +904,7 @@ Deno.serve(async (req) => {
     sent,
     failed,
     resumed,
+    audience_blocked: audienceBlocked,
     cold_cap: coldCap,
     cold_today: coldTouchesToday,
   });

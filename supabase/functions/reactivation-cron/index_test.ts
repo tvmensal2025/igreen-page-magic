@@ -82,11 +82,10 @@ Deno.test("isInsideWindow: usa default timezone quando null", () => {
   assertEquals(typeof result, "boolean");
 });
 
-Deno.test("isInsideWindow: timezone inválido cai em default seguro", () => {
-  // Timezone inválido faz Intl.DateTimeFormat lançar — esperamos que a função
-  // tolere e retorne `true` (default safe).
+Deno.test("isInsideWindow: timezone inválido é fail-closed", () => {
+  // Timezone inválido faz Intl.DateTimeFormat lançar — não enviar.
   const result = isInsideWindow("Mars/Olympus");
-  assertEquals(result, true);
+  assertEquals(result, false);
 });
 
 Deno.test("isInsideWindow: janela configurável aceita opts sem lançar", () => {

@@ -244,7 +244,7 @@ async function runSendAudio(
       customerId: plan.customer_id,
       consultantId: plan.consultant_id || "",
       stepId: "daily_reheat:audio",
-      idempotencyKey: `dreheat-audio:${plan.customer_id}:${Date.now()}`,
+      idempotencyKey: `dreheat-audio:${plan.customer_id}:${plan.step}`,
       supabase,
     } as any,
   );
@@ -265,7 +265,7 @@ async function runCall(
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { action: "call", ok: false, detail: "invalid_phone" };
 
-  const ctid = toCtid(`dreheat_${plan.customer_id.slice(0, 8)}_${Date.now()}`);
+  const ctid = toCtid(`dreheat_${plan.customer_id.slice(0, 8)}_${plan.step}`);
 
   const isRetry = plan.step === "retry";
   const bodyClipId = isRetry
@@ -521,6 +521,7 @@ async function advanceQueueAfterSuccess(
   return {
     nextDueNow: {
       ...plan,
+      claim_token: null,
       step: next.id,
       planned_actions: [...next.actions],
       would_consume_whapi: next.would_consume_whapi,
@@ -558,18 +559,41 @@ export async function dispatchPlans(
       }
       const kit = kitCache.get(cid) ?? null;
 
-      await supabase
-        .from("daily_reheat_queue")
-        .update({ status: "claimed", updated_at: new Date().toISOString() })
-        .eq("customer_id", plan.customer_id)
-        .eq("cycle_date", cycleDate)
-        .in("status", ["planned", "claimed"]);
+      // Claim CAS: só quem passa de planned→claimed (ou já veio claimed da RPC) despacha.
+      if (plan.id && !plan.claim_token) {
+        const { data: got } = await supabase
+          .from("daily_reheat_queue")
+          .update({
+            status: "claimed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", plan.id)
+          .eq("status", "planned")
+          .select("id, claim_token")
+          .maybeSingle();
+        if (!got?.id) {
+          // Outro worker já pegou.
+          break;
+        }
+        plan = { ...plan, claim_token: got.claim_token ?? "cas" };
+      } else if (!plan.id) {
+        const { data: got } = await supabase
+          .from("daily_reheat_queue")
+          .update({ status: "claimed", updated_at: new Date().toISOString() })
+          .eq("customer_id", plan.customer_id)
+          .eq("cycle_date", cycleDate)
+          .eq("status", "planned")
+          .select("id")
+          .maybeSingle();
+        if (!got?.id) break;
+        plan = { ...plan, id: got.id, claim_token: "cas" };
+      }
 
       const r = await dispatchCandidate(supabase, plan, settings, kit, env);
       details.push({ customer_id: plan.customer_id, ok: r.ok, results: r.results });
       if (!r.ok) {
         failed++;
-        await supabase
+        let q = supabase
           .from("daily_reheat_queue")
           .update({
             status: "blocked",
@@ -578,6 +602,10 @@ export async function dispatchPlans(
           })
           .eq("customer_id", plan.customer_id)
           .eq("cycle_date", cycleDate);
+        if (plan.claim_token && plan.claim_token !== "cas") {
+          q = q.eq("claim_token", plan.claim_token);
+        }
+        await q;
         break;
       }
       dispatched++;

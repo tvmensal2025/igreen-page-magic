@@ -35,6 +35,7 @@ export type PlannedAction =
   | "wait";
 
 export type CandidatePlan = {
+  id?: string;
   customer_id: string;
   consultant_id: string | null;
   queue: "A" | "B";
@@ -47,6 +48,7 @@ export type CandidatePlan = {
   would_sms: boolean;
   reason: string;
   guards: string[];
+  claim_token?: string | null;
 };
 
 const TERMINAL_STEPS = new Set([
@@ -373,18 +375,39 @@ export async function loadDueQueuePlans(
 ): Promise<CandidatePlan[]> {
   const limit = opts.limit ?? 40;
   const nowIso = new Date().toISOString();
-  const { data: rows } = await supabase
-    .from("daily_reheat_queue")
-    .select(
-      "customer_id, consultant_id, queue, step, planned_actions, status, next_action_at",
-    )
-    .eq("cycle_date", opts.cycleDate)
-    .in("status", ["planned", "claimed"])
-    .lte("next_action_at", nowIso)
-    .order("next_action_at", { ascending: true })
-    .limit(limit);
 
-  if (!rows?.length) return [];
+  // Preferência: RPC claim atômico (só planned → claimed).
+  try {
+    await supabase.rpc("reconcile_stuck_daily_reheat_claims");
+  } catch { /* migration pendente */ }
+
+  const { data: claimed, error: claimErr } = await supabase.rpc("claim_due_daily_reheat", {
+    p_cycle_date: opts.cycleDate,
+    p_limit: limit,
+  });
+
+  let rows: any[] = [];
+  if (!claimErr && Array.isArray(claimed) && claimed.length > 0) {
+    rows = claimed;
+  } else {
+    if (claimErr) {
+      console.warn("[daily-reheat] claim_due_daily_reheat fallback", claimErr.message);
+    }
+    // Fallback: só planned (nunca claimed) + CAS no dispatch.
+    const { data } = await supabase
+      .from("daily_reheat_queue")
+      .select(
+        "id, customer_id, consultant_id, queue, step, planned_actions, status, next_action_at, claim_token",
+      )
+      .eq("cycle_date", opts.cycleDate)
+      .eq("status", "planned")
+      .lte("next_action_at", nowIso)
+      .order("next_action_at", { ascending: true })
+      .limit(limit);
+    rows = data || [];
+  }
+
+  if (!rows.length) return [];
 
   const ids = rows.map((r: any) => r.customer_id);
   const { data: custs } = await supabase
@@ -422,6 +445,7 @@ export async function loadDueQueuePlans(
         : [...def.actions];
 
     plans.push({
+      id: r.id,
       customer_id: r.customer_id,
       consultant_id: r.consultant_id,
       queue,
@@ -434,6 +458,7 @@ export async function loadDueQueuePlans(
       would_sms: def.would_sms,
       reason: `due_step_${def.id}`,
       guards: [],
+      claim_token: r.claim_token ?? null,
     });
   }
   return plans;
