@@ -117,13 +117,14 @@ export async function persistCadenceLibraryRemote(
     updatedAt: new Date().toISOString(),
   });
   const now = new Date().toISOString();
-  await supabase
+  const { error: deactErr } = await supabase
     .from("ai_media_library")
     .update({ active: false, updated_at: now })
     .eq("consultant_id", consultantId)
     .eq("slot_key", REMOTE_LIBRARY_SLOT)
     .eq("active", true);
-  await supabase.from("ai_media_library").insert({
+  if (deactErr) throw new Error(`persist_deactivate: ${deactErr.message}`);
+  const { error: insErr } = await supabase.from("ai_media_library").insert({
     consultant_id: consultantId,
     slot_key: REMOTE_LIBRARY_SLOT,
     kind: "text",
@@ -137,6 +138,57 @@ export async function persistCadenceLibraryRemote(
     delay_before_ms: 0,
     priority: 0,
   });
+  if (insErr) throw new Error(`persist_insert: ${insErr.message}`);
+}
+
+/**
+ * Mapa Grupo B (painel Multicanal) → estágios do motor `cadence_stage_config`.
+ * Faz o que o usuário edita virar o texto real que o motor envia.
+ */
+const GROUP_B_TO_STAGE: Record<string, string> = {
+  b1_wa_reopen: "COLD_1",
+  b_day2_wa: "COLD_2",
+  b_day7_wa_easy: "COLD_3",
+  b_day10_wa_final: "COLD_4",
+  b4_call_1: "CALL_1",
+  b_day4_call_2: "CALL_2",
+  b_day10_call: "CALL_3",
+  b3_sms_1: "SMS_1",
+  b_day6_sms_2: "SMS_2",
+};
+
+/** Espelha textos do Grupo B em `cadence_stage_config` (consultant_id = null). */
+export async function syncCadenceLibraryToStageConfig(
+  lib: SavedCadenceLibrary,
+): Promise<{ updated: string[]; errors: string[] }> {
+  const updated: string[] = [];
+  const errors: string[] = [];
+  for (const [key, stage] of Object.entries(GROUP_B_TO_STAGE)) {
+    const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
+    if (!tpl) continue;
+    const body = resolveBody(tpl, lib).trim();
+    if (!body) continue;
+    const { data: existing } = await supabase
+      .from("cadence_stage_config")
+      .select("id")
+      .is("consultant_id", null)
+      .eq("stage", stage)
+      .maybeSingle();
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("cadence_stage_config")
+        .update({ message_text: body, updated_at: new Date().toISOString() })
+        .eq("id", existing.id);
+      if (error) { errors.push(`${stage}: ${error.message}`); continue; }
+    } else {
+      const { error } = await supabase
+        .from("cadence_stage_config")
+        .insert({ stage, message_text: body, enabled: true, delay_hours: 24 });
+      if (error) { errors.push(`${stage}: ${error.message}`); continue; }
+    }
+    updated.push(stage);
+  }
+  return { updated, errors };
 }
 
 export async function loadCadenceLibraryRemote(
@@ -323,15 +375,22 @@ export async function syncCadenceLibraryToBotFlow(
   return { updated, skipped, errors };
 }
 
-/** Salva local + remoto + espelha no fluxo WhatsApp. */
+/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A) + motor (Grupo B). */
 export async function publishCadenceLibrary(
   consultantId: string,
   lib: SavedCadenceLibrary,
   variant: string = "A",
 ): Promise<{ updated: string[]; errors: string[] }> {
-  await persistCadenceLibraryRemote(consultantId, lib).catch((e) => {
-    console.warn("[multichannel] persist remote:", (e as Error)?.message);
-  });
+  const errors: string[] = [];
+  try {
+    await persistCadenceLibraryRemote(consultantId, lib);
+  } catch (e) {
+    errors.push(`remote: ${(e as Error)?.message || e}`);
+  }
   const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, variant);
-  return { updated: sync.updated, errors: sync.errors };
+  const motor = await syncCadenceLibraryToStageConfig(lib);
+  return {
+    updated: [...sync.updated, ...motor.updated.map((s) => `motor:${s}`)],
+    errors: [...errors, ...sync.errors, ...motor.errors],
+  };
 }
