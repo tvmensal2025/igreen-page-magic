@@ -23,11 +23,16 @@ type Reason =
 async function applyPause(customerId: string, reason: Reason) {
   const { data: userRes } = await supabase.auth.getUser();
   const uid = userRes?.user?.id || null;
+  // Takeover por echo/outbound `fromMe` (`humano_assumiu_whatsapp`) expira em 24h —
+  // é um motivo automático propenso a falso positivo; sem timeout, leads travam para sempre.
+  const pausedUntil = reason === "humano_assumiu_whatsapp"
+    ? new Date(Date.now() + 24 * 3600_000).toISOString()
+    : null;
   const patch = {
     bot_paused: true,
     bot_paused_reason: reason,
     bot_paused_at: new Date().toISOString(),
-    bot_paused_until: null,
+    bot_paused_until: pausedUntil,
     assigned_human_id: uid,
     updated_at: new Date().toISOString(),
   };
