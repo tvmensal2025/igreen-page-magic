@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Edit2, MessageCircle, Loader2, X, FileText, IdCard } from "lucide-react";
+// Nota: `Check` ainda é usado nos ícones inline dos campos editáveis.
 
 
 type FieldDef = { key: string; label: string; format?: (v: any) => string };
@@ -68,41 +69,9 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
     }
   };
 
-  const confirmSelf = async () => {
-    setBusy("self");
-    try {
-      const nowIso = new Date().toISOString();
-      const holderKey = kind === "bill" ? "bill_holder_name" : "doc_holder_name";
-      const holderName = String(customer?.[holderKey] || "").trim();
-      const src = String(customer?.name_source || "").toLowerCase();
-      const protectedSrc = src === "manual" || src === "user_confirmed";
-      const patch: Record<string, unknown> = {
-        [kind === "bill" ? "bill_data_confirmed_at" : "doc_data_confirmed_at"]: nowIso,
-        [kind === "bill" ? "bill_data_confirmation_by" : "doc_data_confirmation_by"]: "consultant",
-        // Limpa fila de revisão OCR pra o banner laranja "Revisar" sumir.
-        ocr_review_pending: null,
-        ocr_review_decided_at: nowIso,
-        ocr_review_decided_by: "consultant",
-      };
-      // Espelha nome OCR na ficha se ainda for WhatsApp/fake.
-      if (holderName && !protectedSrc) {
-        const cur = String(customer?.name || "").trim();
-        if (!cur || cur.toLowerCase() !== holderName.toLowerCase()) {
-          patch.name = holderName;
-          patch.name_source = kind === "bill" ? "ocr_conta" : "ocr_doc";
-        }
-      }
-      await supabase.from("customers").update(patch as any).eq("id", customer.id);
+  // confirmSelf removido (2026-07-18): a confirmação SEMPRE é feita pelo cliente
+  // no WhatsApp. O consultor não confirma mais dados de OCR pelo painel.
 
-      // IMPORTANTE: confirmação interna do consultor NÃO dispara mensagem ao
-      // cliente nem avança o fluxo do bot. Só o botão "Pedir cliente" (askClient)
-      // pode mandar WhatsApp. O bot avança quando o próprio cliente confirma.
-      toast({ title: "✓ Confirmado", description: "Dados salvos — nada foi enviado ao cliente", duration: 1800 });
-      onConfirmed?.();
-    } catch (e: any) {
-      toast({ title: "Erro", description: e?.message || String(e), variant: "destructive" });
-    } finally { setBusy(""); }
-  };
 
   const askClient = async () => {
     setBusy("client");
@@ -202,13 +171,13 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
 
       {!isConfirmed && (
         <div className="flex items-center gap-1 pt-0.5">
-          <Button size="sm" className="h-6 flex-1 text-[10px] font-bold gap-1 px-1.5" onClick={() => void confirmSelf()} disabled={busy !== ""}>
-            {busy === "self" ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
-            <span className="truncate">Confirmo</span>
-          </Button>
-          <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] gap-1 px-1.5" onClick={() => void askClient()} disabled={busy !== ""} title="Pedir confirmação ao cliente via WhatsApp">
+          {/* 2026-07-18: só o cliente confirma — botão "Confirmo" do consultor
+              foi removido. O bot já mandou os botões SIM/NÃO/EDITAR no WhatsApp
+              logo após o OCR; este botão só re-envia o pedido caso o cliente
+              não tenha respondido. */}
+          <Button size="sm" variant="outline" className="h-6 w-full text-[10px] gap-1 px-1.5" onClick={() => void askClient()} disabled={busy !== ""} title="Reenviar pedido de confirmação ao cliente via WhatsApp">
             {busy === "client" ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <MessageCircle className="w-2.5 h-2.5" />}
-            <span className="truncate">Pedir cliente</span>
+            <span className="truncate">Reenviar ao cliente</span>
           </Button>
         </div>
       )}

@@ -14,7 +14,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useConsultantForm } from "@/hooks/useConsultantForm";
 import { useConsultantPresence } from "@/hooks/useConsultantPresence";
-import { OcrReviewBanner } from "@/components/captacao/OcrReviewBanner";
+// OcrReviewBanner removido — confirmação sempre feita pelo cliente no WhatsApp.
 import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatusBanner";
 
 import PageStatus from "@/components/common/PageStatus";
@@ -446,8 +446,9 @@ const AdminContent = () => {
           ? "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full p-0"
           : "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6"}>
 
-        {/* OCR Review Banner */}
-        <OcrReviewBanner consultantId={userId} />
+        {/* OCR Review Banner removido (2026-07-18):
+            confirmação sempre é feita pelo próprio cliente no WhatsApp
+            (botões SIM / NÃO / EDITAR enviados pelo bot logo após o OCR). */}
         <WhatsAppPhoneStatusBanner consultantId={userId} />
 
 
