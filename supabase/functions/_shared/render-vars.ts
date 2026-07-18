@@ -178,10 +178,13 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
 
   // Limpa formatação WhatsApp órfã (negrito/itálico/strike) que ficou vazia
   // porque a variável veio "" — evita aparecer "* *", "__", "~~" no cliente.
+  // Também remove link `wa.me/` órfão (sem número atrás) — caso o consultor
+  // não tenha telefone cadastrado, não vaza "Responda: wa.me/" quebrado.
   return replaced
     .replace(/\*\s*\*/g, "")
     .replace(/_\s*_/g, "")
     .replace(/~\s*~/g, "")
+    .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1");
 }
