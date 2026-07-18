@@ -1784,6 +1784,35 @@ Deno.serve(async (req) => {
     // ─── 6.1) BOT PAUSED — handoff humano ativo ────────────────────────
     // Se um humano assumiu, NÃO responder. Avisa o consultor (texto/mídia).
     if ((customer as any).bot_paused === true) {
+      // Auto-unpause quando a pausa veio de echo/outbound `fromMe` (`humano_assumiu_whatsapp`)
+      // ou do cron de recovery (`lead_travado_recovery_*`) e o cliente acabou de mandar mensagem.
+      // Esses motivos são automáticos — se o lead respondeu, ele não está travado nem em atendimento humano.
+      const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();
+      const _isEchoTakeover = _autoReason === "humano_assumiu_whatsapp";
+      const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
+        && !(customer as any).assigned_human_id;
+      if (_isEchoTakeover || _isAutoStuckPause) {
+        const { error: unpErr } = await supabase
+          .from("customers")
+          .update({
+            bot_paused: false,
+            bot_paused_reason: null,
+            bot_paused_until: null,
+            bot_paused_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", customer.id);
+        if (unpErr) {
+          console.error("⚠️ [evolution] falha ao auto-despausar:", unpErr);
+        } else {
+          console.log(`▶️ [evolution] Auto-despausado ${customer.id} (reason=${_autoReason}, lead respondeu) — bot volta`);
+          (customer as any).bot_paused = false;
+          (customer as any).bot_paused_reason = null;
+          (customer as any).bot_paused_until = null;
+        }
+      }
+    }
+    if ((customer as any).bot_paused === true) {
       console.log(`🤝 [handoff] bot pausado para ${customer.id} (motivo: ${(customer as any).bot_paused_reason}). Skip auto-reply.`);
       try {
         const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
