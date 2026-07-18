@@ -19,6 +19,7 @@ import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -255,16 +256,12 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
   if (consultantId) {
     const { data: c } = await supabase
       .from("consultants")
-      .select("name, display_name, notification_phone, phone")
+      .select("name, display_name")
       .eq("id", consultantId).maybeSingle();
     const display = String(c?.display_name || c?.name || "").trim();
     consultantName = display.split(" ")[0] || display;
-    // WhatsApp do consultor: notification_phone (WA) tem prioridade sobre phone.
-    consultantPhone = String(c?.notification_phone || c?.phone || "").replace(/\D/g, "");
-    // Garante DDI 55 para gerar link wa.me/ válido em número BR sem prefixo.
-    if (consultantPhone && !consultantPhone.startsWith("55") && (consultantPhone.length === 10 || consultantPhone.length === 11)) {
-      consultantPhone = `55${consultantPhone}`;
-    }
+    // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
+    consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
   }
   return { cust, consultantName, consultantPhone };
 }

@@ -16,6 +16,7 @@ import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJi
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -177,12 +178,14 @@ Deno.serve(async (req) => {
           if ((cust as any)?.consultant_id) {
             const { data: consultant } = await supabase
               .from("consultants")
-              .select("name, display_name, notification_phone, phone")
+              .select("name, display_name")
               .eq("id", (cust as any).consultant_id)
               .maybeSingle();
             representante = (consultant as any)?.display_name || (consultant as any)?.name || null;
-            representantePhone = String(
-              (consultant as any)?.notification_phone || (consultant as any)?.phone || "",
+            // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone.
+            representantePhone = await resolveConsultantConnectedWaPhone(
+              supabase,
+              (cust as any).consultant_id,
             );
           }
         }

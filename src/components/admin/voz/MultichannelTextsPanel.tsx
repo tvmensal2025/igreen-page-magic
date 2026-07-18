@@ -47,6 +47,7 @@ import {
   validateWhapiButtons,
 } from "@/lib/multichannelCadenceTexts";
 import { estimateSavingsRange, parseAverageBillValue } from "@/lib/billValueParse";
+import { useConsultantPhone } from "@/hooks/useConsultantPhone";
 import {
   attachVoiceClipToCadenceSteps,
   loadCadenceLibraryFromBotFlow,
@@ -144,7 +145,9 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const [lastGenStats, setLastGenStats] = useState<string | null>(null);
   const [nameInCache, setNameInCache] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [consultantPhone, setConsultantPhone] = useState("");
+  /** WhatsApp CONECTADO (chip) — mesma cascata do QR/ads; nunca notification_phone. */
+  const { phone: connectedWaPhone } = useConsultantPhone(consultantId);
+  const consultantPhone = normalizeConsultantPhoneDigits(connectedWaPhone || "");
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [testPhone, setTestPhone] = useState("");
@@ -153,18 +156,6 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data: cons } = await supabase
-        .from("consultants")
-        .select("notification_phone, phone")
-        .eq("id", consultantId)
-        .maybeSingle();
-      const phoneDigits = normalizeConsultantPhoneDigits(
-        (cons as { notification_phone?: string; phone?: string } | null)?.notification_phone ||
-          (cons as { phone?: string } | null)?.phone ||
-          "",
-      );
-      if (!cancelled) setConsultantPhone(phoneDigits);
-
       const local = loadLibrary(consultantId);
       const remote = await loadCadenceLibraryRemote(consultantId).catch(() => null);
       const fromFlow: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(

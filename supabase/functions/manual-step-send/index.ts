@@ -9,6 +9,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
 
 
 type Part = "text" | "audio" | "image" | "video" | "document" | "all";
@@ -620,10 +621,11 @@ Deno.serve(async (req) => {
     let _repPhone = "";
     try {
       const { data: _consultant } = await supabase
-        .from("consultants").select("name, display_name, notification_phone, phone").eq("id", body.consultantId).maybeSingle();
+        .from("consultants").select("name, display_name").eq("id", body.consultantId).maybeSingle();
       const _full = String((_consultant as any)?.display_name || (_consultant as any)?.name || "").trim();
       _repName = _full.split(/\s+/)[0] || _full;
-      _repPhone = String((_consultant as any)?.notification_phone || (_consultant as any)?.phone || "");
+      // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone.
+      _repPhone = await resolveConsultantConnectedWaPhone(supabase, body.consultantId);
     } catch (_) { /* best-effort */ }
     // Fallback final — nunca deixar `representante` vazio chegar ao cliente.
     // Sem isso, o template "Sou a *assistente virtual* do *{{representante}}*"

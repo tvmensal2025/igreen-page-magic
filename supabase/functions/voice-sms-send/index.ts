@@ -7,6 +7,7 @@ import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import { makeSMS, toCtid, toVelipBRDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -109,20 +110,12 @@ Deno.serve(async (req) => {
   const template = (body.message || "").trim();
   if (!template) return json(400, { error: "missing_message", message: "Escreva a mensagem do SMS." });
 
-  const { data: consultantRow } = await admin
-    .from("consultants")
-    .select("notification_phone, phone")
-    .eq("id", consultantId)
-    .maybeSingle();
-  const consultantPhone = normalizeConsultantPhone(
-    (consultantRow as { notification_phone?: string; phone?: string } | null)?.notification_phone ||
-      (consultantRow as { phone?: string } | null)?.phone ||
-      "",
-  );
+  // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
+  const consultantPhone = await resolveConsultantConnectedWaPhone(admin, consultantId);
   if (!consultantPhone) {
     return json(400, {
       error: "consultant_phone_missing",
-      message: "Cadastre o WhatsApp do consultor (notification_phone) para o link wa.me do SMS.",
+      message: "Conecte o WhatsApp do consultor (chip/instância) para o link wa.me do SMS.",
     });
   }
 
