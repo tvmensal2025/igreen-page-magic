@@ -1627,9 +1627,9 @@ Deno.serve(async (req) => {
           })
           .eq("id", customer.id);
         if (unpErr) {
-          console.error("⚠️ falha ao despausar lead_travado_recovery:", unpErr);
+          console.error("⚠️ falha ao auto-despausar:", unpErr);
         } else {
-          console.log(`▶️ Auto-despausado ${phone} (reason=lead_travado_recovery, lead respondeu) — bot volta`);
+          console.log(`▶️ Auto-despausado ${phone} (reason=${_autoReason}, lead respondeu) — bot volta`);
           (customer as any).bot_paused = false;
           (customer as any).bot_paused_reason = null;
           (customer as any).bot_paused_until = null;
