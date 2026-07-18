@@ -250,3 +250,24 @@ verify_jwt = false
 [functions.finalize-club]
 verify_jwt = false
 
+# ── Crons pg_cron (apikey anon + x-internal/x-service secret; auth real é
+# assertCronAuth dentro da função). Sem verify_jwt=false o gateway devolve 401
+# e o cron morre em silêncio — regressão de 2026-07-18 23:30 UTC no deploy CLI.
+[functions.cadence-tick]
+verify_jwt = false
+
+[functions.close-attendance-scheduled]
+verify_jwt = false
+
+[functions.pos-venda-auto-progress]
+verify_jwt = false
+
+[functions.bot-stuck-recovery]
+verify_jwt = false
+
+[functions.bot-followup-checker]
+verify_jwt = false
+
+[functions.portal-otp-watchdog]
+verify_jwt = false
+
