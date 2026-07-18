@@ -66,6 +66,13 @@ export async function onLeadInboundResponse(
         ? `lead_responded:${prevStage}`
         : "lead_responded";
 
+    // 0) Jornada canônica: invalida claim em voo e suprime efeitos apenas
+    //    'reserved' (nunca sending/sent/unknown). Cancela SMS/ligação futuros
+    //    do marco cuja mensagem o lead acabou de responder.
+    try {
+      await supabase.rpc("on_journey_inbound", { p_customer_id: customer_id });
+    } catch { /* RPC pode não existir em ambiente antigo — pausa abaixo segue */ }
+
     // 1) Pausa a cadência: o lead voltou a falar → bot_flow assume.
     //    Após 72h: onda B recomeça em COLD_1; Grupo C retoma o estágio salvo.
     const resumeAt = new Date(now.getTime() + 72 * 3600_000).toISOString();

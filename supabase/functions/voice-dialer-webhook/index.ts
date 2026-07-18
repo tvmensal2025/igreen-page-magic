@@ -17,9 +17,57 @@ import {
 } from "../_shared/voice-dialer/velip.ts";
 import { isAutomationEnabled } from "../_shared/automation-gate.ts";
 import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
+import {
+  finishOutboundEffect,
+  markEffectSending,
+  reserveOutboundEffect,
+  voiceFallbackSmsKey,
+} from "../_shared/journey-effects.ts";
+
+/** Hash estável do callback p/ dedup (sem timestamp — retries Velip idênticos). */
+async function eventHash(parts: (string | number)[]): Promise<string> {
+  const data = new TextEncoder().encode(parts.join("|"));
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Registra o evento; retorna false se já foi processado (callback repetido).
+ * Erro de banco → fail-open no PROCESSAMENTO (updates são idempotentes),
+ * mas os efeitos derivados (SMS) têm reserva própria fail-closed.
+ */
+async function registerWebhookEvent(
+  admin: SB,
+  hash: string,
+  kind: string,
+  targetId: string | null,
+  campaignId: string | null,
+  meta: Record<string, unknown>,
+): Promise<boolean> {
+  try {
+    const { data, error } = await admin
+      .from("voice_webhook_events")
+      .upsert(
+        { event_hash: hash, event_kind: kind, target_id: targetId, campaign_id: campaignId, meta },
+        { onConflict: "event_hash", ignoreDuplicates: true },
+      )
+      .select("id");
+    if (error) {
+      console.warn("[voice-webhook] dedup insert failed (processing anyway)", error.message);
+      return true;
+    }
+    return Array.isArray(data) && data.length > 0;
+  } catch (e) {
+    console.warn("[voice-webhook] dedup threw (processing anyway)", (e as Error).message);
+    return true;
+  }
+}
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// deno-lint-ignore no-explicit-any
+type SB = any;
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -68,7 +116,7 @@ async function parsePayload(req: Request): Promise<Record<string, unknown>> {
 const TERMINAL = new Set(["completed", "no_answer", "failed", "machine"]);
 
 async function recountCampaign(
-  admin: ReturnType<typeof createClient>,
+  admin: SB,
   campaignId: string,
 ) {
   const { data: targets } = await admin
@@ -97,12 +145,17 @@ async function recountCampaign(
 interface MatchResult {
   id: string;
   campaign_id: string | null;
+  customer_id: string | null;
   attempts: number;
   max_attempts: number;
+  status?: string | null;
+  fallback_sms_at?: string | null;
 }
 
+const TARGET_COLS = "id, campaign_id, customer_id, attempts, max_attempts, status, fallback_sms_at";
+
 async function matchTarget(
-  admin: ReturnType<typeof createClient>,
+  admin: SB,
   ctid: string,
   velipCallId: string,
   dest: string,
@@ -111,35 +164,35 @@ async function matchTarget(
   if (ctid) {
     const { data } = await admin
       .from("voice_campaign_targets")
-      .select("id, campaign_id, attempts, max_attempts")
+      .select(TARGET_COLS)
       .ilike("id", `${ctid}%`)
       .limit(1)
       .maybeSingle();
-    if (data) return data as MatchResult;
+    if (data) return data as unknown as MatchResult;
   }
   // 2) velip_call_id
   if (velipCallId) {
     const { data } = await admin
       .from("voice_campaign_targets")
-      .select("id, campaign_id, attempts, max_attempts")
+      .select(TARGET_COLS)
       .eq("velip_call_id", velipCallId)
       .limit(1)
       .maybeSingle();
-    if (data) return data as MatchResult;
+    if (data) return data as unknown as MatchResult;
   }
   // 3) dest + janela de 60 min (mais tolerante que 60s)
   if (dest) {
     const cutoff = new Date(Date.now() - 60 * 60_000).toISOString();
     const { data } = await admin
       .from("voice_campaign_targets")
-      .select("id, campaign_id, attempts, max_attempts, dialed_at")
+      .select(`${TARGET_COLS}, dialed_at`)
       .eq("phone", dest)
       .in("status", ["dialing", "answered"])
       .gte("dialed_at", cutoff)
       .order("dialed_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (data) return data as MatchResult;
+    if (data) return data as unknown as MatchResult;
   }
   return null;
 }
@@ -234,6 +287,21 @@ Deno.serve(async (req) => {
   }
 
   const target = await matchTarget(admin, ctid, cd_id, dest);
+
+  // Dedup: o MESMO callback (mesmos identificadores + status) processa 1x.
+  // Retries idênticos da Velip retornam 200 sem repetir efeitos derivados.
+  const callHash = await eventHash([
+    "call", cd_id, ctid, dest, called_status,
+    Number.isFinite(time_sec) ? time_sec : "",
+    target?.id ?? "",
+  ]);
+  const isNewEvent = await registerWebhookEvent(
+    admin, callHash, "call_status", target?.id ?? null, target?.campaign_id ?? null,
+    { cd_id, ctid, dest, called_status },
+  );
+  if (!isNewEvent) {
+    return json(200, { ok: true, duplicate: true, matched: !!target });
+  }
   if (!target) {
     // Não achamos target — grava log solto para auditoria e retorna 200 pra Velip não retentar
     await admin.from("voice_call_logs").insert({
@@ -275,7 +343,29 @@ Deno.serve(async (req) => {
     patch.finished_at = new Date().toISOString();
   }
 
-  await admin.from("voice_campaign_targets").update(patch).eq("id", target.id);
+  // CAS em attempts: callback concorrente do mesmo target não incrementa 2x.
+  const { data: casRows } = await admin
+    .from("voice_campaign_targets")
+    .update(patch)
+    .eq("id", target.id)
+    .eq("attempts", target.attempts ?? 0)
+    .select("id");
+  if (!casRows || casRows.length === 0) {
+    // Outro worker processou um callback deste target primeiro — não repete
+    // contagem nem efeitos derivados; registra o log e sai.
+    await admin.from("voice_call_logs").insert({
+      campaign_id: target.campaign_id,
+      target_id: target.id,
+      velip_call_id: cd_id || null,
+      velip_status: called_status || null,
+      velip_raw: params,
+      raw: params,
+      to_phone: dest || "",
+      status: newStatus ?? "unknown",
+      error: "concurrent_callback_skipped",
+    });
+    return json(200, { ok: true, matched: true, concurrent: true });
+  }
 
   // Log detalhado
   const { data: camp } = target.campaign_id
@@ -324,18 +414,23 @@ Deno.serve(async (req) => {
     } catch (_e) { /* ignore */ }
   }
 
-  // Ligação atendida → pausa cadência (só se toggle ON)
+  // Ligação atendida → pausa cadência (só se toggle ON).
+  // customer_id agora vem no match (antes ficava sempre null — bug do plano).
   if (outcome === "answered") {
     try {
-      const customerId = (target as { customer_id?: string | null }).customer_id ?? null;
-      await onCallAnsweredPauseCadence(admin, customerId);
+      await onCallAnsweredPauseCadence(admin, target.customer_id ?? null);
     } catch (_e) { /* ignore */ }
   }
 
-  // SMS de fallback para NA terminal — exige toggle call_outcome_sms_branch
+  // SMS de fallback para NA terminal — exige toggle call_outcome_sms_branch.
+  // Idempotente: 1 SMS por (target, tentativa terminal); callback repetido
+  // ou reconciliador concorrente não duplicam (reserva em outbound_effects).
   if (!shouldRetry && newStatus === "no_answer" && target.campaign_id && velipConfigured()) {
     if (!(await isAutomationEnabled(admin, "call_outcome_sms_branch"))) {
       return json(200, { ok: true, matched: true, outcome, retry: shouldRetry, sms_skipped: "toggle_off" });
+    }
+    if (target.fallback_sms_at) {
+      return json(200, { ok: true, matched: true, outcome, retry: shouldRetry, sms_skipped: "already_sent" });
     }
     const { data: campFull } = await admin
       .from("voice_campaigns")
@@ -344,7 +439,20 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const smsText = (campFull as { sms_on_no_answer_text?: string | null } | null)?.sms_on_no_answer_text?.trim();
     if (smsText && dest) {
+      const eff = await reserveOutboundEffect(admin, {
+        idempotencyKey: voiceFallbackSmsKey(target.id, attempts),
+        engineKey: "voice_dialer_webhook",
+        channel: "sms",
+        customerId: target.customer_id ?? null,
+        consultantId,
+        provider: "velip",
+        actionKey: "voice_fallback_sms",
+      });
+      if (!eff.canSend) {
+        return json(200, { ok: true, matched: true, outcome, retry: shouldRetry, sms_skipped: `effect_${eff.status}` });
+      }
       try {
+        await markEffectSending(admin, eff.effectId);
         const smsRes = await makeSMS({
           to: dest.replace(/\D/g, ""),
           message: smsText,
@@ -360,7 +468,21 @@ Deno.serve(async (req) => {
           velip_ctid: toCtid(target.id),
           error: smsRes.ok ? null : (smsRes.error ?? "unknown"),
         });
+        await finishOutboundEffect(admin, eff.effectId, smsRes.ok ? "sent" : "failed_final", {
+          providerRequestId: smsRes.cdls_id ? String(smsRes.cdls_id) : null,
+          errorCode: smsRes.ok ? null : String(smsRes.error ?? "sms_failed").slice(0, 120),
+        });
+        if (smsRes.ok) {
+          await admin.from("voice_campaign_targets").update({
+            fallback_sms_at: new Date().toISOString(),
+            fallback_sms_effect_id: eff.effectId,
+          }).eq("id", target.id).is("fallback_sms_at", null);
+        }
       } catch (e) {
+        // Exceção APÓS chamar o provider → ambíguo: unknown, nunca repetir cego.
+        await finishOutboundEffect(admin, eff.effectId, "unknown", {
+          errorCode: String((e as Error).message || "exception").slice(0, 120),
+        });
         console.error("[voice-webhook] SMS fallback falhou:", (e as Error).message);
       }
     }

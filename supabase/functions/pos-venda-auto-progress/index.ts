@@ -18,7 +18,7 @@ import {
   type SendResult,
 } from "../_shared/channel-sender.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
-
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 
 const corsHeaders = {
@@ -76,11 +76,28 @@ async function processCustomer(
   // Checar se já enviou para este estágio (idempotência)
   const { data: existingLog } = await supabase
     .from("customer_auto_message_log")
-    .select("id")
+    .select("id, status, created_at")
     .eq("customer_id", customer.id)
     .eq("stage_key", stageKey)
     .maybeSingle();
-  if (existingLog) return { moved: true, sent: false };
+  let staleClaimId: string | null = null;
+  if (existingLog) {
+    // Claim órfão (worker morreu antes de finalizar): retoma após 60min via
+    // CAS — somente um worker vence o UPDATE condicionado ao status.
+    const isStaleClaim = existingLog.status === "claimed" &&
+      existingLog.created_at &&
+      Date.now() - new Date(existingLog.created_at).getTime() > 60 * 60_000;
+    if (!isStaleClaim) return { moved: true, sent: false };
+    const { data: retaken } = await supabase
+      .from("customer_auto_message_log")
+      .update({ status: "claimed_retry" })
+      .eq("id", existingLog.id)
+      .eq("status", "claimed")
+      .select("id")
+      .maybeSingle();
+    if (!retaken?.id) return { moved: true, sent: false };
+    staleClaimId = String(retaken.id);
+  }
 
   // Buscar config do stage do consultor dono
   const ownerId = customer.consultant_id;
@@ -121,7 +138,8 @@ async function processCustomer(
 
   const channel = await resolveChannelForCustomer(supabase, customer.id, env);
   if (isUnavailable(channel)) {
-    await supabase.from("customer_auto_message_log").insert({
+    // upsert ignoreDuplicates: corrida com outro cron não explode no UNIQUE.
+    await supabase.from("customer_auto_message_log").upsert({
       customer_id: customer.id,
       consultant_id: ownerId,
       stage_key: stageKey,
@@ -129,11 +147,38 @@ async function processCustomer(
       customer_name: customer.name,
       message_preview: null,
       status: `no_channel:${channel.reason}`,
-    });
+    }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
     console.warn(`[pos-venda] canal indisponível customer=${customer.id} instance=${channel.instanceName} reason=${channel.reason}`);
     return { moved: true, sent: false };
   }
 
+  // CLAIM-FIRST: o UNIQUE (customer_id, stage_key) é a reserva. Insere ANTES
+  // de enviar; se não inseriu, outro cron simultâneo já está processando —
+  // dois crons de pós-venda nunca duplicam a mensagem do estágio.
+  let claimId = staleClaimId;
+  if (!claimId) {
+    const { data: claimRow, error: claimErr } = await supabase
+      .from("customer_auto_message_log")
+      .upsert({
+        customer_id: customer.id,
+        consultant_id: ownerId,
+        stage_key: stageKey,
+        remote_jid: toJid(phone),
+        customer_name: customer.name,
+        message_preview: null,
+        status: "claimed",
+      }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true })
+      .select("id");
+    if (claimErr) {
+      console.error("[pos-venda] claim falhou (fail-closed)", customer.id, claimErr.message);
+      return { moved: true, sent: false };
+    }
+    claimId = Array.isArray(claimRow) && claimRow[0]?.id ? String(claimRow[0].id) : null;
+    if (!claimId) {
+      // Já claimado/enviado por outra execução.
+      return { moved: true, sent: false };
+    }
+  }
 
   const jid = toJid(phone);
   const dealOrigin = targetStage === "reprovado" ? "reprovado" : "aprovado";
@@ -183,15 +228,11 @@ async function processCustomer(
     ? `[${channel.kind}]${tag ? ` ${tag}` : ""} ${result.preview}`.slice(0, 200)
     : `[${channel.kind}]${tag ? ` ${tag}` : ""}`;
 
-  await supabase.from("customer_auto_message_log").insert({
-    customer_id: customer.id,
-    consultant_id: ownerId,
-    stage_key: stageKey,
-    remote_jid: jid,
-    customer_name: customer.name,
+  // Finaliza o claim com o resultado real do envio.
+  await supabase.from("customer_auto_message_log").update({
     message_preview: previewText,
     status,
-  });
+  }).eq("id", claimId);
 
   return { moved: true, sent: status === "sent" || status.startsWith("partial") };
 
@@ -212,6 +253,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    // deno-lint-ignore no-explicit-any
+    const cronAuth = await assertCronAuth(req, supabase as any);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
     if (!(await isAutomationEnabled(supabase, "pos_venda_auto_messages"))) {
       await logSkipped(supabase, "pos_venda_auto_messages");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "pos_venda_auto_messages" }), { status: 200, headers: { "Content-Type": "application/json" } });

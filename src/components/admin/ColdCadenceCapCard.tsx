@@ -21,7 +21,7 @@ const COLD_STAGES = [
   "RECALL_8M", "RECALL_8M_SMS", "RECALL_8M_CALL",
   "RECALL_12M", "RECALL_12M_SMS", "RECALL_12M_CALL",
   "RECALL_YEARLY", "RECALL_YEARLY_SMS", "RECALL_YEARLY_CALL",
-];
+] as const;
 
 function todayStartBRT(): string {
   const fmt = new Intl.DateTimeFormat("en-CA", {

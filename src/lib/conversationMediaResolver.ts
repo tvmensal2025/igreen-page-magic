@@ -25,6 +25,8 @@ export type LastInboundMedia = {
   url: string | null;
   messageId: string | null;
   kind: string | null;
+  mime?: string | null;
+  at?: string | null;
 };
 
 export const CONVERSATION_MESSAGE_SELECT =

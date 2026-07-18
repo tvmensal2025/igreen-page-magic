@@ -15,7 +15,13 @@ import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  finishOutboundEffect,
+  finishProactiveTouch,
+  markEffectSending,
+  reserveOutboundEffect,
+  reserveProactiveTouch,
+} from "../_shared/journey-effects.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
@@ -184,7 +190,8 @@ Deno.serve(async (req) => {
       }
 
       // 🛑 Gate global: IA do consultor desligada → silêncio total
-      if (await isConsultantAIDisabled(supabase, lead.consultant_id)) {
+      // deno-lint-ignore no-explicit-any
+      if (await isConsultantAIDisabled(supabase as any, lead.consultant_id)) {
         stats.skipped_global_off++;
         continue;
       }
@@ -276,7 +283,9 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (!(await gateProactiveTouch(supabase, lead.id, "bot_stuck_recovery"))) {
+        // Orquestrador atômico: reserva o direito de tocar (fail-closed).
+        const touch = await reserveProactiveTouch(supabase, lead.id, "bot_stuck_recovery", { step });
+        if (!touch.allowed) {
           continue;
         }
 
@@ -285,24 +294,46 @@ Deno.serve(async (req) => {
           phone: lead.phone_whatsapp,
           consultantId: lead.consultant_id,
         });
-        if (!gate.allowed) continue;
+        if (!gate.allowed) {
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+          continue;
+        }
+
+        // Efeito idempotente: 1 rescue por tentativa — dois crons simultâneos
+        // leem o mesmo rescue_attempts e disputam a MESMA chave (1 vence).
+        const eff = await reserveOutboundEffect(supabase, {
+          idempotencyKey: `rescue:${lead.id}:${attempts + 1}`,
+          engineKey: "bot_stuck_recovery",
+          channel: "whatsapp",
+          customerId: lead.id,
+          consultantId: lead.consultant_id,
+          actionKey: `step:${step}`,
+        });
+        if (!eff.canSend) {
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+          continue;
+        }
 
         const _raw = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, inst.instance_name);
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
         const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: inst.instance_name });
         const remoteJid = `${lead.phone_whatsapp}@s.whatsapp.net`;
+        await markEffectSending(supabase, eff.effectId);
         const sent = await sender.sendText(remoteJid, message);
 
         if (!sent) {
           // Não conta tentativa em falha de envio. Cooldown curto p/ retentar em 10min.
           stats.send_failed++;
+          await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", { errorCode: "send_failed" });
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
           await supabase.from("customers").update({
             next_rescue_allowed_at: new Date(Date.now() + 10 * 60_000).toISOString(),
           }).eq("id", lead.id);
           continue;
         }
 
-        await recordProactiveTouch(supabase, lead.id, "bot_stuck_recovery");
+        await finishOutboundEffect(supabase, eff.effectId, "sent");
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
         stats.rescued++;
         await supabase.from("customers").update({
           last_bot_reply_at: nowIso,

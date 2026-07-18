@@ -561,11 +561,9 @@ export async function runZeroLeadAutoAudit(supabase: {
     .is("consultant_id", null)
     .in("stage", ["COLD_2", "SMS_TEMA_2", "SMS_TEMA_7"]);
 
-  const byStage = new Map(
-    (stages ?? []).map((s: { stage: string; enabled: boolean; message_text: string | null }) => [
-      s.stage,
-      s,
-    ]),
+  type StageRow = { stage: string; enabled: boolean; message_text: string | null };
+  const byStage = new Map<string, StageRow>(
+    ((stages ?? []) as StageRow[]).map((s) => [s.stage, s]),
   );
 
   const cold2 = byStage.get("COLD_2");

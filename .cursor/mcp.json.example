@@ -1,8 +1,7 @@
 {
   "mcpServers": {
     "supabase": {
-      "command": "bash",
-      "args": ["${workspaceFolder}/scripts/mcp-supabase.sh"]
+      "url": "https://mcp.supabase.com/mcp?project_ref=zlzasfhcxcznaprrragl"
     },
     "github": {
       "command": "bash",
@@ -23,6 +22,10 @@
     "analyzer": {
       "command": "bash",
       "args": ["${workspaceFolder}/scripts/mcp-analyzer.sh"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
     },
     "velip": {
       "url": "https://vox20.velip.com.br/mcpserver/velip",

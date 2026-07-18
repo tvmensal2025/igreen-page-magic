@@ -89,11 +89,13 @@ export async function canProactiveTouch(
     Date.now() - settings.orchestrator_cooldown_hours * 3600_000,
   ).toISOString();
 
+  // status 'released' = reserva devolvida sem toque real → não conta cooldown.
   const { data: recent } = await supabase
     .from("proactive_touch_log")
-    .select("source_key, created_at")
+    .select("source_key, created_at, status")
     .eq("customer_id", customerId)
     .gte("created_at", since)
+    .neq("status", "released")
     .order("created_at", { ascending: false })
     .limit(5);
 

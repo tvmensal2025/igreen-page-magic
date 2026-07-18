@@ -47,6 +47,7 @@
     "npm:@supabase/supabase-js@^2.108.2": "2.108.2",
     "npm:@tailwindcss/typography@~0.5.16": "0.5.20_tailwindcss@3.4.19",
     "npm:@tanstack/react-query@^5.83.0": "5.101.0_react@18.3.1",
+    "npm:@tanstack/react-virtual@^3.14.6": "3.14.6_react@18.3.1_react-dom@18.3.1__react@18.3.1",
     "npm:@testing-library/jest-dom@^6.6.0": "6.9.1",
     "npm:@testing-library/react@16": "16.3.2_@testing-library+dom@10.4.1_@types+react@18.3.31_@types+react-dom@18.3.7__@types+react@18.3.31_react@18.3.1_react-dom@18.3.1__react@18.3.1",
     "npm:@types/canvas-confetti@^1.9.0": "1.9.0",
@@ -65,6 +66,7 @@
     "npm:dagre@~0.8.5": "0.8.5",
     "npm:date-fns@^3.6.0": "3.6.0",
     "npm:dotenv@^17.4.2": "17.4.2",
+    "npm:driver.js@^1.7.0": "1.8.0",
     "npm:embla-carousel-autoplay@^8.6.0": "8.6.0_embla-carousel@8.6.0",
     "npm:embla-carousel-react@^8.6.0": "8.6.0_react@18.3.1",
     "npm:eslint-plugin-react-hooks@^5.2.0": "5.2.0_eslint@9.39.4",
@@ -2847,6 +2849,17 @@
         "react"
       ]
     },
+    "@tanstack/react-virtual@3.14.6_react@18.3.1_react-dom@18.3.1__react@18.3.1": {
+      "integrity": "sha512-4+Uq8m0/gzO4kMCHUEpTtGX1RnONK0C+g88b2ltwPMWUBiaVarBuWKoPJaz7gj1cKCVRAdyu+U8GcKhwCc2beA==",
+      "dependencies": [
+        "@tanstack/virtual-core",
+        "react",
+        "react-dom"
+      ]
+    },
+    "@tanstack/virtual-core@3.17.4": {
+      "integrity": "sha512-nGm5KteqxasUdThLc2izl6dHUqLv0LQj7Nuyo5gYalTPf/U8a9ermvsl7reT+6ioBW1l8WfpP/mcU338nLXpqw=="
+    },
     "@testing-library/dom@10.4.1": {
       "integrity": "sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==",
       "dependencies": [
@@ -4076,6 +4089,9 @@
     },
     "draco3d@1.5.7": {
       "integrity": "sha512-m6WCKt/erDXcw+70IJXnG7M3awwQPAsZvJGX5zY7beBqpELw6RDGkYVU0W43AFxye4pDZ5i2Lbyc/NNGqwjUVQ=="
+    },
+    "driver.js@1.8.0": {
+      "integrity": "sha512-+8/IO7h1v14IzWh2GP60N7T3PFZweXwdn5e5POuxRSBoCYUojsBxzqawPeXh3YZIibRy7EehYNEyxe7slwwtdg=="
     },
     "dunder-proto@1.0.1": {
       "integrity": "sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==",
@@ -7777,7 +7793,11 @@
     "https://deno.land/std@0.168.0/async/pool.ts": "6854d8cd675a74c73391c82005cbbe4cc58183bddcd1fbbd7c2bcda42b61cf69",
     "https://deno.land/std@0.168.0/async/retry.ts": "e8e5173623915bbc0ddc537698fa418cf875456c347eda1ed453528645b42e67",
     "https://deno.land/std@0.168.0/async/tee.ts": "3a47cc4e9a940904fd4341f0224907e199121c80b831faa5ec2b054c6d2eff5e",
+    "https://deno.land/std@0.168.0/fmt/colors.ts": "03ad95e543d2808bc43c17a3dd29d25b43d0f16287fe562a0be89bf632454a12",
     "https://deno.land/std@0.168.0/http/server.ts": "e99c1bee8a3f6571ee4cdeb2966efad465b8f6fe62bec1bdb59c1f007cc4d155",
+    "https://deno.land/std@0.168.0/testing/_diff.ts": "a23e7fc2b4d8daa3e158fa06856bedf5334ce2a2831e8bf9e509717f455adb2c",
+    "https://deno.land/std@0.168.0/testing/_format.ts": "cd11136e1797791045e639e9f0f4640d5b4166148796cad37e6ef75f7d7f3832",
+    "https://deno.land/std@0.168.0/testing/asserts.ts": "51353e79437361d4b02d8e32f3fc83b22231bc8f8d4c841d86fd32b0b0afe940",
     "https://deno.land/std@0.224.0/assert/_constants.ts": "a271e8ef5a573f1df8e822a6eb9d09df064ad66a4390f21b3e31f820a38e0975",
     "https://deno.land/std@0.224.0/assert/assert.ts": "09d30564c09de846855b7b071e62b5974b001bb72a4b797958fe0660e7849834",
     "https://deno.land/std@0.224.0/assert/assert_almost_equals.ts": "9e416114322012c9a21fa68e187637ce2d7df25bcbdbfd957cd639e65d3cf293",

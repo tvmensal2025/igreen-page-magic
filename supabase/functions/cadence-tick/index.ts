@@ -22,7 +22,17 @@ import {
 } from "../_shared/voice-dialer/velip.ts";
 import { resolveCallDialAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { gateProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  cadenceEffectKey,
+  finishAutomationRun,
+  finishOutboundEffect,
+  finishProactiveTouch,
+  markEffectSending,
+  reserveOutboundEffect,
+  reserveProactiveTouch,
+  startAutomationRun,
+} from "../_shared/journey-effects.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import {
@@ -300,6 +310,16 @@ function renderTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
 }
 
+/**
+ * Fail-closed de identidade (PLANO §10): se o template exige {{consultor}} /
+ * {{consultor_phone}} e não temos valor real, NÃO enviar — nunca inventar nome.
+ */
+function missingIdentityVar(tpl: string, consultantName: string, consultantPhone: string): string | null {
+  if (/\{\{\s*consultor\s*\}\}/i.test(tpl) && !consultantName.trim()) return "consultor";
+  if (/\{\{\s*(consultor_phone|link_wa)\s*\}\}/i.test(tpl) && !consultantPhone.trim()) return "consultor_phone";
+  return null;
+}
+
 /** Todo SMS sai com https://wa.me do consultor clicável. */
 function ensureSmsWaLink(text: string, consultorPhone: string): string {
   let t = String(text || "").trim();
@@ -369,6 +389,8 @@ async function dispatchWhatsApp(
   }
   const availOverrides = await loadAvail(row.consultant_id);
   const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
+  const missingVar = missingIdentityVar(rawTpl, consultantName, consultantPhone);
+  if (missingVar) return { ok: false, detail: `identity_missing:${missingVar}` };
   const text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
@@ -388,8 +410,11 @@ async function dispatchWhatsApp(
     } else {
       if (!text.trim()) return { ok: false, detail: "empty_message" };
       const stageButtons = buttonsForStage(stage);
-      if (stageHasButtons(stage) && stageButtons.length > 0 && typeof ch.adapter.sendButtons === "function") {
-        r = await ch.adapter.sendButtons(jid, text, stageButtons, { ...sendCtx, supabase } as any);
+      const adapterWithButtons = ch.adapter as typeof ch.adapter & {
+        sendButtons?: (jid: string, text: string, buttons: unknown, ctx: unknown) => Promise<unknown>;
+      };
+      if (stageHasButtons(stage) && stageButtons.length > 0 && typeof adapterWithButtons.sendButtons === "function") {
+        r = await adapterWithButtons.sendButtons(jid, text, stageButtons, { ...sendCtx, supabase } as any);
       } else {
         r = await ch.adapter.sendText(jid, text, { ...sendCtx, supabase } as any);
       }
@@ -441,7 +466,9 @@ async function dispatchVoiceCall(
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
-  const ctid = toCtid(`cad_${stage}_${row.customer_id.slice(0, 8)}_${stage}`);
+  // Ctid estável por (estágio, sequência da jornada) — sem timestamp; ciclos
+  // anuais do Grupo C ganham sequência nova, então não colidem.
+  const ctid = toCtid(`cad_${stage}_s${Number(row.stage_sequence ?? 0)}_${row.customer_id.slice(0, 8)}`);
 
   // Regra Sofia: clip ElevenLabs → Velip. Sem TTS robótico Velip.
   const resolved = await resolveCallDialAudio(supabase, {
@@ -497,6 +524,8 @@ async function dispatchSMS(
   }
   const availOverrides = await loadAvail(row.consultant_id);
   const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
+  const missingSmsVar = missingIdentityVar(rawTpl, consultantName, consultantPhone);
+  if (missingSmsVar) return { ok: false, detail: `identity_missing:${missingSmsVar}` };
   let text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
@@ -534,7 +563,8 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const cronAuth = await assertCronAuth(req, supabase);
+  // deno-lint-ignore no-explicit-any
+  const cronAuth = await assertCronAuth(req, supabase as any);
   if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     if (!(await isAutomationEnabled(supabase, "cadence_engine"))) {
@@ -565,10 +595,15 @@ Deno.serve(async (req) => {
   const coldCap = await loadColdDailyCap(supabase);
   let coldTouchesToday = await countColdTouchesToday(supabase);
   const audienceCfg = await loadCadenceAudienceConfig(supabase);
+  const runId = await startAutomationRun(supabase, "cadence_engine", { triggerKind: "cron" });
 
   // Reabre claims órfãos (lease expirado) — best-effort; RPC pode ainda não existir.
   try {
     await supabase.rpc("reconcile_stuck_cadence_claims");
+  } catch { /* migration pendente */ }
+  // Efeitos órfãos (reserved/sending velhos) → released/unknown.
+  try {
+    await supabase.rpc("reconcile_stale_outbound_effects", { p_reserved_minutes: 30, p_sending_minutes: 30 });
   } catch { /* migration pendente */ }
 
   // Claim atômico (RPC). Fallback: SELECT + CAS em next_action_at (anti-duplicidade).
@@ -584,12 +619,15 @@ Deno.serve(async (req) => {
     }
     const { data: selected, error } = await supabase
       .from("lead_cadence_state")
-      .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at, next_action_at, claim_token")
+      .select("id, customer_id, consultant_id, stage, stage_sequence, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at, next_action_at, claim_token")
       .lte("next_action_at", now.toISOString())
       .not("stage", "eq", "WON")
       .order("next_action_at", { ascending: true })
       .limit(100);
-    if (error) return json({ error: error.message }, 500);
+    if (error) {
+      await finishAutomationRun(supabase, runId, "failed", {}, "select_due_failed");
+      return json({ error: error.message }, 500);
+    }
     due = [];
     for (const row of selected || []) {
       const leaseUntil = new Date(now.getTime() + 15 * 60_000).toISOString();
@@ -606,7 +644,10 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (!due || due.length === 0) return json({ processed: 0, cold_cap: coldCap, cold_today: coldTouchesToday });
+  if (!due || due.length === 0) {
+    await finishAutomationRun(supabase, runId, "completed", { processed: 0 });
+    return json({ processed: 0, cold_cap: coldCap, cold_today: coldTouchesToday });
+  }
 
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
   const { data: custRows } = await supabase
@@ -781,19 +822,53 @@ Deno.serve(async (req) => {
           stage === "RETARGET_ADS_15D" ||
           ((stage === "CLOSE_LOST" || stage === "RETARGET_META") && bulkOn);
         if (canSync) {
-          const meta = await syncCustomerToMetaAudience(supabase, {
+          // Efeito idempotente: 1 sync lógico por (jornada, estágio, sequência).
+          const effKey = cadenceEffectKey(String(row.id), stage, Number(row.stage_sequence ?? 0), "meta_audience");
+          const eff = await reserveOutboundEffect(supabase, {
+            idempotencyKey: effKey,
+            engineKey: "cadence_engine",
+            channel: "meta_audience",
             customerId: row.customer_id,
             consultantId: row.consultant_id,
+            journeyId: row.id,
             stage,
-            dryRun: false,
+            stageSequence: Number(row.stage_sequence ?? 0),
+            provider: "meta",
+            runId,
+            claimId: claimToken ?? null,
           });
-          detail = {
-            ...detail,
-            meta_sync: meta.detail,
-            meta_ok: meta.ok,
-            audience_id: meta.audience_id ?? null,
-          };
-          if (meta.ok) status = "sent";
+          if (eff.canSend) {
+            await markEffectSending(supabase, eff.effectId);
+            const meta = await syncCustomerToMetaAudience(supabase, {
+              customerId: row.customer_id,
+              consultantId: row.consultant_id,
+              stage,
+              dryRun: false,
+            });
+            detail = {
+              ...detail,
+              meta_sync: meta.detail,
+              meta_ok: meta.ok,
+              audience_id: meta.audience_id ?? null,
+              effect_id: eff.effectId,
+            };
+            if (meta.ok) status = "sent";
+            await finishOutboundEffect(
+              supabase, eff.effectId,
+              meta.ok ? "sent" : "failed_retryable",
+              { providerStatus: String(meta.detail || "").slice(0, 200) },
+            );
+          } else if (eff.status === "sent" || eff.status === "delivered") {
+            // Sync já feito numa execução anterior (crash pós-envio): só avança.
+            detail = { ...detail, meta_sync: "effect_already_sent", effect_id: eff.effectId };
+          } else {
+            // reserved/sending/unknown/erro → outro worker ou ambíguo: adia.
+            await finishRow(row.id, claimToken, {
+              next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+            });
+            detail = { ...detail, meta_sync: `effect_${eff.status}` };
+            deferred++; continue;
+          }
         } else {
           detail = { ...detail, meta_sync: "skipped_toggle_off" };
         }
@@ -839,22 +914,82 @@ Deno.serve(async (req) => {
           await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
           skipped++; continue;
         } else {
-          let res: { ok: boolean; detail: string; theme_id?: string };
-          if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
-          else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
-          else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
-          status = res.ok ? "sent" : "failed";
-          detail = {
-            ...detail,
-            dispatch: res.detail,
-            via: "evo_or_whapi",
-            ...(res.theme_id ? { theme_id: res.theme_id } : {}),
-          };
-          if (res.ok) {
-            sent++;
-            if (isColdOutreachStage(stage)) coldTouchesToday++;
-            await recordProactiveTouch(supabase, row.customer_id, "cadence_engine", { stage, channel: def.channel });
-          } else failed++;
+          // 1) Orquestrador atômico: reserva o direito de tocar o cliente.
+          //    Fail-closed: erro de banco/reserva → não envia neste tick.
+          const touch = await reserveProactiveTouch(supabase, row.customer_id, "cadence_engine", {
+            stage, channel: def.channel,
+          });
+          if (!touch.allowed) {
+            await logSkipped(supabase, "retention_orchestrator", {
+              customer_id: row.customer_id, source: "cadence_engine",
+              blocked_by: touch.blockedBy, reason: touch.reason,
+            });
+            deferred++; continue; // lease do claim segura a linha até o próximo tick
+          }
+
+          // 2) Efeito idempotente: 1 envio lógico por (jornada, estágio, sequência, canal).
+          const effKey = cadenceEffectKey(String(row.id), stage, Number(row.stage_sequence ?? 0), def.channel);
+          const eff = await reserveOutboundEffect(supabase, {
+            idempotencyKey: effKey,
+            engineKey: "cadence_engine",
+            channel: def.channel as "whatsapp" | "sms" | "voice",
+            customerId: row.customer_id,
+            consultantId: row.consultant_id,
+            journeyId: row.id,
+            stage,
+            stageSequence: Number(row.stage_sequence ?? 0),
+            provider: def.channel === "whatsapp" ? "evolution_whapi" : "velip",
+            runId,
+            claimId: claimToken ?? null,
+          });
+
+          if (!eff.canSend) {
+            await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+            if (eff.status === "sent" || eff.status === "delivered") {
+              // Envio já ocorreu (ex.: worker morreu entre enviar e avançar):
+              // NÃO reenvia — apenas deixa avançar o estágio abaixo.
+              detail = { ...detail, dispatch: "effect_already_sent", effect_id: eff.effectId };
+              status = "queued";
+            } else {
+              // reserved/sending → outro worker; unknown → ambíguo (reconciliar);
+              // suppressed/failed_final/erro → não reenviar automaticamente.
+              const deferMin = (eff.status === "suppressed" || eff.status === "failed_final") ? 360 : 30;
+              await finishRow(row.id, claimToken, {
+                next_action_at: new Date(now.getTime() + deferMin * 60_000).toISOString(),
+              });
+              detail = { ...detail, dispatch: `effect_${eff.status}`, effect_id: eff.effectId };
+              deferred++; continue;
+            }
+          } else {
+            await markEffectSending(supabase, eff.effectId);
+            let res: { ok: boolean; detail: string; theme_id?: string };
+            if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
+            else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
+            else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
+            status = res.ok ? "sent" : "failed";
+            detail = {
+              ...detail,
+              dispatch: res.detail,
+              via: "evo_or_whapi",
+              effect_id: eff.effectId,
+              ...(res.theme_id ? { theme_id: res.theme_id } : {}),
+            };
+            if (res.ok) {
+              sent++;
+              if (isColdOutreachStage(stage)) coldTouchesToday++;
+              await finishOutboundEffect(supabase, eff.effectId, "sent", {
+                providerStatus: String(res.detail || "").slice(0, 200),
+              });
+              await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
+            } else {
+              failed++;
+              // Falha antes/no provider → retryable com a MESMA chave (attempt++).
+              await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", {
+                errorCode: String(res.detail || "send_failed").slice(0, 120),
+              });
+              await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+            }
+          }
         }
       }
     }
@@ -887,6 +1022,7 @@ Deno.serve(async (req) => {
       next_action_at: nextAt?.toISOString() ?? null,
       attempts_by_channel: attempts,
       paused_until: null,
+      ...(typeof detail.effect_id === "string" ? { last_effect_id: detail.effect_id } : {}),
     });
 
     if (def.next === "CLOSE_LOST") {
@@ -895,6 +1031,11 @@ Deno.serve(async (req) => {
 
     dispatched++;
   }
+
+  await finishAutomationRun(supabase, runId, failed > 0 ? "partial" : "completed", {
+    processed: due.length, dispatched, deferred, skipped, sent, failed, resumed,
+    audience_blocked: audienceBlocked,
+  });
 
   return json({
     processed: due.length,

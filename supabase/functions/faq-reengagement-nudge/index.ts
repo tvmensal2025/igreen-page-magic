@@ -26,7 +26,13 @@ import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  finishOutboundEffect,
+  finishProactiveTouch,
+  markEffectSending,
+  reserveOutboundEffect,
+  reserveProactiveTouch,
+} from "../_shared/journey-effects.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const NUDGE_DELAY_MINUTES = 20;
@@ -108,19 +114,28 @@ serve(async (req: Request) => {
         continue;
       }
 
-      if (!(await gateProactiveTouch(supabase, lead.id, "faq_reengagement_nudge"))) continue;
+      // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
+      const touch = await reserveProactiveTouch(supabase, lead.id, "faq_reengagement_nudge", {});
+      if (!touch.allowed) continue;
+      let touchOpen = true;
+      const releaseTouch = async () => {
+        if (touchOpen) {
+          touchOpen = false;
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+        }
+      };
 
       const gate = await assertBotOutboundAllowed(supabase, {
         customerId: lead.id,
         phone: lead.phone_whatsapp,
         consultantId: lead.consultant_id,
       });
-      if (!gate.allowed) continue;
+      if (!gate.allowed) { await releaseTouch(); continue; }
 
       const channel = await resolveChannelForCustomer(supabase, lead.id, env);
       if (isUnavailable(channel)) {
         console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);
-        continue;
+        await releaseTouch(); continue;
       }
 
 
@@ -128,7 +143,7 @@ serve(async (req: Request) => {
       const quota = await checkSendQuota(supabase, channel.instanceName);
       if (!quota.allowed) {
         console.warn(`[faq-nudge] quota blocked for ${channel.instanceName}: ${quota.reason}`);
-        continue;
+        await releaseTouch(); continue;
       }
 
       const firstName = String(lead.name || "").trim().split(/\s+/)[0] || "";
@@ -146,25 +161,43 @@ serve(async (req: Request) => {
       const digits = normalizePhone(lead.phone_whatsapp).replace(/\D/g, "");
       if (!digits) {
         console.warn(`[faq-nudge] phone inválido para ${lead.id}`);
-        continue;
+        await releaseTouch(); continue;
       }
       const jid = `${digits}@s.whatsapp.net`;
+      // Janela de cooldown (4h) como chave lógica: 1 nudge por janela, mesmo
+      // com dois crons simultâneos (mesmo bucket → mesma chave → 1 vence).
+      const nudgeBucket = Math.floor(Date.now() / (NUDGE_COOLDOWN_HOURS * 60 * 60 * 1000));
+      const idempotencyKey = `nudge:${lead.id}:${nudgeBucket}`;
       const sendCtx = {
         customerId: lead.id,
         consultantId: lead.consultant_id,
         stepId: "faq_nudge",
-        idempotencyKey: `nudge:${lead.id}:${Math.floor(Date.now() / (4 * 60 * 60 * 1000))}`,
+        idempotencyKey,
         supabase,
       };
 
+      const eff = await reserveOutboundEffect(supabase, {
+        idempotencyKey,
+        engineKey: "faq_reengagement_nudge",
+        channel: "whatsapp",
+        customerId: lead.id,
+        consultantId: lead.consultant_id,
+        actionKey: "faq_nudge",
+      });
+      if (!eff.canSend) { await releaseTouch(); continue; }
+
+      await markEffectSending(supabase, eff.effectId);
       const result = await channel.adapter.sendText(jid, nudgeText, sendCtx);
       if (!result.ok) {
         console.warn(`[faq-nudge] send failed for ${lead.id}`);
-        continue;
+        await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", { errorCode: "send_failed" });
+        await releaseTouch(); continue;
       }
 
+      await finishOutboundEffect(supabase, eff.effectId, "sent");
       await registerSend(supabase, channel.instanceName);
-      await recordProactiveTouch(supabase, lead.id, "faq_reengagement_nudge");
+      touchOpen = false;
+      await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
 
       // Log no conversations
       await supabase.from("conversations").insert({

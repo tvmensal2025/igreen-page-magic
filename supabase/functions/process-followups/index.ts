@@ -15,7 +15,13 @@ import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER, isLeadEligible } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  finishOutboundEffect,
+  finishProactiveTouch,
+  markEffectSending,
+  reserveOutboundEffect,
+  reserveProactiveTouch,
+} from "../_shared/journey-effects.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
@@ -47,7 +53,8 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const cronAuth = await assertCronAuth(req, supabase);
+    // deno-lint-ignore no-explicit-any
+    const cronAuth = await assertCronAuth(req, supabase as any);
     if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     if (!(await isAutomationEnabled(supabase, "process_followups"))) {
@@ -137,19 +144,30 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (!(await gateProactiveTouch(supabase, c.id, "process_followups"))) {
+        // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
+        const touch = await reserveProactiveTouch(supabase, c.id, "process_followups", {});
+        if (!touch.allowed) {
           // Mantém lease (já claimado); não reabrir no mesmo tick.
           skipCount++;
           continue;
         }
+        let touchOpen = true;
+        const releaseTouch = async () => {
+          if (touchOpen) {
+            touchOpen = false;
+            await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+          }
+        };
 
-        const gate = await assertBotOutboundAllowed(supabase, {
+        // deno-lint-ignore no-explicit-any
+        const gate = await assertBotOutboundAllowed(supabase as any, {
           customerId: c.id,
           phone: c.phone_whatsapp,
           consultantId: c.consultant_id,
         });
         if (!gate.allowed) {
           skipCount++;
+          await releaseTouch();
           continue;
         }
 
@@ -157,6 +175,7 @@ Deno.serve(async (req) => {
         if (attempts >= MAX_FOLLOWUP_ATTEMPTS) {
           await cancelFollowup(supabase, c.id, "max_attempts");
           skipCount++;
+          await releaseTouch();
           continue;
         }
 
@@ -187,6 +206,7 @@ Deno.serve(async (req) => {
           await rescheduleFollowup(supabase, c.id, 30, attempts);
           skipCount++;
           errors.push({ id: c.id, reason: "no_channel_available" });
+          await releaseTouch();
           continue;
         }
 
@@ -212,6 +232,7 @@ Deno.serve(async (req) => {
             error: cerebro.shouldHandoff ? "handoff" : (cerebro.usouCerebro ? "empty_reply" : "cerebro_skipped"),
           });
           await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+          await releaseTouch();
           continue;
         }
         aiResult = {
@@ -225,27 +246,54 @@ Deno.serve(async (req) => {
           errCount++;
           errors.push({ id: c.id, phase: "ai", error: "empty_reply" });
           await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+          await releaseTouch();
+          continue;
+        }
+
+        // Efeito idempotente: 1 follow-up por tentativa — dois crons
+        // simultâneos leem o mesmo followup_count → mesma chave → 1 vence.
+        const eff = await reserveOutboundEffect(supabase, {
+          idempotencyKey: `followup:${c.id}:${attempts + 1}`,
+          engineKey: "process_followups",
+          channel: "whatsapp",
+          customerId: c.id,
+          consultantId: c.consultant_id,
+          actionKey: "cerebro_followup",
+        });
+        if (!eff.canSend) {
+          skipCount++;
+          await releaseTouch();
           continue;
         }
 
         // Envia pelo canal escolhido
         const remoteJid = `${c.phone_whatsapp}@s.whatsapp.net`;
+        await markEffectSending(supabase, eff.effectId);
         let sent = false;
+        let sendThrew = false;
         try {
           const r = await sender.sendText(remoteJid, reply);
           sent = r === true || (r && (r.ok === true || r.messageId));
           if (sent === undefined || sent === null) sent = true; // whapi sender retorna boolean
         } catch (e: any) {
+          sendThrew = true;
           errors.push({ id: c.id, phase: "send", channel: channelTag, error: String(e?.message || e).slice(0, 200) });
         }
 
         if (!sent) {
           errCount++;
+          // Exceção durante a chamada = ambíguo (unknown); retorno false = retryable.
+          await finishOutboundEffect(supabase, eff.effectId, sendThrew ? "unknown" : "failed_retryable", {
+            errorCode: sendThrew ? "send_exception" : "send_failed",
+          });
           await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+          await releaseTouch();
           continue;
         }
 
-        await recordProactiveTouch(supabase, c.id, "process_followups");
+        await finishOutboundEffect(supabase, eff.effectId, "sent");
+        touchOpen = false;
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
 
         // SUCESSO: persiste conversa + zera schedule
         await supabase.from("conversations").insert({

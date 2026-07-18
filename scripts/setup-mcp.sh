@@ -16,7 +16,9 @@ echo -e "${BLUE}╚════════════════════�
 echo ""
 
 # Scripts executáveis
-chmod +x scripts/mcp-github.sh scripts/mcp-supabase.sh scripts/write-mcp-json.sh
+chmod +x scripts/mcp-github.sh scripts/mcp-supabase.sh scripts/mcp-postgres.sh \
+  scripts/mcp-analyzer.sh scripts/write-mcp-json.sh scripts/setup-mcp.sh 2>/dev/null || true
+chmod +x scripts/mcp-firecrawl.sh 2>/dev/null || true
 
 # .cursor/mcp.json — caminhos ABSOLUTOS (Cursor Linux não expande ${workspaceFolder})
 bash scripts/write-mcp-json.sh

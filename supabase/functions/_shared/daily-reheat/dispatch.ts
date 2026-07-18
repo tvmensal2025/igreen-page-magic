@@ -20,7 +20,7 @@ import {
   velipConfigured,
 } from "../voice-dialer/velip.ts";
 import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
-import { recordProactiveTouch } from "../retention-orchestrator.ts";
+import { finishProactiveTouch, reserveProactiveTouch } from "../journey-effects.ts";
 import { isAutomationEnabled } from "../automation-gate.ts";
 import { isBotGloballyEnabled } from "../bot/global-flag.ts";
 import { assertCanContact } from "../contact-suppression.ts";
@@ -417,6 +417,27 @@ export async function dispatchCandidate(
     };
   }
 
+  // Orquestrador atômico: daily reheat não pode disputar o cliente com a
+  // jornada A/B/C nem com follow-ups (fail-closed: erro = não tocar hoje).
+  const hasRealAction = plan.planned_actions.some((a) => a !== "wait");
+  let touch: Awaited<ReturnType<typeof reserveProactiveTouch>> | null = null;
+  if (hasRealAction) {
+    touch = await reserveProactiveTouch(supabase, plan.customer_id, "daily_reheat", {
+      queue: plan.queue,
+      step: plan.step,
+    });
+    if (!touch.allowed) {
+      return {
+        ok: false,
+        results: [{
+          action: "wait",
+          ok: false,
+          detail: `orchestrator:${touch.reason}${touch.blockedBy ? `:${touch.blockedBy}` : ""}`,
+        }],
+      };
+    }
+  }
+
   for (const action of plan.planned_actions) {
     if (action === "wait") {
       results.push({ action, ok: true, detail: "wait_noop" });
@@ -443,12 +464,12 @@ export async function dispatchCandidate(
   }
 
   const ok = results.every((r) => r.ok);
-  if (ok) {
-    await recordProactiveTouch(supabase, plan.customer_id, "daily_reheat", {
-      queue: plan.queue,
-      step: plan.step,
-      actions: results.map((r) => r.action),
-    }).catch(() => {});
+  if (touch?.allowed) {
+    const touched = results.some((r) => r.ok && r.action !== "wait");
+    await finishProactiveTouch(
+      supabase, touch.reservationId, touch.claimToken,
+      touched ? "done" : "released",
+    );
   }
   return { ok, results };
 }

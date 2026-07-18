@@ -10,6 +10,7 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { sendAttendanceRatingRequest } from "../_shared/attendance-flow.ts";
 import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -27,6 +28,9 @@ Deno.serve(async (req) => {
   );
 
   try {
+    // deno-lint-ignore no-explicit-any
+    const cronAuth = await assertCronAuth(req, supabase as any);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
     if (!(await isAutomationEnabled(supabase, "end_customer_attendance_auto"))) {
       await logSkipped(supabase, "end_customer_attendance_auto");
       return json({ ok: true, skipped: "automation_disabled", processed: 0 });
@@ -67,6 +71,21 @@ Deno.serve(async (req) => {
           .from("customers")
           .update({ attendance_auto_close_at: null, attendance_auto_close_source: null })
           .eq("id", customerId);
+        skipped++;
+        continue;
+      }
+
+      // CLAIM via CAS na própria flag: empurra attendance_auto_close_at
+      // +15min condicionado ao valor lido — dois crons simultâneos não
+      // disparam a pesquisa duas vezes (só um vence o UPDATE).
+      const { data: leased } = await supabase
+        .from("customers")
+        .update({ attendance_auto_close_at: new Date(Date.now() + 15 * 60_000).toISOString() })
+        .eq("id", customerId)
+        .eq("attendance_auto_close_at", String(row.attendance_auto_close_at))
+        .select("id")
+        .maybeSingle();
+      if (!leased?.id) {
         skipped++;
         continue;
       }

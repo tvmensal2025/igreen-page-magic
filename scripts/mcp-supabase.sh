@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # MCP Supabase — carrega credenciais de .env.mcp.local (gitignored).
+# Fallback stdio/PAT quando OAuth hosted não estiver autorizado.
 set -euo pipefail
+
+export PATH="${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ROOT}/.env.mcp.local"
+NPX_BIN="$(command -v npx || true)"
+NPX_BIN="${NPX_BIN:-/usr/bin/npx}"
 
 if [[ -f "${ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
@@ -19,11 +24,9 @@ if [[ -z "${SUPABASE_ACCESS_TOKEN:-}" ]]; then
   exit 1
 fi
 
-# service_role (JWT eyJ...) NÃO funciona no MCP oficial — só PAT (sbp_...).
 if [[ "${SUPABASE_ACCESS_TOKEN}" == eyJ* ]]; then
   echo "ERRO: SUPABASE_ACCESS_TOKEN parece ser service_role (JWT eyJ...)." >&2
   echo "O MCP Supabase exige PAT (sbp_...) da conta, não a chave do projeto." >&2
-  echo "Gere em: https://supabase.com/dashboard/account/tokens" >&2
   exit 1
 fi
 
@@ -33,4 +36,4 @@ if [[ "${READ_ONLY}" == "true" ]]; then
 fi
 
 export SUPABASE_ACCESS_TOKEN
-exec npx "${ARGS[@]}"
+exec "${NPX_BIN}" "${ARGS[@]}"

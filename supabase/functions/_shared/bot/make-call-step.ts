@@ -14,6 +14,7 @@ import { isAutomationEnabled, logSkipped } from "../automation-gate.ts";
 import { assertCanContact } from "../contact-suppression.ts";
 import { resolveCallDialAudio } from "../voice-dialer/call-stitch.ts";
 import { toVelipBRDest, velipConfigured } from "../voice-dialer/velip.ts";
+import { makeCallKey } from "../journey-effects.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -51,9 +52,7 @@ async function enqueueSingleCampaign(
     personalize: boolean;
     stepKey: string | null;
   },
-): Promise<{ ok: boolean; campaignId?: string; error?: string }> {
-  const now = new Date().toISOString();
-
+): Promise<{ ok: boolean; campaignId?: string; existed?: boolean; error?: string }> {
   const { data: clip } = await supabase
     .from("voice_audio_clips")
     .select("audio_url")
@@ -64,48 +63,37 @@ async function enqueueSingleCampaign(
     return { ok: false, error: "clip_missing_audio_url" };
   }
 
-  const { data: camp, error: cErr } = await supabase
-    .from("voice_campaigns")
-    .insert({
-      consultant_id: opts.consultantId,
-      name: `fluxo_make_call:${opts.stepKey || "step"}:${opts.customerId.slice(0, 8)}`,
-      status: "running",
-      dispatch_kind: "audio",
-      audio_clip_id: opts.clipId,
-      audio_url: audioUrl,
-      velip_mode: "single",
-      config: {
-        personalize_name: opts.personalize,
-        source: "bot_flow_make_call",
-        step_key: opts.stepKey,
-        velip_audio_id: opts.velipAudioId,
-      },
-      total: 1,
-      dialed: 0,
-      answered: 0,
-      failed: 0,
-      started_at: now,
-    })
-    .select("id")
-    .maybeSingle();
+  // Chave estável: make_call:{customer}:{step}:{turno} — N execuções paralelas
+  // do mesmo passo no mesmo turno criam UMA campanha (RPC transacional).
+  const logicalKey = makeCallKey(opts.customerId, opts.stepKey || "step");
 
-  if (cErr || !camp?.id) {
-    return { ok: false, error: cErr?.message || "campaign_insert_failed" };
-  }
-
-  const { error: tErr } = await supabase.from("voice_campaign_targets").insert({
-    campaign_id: camp.id,
-    customer_id: opts.customerId,
-    phone: opts.phone,
-    name: opts.name,
-    status: "queued",
+  const { data, error } = await supabase.rpc("enqueue_single_voice_campaign", {
+    p_logical_key: logicalKey,
+    p_consultant_id: opts.consultantId,
+    p_customer_id: opts.customerId,
+    p_phone: opts.phone,
+    p_name: opts.name,
+    p_campaign_name: `fluxo_make_call:${opts.stepKey || "step"}:${opts.customerId.slice(0, 8)}`,
+    p_audio_clip_id: opts.clipId,
+    p_audio_url: audioUrl,
+    p_config: {
+      personalize_name: opts.personalize,
+      source: "bot_flow_make_call",
+      step_key: opts.stepKey,
+      velip_audio_id: opts.velipAudioId,
+      logical_key: logicalKey,
+    },
   });
 
-  if (tErr) {
-    return { ok: false, error: tErr.message || "target_insert_failed" };
+  if (error) {
+    // Fail-closed: sem RPC não enfileira (não cai em INSERT duplicável).
+    return { ok: false, error: `rpc:${error.message}` };
   }
-
-  return { ok: true, campaignId: camp.id };
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.campaign_id) {
+    return { ok: false, error: "rpc_empty_result" };
+  }
+  return { ok: true, campaignId: String(row.campaign_id), existed: Boolean(row.existed) };
 }
 
 /**
@@ -200,7 +188,7 @@ export async function handleMakeCallStep(input: MakeCallStepInput): Promise<Make
 
   console.log(JSON.stringify({
     level: "info",
-    event: "make_call_enqueued",
+    event: enq.existed ? "make_call_dedup_existing" : "make_call_enqueued",
     campaign_id: enq.campaignId,
     ...meta,
   }));
@@ -208,7 +196,7 @@ export async function handleMakeCallStep(input: MakeCallStepInput): Promise<Make
   return {
     ok: true,
     dryRun: false,
-    detail: `enqueued:${enq.campaignId}`,
+    detail: enq.existed ? `dedup_existing:${enq.campaignId}` : `enqueued:${enq.campaignId}`,
     campaignId: enq.campaignId,
     velipAudioId: resolved.velip_audio_id,
   };

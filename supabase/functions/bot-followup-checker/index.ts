@@ -20,7 +20,13 @@ import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  finishOutboundEffect,
+  finishProactiveTouch,
+  markEffectSending,
+  reserveOutboundEffect,
+  reserveProactiveTouch,
+} from "../_shared/journey-effects.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 
@@ -102,14 +108,37 @@ Deno.serve(async (req) => {
     for (const c of (candidates || []).filter((c: any) => candidateAllowed.has(c.id))) {
       if (TERMINAL_STEPS.has(c.conversation_step || "")) continue;
       if (!c.phone_whatsapp) continue;
-      if (!(await gateProactiveTouch(supabase, c.id, "bot_followup_checker"))) continue;
+
+      // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
+      const touch = await reserveProactiveTouch(supabase, c.id, "bot_followup_checker", {
+        step: c.conversation_step,
+      });
+      if (!touch.allowed) continue;
 
       const gate = await assertBotOutboundAllowed(supabase, {
         customerId: c.id,
         phone: c.phone_whatsapp,
         consultantId: c.consultant_id,
       });
-      if (!gate.allowed) continue;
+      if (!gate.allowed) {
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+        continue;
+      }
+
+      // Follow-up #1 é único por cliente (candidatos têm followup_count=0):
+      // chave estável — dois crons simultâneos não duplicam.
+      const eff = await reserveOutboundEffect(supabase, {
+        idempotencyKey: `bot_followup:${c.id}:1`,
+        engineKey: "bot_followup_checker",
+        channel: "whatsapp",
+        customerId: c.id,
+        consultantId: c.consultant_id,
+        actionKey: "followup_sumiu_1",
+      });
+      if (!eff.canSend) {
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+        continue;
+      }
 
       const firstName = (c.name || "").split(" ")[0] || "";
       const fallback = firstName
@@ -123,8 +152,10 @@ Deno.serve(async (req) => {
         c.consultant_id,
       );
       try {
+        await markEffectSending(supabase, eff.effectId);
         await sender.sendText(`${c.phone_whatsapp}@s.whatsapp.net`, msg);
-        await recordProactiveTouch(supabase, c.id, "bot_followup_checker");
+        await finishOutboundEffect(supabase, eff.effectId, "sent");
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
         await supabase.from("customers").update({
           followup_count: 1,
           last_followup_at: new Date().toISOString(),
@@ -140,6 +171,12 @@ Deno.serve(async (req) => {
         sent++;
       } catch (e) {
         console.error(`followup falhou ${c.id}`, (e as Error).message);
+        // Exceção DURANTE a chamada ao provider = ambíguo → unknown (nunca
+        // repetir cegamente; reconciliação decide).
+        await finishOutboundEffect(supabase, eff.effectId, "unknown", {
+          errorCode: String((e as Error).message || "send_exception").slice(0, 120),
+        });
+        await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
       }
     }
 

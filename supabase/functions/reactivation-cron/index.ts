@@ -31,7 +31,10 @@ import {
 } from "../_shared/anti-ban.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
-import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import {
+  finishProactiveTouch,
+  reserveProactiveTouch,
+} from "../_shared/journey-effects.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
@@ -232,6 +235,7 @@ interface ProcessResult {
   total_failed: number;
   total_skipped_window: number;
   total_skipped_capture_mode: number;
+  total_skipped_suppressed: number;
 }
 
 async function processAutoReactivation(supabase: SupabaseClient): Promise<ProcessResult> {
@@ -255,7 +259,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     .limit(200);
 
   if (!templates || templates.length === 0) {
-    return { templates_processed: 0, total_sent: 0, total_failed: 0, total_skipped_window: 0, total_skipped_capture_mode: 0 };
+    return { templates_processed: 0, total_sent: 0, total_failed: 0, total_skipped_window: 0, total_skipped_capture_mode: 0, total_skipped_suppressed: 0 };
   }
 
   // Carrega as configurações de reaquecimento de todos os consultores envolvidos.
@@ -367,9 +371,20 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         continue;
       }
 
-      if (!(await gateProactiveTouch(supabase, customer.id, "reactivation_cron"))) {
+      // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
+      const touch = await reserveProactiveTouch(supabase, customer.id, "reactivation_cron", {
+        template_id: tpl.id,
+      });
+      if (!touch.allowed) {
         continue;
       }
+      let touchOpen = true;
+      const releaseTouch = async () => {
+        if (touchOpen) {
+          touchOpen = false;
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+        }
+      };
 
       const gate = await assertBotOutboundAllowed(supabase, {
         customerId: customer.id,
@@ -378,6 +393,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
       });
       if (!gate.allowed) {
         totalSkippedSuppressed++;
+        await releaseTouch();
         continue;
       }
 
@@ -392,6 +408,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         jsonLog("info", "reactivation_cron_quota_block", {
           instance: instanceName, reason: quota.reason, warmup_day: quota.warmup_day,
         });
+        await releaseTouch();
         // Se o motivo é cota/intervalo, faz sentido tentar o próximo template noutra rodada.
         // Se é recovery/circuit breaker, encerra o cron pra essa instância.
         if (quota.reason === "recovery_mode" || quota.reason === "fatal_disconnect_pending_confirmation"
@@ -423,6 +440,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         if (claimErr) {
           const msg = String(claimErr.message || claimErr.code || "");
           if (msg.includes("uq_reactivation_sends_inflight") || msg.includes("duplicate") || claimErr.code === "23505") {
+            await releaseTouch();
             continue; // outro worker já reservou
           }
           // Sem índice ainda: segue com insert best-effort (não bloqueia o dia).
@@ -448,7 +466,8 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
 
       if (ok) await registerSend(supabase, instanceName);
 
-      if (ok) await recordProactiveTouch(supabase, customer.id, "reactivation_cron", { template_id: tpl.id });
+      touchOpen = false;
+      await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, ok ? "done" : "released");
 
       // Finaliza reserva ou registra envio legado.
       try {
