@@ -1,52 +1,50 @@
-## Diagnóstico confirmado
+# Diagnóstico do lead Francisca (5511971254913) — 18/07 01:48
 
-- O áudio novo foi gerado no Storage (`tts-cache/multichannel-a2/masculino-1784308670894.mp3`), mas ele não está sendo usado no envio real do WhatsApp.
-- O fluxo real do WhatsApp não lê `src/lib/multichannelApprovedAudios.ts` para esse envio. Ele usa a tabela `ai_media_library`.
-- Para o consultor Rafael, o corpo masculino ativo ainda é o arquivo antigo:
-  - slot: `a2_audio_activate_name__body_masculino`
-  - URL ativa: `multichannel-a2_audio_activate_name_body_masculino_1784290750771.mp3`
-- O áudio “Olá Felipe” já foi montado como stitch e ficou em cache:
-  - slot: `stitch:a2_audio_activate_name:ola6:masculino:felipe`
-- Por isso “nada mudou”: o sistema reutilizou o corpo masculino antigo e também pode reutilizar stitches antigos já montados.
-- O problema de pronúncia citado é na palavra “diga”, dentro do corpo fixo masculino.
+## O que aconteceu (linha do tempo real)
 
-## Plano de correção
+1. 01:18 → 01:26 — Bot rodou fluxo A normal: nome → valor (R$ 800) → simulação → "Conhecer mais" → áudio 4a+4b + botões **Cadastrar / Falar com humano**.
+2. **01:36:46** — `bot_paused=true`, motivo `humano_assumiu_whatsapp`, `bot_paused_until=null` (pausa permanente). Nada disso foi disparado pelo cliente — foi o webhook de outbound `fromMe` (o consultor mandou algo pelo celular ou um echo do próprio bot fora da janela de 30s).
+3. **01:48:47** — cliente clicou **Cadastrar**. Mensagem entrou em `conversations` (inbound), mas o motor não rodou porque o gate `bot_paused` bloqueou. **Nenhum engine_log, nenhuma resposta, nenhum avanço para `a6_ask_bill_photo`.**
+4. Estado atual: `assigned_human_id` = próprio consultor, `bot_paused=true`, sem timeout — vai ficar assim para sempre até alguém religar manualmente.
 
-1. Ajustar o texto fonte do corpo masculino A2 para o ElevenLabs pronunciar melhor “diga”.
-   - Manter o feminino intacto.
-   - Trocar apenas no masculino a grafia enviada ao TTS, por exemplo de “me diga” para uma forma fonética/mais natural como “me díga” ou “me fala”.
-   - Recomendo “me fala” se você aceitar pequena mudança de texto, porque reduz o risco de pronúncia ruim.
+**Causa-raiz:** o takeover automático (evolution-webhook linha 498-511 + `auto-takeover.ts`) grava `bot_paused_until: null`. Não existe expiração, não existe retomada quando o cliente responde um botão do fluxo. Qualquer echo/manual fora da janela de 30s congela o lead.
 
-2. Regerar o corpo masculino A2 pela função `regen-a2-audio`.
-   - Confirmar resposta da ElevenLabs.
-   - Confirmar novo arquivo no bucket `tts-cache` com tamanho/data nova.
+Isso explica os relatos anteriores ("bot parou de responder", "não seguiu até portal/OTP/facial") — não é OCR, não é worker: é a pausa órfã.
 
-3. Promover o novo arquivo para o slot real usado pelo WhatsApp.
-   - Desativar o registro antigo ativo em `ai_media_library` para `a2_audio_activate_name__body_masculino`.
-   - Inserir/ativar o novo registro no mesmo slot, com `text_content` atualizado.
-   - Não mexer no slot feminino.
+---
 
-4. Limpar os stitches masculinos antigos afetados.
-   - Desativar pelo menos o cache de `stitch:a2_audio_activate_name:ola6:masculino:felipe`.
-   - Idealmente desativar todos os stitches `stitch:a2_audio_activate_name:ola6:masculino:%`, porque todos foram montados com o corpo antigo e continuariam tocando a pronúncia errada.
+## Correções (para "nunca falhar")
 
-5. Testar com “Felipe”.
-   - Rodar o fluxo/geração para montar um novo stitch usando o corpo masculino novo.
-   - Verificar logs do `whapi-webhook` mostrando `corpo FIXO reutilizado slot=a2_audio_activate_name__body_masculino` após a troca.
-   - Confirmar que o novo stitch aponta para arquivo criado depois da correção.
+### 1. Retomar bot automaticamente quando o cliente clica um botão do fluxo
+No motor (evolution-webhook + whapi-webhook, antes do gate `bot_paused`): se o inbound é `button_click` OU casa `trigger_phrases` do step atual, **religar** o bot (`bot_paused=false`, limpar `bot_paused_reason`) e processar. Cliente interagindo = fluxo tem que continuar.
 
-## Detalhe técnico
+### 2. Endurecer o gate de outbound `fromMe`
+- Aumentar janela de "ignorar como bot recente" de 30s para 5 min (o áudio+texto+auto-publish do painel gera outbounds espaçados).
+- Ignorar outbounds cujo `messageId` já está em `outbound_message_log` como enviado pela própria plataforma (não só o `evolution_message_id` — também matching por texto+timestamp curto).
+- Só considerar takeover quando o outbound vier de um device diferente das instâncias gerenciadas do consultor.
 
-A causa principal não é apenas a geração do MP3. Existem duas camadas de cache:
+### 3. Timeout de takeover
+Popular `bot_paused_until = now + 24h` sempre que o motivo for `humano_assumiu_whatsapp` (echo/manual). Cron `bot-unpause-expired` já existe — só passa a limpar essas linhas. Motivos explícitos (`humano_assumiu` via clique no painel) continuam sem expiração.
 
-```text
-ElevenLabs gera corpo masculino novo
-        ↓
-Storage recebe MP3 novo
-        ↓
-ai_media_library precisa apontar o slot ativo para esse MP3
-        ↓
-stitch por nome precisa ser recriado, senão continua usando o MP3 antigo
-```
+### 4. Consertar o lead da Francisca agora
+Rodar `undoTakeoverByPhone("5511971254913")` para o customer `8428419b…` e disparar `manual-step-send` do step `a6_ask_bill_photo` (`f21b3d40-…`) para o cliente receber o pedido de foto da conta e o fluxo retomar exatamente onde parou.
 
-Sem atualizar `ai_media_library` e limpar os stitches antigos, o WhatsApp continua tocando o áudio anterior mesmo que exista arquivo novo no Storage.
+### 5. Painel de saúde no `/admin/checklist`
+Card "Leads travados por takeover órfão": lista `customers` com `bot_paused=true AND bot_paused_reason='humano_assumiu_whatsapp' AND last_inbound_at > bot_paused_at`. Botão "Religar em massa".
+
+---
+
+## Arquivos afetados
+
+- `supabase/functions/evolution-webhook/index.ts` (linhas 482-514) — janela + retomada por botão.
+- `supabase/functions/whapi-webhook/index.ts` (linha 209 e gate equivalente) — mesma correção.
+- `supabase/functions/_shared/engine/runner.ts` — antes do check de `bot_paused`, chamar `maybeResumeOnFlowInteraction(customer, inbound)`.
+- `src/lib/whatsapp/auto-takeover.ts` — `applyPause` grava `bot_paused_until = now+24h` para reason `humano_assumiu_whatsapp` (só essa).
+- `supabase/functions/bot-unpause-expired/index.ts` — cron já roda; garantir que trata esse motivo.
+- `src/pages/AdminChecklist.tsx` — card de leads travados + botão de religar em massa.
+
+## Aceite
+
+- Reproduzir: pausar bot manual → cliente clica botão → bot religa e envia o próximo step do fluxo. **Passar.**
+- Lead Francisca volta a receber `a6_ask_bill_photo` e completa até OTP/link facial.
+- Nenhum lead fica com `bot_paused=true` + `bot_paused_until=null` para o motivo `humano_assumiu_whatsapp` por mais de 24 h.
