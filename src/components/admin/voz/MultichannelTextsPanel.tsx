@@ -1185,6 +1185,57 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   </div>
                 </div>
 
+                {(selected.channel === "sms" || selected.channel === "call_script") && (
+                  <div className="rounded-md border border-dashed border-emerald-500/50 bg-emerald-500/5 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      {selected.channel === "sms" ? (
+                        <Send className="h-4 w-4 text-emerald-700" />
+                      ) : (
+                        <Phone className="h-4 w-4 text-emerald-700" />
+                      )}
+                      <Label className="text-xs font-semibold">
+                        Teste {selected.channel === "sms" ? "de SMS" : "de ligação"} — envie para um número escolhido
+                      </Label>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="space-y-1 flex-1 min-w-[180px]">
+                        <Label className="text-[11px] text-muted-foreground">
+                          Celular (com DDD)
+                        </Label>
+                        <Input
+                          className="h-9"
+                          value={testPhone}
+                          onChange={(e) => setTestPhone(e.target.value)}
+                          placeholder="11 99999-9999"
+                          inputMode="tel"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={selected.channel === "sms" ? runTestSms : runTestCall}
+                        disabled={testBusy || !testPhone.trim()}
+                        className="gap-1.5 h-9"
+                        style={{ background: "var(--pe-emerald)", color: "#fff" }}
+                      >
+                        {testBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : selected.channel === "sms" ? (
+                          <Send className="h-4 w-4" />
+                        ) : (
+                          <Phone className="h-4 w-4" />
+                        )}
+                        {selected.channel === "sms" ? "Enviar SMS de teste" : "Ligar agora (teste)"}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {selected.channel === "sms"
+                        ? "Envia o texto atual (com variáveis substituídas) via Velip SMS para o número informado."
+                        : "Usa o áudio Sofia já gerado deste passo. Se ainda não existir, gere o áudio primeiro."}
+                    </p>
+                  </div>
+                )}
+
+
                 {isMixedMessageAudio && (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
