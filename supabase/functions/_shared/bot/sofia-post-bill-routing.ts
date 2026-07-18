@@ -44,31 +44,20 @@ export function buildSofiaDispatchNameVars(
  * Conta OCR ok → confirma automaticamente e despacha a7 (documento).
  * Retorna true se aplicou (Sofia A/C); false = caller segue fluxo legado.
  */
-export async function advanceSofiaToDocumentAfterBill(opts: {
+/**
+ * DESATIVADO (2026-07-18): o cliente pediu que a confirmação dos dados
+ * da conta seja SEMPRE feita pela pessoa (igual Fluxo D), nunca pelo bot.
+ * Retornar `false` faz o caller cair no fluxo padrão `confirmando_dados_conta`
+ * que envia botões SIM / NÃO / EDITAR ao lead e só avança quando ele responde
+ * → simulação → "Quero me cadastrar" → documento → Portal → OTP → link facial.
+ *
+ * Mantido como no-op para preservar as importações existentes.
+ */
+export async function advanceSofiaToDocumentAfterBill(_opts: {
   customer: { flow_variant?: string | null; conversation_step?: string | null; name?: string | null };
   updates: Record<string, unknown>;
   dispatchStep: (stepKey: string, vars: Record<string, string>) => Promise<unknown>;
   logPrefix?: string;
 }): Promise<boolean> {
-  const merged = { ...opts.customer, ...opts.updates };
-  if (!isSofiaPostBillCadastro(merged)) return false;
-
-  if (!opts.updates.bill_data_confirmed_at) {
-    opts.updates.bill_data_confirmed_at = new Date().toISOString();
-  }
-  opts.updates.bill_data_confirmation_by = "auto_sofia";
-  opts.updates.conversation_step = "aguardando_doc_auto";
-
-  const vars = buildSofiaDispatchNameVars(merged);
-  try {
-    await opts.dispatchStep(SOFIA_DOC_STEP_KEY, vars);
-    opts.updates.__inline_sent = true;
-    console.log(
-      `[${opts.logPrefix || "sofia-post-bill"}] conta→documento direto (sem simulação a3) name=${vars["{{nome}}"]}`,
-    );
-    return true;
-  } catch (e) {
-    console.warn(`[sofia-post-bill] dispatch ${SOFIA_DOC_STEP_KEY} falhou:`, (e as Error).message);
-    return false;
-  }
+  return false;
 }
