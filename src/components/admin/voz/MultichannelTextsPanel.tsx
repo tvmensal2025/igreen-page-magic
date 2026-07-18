@@ -144,6 +144,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [testPhone, setTestPhone] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
