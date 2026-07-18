@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
         let customerName: string | null = null;
         let billValue: number | null = null;
         let representante: string | null = null;
+        let representantePhone: string | null = null;
         if (phone) {
           // Prioriza customer do consultor que criou o agendamento (evita colisão multi-tenant).
           let custQuery = supabase
