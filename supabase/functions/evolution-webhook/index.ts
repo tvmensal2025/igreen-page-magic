@@ -488,7 +488,9 @@ Deno.serve(async (req) => {
           .maybeSingle();
         if (cust?.last_bot_reply_at) {
           const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
-          if (ageMs >= 0 && ageMs <= 30_000) {
+          // Janela ampliada (30s → 5min): auto-publish do painel encadeia áudio+texto+botões
+          // com gaps de segundos, e cada um vira um outbound `fromMe`. 30s pausava o bot no meio do fluxo.
+          if (ageMs >= 0 && ageMs <= 300_000) {
             console.log(`↩️ [evolution] takeover_skipped_recent_bot_reply age_ms=${ageMs}`);
             return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -496,18 +498,20 @@ Deno.serve(async (req) => {
           }
         }
         if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
+          // Timeout de 24h para takeover por echo — se for falso positivo, o bot volta sozinho.
+          const pausedUntil = new Date(Date.now() + 24 * 3600_000).toISOString();
           await supabase
             .from("customers")
             .update({
               bot_paused: true,
               bot_paused_reason: "humano_assumiu_whatsapp",
               bot_paused_at: new Date().toISOString(),
-              bot_paused_until: null,
+              bot_paused_until: pausedUntil,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
-          console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id})`);
+          console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id}, until ${pausedUntil})`);
         }
       } catch (e) {
         console.error("⚠️ [evolution] Falha ao pausar bot via outbound humano:", e);
