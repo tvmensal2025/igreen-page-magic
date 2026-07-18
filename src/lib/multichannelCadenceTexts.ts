@@ -1061,30 +1061,25 @@ Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém
     title: "Opcional — Ligação Sofia (encaixe no construtor)",
     timing: "Consultor escolhe o momento no fluxo",
     canGenerateAudio: true,
-    notes: "Passo make_call — opcional. Nome isolado (cache) · abertura fixa.",
+    notes: "Passo make_call — opcional. Abertura fixa SEM nome (nome pode não estar disponível ainda na ligação).",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
       {
         id: "call_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        label: "1 · Corpo do áudio (fixo · cache)",
+        text: `Olá! Eu sou a Sofia, assistente virtual do Rafael, da iGreen.
 
 Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
 
 Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
       },
     ],
-    body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
-      {
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+    body: `Olá! Eu sou a Sofia, assistente virtual do Rafael, da iGreen.
 
 Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
 
 Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
-      },
-    ]),
+
 
   },
 
