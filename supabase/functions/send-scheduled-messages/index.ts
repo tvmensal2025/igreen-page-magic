@@ -176,18 +176,22 @@ Deno.serve(async (req) => {
           if ((cust as any)?.consultant_id) {
             const { data: consultant } = await supabase
               .from("consultants")
-              .select("name")
+              .select("name, whatsapp_number, phone")
               .eq("id", (cust as any).consultant_id)
               .maybeSingle();
             representante = (consultant as any)?.name || null;
+            representantePhone = String(
+              (consultant as any)?.whatsapp_number || (consultant as any)?.phone || "",
+            );
           }
         }
 
-        // ✅ Renderiza {{nome}}, {nome}, {NOME}, {{valor_conta}} etc. antes de enviar.
+        // ✅ Renderiza {{nome}}, {nome}, {NOME}, {{valor_conta}}, {{consultor_phone}}, etc.
         const renderedText = renderTemplateVars(msg.message_text, {
           name: customerName,
           phone,
           representante,
+          representante_phone: representantePhone,
           valor_conta: billValue,
         });
 
