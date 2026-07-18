@@ -13,14 +13,15 @@ import { executarFollowupCerebro } from "../_shared/cerebro/followup-hook.ts";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
-import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { LEAD_ORIGIN_FILTER, isLeadEligible } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-internal-secret",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const json = (b: unknown, s = 200) =>
@@ -46,30 +47,12 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
     if (!(await isAutomationEnabled(supabase, "process_followups"))) {
       await logSkipped(supabase, "process_followups");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "process_followups" }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
-
-
-    // Auth: aceita cron interno (x-internal-secret == embed_internal_token) ou Bearer admin.
-    const internalSecret = req.headers.get("x-internal-secret") || "";
-    let expectedInternal = Deno.env.get("EMBED_INTERNAL_SECRET") || "";
-    if (!expectedInternal) {
-      const { data: s } = await supabase.from("settings").select("value").eq("key", "embed_internal_token").maybeSingle();
-      expectedInternal = String(s?.value || "");
-    }
-    const isInternal = !!expectedInternal && !!internalSecret && internalSecret === expectedInternal;
-
-    if (!isInternal) {
-      const authz = req.headers.get("authorization") || "";
-      const jwt = authz.replace(/^Bearer\s+/i, "");
-      if (!jwt) return json({ error: "unauthorized" }, 401);
-      const { data: userData } = await supabase.auth.getUser(jwt);
-      if (!userData?.user) return json({ error: "unauthorized" }, 401);
-      const { data: roleRow } = await supabase
-        .from("user_roles").select("role").eq("user_id", userData.user.id).eq("role", "admin").maybeSingle();
-      if (!roleRow) return json({ error: "forbidden" }, 403);
     }
 
     // Quiet hours: pula execução (cron volta em 5min).
@@ -77,30 +60,58 @@ Deno.serve(async (req) => {
       return json({ ok: true, skipped: "quiet_hours" });
     }
 
-    const now = new Date().toISOString();
-    const { data: due, error } = await supabase
-      .from("customers")
-      .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
-      .lte("next_followup_at", now)
-      .eq("bot_paused", false)
-      .eq("do_not_contact", false)
-      // Pausa temporária ("me chama amanhã" → bot_paused_until) também bloqueia
-      // follow-up. Antes só o booleano bot_paused era respeitado.
-      .or(`bot_paused_until.is.null,bot_paused_until.lte.${now}`)
-      .is("assigned_human_id", null)
-      // Regra de ouro: carteira iGreen nunca recebe automação. Helper
-      // compartilhado em _shared/origin-guard.ts.
-      .or(LEAD_ORIGIN_FILTER)
-      .limit(50);
-    if (error) return json({ error: error.message }, 500);
+    // Claim atômico (RPC). Fallback: SELECT + CAS em next_followup_at.
+    let due: any[] | null = null;
+    const { data: claimedRows, error: claimErr } = await supabase.rpc("claim_due_followups", {
+      p_limit: 50,
+    });
+    if (!claimErr && Array.isArray(claimedRows)) {
+      due = claimedRows;
+    } else {
+      if (claimErr) {
+        console.warn("[process-followups] claim_due_followups fallback CAS", claimErr.message);
+      }
+      const now = new Date().toISOString();
+      const { data: selected, error } = await supabase
+        .from("customers")
+        .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
+        .lte("next_followup_at", now)
+        .eq("bot_paused", false)
+        .eq("do_not_contact", false)
+        .or(`bot_paused_until.is.null,bot_paused_until.lte.${now}`)
+        .is("assigned_human_id", null)
+        .or(LEAD_ORIGIN_FILTER)
+        .limit(50);
+      if (error) return json({ error: error.message }, 500);
+      due = [];
+      for (const row of selected || []) {
+        const lease = new Date(Date.now() + 15 * 60_000).toISOString();
+        const { data: got } = await supabase
+          .from("customers")
+          .update({ next_followup_at: lease })
+          .eq("id", row.id)
+          .eq("next_followup_at", row.next_followup_at)
+          .select("id")
+          .maybeSingle();
+        if (got?.id) due.push({ ...row, next_followup_at: lease });
+      }
+    }
 
-    // Defesa em profundidade: mesmo que um agendamento órfão sobreviva, um lead
-    // em passo terminal (portal/OTP/assinatura/completo) já concluiu o fluxo e
-    // não deve receber nudge. Espelha TERMINAL_STEPS do bot-followup-checker.
-    // A checagem de bot_paused_until é repetida aqui caso a query mude no futuro.
+    // Defesa em profundidade: terminal / origem carteira não recebem nudge.
+    // RPC de claim não aplica LEAD_ORIGIN_FILTER — revalida e cancela aqui.
+    for (const c of (due || [])) {
+      if (TERMINAL_STEPS.has(c.conversation_step || "") || !isLeadEligible(c.customer_origin)) {
+        await cancelFollowup(
+          supabase,
+          c.id,
+          TERMINAL_STEPS.has(c.conversation_step || "") ? "terminal_step" : "blocked_origin",
+        );
+      }
+    }
     const rows = (due || []).filter((c: any) =>
       !TERMINAL_STEPS.has(c.conversation_step || "") &&
-      !(c.bot_paused_until && new Date(c.bot_paused_until).getTime() > Date.now())
+      !(c.bot_paused_until && new Date(c.bot_paused_until).getTime() > Date.now()) &&
+      isLeadEligible(c.customer_origin)
     );
     if (rows.length === 0) return json({ ok: true, processed: 0 });
 
@@ -127,6 +138,7 @@ Deno.serve(async (req) => {
         }
 
         if (!(await gateProactiveTouch(supabase, c.id, "process_followups"))) {
+          // Mantém lease (já claimado); não reabrir no mesmo tick.
           skipCount++;
           continue;
         }

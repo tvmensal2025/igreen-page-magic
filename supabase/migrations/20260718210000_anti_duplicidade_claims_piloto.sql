@@ -66,7 +66,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.claim_due_cadence(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_due_cadence(integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_due_cadence(integer) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.release_cadence_claim(
@@ -92,7 +92,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.release_cadence_claim(uuid, uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.release_cadence_claim(uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.release_cadence_claim(uuid, uuid) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.reconcile_stuck_cadence_claims()
@@ -121,7 +121,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.reconcile_stuck_cadence_claims() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.reconcile_stuck_cadence_claims() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_stuck_cadence_claims() TO service_role;
 
 -- ── 2. Daily reheat: claim_token + RPC ──────────────────────────────────────
@@ -166,7 +166,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.claim_due_daily_reheat(date, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.claim_due_daily_reheat(date, integer) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_due_daily_reheat(date, integer) TO service_role;
 
 CREATE OR REPLACE FUNCTION public.reconcile_stuck_daily_reheat_claims()
@@ -199,7 +199,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.reconcile_stuck_daily_reheat_claims() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.reconcile_stuck_daily_reheat_claims() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_stuck_daily_reheat_claims() TO service_role;
 
 -- ── 3. Reativação: no máximo um pending por (customer, template) ────────────

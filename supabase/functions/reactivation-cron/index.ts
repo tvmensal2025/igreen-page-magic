@@ -186,6 +186,18 @@ async function handle(req: Request): Promise<Response> {
     }
 
 
+  // ─── Step 0: libera pending órfão (unique inflight) ──────────────────────
+  try {
+    const { data: freed } = await supabase.rpc("reconcile_stale_reactivation_pending", {
+      p_stale_minutes: 20,
+    });
+    if (freed && Number(freed) > 0) {
+      jsonLog("info", "reactivation_pending_reconciled", { freed: Number(freed) });
+    }
+  } catch (e: any) {
+    console.warn("[reactivation-cron] reconcile_stale_reactivation_pending falhou:", e?.message);
+  }
+
   // ─── Step 1: classifica outcomes pendentes (R16) ─────────────────────────
   let outcomeRow: Record<string, number> = {};
   try {
