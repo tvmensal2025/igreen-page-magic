@@ -77,9 +77,12 @@ import {
   Save,
   Trash2,
   Volume2,
+  Send,
+  Phone,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
 
 /** Stitches nome+corpo ficam stale quando o corpo fixo é regerado no painel. */
 async function deactivatePersonalizedStitches(
@@ -141,6 +144,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const [hydrated, setHydrated] = useState(false);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [testPhone, setTestPhone] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -915,6 +920,90 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     toast,
   ]);
 
+  const runTestSms = useCallback(async () => {
+    if (!selected) return;
+    const v = validateBrazilPhone(testPhone);
+    if (!v.valid) {
+      toast({ title: "Telefone inválido", description: v.message, variant: "destructive" });
+      return;
+    }
+    const text = renderCadenceBody(resolveBody(selected, lib), previewVars).trim();
+    if (!text) {
+      toast({ title: "Mensagem vazia", description: "Escreva o texto antes de testar.", variant: "destructive" });
+      return;
+    }
+    setTestBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("voice-sms-send", {
+        body: {
+          recipients: [{ phone: v.normalized, name: previewName || "Teste" }],
+          message: text,
+          consultant_id: consultantId,
+        },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error && !data?.sent) throw new Error(String(data.message || data.error));
+      const sent = Number(data?.sent ?? 0);
+      if (sent === 0) {
+        const firstErr = Array.isArray(data?.results)
+          ? (data.results.find((r: { error?: string }) => r?.error)?.error as string | undefined)
+          : undefined;
+        throw new Error(firstErr || data?.message || "Falha ao enviar SMS");
+      }
+      toast({ title: "SMS enviado", description: `Para ${formatBrazilPhone(v.normalized)}` });
+    } catch (e) {
+      toast({ title: "Erro no SMS de teste", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setTestBusy(false);
+    }
+  }, [selected, testPhone, lib, previewVars, previewName, consultantId, toast]);
+
+  const runTestCall = useCallback(async () => {
+    if (!selected) return;
+    const v = validateBrazilPhone(testPhone);
+    if (!v.valid) {
+      toast({ title: "Telefone inválido", description: v.message, variant: "destructive" });
+      return;
+    }
+    const clipKey = audioLookupKey && audioLookupNeedsGender
+      ? cadenceAudioUrlKey(audioLookupKey, previewGender)
+      : audioLookupKey || selected.key;
+    const clipId =
+      (clipKey && lib.audioClipIds?.[clipKey]) ||
+      (audioLookupKey && lib.audioClipIds?.[audioLookupKey]) ||
+      lib.audioClipIds?.[selected.key];
+    if (!clipId) {
+      toast({
+        title: "Áudio não gerado",
+        description: "Gere o áudio Sofia deste passo antes de fazer o teste de ligação.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setTestBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("voice-dialer-enqueue", {
+        body: {
+          action: "test_call",
+          test_phone: v.normalized,
+          test_name: previewName || "Teste",
+          audio_clip_id: clipId,
+          audio_url: previewAudioUrl,
+          dispatch_kind: "audio",
+          campaign_name: `Teste · ${selected.title}`,
+          config: { sofia_test: true, source: "multichannel_panel" },
+        },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) throw new Error(String(data.message || data.detail || data.error));
+      toast({ title: "Sofia está ligando", description: `Atenda em ${formatBrazilPhone(v.normalized)}` });
+    } catch (e) {
+      toast({ title: "Erro na ligação de teste", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setTestBusy(false);
+    }
+  }, [selected, testPhone, previewName, audioLookupKey, audioLookupNeedsGender, previewGender, lib, previewAudioUrl, toast]);
+
   const approvedCount = MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => lib.approved[t.key]).length;
   const withButtons = MULTICHANNEL_CADENCE_TEMPLATES.filter(
     (t) => (t.buttons?.length ?? 0) > 0,
@@ -1095,6 +1184,57 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     />
                   </div>
                 </div>
+
+                {(selected.channel === "sms" || selected.channel === "call_script") && (
+                  <div className="rounded-md border border-dashed border-emerald-500/50 bg-emerald-500/5 p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      {selected.channel === "sms" ? (
+                        <Send className="h-4 w-4 text-emerald-700" />
+                      ) : (
+                        <Phone className="h-4 w-4 text-emerald-700" />
+                      )}
+                      <Label className="text-xs font-semibold">
+                        Teste {selected.channel === "sms" ? "de SMS" : "de ligação"} — envie para um número escolhido
+                      </Label>
+                    </div>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="space-y-1 flex-1 min-w-[180px]">
+                        <Label className="text-[11px] text-muted-foreground">
+                          Celular (com DDD)
+                        </Label>
+                        <Input
+                          className="h-9"
+                          value={testPhone}
+                          onChange={(e) => setTestPhone(e.target.value)}
+                          placeholder="11 99999-9999"
+                          inputMode="tel"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={selected.channel === "sms" ? runTestSms : runTestCall}
+                        disabled={testBusy || !testPhone.trim()}
+                        className="gap-1.5 h-9"
+                        style={{ background: "var(--pe-emerald)", color: "#fff" }}
+                      >
+                        {testBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : selected.channel === "sms" ? (
+                          <Send className="h-4 w-4" />
+                        ) : (
+                          <Phone className="h-4 w-4" />
+                        )}
+                        {selected.channel === "sms" ? "Enviar SMS de teste" : "Ligar agora (teste)"}
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground">
+                      {selected.channel === "sms"
+                        ? "Envia o texto atual (com variáveis substituídas) via Velip SMS para o número informado."
+                        : "Usa o áudio Sofia já gerado deste passo. Se ainda não existir, gere o áudio primeiro."}
+                    </p>
+                  </div>
+                )}
+
 
                 {isMixedMessageAudio && (
                   <div className="space-y-1.5">
