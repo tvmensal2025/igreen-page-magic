@@ -14,7 +14,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useConsultantForm } from "@/hooks/useConsultantForm";
 import { useConsultantPresence } from "@/hooks/useConsultantPresence";
-import { OcrReviewBanner } from "@/components/captacao/OcrReviewBanner";
+// OcrReviewBanner removido — confirmação sempre feita pelo cliente no WhatsApp.
 import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatusBanner";
 
 import PageStatus from "@/components/common/PageStatus";
