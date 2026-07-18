@@ -349,10 +349,10 @@ Se não encontrar um campo, use "". NÃO invente dados.`;
     const gemRes = await withRetry(
       () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
-        maxAttempts: 2,
+        maxAttempts: 3,
         retryOn: (e) => {
           const msg = String(e);
-          return msg.includes("429") || msg.includes("500") || msg.includes("timeout") || msg.includes("abort");
+          return msg.includes("429") || msg.includes("500") || msg.includes("502") || msg.includes("503") || msg.includes("timeout") || msg.includes("abort");
         },
       }
     );
