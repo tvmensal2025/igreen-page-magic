@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Check, Edit2, MessageCircle, Loader2, X, FileText, IdCard } from "lucide-react";
+// Nota: `Check` ainda é usado nos ícones inline dos campos editáveis.
 
 
 type FieldDef = { key: string; label: string; format?: (v: any) => string };
