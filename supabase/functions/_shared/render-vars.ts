@@ -20,6 +20,8 @@ export type RenderVars = {
   representante?: string | null;
   /** Nome humano explícito do consultor (consultants.display_name). Quando preenchido, tem prioridade sobre `representante` — evita vazar username/slug. */
   representante_display?: string | null;
+  /** Telefone do consultor/representante (E.164-BR só dígitos, ex: 5511987654321). Usado para gerar links wa.me/{{consultor_phone}}. */
+  representante_phone?: string | null;
   valor_conta?: number | string | null;
   /** Variante do fluxo (A/B/C/D/E/M). Muda as taxas de economia — Fluxo M usa 10-28%. */
   variant?: string | null;
@@ -44,6 +46,21 @@ const REP_KEYS = new Set([
   "atendente",
   "vendedor",
   "vendedora",
+]);
+// Telefone do consultor — só dígitos, colável direto em wa.me/{{consultor_phone}}.
+const REP_PHONE_KEYS = new Set([
+  "consultor_phone",
+  "consultora_phone",
+  "representante_phone",
+  "consultant_phone",
+  "phone_consultor",
+  "phone_representante",
+  "telefone_consultor",
+  "telefone_representante",
+  "whatsapp_consultor",
+  "whatsapp_representante",
+  "wa_consultor",
+  "wa_representante",
 ]);
 const BILL_KEYS = new Set([
   "valor",
