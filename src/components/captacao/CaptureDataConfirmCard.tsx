@@ -202,13 +202,13 @@ export function CaptureDataConfirmCard({ kind, customer, onConfirmed }: Props) {
 
       {!isConfirmed && (
         <div className="flex items-center gap-1 pt-0.5">
-          <Button size="sm" className="h-6 flex-1 text-[10px] font-bold gap-1 px-1.5" onClick={() => void confirmSelf()} disabled={busy !== ""}>
-            {busy === "self" ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
-            <span className="truncate">Confirmo</span>
-          </Button>
-          <Button size="sm" variant="outline" className="h-6 flex-1 text-[10px] gap-1 px-1.5" onClick={() => void askClient()} disabled={busy !== ""} title="Pedir confirmação ao cliente via WhatsApp">
+          {/* 2026-07-18: só o cliente confirma — botão "Confirmo" do consultor
+              foi removido. O bot já mandou os botões SIM/NÃO/EDITAR no WhatsApp
+              logo após o OCR; este botão só re-envia o pedido caso o cliente
+              não tenha respondido. */}
+          <Button size="sm" variant="outline" className="h-6 w-full text-[10px] gap-1 px-1.5" onClick={() => void askClient()} disabled={busy !== ""} title="Reenviar pedido de confirmação ao cliente via WhatsApp">
             {busy === "client" ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <MessageCircle className="w-2.5 h-2.5" />}
-            <span className="truncate">Pedir cliente</span>
+            <span className="truncate">Reenviar ao cliente</span>
           </Button>
         </div>
       )}
