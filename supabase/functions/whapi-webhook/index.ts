@@ -1611,7 +1611,11 @@ Deno.serve(async (req) => {
       const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();
       const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
         && !(customer as any).assigned_human_id;
-      if (_isAutoStuckPause) {
+      // Auto-unpause também quando a pausa veio de echo/outbound `fromMe` (`humano_assumiu_whatsapp`).
+      // Esse motivo é aplicado automaticamente pelo webhook e é a maior fonte de leads travados —
+      // se o cliente respondeu no fluxo, ele claramente ainda quer conversar com o bot.
+      const _isEchoTakeover = _autoReason === "humano_assumiu_whatsapp";
+      if (_isAutoStuckPause || _isEchoTakeover) {
         const { error: unpErr } = await supabase
           .from("customers")
           .update({
