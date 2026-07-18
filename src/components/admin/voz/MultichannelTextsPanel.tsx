@@ -77,9 +77,12 @@ import {
   Save,
   Trash2,
   Volume2,
+  Send,
+  Phone,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
 
 /** Stitches nome+corpo ficam stale quando o corpo fixo é regerado no painel. */
 async function deactivatePersonalizedStitches(
