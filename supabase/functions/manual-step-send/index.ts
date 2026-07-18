@@ -617,11 +617,13 @@ Deno.serve(async (req) => {
     // (primeiro nome) — sem isso {{representante}} vira "" e o cleanup
     // remove o `* *` à volta, sumindo "do Rafael" no welcome do fluxo.
     let _repName = "";
+    let _repPhone = "";
     try {
       const { data: _consultant } = await supabase
-        .from("consultants").select("name").eq("id", body.consultantId).maybeSingle();
+        .from("consultants").select("name, whatsapp_number, phone").eq("id", body.consultantId).maybeSingle();
       const _full = String((_consultant as any)?.name || "").trim();
       _repName = _full.split(/\s+/)[0] || _full;
+      _repPhone = String((_consultant as any)?.whatsapp_number || (_consultant as any)?.phone || "");
     } catch (_) { /* best-effort */ }
     // Fallback final — nunca deixar `representante` vazio chegar ao cliente.
     // Sem isso, o template "Sou a *assistente virtual* do *{{representante}}*"
@@ -635,6 +637,7 @@ Deno.serve(async (req) => {
           phone: (customer as any).phone_whatsapp || "",
           cpf: (customer as any).cpf || "",
           representante: _repName,
+          representante_phone: _repPhone,
           valor_conta: (customer as any).electricity_bill_value,
           variant: (customer as any)?.flow_variant,
         })

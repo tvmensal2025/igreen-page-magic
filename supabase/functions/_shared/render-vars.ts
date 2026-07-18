@@ -20,6 +20,8 @@ export type RenderVars = {
   representante?: string | null;
   /** Nome humano explícito do consultor (consultants.display_name). Quando preenchido, tem prioridade sobre `representante` — evita vazar username/slug. */
   representante_display?: string | null;
+  /** Telefone do consultor/representante (E.164-BR só dígitos, ex: 5511987654321). Usado para gerar links wa.me/{{consultor_phone}}. */
+  representante_phone?: string | null;
   valor_conta?: number | string | null;
   /** Variante do fluxo (A/B/C/D/E/M). Muda as taxas de economia — Fluxo M usa 10-28%. */
   variant?: string | null;
@@ -44,6 +46,21 @@ const REP_KEYS = new Set([
   "atendente",
   "vendedor",
   "vendedora",
+]);
+// Telefone do consultor — só dígitos, colável direto em wa.me/{{consultor_phone}}.
+const REP_PHONE_KEYS = new Set([
+  "consultor_phone",
+  "consultora_phone",
+  "representante_phone",
+  "consultant_phone",
+  "phone_consultor",
+  "phone_representante",
+  "telefone_consultor",
+  "telefone_representante",
+  "whatsapp_consultor",
+  "whatsapp_representante",
+  "wa_consultor",
+  "wa_representante",
 ]);
 const BILL_KEYS = new Set([
   "valor",
@@ -116,6 +133,14 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   const hasBill = Number.isFinite(billNum) && billNum > 0;
   const billStr = hasBill ? fmtBRL(billNum) : "";
 
+  // Telefone do consultor — dígitos apenas, com DDI 55 quando parecer BR sem
+  // código de país. Se ficar vazio, o placeholder é removido (não vaza `wa.me/`
+  // órfão pro cliente).
+  let repPhoneDigits = String(vars.representante_phone || "").replace(/\D/g, "");
+  if (repPhoneDigits && !repPhoneDigits.startsWith("55") && (repPhoneDigits.length === 10 || repPhoneDigits.length === 11)) {
+    repPhoneDigits = `55${repPhoneDigits}`;
+  }
+
   const lookup = (rawKey: string): string | null => {
     const key = rawKey.trim().toLowerCase();
     if (NAME_KEYS.has(key)) {
@@ -124,6 +149,7 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     }
     if (PHONE_KEYS.has(key)) return phoneFmt;
     if (CPF_KEYS.has(key)) return cpfFmt;
+    if (REP_PHONE_KEYS.has(key)) return repPhoneDigits;
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
     const rates = discountRates(vars.variant);
@@ -152,10 +178,13 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
 
   // Limpa formatação WhatsApp órfã (negrito/itálico/strike) que ficou vazia
   // porque a variável veio "" — evita aparecer "* *", "__", "~~" no cliente.
+  // Também remove link `wa.me/` órfão (sem número atrás) — caso o consultor
+  // não tenha telefone cadastrado, não vaza "Responda: wa.me/" quebrado.
   return replaced
     .replace(/\*\s*\*/g, "")
     .replace(/_\s*_/g, "")
     .replace(/~\s*~/g, "")
+    .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1");
 }
