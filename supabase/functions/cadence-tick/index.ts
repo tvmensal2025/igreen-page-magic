@@ -194,8 +194,17 @@ async function dispatchWhatsApp(
   const quota = await checkSendQuota(supabase, ch.instanceName);
   if (!quota.allowed) return { ok: false, detail: `quota_${quota.reason}` };
 
+  // Carrega consultor p/ substituir {{consultor}} e {{consultor_phone}} — sem
+  // isso, o link `wa.me/{{consultor_phone}}` saía literal ou como `wa.me/`.
+  const { consultantName, consultantPhone } = await loadLeadContext(
+    supabase, row.customer_id, row.consultant_id,
+  );
   const firstName = (cust.name || "").split(" ")[0] || "";
-  const text = renderTemplate(cfg.message_text || "", { nome: firstName });
+  const text = renderTemplate(cfg.message_text || "", {
+    nome: firstName,
+    consultor: consultantName,
+    consultor_phone: consultantPhone,
+  });
   const jid = `${String(cust.phone_whatsapp).replace(/\D/g, "")}@s.whatsapp.net`;
   const sendCtx = ctx(row.consultant_id || "system", row.customer_id, `cadence:${stage}`);
 
