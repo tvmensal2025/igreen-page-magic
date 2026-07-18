@@ -242,6 +242,10 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .eq("id", consultantId).maybeSingle();
     consultantName = (c?.name || "").split(" ")[0] || "";
     consultantPhone = String(c?.whatsapp_number || c?.phone || "").replace(/\D/g, "");
+    // Garante DDI 55 para gerar link wa.me/ válido em número BR sem prefixo.
+    if (consultantPhone && !consultantPhone.startsWith("55") && (consultantPhone.length === 10 || consultantPhone.length === 11)) {
+      consultantPhone = `55${consultantPhone}`;
+    }
   }
   return { cust, consultantName, consultantPhone };
 }
