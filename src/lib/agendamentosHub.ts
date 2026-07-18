@@ -82,14 +82,25 @@ export const DEFAULT_REACTIVATION_SETTINGS: ReactivationSettingsSummary = {
 };
 
 export type AgendamentosHubTab =
+  | "mapa"
+  | "grupo-a"
+  | "grupo-b"
+  | "grupo-c"
+  | "agenda"
+  | "carteira"
+  | "historico"
+  /** @deprecated use mapa */
   | "overview"
+  /** @deprecated use grupo-b */
+  | "leads-frios"
+  /** @deprecated use agenda */
   | "manual"
   | "pos-venda"
   | "reaquecimento"
   | "campanhas"
   | "rodizios"
-  | "igreen"
-  | "historico";
+  /** @deprecated use carteira */
+  | "igreen";
 
 export interface AgendamentosNavDetail {
   tab: string;

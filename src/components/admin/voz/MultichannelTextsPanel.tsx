@@ -23,6 +23,7 @@ import {
   type SavedCadenceLibrary,
   type SpeechGender,
   allAudioSegmentsApproved,
+  availabilityOverridesFromLibrary,
   buildAvailabilityPhrase,
   cadenceAudioUrlKey,
   emptyLibrary,
@@ -44,6 +45,10 @@ import {
   saveLibrary,
   smsCharCount,
   spokenSegmentText,
+  themePlaceholderKind,
+  themeBodyForPreview,
+  ROTATING_CADENCE_THEMES,
+  getTemplate,
   validateWhapiButtons,
 } from "@/lib/multichannelCadenceTexts";
 import { estimateSavingsRange, parseAverageBillValue } from "@/lib/billValueParse";
@@ -69,12 +74,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertTriangle,
   CheckCircle2,
   Copy,
   Download,
   Loader2,
+  MessageCircle,
   Plus,
   RotateCcw,
   Save,
@@ -86,6 +93,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
+import { whapiSendMedia } from "@/services/whapiApi";
 
 /** Stitches nome+corpo ficam stale quando o corpo fixo é regerado no painel. */
 async function deactivatePersonalizedStitches(
@@ -103,8 +111,9 @@ async function deactivatePersonalizedStitches(
 }
 
 const GROUP_TABS: { id: CadenceGroup | "all"; label: string }[] = [
-  { id: "A", label: "Grupo A" },
-  { id: "B", label: "Grupo B" },
+  { id: "A", label: "Grupo A — Novo" },
+  { id: "B", label: "Grupo B — Reaquecimento" },
+  { id: "C", label: "Grupo C — Longo prazo" },
   { id: "theme", label: "Temas" },
   { id: "availability", label: "Disponibilidade" },
   { id: "all", label: "Todos" },
@@ -134,7 +143,13 @@ interface Props {
 export function MultichannelTextsPanel({ consultantId }: Props) {
   const { toast } = useToast();
   const [lib, setLib] = useState<SavedCadenceLibrary>(() => emptyLibrary());
-  const [group, setGroup] = useState<CadenceGroup | "all">("A");
+  const [group, setGroup] = useState<CadenceGroup | "all">(() => {
+    try {
+      const g = new URLSearchParams(window.location.search).get("cadenceGroup");
+      if (g === "A" || g === "B" || g === "C" || g === "theme" || g === "availability") return g;
+    } catch { /* noop */ }
+    return "A";
+  });
   const [selectedKey, setSelectedKey] = useState<string>("a1_ask_name");
   const [previewName, setPreviewName] = useState("Maria");
   const [previewGender, setPreviewGender] = useState<SpeechGender>("feminino");
@@ -150,8 +165,35 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const consultantPhone = normalizeConsultantPhoneDigits(connectedWaPhone || "");
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [previewThemeId, setPreviewThemeId] = useState("simplified_analysis");
   const [testPhone, setTestPhone] = useState("");
   const [testBusy, setTestBusy] = useState(false);
+  /** WhatsApp humano (alertas) — destino padrão do teste de áudio. */
+  const [myWaPhone, setMyWaPhone] = useState("");
+  const [waSendOpen, setWaSendOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("consultants")
+        .select("notification_phone, phone")
+        .eq("id", consultantId)
+        .maybeSingle();
+      if (cancelled) return;
+      const mine =
+        normalizeBrazilPhone(String(data?.notification_phone || "")) ||
+        normalizeBrazilPhone(String(data?.phone || "")) ||
+        "";
+      if (mine) {
+        setMyWaPhone(mine);
+        setTestPhone((prev) => prev || formatBrazilPhone(mine));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [consultantId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -164,7 +206,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       const fromStage: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromStageConfig().catch(
         () => ({} as Partial<SavedCadenceLibrary>),
       );
-      // Prioridade: motor (Grupo B) + fluxo WhatsApp (Grupo A) > remoto > localStorage.
+      // Prioridade: motor (Grupo B + C) + fluxo WhatsApp (Grupo A) > remoto > localStorage.
       const merged: SavedCadenceLibrary = {
         ...emptyLibrary(),
         ...local,
@@ -306,6 +348,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         : resolveBody(selected, lib)
     : "";
   const draftButtons = selected ? resolveButtons(selected, lib) : [];
+  const themePreviewMeta =
+    ROTATING_CADENCE_THEMES.find((t) => t.id === previewThemeId) ||
+    ROTATING_CADENCE_THEMES[0]!;
+  const themeWaTpl = getTemplate(themePreviewMeta.waKey);
+  // themeSlot é calculado depois do draft — botões da prévia usam o tema escolhido no Dia 2/7.
+  const themeSlotEarly = selected ? themePlaceholderKind(resolveBody(selected, lib)) : null;
+  const previewButtons =
+    themeSlotEarly === "wa" && themeWaTpl
+      ? resolveButtons(themeWaTpl, lib)
+      : draftButtons;
   const pairedAudioKey = selected?.pairedAudioKey;
   const audioLookupKey = selected?.canGenerateAudio
     ? selected.key
@@ -355,14 +407,25 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       ? `R$ ${savings.minFormatted} a R$ ${savings.maxFormatted}`
       : undefined,
     consultorPhone: consultantPhone || undefined,
+    availabilityOverrides: availabilityOverridesFromLibrary(lib),
   };
-  const previewSource =
-    selected?.channel === "sms" ? ensureSmsConsultorWaLink(draft) : draft;
+  const themeSlot = themePlaceholderKind(draft);
+  const previewSource = themeSlot
+    ? themeBodyForPreview(previewThemeId, themeSlot, lib)
+    : selected?.channel === "sms"
+      ? ensureSmsConsultorWaLink(draft)
+      : draft;
   const preview = selected ? renderCadenceBody(previewSource, previewVars) : "";
-  const avail = buildAvailabilityPhrase();
+  const avail = buildAvailabilityPhrase(
+    new Date(),
+    availabilityOverridesFromLibrary(lib),
+  );
   const smsLen =
     selected?.channel === "sms"
-      ? smsCharCount(draft, { consultorPhone: consultantPhone })
+      ? smsCharCount(
+          themeSlot ? themeBodyForPreview(previewThemeId, "sms", lib) : draft,
+          { consultorPhone: consultantPhone },
+        )
       : null;
   const segmentsReady = selected ? allAudioSegmentsApproved(selected, lib) : false;
 
@@ -1016,6 +1079,83 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     }
   }, [selected, testPhone, previewName, audioLookupKey, audioLookupNeedsGender, previewGender, lib, previewAudioUrl, toast]);
 
+  /** URL pública do áudio (nunca blob:) — necessária para Whapi enviar. */
+  const resolvePublicAudioUrl = useCallback((): string | null => {
+    if (!selected) return null;
+    const gender = audioLookupNeedsGender || genderAudioVariants ? previewGender : null;
+    const key = audioLookupKey || selected.key;
+    const fromLib =
+      resolveCadenceAudioUrl(lib, key, gender) ||
+      resolveCadenceAudioUrl(lib, selected.key, gender) ||
+      (key === "a3_explain_with_buttons"
+        ? resolveCadenceAudioUrl(lib, "a3_audio_explain", null)
+        : null);
+    if (fromLib && !fromLib.startsWith("blob:")) return fromLib;
+    if (audioUrl && !audioUrl.startsWith("blob:")) return audioUrl;
+    return null;
+  }, [
+    selected,
+    audioLookupKey,
+    audioLookupNeedsGender,
+    genderAudioVariants,
+    previewGender,
+    lib,
+    audioUrl,
+  ]);
+
+  const runTestWhatsAppAudio = useCallback(
+    async (phoneOverride?: string) => {
+      if (!selected) return;
+      const raw = phoneOverride ?? testPhone;
+      const v = validateBrazilPhone(raw);
+      if (!v.valid) {
+        toast({ title: "Telefone inválido", description: v.message, variant: "destructive" });
+        return;
+      }
+      const mediaUrl = resolvePublicAudioUrl();
+      if (!mediaUrl) {
+        toast({
+          title: "Áudio não disponível",
+          description: "Gere o áudio Sofia deste passo (Aprovar e gerar) antes de enviar no WhatsApp.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setTestBusy(true);
+      try {
+        await whapiSendMedia(
+          v.normalized,
+          mediaUrl,
+          "audio",
+          undefined,
+          `${cadenceAudioUrlKey(selected.key, genderAudioVariants ? previewGender : null)}.mp3`,
+          { intent: "reply" },
+        );
+        toast({
+          title: "Áudio enviado no WhatsApp",
+          description: `Para ${formatBrazilPhone(v.normalized)}`,
+        });
+        setWaSendOpen(false);
+      } catch (e) {
+        toast({
+          title: "Erro ao enviar áudio",
+          description: (e as Error).message,
+          variant: "destructive",
+        });
+      } finally {
+        setTestBusy(false);
+      }
+    },
+    [
+      selected,
+      testPhone,
+      resolvePublicAudioUrl,
+      genderAudioVariants,
+      previewGender,
+      toast,
+    ],
+  );
+
   const approvedCount = MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => lib.approved[t.key]).length;
   const withButtons = MULTICHANNEL_CADENCE_TEMPLATES.filter(
     (t) => (t.buttons?.length ?? 0) > 0,
@@ -1113,13 +1253,27 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           {group === "B" && (
             <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">
-                Grupo B — reabrir leads que já estão no CRM
+                Grupo B — Reaquecimento (lead frio)
               </p>
               <p>
-                Onda profissional (anti-spam): reabre no{" "}
+                Lead que já está no CRM e parou. Onda curta D+1→D10: reabre no{" "}
                 <span className="text-foreground font-medium">D+1</span>; SMS/ligação só se houver
-                silêncio. Cap diário de frios na Central de Automações. Grupo A (lead novo) não é
-                limitado.
+                silêncio. Cap diário na Central de Automações. Grupo A (lead novo) não é limitado.
+              </p>
+            </div>
+          )}
+          {group === "C" && (
+            <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-foreground">
+                Grupo C — Longo prazo (Meta + recalls)
+              </p>
+              <p>
+                Começa após o Dia 10 (fim da onda B).{" "}
+                <span className="text-foreground font-medium">Meta</span> = sync de público + remarketing
+                (~15d).{" "}
+                <span className="text-foreground font-medium">Cada marco longo</span> = WhatsApp com
+                análise → SMS se silêncio → ligação Sofia se silêncio (60d, 90d, 5m, 8m, 12m, anual).
+                Toggles OFF até validar a onda B.
               </p>
             </div>
           )}
@@ -1197,6 +1351,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     />
                   </div>
                 </div>
+
+                {selected.channel === "system" && selected.group === "C" && (
+                  <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-xs text-muted-foreground flex gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-violet-600" />
+                    <span>
+                      Card informativo do Grupo C — <strong className="text-foreground">não envia mensagem</strong> ao
+                      lead. Use para documentar Meta/sync. Toggles na Central de Automações e clip de ligação no Motor.
+                    </span>
+                  </div>
+                )}
 
                 {(selected.channel === "sms" || selected.channel === "call_script") && (
                   <div className="rounded-md border border-dashed border-emerald-500/50 bg-emerald-500/5 p-3 space-y-2">
@@ -1445,37 +1609,95 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   </div>
                 ) : (
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <Label>Texto da mensagem</Label>
-                      {smsLen != null && (
-                        <span
-                          className={cn(
-                            "text-xs tabular-nums",
-                            smsLen > 160 ? "text-destructive font-medium" : "text-muted-foreground",
+                    {themeSlot && (
+                      <div className="rounded-md border border-sky-500/40 bg-sky-500/5 px-3 py-2.5 text-xs space-y-2">
+                        <div>
+                          <p className="font-semibold text-foreground">
+                            Temas que o motor pode enviar neste passo
+                          </p>
+                          <p className="text-muted-foreground leading-relaxed mt-1">
+                            Não é o D+1 (reabrir). No Dia 2/7, se o lead ficou em silêncio, o
+                            motor escolhe <strong className="text-foreground">um</strong> destes
+                            temas (sempre diferente do último). Clique para ver o texto na
+                            prévia — sem editar.
+                          </p>
+                        </div>
+                        <div className="grid gap-1.5">
+                          {ROTATING_CADENCE_THEMES.map((t, idx) => {
+                            const active = previewThemeId === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setPreviewThemeId(t.id)}
+                                className={cn(
+                                  "text-left rounded-md border px-2.5 py-2 transition-colors",
+                                  active
+                                    ? "border-sky-600 bg-sky-500/15 text-foreground"
+                                    : "border-border/60 bg-background/60 hover:bg-muted/50 text-muted-foreground",
+                                )}
+                              >
+                                <span className="font-medium text-foreground">
+                                  {idx + 1}. {t.label}
+                                </span>
+                                <span className="block text-[10px] mt-0.5 opacity-80">
+                                  id: {t.id}
+                                  {active ? " · vendo na prévia →" : ""}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          Cruzeiro não entra neste rodízio (precisa de flag de aprovação). Textos
+                          editáveis na aba <strong className="text-foreground">Temas</strong>.
+                        </p>
+                      </div>
+                    )}
+                    {!themeSlot && (
+                      <>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <Label>Texto da mensagem</Label>
+                          {smsLen != null && (
+                            <span
+                              className={cn(
+                                "text-xs tabular-nums",
+                                smsLen > 160
+                                  ? "text-destructive font-medium"
+                                  : "text-muted-foreground",
+                              )}
+                            >
+                              SMS: {smsLen}/160
+                            </span>
                           )}
-                        >
-                          SMS: {smsLen}/160
-                        </span>
-                      )}
-                    </div>
-                    <CadenceFormatToolbar onInsert={insertIntoDraft} />
-                    <Textarea
-                      ref={draftTextareaRef}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      rows={selected.channel === "sms" ? 4 : 12}
-                      className="font-mono text-sm"
-                      placeholder="Use *negrito* e emojis — a prévia no celular atualiza ao vivo"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Dica: selecione um trecho e clique em <strong>B</strong> para *negrito* WhatsApp.
-                    </p>
+                        </div>
+                        <CadenceFormatToolbar onInsert={insertIntoDraft} />
+                        <Textarea
+                          ref={draftTextareaRef}
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          rows={selected.channel === "sms" ? 4 : 12}
+                          className="font-mono text-sm"
+                          placeholder="Use *negrito* e emojis — a prévia no celular atualiza ao vivo"
+                        />
+                        <p className="text-[11px] text-muted-foreground">
+                          Dica: selecione um trecho e clique em <strong>B</strong> para *negrito*
+                          WhatsApp.
+                        </p>
+                      </>
+                    )}
+                    {themeSlot && smsLen != null && (
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        SMS do tema selecionado: {smsLen}/160
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {(selected.channel === "whatsapp_buttons" ||
                   selected.channel === "whatsapp_text" ||
-                  draftButtons.length > 0) && (
+                  draftButtons.length > 0) &&
+                  !themeSlot && (
                   <div className="space-y-2 rounded-md border border-border/60 p-3">
                     <div className="flex items-center justify-between gap-2">
                       <Label>
@@ -1547,7 +1769,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 <div className="lg:hidden rounded-lg border border-border/50 bg-muted/20 p-3">
                   <CadenceMobilePreview
                     text={preview}
-                    buttons={draftButtons}
+                    buttons={previewButtons}
                     channel={selected.channel}
                     contactName="Sofia · iGreen"
                     audioUrl={previewAudioUrl}
@@ -1589,6 +1811,73 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                         : "Aprovar e gerar Sofia"}
                     </Button>
                   )}
+                  <Popover open={waSendOpen} onOpenChange={setWaSendOpen}>
+                    <PopoverTrigger asChild>
+                      <Button type="button" variant="outline" className="gap-2">
+                        <MessageCircle className="h-4 w-4" />
+                        Enviar áudio no WhatsApp
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-80 space-y-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">Teste de áudio no WhatsApp</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Envia o MP3 Sofia já gerado para o número que você escolher (envio manual).
+                        </p>
+                      </div>
+                      {myWaPhone && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="w-full gap-1.5"
+                          disabled={testBusy}
+                          onClick={() => {
+                            setTestPhone(formatBrazilPhone(myWaPhone));
+                            void runTestWhatsAppAudio(myWaPhone);
+                          }}
+                        >
+                          {testBusy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <MessageCircle className="h-3.5 w-3.5" />
+                          )}
+                          Meu WhatsApp ({formatBrazilPhone(myWaPhone)})
+                        </Button>
+                      )}
+                      <div className="space-y-1.5">
+                        <Label className="text-[11px] text-muted-foreground">
+                          Ou escolha outro número (DDD)
+                        </Label>
+                        <Input
+                          className="h-9"
+                          value={testPhone}
+                          onChange={(e) => setTestPhone(e.target.value)}
+                          placeholder="11 99999-9999"
+                          inputMode="tel"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        className="w-full gap-1.5"
+                        disabled={testBusy || !testPhone.trim()}
+                        onClick={() => void runTestWhatsAppAudio()}
+                        style={{ background: "var(--pe-emerald)", color: "#fff" }}
+                      >
+                        {testBusy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Send className="h-4 w-4" />
+                        )}
+                        Enviar para este número
+                      </Button>
+                      {!resolvePublicAudioUrl() && (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                          Ainda sem áudio público — use “Aprovar e gerar Sofia” primeiro.
+                        </p>
+                      )}
+                    </PopoverContent>
+                  </Popover>
                   {(audioUrl ||
                     resolveCadenceAudioUrl(
                       lib,
@@ -1678,7 +1967,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
               <div className="hidden lg:block sticky top-4 self-start">
                 <CadenceMobilePreview
                   text={preview}
-                  buttons={draftButtons}
+                  buttons={previewButtons}
                   channel={selected.channel}
                   contactName="Sofia · iGreen"
                   audioUrl={previewAudioUrl}

@@ -1,7 +1,7 @@
-// Fase 5 — Retargeting Meta automático.
-// Sobe telefone/email (SHA256) de leads em CLOSE_LOST/RETARGET_META
+// Fase 5 — Retargeting Meta automático (job em lote).
+// Sobe telefone/email (SHA256) de leads em CLOSE_LOST / RETARGET_META / RETARGET_ADS_15D
 // para a Custom Audience configurada em facebook_connections.custom_audience_id.
-// Cron 3x/dia. Respeita opt-out via lead_consent_log (SAIR).
+// Sync pontual por lead também existe em cadence-tick via _shared/meta-audience-sync.ts.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 
@@ -11,6 +11,8 @@ const corsHeaders = {
 };
 
 const GRAPH = "https://graph.facebook.com/v20.0";
+
+const RETARGET_STAGES = ["CLOSE_LOST", "RETARGET_META", "RETARGET_ADS_15D"] as const;
 
 async function sha256Hex(s: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -56,12 +58,12 @@ Deno.serve(async (req) => {
   for (const c of conns ?? []) {
     if (!c.access_token_encrypted || !c.custom_audience_id) continue;
 
-    // Leads elegíveis: motor marcou como frio nos últimos 90 dias.
+    // Leads elegíveis: motor marcou como frio/retarget nos últimos 90 dias.
     const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
     const { data: leads } = await admin
       .from("lead_cadence_state")
       .select("customer_id, stage, updated_at, customer:customers!inner(id, consultant_id, phone_whatsapp, email)")
-      .in("stage", ["CLOSE_LOST", "RETARGET_META"])
+      .in("stage", [...RETARGET_STAGES])
       .gte("updated_at", cutoff)
       .eq("customer.consultant_id", c.consultant_id)
       .limit(5000);
@@ -105,8 +107,13 @@ Deno.serve(async (req) => {
         audience_source_count: rows.length,
       }).eq("consultant_id", c.consultant_id);
 
-      // Marca leads como retargetados no motor.
-      await admin.from("lead_cadence_state").update({ stage: "RETARGET_META" })
+      // Marca leads CLOSE_LOST como retargetados (não regride RETARGET_ADS_15D).
+      // Respeita delay de RETARGET_META (24h) — sem next_action_at o tick avançava na hora.
+      const retargetMetaDue = new Date(Date.now() + 24 * 3600_000).toISOString();
+      await admin.from("lead_cadence_state").update({
+        stage: "RETARGET_META",
+        next_action_at: retargetMetaDue,
+      })
         .in("customer_id", ids.filter(id => !blocked.has(id)))
         .eq("stage", "CLOSE_LOST");
 
@@ -114,7 +121,12 @@ Deno.serve(async (req) => {
       await admin.from("cadence_action_log").insert({
         customer_id: ids[0], stage: "RETARGET_META", channel: "meta_audience",
         status: "sent", cost_cents: 0,
-        payload: { synced: rows.length, audience_id: c.custom_audience_id, consultant_id: c.consultant_id },
+        detail: {
+          synced: rows.length,
+          audience_id: c.custom_audience_id,
+          consultant_id: c.consultant_id,
+          stages: [...RETARGET_STAGES],
+        },
       });
 
       results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: rows.length });

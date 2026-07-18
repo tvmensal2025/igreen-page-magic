@@ -38,6 +38,26 @@ const AutomacaoIgreenCard = lazy(() =>
 const RodiziosBroadcastPanel = lazy(() =>
   import("./RodiziosBroadcastPanel").then((m) => ({ default: m.RodiziosBroadcastPanel })),
 );
+const AgendamentosZeroLeadPanel = lazy(() =>
+  import("./AgendamentosZeroLeadPanel").then((m) => ({ default: m.AgendamentosZeroLeadPanel })),
+);
+const AgendamentosJornadaMap = lazy(() =>
+  import("./AgendamentosJornadaMap").then((m) => ({ default: m.AgendamentosJornadaMap })),
+);
+const AgendamentosGrupoAPanel = lazy(() =>
+  import("./AgendamentosGrupoAPanel").then((m) => ({ default: m.AgendamentosGrupoAPanel })),
+);
+const AgendamentosGrupoCPanel = lazy(() =>
+  import("./AgendamentosGrupoCPanel").then((m) => ({ default: m.AgendamentosGrupoCPanel })),
+);
+
+/** Normaliza abas antigas para a nova estrutura */
+function normalizeHubTab(tab: AgendamentosHubTab): AgendamentosHubTab {
+  if (tab === "overview" || tab === "leads-frios") return tab === "leads-frios" ? "grupo-b" : "mapa";
+  if (tab === "igreen") return "carteira";
+  if (tab === "manual" || tab === "pos-venda" || tab === "reaquecimento" || tab === "campanhas" || tab === "rodizios") return "agenda";
+  return tab;
+}
 
 /** Extrai customerId + stage_key de ids tipo `<uuid>-pv_aprovado`. */
 function parsePosVendaTimelineId(id: string): { customerId: string; stageKey: string } | null {
@@ -161,15 +181,18 @@ interface AgendamentosHubProps {
   defaultTab?: AgendamentosHubTab;
   /** Quando true, mostra atalho para abrir como aba principal do Admin */
   showAdminShortcut?: boolean;
+  onOpenChat?: (phone: string) => void;
 }
 
 export function AgendamentosHub({
   consultantId,
   instanceName,
-  defaultTab = "overview",
+  defaultTab = "mapa",
   showAdminShortcut = false,
+  onOpenChat,
 }: AgendamentosHubProps) {
-  const [activeTab, setActiveTab] = useState<AgendamentosHubTab>(defaultTab);
+  const [activeTab, setActiveTab] = useState<AgendamentosHubTab>(() => normalizeHubTab(defaultTab));
+  const [agendaSub, setAgendaSub] = useState<"manual" | "pos-venda" | "reaquecimento" | "campanhas" | "rodizios">("manual");
   const [textosOpen, setTextosOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [phone, setPhone] = useState("");
@@ -187,6 +210,8 @@ export function AgendamentosHub({
   const [savingEdit, setSavingEdit] = useState(false);
   // Filtro visual dos "Próximos envios" (client-side, não altera dados)
   const [timelineFilter, setTimelineFilter] = useState<"all" | AgendamentoTimelineItem["kind"]>("all");
+
+  const goTab = (tab: AgendamentosHubTab) => setActiveTab(normalizeHubTab(tab));
 
   const {
     loading,
@@ -421,12 +446,30 @@ export function AgendamentosHub({
    */
   const sistemasAgendados = [
     {
+      id: "mapa" as const,
+      title: "Mapa do sistema",
+      desc: "Visão A → B → C e status de cada parte.",
+      icon: LayoutGrid,
+      badge: "Comece aqui",
+      badgeOn: true,
+      action: () => goTab("mapa"),
+    },
+    {
+      id: "grupo-b" as const,
+      title: "Grupo B — Leads frios",
+      desc: "Separar DDD, ligar envio dos 10 primeiros dias.",
+      icon: Zap,
+      badge: "Principal",
+      badgeOn: true,
+      action: () => goTab("grupo-b"),
+    },
+    {
       id: "manual" as const,
       title: "Agenda manual",
       desc: "Você escolhe o cliente, escreve a mensagem e marca a hora.",
       count: stats.pendingManual,
       icon: CalendarClock,
-      action: () => setActiveTab("manual"),
+      action: () => { goTab("agenda"); setAgendaSub("manual"); },
     },
     {
       id: "pos-venda" as const,
@@ -434,7 +477,7 @@ export function AgendamentosHub({
       desc: "Mensagem de boas-vindas (aprovado) ou devolutiva (reprovado) e a esteira de 30, 60, 90 e 120 dias. Só roda depois que o consultor clica em Aprovado ou Reprovado.",
       count: stats.posVendaUpcoming,
       icon: Sparkles,
-      action: () => setActiveTab("pos-venda"),
+      action: () => { goTab("agenda"); setAgendaSub("pos-venda"); },
     },
     {
       id: "reaquecimento" as const,
@@ -445,7 +488,7 @@ export function AgendamentosHub({
       icon: Flame,
       badge: reactivationSettings.auto_enabled ? "Ligado" : "Desligado",
       badgeOn: reactivationSettings.auto_enabled,
-      action: () => setActiveTab("reaquecimento"),
+      action: () => { goTab("agenda"); setAgendaSub("reaquecimento"); },
     },
     {
       id: "campanhas" as const,
@@ -453,7 +496,7 @@ export function AgendamentosHub({
       desc: "Disparos para várias pessoas de uma vez (antigo Disparo PRO).",
       count: stats.bulkActive,
       icon: Megaphone,
-      action: () => setActiveTab("campanhas"),
+      action: () => { goTab("agenda"); setAgendaSub("campanhas"); },
     },
     {
       id: "rodizios" as const,
@@ -462,16 +505,16 @@ export function AgendamentosHub({
       icon: Bell,
       badge: "Configurável",
       badgeOn: true,
-      action: () => setActiveTab("rodizios"),
+      action: () => { goTab("agenda"); setAgendaSub("rodizios"); },
     },
     {
-      id: "igreen" as const,
-      title: "Automações iGreen",
+      id: "carteira" as const,
+      title: "Carteira iGreen",
       desc: "Captura de boletos, devolutivas, telecom, seguros e cashback (sempre salvando). Alertas e envios proativos por WhatsApp.",
       icon: Bot,
       badge: "Sempre salvando",
       badgeOn: true,
-      action: () => setActiveTab("igreen"),
+      action: () => goTab("carteira"),
     },
   ];
 
@@ -494,7 +537,7 @@ export function AgendamentosHub({
       icon: ShieldCheck,
       badge: "Automático",
       actionLabel: "Ver o que já saiu",
-      action: () => setActiveTab("historico"),
+      action: () => goTab("historico"),
     },
     {
       title: "Cutucadinha pós-FAQ",
@@ -502,7 +545,7 @@ export function AgendamentosHub({
       icon: Zap,
       badge: "Automático",
       actionLabel: "Ver o que já saiu",
-      action: () => setActiveTab("historico"),
+      action: () => goTab("historico"),
     },
   ];
 
@@ -525,10 +568,10 @@ export function AgendamentosHub({
                 Painel iGreen
               </p>
               <h3 className="font-[Sora,ui-sans-serif,system-ui,sans-serif] font-bold text-foreground text-xl md:text-2xl leading-tight">
-                Central de Agendamentos
+                Central de Automações
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Tudo que sai sozinho da sua conta — em um só lugar, em português claro.
+                Mapa A → B → C · ligue leads frios · agenda · carteira — tudo em português claro.
               </p>
             </div>
           </div>
@@ -648,21 +691,23 @@ export function AgendamentosHub({
         </div>
 
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AgendamentosHubTab)} className="space-y-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(normalizeHubTab(v as AgendamentosHubTab))} className="space-y-4">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
-            <TabsTrigger value="overview" className="text-xs">Visão geral</TabsTrigger>
-            <TabsTrigger value="manual" className="text-xs">Agenda manual</TabsTrigger>
-            <TabsTrigger value="pos-venda" className="text-xs">Pós-venda</TabsTrigger>
-            <TabsTrigger value="reaquecimento" className="text-xs">Reaquecimento</TabsTrigger>
-            <TabsTrigger value="campanhas" className="text-xs">Campanhas</TabsTrigger>
-            <TabsTrigger value="rodizios" className="text-xs">Rodízios</TabsTrigger>
-            <TabsTrigger value="igreen" className="text-xs">Automações iGreen</TabsTrigger>
+            <TabsTrigger value="mapa" className="text-xs font-semibold">Mapa</TabsTrigger>
+            <TabsTrigger value="grupo-a" className="text-xs">Grupo A</TabsTrigger>
+            <TabsTrigger value="grupo-b" className="text-xs font-semibold">Grupo B</TabsTrigger>
+            <TabsTrigger value="grupo-c" className="text-xs">Grupo C</TabsTrigger>
+            <TabsTrigger value="agenda" className="text-xs">Agenda</TabsTrigger>
+            <TabsTrigger value="carteira" className="text-xs">Carteira</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
           </TabsList>
 
-          {/* ── Visão geral ── */}
-          <TabsContent value="overview" className="space-y-6 mt-0">
-            <section>
+          {/* ── Mapa A→B→C + fila ── */}
+          <TabsContent value="mapa" className="space-y-6 mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <AgendamentosJornadaMap onGoTab={goTab} stats={stats} />
+            </Suspense>
+            <section className="border-t pt-6">
               {(() => {
                 const filtered = timelineFilter === "all" ? timeline : timeline.filter((i) => i.kind === timelineFilter);
                 const chips: Array<{ id: "all" | AgendamentoTimelineItem["kind"]; label: string }> = [
@@ -931,8 +976,39 @@ export function AgendamentosHub({
           </TabsContent>
 
 
-          {/* ── Agenda manual ── */}
-          <TabsContent value="manual" className="space-y-4 mt-0">
+          {/* ── Grupo A ── */}
+          <TabsContent value="grupo-a" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <AgendamentosGrupoAPanel />
+            </Suspense>
+          </TabsContent>
+
+          {/* ── Grupo B — operação leads frios ── */}
+          <TabsContent value="grupo-b" className="mt-0 h-[min(calc(100dvh-240px),760px)] min-h-[380px]">
+            <Suspense fallback={<LoadingRow />}>
+              <AgendamentosZeroLeadPanel consultantId={consultantId} onOpenChat={onOpenChat} />
+            </Suspense>
+          </TabsContent>
+
+          {/* ── Grupo C — longo prazo ── */}
+          <TabsContent value="grupo-c" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <AgendamentosGrupoCPanel />
+            </Suspense>
+          </TabsContent>
+
+          {/* ── Agenda (manual, pós-venda, campanhas…) ── */}
+          <TabsContent value="agenda" className="mt-0 space-y-4">
+            <Tabs value={agendaSub} onValueChange={(v) => setAgendaSub(v as typeof agendaSub)}>
+              <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/30 p-1 mb-4">
+                <TabsTrigger value="manual" className="text-[11px]">Manual</TabsTrigger>
+                <TabsTrigger value="pos-venda" className="text-[11px]">Pós-venda</TabsTrigger>
+                <TabsTrigger value="reaquecimento" className="text-[11px]">Reaquecimento</TabsTrigger>
+                <TabsTrigger value="campanhas" className="text-[11px]">Campanhas</TabsTrigger>
+                <TabsTrigger value="rodizios" className="text-[11px]">Rodízios</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="manual" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <p className="text-sm font-bold">Mensagens que você marcou para sair</p>
@@ -988,8 +1064,7 @@ export function AgendamentosHub({
             )}
           </TabsContent>
 
-          {/* ── Pós-venda ── */}
-          <TabsContent value="pos-venda" className="space-y-4 mt-0">
+              <TabsContent value="pos-venda" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <p className="text-sm font-bold">Esteira automática: 30, 60, 90 e 120 dias</p>
@@ -1010,8 +1085,7 @@ export function AgendamentosHub({
             )}
           </TabsContent>
 
-          {/* ── Reaquecimento (junta antiga aba Conversão + Follow-up bot) ── */}
-          <TabsContent value="reaquecimento" className="space-y-4 mt-0">
+              <TabsContent value="reaquecimento" className="space-y-4 mt-0">
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex gap-2">
               <ShieldCheck className="w-4 h-4 text-primary shrink-0 mt-0.5" />
               <p className="text-[11px] text-foreground">
@@ -1066,8 +1140,7 @@ export function AgendamentosHub({
             </Button>
           </TabsContent>
 
-          {/* ── Campanhas em massa + ligação ── */}
-          <TabsContent value="campanhas" className="space-y-4 mt-0">
+              <TabsContent value="campanhas" className="space-y-4 mt-0">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <p className="text-sm font-bold">Campanhas</p>
@@ -1123,15 +1196,16 @@ export function AgendamentosHub({
             )}
           </TabsContent>
 
-          {/* ── Rodízios: métricas para parceiros ── */}
-          <TabsContent value="rodizios" className="mt-0">
-            <Suspense fallback={<LoadingRow />}>
-              <RodiziosBroadcastPanel consultantId={consultantId} />
-            </Suspense>
+              <TabsContent value="rodizios" className="mt-0">
+                <Suspense fallback={<LoadingRow />}>
+                  <RodiziosBroadcastPanel consultantId={consultantId} />
+                </Suspense>
+              </TabsContent>
+            </Tabs>
           </TabsContent>
 
-          {/* ── Automações iGreen ── */}
-          <TabsContent value="igreen" className="mt-0">
+          {/* ── Carteira iGreen ── */}
+          <TabsContent value="carteira" className="mt-0">
             <p className="text-[11px] text-muted-foreground mb-3">
               Captura de dados do escritório iGreen (boletos, devolutivas, telecom, seguros, cashback) é obrigatória e sempre salva.
               Automações que enviam mensagem ao cliente permanecem desligadas — ative com cuidado.
@@ -1157,7 +1231,16 @@ export function AgendamentosHub({
         item={selected}
         consultantId={consultantId}
         onClose={() => setSelected(null)}
-        onGoToConfig={(tab) => { setActiveTab(tab); setSelected(null); }}
+        onGoToConfig={(tab) => {
+          const subs = ["manual", "pos-venda", "reaquecimento", "campanhas", "rodizios"] as const;
+          if ((subs as readonly string[]).includes(tab)) {
+            setAgendaSub(tab as typeof agendaSub);
+            goTab("agenda");
+          } else {
+            goTab(tab);
+          }
+          setSelected(null);
+        }}
         editText={editText}
         setEditText={setEditText}
         editAt={editAt}

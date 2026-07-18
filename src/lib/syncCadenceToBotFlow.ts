@@ -148,7 +148,9 @@ export async function persistCadenceLibraryRemote(
 const GROUP_B_TO_STAGE: Record<string, string> = {
   b1_wa_reopen: "COLD_1",
   b_day2_wa: "COLD_2",
+  b_day2_sms_tema: "SMS_TEMA_2",
   b_day7_wa_easy: "COLD_3",
+  b_day7_sms_tema: "SMS_TEMA_7",
   b_day10_wa_final: "COLD_4",
   b4_call_1: "CALL_1",
   b_day4_call_2: "CALL_2",
@@ -157,13 +159,40 @@ const GROUP_B_TO_STAGE: Record<string, string> = {
   b_day6_sms_2: "SMS_2",
 };
 
-/** Espelha textos do Grupo B em `cadence_stage_config` (consultant_id = null). */
+/** Grupo C (Meta informativo não entra) → WA / SMS / CALL de cada marco. */
+const GROUP_C_TO_STAGE: Record<string, string> = {
+  c_recall_60d_wa: "RECALL_60D",
+  c_recall_60d_sms: "RECALL_60D_SMS",
+  c_recall_60d_call: "RECALL_60D_CALL",
+  c_recall_90d_wa: "RECALL_90D",
+  c_recall_90d_sms: "RECALL_90D_SMS",
+  c_recall_90d_call: "RECALL_90D_CALL",
+  c_recall_5m_wa: "RECALL_5M",
+  c_recall_5m_sms: "RECALL_5M_SMS",
+  c_recall_5m_call: "RECALL_5M_CALL",
+  c_recall_8m_wa: "RECALL_8M",
+  c_recall_8m_sms: "RECALL_8M_SMS",
+  c_recall_8m_call: "RECALL_8M_CALL",
+  c_recall_12m_wa: "RECALL_12M",
+  c_recall_12m_sms: "RECALL_12M_SMS",
+  c_recall_12m_call: "RECALL_12M_CALL",
+  c_recall_yearly_wa: "RECALL_YEARLY",
+  c_recall_yearly_sms: "RECALL_YEARLY_SMS",
+  c_recall_yearly_call: "RECALL_YEARLY_CALL",
+};
+
+const STAGE_TEXT_SYNC_MAP: Record<string, string> = {
+  ...GROUP_B_TO_STAGE,
+  ...GROUP_C_TO_STAGE,
+};
+
+/** Espelha textos do Multicanal (Grupo B + C) em `cadence_stage_config` (consultant_id = null). */
 export async function syncCadenceLibraryToStageConfig(
   lib: SavedCadenceLibrary,
 ): Promise<{ updated: string[]; errors: string[] }> {
   const updated: string[] = [];
   const errors: string[] = [];
-  for (const [key, stage] of Object.entries(GROUP_B_TO_STAGE)) {
+  for (const [key, stage] of Object.entries(STAGE_TEXT_SYNC_MAP)) {
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
     if (!tpl) continue;
     const body = resolveBody(tpl, lib).trim();
@@ -191,9 +220,9 @@ export async function syncCadenceLibraryToStageConfig(
   return { updated, errors };
 }
 
-/** Lê os textos reais do motor (Grupo B) para hidratar o painel. */
+/** Lê os textos reais do motor (Grupo B + C) para hidratar o painel. */
 export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<SavedCadenceLibrary>> {
-  const stages = Object.values(GROUP_B_TO_STAGE);
+  const stages = Object.values(STAGE_TEXT_SYNC_MAP);
   const { data, error } = await supabase
     .from("cadence_stage_config")
     .select("stage, message_text, consultant_id")
@@ -201,7 +230,7 @@ export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<Saved
     .in("stage", stages);
   if (error || !data?.length) return {};
   const stageToKey: Record<string, string> = {};
-  for (const [k, s] of Object.entries(GROUP_B_TO_STAGE)) stageToKey[s] = k;
+  for (const [k, s] of Object.entries(STAGE_TEXT_SYNC_MAP)) stageToKey[s] = k;
   const bodies: Record<string, string> = {};
   for (const row of data) {
     const key = stageToKey[String(row.stage || "")];
@@ -395,7 +424,7 @@ export async function syncCadenceLibraryToBotFlow(
   return { updated, skipped, errors };
 }
 
-/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A) + motor (Grupo B). */
+/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A) + motor (Grupo B + C). */
 export async function publishCadenceLibrary(
   consultantId: string,
   lib: SavedCadenceLibrary,

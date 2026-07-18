@@ -160,20 +160,21 @@ export const CAPACIDADES: CapacidadeItem[] = [
   },
   {
     id: "ciclo-diario",
-    nome: "Ciclo diário (lead novo / frio)",
+    nome: "Ciclo diário (Grupo A / B)",
     oQueFaz:
-      "Fila A (novo) e Fila B (frio): abre WhatsApp, áudio, fluxo, ligação, SMS e fecha. Exige áudio no kit + live_dispatch.",
-    onde: "Dashboard (pizzas) + Voz → Programação do ciclo",
+      "Fila A (lead novo/inbound, ILIMITADA) e Fila B (frio, no cap diário): abre WhatsApp, áudio, fluxo, ligação, SMS e fecha. Exige áudio no kit + live_dispatch. Dashboard mostra também Grupo C (Meta + recalls) via cadência.",
+    onde: "Dashboard (pizzas A/B/C) + Voz → Programação do ciclo",
     grupo: "automatico",
     toggle: "daily_reheat",
     risco: "avancado",
-    dica: "Só ligue com áudio no kit e piloto. Não misture com reactivation_cron no mesmo lead.",
+    dica: "Cap só no frio (B). A não compete por teto. Só ligue com áudio no kit e piloto.",
   },
   {
     id: "cadencia",
-    nome: "Sequência automática de etapas",
-    oQueFaz: "Motor que manda uma sequência de mensagens conforme o estágio do lead.",
-    onde: "Motor de cadência + Automações",
+    nome: "Sequência automática de etapas (B + C)",
+    oQueFaz:
+      "Motor unitário: onda curta (Grupo B) e longo prazo Meta/recalls (Grupo C). Aparece nas pizzas B e C do dashboard.",
+    onde: "Dashboard (pizzas) + Motor de cadência + Automações",
     grupo: "automatico",
     toggle: "cadence_engine",
     risco: "avancado",

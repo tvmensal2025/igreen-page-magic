@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2, Play, Download, Check, CheckCheck, Clock, XCircle } from "lucide-react";
-import { whapiDownloadMedia } from "@/services/whapiApi";
-import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";
-import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
-import { CaptureAttachActions } from "@/components/captacao/CaptureAttachActions";
-import { parseConversationEmbeddedMediaUrl } from "@/lib/captacao/conversationMediaUrl";
-import { toast } from "sonner";
+import { MessageCircle, Mic, ImageIcon, Video, FileText, Loader2, Check, CheckCheck, Clock, XCircle } from "lucide-react";
+import { useCaptureAttach } from "@/hooks/useCaptureAttach";
+import {
+  ConversationMessageBody,
+  CONVERSATION_MESSAGE_SELECT,
+  type ConversationMessageRow,
+} from "@/components/whatsapp/ConversationMessageBody";
 
 interface Props {
   customerId: string;
@@ -17,16 +17,9 @@ interface Props {
 }
 
 
-interface ConvRow {
-  id: string;
-  message_direction: string;
-  message_text: string | null;
-  message_type: string | null;
-  media_id: string | null;
-  external_message_id: string | null;
+interface ConvRow extends ConversationMessageRow {
   delivery_status: string | null;
   delivery_error: string | null;
-  created_at: string;
   slot_key: string | null;
 }
 
@@ -63,8 +56,7 @@ function sortRows(rows: ConvRow[], limit: number) {
     .slice(-limit);
 }
 
-const SELECT_COLS =
-  "id, message_direction, message_text, message_type, media_id, external_message_id, delivery_status, delivery_error, created_at, slot_key";
+const SELECT_COLS = `${CONVERSATION_MESSAGE_SELECT}, delivery_status, delivery_error, slot_key`;
 
 function DeliveryIcon({ status, error }: { status: string | null; error: string | null }) {
   if (!status) return null;
@@ -81,10 +73,6 @@ function DeliveryIcon({ status, error }: { status: string | null; error: string 
   if (s === "sent" || s === "server_ack") return <Check className="h-3 w-3 text-white/50" />;
   if (s === "pending") return <Clock className="h-3 w-3 text-white/40" />;
   return null;
-}
-
-function looksLikeUuid(id: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
 }
 
 export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false }: Props) {
@@ -373,12 +361,13 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                       </span>
                     )}
                   </div>
-                  <MessageBody
+                  <ConversationMessageBody
                     row={r}
                     customerId={customerId}
                     lastInbound={lastInbound}
                     showBoleto
                     attachMediaToCapture={attachMediaToCapture}
+                    tone="dark"
                   />
                 </div>
               </div>
@@ -388,319 +377,6 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
 
         <div ref={bottomRef} aria-hidden className="h-1" />
       </div>
-    </div>
-  );
-}
-
-/* ----- Corpo da mensagem: renderiza texto ou mídia inline ----- */
-
-function isMediaType(t: string | null | undefined) {
-  return t === "image" || t === "audio" || t === "video" || t === "document" || t === "sticker";
-}
-
-function stripPlaceholder(text: string | null, type: string | null) {
-  if (!text) return "";
-  // remove marcadores "[áudio] " / "[image:slot]" / "[arquivo]"
-  const cleaned = text
-    .replace(/^\[(?:áudio|audio|image|imagem|video|vídeo|arquivo|document|documento|sticker)(?::[^\]]*)?\]\s*/i, "")
-    .replace(/\s*\((?:manual|continue)\)\s*$/i, "")
-    .trim();
-  return cleaned;
-}
-
-const MEDIA_LABEL: Record<string, string> = {
-  image: "Imagem",
-  audio: "Áudio",
-  video: "Vídeo",
-  document: "Documento",
-  sticker: "Figurinha",
-};
-
-function MessageBody({
-  row,
-  customerId,
-  lastInbound,
-  showBoleto,
-  attachMediaToCapture,
-}: {
-  row: ConvRow;
-  customerId: string;
-  lastInbound: { url: string | null; messageId: string | null; kind: string | null };
-  showBoleto: boolean;
-  attachMediaToCapture: (opts: {
-    customerId: string;
-    key: CaptureDocKey;
-    sourceUrl: string;
-    fileName?: string | null;
-    mediaId?: string | null;
-  }) => Promise<string | undefined>;
-}) {
-  const type = row.message_type || "text";
-  const caption = stripPlaceholder(row.message_text, type);
-  const hasMedia = isMediaType(type);
-  const inbound = row.message_direction !== "outbound";
-  const canAttach = inbound && (type === "image" || type === "document");
-
-  const [loading, setLoading] = useState(false);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const triedRef = useRef(false);
-
-  const load = useCallback(async (): Promise<string | null> => {
-    if (dataUrl) return dataUrl;
-    if (loading) return null;
-    setLoading(true);
-    setError(null);
-    try {
-      const resolveHttpOrData = async (raw: string): Promise<string | null> => {
-        if (raw.startsWith("data:")) {
-          setDataUrl(raw);
-          return raw;
-        }
-        if (raw.startsWith("http")) {
-          const dl = await whapiDownloadMedia({ url: raw });
-          if (dl?.base64) {
-            const url = `data:${dl.mimetype || "application/octet-stream"};base64,${dl.base64}`;
-            setDataUrl(url);
-            return url;
-          }
-          // MinIO / CDN público às vezes abre direto no browser
-          setDataUrl(raw);
-          return raw;
-        }
-        return null;
-      };
-
-      // 0) Evolution: message_text = "[image] https://..."
-      {
-        const embedded = parseConversationEmbeddedMediaUrl(row.message_text);
-        if (embedded?.url) {
-          const got = await resolveHttpOrData(embedded.url);
-          if (got) return got;
-        }
-      }
-
-      // 1) media_id Whapi (não-UUID) → proxy
-      if (row.media_id && !looksLikeUuid(row.media_id)) {
-        const r = await whapiDownloadMedia({ mediaId: row.media_id });
-        if (r?.base64) {
-          const url = `data:${r.mimetype || "application/octet-stream"};base64,${r.base64}`;
-          setDataUrl(url);
-          return url;
-        }
-      }
-
-      // 2) media_id UUID → biblioteca interna (passos do roteiro)
-      if (row.media_id && looksLikeUuid(row.media_id)) {
-        const { data: lib } = await supabase
-          .from("ai_media_library")
-          .select("url, kind")
-          .eq("id", row.media_id)
-          .maybeSingle();
-        if (lib?.url) {
-          const got = await resolveHttpOrData(String(lib.url));
-          if (got) return got;
-        }
-      }
-
-      // 3) Fallback: última mídia inbound do customer (mesma mensagem)
-      if (
-        inbound &&
-        lastInbound.url &&
-        lastInbound.messageId &&
-        row.external_message_id &&
-        lastInbound.messageId === row.external_message_id
-      ) {
-        const got = await resolveHttpOrData(lastInbound.url);
-        if (got) return got;
-      }
-
-      // 4) Último recurso inbound sem id: last_inbound http/data
-      if (inbound && !row.media_id && lastInbound.url && (type === "image" || type === "document" || type === lastInbound.kind)) {
-        const got = await resolveHttpOrData(lastInbound.url);
-        if (got) return got;
-      }
-
-      setError("Mídia indisponível");
-      return null;
-    } catch (e: any) {
-      setError(e?.message || "Falha ao abrir mídia");
-      return null;
-    } finally {
-      setLoading(false);
-      triedRef.current = true;
-    }
-  }, [row.media_id, row.external_message_id, row.message_text, dataUrl, loading, inbound, lastInbound, type]);
-
-  // Auto-carrega imagens / stickers / documentos (PDF preview)
-  useEffect(() => {
-    triedRef.current = false;
-    setDataUrl(null);
-    setError(null);
-  }, [row.id]);
-
-  useEffect(() => {
-    if (
-      (type === "image" || type === "sticker" || type === "document") &&
-      !dataUrl &&
-      !loading &&
-      !triedRef.current
-    ) {
-      triedRef.current = true;
-      void load();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, row.id, row.media_id]);
-
-  const downloadName = (() => {
-    const ext = type === "audio" ? "ogg" : type === "video" ? "mp4" : type === "image" || type === "sticker" ? "jpg" : type === "document" ? "pdf" : "bin";
-    const stamp = new Date(row.created_at || Date.now()).toISOString().replace(/[:.]/g, "-");
-    return `${type}-${stamp}.${ext}`;
-  })();
-
-  // Hooks precisam vir antes de qualquer return condicional (rules-of-hooks).
-  const handleDownload = useCallback(async () => {
-    if (!dataUrl) return;
-    try {
-      const res = await fetch(dataUrl);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = downloadName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      window.open(dataUrl, "_blank");
-    }
-  }, [dataUrl, downloadName]);
-
-  const handleAttach = useCallback(async (key: CaptureDocKey) => {
-    const src = dataUrl || (await load());
-    if (!src) {
-      toast.error("Carregue a mídia antes de anexar");
-      return;
-    }
-    await attachMediaToCapture({
-      customerId,
-      key,
-      sourceUrl: src,
-      mediaId: row.media_id && !looksLikeUuid(row.media_id) ? row.media_id : null,
-      fileName: type === "document" ? (caption || "documento.pdf") : null,
-    });
-  }, [dataUrl, load, attachMediaToCapture, customerId, row.media_id, type, caption]);
-
-  if (!hasMedia) {
-    return (
-      <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-        <WhatsAppFormattedText text={row.message_text || ""} />
-      </p>
-    );
-  }
-
-  const isPdf = type === "document" && (
-    dataUrl?.includes("application/pdf") ||
-    dataUrl?.toLowerCase().includes(".pdf") ||
-    (caption || "").toLowerCase().endsWith(".pdf")
-  );
-
-  return (
-    <div className="space-y-1.5">
-      {/* Mídia carregada */}
-      {dataUrl && (type === "image" || type === "sticker") && (
-        <a href={dataUrl} target="_blank" rel="noreferrer">
-          <img
-            src={dataUrl}
-            alt={MEDIA_LABEL[type]}
-            className="rounded-md max-h-64 w-auto object-cover border border-white/10"
-            loading="lazy"
-            decoding="async"
-          />
-        </a>
-      )}
-      {dataUrl && type === "audio" && (
-        <audio
-          controls
-          preload="metadata"
-          src={dataUrl}
-          className="w-full h-9"
-          controlsList="nofullscreen noremoteplayback"
-        />
-      )}
-      {dataUrl && type === "video" && (
-        <video controls preload="metadata" src={dataUrl} className="rounded-md max-h-64 w-auto border border-white/10" />
-      )}
-      {dataUrl && type === "document" && isPdf && (
-        <iframe
-          src={dataUrl}
-          className="w-full h-40 rounded border border-white/10 bg-black/20"
-          title={caption || "PDF"}
-        />
-      )}
-      {dataUrl && type === "document" && !isPdf && (
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="inline-flex items-center gap-1.5 text-xs bg-white/10 hover:bg-white/20 rounded-md px-2 py-1"
-        >
-          <Download className="w-3.5 h-3.5" /> Baixar documento
-        </button>
-      )}
-      {dataUrl && (type === "audio" || type === "video" || type === "image" || type === "sticker" || (type === "document" && isPdf)) && (
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="inline-flex items-center gap-1.5 text-[11px] bg-white/10 hover:bg-white/20 rounded-md px-2 py-1 transition"
-          title={`Baixar ${MEDIA_LABEL[type]}`}
-        >
-          <Download className="w-3 h-3" /> Baixar {MEDIA_LABEL[type]?.toLowerCase()}
-        </button>
-      )}
-
-      {/* Fallback / botão de abrir para tipos não pré-carregados */}
-      {!dataUrl && (
-        <button
-          type="button"
-          onClick={() => { triedRef.current = false; void load(); }}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-50 px-2.5 py-1.5 text-xs font-medium transition"
-        >
-          {loading ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Play className="w-3.5 h-3.5" />
-          )}
-          <span>
-            {loading
-              ? "Carregando…"
-              : error
-              ? `Tentar ${MEDIA_LABEL[type]?.toLowerCase() || "mídia"} de novo`
-              : `Abrir ${MEDIA_LABEL[type] || "mídia"}`}
-          </span>
-        </button>
-      )}
-
-      {error && !dataUrl && <p className="text-[11px] text-red-300">{error}</p>}
-      {!row.media_id && !dataUrl && !lastInbound.url && (
-        <p className="text-[11px] opacity-60 italic">Mídia sem identificador — abra no chat completo.</p>
-      )}
-
-      {canAttach && (
-        <CaptureAttachActions
-          onAttach={handleAttach}
-          tone="dark"
-          compact
-          showBoleto={showBoleto}
-        />
-      )}
-
-      {caption && (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-          <WhatsAppFormattedText text={caption} />
-        </p>
-      )}
     </div>
   );
 }

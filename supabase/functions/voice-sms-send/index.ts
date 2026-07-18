@@ -7,7 +7,7 @@ import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import { makeSMS, toCtid, toVelipBRDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
-import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
+import { resolveConsultantConnectedWaPhone, buildConsultantSmsWaLink, normalizeWaPhoneDigits } from "../_shared/consultant-wa-phone.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -30,22 +30,15 @@ function firstName(name: string | null | undefined): string {
   return n.split(/\s+/)[0] || "";
 }
 
-function normalizeConsultantPhone(raw: string | null | undefined): string {
-  let d = String(raw || "").replace(/\D/g, "");
-  if (!d) return "";
-  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = `55${d}`;
-  return d;
-}
-
-/** Substitui {{nome}} / {{consultor_phone}} / {{link_wa}}. Garante wa.me do consultor. */
+/** Substitui {{nome}} / {{consultor_phone}} / {{link_wa}}. Garante https://wa.me do consultor. */
 function renderSms(
   message: string,
   name: string | null | undefined,
   consultorPhone: string,
 ): string {
   const nome = firstName(name);
-  const phone = normalizeConsultantPhone(consultorPhone);
-  const linkWa = phone ? `wa.me/${phone}` : "";
+  const phone = normalizeWaPhoneDigits(consultorPhone);
+  const linkWa = buildConsultantSmsWaLink(phone);
   let out = String(message || "").trim();
   if (
     out &&
@@ -53,7 +46,7 @@ function renderSms(
     !/\{\{\s*consultor_phone\s*\}\}/i.test(out) &&
     !/\{\{\s*link_wa\s*\}\}/i.test(out)
   ) {
-    out = `${out} wa.me/{{consultor_phone}}`;
+    out = `${out} https://wa.me/{{consultor_phone}}`;
   }
   out = out
     .replace(/\{\{\s*nome\s*\}\}/gi, nome)
@@ -61,6 +54,8 @@ function renderSms(
     .replace(/\{\{\s*link_wa\s*\}\}/gi, linkWa)
     .replace(/\{\{\s*consultor_phone\s*\}\}/gi, phone)
     .replace(/\{\{\s*consultor\s*\}\}/gi, "");
+  // Protocolo obrigatório no SMS — senão o celular não abre o link.
+  out = out.replace(/(?:https?:\/\/)?wa\.me\/(?=[\d+]|\{\{)/gi, "https://wa.me/");
   if (!nome) {
     out = out
       .replace(/\bOi\s*,/gi, "Oi")

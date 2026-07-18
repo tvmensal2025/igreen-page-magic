@@ -7,11 +7,29 @@
  * Cascata: whatsapp_instances.connected_phone → consultants.phone
  */
 
+/**
+ * Normaliza telefone WA do consultor: só dígitos, DDI 55, e 9º dígito
+ * quando vier celular antigo (55+DDD+8 dígitos começando em 6–9).
+ * Ex.: 553484314317 → 5534984314317 (wa.me precisa do celular completo).
+ */
 export function normalizeWaPhoneDigits(raw: string | null | undefined): string {
-  let d = String(raw || "").replace(/\D/g, "");
+  let d = String(raw || "").replace(/\D/g, "").replace(/^0+/, "");
   if (!d) return "";
   if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = `55${d}`;
+  if (d.length === 12 && d.startsWith("55")) {
+    const ddd = d.slice(2, 4);
+    const local = d.slice(4);
+    if (local.length === 8 && /^[6-9]/.test(local)) {
+      d = `55${ddd}9${local}`;
+    }
+  }
   return d;
+}
+
+/** Link WhatsApp clicável em SMS (sempre com https://). */
+export function buildConsultantSmsWaLink(rawPhone: string | null | undefined): string {
+  const phone = normalizeWaPhoneDigits(rawPhone);
+  return phone ? `https://wa.me/${phone}` : "";
 }
 
 /** Resolve o número do WhatsApp conectado do consultor (só dígitos, com DDI 55). */

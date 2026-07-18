@@ -53,10 +53,21 @@ export async function onLeadInboundResponse(
   try {
     const now = new Date();
 
-    // 1) Cancela a cadência: o lead voltou a falar → deixa o bot_flow do
-    //    consultor (variante A) assumir. Marcamos como PAUSED por 72h para
-    //    não voltar a assediar. Se o consultor perder de novo (nenhum
-    //    fechamento em 72h), o motor reaquece do zero.
+    // Preserva o estágio atual em paused_reason (lead_responded:<STAGE>)
+    // para o tick retomar Grupo C no mesmo ponto — sem zerar para COLD_1.
+    const { data: cur } = await supabase
+      .from("lead_cadence_state")
+      .select("stage")
+      .eq("customer_id", customer_id)
+      .maybeSingle();
+    const prevStage = String((cur as { stage?: string } | null)?.stage || "");
+    const reason =
+      prevStage && prevStage !== "PAUSED"
+        ? `lead_responded:${prevStage}`
+        : "lead_responded";
+
+    // 1) Pausa a cadência: o lead voltou a falar → bot_flow assume.
+    //    Após 72h: onda B recomeça em COLD_1; Grupo C retoma o estágio salvo.
     const resumeAt = new Date(now.getTime() + 72 * 3600_000).toISOString();
     await supabase
       .from("lead_cadence_state")
@@ -65,7 +76,7 @@ export async function onLeadInboundResponse(
         last_response_at: now.toISOString(),
         next_action_at: resumeAt,
         paused_until: resumeAt,
-        paused_reason: "lead_responded",
+        paused_reason: reason,
       })
       .eq("customer_id", customer_id);
 

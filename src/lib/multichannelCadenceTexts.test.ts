@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   AFTER_CLUB_BUTTONS,
   AFTER_EXPLAIN_BUTTONS,
+  AVAILABILITY_BODY_KEYS,
+  DEFAULT_AVAILABILITY_PHRASES,
   MULTICHANNEL_CADENCE_TEMPLATES,
   SMS_CONSULTOR_WA_LINK,
   WHAPI_MAX_BUTTONS,
   allAudioSegmentsApproved,
   assertCatalogWhapiSafe,
+  availabilityOverridesFromLibrary,
+  buildAvailabilityPhrase,
   cadenceAudioUrlKey,
   cadenceBodyAudioUrlKey,
   emptyLibrary,
@@ -115,26 +119,41 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(MULTICHANNEL_CADENCE_TEMPLATES.some((t) => t.key === "a_optional_call_slot")).toBe(true);
   });
 
-  it("todo SMS do catálogo tem wa.me do consultor", () => {
+  it("todo SMS do catálogo tem https://wa.me do consultor", () => {
     const sms = MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => t.channel === "sms");
     expect(sms.length).toBeGreaterThan(0);
     for (const t of sms) {
-      expect(t.body, t.key).toMatch(/wa\.me\/\{\{\s*consultor_phone\s*\}\}/i);
+      // Slots de tema (`{{tema_sms}}`) recebem o link via ensureSmsConsultorWaLink.
+      if (!/\{\{\s*tema_sms\s*\}\}/i.test(t.body)) {
+        expect(t.body, t.key).toMatch(/https:\/\/wa\.me\/\{\{\s*consultor_phone\s*\}\}/i);
+      }
       const resolved = resolveBody(t, emptyLibrary());
       expect(resolved, t.key).toContain(SMS_CONSULTOR_WA_LINK);
       expect(
         renderCadenceBody(resolved, { nome: "Maria", consultorPhone: "5511989000650" }),
         t.key,
-      ).toContain("wa.me/5511989000650");
+      ).toContain("https://wa.me/5511989000650");
     }
   });
 
-  it("ensureSmsConsultorWaLink acrescenta link se faltar", () => {
+  it("ensureSmsConsultorWaLink acrescenta link se faltar e força https", () => {
     expect(ensureSmsConsultorWaLink("Oi {{nome}}")).toBe(`Oi {{nome}} ${SMS_CONSULTOR_WA_LINK}`);
     expect(ensureSmsConsultorWaLink(`Oi ${SMS_CONSULTOR_WA_LINK}`)).toBe(
       `Oi ${SMS_CONSULTOR_WA_LINK}`,
     );
     expect(ensureSmsConsultorWaLink("Oi wa.me/")).toBe(`Oi ${SMS_CONSULTOR_WA_LINK}`);
+    expect(ensureSmsConsultorWaLink("Oi wa.me/{{consultor_phone}}")).toBe(
+      `Oi ${SMS_CONSULTOR_WA_LINK}`,
+    );
+  });
+
+  it("normaliza celular BR sem 9º dígito no link do SMS", () => {
+    const out = renderCadenceBody("Abra: {{link_wa}}", {
+      nome: "Maria",
+      consultorPhone: "553484314317",
+    });
+    expect(out).toContain("https://wa.me/5534984314317");
+    expect(out).not.toContain("wa.me/553484314317");
   });
 
   it("áudios: no máx. 1 corte de nome + 1 corpo por gênero (ou só corpo)", () => {
@@ -359,5 +378,45 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const lib = emptyLibrary();
     lib.bodies[a3.key] = "   ";
     expect(resolveBody(a3, lib)).toContain("{{valor_conta}}");
+  });
+});
+
+describe("Disponibilidade — {{frase_disponibilidade}}", () => {
+  it("catálogo tem 4 frases alinhadas aos defaults", () => {
+    for (const [slot, key] of Object.entries(AVAILABILITY_BODY_KEYS) as Array<
+      [keyof typeof DEFAULT_AVAILABILITY_PHRASES, string]
+    >) {
+      const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
+      expect(tpl?.body, key).toBe(DEFAULT_AVAILABILITY_PHRASES[slot]);
+    }
+  });
+
+  it("usa override da biblioteca quando existir", () => {
+    const lib = emptyLibrary();
+    lib.bodies.availability_before_1630 = "Atendo hoje até 18h, {{nome}}.";
+    const overrides = availabilityOverridesFromLibrary(lib);
+    // 10:00 SP ≈ 13:00 UTC (sem horário de verão)
+    const noonUtc = new Date("2026-07-15T13:00:00.000Z"); // qua
+    const { slot, phrase } = buildAvailabilityPhrase(noonUtc, overrides);
+    expect(slot).toBe("before_1630");
+    expect(phrase).toBe("Atendo hoje até 18h, {{nome}}.");
+  });
+
+  it("renderCadenceBody injeta frase da lib", () => {
+    const lib = emptyLibrary();
+    lib.bodies.availability_before_1630 = "Frase custom do painel.";
+    const out = renderCadenceBody("Oi.\n\n{{frase_disponibilidade}}", {
+      now: new Date("2026-07-15T13:00:00.000Z"),
+      availabilityOverrides: availabilityOverridesFromLibrary(lib),
+    });
+    expect(out).toContain("Frase custom do painel.");
+    expect(out).not.toContain("{{frase_disponibilidade}}");
+  });
+
+  it("fim de semana usa frase after_1800", () => {
+    const sat = new Date("2026-07-18T15:00:00.000Z"); // sábado
+    const { slot, phrase } = buildAvailabilityPhrase(sat);
+    expect(slot).toBe("closed");
+    expect(phrase).toBe(DEFAULT_AVAILABILITY_PHRASES.after_1800);
   });
 });

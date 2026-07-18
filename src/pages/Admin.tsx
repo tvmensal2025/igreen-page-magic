@@ -120,6 +120,10 @@ const AdminContent = () => {
 
   const [pendingConversaoView, setPendingConversaoView] = useState<string | null>(null);
   const [pendingWhatsAppSub, setPendingWhatsAppSub] = useState<string | null>(null);
+  const [pendingHubTab, setPendingHubTab] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("hubTab");
+  });
 
   const [pendingChatPhone, setPendingChatPhone] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -162,6 +166,7 @@ const AdminContent = () => {
       }
       if (detail.whatsappSub) setPendingWhatsAppSub(detail.whatsappSub);
       if (detail.conversaoView) setPendingConversaoView(detail.conversaoView);
+      if (detail.hubTab) setPendingHubTab(detail.hubTab);
     };
     window.addEventListener("igreen-admin-nav", onNav);
     return () => window.removeEventListener("igreen-admin-nav", onNav);
@@ -536,6 +541,9 @@ const AdminContent = () => {
               <AgendamentosHub
                 consultantId={userId}
                 instanceName={instanceName || ""}
+                defaultTab={(pendingHubTab as import("@/lib/agendamentosHub").AgendamentosHubTab | null) ?? undefined}
+                key={pendingHubTab || "agendamentos-default"}
+                onOpenChat={handleOpenChatFromCustomer}
               />
             </Suspense>
           )}

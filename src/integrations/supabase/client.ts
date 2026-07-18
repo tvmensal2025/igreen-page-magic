@@ -7,13 +7,39 @@ const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 
 const SUPABASE_FETCH_TIMEOUT_MS = 15000;
 
+/**
+ * Em DEV, edge functions com CORS restrito (allowlist) quebram quando o Vite
+ * sobe em localhost:8081/8082. O vite.config já tem `/functions-proxy` →
+ * Supabase; reescrever a URL torna a chamada same-origin (sem preflight CORS).
+ * Produção não é afetada (`import.meta.env.DEV` é false).
+ */
+function rewriteFunctionsUrlForDev(url: string): string {
+  if (!import.meta.env.DEV) return url;
+  return url.replace(
+    /^https:\/\/zlzasfhcxcznaprrragl\.supabase\.co\/functions\/v1(?=\/|$)/,
+    "/functions-proxy",
+  );
+}
+
 const fetchWithTimeout: typeof fetch = async (input, init?: RequestInit) => {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
   const requestInit = init ?? {};
 
   try {
-    return await fetch(input, {
+    let nextInput: RequestInfo | URL = input;
+    if (typeof input === "string") {
+      nextInput = rewriteFunctionsUrlForDev(input);
+    } else if (input instanceof URL) {
+      nextInput = new URL(rewriteFunctionsUrlForDev(input.href));
+    } else if (typeof Request !== "undefined" && input instanceof Request) {
+      const rewritten = rewriteFunctionsUrlForDev(input.url);
+      if (rewritten !== input.url) {
+        nextInput = new Request(rewritten, input);
+      }
+    }
+
+    return await fetch(nextInput, {
       ...requestInit,
       signal: requestInit.signal ?? controller.signal,
     });

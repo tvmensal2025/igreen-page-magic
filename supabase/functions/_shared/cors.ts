@@ -28,6 +28,10 @@ const DEV_FALLBACK_ORIGINS = [
   "http://localhost:5173",
   "http://localhost:3000",
   "http://localhost:8080",
+  "http://localhost:8081",
+  "http://localhost:8082",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:8081",
 ];
 
 const BASE_ALLOW_HEADERS = "authorization, x-client-info, apikey, content-type";
@@ -47,12 +51,14 @@ function allowedOrigins(): string[] {
  * @param extraAllowHeaders Headers adicionais permitidos, separados por vírgula
  *                          (ex.: "x-service-secret").
  */
-// Padrões de origens sempre liberadas (preview/sandbox do Lovable).
-// Mantemos as previews liberadas pra não quebrar testes da equipe direto do editor.
+// Padrões de origens sempre liberadas (preview/sandbox do Lovable + localhost
+// em qualquer porta — Vite sobe em 8081/8082 quando 8080 está ocupada).
 const ORIGIN_PATTERNS: RegExp[] = [
   /^https:\/\/([a-z0-9-]+\.)*lovable\.app$/i,
   /^https:\/\/([a-z0-9-]+\.)*lovableproject\.com$/i,
   /^https:\/\/([a-z0-9-]+\.)*lovable\.dev$/i,
+  /^http:\/\/localhost:\d+$/i,
+  /^http:\/\/127\.0\.0\.1:\d+$/i,
 ];
 
 function isOriginAllowed(origin: string, allow: string[]): boolean {
@@ -64,10 +70,14 @@ function isOriginAllowed(origin: string, allow: string[]): boolean {
 export function buildCors(req: Request, extraAllowHeaders = ""): Record<string, string> {
   const origin = req.headers.get("Origin") ?? "";
   const allow = allowedOrigins();
-  // Reflete a origem quando permitida (lista fixa ou pattern de preview);
-  // senão devolve a primeira da allowlist (browser bloqueia por mismatch).
-  const allowOrigin = isOriginAllowed(origin, allow) ? origin : allow[0];
-
+  // Reflete a origem quando permitida (lista fixa ou pattern de preview/dev).
+  // Sem Origin (cron/server-to-server) usa produção. Origem estranha: não mente
+  // com igreen.cloud — isso só gera CORS confuso no browser (localhost:8081).
+  const allowOrigin = !origin
+    ? PROD_ORIGINS[0]
+    : isOriginAllowed(origin, allow)
+      ? origin
+      : "null";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,

@@ -85,11 +85,12 @@ export function VelipHealthBanner() {
   const lowBalance = saldo != null && avgDay > 0 && saldo < avgDay;
   const critical = saldo != null && avgDay > 0 && saldo < avgDay * 3;
 
+  const isOk = !critical && !lowBalance;
   const toneClass = critical
     ? "border-destructive/50 bg-destructive/10 text-destructive"
     : lowBalance
       ? "border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-100"
-      : "border-emerald-600/60 bg-white text-emerald-950 dark:bg-emerald-950/40 dark:text-emerald-50 dark:border-emerald-400/50";
+      : "border-primary bg-primary text-primary-foreground";
 
   return (
     <div className={`rounded-md border px-3 py-2.5 text-xs ${toneClass}`}>
@@ -98,10 +99,16 @@ export function VelipHealthBanner() {
           <CheckCircle2 className="h-3.5 w-3.5" />
           <span className="font-medium">Velip conectado</span>
           {state.webhook_configured === false && (
-            <span className="text-amber-700 dark:text-amber-300">(webhook sem auth)</span>
+            <span className={isOk ? "text-amber-100" : "text-amber-700 dark:text-amber-300"}>(webhook sem auth)</span>
           )}
         </div>
-        <Button size="sm" variant="ghost" onClick={load} disabled={busy} className="h-6 px-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={load}
+          disabled={busy}
+          className={`h-6 px-2 ${isOk ? "text-primary-foreground hover:bg-white/15 hover:text-primary-foreground" : ""}`}
+        >
           <RefreshCw className={`h-3 w-3 ${busy ? "animate-spin" : ""}`} />
         </Button>
       </div>
@@ -112,10 +119,11 @@ export function VelipHealthBanner() {
           label="Saldo"
           value={saldo == null ? "ver painel Velip" : fmt(saldo)}
           strong={saldo != null}
+          onGreen={isOk}
         />
-        <Metric icon={<TrendingUp className="h-3 w-3" />} label="Hoje" value={fmt(state.spend?.spend_today ?? 0)} />
-        <Metric label="7 dias" value={fmt(state.spend?.spend_week ?? 0)} />
-        <Metric label="30 dias" value={fmt(spendMonth)} />
+        <Metric icon={<TrendingUp className="h-3 w-3" />} label="Hoje" value={fmt(state.spend?.spend_today ?? 0)} onGreen={isOk} />
+        <Metric label="7 dias" value={fmt(state.spend?.spend_week ?? 0)} onGreen={isOk} />
+        <Metric label="30 dias" value={fmt(spendMonth)} onGreen={isOk} />
       </div>
       {state.spend && state.spend.answered_count > 0 && (
         <div className="mt-1.5 text-[10.5px] opacity-80">
@@ -129,9 +137,21 @@ export function VelipHealthBanner() {
   );
 }
 
-function Metric({ icon, label, value, strong }: { icon?: React.ReactNode; label: string; value: string; strong?: boolean }) {
+function Metric({
+  icon,
+  label,
+  value,
+  strong,
+  onGreen,
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: string;
+  strong?: boolean;
+  onGreen?: boolean;
+}) {
   return (
-    <div className="flex flex-col rounded bg-background/40 px-2 py-1">
+    <div className={`flex flex-col rounded px-2 py-1 ${onGreen ? "bg-white/15" : "bg-background/40"}`}>
       <span className="flex items-center gap-1 text-[10px] uppercase tracking-wide opacity-80">
         {icon} {label}
       </span>

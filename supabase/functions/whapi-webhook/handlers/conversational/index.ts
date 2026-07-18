@@ -1135,7 +1135,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // set pra nunca ciclar. Falha silenciosa: se algo der errado, mantém o
   // passo original (comportamento atual).
   const TRUSTED_NAME_SKIP = new Set([
-    "ocr", "ocr_conta", "ocr_doc", "user_confirmed", "self_introduced", "manual",
+    "ocr", "ocr_conta", "ocr_doc", "user_confirmed", "self_introduced", "manual", "cadence",
   ]);
   const stepCapturesField = (s: DbStep, field: string): boolean => {
     if (!Array.isArray(s.captures)) return false;

@@ -1,5 +1,5 @@
 /**
- * Biblioteca de textos — Conversão Multicanal (Grupo A / Grupo B).
+ * Biblioteca de textos — Conversão Multicanal (Grupo A / B / C).
  *
  * Regras Whapi (obrigatórias):
  * - No máximo 3 botões por mensagem interativa (API corta o resto).
@@ -15,6 +15,7 @@
  */
 
 import { mergeApprovedA2Audios } from "@/lib/multichannelApprovedAudios";
+import { normalizeBrazilPhone } from "@/lib/phone";
 
 /** replaceAll compatível com lib ES2020 do projeto. */
 function tplReplace(text: string, needle: string, value: string): string {
@@ -45,7 +46,7 @@ export type CadenceChannel =
   | "call_script"
   | "system";
 
-export type CadenceGroup = "A" | "B" | "theme" | "availability";
+export type CadenceGroup = "A" | "B" | "C" | "theme" | "availability";
 
 /** Botão Whapi — title máx. 25 chars (whapi-api.ts). */
 export type CadenceButton = {
@@ -509,10 +510,67 @@ export function validateWhapiButtons(buttons: CadenceButton[] | undefined): {
   return { ok: errors.length === 0, errors };
 }
 
+export type AvailabilitySlot =
+  | "before_1630"
+  | "1630_1730"
+  | "after_1730"
+  | "after_1800"
+  | "closed";
+
+export type AvailabilityOverrideKey =
+  | "before_1630"
+  | "1630_1730"
+  | "after_1730"
+  | "after_1800";
+
+export type AvailabilityOverrides = Partial<Record<AvailabilityOverrideKey, string>>;
+
+/** Keys do catálogo Multicanal (aba Disponibilidade). */
+export const AVAILABILITY_BODY_KEYS: Record<AvailabilityOverrideKey, string> = {
+  before_1630: "availability_before_1630",
+  "1630_1730": "availability_1630_1730",
+  after_1730: "availability_after_1730",
+  after_1800: "availability_after_1800",
+};
+
+export const DEFAULT_AVAILABILITY_PHRASES: Record<AvailabilityOverrideKey, string> = {
+  before_1630: "Estou disponível hoje até as 18 horas.",
+  "1630_1730": "Ainda estou disponível hoje até as 18 horas.",
+  after_1730:
+    "Ainda estou disponível hoje até as 18 horas — se preferir, seguimos no próximo horário de atendimento.",
+  after_1800:
+    "Recebi sua solicitação e deixei seu atendimento preparado. No próximo horário de atendimento, nossa equipe dará continuidade.",
+};
+
+function pickAvailabilityOverride(
+  overrides: AvailabilityOverrides | undefined,
+  key: AvailabilityOverrideKey,
+): string {
+  const custom = overrides?.[key]?.trim();
+  return custom || DEFAULT_AVAILABILITY_PHRASES[key];
+}
+
+/** Lê frases editadas na biblioteca (aba Disponibilidade). */
+export function availabilityOverridesFromLibrary(
+  lib: { bodies?: Record<string, string> } | null | undefined,
+): AvailabilityOverrides {
+  const bodies = lib?.bodies;
+  if (!bodies) return {};
+  const out: AvailabilityOverrides = {};
+  for (const [slot, key] of Object.entries(AVAILABILITY_BODY_KEYS) as Array<
+    [AvailabilityOverrideKey, string]
+  >) {
+    const v = bodies[key]?.trim();
+    if (v) out[slot] = v;
+  }
+  return out;
+}
+
 /** Frase dinâmica de disponibilidade (America/Sao_Paulo). */
 export function buildAvailabilityPhrase(
   now: Date = new Date(),
-): { phrase: string; slot: "before_1630" | "1630_1730" | "after_1730" | "after_1800" | "closed" } {
+  overrides?: AvailabilityOverrides,
+): { phrase: string; slot: AvailabilitySlot } {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "America/Sao_Paulo",
     weekday: "short",
@@ -524,9 +582,7 @@ export function buildAvailabilityPhrase(
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
   const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
   const mins = hour * 60 + minute;
-
-  const closedPhrase =
-    "Recebi sua solicitação e deixei seu atendimento preparado. No próximo horário de atendimento, nossa equipe dará continuidade.";
+  const closedPhrase = pickAvailabilityOverride(overrides, "after_1800");
 
   if (wd === "Sun" || wd === "Sat") {
     return { slot: "closed", phrase: closedPhrase };
@@ -535,14 +591,20 @@ export function buildAvailabilityPhrase(
   if (mins >= 17 * 60 + 30) {
     return {
       slot: "after_1730",
-      phrase: "Deixei seu atendimento preparado e posso continuar no próximo horário de atendimento.",
+      phrase: pickAvailabilityOverride(overrides, "after_1730"),
     };
   }
   if (mins >= 16 * 60 + 30) {
-    return { slot: "1630_1730", phrase: "Ainda estou disponível hoje até as 18 horas." };
+    return {
+      slot: "1630_1730",
+      phrase: pickAvailabilityOverride(overrides, "1630_1730"),
+    };
   }
   if (mins >= 9 * 60) {
-    return { slot: "before_1630", phrase: "Estou disponível hoje até as 18 horas." };
+    return {
+      slot: "before_1630",
+      phrase: pickAvailabilityOverride(overrides, "before_1630"),
+    };
   }
   return { slot: "closed", phrase: closedPhrase };
 }
@@ -565,10 +627,15 @@ export function renderCadenceBody(
     linkFacial?: string;
     /** Dígitos do WhatsApp do consultor (com DDI 55) → {{consultor_phone}} / {{link_wa}}. */
     consultorPhone?: string;
+    /** Frases da aba Disponibilidade (lib.bodies). */
+    availabilityOverrides?: AvailabilityOverrides;
   } = {},
 ): string {
   const nome = (opts.nome || "Cliente").trim() || "Cliente";
-  const { phrase } = buildAvailabilityPhrase(opts.now ?? new Date());
+  const { phrase } = buildAvailabilityPhrase(
+    opts.now ?? new Date(),
+    opts.availabilityOverrides,
+  );
   const g = genderLexicon(opts.gender ?? "masculino");
   const valor =
     (opts.valorConta ?? opts.valorFormatado ?? "").trim() || "…";
@@ -580,7 +647,9 @@ export function renderCadenceBody(
   const telefone =
     (opts.telefone ?? opts.telefoneMascarado ?? "").trim() || "(11) 9••••-••••";
   const consultorPhone = normalizeConsultantPhoneDigits(opts.consultorPhone);
-  const linkWa = consultorPhone ? `wa.me/${consultorPhone}` : "wa.me/{{consultor_phone}}";
+  const linkWa = consultorPhone
+    ? `https://wa.me/${consultorPhone}`
+    : "https://wa.me/{{consultor_phone}}";
   return [
     ["{{nome}}", nome],
     ["{{frase_disponibilidade}}", phrase],
@@ -593,7 +662,7 @@ export function renderCadenceBody(
     ["{{telefone}}", telefone],
     ["{{telefone_mascarado}}", telefone],
     ["{{link_facial}}", opts.linkFacial ?? ""],
-    // Sem telefone: não apagar o placeholder (evita SMS com `wa.me/` quebrado na prévia).
+    // Sem telefone: não apagar o placeholder (evita SMS com `https://wa.me/` quebrado na prévia).
     ["{{consultor_phone}}", consultorPhone || "{{consultor_phone}}"],
     ["{{link_wa}}", linkWa],
     ["{{bem_vindo}}", g.bem_vindo],
@@ -633,12 +702,20 @@ export function spokenSegmentText(
   return renderCadenceBody(seg.text, { ...opts, nome: first }).trim();
 }
 
-/** Link WhatsApp clicável no SMS (resolvido no envio com o telefone do consultor). */
-export const SMS_CONSULTOR_WA_LINK = "wa.me/{{consultor_phone}}";
+/** Link WhatsApp clicável no SMS (sempre https:// — sem protocolo o celular não abre). */
+export const SMS_CONSULTOR_WA_LINK = "https://wa.me/{{consultor_phone}}";
 
-/** Garante wa.me do consultor em todo SMS — sem depender de eu editar cada texto. */
+/** Força protocolo https em qualquer wa.me/ do texto (templates antigos sem https). */
+export function ensureHttpsWaMeLinks(body: string): string {
+  return String(body || "").replace(
+    /(?:https?:\/\/)?wa\.me\/(?=[\d+]|\{\{)/gi,
+    "https://wa.me/",
+  );
+}
+
+/** Garante https://wa.me do consultor em todo SMS — sem depender de eu editar cada texto. */
 export function ensureSmsConsultorWaLink(body: string): string {
-  let t = String(body || "").trim();
+  let t = ensureHttpsWaMeLinks(String(body || "").trim());
   if (!t) return t;
   // Remove wa.me/ vazio/quebrado (sem dígitos nem placeholder).
   t = t.replace(/(?:https?:\/\/)?wa\.me\/(?![\d+]|\{\{)/gi, "").replace(/\s{2,}/g, " ").trim();
@@ -647,16 +724,14 @@ export function ensureSmsConsultorWaLink(body: string): string {
     /\{\{\s*link_wa\s*\}\}/i.test(t) ||
     /\{\{\s*consultor_phone\s*\}\}/i.test(t)
   ) {
-    return t;
+    return ensureHttpsWaMeLinks(t);
   }
   return `${t} ${SMS_CONSULTOR_WA_LINK}`.replace(/\s{2,}/g, " ").trim();
 }
 
+/** Telefone do consultor para wa.me: DDI 55 + 9º dígito quando faltar (celular BR). */
 export function normalizeConsultantPhoneDigits(raw: string | null | undefined): string {
-  let d = String(raw || "").replace(/\D/g, "");
-  if (!d) return "";
-  if (!d.startsWith("55") && (d.length === 10 || d.length === 11)) d = `55${d}`;
-  return d;
+  return normalizeBrazilPhone(raw);
 }
 
 export function smsCharCount(
@@ -700,7 +775,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     title: "Frase — após 17h30",
     timing: "17:30–17:59",
     canGenerateAudio: false,
-    body: "Deixei seu atendimento preparado e posso continuar no próximo horário de atendimento.",
+    body: "Ainda estou disponível hoje até as 18 horas — se preferir, seguimos no próximo horário de atendimento.",
   },
   {
     key: "availability_after_1800",
@@ -1092,7 +1167,7 @@ Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém
     canGenerateAudio: false,
     maxChars: 160,
     notes: "Passo send_sms no construtor — não é obrigatório na sequência 1→2→3.",
-    body: `Sofia | iGreen: oi {{nome}}, ative seu beneficio no WhatsApp: wa.me/{{consultor_phone}}`,
+    body: `Sofia | iGreen: oi {{nome}}, ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
   },
   {
     key: "a_optional_call_slot",
@@ -1247,7 +1322,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "D+1 · envia às 11h30 · só se silêncio no WA",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, reabri sua analise. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, reabri sua analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b4_call_1",
@@ -1287,13 +1362,25 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     key: "b_day2_wa",
     group: "B",
     channel: "whatsapp_buttons",
-    title: "Dia 2 — Segunda novidade no WhatsApp",
-    timing: "Dia 2 · envia às 10h30",
+    title: "Dia 2 — WhatsApp com tema (rotativo)",
+    timing: "Dia 2 · envia às 10h30 · só se silêncio no D+1",
     canGenerateAudio: false,
     notes:
-      "O sistema escolhe um tema diferente do D+1. Sem áudio. Até 3 botões de faixa.",
+      "Não edite o texto aqui. No Dia 2 o motor escolhe UM tema da aba Temas (análise, bandeiras, sem placas, segurança…). Diferente do D+1 (reabrir). Em silêncio ~2h → SMS tema.",
     body: `{{tema_whatsapp}}`,
     buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "b_day2_sms_tema",
+    group: "B",
+    channel: "sms",
+    title: "Dia 2 — SMS do mesmo tema (só se silêncio)",
+    timing: "Dia 2 · ~2h após o WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes:
+      "Não edite aqui. Usa o SMS do mesmo tema escolhido no WhatsApp (aba Temas). Placeholder {{tema_sms}}.",
+    body: `{{tema_sms}}`,
   },
   {
     key: "b_day4_call_2",
@@ -1333,7 +1420,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 6 · envia às 11h30 · sem ligação no mesmo dia",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, novidades e beneficios extras. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, novidades e beneficios extras. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
@@ -1343,13 +1430,25 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 7 · envia às 10h30",
     canGenerateAudio: false,
     notes:
-      "3 botões de faixa. Se precisar de foto, ligação ou encerrar, usa o passo seguinte.",
+      "3 botões de faixa. Se precisar de foto, ligação ou encerrar, usa o passo seguinte. Em silêncio → SMS_TEMA_7.",
     body: `Olá, *{{nome}}*! 👋
 
 Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*.
 
 *Qual faixa está sua conta hoje?*`,
     buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "b_day7_sms_tema",
+    group: "B",
+    channel: "sms",
+    title: "Dia 7 — SMS do tema (só se silêncio)",
+    timing: "Dia 7 · ~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes:
+      "Não edite aqui. Outro tema rotativo (aba Temas), diferente do último. Placeholder {{tema_sms}}.",
+    body: `{{tema_sms}}`,
   },
   {
     key: "b_day7b_wa_action",
@@ -1408,34 +1507,466 @@ Como não consegui falar com você, vou *pausar este ciclo* — sem excluir seu 
     ],
   },
 
+  // ─── GRUPO C (longo prazo — Meta + recalls após onda B) ─────────────────
+  {
+    key: "c_meta_close_lost",
+    group: "C",
+    channel: "system",
+    title: "Meta — fim da onda (CLOSE_LOST)",
+    timing: "Logo após Dia 10 · sem WhatsApp",
+    canGenerateAudio: false,
+    notes:
+      "Não envia mensagem ao lead. Marca fim da onda curta e prepara fila de Custom Audience. Toggle facebook_retarget_sync na Central de Automações.",
+    body: `Este passo NÃO manda WhatsApp, SMS ou ligação.
+
+O lead concluiu a onda de reaquecimento (Grupo B) sem converter. O motor registra CLOSE_LOST e, se o sync Meta estiver ON, inclui telefone/e-mail (hash) na Custom Audience.
+
+Criativo/imagem de anúncio: Meta Ads Manager ou Ads Central — não configura aqui.`,
+  },
+  {
+    key: "c_meta_sync_audience",
+    group: "C",
+    channel: "system",
+    title: "Meta — sync Custom Audience (RETARGET_META)",
+    timing: "~1 dia após CLOSE_LOST",
+    canGenerateAudio: false,
+    notes: "Sobe hash para público Meta. Sem texto para o lead.",
+    body: `Sync técnico com Meta (Custom Audience).
+
+Requer facebook_retarget_sync ON + credenciais Meta OK. Não escolhe criativo nem budget — só alimenta a lista para remarketing posterior.`,
+  },
+  {
+    key: "c_meta_ads_15d",
+    group: "C",
+    channel: "system",
+    title: "Meta — remarketing ~15 dias (RETARGET_ADS_15D)",
+    timing: "~15 dias após sync · toggle cadence_retarget_ads_15d",
+    canGenerateAudio: false,
+    notes: "Estágio de remarketing ads. Criativo no Ads Manager.",
+    body: `Marco de remarketing ~15 dias após fim da onda.
+
+Toggle cadence_retarget_ads_15d (Central de Automações). O anúncio em si roda no Meta Ads — este painel só controla se o lead entra na escada longa.`,
+  },
+  // Cada marco: WA análise → SMS se silêncio → ligação se silêncio
+  {
+    key: "c_recall_60d_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "1º recall (~30d) — WhatsApp (análise)",
+    timing: "~14d após Meta · ~30d após Dia 10 · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_60D (delay 336h ≈ 14d após Meta/ads). Em silêncio → SMS → ligação (toggle cadence_recall_60d).",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Faz cerca de *1 mês* que falamos sobre *economia na conta de luz*.
+
+✅ Sua *análise continua disponível* — iniciamos só com o *valor médio* da conta. Sem foto, sem burocracia.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?*
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_60d_sms",
+    group: "C",
+    channel: "sms",
+    title: "60d — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_60D_SMS.",
+    body: `Rafael | iGreen: {{nome}}, sua analise de economia segue disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_60d_call",
+    group: "C",
+    channel: "call_script",
+    title: "60d — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_60D_CALL. Clip Sofia no Motor.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "c60_call_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
+
+Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
+
+Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?` },
+    ]),
+  },
+  {
+    key: "c_recall_90d_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "90d — WhatsApp (análise)",
+    timing: "~90 dias · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_90D. Em silêncio → SMS → ligação.",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Faz cerca de *3 meses* desde nosso contato sobre *reduzir a conta de luz*.
+
+✅ Posso *retomar sua análise de economia* agora — só com o valor médio da conta. Sem foto obrigatória.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?* 👇
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_90d_sms",
+    group: "C",
+    channel: "sms",
+    title: "90d — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_90D_SMS.",
+    body: `Rafael | iGreen: {{nome}}, ainda posso retomar sua analise da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_90d_call",
+    group: "C",
+    channel: "call_script",
+    title: "90d — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_90D_CALL.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "c90_call_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+    ]),
+  },
+  {
+    key: "c_recall_5m_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "5 meses — WhatsApp (análise)",
+    timing: "~5 meses · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_5M. Em silêncio → SMS → ligação.",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Faz cerca de *5 meses* que falamos sobre *economia na conta de luz*.
+
+✅ Sua *análise continua disponível* — iniciamos só com o *valor médio*. Sem foto, sem burocracia.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?*
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_5m_sms",
+    group: "C",
+    channel: "sms",
+    title: "5 meses — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_5M_SMS.",
+    body: `Rafael | iGreen: {{nome}}, analise de economia ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_5m_call",
+    group: "C",
+    channel: "call_script",
+    title: "5 meses — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_5M_CALL. Clip Sofia no Motor.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "c5m_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
+
+Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
+
+Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para o Rafael retornar quando for melhor para você.`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
+
+Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
+
+Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para o Rafael retornar quando for melhor para você.` },
+    ]),
+  },
+  {
+    key: "c_recall_8m_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "8 meses — WhatsApp (análise)",
+    timing: "~8 meses · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_8M. Em silêncio → SMS → ligação.",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Faz cerca de *8 meses* desde nosso contato sobre *economia na conta*.
+
+✅ Posso *retomar sua análise* agora — só com o valor médio. Sem foto obrigatória.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?*
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_8m_sms",
+    group: "C",
+    channel: "sms",
+    title: "8 meses — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_8M_SMS.",
+    body: `Rafael | iGreen: {{nome}}, novidades na economia de energia. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_8m_call",
+    group: "C",
+    channel: "call_script",
+    title: "8 meses — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_8M_CALL.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "c8m_call_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+    ]),
+  },
+  {
+    key: "c_recall_12m_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "12 meses — WhatsApp (análise)",
+    timing: "~1 ano · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_12M. Em silêncio → SMS → ligação.",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Faz cerca de *1 ano* desde nosso contato sobre economia na conta.
+
+✅ Sua *análise de economia* continua disponível — basta o valor médio da conta.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?*
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_12m_sms",
+    group: "C",
+    channel: "sms",
+    title: "12 meses — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_12M_SMS.",
+    body: `Rafael | iGreen: {{nome}}, faz 1 ano — analise ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_12m_call",
+    group: "C",
+    channel: "call_script",
+    title: "12 meses — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_12M_CALL.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "c12m_call_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+    ]),
+  },
+  {
+    key: "c_recall_yearly_wa",
+    group: "C",
+    channel: "whatsapp_buttons",
+    title: "Anual — WhatsApp (análise)",
+    timing: "A cada ~1 ano · WA primeiro",
+    canGenerateAudio: false,
+    notes: "RECALL_YEARLY. Em silêncio → SMS → ligação → loop anual.",
+    body: `Olá, *{{nome}}*! 👋
+
+Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+
+Lembrete anual: sua *análise de economia na conta* continua disponível.
+
+✅ Iniciamos só com o *valor médio*. Sem foto, sem burocracia.
+
+{{frase_disponibilidade}}
+
+*Em qual faixa está sua conta hoje?*
+
+_Para não receber mais contatos, responda SAIR._`,
+    buttons: [...BILL_RANGE_BUTTONS],
+  },
+  {
+    key: "c_recall_yearly_sms",
+    group: "C",
+    channel: "sms",
+    title: "Anual — SMS (se silêncio)",
+    timing: "~2h após WA · só se silêncio",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "RECALL_YEARLY_SMS.",
+    body: `Rafael | iGreen: {{nome}}, lembrete anual da analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+  },
+  {
+    key: "c_recall_yearly_call",
+    group: "C",
+    channel: "call_script",
+    title: "Anual — Ligação Sofia (se silêncio)",
+    timing: "~4h após SMS · só se silêncio",
+    canGenerateAudio: true,
+    notes: "RECALL_YEARLY_CALL.",
+    audioSegments: [
+      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      {
+        id: "cyear_call_body",
+        kind: "fixed",
+        label: "2 · Corpo",
+        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}." },
+      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+
+Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
+
+Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+    ]),
+  },
+
   // ─── TEMAS (todos ≤ 3 botões) ───────────────────────────────────────────
   {
     key: "theme_simplified_analysis_wa",
     group: "theme",
     channel: "whatsapp_buttons",
-    title: "Tema — Análise simplificada",
-    timing: "Alternável",
+    title: "Tema — Análise só com o valor da conta",
+    timing: "Alternável · Dia 2 (e Dia 7 se silêncio)",
     theme: "simplified_analysis",
     canGenerateAudio: false,
+    notes:
+      "Um dos temas rotativos do Grupo B. Não é o 1º contato: o D+1 usa o texto fixo de reabrir. Edite aqui; o Dia 2 só referencia {{tema_whatsapp}}.",
     body: `Olá, {{nome}}.
 
-Voltei ao seu atendimento porque agora conseguimos iniciar a análise de forma mais simples, só com o valor médio.
+Boa notícia: agora dá para começar sua análise só com o valor médio da conta — sem foto e sem burocracia.
 
 {{frase_disponibilidade}}
 
-Qual faixa da sua conta?`,
+Qual faixa está sua conta hoje?`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
     key: "theme_simplified_analysis_sms",
     group: "theme",
     channel: "sms",
-    title: "Tema — Análise simplificada (SMS)",
-    timing: "Alternável",
+    title: "Tema — Análise só com o valor (SMS)",
+    timing: "Alternável · Dia 2 ou 7 se silêncio",
     theme: "simplified_analysis",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: {{nome}}, analise pelo valor medio. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: {{nome}}, agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_cruise_wa",
@@ -1509,7 +2040,7 @@ Além da possibilidade de economia na conta de energia, existe uma novidade espe
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: sorteio cabine cruzeiro p/2 (regulamento). Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: sorteio cabine cruzeiro p/2 (regulamento). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_tariff_flags_wa",
@@ -1538,7 +2069,7 @@ Quer análise inicial pelo valor médio? Qual faixa?`,
     theme: "tariff_flags",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: bandeiras podem subir a conta. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | Energia: bandeiras podem subir a conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_no_home_panels_wa",
@@ -1568,7 +2099,7 @@ A análise pode começar pelo valor médio. Como prefere?`,
     theme: "no_home_panels",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: sem placas nem obra. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | Energia: sem placas nem obra. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_security_wa",
@@ -1596,7 +2127,7 @@ Como prefere seguir?`,
     theme: "security",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: nao pedimos Pix/pagamento. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_benefits_club_wa",
@@ -1626,7 +2157,7 @@ O que você quer conhecer?`,
     theme: "benefits_club",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: economia + clube de parceiros. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: economia + clube de parceiros. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_referral_cashback_wa",
@@ -1656,14 +2187,14 @@ O que você quer conhecer?`,
     theme: "referral_cashback",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: economia + indicacao (regras). Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: economia + indicacao (regras). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_digital_app_wa",
     group: "theme",
     channel: "whatsapp_buttons",
     title: "Tema — App digital",
-    timing: "Alternável",
+    timing: "Alternável · Dia 2 (e Dia 7 se silêncio)",
     theme: "digital_app",
     canGenerateAudio: false,
     body: `Olá, {{nome}}.
@@ -1674,6 +2205,17 @@ Além da economia na conta, clientes elegíveis podem acompanhar o benefício pe
 
 Como prefere seguir?`,
     buttons: [...ANALYZE_OR_CALL_BUTTONS],
+  },
+  {
+    key: "theme_digital_app_sms",
+    group: "theme",
+    channel: "sms",
+    title: "Tema — App digital (SMS)",
+    timing: "Alternável · Dia 2 ou 7 se silêncio",
+    theme: "digital_app",
+    canGenerateAudio: false,
+    maxChars: 160,
+    body: `Rafael | iGreen: economia no app. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
 ];
 
@@ -1790,6 +2332,94 @@ export function resolveBody(tpl: CadenceTemplate, lib: SavedCadenceLibrary): str
   const segs = resolveAudioSegments(tpl, lib);
   if (segs.length) return joinAudioSegmentTexts(segs);
   return savedOk ? saved : tpl.body;
+}
+
+/** Slot do Grupo B que só referencia tema (`{{tema_whatsapp}}` / `{{tema_sms}}`). */
+export function themePlaceholderKind(body: string): "wa" | "sms" | null {
+  const t = String(body || "").trim();
+  if (/\{\{\s*tema_whatsapp\s*\}\}/i.test(t)) return "wa";
+  if (/\{\{\s*tema_sms\s*\}\}/i.test(t)) return "sms";
+  return null;
+}
+
+/**
+ * Temas que o motor pode escolher no Dia 2 / Dia 7 (sem cruzeiro — exige flag).
+ * Ordem = mesma ideia do pool em cadence-themes.ts.
+ */
+export type RotatingCadenceThemeInfo = {
+  id: string;
+  label: string;
+  waKey: string;
+  smsKey: string;
+};
+
+export const ROTATING_CADENCE_THEMES: ReadonlyArray<RotatingCadenceThemeInfo> = [
+  {
+    id: "simplified_analysis",
+    label: "Análise só com o valor da conta",
+    waKey: "theme_simplified_analysis_wa",
+    smsKey: "theme_simplified_analysis_sms",
+  },
+  {
+    id: "tariff_flags",
+    label: "Bandeiras tarifárias (amarela/vermelha)",
+    waKey: "theme_tariff_flags_wa",
+    smsKey: "theme_tariff_flags_sms",
+  },
+  {
+    id: "no_home_panels",
+    label: "Sem placas / sem obra em casa",
+    waKey: "theme_no_home_panels_wa",
+    smsKey: "theme_no_home_panels_sms",
+  },
+  {
+    id: "security",
+    label: "Segurança (não pedimos Pix)",
+    waKey: "theme_security_wa",
+    smsKey: "theme_security_sms",
+  },
+  {
+    id: "benefits_club",
+    label: "Clube de benefícios / parceiros",
+    waKey: "theme_benefits_club_wa",
+    smsKey: "theme_benefits_club_sms",
+  },
+  {
+    id: "referral_cashback",
+    label: "Indicação / cashback",
+    waKey: "theme_referral_cashback_wa",
+    smsKey: "theme_referral_cashback_sms",
+  },
+  {
+    id: "digital_app",
+    label: "Economia no app",
+    waKey: "theme_digital_app_wa",
+    smsKey: "theme_digital_app_sms",
+  },
+];
+
+/** Corpo resolvido de um tema (WA ou SMS) para prévia no Dia 2/7. */
+export function themeBodyForPreview(
+  themeId: string,
+  kind: "wa" | "sms",
+  lib: SavedCadenceLibrary,
+): string {
+  const info =
+    ROTATING_CADENCE_THEMES.find((t) => t.id === themeId) || ROTATING_CADENCE_THEMES[0]!;
+  const key = kind === "wa" ? info.waKey : info.smsKey;
+  const tpl = getTemplate(key);
+  if (!tpl) return kind === "sms" ? SMS_CONSULTOR_WA_LINK : "";
+  const body = resolveBody(tpl, lib);
+  return kind === "sms" ? ensureSmsConsultorWaLink(body) : body;
+}
+
+/** @deprecated use themeBodyForPreview */
+export function exampleThemeBodyForPreview(
+  kind: "wa" | "sms",
+  lib: SavedCadenceLibrary,
+  themeId = "simplified_analysis",
+): string {
+  return themeBodyForPreview(themeId, kind, lib);
 }
 
 /** Já existe MP3 gerado para este template (chave base ou M/F). */

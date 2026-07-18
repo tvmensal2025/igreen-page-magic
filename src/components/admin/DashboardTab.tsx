@@ -1,12 +1,13 @@
 import { useMemo, useState, useEffect, useRef, lazy, Suspense } from "react";
-import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, KeyRound, DollarSign, PiggyBank, Crown } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Users, Zap, RefreshCw, Loader2, Filter, FileDown, KeyRound, DollarSign, PiggyBank, Crown, ClipboardCheck, ArrowRight } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { useTeamConsultantIds } from "@/hooks/useTeamConsultantIds";
@@ -23,16 +24,18 @@ import { useNetworkLicenciados } from "@/hooks/useNetworkLicenciados";
 import { useNetworkAggregates } from "@/hooks/useNetworkGpMes";
 import { useGreenSettings } from "@/features/produtos/acompanhamento/greenHooks";
 import { careerBonusPercent, graduacaoDisplay, graduacaoRank } from "@/features/produtos/acompanhamento/greenCommission";
+import { ZERO_LEAD_CHECKLIST } from "@/lib/zeroLeadChecklist";
 
 
 import { TeamRankingTab } from "./TeamRankingTab";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
+import { CustomerCharts } from "./CustomerCharts";
 
-const CustomerCharts = lazy(() =>
-  import("./CustomerCharts").then((m) => ({ default: m.CustomerCharts })),
-);
 const TeamDashboard = lazy(() =>
-  import("./team-dashboard/TeamDashboard").then((m) => ({ default: m.TeamDashboard })),
+  import("./team-dashboard/TeamDashboard").then((m) => {
+    if (!m.TeamDashboard) throw new Error("TeamDashboard export missing");
+    return { default: m.TeamDashboard };
+  }),
 );
 
 
@@ -76,6 +79,20 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     scope === "team" && isLeader ? teamIds : null,
     networkIgreenIds,
   );
+  const salesConsultantIds = scope === "team" && isLeader ? teamIds : [userId];
+  const { data: wonSales = [] } = useQuery({
+    queryKey: ["dashboard-won-sales", userId, scope, salesConsultantIds.join(",")],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("sales")
+        .select("id, customer_id, outcome, closed_at, amount_cents, points_kwh, capture_data")
+        .in("consultant_id", salesConsultantIds)
+        .eq("outcome", "won");
+      if (error) throw error;
+      return data ?? [];
+    },
+    enabled: !!userId && salesConsultantIds.length > 0,
+  });
   const { toast } = useToast();
   const confirm = useConfirm();
   const queryClient = useQueryClient();
@@ -90,6 +107,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
   const refreshDashboardQueries = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["analytics"] }),
+      queryClient.invalidateQueries({ queryKey: ["dashboard-won-sales"] }),
       queryClient.invalidateQueries({ queryKey: ["network-licenciados", userId] }),
       queryClient.invalidateQueries({ queryKey: ["network-igreen-ids", userId] }),
       queryClient.invalidateQueries({ queryKey: ["igreen-sync-status", userId] }),
@@ -238,6 +256,161 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
     const totalBill = withBill.reduce((s: number, c: any) => s + billOf(c), 0);
     const avgBill = withBill.length > 0 ? totalBill / withBill.length : 0;
     const economiaGerada = totalBill * 0.20;
+    // Valor fechado (carteira aprovada) — mantido no agregado
+    const valorFechado = approvedWallet.reduce((s: number, c: any) => s + billOf(c), 0);
+    const fechamentosCount = approvedWallet.length;
+
+    // Funil de captação:
+    // - Cadastro = passou pelo funil e foi cadastrado (portal / facial / registered)
+    // - Ganho = Encerrar captação → Ganho (sales.won) OU OTP+facial concluída
+    const statusOf = (c: any) => String(c.status || "").toLowerCase();
+    const parseDateFlex = (raw: unknown): Date | null => {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      if (!s) return null;
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+        const d = new Date(s);
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (br) {
+        const d = new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]));
+        return Number.isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(s);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const isFaltaFacial = (c: any) => {
+      if (c.facial_confirmed_at) return false;
+      const st = statusOf(c);
+      if (st === "awaiting_signature" || st === "aguardando_assinatura") return true;
+      return !!(c.link_facial || c.link_facial_sent_at);
+    };
+    const isFunnelCadastrado = (c: any) => {
+      if (c.portal_submitted_at || c.facial_confirmed_at || c.data_cadastro) return true;
+      if (isFaltaFacial(c)) return true;
+      const st = statusOf(c);
+      return (
+        st === "registered_igreen" ||
+        st === "portal_submitting" ||
+        st === "finalizando" ||
+        st === "awaiting_signature" ||
+        st === "aguardando_assinatura"
+      );
+    };
+    const byId = new Map<string, any>();
+    for (const c of analytics.allCustomers || []) byId.set(c.id, c);
+
+    const funnelPool = (analytics.allCustomers || []).filter((c: any) => {
+      if (selectedLicenciado !== "all" && c.registered_by_name !== selectedLicenciado) return false;
+      // Só captação/funil — não mistura carteira sync antiga sem passagem no funil
+      if (isIgreenWalletOrigin(c.customer_origin) && !isFunnelCadastrado(c)) return false;
+      return isFunnelCadastrado(c);
+    });
+
+    // Ganhos manuais (Encerrar → Ganho)
+    const wonByCustomer = new Map<string, { at: Date; valor: number }>();
+    for (const s of wonSales as any[]) {
+      const cid = s.customer_id as string | null;
+      if (!cid) continue;
+      const cust = byId.get(cid);
+      if (selectedLicenciado !== "all" && cust && cust.registered_by_name !== selectedLicenciado) continue;
+      const at = parseDateFlex(s.closed_at) || parseDateFlex((s as any).created_at);
+      if (!at) continue;
+      const amount = Number(s.amount_cents || 0) > 0
+        ? Number(s.amount_cents) / 100
+        : cust
+          ? billOf(cust)
+          : Number((s.capture_data as any)?.bill_value || 0);
+      const prev = wonByCustomer.get(cid);
+      if (!prev || at > prev.at) wonByCustomer.set(cid, { at, valor: amount });
+    }
+
+    // Ganhos automáticos do funil (OTP + facial) — sem duplicar se já tem sales.won
+    for (const c of funnelPool) {
+      if (!c.facial_confirmed_at) continue;
+      if (wonByCustomer.has(c.id)) continue;
+      const at = parseDateFlex(c.facial_confirmed_at);
+      if (!at) continue;
+      wonByCustomer.set(c.id, { at, valor: billOf(c) });
+    }
+
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const startOfWeek = new Date(startOfDay);
+    const dow = startOfWeek.getDay();
+    const daysFromMon = dow === 0 ? 6 : dow - 1;
+    startOfWeek.setDate(startOfWeek.getDate() - daysFromMon);
+    const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1);
+
+    const enteredAt = (c: any): Date =>
+      parseDateFlex(c.portal_submitted_at) ||
+      parseDateFlex(c.data_cadastro) ||
+      parseDateFlex(c.created_at) ||
+      new Date(0);
+
+    const toPerson = (c: any, valor?: number) => ({
+      id: c.id as string,
+      name: (c.name as string) || "Sem nome",
+      phone: (c.phone_whatsapp as string) || "",
+      status: (c.status as string) || "",
+      valor: typeof valor === "number" ? valor : billOf(c),
+      distribuidora: (c.distribuidora as string) || "",
+    });
+
+    const sliceFunnel = (from: Date) => {
+      let cadastros = 0;
+      let ganhos = 0;
+      let faltaFacial = 0;
+      let valor = 0;
+      const ganhosPeople: Array<{ id: string; name: string; phone: string; status: string; valor: number; distribuidora: string }> = [];
+      const faltaPeople: Array<{ id: string; name: string; phone: string; status: string; valor: number; distribuidora: string }> = [];
+      const cadastrosPeople: Array<{ id: string; name: string; phone: string; status: string; valor: number; distribuidora: string }> = [];
+
+      for (const c of funnelPool) {
+        if (enteredAt(c) >= from) {
+          cadastros += 1;
+          cadastrosPeople.push(toPerson(c));
+          if (!wonByCustomer.has(c.id) && isFaltaFacial(c)) {
+            faltaFacial += 1;
+            faltaPeople.push(toPerson(c));
+          }
+        }
+      }
+      for (const [cid, g] of wonByCustomer.entries()) {
+        if (g.at >= from) {
+          ganhos += 1;
+          valor += g.valor;
+          const cust = byId.get(cid);
+          if (cust) ganhosPeople.push(toPerson(cust, g.valor));
+          else {
+            ganhosPeople.push({
+              id: cid,
+              name: "Cliente",
+              phone: "",
+              status: "ganho",
+              valor: g.valor,
+              distribuidora: "",
+            });
+          }
+        }
+      }
+      ganhosPeople.sort((a, b) => b.valor - a.valor);
+      faltaPeople.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+      cadastrosPeople.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+      return { count: ganhos, valor, cadastros, faltaFacial, ganhosPeople, faltaPeople, cadastrosPeople };
+    };
+    const fechamentosDia = sliceFunnel(startOfDay);
+    const fechamentosSemana = sliceFunnel(startOfWeek);
+    const fechamentosMes = sliceFunnel(startOfMonth);
+    const faltaFacialPeople = funnelPool
+      .filter((c: any) => !wonByCustomer.has(c.id) && isFaltaFacial(c))
+      .map((c: any) => toPerson(c))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
+    const faltaFacialAberta = faltaFacialPeople.length;
+    const funnelCandidates = funnelPool
+      .map((c: any) => toPerson(c))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt-BR"));
 
     const statusMap = new Map<string, number>();
     for (const c of filtered) { const s = (c as any).status || "pending"; statusMap.set(s, (statusMap.get(s) || 0) + 1); }
@@ -265,8 +438,8 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
       }
     }
     const weeklyNewCustomers = Array.from(weekMap.entries()).map(([week, count]) => ({ week, count }));
-    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, recorrenciaGarantida, diretoValor, indiretoValor, gestorValor, diretoPct, redePct, carreiraPct, networkClientesAtivos: Math.max(networkClientesAtivos, pisoAtivosMin), avgBillMine, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
-  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, networkClientesAtivos, carreiraPct]);
+    return { totalCustomers, directCustomers, totalKw, avgKw, avgBill, economiaGerada, valorFechado, fechamentosCount, fechamentosDia, fechamentosSemana, fechamentosMes, faltaFacialAberta, faltaFacialPeople, funnelCandidates, recorrenciaGarantida, diretoValor, indiretoValor, gestorValor, diretoPct, redePct, carreiraPct, networkClientesAtivos: Math.max(networkClientesAtivos, pisoAtivosMin), avgBillMine, approvedCount: approvedWallet.length, customersByStatus, weeklyNewCustomers, filteredCustomers: filtered };
+  }, [analytics, selectedLicenciado, periodDays, scope, myClientsSettings, networkIgreenIds, networkClientesAtivos, carreiraPct, wonSales]);
 
   const handleDashboardSync = async () => {
     setSyncingDashboard(true);
@@ -374,6 +547,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
             {syncingDashboard ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             <span className="hidden lg:inline">{syncingDashboard ? "Sincronizando..." : syncCooldown > 0 ? `${syncCooldown}s` : "Sincronizar"}</span>
           </Button>
+          <Button asChild variant="default" size="sm" className="h-7 text-[11px] px-2.5 gap-1 bg-emerald-600 hover:bg-emerald-700">
+            <Link to="/admin/checklist" title="Checklist Zero Lead Perdido">
+              <ClipboardCheck className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Checklist v5</span>
+            </Link>
+          </Button>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <Select value={String(periodDays)} onValueChange={(v) => onPeriodChange(Number(v))}>
@@ -393,6 +572,27 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
           <PhoneResetButton userId={userId} />
         </div>
       </div>
+
+      {/* Card checklist — validação Zero Lead Perdido */}
+      <Link
+        to="/admin/checklist"
+        className="flex items-center justify-between gap-3 rounded-xl border border-emerald-500/35 bg-emerald-500/5 px-4 py-3 hover:bg-emerald-500/10 transition"
+      >
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="w-9 h-9 rounded-lg bg-emerald-600/15 flex items-center justify-center shrink-0">
+            <ClipboardCheck className="w-5 h-5 text-emerald-600" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-sm">Validar Zero Lead Perdido v5</div>
+            <div className="text-xs text-muted-foreground leading-snug">
+              Auto-check de toggles/cap/estágios + checklist de todos os textos (Grupo A/B, temas, SMS, voz, Meta) · {ZERO_LEAD_CHECKLIST.length} itens
+            </div>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400 shrink-0">
+          Abrir <ArrowRight className="w-3.5 h-3.5" />
+        </span>
+      </Link>
 
 
 
@@ -461,9 +661,7 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
         <StatCard icon={<Zap className="w-5 h-5" />} label="Total de kWh" value={`${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle="soma da média de consumo" />
       </div>
 
-      <Suspense fallback={<div className="h-40 rounded-xl bg-muted/40 animate-pulse" />}>
-        <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} consultantId={userId} />
-      </Suspense>
+      <CustomerCharts filteredMetrics={filteredMetrics} topLicenciados={analytics?.topLicenciados} consultantId={userId} onOpenChat={onOpenChat} />
 
       <TopConsumersCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} onOpenChat={onOpenChat} />
       <GeographyCard customers={filteredMetrics?.filteredCustomers} />

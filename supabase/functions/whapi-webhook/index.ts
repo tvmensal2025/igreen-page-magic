@@ -2302,6 +2302,48 @@ Deno.serve(async (req) => {
       console.warn("[resume-guard] erro não-bloqueante:", e?.message);
     }
 
+    // ─── Roteador cadência B/C → Grupo A (sem vácuo) ───────────────────
+    try {
+      const { data: cadenceState } = await supabase
+        .from("lead_cadence_state")
+        .select("stage, paused_reason")
+        .eq("customer_id", customer.id)
+        .maybeSingle();
+      const { applyCadenceInboundRoute } = await import(
+        "../_shared/cadence-inbound-router.ts"
+      );
+      const cadenceRoute = await applyCadenceInboundRoute(supabase, {
+        customer,
+        customerId: customer.id,
+        remoteJid,
+        messageText,
+        buttonId: buttonId ?? null,
+        isButton,
+        isFile,
+        hasImage,
+        hasDocument,
+        cadencePausedReason: (cadenceState as { paused_reason?: string } | null)?.paused_reason ?? null,
+        cadenceStage: (cadenceState as { stage?: string } | null)?.stage ?? null,
+        sender,
+      });
+      if (cadenceRoute.routed) {
+        rawStep = customer.conversation_step || null;
+        stepBefore = stripPrefix(rawStep);
+        (customer as any).conversation_step = stepBefore;
+        if (!cadenceRoute.continueBotFlow) {
+          try {
+            await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id });
+          } catch (_) { /* noop */ }
+          return new Response(
+            JSON.stringify({ ok: true, mode: "cadence_router", reason: cadenceRoute.reason }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+    } catch (e: any) {
+      console.warn("[cadence-router] erro não-bloqueante:", e?.message);
+    }
+
     let reply: string | null = "";
     let updates: Record<string, any> = {};
     let engineUsed: "sys" | "flow" = "sys";

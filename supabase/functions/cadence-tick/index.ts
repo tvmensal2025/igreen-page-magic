@@ -25,7 +25,25 @@ import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch, recordProactiveTouch } from "../_shared/retention-orchestrator.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
-import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
+import {
+  normalizeWaPhoneDigits,
+  resolveConsultantConnectedWaPhone,
+} from "../_shared/consultant-wa-phone.ts";
+import {
+  loadLastThemeId,
+  needsSmsTheme,
+  needsWhatsAppTheme,
+  pickCadenceTheme,
+} from "../_shared/cadence-themes.ts";
+import {
+  buildAvailabilityPhrase,
+  createAvailabilityLoader,
+  type AvailabilityOverrides,
+} from "../_shared/cadence-availability.ts";
+import { syncCustomerToMetaAudience } from "../_shared/meta-audience-sync.ts";
+import { buttonsForStage, stageHasButtons } from "../_shared/cadence-stage-buttons.ts";
+
+type AvailLoader = (consultantId: string | null | undefined) => Promise<AvailabilityOverrides>;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,13 +61,28 @@ const STAGE_TOGGLE_KEY: Partial<Record<Stage, string>> = {
   CALL_3: "cadence_call_3",
   SMS_1: "cadence_sms_1",
   SMS_2: "cadence_sms_2",
+  SMS_TEMA_2: "cadence_sms_tema_2",
+  SMS_TEMA_7: "cadence_sms_tema_7",
   RETARGET_ADS_15D: "cadence_retarget_ads_15d",
+  // Grupo C: SMS/CALL do marco compartilham o toggle do WA principal
   RECALL_60D: "cadence_recall_60d",
+  RECALL_60D_SMS: "cadence_recall_60d",
+  RECALL_60D_CALL: "cadence_recall_60d",
   RECALL_90D: "cadence_recall_90d",
+  RECALL_90D_SMS: "cadence_recall_90d",
+  RECALL_90D_CALL: "cadence_recall_90d",
   RECALL_5M: "cadence_recall_5m",
+  RECALL_5M_SMS: "cadence_recall_5m",
+  RECALL_5M_CALL: "cadence_recall_5m",
   RECALL_8M: "cadence_recall_8m",
+  RECALL_8M_SMS: "cadence_recall_8m",
+  RECALL_8M_CALL: "cadence_recall_8m",
   RECALL_12M: "cadence_recall_12m",
+  RECALL_12M_SMS: "cadence_recall_12m",
+  RECALL_12M_CALL: "cadence_recall_12m",
   RECALL_YEARLY: "cadence_recall_yearly",
+  RECALL_YEARLY_SMS: "cadence_recall_yearly",
+  RECALL_YEARLY_CALL: "cadence_recall_yearly",
 };
 
 const DEFAULT_COLD_DAILY_CAP = 60;
@@ -86,8 +119,13 @@ async function countColdTouchesToday(supabase: any): Promise<number> {
     .in("stage", [
       "COLD_1", "COLD_2", "COLD_3", "COLD_4",
       "CALL_1", "CALL_2", "CALL_3",
-      "SMS_1", "SMS_2",
-      "RECALL_60D", "RECALL_90D", "RECALL_5M", "RECALL_8M", "RECALL_12M", "RECALL_YEARLY",
+      "SMS_1", "SMS_2", "SMS_TEMA_2", "SMS_TEMA_7",
+      "RECALL_60D", "RECALL_60D_SMS", "RECALL_60D_CALL",
+      "RECALL_90D", "RECALL_90D_SMS", "RECALL_90D_CALL",
+      "RECALL_5M", "RECALL_5M_SMS", "RECALL_5M_CALL",
+      "RECALL_8M", "RECALL_8M_SMS", "RECALL_8M_CALL",
+      "RECALL_12M", "RECALL_12M_SMS", "RECALL_12M_CALL",
+      "RECALL_YEARLY", "RECALL_YEARLY_SMS", "RECALL_YEARLY_CALL",
     ]);
   if (error || !data) return 0;
   return new Set(data.map((r: { customer_id: string }) => r.customer_id)).size;
@@ -258,18 +296,19 @@ function renderTemplate(tpl: string, vars: Record<string, string>): string {
   return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
 }
 
-/** Todo SMS sai com wa.me do consultor clicável. */
+/** Todo SMS sai com https://wa.me do consultor clicável. */
 function ensureSmsWaLink(text: string, consultorPhone: string): string {
   let t = String(text || "").trim();
   if (!t) return t;
   if (!/wa\.me\//i.test(t) && !/\{\{\s*consultor_phone\s*\}\}/i.test(t) && !/\{\{\s*link_wa\s*\}\}/i.test(t)) {
-    t = `${t} wa.me/{{consultor_phone}}`;
+    t = `${t} https://wa.me/{{consultor_phone}}`;
   }
-  const phone = String(consultorPhone || "").replace(/\D/g, "");
-  const link = phone ? `wa.me/${phone}` : "";
+  const phone = normalizeWaPhoneDigits(consultorPhone);
+  const link = phone ? `https://wa.me/${phone}` : "";
   return t
     .replace(/\{\{\s*link_wa\s*\}\}/gi, link)
     .replace(/\{\{\s*consultor_phone\s*\}\}/gi, phone)
+    .replace(/(?:https?:\/\/)?wa\.me\/(?=[\d+]|\{\{)/gi, "https://wa.me/")
     .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
@@ -281,7 +320,8 @@ async function dispatchWhatsApp(
   row: any,
   stage: Stage,
   cfg: StageConfig,
-): Promise<{ ok: boolean; detail: string }> {
+  loadAvail: AvailLoader,
+): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
   const { data: cust } = await supabase
     .from("customers")
     .select("id, name, phone_whatsapp, consultant_id")
@@ -313,10 +353,23 @@ async function dispatchWhatsApp(
     supabase, row.customer_id, row.consultant_id,
   );
   const firstName = (cust.name || "").split(" ")[0] || "";
-  const text = renderTemplate(cfg.message_text || "", {
+  let rawTpl = cfg.message_text || "";
+  let themeId: string | undefined;
+  if (needsWhatsAppTheme(rawTpl, stage)) {
+    const last = await loadLastThemeId(supabase, row.customer_id);
+    const theme = pickCadenceTheme({ customerId: row.customer_id, stage, lastThemeId: last });
+    themeId = theme.id;
+    rawTpl = rawTpl.includes("{{tema_whatsapp}}")
+      ? rawTpl.replaceAll("{{tema_whatsapp}}", theme.wa)
+      : theme.wa;
+  }
+  const availOverrides = await loadAvail(row.consultant_id);
+  const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
+  const text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
     consultor_phone: consultantPhone,
+    frase_disponibilidade: fraseDisponibilidade,
   });
   const jid = `${String(cust.phone_whatsapp).replace(/\D/g, "")}@s.whatsapp.net`;
   const sendCtx = ctx(row.consultant_id || "system", row.customer_id, `cadence:${stage}`);
@@ -330,11 +383,17 @@ async function dispatchWhatsApp(
       r = await ch.adapter.sendMedia(jid, { kind: mtype, url: cfg.media_url, caption: text } as any, sendCtx);
     } else {
       if (!text.trim()) return { ok: false, detail: "empty_message" };
-      r = await ch.adapter.sendText(jid, text, { ...sendCtx, supabase } as any);
+      const stageButtons = buttonsForStage(stage);
+      if (stageHasButtons(stage) && stageButtons.length > 0 && typeof ch.adapter.sendButtons === "function") {
+        r = await ch.adapter.sendButtons(jid, text, stageButtons, { ...sendCtx, supabase } as any);
+      } else {
+        r = await ch.adapter.sendText(jid, text, { ...sendCtx, supabase } as any);
+      }
     }
     if (!(r as any)?.ok) return { ok: false, detail: `send_failed:${(r as any)?.detail ?? "?"}` };
     await registerSend(supabase, ch.instanceName);
-    return { ok: true, detail: `sent_via_${ch.kind}` };
+    const themeTag = themeId ? `:theme_${themeId}` : "";
+    return { ok: true, detail: `sent_via_${ch.kind}${themeTag}`, theme_id: themeId };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }
@@ -397,8 +456,8 @@ async function dispatchVoiceCall(
 }
 
 async function dispatchSMS(
-  supabase: any, row: any, stage: Stage, cfg: StageConfig,
-): Promise<{ ok: boolean; detail: string }> {
+  supabase: any, row: any, stage: Stage, cfg: StageConfig, loadAvail: AvailLoader,
+): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
   const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
@@ -406,11 +465,24 @@ async function dispatchSMS(
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
   const firstName = (cust.name || "").split(" ")[0] || "";
-  let text = renderTemplate(cfg.message_text || "", {
+  let rawTpl = cfg.message_text || "";
+  let themeId: string | undefined;
+  if (needsSmsTheme(rawTpl, stage)) {
+    const last = await loadLastThemeId(supabase, row.customer_id);
+    const theme = pickCadenceTheme({ customerId: row.customer_id, stage, lastThemeId: last });
+    themeId = theme.id;
+    rawTpl = rawTpl.includes("{{tema_sms}}")
+      ? rawTpl.replaceAll("{{tema_sms}}", theme.sms)
+      : theme.sms;
+  }
+  const availOverrides = await loadAvail(row.consultant_id);
+  const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
+  let text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
     consultor_phone: consultantPhone,
-    link_wa: consultantPhone ? `wa.me/${consultantPhone}` : "",
+    link_wa: consultantPhone ? `https://wa.me/${consultantPhone}` : "",
+    frase_disponibilidade: fraseDisponibilidade,
   });
   text = ensureSmsWaLink(text, consultantPhone);
   if (!text.trim()) return { ok: false, detail: "empty_message" };
@@ -427,7 +499,8 @@ async function dispatchSMS(
       raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
     });
     if (!r.ok) return { ok: false, detail: `velip:${r.error || "sms_failed"}` };
-    return { ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
+    const themeTag = themeId ? `:theme_${themeId}` : "";
+    return { ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}${themeTag}`, theme_id: themeId };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }
@@ -468,6 +541,7 @@ Deno.serve(async (req) => {
   }
 
   const now = new Date();
+  const loadAvail = createAvailabilityLoader(supabase);
   const coldCap = await loadColdDailyCap(supabase);
   let coldTouchesToday = await countColdTouchesToday(supabase);
 
@@ -475,7 +549,7 @@ Deno.serve(async (req) => {
   // Exclui só WON (CLOSE_LOST / RETARGET_* / RECALL_* avançam na máquina).
   const { data: due, error } = await supabase
     .from("lead_cadence_state")
-    .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, last_action_at, last_response_at")
+    .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at")
     .lte("next_action_at", now.toISOString())
     .not("stage", "eq", "WON")
     .order("next_action_at", { ascending: true })
@@ -504,16 +578,32 @@ Deno.serve(async (req) => {
   for (const row of due) {
     let stage = row.stage as Stage;
 
-    // Retomada pós-inbound: PAUSED vencido → volta à onda curta (COLD_1).
+    // Retomada pós-inbound: PAUSED vencido.
+    // - Grupo C (paused_reason lead_responded:<STAGE>): retoma o mesmo estágio.
+    // - Onda B / sem estágio salvo: reaquece em COLD_1 (comportamento antigo).
     if (stage === "PAUSED") {
       if (row.paused_until && new Date(row.paused_until) > now) {
         await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
         deferred++; continue;
       }
-      const resumeAt = computeNextActionAt("GREETED", now);
+      const reason = String(row.paused_reason || "");
+      const saved = reason.startsWith("lead_responded:")
+        ? reason.slice("lead_responded:".length)
+        : "";
+      const savedIsC =
+        saved === "CLOSE_LOST" ||
+        saved.startsWith("RETARGET_") ||
+        saved.startsWith("RECALL_");
+      const resumeStage = (savedIsC && STAGE_MAP[saved as Stage] ? saved : "COLD_1") as Stage;
+      // COLD_1: delay de GREETED (D+1). Grupo C: retoma já no próximo slot útil
+      // (não reaplica o delay longo do marco — senão espera mais 14d+ à toa).
+      const resumeAtIso =
+        resumeStage === "COLD_1"
+          ? (computeNextActionAt("GREETED", now)?.toISOString() ?? tomorrowMorningBRT())
+          : tomorrowMorningBRT();
       await supabase.from("lead_cadence_state").update({
-        stage: "COLD_1",
-        next_action_at: resumeAt?.toISOString() ?? tomorrowMorningBRT(),
+        stage: resumeStage,
+        next_action_at: resumeAtIso,
         paused_until: null,
         paused_reason: null,
       }).eq("id", row.id);
@@ -585,7 +675,6 @@ Deno.serve(async (req) => {
       def.channel === "sms";
 
     if (def.channel === "meta_audience" || def.channel === "system") {
-      // Avanço de máquina (Meta/ads) — facebook-retarget-sync faz o sync pesado.
       status = "queued";
       detail = { ...detail, reason: "meta_or_system_advance" };
       const stageToggle = STAGE_TOGGLE_KEY[stage];
@@ -597,12 +686,37 @@ Deno.serve(async (req) => {
         await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
         deferred++; continue;
       }
+      // CLOSE_LOST / RETARGET_META: sync se facebook_retarget_sync ON.
+      // RETARGET_ADS_15D: sync se cadence_retarget_ads_15d ON (já passou no gate).
+      if (def.channel === "meta_audience") {
+        const bulkOn = await isAutomationEnabled(supabase, "facebook_retarget_sync");
+        const canSync =
+          stage === "RETARGET_ADS_15D" ||
+          ((stage === "CLOSE_LOST" || stage === "RETARGET_META") && bulkOn);
+        if (canSync) {
+          const meta = await syncCustomerToMetaAudience(supabase, {
+            customerId: row.customer_id,
+            consultantId: row.consultant_id,
+            stage,
+            dryRun: false,
+          });
+          detail = {
+            ...detail,
+            meta_sync: meta.detail,
+            meta_ok: meta.ok,
+            audience_id: meta.audience_id ?? null,
+          };
+          if (meta.ok) status = "sent";
+        } else {
+          detail = { ...detail, meta_sync: "skipped_toggle_off" };
+        }
+      }
       cfgForDelay = await loadStageConfig(supabase, row.consultant_id, stage);
     } else if (needsDispatch) {
       const stageToggle = STAGE_TOGGLE_KEY[stage];
       if (stageToggle && !(await isAutomationEnabled(supabase, stageToggle))) {
         await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
-        // Recall/ads OFF: adia (não perde). Onda curta OFF: avança sem enviar (legado).
+        // Recall/ads OFF: adia (não perde). Onda curta / SMS tema OFF: avança sem enviar.
         if (stage.startsWith("RECALL_") || stage === "RETARGET_ADS_15D") {
           await supabase.from("lead_cadence_state").update({
             next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
@@ -638,12 +752,17 @@ Deno.serve(async (req) => {
           await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
           skipped++; continue;
         } else {
-          let res: { ok: boolean; detail: string };
-          if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
+          let res: { ok: boolean; detail: string; theme_id?: string };
+          if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
           else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
-          else res = await dispatchSMS(supabase, row, stage, cfg);
+          else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
           status = res.ok ? "sent" : "failed";
-          detail = { ...detail, dispatch: res.detail, via: "evo_or_whapi" };
+          detail = {
+            ...detail,
+            dispatch: res.detail,
+            via: "evo_or_whapi",
+            ...(res.theme_id ? { theme_id: res.theme_id } : {}),
+          };
           if (res.ok) {
             sent++;
             if (isColdOutreachStage(stage)) coldTouchesToday++;

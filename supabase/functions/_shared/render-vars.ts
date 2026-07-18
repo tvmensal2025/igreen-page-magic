@@ -133,12 +133,18 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   const hasBill = Number.isFinite(billNum) && billNum > 0;
   const billStr = hasBill ? fmtBRL(billNum) : "";
 
-  // Telefone do consultor — dígitos apenas, com DDI 55 quando parecer BR sem
-  // código de país. Se ficar vazio, o placeholder é removido (não vaza `wa.me/`
-  // órfão pro cliente).
-  let repPhoneDigits = String(vars.representante_phone || "").replace(/\D/g, "");
+  // Telefone do consultor — dígitos, DDI 55 e 9º dígito (celular BR).
+  // Vazio → placeholder removido (não vaza `https://wa.me/` órfão).
+  let repPhoneDigits = String(vars.representante_phone || "").replace(/\D/g, "").replace(/^0+/, "");
   if (repPhoneDigits && !repPhoneDigits.startsWith("55") && (repPhoneDigits.length === 10 || repPhoneDigits.length === 11)) {
     repPhoneDigits = `55${repPhoneDigits}`;
+  }
+  if (repPhoneDigits.length === 12 && repPhoneDigits.startsWith("55")) {
+    const ddd = repPhoneDigits.slice(2, 4);
+    const local = repPhoneDigits.slice(4);
+    if (local.length === 8 && /^[6-9]/.test(local)) {
+      repPhoneDigits = `55${ddd}9${local}`;
+    }
   }
 
   const lookup = (rawKey: string): string | null => {
@@ -151,7 +157,7 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (CPF_KEYS.has(key)) return cpfFmt;
     if (REP_PHONE_KEYS.has(key)) return repPhoneDigits;
     if (key === "link_wa" || key === "wa_link" || key === "link_whatsapp") {
-      return repPhoneDigits ? `wa.me/${repPhoneDigits}` : "";
+      return repPhoneDigits ? `https://wa.me/${repPhoneDigits}` : "";
     }
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
@@ -187,6 +193,8 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     .replace(/\*\s*\*/g, "")
     .replace(/_\s*_/g, "")
     .replace(/~\s*~/g, "")
+    // SMS/WA: protocolo obrigatório para o celular abrir o link.
+    .replace(/(?:https?:\/\/)?wa\.me\/(?=[\d+])/gi, "https://wa.me/")
     .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1");

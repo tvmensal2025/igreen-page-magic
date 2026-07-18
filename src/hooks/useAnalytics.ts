@@ -197,7 +197,7 @@ export function useAnalytics(
       while (true) {
         const baseQ = supabase
           .from("customers")
-          .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento");
+          .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, pos_venda_approved_at, portal_submitted_at, facial_confirmed_at, link_facial, link_facial_sent_at, data_validado, data_cadastro, andamento_igreen, capture_closed_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento");
         const scoped = useTeam
           ? baseQ.in("consultant_id", teamIds!)
           : baseQ.eq("consultant_id", consultantId!);
@@ -235,7 +235,7 @@ export function useAnalytics(
           while (true) {
             const { data, error } = await supabase
               .from("customers")
-              .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
+              .select("id, name, status, media_consumo, electricity_bill_value, created_at, updated_at, pos_venda_approved_at, portal_submitted_at, facial_confirmed_at, link_facial, link_facial_sent_at, data_validado, data_cadastro, andamento_igreen, capture_closed_at, registered_by_name, registered_by_igreen_id, customer_origin, address_state, address_city, distribuidora, phone_whatsapp, consultant_id, data_nascimento")
               .in("registered_by_igreen_id", batch)
               .in("customer_origin", ["igreen_sync", "igreen_extension"])
               .range(pageL * pageSize, (pageL + 1) * pageSize - 1);

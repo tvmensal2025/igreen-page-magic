@@ -44,6 +44,8 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
   const [loading, setLoading] = useState(true);
   const [subTab, setSubTab] = useState(() => {
     try {
+      const fromUrl = new URLSearchParams(window.location.search).get("sub");
+      if (fromUrl) return fromUrl;
       return sessionStorage.getItem("igreen-voz-subtab") || "nova";
     } catch {
       return "nova";
@@ -56,6 +58,11 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
       if (detail?.sub) setSubTab(detail.sub);
     };
     window.addEventListener("igreen-voz-subtab", onSub);
+    // Deep-link /admin?tab=voz&sub=textos (Motor → Grupo B)
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("sub");
+      if (fromUrl) setSubTab(fromUrl);
+    } catch { /* noop */ }
     return () => window.removeEventListener("igreen-voz-subtab", onSub);
   }, []);
 

@@ -1,6 +1,6 @@
 /**
  * Máquina de estados do ciclo diário (Fila A novo / Fila B frio).
- * Alinha com as pizzas do Dashboard — um passo por tick quando due.
+ * Pizza do Dashboard: A = estes passos; B visual = dias v5 (D+1→D10) via mapeamento.
  */
 
 import type { PlannedAction } from "./plan.ts";

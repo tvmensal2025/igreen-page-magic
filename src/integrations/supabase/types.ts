@@ -12751,17 +12751,31 @@ export type Database = {
         | "COLD_3"
         | "CALL_2"
         | "SMS_2"
+        | "SMS_TEMA_2"
+        | "SMS_TEMA_7"
         | "COLD_4"
         | "CALL_3"
         | "CLOSE_LOST"
         | "RETARGET_META"
         | "RETARGET_ADS_15D"
         | "RECALL_60D"
+        | "RECALL_60D_SMS"
+        | "RECALL_60D_CALL"
         | "RECALL_90D"
+        | "RECALL_90D_SMS"
+        | "RECALL_90D_CALL"
         | "RECALL_5M"
+        | "RECALL_5M_SMS"
+        | "RECALL_5M_CALL"
         | "RECALL_8M"
+        | "RECALL_8M_SMS"
+        | "RECALL_8M_CALL"
         | "RECALL_12M"
+        | "RECALL_12M_SMS"
+        | "RECALL_12M_CALL"
         | "RECALL_YEARLY"
+        | "RECALL_YEARLY_SMS"
+        | "RECALL_YEARLY_CALL"
         | "PAUSED"
         | "WON"
       lead_temperature:
@@ -12937,17 +12951,31 @@ export const Constants = {
         "COLD_3",
         "CALL_2",
         "SMS_2",
+        "SMS_TEMA_2",
+        "SMS_TEMA_7",
         "COLD_4",
         "CALL_3",
         "CLOSE_LOST",
         "RETARGET_META",
         "RETARGET_ADS_15D",
         "RECALL_60D",
+        "RECALL_60D_SMS",
+        "RECALL_60D_CALL",
         "RECALL_90D",
+        "RECALL_90D_SMS",
+        "RECALL_90D_CALL",
         "RECALL_5M",
+        "RECALL_5M_SMS",
+        "RECALL_5M_CALL",
         "RECALL_8M",
+        "RECALL_8M_SMS",
+        "RECALL_8M_CALL",
         "RECALL_12M",
+        "RECALL_12M_SMS",
+        "RECALL_12M_CALL",
         "RECALL_YEARLY",
+        "RECALL_YEARLY_SMS",
+        "RECALL_YEARLY_CALL",
         "PAUSED",
         "WON",
       ],

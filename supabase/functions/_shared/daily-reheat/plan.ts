@@ -148,13 +148,15 @@ function baseGuards(c: any): string[] {
 }
 
 /**
- * Seleciona candidatos Fila A (novo) e B (frio) e aplica teto diário Whapi.
+ * Seleciona candidatos Fila A (novo) e B (frio).
+ * Zero Lead v5: Fila A (lead novo / inbound) é ILIMITADA — não consome cap.
+ * Cap `daily_whapi_cap` aplica-se só à Fila B (outreach frio).
  * Só planeja — nunca muta customers nem dispara canal.
  */
 export async function planDailyReheat(
   supabase: SB,
   settings: DailyReheatSettings,
-  opts: { cycleDate: string; limitScan?: number } = { cycleDate: cycleDateBRT() },
+  opts: { cycleDate: string; limitScan?: number; limitScanA?: number; limitScanB?: number } = { cycleDate: cycleDateBRT() },
 ): Promise<{
   plans: CandidatePlan[];
   skippedGuards: number;
@@ -162,7 +164,10 @@ export async function planDailyReheat(
   scannedA: number;
   scannedB: number;
 }> {
+  // A: scan alto (ilimitado no cap). B: scan moderado — o teto diário corta depois.
   const limitScan = opts.limitScan ?? 80;
+  const limitScanA = opts.limitScanA ?? Math.max(limitScan, 500);
+  const limitScanB = opts.limitScanB ?? limitScan;
   const now = Date.now();
   const waitMs = settings.queue_a_wait_minutes * 60_000;
   const coldAgeMs = settings.cold_min_age_hours * 3600_000;
@@ -184,7 +189,7 @@ export async function planDailyReheat(
     .is("assigned_human_id", null)
     .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
     .order("created_at", { ascending: true })
-    .limit(limitScan);
+    .limit(limitScanA);
 
   let qB = supabase
     .from("customers")
@@ -196,7 +201,7 @@ export async function planDailyReheat(
     .is("assigned_human_id", null)
     .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null")
     .order("last_bot_interaction_at", { ascending: true, nullsFirst: true })
-    .limit(limitScan);
+    .limit(limitScanB);
 
   if (settings.pilot_consultant_ids.length > 0) {
     qA = qA.in("consultant_id", settings.pilot_consultant_ids);
@@ -212,13 +217,25 @@ export async function planDailyReheat(
     .eq("cycle_date", opts.cycleDate);
   const already = new Set((existing || []).map((r: any) => r.customer_id));
 
-  // Toques proativos recentes (cooldown)
-  const idsForCooldown = [
+  // Já no motor de cadência (B/C) → não duplicar cutucada pelo ciclo diário.
+  const candidateIds = [
     ...new Set([
       ...(rowsA || []).map((r: any) => r.id),
       ...(rowsB || []).map((r: any) => r.id),
     ]),
   ];
+  const inCadence = new Set<string>();
+  if (candidateIds.length > 0) {
+    const { data: cadRows } = await supabase
+      .from("lead_cadence_state")
+      .select("customer_id, stage")
+      .in("customer_id", candidateIds.slice(0, 200))
+      .not("stage", "in", "(WON,PAUSED)");
+    for (const c of cadRows || []) inCadence.add((c as any).customer_id);
+  }
+
+  // Toques proativos recentes (cooldown)
+  const idsForCooldown = candidateIds;
   const recentTouch = new Set<string>();
   if (idsForCooldown.length > 0) {
     const { data: touches } = await supabase
@@ -253,6 +270,11 @@ export async function planDailyReheat(
 
   const consider = (c: any, queue: "A" | "B") => {
     if (already.has(c.id)) {
+      skippedGuards++;
+      return;
+    }
+    // Fila B: quem já está na onda/cadência longa fica só com o motor unitário.
+    if (queue === "B" && inCadence.has(c.id)) {
       skippedGuards++;
       return;
     }
@@ -296,7 +318,7 @@ export async function planDailyReheat(
     consider(c, "B");
   }
 
-  // Prioridade + teto Whapi
+  // Prioridade de ordenação (A continua ilimitado; B respeita cap)
   const order =
     settings.priority_queue === "B_then_A"
       ? [...rawPlans.filter((p) => p.queue === "B"), ...rawPlans.filter((p) => p.queue === "A")]
@@ -306,44 +328,31 @@ export async function planDailyReheat(
           ? rawPlans.filter((p) => p.queue === "B")
           : [...rawPlans.filter((p) => p.queue === "A"), ...rawPlans.filter((p) => p.queue === "B")];
 
-  // Contar slots já "planejados" hoje que consumiriam Whapi
-  const { count: usedToday } = await supabase
+  // Cap só conta Fila B já inscrita hoje (frio). A não entra no teto — v5.
+  const { count: usedTodayB } = await supabase
     .from("daily_reheat_queue")
     .select("id", { count: "exact", head: true })
     .eq("cycle_date", opts.cycleDate)
+    .eq("queue", "B")
     .in("status", ["planned", "claimed", "done"]);
 
-  let slotsLeft = Math.max(0, settings.daily_whapi_cap - (usedToday ?? 0));
+  let slotsLeftB = Math.max(0, settings.daily_whapi_cap - (usedTodayB ?? 0));
   const plans: CandidatePlan[] = [];
   let skippedCap = 0;
 
-  // Reserva ~30% do cap para Fila A ("sempre traz novos") quando A não é a única fila
-  // e a prioridade não é A_only. Assim, mesmo com backlog frio, lead novo sempre entra.
-  const reserveForA =
-    settings.priority_queue === "A_only" || settings.priority_queue === "B_only"
-      ? 0
-      : Math.floor(settings.daily_whapi_cap * 0.3);
-  let usedByB = 0;
-
-  const remainingA = () => order.filter((p) => p.queue === "A" && !plans.includes(p)).length;
-
   for (const p of order) {
-    if (!p.would_consume_whapi) {
+    // Grupo A (novo/inbound): sempre planeja — sem teto, sem reserva 30%.
+    if (p.queue === "A") {
       plans.push(p);
       continue;
     }
-    if (slotsLeft <= 0) {
-      skippedCap++;
-      continue;
-    }
-    // Se este consome Whapi, é B, e ainda há leads A esperando + reserva não atendida → segura o slot
-    if (p.queue === "B" && remainingA() > 0 && slotsLeft <= reserveForA - usedByB) {
+    // Fila B (frio): 1 pessoa = 1 slot do cap diário
+    if (slotsLeftB <= 0) {
       skippedCap++;
       continue;
     }
     plans.push(p);
-    slotsLeft--;
-    if (p.queue === "B") usedByB++;
+    slotsLeftB--;
   }
 
   return {
