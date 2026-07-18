@@ -190,10 +190,11 @@ Deno.serve(async (req) => {
           .maybeSingle();
         if (selErr) console.error("⚠️ select customer (outboundHuman):", selErr);
 
-        // Guard 2: bot acabou de responder (≤30s) → muito provavelmente é eco
+        // Guard 2: bot acabou de responder (≤5min) → muito provavelmente é eco do próprio bot.
+        // Janela ampliada: auto-publish encadeia áudio+texto+botões com gaps de segundos.
         if (cust?.last_bot_reply_at) {
           const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
-          if (ageMs >= 0 && ageMs <= 30_000) {
+          if (ageMs >= 0 && ageMs <= 300_000) {
             console.log(`↩️ takeover_skipped_recent_bot_reply age_ms=${ageMs} customer=${cust.id}`);
             return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -202,19 +203,21 @@ Deno.serve(async (req) => {
         }
 
         if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
+          // Timeout de 24h — takeover por echo/fromMe é falso positivo comum.
+          const pausedUntil = new Date(Date.now() + 24 * 3600_000).toISOString();
           const { error: updErr } = await supabase
             .from("customers")
             .update({
               bot_paused: true,
               bot_paused_reason: "humano_assumiu_whatsapp",
               bot_paused_at: new Date().toISOString(),
-              bot_paused_until: null,
+              bot_paused_until: pausedUntil,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
           if (updErr) console.error("⚠️ update bot_paused (outboundHuman):", updErr);
-          else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id})`);
+          else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, until ${pausedUntil})`);
         } else if (!cust) {
           console.warn(`⚠️ Nenhum customer encontrado para ${outPhone} — bot não foi pausado`);
         }
