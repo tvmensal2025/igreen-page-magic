@@ -191,6 +191,26 @@ export async function syncCadenceLibraryToStageConfig(
   return { updated, errors };
 }
 
+/** Lê os textos reais do motor (Grupo B) para hidratar o painel. */
+export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<SavedCadenceLibrary>> {
+  const stages = Object.values(GROUP_B_TO_STAGE);
+  const { data, error } = await supabase
+    .from("cadence_stage_config")
+    .select("stage, message_text, consultant_id")
+    .is("consultant_id", null)
+    .in("stage", stages);
+  if (error || !data?.length) return {};
+  const stageToKey: Record<string, string> = {};
+  for (const [k, s] of Object.entries(GROUP_B_TO_STAGE)) stageToKey[s] = k;
+  const bodies: Record<string, string> = {};
+  for (const row of data) {
+    const key = stageToKey[String(row.stage || "")];
+    const text = String(row.message_text || "").trim();
+    if (key && text) bodies[key] = text;
+  }
+  return { bodies };
+}
+
 export async function loadCadenceLibraryRemote(
   consultantId: string,
 ): Promise<SavedCadenceLibrary | null> {
