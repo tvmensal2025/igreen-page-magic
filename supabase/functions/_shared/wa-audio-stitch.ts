@@ -126,11 +126,13 @@ async function synthesizePhraseMp3(
     language_code: "pt",
   };
 
-  // Nome isolado (“Fernandinho.”) sem contexto → eleven_v3 infere espanhol.
-  // v2 + previous/next_text ancora PT-BR sem falar palavras extras no MP3.
+  // Nome isolado (“Fernandinho,”) sem contexto → eleven_v3 infere espanhol.
+  // v2 + previous/next_text ancora PT-BR e dá entonação de chamada (não de fim de frase).
+  // next_text começando com "deixa eu te explicar..." induz cadência descendente
+  // suave (callout), como quem chama a pessoa antes de continuar falando.
   if (clip === "name_only") {
-    payload.previous_text = "Olá, ";
-    payload.next_text = ", tudo bem com você?";
+    payload.previous_text = "Então, olha só, ";
+    payload.next_text = " deixa eu te explicar uma coisa rapidinho.";
   }
 
   const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${SOFIA_VOICE_ID}`, {
