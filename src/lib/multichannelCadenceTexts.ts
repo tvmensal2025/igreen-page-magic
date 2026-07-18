@@ -1129,7 +1129,7 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     group: "B",
     channel: "whatsapp_text",
     title: "1 — Pedir o nome (só se faltar no CRM)",
-    timing: "Dia 0 · no começo · só se o nome estiver faltando ou inválido",
+    timing: "D+1 · no começo · só se o nome estiver faltando ou inválido",
     canGenerateAudio: false,
     notes:
       "O lead já está no CRM (já mandou mensagem). Se o nome já estiver certo, pula esta etapa e vai direto para a reabertura. Sem botões — o cliente digita o nome.",
@@ -1144,7 +1144,7 @@ Para agilizar, me diga *seu primeiro nome*, por favor.`,
     group: "B",
     channel: "whatsapp_buttons",
     title: "2 — Reabrir atendimento (perguntar faixa da conta)",
-    timing: "Dia 0 · envia às 09h30",
+    timing: "D+1 · envia às 09h30",
     canGenerateAudio: false,
     notes:
       "WhatsApp com 3 botões de faixa. Usa o nome que já está no CRM. Se precisar de foto/ligar/encerrar, segue o passo seguinte.",
@@ -1152,13 +1152,13 @@ Para agilizar, me diga *seu primeiro nome*, por favor.`,
 
 Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
 
-Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade: 🚀
+Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade:
 
 ✅ Conseguimos iniciar sua análise *apenas com o valor médio da conta*. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-*Em qual faixa está sua conta hoje?* 👇
+*Em qual faixa está sua conta hoje?*
 
 _Para não receber mais contatos, responda SAIR._`,
     buttons: [...BILL_RANGE_BUTTONS],
@@ -1168,7 +1168,7 @@ _Para não receber mais contatos, responda SAIR._`,
     group: "B",
     channel: "whatsapp_buttons",
     title: "2 — Reabrir lead parado há mais tempo",
-    timing: "Dia 0 · envia às 09h30",
+    timing: "D+1 · envia às 09h30",
     canGenerateAudio: false,
     notes:
       "Versão para quem pediu informação há bastante tempo. Não diga que há atendimento pendente se não houver histórico.",
@@ -1192,7 +1192,7 @@ _Para não receber mais contatos, responda SAIR._`,
     group: "B",
     channel: "whatsapp_buttons",
     title: "2b — Outras opções (foto, ligar ou encerrar)",
-    timing: "Dia 0 · depois das 09h30 · só se precisar",
+    timing: "D+1 · depois das 09h30 · só se precisar",
     canGenerateAudio: false,
     notes: "Oferece continuar de outro jeito: enviar foto, pedir ligação ou encerrar.",
     body: `*{{nome}}*, prefere continuar de outra forma? 👇
@@ -1205,7 +1205,7 @@ Escolha a opção mais prática pra você:`,
     group: "B",
     channel: "whatsapp_audio",
     title: "3 — Áudio de reativação (Sofia · ~30s)",
-    timing: "Dia 0 · envia às 09h32 · só com nome no CRM",
+    timing: "D+1 · envia às 09h32 · só com nome no CRM",
     canGenerateAudio: true,
     notes: "Sempre voz Sofia. Abertura fixa; o nome entra só no cumprimento.",
     audioSegments: [
@@ -1244,7 +1244,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     group: "B",
     channel: "sms",
     title: "4 — Primeiro SMS",
-    timing: "Dia 0 · envia às 11h30",
+    timing: "D+1 · envia às 11h30 · só se silêncio no WA",
     canGenerateAudio: false,
     maxChars: 160,
     body: `Rafael | iGreen: {{nome}}, reabri sua analise. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
@@ -1254,7 +1254,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     group: "B",
     channel: "call_script",
     title: "5 — Primeira ligação (Sofia)",
-    timing: "Dia 0 · entre 15h e 17h",
+    timing: "D+1 · entre 15h e 17h · só se ainda silêncio",
     canGenerateAudio: true,
     audioSegments: [
       { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
@@ -1291,7 +1291,7 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     timing: "Dia 2 · envia às 10h30",
     canGenerateAudio: false,
     notes:
-      "O sistema escolhe um tema diferente do Dia 0. Sem áudio. Até 3 botões de faixa.",
+      "O sistema escolhe um tema diferente do D+1. Sem áudio. Até 3 botões de faixa.",
     body: `{{tema_whatsapp}}`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
@@ -1300,7 +1300,7 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     group: "B",
     channel: "call_script",
     title: "Dia 4 — Segunda ligação (Sofia)",
-    timing: "Dia 4 · entre 14h30 e 17h",
+    timing: "Dia 4 · entre 14h30 e 17h · espaçada (anti-spam)",
     canGenerateAudio: true,
     audioSegments: [
       { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
@@ -1330,7 +1330,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     group: "B",
     channel: "sms",
     title: "Dia 6 — Segundo SMS",
-    timing: "Dia 6 · envia às 11h30",
+    timing: "Dia 6 · envia às 11h30 · sem ligação no mesmo dia",
     canGenerateAudio: false,
     maxChars: 160,
     body: `Rafael | iGreen: {{nome}}, novidades e beneficios extras. Abra: wa.me/{{consultor_phone}} SAIR encerra.`,
@@ -1346,9 +1346,9 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
       "3 botões de faixa. Se precisar de foto, ligação ou encerrar, usa o passo seguinte.",
     body: `Olá, *{{nome}}*! 👋
 
-Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*. ⚡
+Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*.
 
-*Qual faixa está sua conta hoje?* 👇`,
+*Qual faixa está sua conta hoje?*`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -1366,7 +1366,7 @@ Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*. ⚡
     group: "B",
     channel: "call_script",
     title: "Dia 10 — Ligação final (Sofia)",
-    timing: "Dia 10 · envia às 15h",
+    timing: "Dia 10 · envia às 15h · encerramento educado da onda",
     canGenerateAudio: true,
     audioSegments: [
       { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
@@ -1394,12 +1394,13 @@ Estou concluindo esta sequência para não ficar insistindo. Você prefere mante
     title: "Dia 10 — WhatsApp final (pausar atendimento)",
     timing: "Dia 10 · depois da ligação · se não atender",
     canGenerateAudio: false,
-    notes: "Depois disso o atendimento fica pausado e só volta a ser contactado após 21 dias.",
+    notes:
+      "Fim da onda intensa (CLOSE_LOST no motor). Recall longo / Meta podem seguir depois — não é exclusão do cadastro.",
     body: `Olá, *{{nome}}*.
 
-Como não consegui falar com você, vou *pausar seu atendimento* — sem excluir seu cadastro. ⏸️
+Como não consegui falar com você, vou *pausar este ciclo* — sem excluir seu cadastro.
 
-👇 *Escolha abaixo* como prefere seguir (ou responda SAIR para não receber mais contatos):`,
+*Escolha abaixo* como prefere seguir (ou responda SAIR para não receber mais contatos):`,
     buttons: [
       { id: "analyze", title: "Quero analisar" },
       { id: "call_me", title: "Pode me ligar" },

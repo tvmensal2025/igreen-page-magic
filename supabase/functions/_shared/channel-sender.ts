@@ -167,6 +167,74 @@ export function isUnavailable(
   return !!ch && (ch as UnavailableChannel).unavailable === true;
 }
 
+/**
+ * Resolve canal do lead; se origem offline, tenta failover Evolution↔Whapi
+ * do mesmo consultor (plano Zero Lead Perdido — não perder o toque do dia).
+ */
+export async function resolveChannelForCustomerWithFailover(
+  supabase: any,
+  customerId: string,
+  env: ChannelEnv,
+): Promise<ResolvedChannel | UnavailableChannel> {
+  const primary = await resolveChannelForCustomer(supabase, customerId, env);
+  if (!isUnavailable(primary)) return primary;
+
+  const { data: c } = await supabase
+    .from("customers")
+    .select("consultant_id, origin_channel")
+    .eq("id", customerId)
+    .maybeSingle();
+  const consultantId = c?.consultant_id as string | null;
+  if (!consultantId) return primary;
+
+  const originKind = (c?.origin_channel as string | null) || null;
+
+  // Failover → Evolution saudável do consultor
+  if (originKind !== "evolution" && env.evolutionUrl && env.evolutionKey) {
+    const { data: inst } = await supabase
+      .from("whatsapp_instances")
+      .select("instance_name, status, manual_review_required, fatal_lock_until")
+      .eq("consultant_id", consultantId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const status = String(inst?.status || "").toLowerCase();
+    if (
+      inst?.instance_name &&
+      !inst.manual_review_required &&
+      !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
+      (!status || HEALTHY_STATUSES.has(status))
+    ) {
+      const adapter = getAdapter({
+        kind: "evolution",
+        input: {
+          apiUrl: env.evolutionUrl,
+          apiKey: env.evolutionKey,
+          instanceName: inst.instance_name,
+        },
+      });
+      return { kind: "evolution", instanceName: inst.instance_name, adapter };
+    }
+  }
+
+  // Failover → Whapi
+  if (originKind !== "whapi" && env.whapiToken) {
+    const adapter = getAdapter({
+      kind: "whapi",
+      input: { apiToken: env.whapiToken, instanceName: "whapi-failover" },
+    });
+    return { kind: "whapi", instanceName: "whapi-failover", adapter };
+  }
+
+  // Sem origin: tentar qualquer canal saudável
+  if (!originKind) {
+    const legacy = await resolveChannel(supabase, consultantId, env);
+    if (legacy) return legacy;
+  }
+
+  return primary;
+}
+
 async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {
   const quota = await checkSendQuota(supabase, instanceName);
   if (!quota.allowed) {

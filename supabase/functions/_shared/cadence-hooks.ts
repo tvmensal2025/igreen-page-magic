@@ -9,7 +9,7 @@
  */
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { computeNextActionAt } from "./cadence-engine.ts";
+import { nextBusinessMorning } from "./cadence-engine.ts";
 import { isAutomationEnabled } from "./automation-gate.ts";
 import { loadRetentionSettings } from "./retention-orchestrator.ts";
 
@@ -23,7 +23,8 @@ export async function ensureCadenceState(
     // Só entra na máquina de estados se o motor estiver autorizado.
     if (!(await isAutomationEnabled(supabase, "cadence_engine"))) return;
 
-    const nextAt = computeNextActionAt("GREETED");
+    // D+1 manhã útil: GREETED fica aguardando até o próximo dia comercial.
+    const nextAt = nextBusinessMorning(new Date());
     await supabase
       .from("lead_cadence_state")
       .upsert(
@@ -31,7 +32,7 @@ export async function ensureCadenceState(
           customer_id,
           consultant_id,
           stage: "GREETED",
-          next_action_at: nextAt?.toISOString() ?? null,
+          next_action_at: nextAt.toISOString(),
         },
         { onConflict: "customer_id", ignoreDuplicates: true },
       );

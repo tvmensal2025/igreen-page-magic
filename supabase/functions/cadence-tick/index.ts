@@ -6,9 +6,15 @@
 // META    → placeholder para Fase 5
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { STAGE_MAP, computeNextActionAt, shouldDispatch, type Stage } from "../_shared/cadence-engine.ts";
+import {
+  STAGE_MAP,
+  computeNextActionAt,
+  shouldDispatch,
+  isColdOutreachStage,
+  type Stage,
+} from "../_shared/cadence-engine.ts";
 import { isBusinessHour } from "../_shared/business-window.ts";
-import { resolveChannelForCustomer, isUnavailable, ctx } from "../_shared/channel-sender.ts";
+import { resolveChannelForCustomerWithFailover, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import {
   playAudioFile, makeSMS,
@@ -37,7 +43,96 @@ const STAGE_TOGGLE_KEY: Partial<Record<Stage, string>> = {
   CALL_3: "cadence_call_3",
   SMS_1: "cadence_sms_1",
   SMS_2: "cadence_sms_2",
+  RETARGET_ADS_15D: "cadence_retarget_ads_15d",
+  RECALL_60D: "cadence_recall_60d",
+  RECALL_90D: "cadence_recall_90d",
+  RECALL_5M: "cadence_recall_5m",
+  RECALL_8M: "cadence_recall_8m",
+  RECALL_12M: "cadence_recall_12m",
+  RECALL_YEARLY: "cadence_recall_yearly",
 };
+
+const DEFAULT_COLD_DAILY_CAP = 60;
+
+/** Cap diário de pessoas frias (BRT) — reutiliza daily_reheat_settings.daily_whapi_cap. */
+async function loadColdDailyCap(supabase: any): Promise<number> {
+  try {
+    const { data } = await supabase
+      .from("daily_reheat_settings")
+      .select("daily_whapi_cap")
+      .limit(1)
+      .maybeSingle();
+    const n = Number(data?.daily_whapi_cap);
+    if (Number.isFinite(n) && n >= 1 && n <= 600) return Math.floor(n);
+  } catch { /* fallback */ }
+  return DEFAULT_COLD_DAILY_CAP;
+}
+
+/** Pessoas distintas tocadas hoje (BRT) em estágios frios. */
+async function countColdTouchesToday(supabase: any): Promise<number> {
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const day = fmt.format(new Date()); // YYYY-MM-DD
+  const startIso = new Date(`${day}T00:00:00-03:00`).toISOString();
+  const { data, error } = await supabase
+    .from("cadence_action_log")
+    .select("customer_id")
+    .eq("status", "sent")
+    .gte("created_at", startIso)
+    .in("stage", [
+      "COLD_1", "COLD_2", "COLD_3", "COLD_4",
+      "CALL_1", "CALL_2", "CALL_3",
+      "SMS_1", "SMS_2",
+      "RECALL_60D", "RECALL_90D", "RECALL_5M", "RECALL_8M", "RECALL_12M", "RECALL_YEARLY",
+    ]);
+  if (error || !data) return 0;
+  return new Set(data.map((r: { customer_id: string }) => r.customer_id)).size;
+}
+
+/** Lead engajou desde o último toque da cadência? (anti-spam: skip SMS/call). */
+async function hasEngagedSinceLastAction(
+  supabase: any,
+  customerId: string,
+  lastActionAt: string | null,
+): Promise<boolean> {
+  const since = lastActionAt || new Date(Date.now() - 48 * 3600_000).toISOString();
+  const { data: state } = await supabase
+    .from("lead_cadence_state")
+    .select("last_response_at")
+    .eq("customer_id", customerId)
+    .maybeSingle();
+  if (state?.last_response_at && new Date(state.last_response_at) > new Date(since)) {
+    return true;
+  }
+  try {
+    const { count } = await supabase
+      .from("conversations")
+      .select("id", { count: "exact", head: true })
+      .eq("customer_id", customerId)
+      .eq("direction", "inbound")
+      .gte("created_at", since);
+    if ((count || 0) > 0) return true;
+  } catch { /* schema pode variar */ }
+  return false;
+}
+
+function tomorrowMorningBRT(): string {
+  const now = new Date();
+  // +1 dia 09:00 America/Sao_Paulo (approx -03)
+  const d = new Date(now.getTime() + 24 * 3600_000);
+  const fmt = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const day = fmt.format(d);
+  return new Date(`${day}T09:00:00-03:00`).toISOString();
+}
 
 interface StageConfig {
   enabled: boolean;
@@ -202,7 +297,7 @@ async function dispatchWhatsApp(
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
-  const ch = await resolveChannelForCustomer(supabase, row.customer_id, {
+  const ch = await resolveChannelForCustomerWithFailover(supabase, row.customer_id, {
     evolutionUrl: env.evolutionUrl,
     evolutionKey: env.evolutionKey,
     whapiToken: env.whapiToken,
@@ -373,19 +468,22 @@ Deno.serve(async (req) => {
   }
 
   const now = new Date();
+  const coldCap = await loadColdDailyCap(supabase);
+  let coldTouchesToday = await countColdTouchesToday(supabase);
+
+  // Inclui PAUSED com next_action_at vencido (retoma após inbound).
+  // Exclui só WON (CLOSE_LOST / RETARGET_* / RECALL_* avançam na máquina).
   const { data: due, error } = await supabase
     .from("lead_cadence_state")
-    .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until")
+    .select("id, customer_id, consultant_id, stage, attempts_by_channel, paused_until, last_action_at, last_response_at")
     .lte("next_action_at", now.toISOString())
-    .not("stage", "in", "(CLOSE_LOST,WON,PAUSED,RETARGET_META)")
+    .not("stage", "eq", "WON")
     .order("next_action_at", { ascending: true })
     .limit(100);
 
   if (error) return json({ error: error.message }, 500);
-  if (!due || due.length === 0) return json({ processed: 0 });
+  if (!due || due.length === 0) return json({ processed: 0, cold_cap: coldCap, cold_today: coldTouchesToday });
 
-  // Batch: leads com bot pausado (fixo/temporário) ou em mão humana não
-  // recebem cadência — a state machine só volta a olhar em 6h.
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
   const { data: custRows } = await supabase
     .from("customers")
@@ -401,10 +499,28 @@ Deno.serve(async (req) => {
       .map((c: any) => c.id),
   );
 
-  let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0;
+  let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0;
 
   for (const row of due) {
-    const stage = row.stage as Stage;
+    let stage = row.stage as Stage;
+
+    // Retomada pós-inbound: PAUSED vencido → volta à onda curta (COLD_1).
+    if (stage === "PAUSED") {
+      if (row.paused_until && new Date(row.paused_until) > now) {
+        await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
+        deferred++; continue;
+      }
+      const resumeAt = computeNextActionAt("GREETED", now);
+      await supabase.from("lead_cadence_state").update({
+        stage: "COLD_1",
+        next_action_at: resumeAt?.toISOString() ?? tomorrowMorningBRT(),
+        paused_until: null,
+        paused_reason: null,
+      }).eq("id", row.id);
+      resumed++;
+      continue;
+    }
+
     if (row.paused_until && new Date(row.paused_until) > now) {
       await supabase.from("lead_cadence_state").update({ next_action_at: row.paused_until }).eq("id", row.id);
       deferred++; continue;
@@ -418,8 +534,17 @@ Deno.serve(async (req) => {
     if (!(await gateProactiveTouch(supabase, row.customer_id, "cadence_engine"))) {
       deferred++; continue;
     }
+
     const def = STAGE_MAP[stage];
     if (!def) { skipped++; continue; }
+
+    // Cap 60 pessoas/dia — adia, nunca descarta.
+    if (isColdOutreachStage(stage) && coldTouchesToday >= coldCap) {
+      await supabase.from("lead_cadence_state").update({
+        next_action_at: tomorrowMorningBRT(),
+      }).eq("id", row.id);
+      deferred++; continue;
+    }
 
     if (def.requiresBusinessHours && !isBusinessHour(now)) {
       const nextSlot = computeNextActionAt(stage, now);
@@ -428,65 +553,105 @@ Deno.serve(async (req) => {
     }
     if (!shouldDispatch(stage, now)) { skipped++; continue; }
 
+    // Anti-spam: SMS/call (e similares) pulam se o lead já engajou.
+    if (def.skipIfEngaged) {
+      const engaged = await hasEngagedSinceLastAction(
+        supabase, row.customer_id, row.last_action_at || null,
+      );
+      if (engaged) {
+        const cfgSkip = await loadStageConfig(supabase, row.consultant_id, def.next);
+        const nextAt = computeNextActionAt(def.next, now, cfgSkip?.delay_hours);
+        await supabase.from("lead_cadence_state").update({
+          stage: def.next,
+          next_action_at: nextAt?.toISOString() ?? null,
+          paused_reason: null,
+        }).eq("id", row.id);
+        await supabase.from("cadence_action_log").insert({
+          customer_id: row.customer_id, consultant_id: row.consultant_id,
+          stage, channel: "system", status: "queued",
+          detail: { reason: "skipped_engaged", next: def.next },
+        }).then(() => {}, () => {});
+        skipped++; continue;
+      }
+    }
+
     let status: "queued" | "sent" | "failed" = "queued";
-    let detail: Record<string, unknown> = { note: "phase3_orchestrator", scheduled_next: def.next };
+    let detail: Record<string, unknown> = { note: "zero_lead_v5", scheduled_next: def.next };
+    let cfgForDelay: StageConfig | null = null;
 
     const needsDispatch =
-      (def.channel === "whatsapp" && stage.startsWith("COLD_")) ||
-      (def.channel === "voice"    && stage.startsWith("CALL_")) ||
-      (def.channel === "sms"      && stage.startsWith("SMS_"));
+      def.channel === "whatsapp" ||
+      def.channel === "voice" ||
+      def.channel === "sms";
 
-    if (needsDispatch) {
+    if (def.channel === "meta_audience" || def.channel === "system") {
+      // Avanço de máquina (Meta/ads) — facebook-retarget-sync faz o sync pesado.
+      status = "queued";
+      detail = { ...detail, reason: "meta_or_system_advance" };
+      const stageToggle = STAGE_TOGGLE_KEY[stage];
+      if (stageToggle && !(await isAutomationEnabled(supabase, stageToggle))) {
+        // Fase longa OFF: adia 24h sem avançar (não perde o lead).
+        await supabase.from("lead_cadence_state").update({
+          next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
+        }).eq("id", row.id);
+        await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
+        deferred++; continue;
+      }
+      cfgForDelay = await loadStageConfig(supabase, row.consultant_id, stage);
+    } else if (needsDispatch) {
       const stageToggle = STAGE_TOGGLE_KEY[stage];
       if (stageToggle && !(await isAutomationEnabled(supabase, stageToggle))) {
         await logSkipped(supabase, stageToggle, { customer_id: row.customer_id, stage });
+        // Recall/ads OFF: adia (não perde). Onda curta OFF: avança sem enviar (legado).
+        if (stage.startsWith("RECALL_") || stage === "RETARGET_ADS_15D") {
+          await supabase.from("lead_cadence_state").update({
+            next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
+          }).eq("id", row.id);
+          deferred++; continue;
+        }
         detail = { ...detail, reason: "stage_toggle_off", key: stageToggle };
+        cfgForDelay = await loadStageConfig(supabase, row.consultant_id, stage);
+        // cai no avanço abaixo sem disparar
       } else {
         const cfg = await loadStageConfig(supabase, row.consultant_id, stage);
+        cfgForDelay = cfg;
         if (!cfg || !cfg.enabled) {
+          if (stage.startsWith("RECALL_") || stage === "RETARGET_ADS_15D") {
+            await supabase.from("lead_cadence_state").update({
+              next_action_at: new Date(now.getTime() + 24 * 3600_000).toISOString(),
+            }).eq("id", row.id);
+            deferred++; continue;
+          }
           detail = { ...detail, reason: "config_disabled_or_missing" };
         } else if (!isInStageWindow(now, cfg)) {
-          // Janela específica do estágio (SMS 9-20, Voz 9-19 etc.) não abriu.
-          // Reagenda para daqui 30min sem consumir o disparo.
           await supabase.from("lead_cadence_state").update({
             next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
           }).eq("id", row.id);
-          detail = { ...detail, reason: "channel_window_closed" };
-          deferred++;
-          // pula insert + avanço de estado (skipping do log evita ruído)
-          continue;
+          deferred++; continue;
         } else if (cfg.max_per_lead && cfg.max_per_lead > 0
                    && (await countChannelSends(supabase, row.customer_id, def.channel)) >= cfg.max_per_lead) {
-          // Limite por canal atingido → encerra cadência para este lead.
           await supabase.from("lead_cadence_state").update({
             stage: "CLOSE_LOST",
-            next_action_at: null,
+            next_action_at: computeNextActionAt("CLOSE_LOST", now)?.toISOString() ?? null,
             paused_reason: "channel_limit_reached",
           }).eq("id", row.id);
           await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
-          detail = { ...detail, reason: "channel_limit_reached", channel: def.channel };
-          skipped++;
-          await supabase.from("cadence_action_log").insert({
-            customer_id: row.customer_id, consultant_id: row.consultant_id,
-            stage: "CLOSE_LOST", channel: "system", status: "queued", detail,
-          }).then(() => {}, () => {});
-          continue;
+          skipped++; continue;
         } else {
           let res: { ok: boolean; detail: string };
           if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg);
           else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
           else res = await dispatchSMS(supabase, row, stage, cfg);
           status = res.ok ? "sent" : "failed";
-          detail = { ...detail, dispatch: res.detail };
+          detail = { ...detail, dispatch: res.detail, via: "evo_or_whapi" };
           if (res.ok) {
             sent++;
+            if (isColdOutreachStage(stage)) coldTouchesToday++;
             await recordProactiveTouch(supabase, row.customer_id, "cadence_engine", { stage, channel: def.channel });
           } else failed++;
         }
       }
     }
-
-
 
     const insertRes = await supabase.from("cadence_action_log").insert({
       customer_id: row.customer_id,
@@ -497,9 +662,6 @@ Deno.serve(async (req) => {
       console.error("cadence log insert failed", insertRes.error);
     }
 
-    // Falha de disparo NÃO avança a state machine: reagenda o MESMO stage
-    // em 30min. (Antes o lead pulava para o próximo stage sem ter recebido
-    // nada — etapas inteiras da cadência sumiam em caso de erro.)
     if (status === "failed") {
       await supabase.from("lead_cadence_state").update({
         next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
@@ -507,7 +669,9 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const nextAt = computeNextActionAt(def.next, now);
+    // Espera do PRÓXIMO estágio (delay_hours do banco ou STAGE_MAP).
+    const nextCfg = await loadStageConfig(supabase, row.consultant_id, def.next);
+    const nextAt = computeNextActionAt(def.next, now, nextCfg?.delay_hours ?? null);
     const attempts = (row.attempts_by_channel as Record<string, number>) ?? {};
     attempts[def.channel] = (attempts[def.channel] ?? 0) + 1;
 
@@ -516,10 +680,9 @@ Deno.serve(async (req) => {
       last_action_at: now.toISOString(),
       next_action_at: nextAt?.toISOString() ?? null,
       attempts_by_channel: attempts,
+      paused_until: null,
     }).eq("id", row.id);
 
-    // Fim natural da cadência: CALL_3 → CLOSE_LOST. Dispara notificação
-    // formatada ao parceiro (o retarget-sync cuida do Meta em cron próprio).
     if (def.next === "CLOSE_LOST") {
       await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
     }
@@ -527,8 +690,17 @@ Deno.serve(async (req) => {
     dispatched++;
   }
 
-
-  return json({ processed: due.length, dispatched, deferred, skipped, sent, failed });
+  return json({
+    processed: due.length,
+    dispatched,
+    deferred,
+    skipped,
+    sent,
+    failed,
+    resumed,
+    cold_cap: coldCap,
+    cold_today: coldTouchesToday,
+  });
 });
 
 function json(body: unknown, status = 200) {

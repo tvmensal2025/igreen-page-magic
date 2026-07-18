@@ -23,6 +23,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CentralAutomacoesControle } from "@/components/admin/CentralAutomacoesControle";
 import { RetentionSettingsCard } from "@/components/admin/RetentionSettingsCard";
+import { ColdCadenceCapCard } from "@/components/admin/ColdCadenceCapCard";
 import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
 import { AgendamentosTextosDialog } from "@/components/whatsapp/AgendamentosTextosDialog";
 import { cn } from "@/lib/utils";
@@ -279,6 +280,7 @@ export default function AdminAgendamentosCentral() {
 
           <TabsContent value="controle" className="mt-0 focus-visible:outline-none space-y-4">
             <RetentionSettingsCard canEdit />
+            <ColdCadenceCapCard canEdit />
             <CentralAutomacoesControle canToggle />
           </TabsContent>
 

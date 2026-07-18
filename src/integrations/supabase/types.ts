@@ -12755,6 +12755,13 @@ export type Database = {
         | "CALL_3"
         | "CLOSE_LOST"
         | "RETARGET_META"
+        | "RETARGET_ADS_15D"
+        | "RECALL_60D"
+        | "RECALL_90D"
+        | "RECALL_5M"
+        | "RECALL_8M"
+        | "RECALL_12M"
+        | "RECALL_YEARLY"
         | "PAUSED"
         | "WON"
       lead_temperature:
@@ -12934,6 +12941,13 @@ export const Constants = {
         "CALL_3",
         "CLOSE_LOST",
         "RETARGET_META",
+        "RETARGET_ADS_15D",
+        "RECALL_60D",
+        "RECALL_90D",
+        "RECALL_5M",
+        "RECALL_8M",
+        "RECALL_12M",
+        "RECALL_YEARLY",
         "PAUSED",
         "WON",
       ],

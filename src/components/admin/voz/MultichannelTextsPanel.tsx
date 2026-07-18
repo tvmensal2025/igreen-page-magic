@@ -1116,9 +1116,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 Grupo B — reabrir leads que já estão no CRM
               </p>
               <p>
-                O cliente já mandou mensagem antes. Cada passo mostra o{" "}
-                <span className="text-foreground font-medium">horário de envio</span>{" "}
-                (ex.: Dia 0 às 09h30, SMS às 11h30, ligação entre 15h e 17h).
+                Onda profissional (anti-spam): reabre no{" "}
+                <span className="text-foreground font-medium">D+1</span>; SMS/ligação só se houver
+                silêncio. Cap diário de frios na Central de Automações. Grupo A (lead novo) não é
+                limitado.
               </p>
             </div>
           )}
