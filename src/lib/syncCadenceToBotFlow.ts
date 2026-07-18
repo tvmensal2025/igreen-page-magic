@@ -375,15 +375,22 @@ export async function syncCadenceLibraryToBotFlow(
   return { updated, skipped, errors };
 }
 
-/** Salva local + remoto + espelha no fluxo WhatsApp. */
+/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A) + motor (Grupo B). */
 export async function publishCadenceLibrary(
   consultantId: string,
   lib: SavedCadenceLibrary,
   variant: string = "A",
 ): Promise<{ updated: string[]; errors: string[] }> {
-  await persistCadenceLibraryRemote(consultantId, lib).catch((e) => {
-    console.warn("[multichannel] persist remote:", (e as Error)?.message);
-  });
+  const errors: string[] = [];
+  try {
+    await persistCadenceLibraryRemote(consultantId, lib);
+  } catch (e) {
+    errors.push(`remote: ${(e as Error)?.message || e}`);
+  }
   const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, variant);
-  return { updated: sync.updated, errors: sync.errors };
+  const motor = await syncCadenceLibraryToStageConfig(lib);
+  return {
+    updated: [...sync.updated, ...motor.updated.map((s) => `motor:${s}`)],
+    errors: [...errors, ...sync.errors, ...motor.errors],
+  };
 }
