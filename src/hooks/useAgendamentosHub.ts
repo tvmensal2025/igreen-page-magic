@@ -149,6 +149,26 @@ export function useAgendamentosHub(consultantId: string) {
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
       setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
 
+      // Mapeia rows do motor para o formato esperado pela timeline.
+      setCadence(
+        ((cadenceRes.data || []) as Array<{
+          id: string;
+          customer_id: string;
+          stage: string;
+          next_action_at: string;
+          paused_until: string | null;
+          customer?: { name: string | null; phone_whatsapp: string | null } | null;
+        }>).map((r) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          stage: r.stage,
+          next_action_at: r.next_action_at,
+          paused_until: r.paused_until,
+          customer_name: r.customer?.name ?? null,
+          customer_phone: r.customer?.phone_whatsapp ?? null,
+        })),
+      );
+
       if (settingsRes.data) {
         const s = settingsRes.data;
         setReactivationSettings({
