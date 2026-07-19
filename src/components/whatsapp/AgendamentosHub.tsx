@@ -746,6 +746,7 @@ export function AgendamentosHub({
                 const filtered = timelineFilter === "all" ? timeline : timeline.filter((i) => i.kind === timelineFilter);
                 const chips: Array<{ id: "all" | AgendamentoTimelineItem["kind"]; label: string }> = [
                   { id: "all", label: "Todos" },
+                  { id: "cadence_send", label: "Motor A→B→C" },
                   { id: "manual_scheduled", label: "Manual" },
                   { id: "pos_venda_auto", label: "Pós-venda" },
                   { id: "bulk_campaign", label: "WA" },
