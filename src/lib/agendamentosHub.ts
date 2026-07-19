@@ -236,11 +236,20 @@ export function buildAgendamentosTimeline(input: {
     const at = new Date(c.next_action_at);
     const paused = c.paused_until && new Date(c.paused_until).getTime() > now;
     const { channel, label } = cadenceStageLabel(c.stage);
+    const info = input.cadenceStageInfo?.[c.stage];
+    const name = c.customer_name || "";
+    const rendered = info?.message_text
+      ? info.message_text
+          .replace(/\{\{\s*nome\s*\}\}/gi, name || "cliente")
+          .replace(/\{\{\s*consultor\s*\}\}/gi, "seu consultor")
+          .replace(/\{\{\s*assistente\s*\}\}/gi, "Sofia")
+      : null;
     items.push({
       id: `cadence-${c.id}`,
       kind: "cadence_send",
       title: c.customer_name || c.customer_phone || "Lead",
-      preview: `${channel} · ${label}`,
+      preview: rendered || `${channel} · ${label}`,
+      audio_url: info?.audio_url ?? null,
       at,
       status: paused ? "pending" : at.getTime() <= now ? "overdue" : "pending",
       badge: `Motor A→B→C · ${label}`,
