@@ -15,6 +15,7 @@ export interface AgendamentoTimelineItem {
   kind: AgendamentoTimelineKind;
   title: string;
   preview?: string | null;
+  audio_url?: string | null;
   at: Date;
   status: AgendamentoTimelineStatus;
   badge: string;
