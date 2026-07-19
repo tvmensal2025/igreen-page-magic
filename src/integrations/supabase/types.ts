@@ -1550,6 +1550,8 @@ export type Database = {
         Row: {
           bot_engine_production_mode: boolean
           bot_global_enabled: boolean
+          cadence_allowed_ddds: Json
+          cadence_audience_mode: string
           cadence_engine_enabled: boolean
           cadence_window: Json | null
           devtools_blocked: boolean
@@ -1566,6 +1568,8 @@ export type Database = {
         Insert: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          cadence_allowed_ddds?: Json
+          cadence_audience_mode?: string
           cadence_engine_enabled?: boolean
           cadence_window?: Json | null
           devtools_blocked?: boolean
@@ -1582,6 +1586,8 @@ export type Database = {
         Update: {
           bot_engine_production_mode?: boolean
           bot_global_enabled?: boolean
+          cadence_allowed_ddds?: Json
+          cadence_audience_mode?: string
           cadence_engine_enabled?: boolean
           cadence_window?: Json | null
           devtools_blocked?: boolean
@@ -1651,6 +1657,123 @@ export type Database = {
           time_slot?: string
           updated_at?: string
           voice_id?: string | null
+        }
+        Relationships: []
+      }
+      automation_dead_letter: {
+        Row: {
+          attempts: number
+          customer_id: string | null
+          effect_id: string | null
+          engine_key: string
+          first_failed_at: string
+          id: string
+          last_failed_at: string
+          logical_key: string | null
+          meta: Json
+          reason_code: string
+          resolution_note: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          attempts?: number
+          customer_id?: string | null
+          effect_id?: string | null
+          engine_key: string
+          first_failed_at?: string
+          id?: string
+          last_failed_at?: string
+          logical_key?: string | null
+          meta?: Json
+          reason_code: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          attempts?: number
+          customer_id?: string | null
+          effect_id?: string | null
+          engine_key?: string
+          first_failed_at?: string
+          id?: string
+          last_failed_at?: string
+          logical_key?: string | null
+          meta?: Json
+          reason_code?: string
+          resolution_note?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      automation_runs: {
+        Row: {
+          auth_reason: string | null
+          claimed: number
+          dead_lettered: number
+          engine_key: string
+          error_code: string | null
+          failed: number
+          finished_at: string | null
+          heartbeat_at: string
+          id: string
+          meta: Json
+          mode: string
+          scanned: number
+          sent: number
+          skipped: number
+          started_at: string
+          status: string
+          trigger_kind: string
+          unknown: number
+          worker_id: string | null
+        }
+        Insert: {
+          auth_reason?: string | null
+          claimed?: number
+          dead_lettered?: number
+          engine_key: string
+          error_code?: string | null
+          failed?: number
+          finished_at?: string | null
+          heartbeat_at?: string
+          id?: string
+          meta?: Json
+          mode?: string
+          scanned?: number
+          sent?: number
+          skipped?: number
+          started_at?: string
+          status?: string
+          trigger_kind?: string
+          unknown?: number
+          worker_id?: string | null
+        }
+        Update: {
+          auth_reason?: string | null
+          claimed?: number
+          dead_lettered?: number
+          engine_key?: string
+          error_code?: string | null
+          failed?: number
+          finished_at?: string | null
+          heartbeat_at?: string
+          id?: string
+          meta?: Json
+          mode?: string
+          scanned?: number
+          sent?: number
+          skipped?: number
+          started_at?: string
+          status?: string
+          trigger_kind?: string
+          unknown?: number
+          worker_id?: string | null
         }
         Relationships: []
       }
@@ -2465,7 +2588,7 @@ export type Database = {
           personalize_name: boolean
           stage: string
           template_updated_at: string | null
-          template_version: number | null
+          template_version: number
           updated_at: string
           velip_audio_id: string | null
           voice_audio_clip_id: string | null
@@ -2487,7 +2610,7 @@ export type Database = {
           personalize_name?: boolean
           stage: string
           template_updated_at?: string | null
-          template_version?: number | null
+          template_version?: number
           updated_at?: string
           velip_audio_id?: string | null
           voice_audio_clip_id?: string | null
@@ -2509,7 +2632,7 @@ export type Database = {
           personalize_name?: boolean
           stage?: string
           template_updated_at?: string | null
-          template_version?: number | null
+          template_version?: number
           updated_at?: string
           velip_audio_id?: string | null
           voice_audio_clip_id?: string | null
@@ -5064,11 +5187,15 @@ export type Database = {
       }
       daily_reheat_queue: {
         Row: {
+          claim_attempts: number
+          claim_token: string | null
+          claimed_at: string | null
           consultant_id: string | null
           created_at: string
           customer_id: string
           cycle_date: string
           id: string
+          lease_expires_at: string | null
           next_action_at: string
           planned_actions: Json
           queue: string
@@ -5079,11 +5206,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          claim_attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           consultant_id?: string | null
           created_at?: string
           customer_id: string
           cycle_date: string
           id?: string
+          lease_expires_at?: string | null
           next_action_at?: string
           planned_actions?: Json
           queue: string
@@ -5094,11 +5225,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          claim_attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           consultant_id?: string | null
           created_at?: string
           customer_id?: string
           cycle_date?: string
           id?: string
+          lease_expires_at?: string | null
           next_action_at?: string
           planned_actions?: Json
           queue?: string
@@ -7572,51 +7707,84 @@ export type Database = {
       lead_cadence_state: {
         Row: {
           attempts_by_channel: Json
+          claim_attempts: number
+          claim_token: string | null
+          claimed_at: string | null
           consultant_id: string | null
           created_at: string
           customer_id: string
           id: string
+          journey_started_at: string | null
+          journey_version: number
           last_action_at: string | null
+          last_effect_id: string | null
           last_response_at: string | null
+          lease_expires_at: string | null
           next_action_at: string | null
           paused_reason: string | null
           paused_until: string | null
           retarget_enabled: boolean
           stage: Database["public"]["Enums"]["cadence_stage"]
+          stage_entered_at: string | null
+          stage_sequence: number
           temperature: string
+          timezone: string
           updated_at: string
+          won_at: string | null
         }
         Insert: {
           attempts_by_channel?: Json
+          claim_attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           consultant_id?: string | null
           created_at?: string
           customer_id: string
           id?: string
+          journey_started_at?: string | null
+          journey_version?: number
           last_action_at?: string | null
+          last_effect_id?: string | null
           last_response_at?: string | null
+          lease_expires_at?: string | null
           next_action_at?: string | null
           paused_reason?: string | null
           paused_until?: string | null
           retarget_enabled?: boolean
           stage?: Database["public"]["Enums"]["cadence_stage"]
+          stage_entered_at?: string | null
+          stage_sequence?: number
           temperature?: string
+          timezone?: string
           updated_at?: string
+          won_at?: string | null
         }
         Update: {
           attempts_by_channel?: Json
+          claim_attempts?: number
+          claim_token?: string | null
+          claimed_at?: string | null
           consultant_id?: string | null
           created_at?: string
           customer_id?: string
           id?: string
+          journey_started_at?: string | null
+          journey_version?: number
           last_action_at?: string | null
+          last_effect_id?: string | null
           last_response_at?: string | null
+          lease_expires_at?: string | null
           next_action_at?: string | null
           paused_reason?: string | null
           paused_until?: string | null
           retarget_enabled?: boolean
           stage?: Database["public"]["Enums"]["cadence_stage"]
+          stage_entered_at?: string | null
+          stage_sequence?: number
           temperature?: string
+          timezone?: string
           updated_at?: string
+          won_at?: string | null
         }
         Relationships: []
       }
@@ -7949,6 +8117,50 @@ export type Database = {
           },
         ]
       }
+      meta_audience_sync_log: {
+        Row: {
+          audience_id: string | null
+          consultant_id: string | null
+          created_at: string
+          customer_id: string | null
+          detail: string | null
+          id: string
+          ok: boolean
+          phone_ddd: string | null
+          source: string
+        }
+        Insert: {
+          audience_id?: string | null
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          detail?: string | null
+          id?: string
+          ok?: boolean
+          phone_ddd?: string | null
+          source?: string
+        }
+        Update: {
+          audience_id?: string | null
+          consultant_id?: string | null
+          created_at?: string
+          customer_id?: string | null
+          detail?: string | null
+          id?: string
+          ok?: boolean
+          phone_ddd?: string | null
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_audience_sync_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       network_members: {
         Row: {
           bonificavel: number | null
@@ -8119,6 +8331,105 @@ export type Database = {
           id?: string
           instance_name?: string | null
           reason?: string
+        }
+        Relationships: []
+      }
+      outbound_effects: {
+        Row: {
+          action_key: string | null
+          attempt_count: number
+          channel: string
+          claim_id: string | null
+          consultant_id: string | null
+          customer_id: string | null
+          delivered_at: string | null
+          destination_hash: string | null
+          engine_key: string
+          error_code: string | null
+          id: string
+          idempotency_key: string
+          journey_id: string | null
+          meta: Json
+          next_reconcile_at: string | null
+          payload_hash: string | null
+          provider: string | null
+          provider_message_id: string | null
+          provider_request_id: string | null
+          provider_status: string | null
+          reserved_at: string
+          run_id: string | null
+          sending_at: string | null
+          sent_at: string | null
+          stage: string | null
+          stage_sequence: number | null
+          status: string
+          template_key: string | null
+          template_version: string | null
+          updated_at: string
+        }
+        Insert: {
+          action_key?: string | null
+          attempt_count?: number
+          channel: string
+          claim_id?: string | null
+          consultant_id?: string | null
+          customer_id?: string | null
+          delivered_at?: string | null
+          destination_hash?: string | null
+          engine_key: string
+          error_code?: string | null
+          id?: string
+          idempotency_key: string
+          journey_id?: string | null
+          meta?: Json
+          next_reconcile_at?: string | null
+          payload_hash?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          provider_request_id?: string | null
+          provider_status?: string | null
+          reserved_at?: string
+          run_id?: string | null
+          sending_at?: string | null
+          sent_at?: string | null
+          stage?: string | null
+          stage_sequence?: number | null
+          status?: string
+          template_key?: string | null
+          template_version?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action_key?: string | null
+          attempt_count?: number
+          channel?: string
+          claim_id?: string | null
+          consultant_id?: string | null
+          customer_id?: string | null
+          delivered_at?: string | null
+          destination_hash?: string | null
+          engine_key?: string
+          error_code?: string | null
+          id?: string
+          idempotency_key?: string
+          journey_id?: string | null
+          meta?: Json
+          next_reconcile_at?: string | null
+          payload_hash?: string | null
+          provider?: string | null
+          provider_message_id?: string | null
+          provider_request_id?: string | null
+          provider_status?: string | null
+          reserved_at?: string
+          run_id?: string | null
+          sending_at?: string | null
+          sent_at?: string | null
+          stage?: string | null
+          stage_sequence?: number | null
+          status?: string
+          template_key?: string | null
+          template_version?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -8383,6 +8694,7 @@ export type Database = {
           page_name: string | null
           pixel_id: string | null
           pixel_name: string | null
+          retarget_ddd_allowlist: number[] | null
           status: string
           token_expires_at: string | null
           updated_at: string
@@ -8410,6 +8722,7 @@ export type Database = {
           page_name?: string | null
           pixel_id?: string | null
           pixel_name?: string | null
+          retarget_ddd_allowlist?: number[] | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string
@@ -8437,6 +8750,7 @@ export type Database = {
           page_name?: string | null
           pixel_id?: string | null
           pixel_name?: string | null
+          retarget_ddd_allowlist?: number[] | null
           status?: string
           token_expires_at?: string | null
           updated_at?: string
@@ -8589,25 +8903,34 @@ export type Database = {
       }
       proactive_touch_log: {
         Row: {
+          claim_token: string | null
           created_at: string
           customer_id: string
           id: number
+          lease_expires_at: string | null
           meta: Json
           source_key: string
+          status: string
         }
         Insert: {
+          claim_token?: string | null
           created_at?: string
           customer_id: string
           id?: number
+          lease_expires_at?: string | null
           meta?: Json
           source_key: string
+          status?: string
         }
         Update: {
+          claim_token?: string | null
           created_at?: string
           customer_id?: string
           id?: number
+          lease_expires_at?: string | null
           meta?: Json
           source_key?: string
+          status?: string
         }
         Relationships: [
           {
@@ -10869,6 +11192,8 @@ export type Database = {
           customer_id: string | null
           dialed_at: string | null
           error: string | null
+          fallback_sms_at: string | null
+          fallback_sms_effect_id: string | null
           finished_at: string | null
           id: string
           max_attempts: number
@@ -10890,6 +11215,8 @@ export type Database = {
           customer_id?: string | null
           dialed_at?: string | null
           error?: string | null
+          fallback_sms_at?: string | null
+          fallback_sms_effect_id?: string | null
           finished_at?: string | null
           id?: string
           max_attempts?: number
@@ -10911,6 +11238,8 @@ export type Database = {
           customer_id?: string | null
           dialed_at?: string | null
           error?: string | null
+          fallback_sms_at?: string | null
+          fallback_sms_effect_id?: string | null
           finished_at?: string | null
           id?: string
           max_attempts?: number
@@ -10949,6 +11278,7 @@ export type Database = {
           failed: number
           finished_at: string | null
           id: string
+          logical_key: string | null
           name: string
           scheduled_at: string | null
           sms_on_no_answer_text: string | null
@@ -10976,6 +11306,7 @@ export type Database = {
           failed?: number
           finished_at?: string | null
           id?: string
+          logical_key?: string | null
           name?: string
           scheduled_at?: string | null
           sms_on_no_answer_text?: string | null
@@ -11003,6 +11334,7 @@ export type Database = {
           failed?: number
           finished_at?: string | null
           id?: string
+          logical_key?: string | null
           name?: string
           scheduled_at?: string | null
           sms_on_no_answer_text?: string | null
@@ -11320,6 +11652,39 @@ export type Database = {
           updated_at?: string
           velip_audio_id?: string | null
           velip_uploaded_at?: string | null
+        }
+        Relationships: []
+      }
+      voice_webhook_events: {
+        Row: {
+          campaign_id: string | null
+          created_at: string
+          event_hash: string
+          event_kind: string | null
+          id: string
+          meta: Json
+          provider: string
+          target_id: string | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          created_at?: string
+          event_hash: string
+          event_kind?: string | null
+          id?: string
+          meta?: Json
+          provider?: string
+          target_id?: string | null
+        }
+        Update: {
+          campaign_id?: string | null
+          created_at?: string
+          event_hash?: string
+          event_kind?: string | null
+          id?: string
+          meta?: Json
+          provider?: string
+          target_id?: string | null
         }
         Relationships: []
       }
@@ -11861,6 +12226,33 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_facebook_audience_status: {
+        Row: {
+          audience_source_count: number | null
+          audience_synced_at: string | null
+          custom_audience_id: string | null
+          id: boolean | null
+          retarget_ddd_allowlist: number[] | null
+          updated_at: string | null
+        }
+        Insert: {
+          audience_source_count?: number | null
+          audience_synced_at?: string | null
+          custom_audience_id?: string | null
+          id?: boolean | null
+          retarget_ddd_allowlist?: number[] | null
+          updated_at?: string | null
+        }
+        Update: {
+          audience_source_count?: number | null
+          audience_synced_at?: string | null
+          custom_audience_id?: string | null
+          id?: boolean | null
+          retarget_ddd_allowlist?: number[] | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       v_ai_agent_health: {
         Row: {
           avg_latency_ms: number | null
@@ -12083,6 +12475,7 @@ export type Database = {
         }
         Returns: undefined
       }
+      cadence_stage_group: { Args: { p_stage: string }; Returns: string }
       can_access_remote_support_topic: {
         Args: { _topic: string }
         Returns: boolean
@@ -12101,6 +12494,339 @@ export type Database = {
         }[]
       }
       check_send_quota: { Args: { p_instance: string }; Returns: Json }
+      claim_due_cadence: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts_by_channel: Json
+          claim_attempts: number
+          claim_token: string | null
+          claimed_at: string | null
+          consultant_id: string | null
+          created_at: string
+          customer_id: string
+          id: string
+          journey_started_at: string | null
+          journey_version: number
+          last_action_at: string | null
+          last_effect_id: string | null
+          last_response_at: string | null
+          lease_expires_at: string | null
+          next_action_at: string | null
+          paused_reason: string | null
+          paused_until: string | null
+          retarget_enabled: boolean
+          stage: Database["public"]["Enums"]["cadence_stage"]
+          stage_entered_at: string | null
+          stage_sequence: number
+          temperature: string
+          timezone: string
+          updated_at: string
+          won_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "lead_cadence_state"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_due_daily_reheat: {
+        Args: { p_cycle_date: string; p_limit?: number }
+        Returns: {
+          claim_attempts: number
+          claim_token: string | null
+          claimed_at: string | null
+          consultant_id: string | null
+          created_at: string
+          customer_id: string
+          cycle_date: string
+          id: string
+          lease_expires_at: string | null
+          next_action_at: string
+          planned_actions: Json
+          queue: string
+          run_id: string | null
+          skip_reason: string | null
+          status: string
+          step: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "daily_reheat_queue"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_due_followups: {
+        Args: { p_limit?: number }
+        Returns: {
+          address_city: string | null
+          address_complement: string | null
+          address_neighborhood: string | null
+          address_number: string | null
+          address_state: string | null
+          address_street: string | null
+          ai_followups_count: number
+          ai_last_rescue_at: string | null
+          ai_rescue_count: number
+          andamento_igreen: string | null
+          assigned_consultant_id: string | null
+          assigned_human_id: string | null
+          assinatura_cliente: string | null
+          assinatura_cliente_status: string | null
+          assinatura_igreen: string | null
+          assinatura_igreen_status: string | null
+          attendance_auto_close_at: string | null
+          attendance_auto_close_source: string | null
+          attendance_ended_at: string | null
+          attendance_rating: number | null
+          attendance_rating_at: string | null
+          attendance_rating_requested_at: string | null
+          bill_base64: string | null
+          bill_data_confirmation_by: string | null
+          bill_data_confirmed_at: string | null
+          bill_holder_name: string | null
+          bill_message_id: string | null
+          bill_owner_relationship: string | null
+          bill_requested_at: string | null
+          bot_force_enabled: boolean
+          bot_paused: boolean
+          bot_paused_at: string | null
+          bot_paused_reason: string | null
+          bot_paused_until: string | null
+          bot_processing_until: string | null
+          capture_closed_at: string | null
+          capture_closed_by: string | null
+          capture_mode: string
+          capture_started_at: string | null
+          cashback: string | null
+          cashback_igreen: string | null
+          cep: string | null
+          chat_cleared_at: string | null
+          club_created_at: string | null
+          club_dry_run: boolean | null
+          club_error: string | null
+          club_error_kind: string | null
+          club_payload: Json | null
+          club_response: Json | null
+          club_status: string | null
+          club_updated_at: string | null
+          commission_rate: number | null
+          concessionaria: string | null
+          consultant_id: string | null
+          conta_pdf_protegida: boolean | null
+          contaunica: boolean | null
+          contaunica_answered: boolean
+          conversation_step: string | null
+          conversation_summary: string | null
+          conversational_flow_enabled: boolean | null
+          converted_at: string | null
+          cpf: string | null
+          created_at: string
+          ctwa_clid: string | null
+          custom_step_retries: number
+          custom_step_retries_step: string | null
+          customer_origin: string
+          customer_referred_by_consultant_id: string | null
+          customer_referred_by_name: string | null
+          customer_referred_by_phone: string | null
+          data_ativo: string | null
+          data_ativo_igreen: string | null
+          data_cadastro: string | null
+          data_cadastro_igreen: string | null
+          data_injecao_igreen: string | null
+          data_nascimento: string | null
+          data_nascimento_iso: string | null
+          data_validado: string | null
+          data_validado_igreen: string | null
+          debitos_aberto: boolean | null
+          desconto_cliente: number | null
+          detour_count: number
+          devolutiva: string | null
+          distribuidora: string | null
+          do_not_contact: boolean
+          doc_data_confirmation_by: string | null
+          doc_data_confirmed_at: string | null
+          doc_holder_name: string | null
+          document_back_base64: string | null
+          document_back_url: string | null
+          document_front_base64: string | null
+          document_front_url: string | null
+          document_type: string | null
+          document_uploaded: boolean | null
+          document_verify_at: string | null
+          document_verify_status: string | null
+          electricity_bill_photo_url: string | null
+          electricity_bill_value: number | null
+          electricity_boleto_photo_url: string | null
+          email: string | null
+          error_message: string | null
+          facial_confirmed_at: string | null
+          facial_link_sent_at: string | null
+          finalized_at: string | null
+          finalized_by: string | null
+          flow_variant: string | null
+          fluxo_b_state: Json
+          fluxo_b_variant: string
+          followup_count: number
+          followup_hook: string | null
+          fornecedora: string | null
+          historico_completo_at: string | null
+          id: string
+          igreen_account_id: string | null
+          igreen_code: string | null
+          igreen_link: string | null
+          intent_signals: Json | null
+          is_converted: boolean
+          is_sandbox: boolean
+          is_test_lead: boolean
+          last_bot_interaction_at: string | null
+          last_bot_reply_at: string | null
+          last_custom_prompt_at: string | null
+          last_enriched_at: string | null
+          last_followup_at: string | null
+          last_handoff_notified_at: string | null
+          last_inbound_media_at: string | null
+          last_inbound_media_kind: string | null
+          last_inbound_media_message_id: string | null
+          last_inbound_media_mime: string | null
+          last_inbound_media_url: string | null
+          last_new_lead_notified_at: string | null
+          last_otp_dispatch_at: string | null
+          last_otp_dispatch_error: string | null
+          last_partner_notified_at: string | null
+          last_portal_dispatch_at: string | null
+          last_portal_dispatch_error: string | null
+          last_rescue_at: string | null
+          last_rule_fire_at: string | null
+          last_rule_id: string | null
+          last_step_advanced_at: string | null
+          lead_source: Json | null
+          lead_source_detail: Json | null
+          link_assinatura: string | null
+          link_facial: string | null
+          link_facial_sent_at: string | null
+          logindistribuidora: string | null
+          manual_override_reactivate: boolean
+          manual_review_at: string | null
+          manual_review_reason: string | null
+          media_consumo: number | null
+          media_message_id: string | null
+          media_storage: string | null
+          meta_retargeting_synced_at: string | null
+          name: string | null
+          name_ask_sent_at: string | null
+          name_mismatch_acknowledged_at: string | null
+          name_mismatch_flag: boolean
+          name_mismatch_reason: string | null
+          name_source: string | null
+          needs_manual_review: boolean
+          next_followup_at: string | null
+          next_rescue_allowed_at: string | null
+          nivel_licenciado: string | null
+          nome_mae: string | null
+          nome_pai: string | null
+          nudge_sent_at: string | null
+          num_cliente_distribuidora: string | null
+          numero_instalacao: string | null
+          observacao: string | null
+          observacao_igreen: string | null
+          ocr_confianca: number | null
+          ocr_consumo_original: number | null
+          ocr_consumo_rejeitado: boolean | null
+          ocr_conta_attempts: number
+          ocr_doc_attempts: number
+          ocr_done: boolean
+          ocr_review_decided_at: string | null
+          ocr_review_decided_by: string | null
+          ocr_review_pending: string | null
+          ocr_review_started_at: string | null
+          orgao_expedidor: string | null
+          origin_channel: string | null
+          origin_consultant_id: string | null
+          origin_instance_name: string | null
+          origin_recovery: string | null
+          otp_code: string | null
+          otp_pending_replay: boolean
+          otp_received_at: string | null
+          otp_status: string | null
+          otp_status_checked_at: string | null
+          otp_test_phone: string | null
+          otp_validated_at: string | null
+          pain_point: string | null
+          pending_flow_switch: string | null
+          pending_inbound_at: string | null
+          pending_inbound_message_id: string | null
+          pending_snoozed_until: string | null
+          phone_contact_confirmed: boolean
+          phone_landline: string | null
+          phone_whatsapp: string
+          pj_jsonb: Json | null
+          portal_idconsultor_override: number | null
+          portal_last_retry_at: string | null
+          portal_retry_count: number
+          portal_submitted_at: string | null
+          portal2_celular_alt: string | null
+          portal2_contract_link: string | null
+          portal2_correction_attempts: Json
+          portal2_created_at: string | null
+          portal2_error: string | null
+          portal2_error_kind: string | null
+          portal2_extraction_mode: string | null
+          portal2_idcliente: number | null
+          portal2_idsolcontratovalidacao: number | null
+          portal2_ocr_bill_result: Json | null
+          portal2_ocr_doc_result: Json | null
+          portal2_otp_sent_at: string | null
+          portal2_otp_validated_at: string | null
+          portal2_status: string | null
+          pos_venda_approved_at: string | null
+          pos_venda_invalid: boolean
+          pos_venda_manual: boolean
+          pos_venda_pending_stage: string | null
+          pos_venda_reason: string | null
+          pos_venda_stage: string | null
+          possui_placas: boolean | null
+          possui_procurador: boolean | null
+          previous_conversation_step: string | null
+          procurador_jsonb: Json | null
+          qualification_score: number | null
+          referral_detected_at: string | null
+          referral_keyword_matched: string | null
+          referral_partner_id: string | null
+          registered_by_igreen_id: string | null
+          registered_by_name: string | null
+          rescue_attempts: number
+          rg: string | null
+          sales_phase: string | null
+          senha_pdf: string | null
+          senhadistribuidora: string | null
+          signature_summary: Json | null
+          situacao_igreen: string | null
+          source_ad_id: string | null
+          source_campaign_id: string | null
+          source_ctwa_clid: string | null
+          source_referral: Json | null
+          status: string
+          status_financeiro: string | null
+          summary_updated_at: string | null
+          terms_accepted_at: string | null
+          tipo_produto: string
+          tracking_protocol: string | null
+          transferir_titularidade: boolean | null
+          transferir_titularidade_answered: boolean
+          updated_at: string
+          variant_id: string | null
+          welcome_sent_at: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "customers"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       claim_recon_job: {
         Args: never
         Returns: {
@@ -12259,6 +12985,23 @@ export type Database = {
         Args: { _customer_id: string; _message_id: string }
         Returns: undefined
       }
+      enqueue_single_voice_campaign: {
+        Args: {
+          p_audio_clip_id: string
+          p_audio_url: string
+          p_campaign_name: string
+          p_config?: Json
+          p_consultant_id: string
+          p_customer_id: string
+          p_logical_key: string
+          p_name: string
+          p_phone: string
+        }
+        Returns: {
+          campaign_id: string
+          existed: boolean
+        }[]
+      }
       ensure_bot_flow_variant: {
         Args: {
           _consultant_id: string
@@ -12266,6 +13009,10 @@ export type Database = {
           _variant: string
         }
         Returns: string
+      }
+      ensure_qa_media_slots: {
+        Args: { _kinds?: string[]; _qa_id: string }
+        Returns: undefined
       }
       ensure_sale_stage_progress: {
         Args: { p_sale_id: string }
@@ -12286,6 +13033,35 @@ export type Database = {
       filter_dispatched_phones: {
         Args: { p_consultant_id: string; p_phones: string[] }
         Returns: string[]
+      }
+      finish_automation_run: {
+        Args: {
+          p_counters?: Json
+          p_error_code?: string
+          p_run_id: string
+          p_status?: string
+        }
+        Returns: undefined
+      }
+      finish_outbound_effect: {
+        Args: {
+          p_effect_id: string
+          p_error_code?: string
+          p_from_status?: string[]
+          p_provider_message_id?: string
+          p_provider_request_id?: string
+          p_provider_status?: string
+          p_to_status: string
+        }
+        Returns: boolean
+      }
+      finish_proactive_touch: {
+        Args: {
+          p_claim_token: string
+          p_outcome?: string
+          p_reservation_id: number
+        }
+        Returns: boolean
       }
       flow_engine_housekeeping: { Args: never; Returns: Json }
       fork_ad_template: { Args: { _origin_id: string }; Returns: string }
@@ -12464,6 +13240,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_journey_won: {
+        Args: { p_customer_id: string; p_source?: string }
+        Returns: boolean
+      }
       match_knowledge: {
         Args: {
           p_consultant_id: string
@@ -12509,6 +13289,10 @@ export type Database = {
         Args: { _year?: number }
         Returns: number
       }
+      on_journey_inbound: {
+        Args: { p_customer_id: string }
+        Returns: undefined
+      }
       pause_sending_now: {
         Args: { p_hours?: number; p_instance: string }
         Returns: string
@@ -12537,7 +13321,20 @@ export type Database = {
         }[]
       }
       recompute_pos_venda_stages: { Args: never; Returns: number }
+      reconcile_stale_outbound_effects: {
+        Args: { p_reserved_minutes?: number; p_sending_minutes?: number }
+        Returns: {
+          released_count: number
+          unknown_count: number
+        }[]
+      }
+      reconcile_stale_reactivation_pending: {
+        Args: { p_stale_minutes?: number }
+        Returns: number
+      }
       reconcile_stuck_bulk_targets: { Args: never; Returns: number }
+      reconcile_stuck_cadence_claims: { Args: never; Returns: number }
+      reconcile_stuck_daily_reheat_claims: { Args: never; Returns: number }
       reconcile_stuck_scheduled_messages: { Args: never; Returns: number }
       record_risk_signal: {
         Args: {
@@ -12546,6 +13343,15 @@ export type Database = {
           p_severity?: string
           p_signal_type: string
           p_ttl_hours?: number
+        }
+        Returns: string
+      }
+      refresh_objection_shortcut: {
+        Args: {
+          _flow_id: string
+          _intent_name: string
+          _text_response: string
+          _triggers: string[]
         }
         Returns: string
       }
@@ -12564,6 +13370,10 @@ export type Database = {
         Returns: undefined
       }
       register_send: { Args: { p_instance: string }; Returns: undefined }
+      release_cadence_claim: {
+        Args: { p_claim_token: string; p_id: string }
+        Returns: boolean
+      }
       release_customer_lock: {
         Args: { p_customer: string; p_token: string }
         Returns: boolean
@@ -12590,6 +13400,41 @@ export type Database = {
           p_slot_key?: string
         }
         Returns: string
+      }
+      reserve_outbound_effect: {
+        Args: {
+          p_action_key?: string
+          p_channel: string
+          p_claim_id?: string
+          p_consultant_id?: string
+          p_customer_id?: string
+          p_destination_hash?: string
+          p_engine_key: string
+          p_idempotency_key: string
+          p_journey_id?: string
+          p_payload_hash?: string
+          p_provider?: string
+          p_run_id?: string
+          p_stage?: string
+          p_stage_sequence?: number
+          p_template_key?: string
+          p_template_version?: string
+        }
+        Returns: {
+          acquired: boolean
+          current_status: string
+          effect_id: string
+        }[]
+      }
+      reserve_proactive_touch: {
+        Args: { p_customer_id: string; p_meta?: Json; p_source_key: string }
+        Returns: {
+          allowed: boolean
+          blocked_by: string
+          claim_token: string
+          reason: string
+          reservation_id: number
+        }[]
       }
       reset_all_consultant_conversations: {
         Args: { _consultant_id: string }
@@ -12641,6 +13486,16 @@ export type Database = {
           _intent_name: string
           _text_response: string
           _triggers: string[]
+        }
+        Returns: string
+      }
+      start_automation_run: {
+        Args: {
+          p_auth_reason?: string
+          p_engine_key: string
+          p_mode?: string
+          p_trigger_kind?: string
+          p_worker_id?: string
         }
         Returns: string
       }
