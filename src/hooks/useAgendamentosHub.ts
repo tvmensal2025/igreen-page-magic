@@ -15,6 +15,7 @@ import {
   type BotFollowupRow,
   type BulkCampaignRow,
   type CadenceScheduleRow,
+  type CadenceStageInfo,
   type ReactivationSettingsSummary,
   type ScheduledMessageRow,
   type VoiceCampaignRow,
