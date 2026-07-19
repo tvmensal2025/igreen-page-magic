@@ -212,6 +212,7 @@ export function useAgendamentosHub(consultantId: string) {
     botFollowups,
     bulk: bulkCampaigns,
     voice: voiceCampaigns,
+    cadence,
   });
 
   const pendingManual = manual.filter((m) => m.status === "pending");
