@@ -2,8 +2,13 @@
 //
 // Nada que roda no navegador é secreto de verdade. A segurança real está no
 // backend (Supabase RLS, caller-auth, verify_jwt). Aqui só dificultamos para
-// curioso leigo: trava F12, clique direito, atalhos de DevTools, e silencia
-// o console. O super admin controla via flag `devtools_blocked` (app_settings).
+// curioso leigo: trava F12, clique direito e atalhos de DevTools.
+//
+// NÃO bloqueia: gravação de tela, PrintScreen, getDisplayMedia, Ctrl/Cmd+S,
+// Ctrl/Cmd+Shift+S (screenshot) — isso precisa continuar livre.
+//
+// O super admin controla via flag `devtools_blocked` (app_settings).
+// Só aplica bloqueio quando a flag está explicitamente true.
 //
 // Em ambientes de desenvolvimento (localhost, lovable.app, IP direto, iframe)
 // NUNCA trava — independente da flag no banco.
@@ -26,12 +31,20 @@ function isAmbienteDev(): boolean {
 }
 
 function aplicarBloqueios() {
-  // Bloqueia atalhos de teclado (F12, Ctrl+Shift+I/J/C, Ctrl+U, Ctrl+S)
+  // Só atalhos de inspecionar / ver código-fonte — não captura, save nem print.
   window.addEventListener("keydown", (e) => {
     const key = (e.key || "").toLowerCase();
-    if (key === "f12") { e.preventDefault(); return; }
-    if ((e.ctrlKey || e.metaKey) && (key === "u" || key === "s")) { e.preventDefault(); return; }
-    if ((e.ctrlKey || e.metaKey) && (e.shiftKey || e.altKey) && (key === "i" || key === "j" || key === "c")) {
+    if (key === "f12") {
+      e.preventDefault();
+      return;
+    }
+    // Ctrl/Cmd+U = ver código-fonte
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && key === "u") {
+      e.preventDefault();
+      return;
+    }
+    // Ctrl/Cmd+Shift+I/J/C = DevTools / console / inspecionar elemento
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && (key === "i" || key === "j" || key === "c")) {
       e.preventDefault();
     }
   }, { capture: true });
@@ -51,7 +64,7 @@ let jaVerificou = false;
 
 /**
  * Chame uma vez no boot do app (main.tsx).
- * Busca a flag do banco e aplica bloqueios se `devtools_blocked = true`.
+ * Busca a flag do banco e aplica bloqueios só se `devtools_blocked = true`.
  */
 export async function ativarHardening() {
   if (jaVerificou) return;
@@ -60,17 +73,18 @@ export async function ativarHardening() {
   // Ambientes de dev: nunca bloqueia.
   if (isAmbienteDev()) return;
 
-  // Busca a flag. Se falhar (sem rede, RLS, etc.), bloqueia por precaução.
-  let deveBloqueiar = true;
+  // Só bloqueia se a flag estiver explicitamente ligada (botão ATIVO).
+  // Fail-open: rede/RPC falhou → não trava (gravação de tela e uso normal seguem).
+  let deveBloqueiar = false;
   try {
     // RPC dedicada: retorna SOMENTE o boolean, sem expor outros campos de
     // app_settings (super_admin_phone, etc.) para usuários anônimos.
     const { data, error } = await supabase.rpc("get_devtools_blocked");
-    if (!error && data === false) {
-      deveBloqueiar = false;
+    if (!error && data === true) {
+      deveBloqueiar = true;
     }
   } catch {
-    // fail-closed: se não conseguiu ler, bloqueia.
+    // fail-open
   }
 
   if (deveBloqueiar) {

@@ -116,7 +116,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
         channel: "voice",
         title: "Ligação Sofia",
         when: "D+1 · 15h–17h · só se ainda silêncio",
-        hint: "Áudio Sofia (ElevenLabs → Velip). Sem clip, a ligação não sai.",
+        hint: "Áudio Sofia no Multicanal (publish → voice_audio_clip_id). Sem clip, a ligação não sai.",
         templateKey: "b4_call_1",
         textsFromMultichannel: true,
         onlyIfSilent: true,

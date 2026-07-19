@@ -105,6 +105,7 @@ export function goalFromStepRow(stepRow: any, customer: any, representante?: str
   if (rawMsg) {
     const rendered = renderTemplateVars(rawMsg, {
       name: customer?.name,
+      name_source: customer?.name_source,
       phone: customer?.phone_whatsapp,
       cpf: customer?.cpf,
       representante: representante ?? undefined,

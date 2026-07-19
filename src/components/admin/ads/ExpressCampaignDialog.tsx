@@ -100,7 +100,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
       const s = await fetchExpressSuggestions({ consultantId, cities: names });
       setSuggestions(s);
       if (!selectedImage && s.images.length) setSelectedImage(s.images[0]);
-      setBudget(Math.max(10, Math.round(s.defaults.budget_cents / 100)));
+      setBudget(Math.max(5.17, Math.round((s.defaults.budget_cents / 100) * 100) / 100));
       setDays(s.defaults.duration_days ?? 7);
     } catch (e: any) {
       toast({ title: "Falha ao carregar sugestões", description: e.message, variant: "destructive" });
@@ -137,7 +137,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
     if (cityNames.length === 0) return "Escolha pelo menos 1 cidade ou endereço.";
     if (!selectedImage) return "Selecione uma imagem.";
     if (!suggestions?.copies[selectedCopyIdx]) return "Aguardando geração da copy...";
-    if (budget < 10) return "Orçamento mínimo R$ 10/dia.";
+    if (budget < 5.17) return "Orçamento mínimo R$ 5,17/dia.";
     return null;
   }
 
@@ -325,8 +325,8 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
           <section className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label className="flex items-center gap-1.5 text-sm"><DollarSign className="w-4 h-4 text-primary" /> 4. Valor por dia (R$)</Label>
-              <Input type="number" min={10} max={500} value={budget}
-                onChange={(e) => setBudget(Math.max(10, Number(e.target.value) || 10))} className="h-9" />
+              <Input type="number" min={5.17} max={500} step={0.01} value={budget}
+                onChange={(e) => setBudget(Math.max(5.17, Number(e.target.value) || 5.17))} className="h-9" />
               <p className="text-[11px] text-muted-foreground">A sugestão considera seu histórico; ajuste conforme a verba disponível.</p>
               {defaults && defaults.budget_cents !== 1500 && (
                 <p className="text-[11px] text-muted-foreground">Média dos seus winners: R$ {(defaults.budget_cents / 100).toFixed(0)}</p>

@@ -20,6 +20,7 @@ import {
 } from "../_shared/campaign-tracking.ts";
 import { normalizeRodizioPartnerIds } from "./rodizio-pool.ts";
 import { mergePlatformRetargetDdds, resolveRetargetDdds } from "../_shared/city-to-ddd.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 async function safeNotifyConsultant(
   consultantId: string,
@@ -92,6 +93,8 @@ interface Body {
   // Lista ORDENADA de ids de referral_partners participantes do rodízio.
   // A ordem define a posição na fila circular (0, 1, 2, ...).
   rodizio_partner_ids?: string[];
+  /** Somente service_role: publica em nome deste consultor (automação interna). */
+  consultant_id?: string;
 }
 
 function buildInitialMessage(raw: string | undefined, distribuidora?: string): string {
@@ -151,11 +154,25 @@ Deno.serve(async (req) => {
 
   let consultantIdForAlert: string | null = null;
   try {
-    const auth = await authConsultant(req);
-    if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    consultantIdForAlert = auth.id;
-
     const body = await req.json() as Body;
+    let auth = await authConsultant(req);
+    if (!auth && isServiceRoleAuth(req)) {
+      const cid = String(body.consultant_id || "").trim();
+      if (!cid) {
+        return new Response(JSON.stringify({ error: "consultant_id obrigatório com service_role" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      auth = { id: cid, supabase: adminClient() };
+    }
+    if (!auth) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    consultantIdForAlert = auth.id;
 
     // ─── Template (galeria pública) ──────────────────────────────────────
     // Se vier template_id, carrega e usa fotos/copy/segmentação/orçamento do

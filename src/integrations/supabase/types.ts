@@ -2452,6 +2452,7 @@ export type Database = {
       }
       cadence_stage_config: {
         Row: {
+          buttons: Json | null
           consultant_id: string | null
           created_at: string
           delay_hours: number
@@ -2463,6 +2464,8 @@ export type Database = {
           message_text: string | null
           personalize_name: boolean
           stage: string
+          template_updated_at: string | null
+          template_version: number | null
           updated_at: string
           velip_audio_id: string | null
           voice_audio_clip_id: string | null
@@ -2471,6 +2474,7 @@ export type Database = {
           window_start_hour: number | null
         }
         Insert: {
+          buttons?: Json | null
           consultant_id?: string | null
           created_at?: string
           delay_hours?: number
@@ -2482,6 +2486,8 @@ export type Database = {
           message_text?: string | null
           personalize_name?: boolean
           stage: string
+          template_updated_at?: string | null
+          template_version?: number | null
           updated_at?: string
           velip_audio_id?: string | null
           voice_audio_clip_id?: string | null
@@ -2490,6 +2496,7 @@ export type Database = {
           window_start_hour?: number | null
         }
         Update: {
+          buttons?: Json | null
           consultant_id?: string | null
           created_at?: string
           delay_hours?: number
@@ -2501,6 +2508,8 @@ export type Database = {
           message_text?: string | null
           personalize_name?: boolean
           stage?: string
+          template_updated_at?: string | null
+          template_version?: number | null
           updated_at?: string
           velip_audio_id?: string | null
           voice_audio_clip_id?: string | null

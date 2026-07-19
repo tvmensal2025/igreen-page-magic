@@ -14,6 +14,7 @@ import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 
 
 const corsHeaders = {
@@ -48,11 +49,18 @@ type Body = SingleBody | BatchBody;
 
 function renderVars(template: string, customer: any, consultantName: string): string {
   if (!template) return "";
-  const firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
+  const firstName = safeFirstNameForAddress(customer.name, customer.name_source);
   const valor = customer.electricity_bill_value
     ? Number(customer.electricity_bill_value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : "";
-  return template
+  let out = template;
+  if (!firstName) {
+    out = out
+      .replace(/\{\{\s*nome\s*\}\}\s*,\s*/gi, "")
+      .replace(/,\s*\{\{\s*nome\s*\}\}/gi, "")
+      .replace(/\s+\{\{\s*nome\s*\}\}/gi, "");
+  }
+  return out
     .replaceAll("{{nome}}", firstName)
     .replaceAll("{{valor_conta}}", valor)
     .replaceAll("{{representante}}", consultantName)

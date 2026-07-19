@@ -9,6 +9,7 @@ import { isLeadEligible } from "../_shared/origin-guard.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,7 +151,7 @@ Deno.serve(async (req) => {
             supabase,
             customer.consultant_id,
             tipKey,
-            { nome: (customer.name || "").split(" ")[0] || "" },
+            { nome: safeFirstNameForAddress(customer.name, (customer as any).name_source) },
             tipFallback,
           );
           const tip = tipResolved.text || tipFallback;
@@ -215,6 +216,7 @@ Deno.serve(async (req) => {
           {
             id: customer.id,
             name: customer.name,
+            name_source: (customer as any).name_source,
             phone_whatsapp: customer.phone_whatsapp,
             conversation_step: customer.conversation_step,
           },

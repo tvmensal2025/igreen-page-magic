@@ -1,0 +1,38 @@
+---
+description: Atribuição de campanha/rodízio — UUID e sinais Meta, não texto do WhatsApp
+alwaysApply: true
+---
+
+# Campanha / rodízio — identidade por UUID (não por texto do Zap)
+
+## Fonte da verdade
+
+- Cada campanha tem `facebook_campaigns.id` (**UUID**). Duas campanhas **nunca** compartilham o mesmo UUID (PK).
+- O rodízio usa **somente** esse UUID: `customers.source_campaign_id` → `rodizio_pools.campaign_id`.
+- Nome da campanha, cidade, apelido e palavra-chave **não** escolhem o parceiro.
+
+## O que resolve a campanha (ordem)
+
+1. Sinais fortes da Meta (preferidos): **AD ID** → `fb_campaign_id` → **ctwa_clid**
+2. Fallbacks de texto (só se o Meta não trouxe sinal): protocolo legado na mensagem → **frase exata** = `initial_message`
+3. Depois de gravar `source_campaign_id`, o rodízio **ignora** o texto das mensagens seguintes
+
+## Protocolo `2026-####`
+
+- Existe **só no banco** (relatório/admin). **Não** deve aparecer na mensagem do WhatsApp.
+- Lead **não** digita protocolo.
+
+## Mensagem do WhatsApp (CTWA)
+
+- Pode ser frase limpa e humana (padrão desejado).
+- Com clique CTWA bem formado (AD ID / ctwa_clid), **mudar o texto não muda o rodízio** — a campanha já veio pelo sinal Meta → UUID.
+- Sem sinal Meta, o sistema ainda pode usar **match exato** de `initial_message` como fallback. Por isso:
+  - Evite a **mesma** frase inicial em duas campanhas ativas do mesmo consultor.
+  - Não dependa de palavra-chave solta (“Uberlândia”) para atribuição.
+
+## Regras para o agente
+
+- Não voltar a appendar “📋 Protocolo” na mensagem WA.
+- Não implementar matching de campanha por keyword/cidade no texto.
+- Ao mexer em webhooks/rodízio, preservar prioridade: Meta ID → UUID → pool; texto só como fallback documentado.
+- UUID é confiável e único; não “gerar UUID parecido” nem reusar id de campanha.

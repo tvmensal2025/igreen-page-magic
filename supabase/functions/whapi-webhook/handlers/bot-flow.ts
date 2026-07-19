@@ -8,6 +8,10 @@
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
 import { discountRates } from "../../_shared/discount-rates.ts";
 import {
+  isUsableCustomerName,
+  safeFirstNameForAddress,
+} from "../../_shared/customer-display-name.ts";
+import {
   extractQuestionTail,
   resolveStepReentry,
 } from "../../_shared/bot/step-goal.ts";
@@ -413,16 +417,22 @@ function normalizeLeadName(rawText: string | null | undefined): string | null {
     }
     return null;
   }
-  return raw
+  const formatted = raw
     .toLowerCase()
     .split(/\s+/)
     .map((w) => (w.length > 2 ? w[0].toUpperCase() + w.slice(1) : w))
     .join(" ");
+  if (!isUsableCustomerName(formatted)) {
+    console.log(`[name-capture] ⏭️ rejeitado (unusable): "${formatted.slice(0, 40)}"`);
+    return null;
+  }
+  return formatted;
 }
 
 function isBogusCapturedName(name: string | null | undefined): boolean {
   if (!name) return false;
-  return NON_NAME_RESPONSES.test(String(name).trim());
+  if (NON_NAME_RESPONSES.test(String(name).trim())) return true;
+  return !isUsableCustomerName(name);
 }
 
 function buildNotReadyReply(nomeRepresentante: string): string {
@@ -770,7 +780,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const kb = await resolveKnowledgeAnswer(supabase, {
           question: questionText,
           consultantId: customer.consultant_id,
-          leadName: String((customer as any).name || "").trim().split(/\s+/)[0] || "",
+          leadName: safeFirstNameForAddress((customer as any).name, (customer as any).name_source),
           currentStepLabel: stepNow || "Cadastro",
         });
         if (kb.text) {
@@ -848,7 +858,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         await supabase.from("customers").update({ detour_count: 0 }).eq("id", customer.id);
       } catch (_) { /* noop */ }
       // Responde com incentivo e reapresenta botões (não fica silencioso)
-      const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+      const firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
       const encourageText = firstName
         ? `Ótimo, ${firstName}! Vamos lá então 😊`
         : `Ótimo! Vamos lá então 😊`;
@@ -892,6 +902,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           {
             id: customer.id,
             name: (customer as any).name,
+            name_source: (customer as any).name_source,
             phone_whatsapp: (customer as any).phone_whatsapp,
             conversation_step: stepNow,
           },
@@ -1385,7 +1396,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                   const { notifyHandoff } = await import("../../_shared/notify-consultant.ts");
                   await notifyHandoff(supabase, customer, `Limite de ${maxQ} perguntas IA atingido no passo "${stepKey}"`).catch(() => {});
                 } catch (_) { /* best-effort */ }
-                const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+                const firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
                 const msg = firstName
                   ? `${firstName}, vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌`
                   : "Vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌";
@@ -1457,7 +1468,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // persistente, roteamento (clarify/escalate/continue) e logging
           // unificado de IA neste passo também.
           const { runOrchestrator } = await import("../../_shared/ai-orchestrator.ts");
-          const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+          const firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
           const orch = await runOrchestrator({
             supabase,
             customer,
@@ -1523,7 +1534,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // GUARD ABSOLUTO: passos de dúvida NUNCA enviam áudio/vídeo/imagem.
           // Se a IA falhou, manda texto seguro e retorna — não cai no envio de mídia.
           try {
-            const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+            const firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
             const fallbackText = firstName
               ? `${firstName}, pode mandar sua dúvida que eu te explico tudo agora 😊`
               : "Pode mandar sua dúvida, que eu explico tudo agora 😊";
@@ -1572,7 +1583,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (_before !== medias.length) console.log(`[dispatch:${stepKey}] variant=B: removed ${_before - medias.length} audio media(s)`);
       }
 
-      const firstName = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+      const firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
       // Normaliza extraVars: callers passam chaves como "{conta}" / "{{conta}}".
       // Convertemos para chaves nuas ("conta") para o helper compartilhado.
       const normalizedExtras: Record<string, string> = {};
@@ -1585,6 +1596,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const applyVars = (s: string) =>
         renderTemplateVars(s, {
           name: (customer as any).name || "",
+          name_source: (customer as any).name_source,
           phone: (customer as any).phone_whatsapp || "",
           representante: nomeRepresentante || "",
           valor_conta: (customer as any).electricity_bill_value,
@@ -1866,7 +1878,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // F: texto entra como item ordenável junto com mídias
     let baseText = qa.text_response
-      ? renderTemplateVars(String(qa.text_response), { name: customer.name || "", representante: nomeRepresentante || "" })
+      ? renderTemplateVars(String(qa.text_response), { name: customer.name || "", name_source: (customer as any).name_source, representante: nomeRepresentante || "" })
       : "";
     const nudgeStep = qa.is_closing ? "aguardando_conta" : (step || "qualificacao");
     if (baseText) {
@@ -2191,6 +2203,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               try {
                 await sendText(remoteJid, renderTemplateVars(String(openingText), {
                   name: customer.name || "",
+                  name_source: (customer as any).name_source,
                   representante: nomeRepresentante || "",
                 }));
                 await supabase.from("conversations").insert({
@@ -2587,7 +2600,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     step = "aguardando_conta";
     (customer as any).conversation_step = "aguardando_conta";
     updates.conversation_step = "aguardando_conta";
-    const firstNm = ((customer as any).name || "").split(/\s+/)[0];
+    const firstNm = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
     const v = firstNm ? `${firstNm}, ` : "";
     const reply = `Show, ${v.trim().replace(/,$/, "")}! 📸 Pra eu já calcular sua economia exata e iniciar o cadastro, me envia uma *foto ou PDF da sua conta de luz* (qualquer página serve).`;
     return { reply, updates };
@@ -2597,7 +2610,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // não podem cair na IA e repetir áudio/vídeo. Se vier valor junto, já avança direto.
   if (!isFile && !isButton && step === "checkin_pos_video" && messageText) {
     const txt = messageText.trim();
-    const firstNm = ((customer as any).name || "").split(/\s+/)[0];
+    const firstNm = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
     const v = firstNm ? `${firstNm}, ` : "";
     const billValue = extractMoneyFromText(txt) ?? 0;
     const positive = isPositiveCheckinIntent(txt);
@@ -2785,7 +2798,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               try {
                 await sleepForMedia("video", Number((clubMedia as any).duration_sec || 0) || null);
               } catch (_) { /* best-effort */ }
-              const firstNm = ((customer as any).name || "").split(/\s+/)[0];
+              const firstNm = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
               const duvidaMsg = firstNm
                 ? `${firstNm}, ficou alguma dúvida sobre o Conexão Club ou sobre como funciona? Pode mandar aqui que eu te explico 😊\n\nSe estiver tudo certo, é só me dizer *"pode seguir"* que a gente já avança pro cadastro.`
                 : `Ficou alguma dúvida sobre o Conexão Club ou sobre como funciona? Pode mandar aqui que eu te explico 😊\n\nSe estiver tudo certo, é só me dizer *"pode seguir"* que a gente já avança pro cadastro.`;
@@ -2868,7 +2881,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     if (canCheckPostpone && MEDIA_WAIT_RX.test(step)) {
       const intent = detectPostponeIntent(messageText);
       if (intent) {
-        const firstName = ((customer as any)?.name || "").split(/\s+/)[0] || "";
+        const firstName = safeFirstNameForAddress((customer as any)?.name, (customer as any)?.name_source);
         const waitingDoc = step.startsWith("aguardando_doc");
         const reply = await buildPostponeReplyResolved(supabase, (customer as any)?.consultant_id, { firstName, when: intent.when, waitingDoc });
         console.log(`[postpone] customer=${customer.id} step=${step} when="${intent.when}" until=${intent.pauseUntil}`);
@@ -3103,7 +3116,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 const _fmtBRL = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 const _valor = Number((customer as any).electricity_bill_value || 0);
                 const _rates = discountRates((customer as any)?.flow_variant);
-                const _first = String((customer as any).name || "").trim().split(/\s+/)[0] || "";
+                const _first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
                 const _vars: Record<string, string> = {
                   "{{nome}}": _first, "{nome}": _first,
                   "{{representante}}": nomeRepresentante || "", "{representante}": nomeRepresentante || "",
@@ -3416,6 +3429,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                     {
                       id: customer.id,
                       name: (customer as any).name,
+                      name_source: (customer as any).name_source,
                       phone_whatsapp: (customer as any).phone_whatsapp || phone,
                       conversation_step: stepKeyForRetry,
                     },
@@ -3656,7 +3670,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "welcome": {
       // Vendedor humano: saudação curta sem botões. O áudio de abertura (slot)
       // já tocou. A partir daqui a IA assume a conversa em "qualificacao".
-      const first = ((customer as any).name || "").split(/\s+/)[0];
+      const first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
       const saud = first ? `Oi, ${first}! ` : "Oi! ";
       reply = `${saud}Tudo bem? Aqui é da equipe da *${nomeRepresentante}* 💚\n\nMe conta rapidinho: você paga em torno de quanto na sua conta de luz hoje?`;
       updates.conversation_step = "qualificacao";
@@ -3719,7 +3733,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     // Se for dúvida/negativa, deixa a IA responder (mesma rota do qualificacao).
     case "checkin_pos_video": {
       const txt = String(messageText || "").trim().toLowerCase();
-      const first = ((customer as any).name || "").split(/\s+/)[0];
+      const first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
       const v = first ? `${first}, ` : "";
       const RE_AFFIRM = /^(sim|ss+|s|deu|entendi|entendido|claro|ok|okay|beleza|blz|certo|positivo|isso|🆗|👌|👍|✅|com\s*certeza|perfeito|bacana|massa|legal|joia|tranquilo)\b/i;
       const RE_NEG = /^(n[aã]o|nn|n|nada|n[aã]o\s*entendi|n[aã]o\s*muito|mais\s*ou\s*menos|m[ãa]is\s*menos|confuso)\b/i;
@@ -3758,7 +3772,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // Legado: leads existentes presos no menu de botões. Migra direto pra IA conversacional.
       const resp = isButton ? buttonId : (messageText || "").toLowerCase().trim();
       if (resp === "cadastrar_agora" || resp?.includes("cadastr") || resp?.includes("participar")) {
-        const first = ((customer as any).name || "").split(/\s+/)[0];
+        const first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
         const v = first ? `${first}, ` : "";
         reply = `Boa! ${v}pra eu travar a sua economia exata, me manda uma *foto* (ou PDF) da sua última conta de luz aqui no chat 📸`;
         updates.conversation_step = "aguardando_conta";
@@ -3768,7 +3782,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.conversation_step = "aguardando_humano";
       } else {
         // Qualquer outra coisa → vira conversa livre, IA assume.
-        const first = ((customer as any).name || "").split(/\s+/)[0];
+        const first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
         const v = first ? `${first}, ` : "";
         reply = `${v}me conta: quanto vem em média na sua conta de luz? Assim eu já te calculo quanto dá pra economizar 💡`;
         updates.conversation_step = "qualificacao";
@@ -3810,7 +3824,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // "Como funciona" depois do customer já estar em aguardando_conta caíam no
       // anti-dup silencioso e o lead via mensagem fantasma.
       if (isButton) {
-        const _firstName = ((customer as any).name || "").split(/\s+/)[0];
+        const _firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
         const _v = _firstName ? `${_firstName}, ` : "";
         reply = `${_v}me manda uma *foto* (ou PDF) da sua conta de luz, por favor 📸\n\nSe estiver sem a conta agora, é só me dizer o valor médio que você paga.`;
         break;
@@ -3830,7 +3844,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       } catch (_) { /* noop */ }
       if (!isFile) {
         const txt = String(messageText || "").trim();
-        const first = ((customer as any).name || "").split(/\s+/)[0];
+        const first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
         const v = first ? `${first}, ` : "";
 
         // Lead recusa mandar a foto → aceita seguir só com o valor.
@@ -4141,7 +4155,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           }
           if (!updates.electricity_bill_value || updates.electricity_bill_value < 30) {
             updates.conversation_step = "editing_conta_valor";
-            reply = `📋 Já peguei seus dados, ${String(finalName).split(" ")[0]}! Só me confirma uma coisa:\n\n💰 Qual o *valor médio* da sua conta de luz? (ex: 350,00)`;
+            reply = `📋 Já peguei seus dados, ${safeFirstNameForAddress(finalName, "ocr_conta")}! Só me confirma uma coisa:\n\n💰 Qual o *valor médio* da sua conta de luz? (ex: 350,00)`;
             break;
           }
 
@@ -4615,6 +4629,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                   const rawText = (nextCustom.message_text || "").trim();
                   const finalText = renderTemplateVars(rawText || FINAL_FALLBACK_TEXT, {
                     name: customer.name || "",
+                    name_source: (customer as any).name_source,
                     representante: nomeRepresentante || "",
                   });
                   await sendOptions(remoteJid, finalText, [
@@ -6472,7 +6487,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.facial_confirmed_at = new Date().toISOString();
         updates.conversation_step = "cadastro_em_analise";
         updates.status = "cadastro_concluido";
-        const _firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
+        const _firstName = safeFirstNameForAddress(customer.name, (customer as any).name_source);
         reply = `🎉 *Validação facial confirmada!*\n\nPrimeiro, parabéns ${_firstName ? _firstName + " " : ""}por dar esse passo rumo à economia! 💚\n\nSeu cadastro foi enviado para a equipe da *iGreen Energy* e agora entra na fila de análise.\n\n⏳ A aprovação costuma sair em *24 a 48 horas úteis*.\n\nAssim que estiver aprovado eu te aviso por aqui com os próximos passos. Pode relaxar — daqui em diante é com a gente. ☀️`;
       } else if (link) {
         reply = "📸 *Última etapa: Validação Facial*\n\n👉 Abra este link no seu celular e siga as instruções:\n" + `${link}\n\n` + "Quando terminar a selfie, me responda *PRONTO* aqui que finalizamos seu cadastro! ✅";
@@ -6520,7 +6535,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
       // Lead já concluiu a selfie. Aguardando aprovação da iGreen (24-48h).
       // Não voltar para aguardando_conta nem reiniciar fluxo. Só responder educadamente.
-      const _firstName = String(customer.name || "").trim().split(/\s+/)[0] || "";
+      const _firstName = safeFirstNameForAddress(customer.name, (customer as any).name_source);
       reply = `Oi${_firstName ? " " + _firstName : ""}! 💚 Seu cadastro ainda está em análise pela equipe da *iGreen Energy*.\n\n⏳ O prazo de aprovação é de *24 a 48 horas úteis* — assim que sair, eu te aviso aqui mesmo.\n\nSe precisar de qualquer coisa enquanto isso, é só chamar! ☀️`;
       break;
     }
@@ -6544,6 +6559,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           if (txt) {
           parabens = renderTemplateVars(txt, {
             name: customer.name || "",
+            name_source: (customer as any).name_source,
             representante: nomeRepresentante || "",
           });
           }
@@ -6806,8 +6822,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (isSofiaMulticanalCustomer({ ...customer, ...updates })) {
           try {
             await dispatchStepFromFlow("a10_portal_otp_facial", {
-              "{nome}": String(merged.name || "").split(/\s+/)[0] || "Cliente",
-              "{{nome}}": String(merged.name || "").split(/\s+/)[0] || "Cliente",
+              "{nome}": safeFirstNameForAddress(merged.name, (merged as any).name_source),
+              "{{nome}}": safeFirstNameForAddress(merged.name, (merged as any).name_source),
             });
             (updates as any).__inline_sent = true;
           } catch (_) { /* best-effort */ }
@@ -6844,7 +6860,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
       if (isSofiaMulticanalCustomer({ ...customer, ...updates })) {
         try {
-          const _first = String(merged.name || "").split(/\s+/)[0] || "Cliente";
+          const _first = safeFirstNameForAddress(merged.name, (merged as any).name_source);
           const ok = await dispatchStepFromFlow("a10_portal_otp_facial", {
             "{nome}": _first,
             "{{nome}}": _first,

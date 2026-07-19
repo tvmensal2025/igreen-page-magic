@@ -10,7 +10,7 @@ import type { QualityResult } from "@/lib/adQualityScore";
 import type { AdImageLibraryItem } from "@/services/adImageLibrary";
 import { DISTRIBUIDORAS_PRESETS } from "@/data/distribuidoraPresets";
 import {
-  EMPTY_FILES, ALL_PLACEMENTS, buildDefaultInitialMessage,
+  EMPTY_FILES, ALL_PLACEMENTS, buildDefaultInitialMessage, ADS_MIN_DAILY_BUDGET_BRL,
   type AdFormat, type FilesByFormat,
 } from "../wizardHelpers";
 
@@ -111,6 +111,8 @@ export interface WizardState {
   savingTemplate: boolean;
   // Prefixo livre no nome da campanha (aparece no Meta Ads na frente do padrão).
   namePrefix: string;
+  /** Remarketing: sistema deriva DDDs das cidades e grava na allowlist de audience. */
+  isRemarketing: boolean;
 }
 
 
@@ -136,10 +138,11 @@ const INITIAL_STATE: WizardState = {
   warmedCount: 0,
   warming: false,
   creativeMode: "photo",
-  format: "square",
+  // Padrão: Stories/Reels 1080×1920 — consultor só escolhe a imagem na biblioteca.
+  format: "story",
   filesByFormat: EMPTY_FILES,
   pickedLibrary: [],
-  photoTab: "upload",
+  photoTab: "library",
   aiResizingIdx: null,
   videoFile: null,
   videoUrl: null,
@@ -158,8 +161,9 @@ const INITIAL_STATE: WizardState = {
   initialMsgDuplicate: false,
   initialMsgChecking: false,
   initialMsgVarying: false,
-  budget: 25,
-  duration: 7,
+  // Valor mínimo Meta (R$ 5,17/dia) + sem data fim (fica ativo até pausar).
+  budget: ADS_MIN_DAILY_BUDGET_BRL,
+  duration: 0,
   placementMode: "auto",
   placements: ALL_PLACEMENTS,
   rodizioEnabled: false,
@@ -173,6 +177,7 @@ const INITIAL_STATE: WizardState = {
   saveTplOpen: false,
   savingTemplate: false,
   namePrefix: "",
+  isRemarketing: false,
 };
 
 

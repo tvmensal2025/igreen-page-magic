@@ -1,5 +1,6 @@
 // Templates V2 — fallbacks determinísticos + validador estrutural.
 import type { Etapa } from "./types.ts";
+import { safeFullNameForAddress } from "../../customer-display-name.ts";
 
 export const TRAVA_POR_ETAPA: Record<Etapa, string> = {
   interesse: "Faça a ABERTURA: apresentação curta + benefício (pagar menos sem obra) + pergunte 'posso te chamar como?'. PROIBIDO pedir valor/foto/doc/e-mail.",
@@ -178,15 +179,13 @@ export function leadAfirmaEnvio(texto: string): boolean {
   return false;
 }
 
-/** Capitaliza primeiro nome (e sobrenome curto se houver). "bruno" → "Bruno". */
-export function prettyName(s: string | null | undefined): string | null {
-  const raw = String(s || "").trim();
-  if (!raw) return null;
-  return raw
-    .split(/\s+/)
-    .slice(0, 3)
-    .map((w) => (w.length <= 2 ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()))
-    .join(" ");
+/** Capitaliza nome usável com fonte confiável. Lixo / Zap → null. */
+export function prettyName(
+  s: string | null | undefined,
+  nameSource?: string | null,
+): string | null {
+  const pretty = safeFullNameForAddress(s, nameSource);
+  return pretty || null;
 }
 
 /** Resposta determinística pra quando o lead pede falar com humano. */

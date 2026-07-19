@@ -186,14 +186,30 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
   }, [chats, consultantId]);
 
   const searchCustomers = useCallback(async (query: string) => {
-    if (!consultantId || query.length < 3) { setCustomerResults([]); return; }
+    const trimmed = query.trim();
+    if (!consultantId || trimmed.length < 2) { setCustomerResults([]); return; }
     try {
+      const digits = trimmed.replace(/\D/g, "");
+      const orParts = [`name.ilike.%${trimmed}%`];
+      if (digits.length >= 4) {
+        orParts.push(`phone_whatsapp.ilike.%${digits}%`);
+        // 9º dígito BR: tenta com e sem
+        if (digits.startsWith("55") && digits.length >= 12) {
+          const ddd = digits.slice(2, 4);
+          const rest = digits.slice(4);
+          if (rest.length === 9 && rest.startsWith("9")) {
+            orParts.push(`phone_whatsapp.ilike.%55${ddd}${rest.slice(1)}%`);
+          } else if (rest.length === 8) {
+            orParts.push(`phone_whatsapp.ilike.%55${ddd}9${rest}%`);
+          }
+        }
+      }
       const { data } = await supabase
         .from("customers")
         .select("name, phone_whatsapp")
         .eq("consultant_id", consultantId)
-        .or(`name.ilike.%${query}%,phone_whatsapp.ilike.%${query}%`)
-        .limit(5);
+        .or(orParts.join(","))
+        .limit(8);
       setCustomerResults(data || []);
     } catch {
       setCustomerResults([]);
@@ -225,15 +241,26 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     setCustomerResults([]);
   };
 
-  const filtered = useMemo(
-    () =>
-      chats.filter(
-        (c) =>
-          c.name.toLowerCase().includes(search.toLowerCase()) ||
-          c.remoteJid.includes(search),
-      ),
-    [chats, search],
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const qDigits = search.replace(/\D/g, "");
+    if (!q && qDigits.length < 4) return chats;
+    return chats.filter((c) => {
+      if (q && c.name.toLowerCase().includes(q)) return true;
+      if (q && c.remoteJid.toLowerCase().includes(q)) return true;
+      if (qDigits.length >= 4) {
+        const chatDigits = (c.sendTargetJid || c.remoteJid).split("@")[0].replace(/\D/g, "");
+        if (
+          chatDigits.includes(qDigits) ||
+          qDigits.includes(chatDigits) ||
+          chatDigits.slice(-9) === qDigits.slice(-9)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
+  }, [chats, search]);
 
   const emAtendimento = useMemo(
     () => filtered.filter((c) => !!enrichByJid[c.remoteJid]?.inAttendance),
@@ -256,7 +283,13 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
     return { atend, esp };
   }, [filtered, enrichByJid]);
 
-  const visibleChats = listTab === "atendimento" ? emAtendimento : emEspera;
+  /** Com busca ativa, ignora aba — lead fechado costuma estar em "Em espera". */
+  const isSearching = search.trim().length >= 2;
+  const visibleChats = isSearching
+    ? filtered
+    : listTab === "atendimento"
+      ? emAtendimento
+      : emEspera;
 
   return (
     <div className="flex flex-col h-full min-h-0 border-r border-border/60 bg-card">
@@ -411,12 +444,18 @@ export function ChatSidebar({ chats, isLoading, selectedJid, onSelectChat, consu
         {!isLoading && visibleChats.length === 0 && (
           <div className="p-6 text-center space-y-1">
             <p className="text-xs font-medium text-foreground">
-              {listTab === "atendimento" ? "Ninguém em atendimento" : "Nenhuma conversa em espera"}
+              {isSearching
+                ? "Nenhuma conversa com esse termo"
+                : listTab === "atendimento"
+                  ? "Ninguém em atendimento"
+                  : "Nenhuma conversa em espera"}
             </p>
             <p className="text-[11px] text-muted-foreground max-w-[220px] mx-auto">
-              {listTab === "atendimento"
-                ? "Quem tiver atendimento aberto (welcome enviado) aparece aqui — igual Captação."
-                : "Novas conversas e leads sem atendimento ativo ficam nesta fila."}
+              {isSearching
+                ? "Lead fechado pode estar em Em espera — a busca já olha todas as abas. Confira também Clientes encontrados acima ou use o + para abrir pelo telefone."
+                : listTab === "atendimento"
+                  ? "Quem tiver atendimento aberto (welcome enviado) aparece aqui — igual Captação."
+                  : "Novas conversas e leads sem atendimento ativo ficam nesta fila."}
             </p>
           </div>
         )}

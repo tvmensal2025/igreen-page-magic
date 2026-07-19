@@ -16,6 +16,7 @@ import {
 import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomerWithFailover, isUnavailable, ctx } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
 import {
   playAudioFile, makeSMS,
   toVelipBRDest, toCtid, velipConfigured,
@@ -321,7 +322,16 @@ async function notifyPartnerOfLoss(supabase: any, customerId: string, consultant
 
 
 function renderTemplate(tpl: string, vars: Record<string, string>): string {
-  return tpl.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
+  let out = tpl;
+  const nome = String(vars.nome || "").trim();
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
+  }
+  out = out.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k) => vars[k] ?? "");
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
+  }
+  return out.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /**
@@ -362,7 +372,7 @@ async function dispatchWhatsApp(
 ): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, consultant_id")
+    .select("id, name, name_source, phone_whatsapp, consultant_id")
     .eq("id", row.customer_id)
     .maybeSingle();
 
@@ -390,7 +400,7 @@ async function dispatchWhatsApp(
   const { consultantName, consultantPhone } = await loadLeadContext(
     supabase, row.customer_id, row.consultant_id,
   );
-  const firstName = (cust.name || "").split(" ")[0] || "";
+  const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
   let rawTpl = cfg.message_text || "";
   let themeId: string | undefined;
   if (needsWhatsAppTheme(rawTpl, stage)) {
@@ -448,7 +458,7 @@ async function dispatchWhatsApp(
 async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp")
+    .select("id, name, name_source, phone_whatsapp")
     .eq("id", customerId).maybeSingle();
   let consultantName = "";
   let consultantPhone = "";
@@ -487,11 +497,13 @@ async function dispatchVoiceCall(
   const ctid = toCtid(`cad_${stage}_s${Number(row.stage_sequence ?? 0)}_${row.customer_id.slice(0, 8)}`);
 
   // Regra Sofia: clip ElevenLabs → Velip. Sem TTS robótico Velip.
+  // Sem nome digitado/confiável → só o CORPO (sem intro "Olá, Nome").
   const resolved = await resolveCallDialAudio(supabase, {
     consultantId: row.consultant_id,
     clipId: cfg.voice_audio_clip_id,
     legacyVelipAudioId: cfg.velip_audio_id,
     rawName: cust?.name,
+    nameSource: (cust as { name_source?: string | null })?.name_source ?? null,
     personalize: Boolean(cfg.personalize_name),
   });
   if (!resolved.ok || !resolved.velip_audio_id) {
@@ -502,7 +514,9 @@ async function dispatchVoiceCall(
     const r = await playAudioFile({ to: dest, audioId: resolved.velip_audio_id, ctid });
     if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
     const stitchTag = cfg.personalize_name
-      ? (resolved.cached ? ":stitched_cached" : ":stitched_new")
+      ? (resolved.fallback_body
+        ? ":body_only"
+        : (resolved.cached ? ":stitched_cached" : ":stitched_new"))
       : "";
     return { ok: true, detail: `call_placed:${r.cd_id ?? "?"}${stitchTag}` };
   } catch (e) {
@@ -527,7 +541,7 @@ async function dispatchSMS(
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { ok: false, detail: "invalid_phone" };
 
-  const firstName = (cust.name || "").split(" ")[0] || "";
+  const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
   let rawTpl = cfg.message_text || "";
   let themeId: string | undefined;
   if (needsSmsTheme(rawTpl, stage)) {

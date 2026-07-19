@@ -201,7 +201,18 @@ export const RE_INTENT_RESET =
   /\b(n[ãa]o sou eu|esses dados n[ãa]o s[ãa]o meus|essa conta n[ãa]o [eé] minha|recome[çc]ar|come[çc]ar de novo|outra conta|nova conta|resetar|reiniciar|zerar)\b/i;
 
 // Names sources we trust for personalization / "bill is yours" logic.
-export const TRUSTED_NAME_SOURCES = new Set(["ocr", "self_introduced", "manual"]);
+// Espelha ADDRESSABLE_NAME_SOURCES (customer-display-name) + aliases legados.
+export const TRUSTED_NAME_SOURCES = new Set([
+  "ocr",
+  "self_introduced",
+  "manual",
+  "user_confirmed",
+  "ocr_conta",
+  "ocr_doc",
+  "ocr_cnh",
+  "ocr_rg",
+  "igreen_portal",
+]);
 
 /**
  * Wipes lead-identity / OCR fields so the bot can restart cleanly.

@@ -596,6 +596,23 @@ html {
   filter: blur(10px);
 }
 
+/* Aviso Multicanal/pizza: pisca quando falta áudio/SMS/stage */
+@keyframes cadence-missing-blink {
+  0%, 100% {
+    border-color: hsl(38 92% 50% / 0.95);
+    box-shadow: 0 0 0 0 hsl(38 92% 50% / 0.45);
+    background-color: hsl(38 92% 50% / 0.18);
+  }
+  50% {
+    border-color: hsl(0 84% 55% / 0.9);
+    box-shadow: 0 0 0 4px hsl(0 84% 55% / 0.2);
+    background-color: hsl(0 84% 55% / 0.12);
+  }
+}
+.cadence-missing-blink {
+  animation: cadence-missing-blink 1.4s ease-in-out infinite;
+}
+
 /* ═══════════════ Executive Performance Animations ═══════════════ */
 
 /* --- Ambient background: slow premium gradient drift (war room feel) --- */

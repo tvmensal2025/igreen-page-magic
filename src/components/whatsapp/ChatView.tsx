@@ -254,16 +254,27 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     setTogglingBot(true);
     try {
       if (botActive) {
-        // Desligar: pausa esse lead. Não toca no force.
+        // Desligar: pausa estável (mesmo reason do portal/WhatsApp).
         const { error } = await supabase.from("customers")
-          .update({ bot_paused: true })
+          .update({
+            bot_paused: true,
+            bot_paused_reason: "humano_assumiu",
+            bot_paused_at: new Date().toISOString(),
+            bot_paused_until: null,
+          } as never)
           .eq("id", customerId);
         if (error) throw error;
         setBotPaused(true);
         toast({ title: "🤖 Bot desligado neste cliente interessado", description: "A IA não vai responder mais este número." });
       } else {
         // Ligar: tira pause. Se global está off, força para este lead.
-        const patch: Record<string, unknown> = { bot_paused: false, assigned_human_id: null };
+        const patch: Record<string, unknown> = {
+          bot_paused: false,
+          bot_paused_reason: null,
+          bot_paused_at: null,
+          bot_paused_until: null,
+          assigned_human_id: null,
+        };
         if (!globalAiEnabled) patch.bot_force_enabled = true;
         const { error } = await supabase.from("customers")
           .update(patch as never)

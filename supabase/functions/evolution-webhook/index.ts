@@ -18,6 +18,7 @@ import { resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { computeIdempotencyKey } from "../_shared/idempotency.ts";
 import { computeMessageTextHash } from "../_shared/text-hash.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 import {
   isRateLimited,
   RATE_LIMIT_MAX,
@@ -847,6 +848,7 @@ Deno.serve(async (req) => {
           notifyNewLead(instanceData.consultant_id, {
             id: customer.id,
             name: (customer as any).name,
+            name_source: (customer as any).name_source,
             phone_whatsapp: (customer as any).phone_whatsapp,
           }).catch((e) => console.warn("[notify-new-lead reentry] falhou:", (e as Error).message));
         }
@@ -1220,6 +1222,7 @@ Deno.serve(async (req) => {
             return notifyPartnerNewLead(instanceData.consultant_id, rodizioPartnerId, {
               id: customer.id,
               name: (customer as any).name,
+              name_source: (customer as any).name_source,
               phone_whatsapp: (customer as any).phone_whatsapp,
               is_sandbox: (customer as any).is_sandbox,
               tracking_protocol: res?.protocol,
@@ -1277,6 +1280,7 @@ Deno.serve(async (req) => {
             {
               id: customer.id,
               name: (customer as any).name,
+              name_source: (customer as any).name_source,
               phone_whatsapp: (customer as any).phone_whatsapp,
               is_sandbox: (customer as any).is_sandbox,
             },
@@ -1298,6 +1302,7 @@ Deno.serve(async (req) => {
             {
               id: customer.id,
               name: (customer as any).name,
+              name_source: (customer as any).name_source,
               phone_whatsapp: (customer as any).phone_whatsapp,
               is_sandbox: (customer as any).is_sandbox,
             },
@@ -1324,6 +1329,7 @@ Deno.serve(async (req) => {
         {
           id: customer.id,
           name: (customer as any).name,
+          name_source: (customer as any).name_source,
           phone_whatsapp: (customer as any).phone_whatsapp,
           is_sandbox: (customer as any).is_sandbox,
         },
@@ -1426,6 +1432,7 @@ Deno.serve(async (req) => {
               return notifyPartnerNewLead(instanceData.consultant_id, matchedPartnerId, {
                 id: customer.id,
                 name: (customer as any).name,
+                name_source: (customer as any).name_source,
                 phone_whatsapp: (customer as any).phone_whatsapp,
                 is_sandbox: (customer as any).is_sandbox,
                 tracking_protocol: res?.protocol,
@@ -1743,6 +1750,8 @@ Deno.serve(async (req) => {
             conversation_step: (customer as any).conversation_step,
             attendance_rating: (customer as any).attendance_rating,
             attendance_rating_requested_at: (customer as any).attendance_rating_requested_at,
+            bot_paused: (customer as any).bot_paused,
+            bot_paused_reason: (customer as any).bot_paused_reason,
           },
           remoteJid,
           messageText,
@@ -1755,10 +1764,22 @@ Deno.serve(async (req) => {
             try { return !!(await sender.sendText(jid, text)); } catch { return false; }
           },
         });
-        if (ratingHit.intercepted) {
+        if (ratingHit.abandoned) {
+          (customer as any).conversation_step = null;
+          const reason = String((customer as any).bot_paused_reason || "").toLowerCase();
+          const humanKeep =
+            reason.includes("humano") || reason.includes("human") || reason.startsWith("handoff");
+          if (!humanKeep) {
+            (customer as any).bot_paused = false;
+            (customer as any).bot_paused_reason = null;
+            (customer as any).bot_paused_until = null;
+          }
+        } else if (ratingHit.intercepted) {
           return new Response(JSON.stringify({
             ok: true,
-            msg: ratingHit.media
+            msg: ratingHit.silent
+              ? "attendance_rating_silent_human"
+              : ratingHit.media
               ? "attendance_rating_media_hint"
               : ratingHit.invalid
               ? "attendance_rating_invalid_retry"
@@ -2991,7 +3012,10 @@ Deno.serve(async (req) => {
         extra: { customer_id: customer.id, step: stepToSend, sender_outbound_count: senderOutboundCount },
       });
 
-      const firstName = String((customer as any).name || "").split(" ")[0] || "";
+      const firstName = safeFirstNameForAddress(
+        (customer as any).name,
+        (customer as any).name_source,
+      );
       const SAFETY_MARKER = "[__safety_ping__]";
 
       // 🔁 Camada 3: anti-loop. Conta sentinels já gravados no MESMO step

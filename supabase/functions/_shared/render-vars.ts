@@ -12,9 +12,16 @@
  */
 
 import { discountRates } from "./discount-rates.ts";
+import {
+  safeFirstNameForAddress,
+  safeFullNameForAddress,
+  scrubEmptyNameGreeting,
+} from "./customer-display-name.ts";
 
 export type RenderVars = {
   name?: string | null;
+  /** Fonte do nome (`customers.name_source`). Sem fonte confiável → não chama. */
+  name_source?: string | null;
   phone?: string | null;
   cpf?: string | null;
   representante?: string | null;
@@ -80,21 +87,17 @@ function fmtBRL(v: number) {
   }
 }
 
-function firstNameOf(full: string | null | undefined): string {
-  const s = String(full || "").trim();
-  if (!s) return "";
-  return s.split(/\s+/)[0] || "";
-}
-
 /**
  * Renderiza variáveis num texto. Aceita {chave} e {{chave}} em qualquer caixa,
  * com espaços ao redor. Chaves desconhecidas são REMOVIDAS (sem deixar `{...}`
  * vazar pro cliente).
+ *
+ * Nome inválido (Ixi Kkk, telefone, meme) → {{nome}} vazio e limpeza de vírgula.
  */
 export function renderTemplateVars(text: string | null | undefined, vars: RenderVars): string {
   if (!text) return "";
-  const name = String(vars.name || "").trim();
-  const firstName = firstNameOf(name);
+  const firstName = safeFirstNameForAddress(vars.name, vars.name_source);
+  const name = safeFullNameForAddress(vars.name, vars.name_source);
   const phoneRaw = String(vars.phone || "").replace(/\D/g, "");
   // Telefone "humano": (11) 99999-8888 quando possível
   let phoneFmt = phoneRaw;
@@ -177,9 +180,15 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     return null;
   };
 
+  let working = text;
+  // Sem nome usável: tira bloco "Olá, {{nome}}." e vai só o corpo.
+  if (!firstName) {
+    working = scrubEmptyNameGreeting(working);
+  }
+
   // Substitui {{ chave }} e { chave } (1-2 chaves, espaços tolerados, qualquer caixa).
   // Só substitui chaves conhecidas — chaves desconhecidas ficam intactas para debug.
-  const replaced = text.replace(/\{\{?\s*([a-zA-ZÀ-ÿ_][\w\sÀ-ÿ-]{0,40})\s*\}?\}/g, (match, rawKey: string) => {
+  const replaced = working.replace(/\{\{?\s*([a-zA-ZÀ-ÿ_][\w\sÀ-ÿ-]{0,40})\s*\}?\}/g, (match, rawKey: string) => {
     const v = lookup(rawKey);
     if (v == null) return match; // chave desconhecida → mantém literal
     return v;
@@ -189,7 +198,7 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   // porque a variável veio "" — evita aparecer "* *", "__", "~~" no cliente.
   // Também remove link `wa.me/` órfão (sem número atrás) — caso o consultor
   // não tenha telefone cadastrado, não vaza "Responda: wa.me/" quebrado.
-  return replaced
+  let out = replaced
     .replace(/\*\s*\*/g, "")
     .replace(/_\s*_/g, "")
     .replace(/~\s*~/g, "")
@@ -198,4 +207,9 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.!?;:])/g, "$1");
+
+  if (!firstName) {
+    out = scrubEmptyNameGreeting(out);
+  }
+  return out;
 }

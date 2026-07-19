@@ -8,6 +8,7 @@ import { resolveCaller } from "../_shared/caller-auth.ts";
 import { makeSMS, toCtid, toVelipBRDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { resolveConsultantConnectedWaPhone, buildConsultantSmsWaLink, normalizeWaPhoneDigits } from "../_shared/consultant-wa-phone.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -24,19 +25,13 @@ interface Body {
   consultant_id?: string;
 }
 
-function firstName(name: string | null | undefined): string {
-  const n = String(name || "").trim();
-  if (!n) return "";
-  return n.split(/\s+/)[0] || "";
-}
-
-/** Substitui {{nome}} / {{consultor_phone}} / {{link_wa}}. Garante https://wa.me do consultor. */
 function renderSms(
   message: string,
   name: string | null | undefined,
   consultorPhone: string,
+  nameSource?: string | null,
 ): string {
-  const nome = firstName(name);
+  const nome = safeFirstNameForAddress(name, nameSource ?? "manual");
   const phone = normalizeWaPhoneDigits(consultorPhone);
   const linkWa = buildConsultantSmsWaLink(phone);
   let out = String(message || "").trim();

@@ -2,6 +2,7 @@
 // FONTE ÚNICA (Etapa 3a unificação): superset Whapi + Evolution.
 
 import { parseMoneyBR } from "../parse-money.ts";
+import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
 
 const FALLBACK: Record<string, string> = {
   "welcome:saudacao": "Oi! Aqui é o {{representante}} 👋",
@@ -19,6 +20,8 @@ const FALLBACK: Record<string, string> = {
 
 export interface TemplateVars {
   nome?: string | null;
+  /** customers.name_source — sem fonte confiável não chama. */
+  nome_source?: string | null;
   representante?: string | null;
   valor_conta?: number | string | null;
   telefone?: string | null;
@@ -65,7 +68,7 @@ function fmtEconomiaRange(v: number | string | null | undefined): string {
 }
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
-  const nome = (vars.nome || "").split(" ")[0] || "";
+  const nome = safeFirstNameForAddress(vars.nome, vars.nome_source);
   const rep = (String(vars.representante || "").trim()) || "iGreen Energy";
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
@@ -76,6 +79,9 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   const replaceVar = (str: string, key: string, value: string) =>
     str.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "gi"), value);
   let out = tpl;
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
+  }
   out = replaceVar(out, "nome", nome);
   out = replaceVar(out, "representante", rep);
   out = replaceVar(out, "valor_conta", valor);
@@ -107,6 +113,9 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
       .replace(/[ \t]{2,}/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+  }
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
   }
   return out;
 }

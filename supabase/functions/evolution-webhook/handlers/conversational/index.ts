@@ -499,6 +499,7 @@ async function sendStepMedia(
           consultantId,
           slotKey: String(slotKey),
           customerName: (ctx.customer as any)?.name,
+          nameSource: (ctx.customer as any)?.name_source,
           // Nome digitado agora: gera Olá+corpo em paralelo; 90s evita skip no 1º nome.
           timeoutMs: 90_000,
         });
@@ -1193,7 +1194,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     }
   }
   const _turnVars = {
-    nome: ctx.customer.name,
+    nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
     valor_conta: (ctx.customer as any).electricity_bill_value,
     telefone: ctx.customer.phone_whatsapp,
@@ -1282,7 +1283,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     //   step que precise esperar resposta (wait_for=reply).
     console.log(`[conversational] unknown step="${stepKey}" → restart at firstActive=${firstActive?.id} (steps=${dbSteps.length})`);
     const vars = {
-      nome: ctx.customer.name,
+      nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
@@ -1479,6 +1480,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           consultantId,
           slotKey: "a2_audio_activate_name",
           customerName: captureUpdates.name,
+          nameSource: captureUpdates.name_source || "self_introduced",
         });
         const presenceKeepAlive = !cached
           ? setInterval(() => {
@@ -1490,6 +1492,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             consultantId,
             slotKey: "a2_audio_activate_name",
             customerName: captureUpdates.name,
+            nameSource: captureUpdates.name_source || "self_introduced",
           });
           console.log(
             `[wa-stitch] warm on name="${captureUpdates.name}" a2_ok=${warmed.ok} a2_cached=${warmed.cached} intros+stitch`,
@@ -1511,6 +1514,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           consultantId,
           slotKey: "a3_explain_with_buttons",
           customerName: (ctx.customer as any).name,
+          nameSource: (ctx.customer as any).name_source,
         });
       } catch (e) {
         console.warn("[prefetch a3]", (e as Error)?.message || e);
@@ -1572,7 +1576,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
     const qaText = formatFaqReply(withQaStepClose(renderTemplate(qaHit.text || "", {
-      nome: ctx.customer.name,
+      nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
@@ -1759,7 +1763,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         try {
           await notifyHandoff(
             consultantId || ctx.customer.consultant_id,
-            { id: ctx.customer.id, name: (ctx.customer as any).name, phone_whatsapp: (ctx.customer as any).phone_whatsapp, conversation_step: stepKey },
+            { id: ctx.customer.id, name: (ctx.customer as any).name, name_source: (ctx.customer as any).name_source, phone_whatsapp: (ctx.customer as any).phone_whatsapp, conversation_step: stepKey },
             ctx.messageText || "",
             "cliente_confuso_botoes",
           ).catch(() => {});
@@ -1899,7 +1903,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (ai.source === "ai" && ai.text && ai.confidence >= 0.6 && !ai.shouldHandoff) {
         console.log(`[ai-faq] hit step="${stepKey}" conf=${ai.confidence.toFixed(2)}`);
         const renderedFaq = renderTemplate(ai.text, {
-          nome: ctx.customer.name,
+          nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
           representante: ctx.nomeRepresentante,
           valor_conta: (ctx.customer as any).electricity_bill_value,
           telefone: ctx.customer.phone_whatsapp,
@@ -1975,7 +1979,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (isSaudacao && currentStep.id !== firstActive.id) {
     console.log(`[conversational] 🔁 saudação detectada em step=${currentStep.step_key} → restart no Passo 1 (${firstActive.step_key})`);
     const restartVars = {
-      nome: captureUpdates.name || ctx.customer.name,
+      nome: captureUpdates.name || ctx.customer.name, nome_source: (captureUpdates as any).name_source || (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
       valor_conta: captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value,
       telefone: captureUpdates.phone_whatsapp || ctx.customer.phone_whatsapp,
@@ -2061,7 +2065,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
 
   const vars = {
-    nome: captureUpdates.name || ctx.customer.name,
+    nome: captureUpdates.name || ctx.customer.name, nome_source: (captureUpdates as any).name_source || (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
     valor_conta: captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value,
     telefone: captureUpdates.phone_whatsapp || ctx.customer.phone_whatsapp,
@@ -2105,6 +2109,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         consultantId: consultantId || ctx.customer.consultant_id,
         customerId: ctx.customer.id,
         customerName: (ctx.customer as any).name ?? null,
+        nameSource: (ctx.customer as any).name_source ?? null,
         phoneWhatsapp: (ctx.customer as any).phone_whatsapp ?? null,
         stepKey: st.step_key,
         voiceAudioClipId: st.voice_audio_clip_id,
@@ -2580,7 +2585,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     }
     return _finalize(stepKey, {
       reply: await getTemplate(ctx.supabase, "checkin_pos_video", "pedir_conta", {
-        nome: ctx.customer.name, representante: ctx.nomeRepresentante,
+        nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante,
       }),
       updates: { conversation_step: "aguardando_conta", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
     });
@@ -2594,7 +2599,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   if (!transition && cls.intent === "quer_humano") {
     return _finalize(stepKey, {
       reply: await getTemplate(ctx.supabase, "aguardando_humano", "avisado", {
-        nome: ctx.customer.name, representante: ctx.nomeRepresentante,
+        nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante,
       }),
       updates: { conversation_step: "aguardando_humano", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
     });
@@ -2981,7 +2986,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (then === "humano") {
         const handoffText = await getTemplate(
           ctx.supabase, "aguardando_humano", "avisado",
-          { nome: ctx.customer.name, representante: ctx.nomeRepresentante },
+          { nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante },
         );
         try {
           await ctx.supabase.from("bot_handoff_alerts").insert({
@@ -3065,7 +3070,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // — sem isso, o prompt ia literal "Você é a {{representante}}..." e a IA
       // tentava preencher sozinha (ou se nomeava "{{representante}}").
       const renderedSystemPrompt = renderTemplate(String(fb.ai_prompt), {
-        nome: ctx.customer.name || "",
+        nome: ctx.customer.name || "", nome_source: (ctx.customer as any).name_source,
         representante: ctx.nomeRepresentante,
       });
       const aiText = await generateAiAnswer({
@@ -3216,7 +3221,7 @@ async function runLegacyConversational(ctx: BotContext): Promise<BotResult> {
 
   const cls = await classifyIntent(ctx.messageText, step, ctx.geminiApiKey);
   const transition = decideTransition(step, cls.intent, ctx.customer);
-  const vars = { nome: ctx.customer.name, representante: ctx.nomeRepresentante };
+  const vars = { nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante };
   let reply = "";
   if (transition.action.type === "send_template") {
     reply = await getTemplate(ctx.supabase, transition.action.step_key, transition.action.template_key, vars);

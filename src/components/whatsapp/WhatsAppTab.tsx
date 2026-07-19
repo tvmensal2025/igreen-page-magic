@@ -115,6 +115,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     // sempre que a Evolution API estivesse lenta/intermitente.
     instanceName || null,
     isWhapi,
+    userId,
   );
 
   const [activeSubTab, setActiveSubTab] = useState<SubTab>(initialSubTab ?? "dashboard");

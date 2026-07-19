@@ -44,7 +44,7 @@ export function DevToolsBlockToggle() {
       toast({
         title: next ? "Bloqueio de inspecionar ativado" : "Bloqueio de inspecionar desativado",
         description: next
-          ? "F12, clique direito e console estão bloqueados para usuários em produção."
+          ? "F12, clique direito e atalhos de inspecionar bloqueados. Gravação de tela continua liberada."
           : "DevTools liberado. Útil para debug temporário.",
       });
     } catch (e: any) {
@@ -78,8 +78,8 @@ export function DevToolsBlockToggle() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Impede F12, clique direito e atalhos de inspecionar para usuários em produção.
-            Desative temporariamente se precisar debugar algo no navegador.
+            Quando ativo, impede F12, clique direito e atalhos de inspecionar (anti-curioso).
+            Não bloqueia gravação de tela nem PrintScreen. Desative se precisar debugar no navegador.
           </p>
         </div>
         <AlertDialog>
@@ -96,7 +96,7 @@ export function DevToolsBlockToggle() {
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {off
-                  ? "Usuários não conseguirão abrir o inspecionar (F12, clique direito, atalhos). Efeito imediato no próximo carregamento da página."
+                  ? "Usuários não conseguirão abrir o inspecionar (F12, clique direito, atalhos). Gravação de tela e PrintScreen continuam liberados. Efeito no próximo carregamento da página."
                   : "O DevTools ficará acessível para qualquer um até você reativar o bloqueio."}
               </AlertDialogDescription>
             </AlertDialogHeader>

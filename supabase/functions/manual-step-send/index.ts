@@ -10,6 +10,7 @@ import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 
 
 type Part = "text" | "audio" | "image" | "video" | "document" | "all";
@@ -636,6 +637,7 @@ Deno.serve(async (req) => {
     const renderedText = (step as any).message_text
       ? renderTemplateVars(String((step as any).message_text), {
           name: (customer as any).name || "",
+          name_source: (customer as any).name_source,
           phone: (customer as any).phone_whatsapp || "",
           cpf: (customer as any).cpf || "",
           representante: _repName,
@@ -646,8 +648,7 @@ Deno.serve(async (req) => {
       : "";
 
     // Vars map for ad-hoc placeholder substitution in fallback prompts
-    const _name = String((customer as any).name || "").trim();
-    const _firstName = _name.split(/\s+/)[0] || _name;
+    const _firstName = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
     const _phoneRaw = String((customer as any).phone_whatsapp || "").replace(/\D/g, "");
     const _phoneNoCc = _phoneRaw.startsWith("55") && _phoneRaw.length >= 12 ? _phoneRaw.slice(2) : _phoneRaw;
     const _phoneFmt = _phoneNoCc.length === 11

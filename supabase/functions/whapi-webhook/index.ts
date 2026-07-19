@@ -757,6 +757,7 @@ Deno.serve(async (req) => {
           notifyNewLead(superAdminConsultantId, {
             id: customer.id,
             name: (customer as any).name,
+            name_source: (customer as any).name_source,
             phone_whatsapp: (customer as any).phone_whatsapp,
           }).catch((e) => console.warn("[notify-new-lead reentry] falhou:", (e as Error).message));
         }
@@ -1138,6 +1139,7 @@ Deno.serve(async (req) => {
                   return notifyPartnerNewLead(superAdminConsultantId, rodizioPartnerId, {
                     id: customer.id,
                     name: (customer as any).name,
+                    name_source: (customer as any).name_source,
                     phone_whatsapp: (customer as any).phone_whatsapp,
                     is_sandbox: (customer as any).is_sandbox,
                     tracking_protocol: res?.protocol,
@@ -1171,6 +1173,7 @@ Deno.serve(async (req) => {
                   {
                     id: customer.id,
                     name: (customer as any).name,
+                    name_source: (customer as any).name_source,
                     phone_whatsapp: (customer as any).phone_whatsapp,
                     is_sandbox: (customer as any).is_sandbox,
                   },
@@ -1191,6 +1194,7 @@ Deno.serve(async (req) => {
                   {
                     id: customer.id,
                     name: (customer as any).name,
+                    name_source: (customer as any).name_source,
                     phone_whatsapp: (customer as any).phone_whatsapp,
                     is_sandbox: (customer as any).is_sandbox,
                   },
@@ -1215,6 +1219,7 @@ Deno.serve(async (req) => {
               {
                 id: customer.id,
                 name: (customer as any).name,
+                name_source: (customer as any).name_source,
                 phone_whatsapp: (customer as any).phone_whatsapp,
                 is_sandbox: (customer as any).is_sandbox,
               },
@@ -1336,6 +1341,7 @@ Deno.serve(async (req) => {
               return notifyPartnerNewLead(superAdminConsultantId, matchedPartnerId, {
                 id: customer.id,
                 name: (customer as any).name,
+                name_source: (customer as any).name_source,
                 phone_whatsapp: (customer as any).phone_whatsapp,
                 is_sandbox: (customer as any).is_sandbox,
                 tracking_protocol: res?.protocol,
@@ -1369,11 +1375,9 @@ Deno.serve(async (req) => {
         const cs = String((customer as any).conversation_step || "");
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         const inCustomFlow = cs.startsWith("flow:") || cs.startsWith("passo_") || UUID_RE.test(cs);
-        // Nunca resetar durante pesquisa de atendimento (nota 1–5) nem após nota salva.
-        const inAttendanceRating =
-          cs === "aguardando_avaliacao_atendimento" ||
-          cs === "atendimento_finalizado" ||
-          (!!(customer as any).attendance_rating_requested_at && (customer as any).attendance_rating == null);
+        // Só bloqueia re-welcome enquanto a pesquisa está ATIVA.
+        // Após abandonar (step null) ou finalizar, mensagem pode reabrir fluxo.
+        const inAttendanceRating = cs === "aguardando_avaliacao_atendimento";
 
         // Atividade recente em transições = lead engajado, não resetar.
         const since30 = new Date(Date.now() - 30 * 60 * 1000).toISOString();
@@ -1493,6 +1497,8 @@ Deno.serve(async (req) => {
             conversation_step: (customer as any).conversation_step,
             attendance_rating: (customer as any).attendance_rating,
             attendance_rating_requested_at: (customer as any).attendance_rating_requested_at,
+            bot_paused: (customer as any).bot_paused,
+            bot_paused_reason: (customer as any).bot_paused_reason,
           },
           remoteJid,
           messageText,
@@ -1503,10 +1509,23 @@ Deno.serve(async (req) => {
             try { return !!(await sender.sendText(jid, text)); } catch { return false; }
           },
         });
-        if (ratingHit.intercepted) {
+        if (ratingHit.abandoned) {
+          // Msg qualquer (não-nota) — pesquisa encerrada, conversa reaberta.
+          (customer as any).conversation_step = null;
+          const reason = String((customer as any).bot_paused_reason || "").toLowerCase();
+          const humanKeep =
+            reason.includes("humano") || reason.includes("human") || reason.startsWith("handoff");
+          if (!humanKeep) {
+            (customer as any).bot_paused = false;
+            (customer as any).bot_paused_reason = null;
+            (customer as any).bot_paused_until = null;
+          }
+        } else if (ratingHit.intercepted) {
           return new Response(JSON.stringify({
             ok: true,
-            msg: ratingHit.media
+            msg: ratingHit.silent
+              ? "attendance_rating_silent_human"
+              : ratingHit.media
               ? "attendance_rating_media_hint"
               : ratingHit.invalid
               ? "attendance_rating_invalid_retry"

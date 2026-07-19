@@ -12,6 +12,17 @@ import {
   CadenceMobilePreview,
 } from "@/components/admin/voz/CadenceMobilePreview";
 import {
+  CadenceFlowStyleEditor,
+  type CadenceEditorTab,
+} from "@/components/admin/voz/CadenceFlowStyleEditor";
+import { CadenceTimelineItem } from "@/components/admin/voz/CadenceTimelineItem";
+import {
+  CadenceSendOrderGuide,
+  buildSendOrderSteps,
+} from "@/components/admin/voz/CadenceSendOrderGuide";
+import { CadenceAudioCutsPanel } from "@/components/admin/voz/CadenceAudioCutsPanel";
+import { BUTTON_PRESETS } from "@/components/admin/flow-builder/flowTypes";
+import {
   MULTICHANNEL_CADENCE_TEMPLATES,
   SPEECH_GENDERS,
   WHAPI_MAX_BUTTONS,
@@ -60,6 +71,7 @@ import {
   loadCadenceLibraryRemote,
   publishCadenceLibrary,
 } from "@/lib/syncCadenceToBotFlow";
+import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -77,18 +89,23 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertTriangle,
-  CheckCircle2,
   Copy,
   Download,
   Loader2,
   MessageCircle,
+  ChevronLeft,
+  ChevronRight,
+  Link2,
+  Pencil,
   Plus,
   RotateCcw,
   Save,
+  Search,
   Trash2,
   Volume2,
   Send,
   Phone,
+  X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -117,6 +134,14 @@ const GROUP_TABS: { id: CadenceGroup | "all"; label: string }[] = [
   { id: "theme", label: "Temas" },
   { id: "availability", label: "Disponibilidade" },
   { id: "all", label: "Todos" },
+];
+
+const CHANNEL_FILTERS: { id: CadenceTemplate["channel"]; emoji: string; label: string }[] = [
+  { id: "whatsapp_text", emoji: "💬", label: "Texto" },
+  { id: "whatsapp_buttons", emoji: "🔘", label: "Botões" },
+  { id: "whatsapp_audio", emoji: "🎧", label: "Áudio" },
+  { id: "sms", emoji: "📱", label: "SMS" },
+  { id: "call_script", emoji: "📞", label: "Ligação" },
 ];
 
 function channelLabel(ch: CadenceTemplate["channel"]): string {
@@ -151,7 +176,12 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     return "A";
   });
   const [selectedKey, setSelectedKey] = useState<string>("a1_ask_name");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<CadenceEditorTab>("conteudo");
+  const [listQuery, setListQuery] = useState("");
+  const [channelFilter, setChannelFilter] = useState<Set<string>>(new Set());
   const [previewName, setPreviewName] = useState("Maria");
+  const listSearchRef = useRef<HTMLInputElement | null>(null);
   const [previewGender, setPreviewGender] = useState<SpeechGender>("feminino");
   const [previewBill, setPreviewBill] = useState("500");
   const [saving, setSaving] = useState(false);
@@ -221,6 +251,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           ...local.buttons,
           ...(remote?.buttons || {}),
           ...(fromFlow.buttons || {}),
+          ...(fromStage.buttons || {}),
         },
         audioUrls: {
           ...local.audioUrls,
@@ -230,6 +261,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           ...local.audioClipIds,
           ...(remote?.audioClipIds || {}),
           ...(fromFlow.audioClipIds || {}),
+          ...(fromStage.audioClipIds || {}),
         },
         segmentBodies: {
           ...local.segmentBodies,
@@ -270,12 +302,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             variant: "destructive",
           });
         } else {
+          const flowN = result.updated.filter((u) => !u.startsWith("motor:")).length;
+          const motorN = result.updated.filter((u) => u.startsWith("motor:")).length;
           toast({
-            title: "Publicado no fluxo WhatsApp",
+            title: "Publicado (ContentContract)",
             description:
               result.updated.length > 0
-                ? `${result.updated.length} passo(s) atualizados (texto + botões).`
-                : "Nada a sincronizar neste fluxo.",
+                ? `Grupo A: ${flowN} passo(s) no fluxo · Grupos B/C: ${motorN} estágio(s) no motor (texto + botões).`
+                : "Nada a sincronizar neste fluxo/motor.",
           });
         }
       }
@@ -318,6 +352,27 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     return base.filter((t) => !t.hiddenInPanel);
   }, [group]);
 
+  const filteredList = useMemo(() => {
+    const q = listQuery.trim().toLowerCase();
+    return list.filter((t) => {
+      if (channelFilter.size > 0 && !channelFilter.has(t.channel)) return false;
+      if (!q) return true;
+      const body = resolveBody(t, lib).toLowerCase();
+      const btns = resolveButtons(t, lib)
+        .map((b) => `${b.id} ${b.title}`)
+        .join(" ")
+        .toLowerCase();
+      return (
+        t.title.toLowerCase().includes(q) ||
+        t.key.toLowerCase().includes(q) ||
+        t.timing.toLowerCase().includes(q) ||
+        body.includes(q) ||
+        btns.includes(q) ||
+        channelLabel(t.channel).toLowerCase().includes(q)
+      );
+    });
+  }, [list, listQuery, channelFilter, lib]);
+
   const selected = useMemo(
     () => MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === selectedKey) ?? list[0],
     [selectedKey, list],
@@ -329,6 +384,55 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     }
   }, [list, selectedKey]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      const isTyping = tag === "input" || tag === "textarea" || target?.isContentEditable;
+      if (e.key === "/" && !isTyping) {
+        e.preventDefault();
+        listSearchRef.current?.focus();
+      } else if (e.key === "Escape" && document.activeElement === listSearchRef.current) {
+        setListQuery("");
+        listSearchRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const openInspector = (key: string, tab: CadenceEditorTab = "conteudo") => {
+    setSelectedKey(key);
+    setInspectorTab(tab);
+    setInspectorOpen(true);
+  };
+
+  // Deep-link pizza / Motor → toque Multicanal (?cadenceKey= ou sessionStorage / event).
+  useEffect(() => {
+    const focusKey = (key: string, tab?: CadenceEditorTab) => {
+      const tpl = getTemplate(key);
+      if (!tpl) return;
+      setGroup(tpl.group);
+      openInspector(key, tab || (tpl.channel === "call_script" ? "midias" : "conteudo"));
+    };
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("cadenceKey");
+      const fromSs = sessionStorage.getItem("igreen-multichannel-focus-key");
+      const key = fromUrl || fromSs;
+      if (key) {
+        focusKey(key);
+        sessionStorage.removeItem("igreen-multichannel-focus-key");
+      }
+    } catch { /* noop */ }
+    const onFocus = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { key?: string; tab?: CadenceEditorTab } | undefined;
+      if (detail?.key) focusKey(detail.key, detail.tab);
+    };
+    window.addEventListener("igreen-multichannel-focus", onFocus);
+    return () => window.removeEventListener("igreen-multichannel-focus", onFocus);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só no mount + listener
+  }, []);
+
   const draftSegments = selected ? resolveAudioSegments(selected, lib) : [];
   const hasSegments = draftSegments.length > 0;
   /** Texto WhatsApp + áudio no mesmo passo (ex.: passo 3 unificado). */
@@ -336,6 +440,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     !!hasSegments &&
     selected?.channel !== "whatsapp_audio" &&
     selected?.channel !== "call_script";
+  /** Toque só de áudio (2a / 4a) — roteiro mora na aba Mídia. */
+  const isAudioOnlyStep =
+    selected?.channel === "whatsapp_audio" || selected?.channel === "call_script";
+  const pairedTpl = selected?.pairedAudioKey
+    ? getTemplate(selected.pairedAudioKey)
+    : null;
+  const pairedSegments = pairedTpl ? resolveAudioSegments(pairedTpl, lib) : [];
+  const listIdx = selected ? list.findIndex((t) => t.key === selected.key) : -1;
   const genderAudioVariants = hasGenderAudioVariants(draftSegments);
   const previewSegments = genderAudioVariants
     ? filterSegmentsForGender(draftSegments, previewGender)
@@ -348,6 +460,17 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         : resolveBody(selected, lib)
     : "";
   const draftButtons = selected ? resolveButtons(selected, lib) : [];
+  const sendOrderSteps = selected
+    ? buildSendOrderSteps(selected, {
+        hasButtons: draftButtons.length > 0 || selected.channel === "whatsapp_buttons",
+        textDone: !!resolveBody(selected, lib).trim(),
+        audioDone:
+          hasGeneratedCadenceAudio(selected.key, lib) ||
+          (!!selected.pairedAudioKey &&
+            hasGeneratedCadenceAudio(selected.pairedAudioKey, lib)),
+        buttonsDone: draftButtons.length > 0,
+      })
+    : [];
   const themePreviewMeta =
     ROTATING_CADENCE_THEMES.find((t) => t.id === previewThemeId) ||
     ROTATING_CADENCE_THEMES[0]!;
@@ -591,13 +714,21 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     setButtons(next);
   };
 
-  const addButton = () => {
+  const addButton = (preset?: { id: string; title: string; emoji?: string }) => {
     if (draftButtons.length >= WHAPI_MAX_BUTTONS) {
       toast({
         title: "Limite Whapi",
         description: `No máximo ${WHAPI_MAX_BUTTONS} botões por mensagem.`,
         variant: "destructive",
       });
+      return;
+    }
+    if (preset) {
+      if (draftButtons.some((b) => b.id === preset.id)) return;
+      const title = preset.emoji
+        ? `${preset.emoji} ${preset.title}`.slice(0, WHAPI_MAX_BUTTON_TITLE)
+        : preset.title.slice(0, WHAPI_MAX_BUTTON_TITLE);
+      setButtons([...draftButtons, { id: preset.id, title }]);
       return;
     }
     setButtons([
@@ -1162,82 +1293,73 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   ).length;
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-xl border border-border/60 bg-card/40 p-4 space-y-2">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold">Biblioteca Multicanal — Whapi + Sofia TTS</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Áudios Sofia em cortes (voz profissional obrigatória); só o <strong>nome novo</strong>{" "}
-              gasta crédito. No 2a: 2 corpos (feminino / masculino). Envio automático OFF.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">{MULTICHANNEL_CADENCE_TEMPLATES.length} textos</Badge>
-            <Badge variant="outline">{withButtons} c/ botões</Badge>
-            <Badge variant="outline">{approvedCount} aprovados</Badge>
-          </div>
+    <div className="space-y-3">
+      <CadenceMissingAlert />
+      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/50 pb-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold tracking-tight">Biblioteca Multicanal</h3>
+          <p className="mt-0.5 text-[12px] text-muted-foreground">
+            Clique no toque para editar · Sofia em cortes · envio automático OFF
+          </p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground/80">
+            Agora ({avail.slot}): “{avail.phrase}”
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Disponibilidade agora ({avail.slot}): “{avail.phrase}”
-        </p>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant="secondary" className="h-5 text-[10px]">
+            {MULTICHANNEL_CADENCE_TEMPLATES.length} textos
+          </Badge>
+          <Badge variant="outline" className="h-5 text-[10px]">
+            {withButtons} botões
+          </Badge>
+          <Badge variant="outline" className="h-5 text-[10px]">
+            {approvedCount} ok
+          </Badge>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
-          <Label className="text-xs">Nome na prévia / TTS</Label>
+      <div className="flex flex-wrap items-end gap-2.5">
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Nome / TTS</Label>
           <Input
-            className="w-40 h-9"
+            className="h-8 w-36 text-sm"
             value={previewName}
             onChange={(e) => setPreviewName(e.target.value)}
           />
-          {nameInCache ? (
-            <p className="text-[10px] text-emerald-700">Nome já no cache · 0 crédito</p>
-          ) : (
-            <p className="text-[10px] text-amber-700">Nome novo · 1 crédito na 1ª fala</p>
-          )}
+          <p className={cn("text-[9px]", nameInCache ? "text-emerald-700" : "text-amber-700")}>
+            {nameInCache ? "cache · 0 crédito" : "novo · 1 crédito"}
+          </p>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Gênero (fala)</Label>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Gênero</Label>
           <Select
             value={previewGender}
             onValueChange={(v) => setPreviewGender(v as SpeechGender)}
           >
-            <SelectTrigger className="w-40 h-9">
+            <SelectTrigger className="h-8 w-32 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="feminino">Feminino (corpo)</SelectItem>
-              <SelectItem value="masculino">Masculino (corpo)</SelectItem>
+              <SelectItem value="feminino">Feminino</SelectItem>
+              <SelectItem value="masculino">Masculino</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Valor conta (teste)</Label>
+        <div className="space-y-0.5">
+          <Label className="text-[10px] text-muted-foreground">Conta (teste)</Label>
           <Input
-            className="w-32 h-9"
+            className="h-8 w-28 text-sm"
             value={previewBill}
             onChange={(e) => setPreviewBill(e.target.value)}
-            placeholder="500 ou 500,00"
+            placeholder="500"
           />
-          {billParsed.ok === false && (
-            <p className="text-[10px] text-destructive max-w-[140px] leading-tight">
-              {billParsed.message}
-            </p>
-          )}
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Voz TTS</Label>
-          <div className="h-9 px-3 rounded-md border border-border/60 bg-muted/30 flex items-center gap-2 min-w-[220px]">
-            <Badge variant="secondary" className="text-[10px]">
-              Obrigatória
-            </Badge>
-            <span className="text-sm">Sofia · profissional</span>
-          </div>
+        <div className="flex h-8 items-center gap-1.5 rounded-md border border-border/50 bg-muted/25 px-2.5 text-[11px] text-muted-foreground">
+          Sofia · profissional
         </div>
-        <Button onClick={handleSave} disabled={saving} className="gap-2">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Salvar todos
+        <Button onClick={handleSave} disabled={saving} size="sm" className="h-8 gap-1.5">
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+          Salvar
         </Button>
       </div>
 
@@ -1260,6 +1382,12 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 <span className="text-foreground font-medium">D+1</span>; SMS/ligação só se houver
                 silêncio. Cap diário na Central de Automações. Grupo A (lead novo) não é limitado.
               </p>
+              <p className="text-foreground/90">
+                Ao publicar: texto + botões (máx. 3) vão para{" "}
+                <span className="font-medium">cadence_stage_config</span> — mesmo contrato de
+                conteúdo do Construtor de Fluxos. O motor (cadence-tick) continua no tempo/estágio;
+                se o botão for inválido, usa o fallback padrão.
+              </p>
             </div>
           )}
           {group === "C" && (
@@ -1275,86 +1403,221 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 análise → SMS se silêncio → ligação Sofia se silêncio (60d, 90d, 5m, 8m, 12m, anual).
                 Toggles OFF até validar a onda B.
               </p>
+              <p className="text-foreground/90">
+                Ao publicar: textos/botões WA sincronizam no motor (ContentContract). SMS/call
+                texto; ligação também publica o clip Sofia no motor. Executor: cadence-tick — sem misturar com o grafo do Grupo A.
+              </p>
             </div>
           )}
-          <div className="grid lg:grid-cols-[240px_minmax(0,1fr)_minmax(260px,290px)] gap-4 items-start">
-            <div className="rounded-lg border border-border/50 max-h-[70vh] overflow-y-auto divide-y lg:max-h-[78vh]">
-              {list.map((t) => {
-                const ok =
-                  !!lib.approved[t.key] ||
-                  (t.canGenerateAudio && hasGeneratedCadenceAudio(t.key, lib));
-                const nBtn = resolveButtons(t, lib).length;
-                const nSeg = t.audioSegments?.length ?? 0;
-                return (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setSelectedKey(t.key)}
-                    className={cn(
-                      "w-full text-left px-3 py-2.5 hover:bg-secondary/40 transition-colors",
-                      selected?.key === t.key && "bg-secondary/60",
-                    )}
-                  >
-                    <div className="flex items-start gap-2">
-                      {ok ? (
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 mt-0.5 shrink-0" />
-                      ) : (
-                        <span className="h-3.5 w-3.5 rounded-full border border-muted-foreground/40 mt-0.5 shrink-0" />
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium leading-snug truncate">{t.title}</p>
-                        <p className="text-[11px] text-foreground/80 mt-0.5 font-medium">
-                          {t.timing}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {channelLabel(t.channel)}
-                          {nSeg > 0 ? ` · ${nSeg} cortes de áudio` : ""}
-                          {nBtn > 0 ? ` · ${nBtn} botão(ões)` : " · cliente digita"}
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(260px,320px)]">
+            <div className="min-w-0 space-y-2">
+              <div className="sticky top-0 z-[5] space-y-1.5 rounded-lg border border-border/60 bg-background/90 px-2.5 py-1.5 backdrop-blur">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      ref={listSearchRef}
+                      value={listQuery}
+                      onChange={(e) => setListQuery(e.target.value)}
+                      placeholder="Buscar toque…  ( / )"
+                      className="h-7 border-0 bg-transparent pl-7 text-xs shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                  <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+                    {filteredList.length}/{list.length}
+                  </span>
+                  {(listQuery.trim() || channelFilter.size > 0) && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-1.5 text-[10px]"
+                      onClick={() => {
+                        setListQuery("");
+                        setChannelFilter(new Set());
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {CHANNEL_FILTERS.map((ch) => {
+                    const active = channelFilter.has(ch.id);
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => {
+                          setChannelFilter((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(ch.id)) next.delete(ch.id);
+                            else next.add(ch.id);
+                            return next;
+                          });
+                        }}
+                        className={cn(
+                          "inline-flex items-center gap-0.5 rounded-full border px-1.5 py-px text-[10px] transition-colors",
+                          active
+                            ? "border-primary/50 bg-primary/10 text-primary"
+                            : "border-transparent bg-muted/50 text-muted-foreground hover:border-border",
+                        )}
+                      >
+                        <span>{ch.emoji}</span>
+                        <span className="hidden sm:inline">{ch.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="max-h-[70vh] overflow-y-auto pr-1 lg:max-h-[78vh] space-y-0">
+                {filteredList.length === 0 ? (
+                  <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center">
+                    <p className="text-sm font-medium text-foreground">Nenhum toque encontrado</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Ajuste a busca ou limpe os filtros de canal.
+                    </p>
+                  </div>
+                ) : (
+                  filteredList.map((t, idx) => {
+                    const ok =
+                      !!lib.approved[t.key] ||
+                      (t.canGenerateAudio && hasGeneratedCadenceAudio(t.key, lib));
+                    const nBtn = resolveButtons(t, lib).length;
+                    const nSeg = t.audioSegments?.length ?? 0;
+                    const snippet = renderCadenceBody(
+                      resolveBody(t, lib),
+                      {
+                        nome: previewName,
+                        gender: previewGender,
+                        valorFormatado: billParsed.ok ? billParsed.formatted : previewBill,
+                        valorConta: billParsed.ok ? billParsed.formatted : previewBill,
+                        economiaMin: savings?.minFormatted,
+                        economiaMax: savings?.maxFormatted,
+                        economiaRange: savings
+                          ? `R$ ${savings.minFormatted} a R$ ${savings.maxFormatted}`
+                          : undefined,
+                        consultorPhone: consultantPhone || undefined,
+                        availabilityOverrides: availabilityOverridesFromLibrary(lib),
+                      },
+                    )
+                      .replace(/\s+/g, " ")
+                      .trim()
+                      .slice(0, 90);
+                    return (
+                      <CadenceTimelineItem
+                        key={t.key}
+                        position={idx + 1}
+                        template={t}
+                        previewText={snippet}
+                        selected={selected?.key === t.key}
+                        isLast={idx === filteredList.length - 1}
+                        approved={ok}
+                        buttonCount={nBtn}
+                        segmentCount={nSeg}
+                        onSelect={() => setSelectedKey(t.key)}
+                        onEdit={() => openInspector(t.key)}
+                        onJumpLinked={(key) => {
+                          setSelectedKey(key);
+                          openInspector(key);
+                        }}
+                      />
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             {selected && (
-              <div className="rounded-lg border border-border/50 p-4 space-y-4">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <h4 className="font-semibold">{selected.title}</h4>
-                    <p className="text-xs text-foreground/90 mt-1 font-medium">
-                      Horário de envio: {selected.timing}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Canal: {channelLabel(selected.channel)}
-                    </p>
-                    {selected.notes && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
-                        {selected.notes}
+              <div className="sticky top-3 hidden self-start lg:block">
+                <div className="overflow-hidden rounded-xl border border-border/60 bg-gradient-to-b from-card to-muted/20 p-2.5 shadow-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2 px-0.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-semibold">{selected.title}</p>
+                      <p className="truncate text-[10px] text-muted-foreground">
+                        {selected.timing}
                       </p>
-                    )}
-                    {selected.requiresApproval && (
-                      <Badge variant="destructive" className="mt-2 text-[10px]">
-                        Requer {selected.requiresApproval}=true
-                      </Badge>
-                    )}
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      className="h-7 shrink-0 gap-1 px-2 text-[11px]"
+                      onClick={() => openInspector(selected.key)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Editar
+                    </Button>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="approved" className="text-xs">
-                      Aprovado
-                    </Label>
-                    <Switch
-                      id="approved"
-                      checked={!!lib.approved[selected.key]}
-                      onCheckedChange={toggleApproved}
-                    />
+                  <CadenceMobilePreview
+                    text={preview}
+                    buttons={previewButtons}
+                    channel={selected.channel}
+                    contactName="Sofia · iGreen"
+                    audioUrl={previewAudioUrl}
+                    showAudio={showAudioAboveButtons}
+                    audioPlacement={audioPlacement}
+                    className="max-w-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+            {selected && (
+              <CadenceFlowStyleEditor
+                open={inspectorOpen}
+                onClose={() => setInspectorOpen(false)}
+                stepKey={selected.key}
+                tab={inspectorTab}
+                onTabChange={setInspectorTab}
+                title={`#${Math.max(1, listIdx + 1)} · ${selected.title}`}
+                description={`${selected.timing} · ${channelLabel(selected.channel)}`}
+                contentTab={(
+                  <>
+                <CadenceSendOrderGuide
+                  steps={sendOrderSteps}
+                  activeTab={inspectorTab}
+                  onGoTab={setInspectorTab}
+                />
+
+                {selected.linkedToStepKey && (
+                  <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
+                    Erro OCR ligado a{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => openInspector(selected.linkedToStepKey!)}
+                    >
+                      {getTemplate(selected.linkedToStepKey)?.title ?? selected.linkedToStepKey}
+                    </button>
+                    . Não avança o funil — só reenvia e continua aguardando a foto.
+                    Gere áudio opcional na aba Mídia.
                   </div>
+                )}
+
+                <div className="flex items-center justify-between rounded-lg border border-border/60 px-2.5 py-2">
+                  <Label htmlFor="approved" className="text-xs font-medium">
+                    Aprovado
+                  </Label>
+                  <Switch
+                    id="approved"
+                    checked={!!lib.approved[selected.key]}
+                    onCheckedChange={toggleApproved}
+                    className="scale-90"
+                  />
                 </div>
 
+                {selected.notes && (
+                  <div className="flex gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-2.5 py-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    <p className="text-[11px] leading-snug text-muted-foreground">{selected.notes}</p>
+                  </div>
+                )}
+
                 {selected.channel === "system" && selected.group === "C" && (
-                  <div className="rounded-md border border-violet-500/30 bg-violet-500/5 px-3 py-2 text-xs text-muted-foreground flex gap-2">
-                    <AlertTriangle className="h-4 w-4 shrink-0 text-violet-600" />
+                  <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-xs text-muted-foreground flex gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-info" />
                     <span>
                       Card informativo do Grupo C — <strong className="text-foreground">não envia mensagem</strong> ao
                       lead. Use para documentar Meta/sync. Toggles na Central de Automações e clip de ligação no Motor.
@@ -1363,14 +1626,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 )}
 
                 {(selected.channel === "sms" || selected.channel === "call_script") && (
-                  <div className="rounded-md border border-dashed border-emerald-500/50 bg-emerald-500/5 p-3 space-y-2">
+                  <div className="rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
                     <div className="flex items-center gap-2">
                       {selected.channel === "sms" ? (
-                        <Send className="h-4 w-4 text-emerald-700" />
+                        <Send className="h-4 w-4 text-primary" />
                       ) : (
-                        <Phone className="h-4 w-4 text-emerald-700" />
+                        <Phone className="h-4 w-4 text-primary" />
                       )}
-                      <Label className="text-xs font-semibold">
+                      <Label className="text-sm font-semibold">
                         Teste {selected.channel === "sms" ? "de SMS" : "de ligação"} — envie para um número escolhido
                       </Label>
                     </div>
@@ -1413,213 +1676,37 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 )}
 
 
-                {isMixedMessageAudio && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <Label>1 · Texto da simulação (valor + economia)</Label>
-                      <span className="text-[10px] text-muted-foreground">
-                        Ordem no WA: texto → áudio → botões
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground">
-                      Use{" "}
-                      <code className="rounded bg-muted px-1">{"{{valor_conta}}"}</code> e{" "}
-                      <code className="rounded bg-muted px-1">{"{{economia_range}}"}</code>{" "}
-                      — a prévia preenche com o valor de teste ao lado.
-                    </p>
-                    <CadenceFormatToolbar onInsert={insertIntoDraft} />
-                    <Textarea
-                      ref={draftTextareaRef}
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      rows={8}
-                      className="font-mono text-sm"
-                      placeholder={
-                        "Perfeito, {{nome}}!\n\nCom base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%*…\n\n(depois vem o áudio e os botões)"
-                      }
-                    />
-                  </div>
-                )}
-
-                {hasSegments ? (
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div>
-                        <Label>
-                          {isMixedMessageAudio
-                            ? "2 · Cortes do áudio Sofia"
-                            : "Cortes do áudio Sofia"}
-                        </Label>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {isMixedMessageAudio ? (
-                            <>
-                              Ordem no WhatsApp: <strong>texto → áudio → botões</strong>. Áudio
-                              = <strong>só o nome</strong> + explicação até{" "}
-                              <strong>“É simples”</strong> (sem Então).
-                            </>
-                          ) : selected?.key === "a5_audio_club_benefits" ? (
-                            <>
-                              Passo 4 (benefício): <strong>só o nome</strong> no início → corpo
-                              fixo do clube (sem Olá de novo).
-                            </>
-                          ) : selected?.key === "a2_audio_activate_name" ? (
-                            <>
-                              Passo 2: <strong>Olá + nome</strong> (1 corte variável) → corpo fixo
-                              Sofia/Rafael gestor (M/F). Reutiliza cache de 200+ nomes.
-                            </>
-                          ) : (
-                            <>
-                              Passo 3: só o nome + explicação fixa. Passo 4a: só o nome + clube.
-                            </>
-                          )}
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        onClick={approveAllSegments}
-                      >
-                        Aprovar todos os cortes
-                      </Button>
-                    </div>
-                    {draftSegments.map((seg: AudioSegment) => {
-                      const ok =
-                        !!lib.segmentApproved[selected.key]?.[seg.id] ||
-                        hasGeneratedCadenceAudio(selected.key, lib);
-                      const spoken = spokenSegmentText(seg, previewVars);
-                      const nameLead = /^então\b/i.test(spoken)
-                        ? "Então"
-                        : /^olá\b/i.test(spoken)
-                          ? "Olá"
-                          : null;
-                      const kindLabel =
-                        seg.kind === "name"
-                          ? nameLead
-                            ? `${nameLead} + nome · pausa`
-                            : "Nome · pausa"
-                          : seg.kind === "gendered"
-                            ? "M/F · cache"
-                            : seg.kind === "with_name"
-                              ? "Nome · início"
-                              : "Fixo · cache";
-                      const lockedName = seg.kind === "name";
-                      const firstNome = previewName.split(/\s+/)[0] || "Nome";
-                      return (
-                        <div
-                          key={seg.id}
-                          className="rounded-md border border-border/60 p-3 space-y-2 bg-muted/10"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex flex-wrap items-center gap-2 min-w-0">
-                              <span className="text-sm font-medium truncate">{seg.label}</span>
-                              <Badge
-                                variant={
-                                  seg.kind === "name" || seg.kind === "with_name"
-                                    ? "outline"
-                                    : "secondary"
-                                }
-                                className="text-[10px]"
-                              >
-                                {kindLabel}
-                              </Badge>
-                              {seg.reusable && (
-                                <Badge variant="outline" className="text-[10px]">
-                                  Reutilizável
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Label className="text-xs">Ok</Label>
-                              <Switch
-                                checked={ok}
-                                onCheckedChange={(v) => toggleSegmentApproved(seg.id, v)}
-                              />
-                            </div>
-                          </div>
-                          {lockedName ? (
-                            <div className="rounded-md border bg-background px-3 py-2 text-sm font-mono">
-                              {spoken}
-                              <p className="text-[10px] text-muted-foreground mt-1 font-sans">
-                                {nameLead ? (
-                                  <>
-                                    TTS com pausa: “{nameLead}... {firstNome}...” — Olá + nome no
-                                    mesmo corte (passo 2 · cache por nome).
-                                  </>
-                                ) : (
-                                  <>
-                                    Só o nome (passos 3 e 4a). Em seguida vem o corpo fixo salvo no
-                                    painel — sem Olá nem “Então”.
-                                  </>
-                                )}
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-1.5">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="secondary"
-                                  className="h-7 text-[11px] font-mono"
-                                  onClick={() => insertNomeInSegment(seg.id, seg.text)}
-                                >
-                                  {"{{nome}}"}
-                                </Button>
-                                <span className="text-[10px] text-muted-foreground">
-                                  Clique para encaixar o nome da pessoa neste corte
-                                </span>
-                                {seg.text.includes("{{nome}}") && (
-                                  <Badge variant="outline" className="text-[10px]">
-                                    variável · cache por nome
-                                  </Badge>
-                                )}
-                              </div>
-                              <Textarea
-                                id={`seg-ta-${seg.id}`}
-                                value={seg.text}
-                                onChange={(e) => setSegmentText(seg.id, e.target.value)}
-                                rows={seg.kind === "gendered" || seg.kind === "with_name" ? 2 : 5}
-                                className="font-mono text-sm"
-                                placeholder='Ex.: Deixa eu te explicar, {{nome}}, de um jeito simples...'
-                              />
-                              <p className="text-[10px] text-muted-foreground">
-                                Na prévia/TTS, {"{{nome}}"} vira o primeiro nome (ex.:{" "}
-                                <span className="font-mono">{firstNome}</span>). No passo 3 o
-                                nome já entra no início do áudio; use aqui só se quiser
-                                citar de novo na explicação.
-                              </p>
-                            </div>
-                          )}
-                          <div className="rounded border bg-background/50 p-2 max-h-24 overflow-y-auto">
-                            <WhatsAppFormattedText
-                              text={spoken}
-                              className="text-[11px] leading-snug text-muted-foreground whitespace-pre-wrap break-words"
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {!segmentsReady && (
-                      <div className="flex items-start gap-2 text-xs text-amber-700 dark:text-amber-400">
-                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                        <span>Aprove todos os cortes antes de gerar o áudio.</span>
-                      </div>
-                    )}
+                {isAudioOnlyStep ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 text-[11px] text-muted-foreground">
+                    Roteiro e MP3 na aba{" "}
+                    <button
+                      type="button"
+                      className="font-medium text-primary underline-offset-2 hover:underline"
+                      onClick={() => setInspectorTab("midias")}
+                    >
+                      Mídia
+                    </button>
                   </div>
                 ) : (
                   <div className="space-y-1.5">
+                    {isMixedMessageAudio && (
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Texto após o áudio · use{" "}
+                        <code className="rounded bg-muted px-1 text-[10px]">{"{{valor_conta}}"}</code>{" "}
+                        e{" "}
+                        <code className="rounded bg-muted px-1 text-[10px]">{"{{economia_range}}"}</code>
+                      </p>
+                    )}
                     {themeSlot && (
-                      <div className="rounded-md border border-sky-500/40 bg-sky-500/5 px-3 py-2.5 text-xs space-y-2">
+                      <div className="rounded-lg border border-sky-500/40 bg-sky-500/5 px-3 py-2.5 text-xs space-y-2">
                         <div>
                           <p className="font-semibold text-foreground">
                             Temas que o motor pode enviar neste passo
                           </p>
                           <p className="text-muted-foreground leading-relaxed mt-1">
-                            Não é o D+1 (reabrir). No Dia 2/7, se o lead ficou em silêncio, o
-                            motor escolhe <strong className="text-foreground">um</strong> destes
-                            temas (sempre diferente do último). Clique para ver o texto na
-                            prévia — sem editar.
+                            No Dia 2/7, se o lead ficou em silêncio, o motor escolhe{" "}
+                            <strong className="text-foreground">um</strong> destes temas.
+                            Clique para ver na prévia — sem editar aqui.
                           </p>
                         </div>
                         <div className="grid gap-1.5">
@@ -1648,16 +1735,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                             );
                           })}
                         </div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Cruzeiro não entra neste rodízio (precisa de flag de aprovação). Textos
-                          editáveis na aba <strong className="text-foreground">Temas</strong>.
-                        </p>
                       </div>
                     )}
                     {!themeSlot && (
                       <>
                         <div className="flex items-center justify-between gap-2 flex-wrap">
-                          <Label>Texto da mensagem</Label>
+                          <Label className="text-sm">
+                            {isMixedMessageAudio
+                              ? "Texto da simulação (valor + economia)"
+                              : "Texto da mensagem"}
+                          </Label>
                           {smsLen != null && (
                             <span
                               className={cn(
@@ -1676,13 +1763,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                           ref={draftTextareaRef}
                           value={draft}
                           onChange={(e) => setDraft(e.target.value)}
-                          rows={selected.channel === "sms" ? 4 : 12}
-                          className="font-mono text-sm"
+                          rows={selected.channel === "sms" ? 3 : isMixedMessageAudio ? 6 : 8}
+                          className="min-h-0 resize-y text-[13px] leading-snug"
                           placeholder="Use *negrito* e emojis — a prévia no celular atualiza ao vivo"
                         />
                         <p className="text-[11px] text-muted-foreground">
                           Dica: selecione um trecho e clique em <strong>B</strong> para *negrito*
-                          WhatsApp.
+                          WhatsApp. Variáveis:{" "}
+                          <code className="rounded bg-muted px-1">{"{{nome}}"}</code>
                         </p>
                       </>
                     )}
@@ -1691,109 +1779,242 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                         SMS do tema selecionado: {smsLen}/160
                       </p>
                     )}
+                    {selected.pairedAudioKey && (
+                      <button
+                        type="button"
+                        onClick={() => setInspectorTab("midias")}
+                        className="mt-2 flex w-full items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-left text-xs text-muted-foreground hover:border-primary/40 hover:bg-primary/5"
+                      >
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span>
+                          Áudio deste toque vem de{" "}
+                          <strong className="text-foreground">
+                            {pairedTpl?.title ?? selected.pairedAudioKey}
+                          </strong>
+                          {" — "}abra a aba Mídia
+                        </span>
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {(selected.channel === "whatsapp_buttons" ||
-                  selected.channel === "whatsapp_text" ||
-                  draftButtons.length > 0) &&
-                  !themeSlot && (
-                  <div className="space-y-2 rounded-md border border-border/60 p-3">
+                  </>
+                )}
+                buttonsTab={(
+                  <>
+                <p className="text-[11px] text-muted-foreground">
+                  Máx. {WHAPI_MAX_BUTTONS} · título ≤ {WHAPI_MAX_BUTTON_TITLE}
+                </p>
+
+                {themeSlot ||
+                (selected.channel !== "whatsapp_buttons" &&
+                  selected.channel !== "whatsapp_text" &&
+                  selected.channel !== "whatsapp_audio" &&
+                  draftButtons.length === 0) ? (
+                  <div className="rounded-lg border border-dashed bg-muted/15 px-3 py-5 text-center text-[12px] text-muted-foreground">
+                    Este toque não usa botões.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    <div className="flex flex-wrap gap-1">
+                      {BUTTON_PRESETS.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          disabled={
+                            draftButtons.length >= WHAPI_MAX_BUTTONS ||
+                            draftButtons.some((b) => b.id === p.id)
+                          }
+                          onClick={() => addButton(p)}
+                          className="rounded-full border border-border/60 bg-card px-2 py-0.5 text-[10px] hover:border-primary/40 hover:bg-primary/5 disabled:pointer-events-none disabled:opacity-35"
+                        >
+                          {p.emoji} {p.title}
+                        </button>
+                      ))}
+                    </div>
+
                     <div className="flex items-center justify-between gap-2">
-                      <Label>
-                        {isMixedMessageAudio ? "3 · " : ""}
-                        Botões Whapi ({draftButtons.length}/{WHAPI_MAX_BUTTONS})
+                      <Label className="text-xs">
+                        Botões ({draftButtons.length}/{WHAPI_MAX_BUTTONS})
                       </Label>
                       <Button
                         type="button"
                         size="sm"
                         variant="outline"
-                        className="gap-1 h-8"
-                        onClick={addButton}
+                        className="h-7 gap-1 text-[11px]"
+                        onClick={() => addButton()}
                         disabled={draftButtons.length >= WHAPI_MAX_BUTTONS}
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <Plus className="h-3 w-3" />
                         Botão
                       </Button>
                     </div>
-                    {draftButtons.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Sem botões — mensagem só texto (ex.: pedir nome).
-                      </p>
-                    )}
-                    {draftButtons.map((b, idx) => (
-                      <div key={`${b.id}-${idx}`} className="flex flex-wrap items-center gap-2">
-                        <Input
-                          className="w-28 h-8 text-xs font-mono"
-                          value={b.id}
-                          onChange={(e) => updateButton(idx, { id: e.target.value })}
-                          placeholder="id"
-                        />
-                        <Input
-                          className="flex-1 min-w-[140px] h-8 text-sm"
-                          value={b.title}
-                          maxLength={WHAPI_MAX_BUTTON_TITLE}
-                          onChange={(e) => updateButton(idx, { title: e.target.value })}
-                          placeholder="título (máx 25)"
-                        />
-                        <span
-                          className={cn(
-                            "text-[10px] tabular-nums w-10",
-                            b.title.length > WHAPI_MAX_BUTTON_TITLE
-                              ? "text-destructive"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {b.title.length}/{WHAPI_MAX_BUTTON_TITLE}
-                        </span>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8"
-                          onClick={() => removeButton(idx)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+
+                    {draftButtons.length === 0 ? (
+                      <div className="rounded-lg border border-dashed bg-muted/15 px-3 py-5 text-center text-[12px] text-muted-foreground">
+                        Sem botões — use um preset ou “+ Botão”.
                       </div>
-                    ))}
+                    ) : (
+                      <div className="space-y-1.5">
+                        {draftButtons.map((b, idx) => (
+                          <div
+                            key={`${b.id}-${idx}`}
+                            className="space-y-1.5 rounded-lg border border-border/60 bg-card/70 p-2.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge variant="secondary" className="h-4 text-[9px]">
+                                #{idx + 1}
+                              </Badge>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-6 w-6 text-destructive"
+                                onClick={() => removeButton(idx)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-[88px_1fr] gap-1.5">
+                              <Input
+                                className="h-7 font-mono text-[11px]"
+                                value={b.id}
+                                onChange={(e) => updateButton(idx, { id: e.target.value })}
+                                placeholder="id"
+                              />
+                              <div className="relative">
+                                <Input
+                                  className="h-7 pr-10 text-[12px]"
+                                  value={b.title}
+                                  maxLength={WHAPI_MAX_BUTTON_TITLE}
+                                  onChange={(e) => updateButton(idx, { title: e.target.value })}
+                                  placeholder="título"
+                                />
+                                <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] tabular-nums text-muted-foreground">
+                                  {b.title.length}/{WHAPI_MAX_BUTTON_TITLE}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {!btnValidation.ok && (
-                      <div className="flex items-start gap-2 text-xs text-destructive">
-                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <div className="flex items-start gap-1.5 text-[11px] text-destructive">
+                        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                         <span>{btnValidation.errors.join(" · ")}</span>
                       </div>
                     )}
                   </div>
                 )}
+                  </>
+                )}
+                mediaTab={(
+                  <>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Cortes TTS · gerar MP3 · teste WA
+                  {(selected.audioPlacement === "before_text" || selected.pairedAudioKey) &&
+                    " · ordem: áudio → texto → botões"}
+                  {selected.audioPlacement === "after_text" && " · ordem: texto → áudio → botões"}
+                </p>
 
-                <div className="lg:hidden rounded-lg border border-border/50 bg-muted/20 p-3">
-                  <CadenceMobilePreview
-                    text={preview}
-                    buttons={previewButtons}
-                    channel={selected.channel}
-                    contactName="Sofia · iGreen"
-                    audioUrl={previewAudioUrl}
-                    showAudio={showAudioAboveButtons}
-                    audioPlacement={audioPlacement}
-                  />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={handleSave} disabled={saving} className="gap-2">
-                    {saving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Save className="h-4 w-4" />
+                {pairedTpl && !hasSegments && (
+                  <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/[0.04] p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <Label className="flex items-center gap-1 text-xs">
+                          <Link2 className="h-3 w-3" />
+                          Áudio pareado
+                        </Label>
+                        <p className="truncate text-[10px] text-muted-foreground">
+                          {pairedTpl.title}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-7 shrink-0 text-[11px]"
+                        onClick={() => openInspector(pairedTpl.key, "midias")}
+                      >
+                        Editar
+                      </Button>
+                    </div>
+                    {pairedSegments.length > 0 && (
+                      <CadenceAudioCutsPanel
+                        segments={pairedSegments}
+                        previewName={previewName}
+                        previewVars={previewVars}
+                        isSegmentOk={(id) =>
+                          !!lib.segmentApproved[pairedTpl.key]?.[id] ||
+                          hasGeneratedCadenceAudio(pairedTpl.key, lib)
+                        }
+                        segmentsReady={allAudioSegmentsApproved(pairedTpl, lib)}
+                        readOnly
+                        onApproveAll={() => {}}
+                        onToggleApproved={() => {}}
+                        onSetText={() => {}}
+                        onInsertNome={() => {}}
+                      />
                     )}
-                    Salvar
-                  </Button>
-                  <Button type="button" variant="outline" className="gap-2" onClick={handleCopy}>
-                    <Copy className="h-4 w-4" /> Copiar
-                  </Button>
-                  <Button type="button" variant="outline" className="gap-2" onClick={handleResetOne}>
-                    <RotateCcw className="h-4 w-4" /> Restaurar
-                  </Button>
-                  {selected.canGenerateAudio && (
+                    {(resolveCadenceAudioUrl(lib, pairedTpl.key, null) ||
+                      lib.audioUrls[pairedTpl.key]) && (
+                      <audio
+                        controls
+                        className="w-full"
+                        src={
+                          resolveCadenceAudioUrl(lib, pairedTpl.key, null) ||
+                          lib.audioUrls[pairedTpl.key]
+                        }
+                      />
+                    )}
+                  </div>
+                )}
+
+                {hasSegments && (
+                  <CadenceAudioCutsPanel
+                    segments={draftSegments}
+                    previewName={previewName}
+                    previewVars={previewVars}
+                    isSegmentOk={(id) =>
+                      !!lib.segmentApproved[selected.key]?.[id] ||
+                      hasGeneratedCadenceAudio(selected.key, lib)
+                    }
+                    segmentsReady={segmentsReady}
+                    hint={
+                      isMixedMessageAudio ? (
+                        <>
+                          Ordem no WhatsApp: <strong>áudio → texto → botões</strong>.
+                          Áudio = nome + corpo fixo.
+                        </>
+                      ) : selected.key === "a5_audio_club_benefits" ? (
+                        <>Passo 4a: só o nome → corpo fixo do clube.</>
+                      ) : selected.key === "a2_audio_activate_name" ? (
+                        <>Passo 2a: Olá + nome → corpo fixo M/F.</>
+                      ) : (
+                        <>Aprove cada corte antes de gerar o MP3.</>
+                      )
+                    }
+                    onApproveAll={approveAllSegments}
+                    onToggleApproved={toggleSegmentApproved}
+                    onSetText={setSegmentText}
+                    onInsertNome={insertNomeInSegment}
+                  />
+                )}
+
+                {!selected.canGenerateAudio &&
+                  !hasSegments &&
+                  !pairedTpl &&
+                  !lib.audioUrls[selected.key] &&
+                  !audioUrl && (
+                  <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
+                    <p className="text-sm text-muted-foreground">
+                      Este toque não tem áudio. Use a aba Conteúdo para o texto.
+                    </p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+{selected.canGenerateAudio && (
                     <Button
                       type="button"
                       variant="secondary"
@@ -1905,6 +2126,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   )}
                 </div>
 
+
                 {lastGenStats && (
                   <p className="text-xs text-muted-foreground">{lastGenStats}</p>
                 )}
@@ -1960,23 +2182,126 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     )}
                   </>
                 )}
-              </div>
-            )}
 
-            {selected && (
-              <div className="hidden lg:block sticky top-4 self-start">
-                <CadenceMobilePreview
-                  text={preview}
-                  buttons={previewButtons}
-                  channel={selected.channel}
-                  contactName="Sofia · iGreen"
-                  audioUrl={previewAudioUrl}
-                  showAudio={showAudioAboveButtons}
-                  audioPlacement={audioPlacement}
-                />
-              </div>
+                  </>
+                )}
+                advancedTab={(
+                  <>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between rounded-lg border border-border/60 px-2.5 py-2">
+                    <Label htmlFor="approved-adv" className="text-xs">Aprovado</Label>
+                    <Switch
+                      id="approved-adv"
+                      checked={!!lib.approved[selected.key]}
+                      onCheckedChange={toggleApproved}
+                      className="scale-90"
+                    />
+                  </div>
+
+                  <div className="space-y-1 rounded-lg border border-dashed bg-muted/15 px-2.5 py-2">
+                    <Label className="text-xs">Runtime</Label>
+                    <p className="text-[11px] leading-snug text-muted-foreground">
+                      A → <code className="rounded bg-muted px-1 text-[10px]">bot_flow_steps</code>
+                      {" · "}
+                      B/C → <code className="rounded bg-muted px-1 text-[10px]">cadence_stage_config</code>
+                    </p>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {selected.key} · {selected.channel} · {selected.group}
+                    </p>
+                  </div>
+
+                  {selected.requiresApproval && (
+                    <Badge variant="destructive" className="text-[10px]">
+                      Requer {selected.requiresApproval}=true
+                    </Badge>
+                  )}
+                </div>
+                  </>
+                )}
+                footer={(
+                  <>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-0.5 px-2 text-[11px]"
+                    disabled={listIdx <= 0}
+                    onClick={() => {
+                      if (listIdx > 0) openInspector(list[listIdx - 1]!.key, inspectorTab);
+                    }}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Ant.
+                  </Button>
+                  <span className="px-1 text-[10px] tabular-nums text-muted-foreground">
+                    {listIdx + 1}/{list.length}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-0.5 px-2 text-[11px]"
+                    disabled={listIdx < 0 || listIdx >= list.length - 1}
+                    onClick={() => {
+                      if (listIdx >= 0 && listIdx < list.length - 1) {
+                        openInspector(list[listIdx + 1]!.key, inspectorTab);
+                      }
+                    }}
+                  >
+                    Próx.
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                  <div className="ml-auto flex flex-wrap gap-1.5">
+                    <Button
+                      onClick={handleSave}
+                      disabled={saving}
+                      size="sm"
+                      className="h-7 gap-1 text-[11px]"
+                    >
+                      {saving ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Save className="h-3 w-3" />
+                      )}
+                      Salvar
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-[11px]"
+                      onClick={handleCopy}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 gap-1 px-2 text-[11px]"
+                      onClick={handleResetOne}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-border/50 p-2 lg:hidden">
+                  <CadenceMobilePreview
+                    text={preview}
+                    buttons={previewButtons}
+                    channel={selected.channel}
+                    contactName="Sofia · iGreen"
+                    audioUrl={previewAudioUrl}
+                    showAudio={showAudioAboveButtons}
+                    audioPlacement={audioPlacement}
+                  />
+                </div>
+                  </>
+                )}
+              />
             )}
-          </div>
         </TabsContent>
       </Tabs>
     </div>

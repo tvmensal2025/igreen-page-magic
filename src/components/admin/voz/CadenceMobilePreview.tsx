@@ -45,16 +45,16 @@ export function CadenceMobilePreview({
 
   if (isSms) {
     return (
-      <div className={cn("w-full max-w-[280px] mx-auto", className)}>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 text-center">
+      <div className={cn("mx-auto w-full max-w-[280px]", className)}>
+        <p className="mb-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
           Prévia SMS
         </p>
-        <div className="rounded-[1.75rem] border-[7px] border-zinc-900 bg-zinc-950 shadow-xl overflow-hidden">
-          <div className="bg-zinc-900 px-3 py-2 text-center">
-            <p className="text-[11px] text-white/80">Mensagens</p>
-            <p className="text-xs font-semibold text-white truncate">{contactName}</p>
+        <div className="overflow-hidden rounded-[1.5rem] border-[6px] border-zinc-900 bg-zinc-950 shadow-lg">
+          <div className="bg-zinc-900 px-2.5 py-1.5 text-center">
+            <p className="text-[10px] text-white/80">Mensagens</p>
+            <p className="truncate text-[11px] font-semibold text-white">{contactName}</p>
           </div>
-          <div className="min-h-[340px] bg-white px-3 py-4">
+          <div className="min-h-[280px] bg-white px-2.5 py-3">
             <div className="max-w-[92%] rounded-2xl bg-[#e9e9eb] px-3 py-2 shadow-sm">
               <WhatsAppFormattedText
                 text={text || "(vazio)"}
@@ -75,22 +75,22 @@ export function CadenceMobilePreview({
 
   if (isCall) {
     return (
-      <div className={cn("w-full max-w-[280px] mx-auto", className)}>
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2 text-center">
+      <div className={cn("mx-auto w-full max-w-[280px]", className)}>
+        <p className="mb-1.5 text-center text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
           Script ligação
         </p>
-        <div className="rounded-[1.75rem] border-[7px] border-zinc-900 bg-gradient-to-b from-emerald-900 to-zinc-950 shadow-xl overflow-hidden">
-          <div className="px-4 pt-8 pb-4 text-center text-white">
-            <div className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-full bg-white/15">
-              <Phone className="h-7 w-7" />
+        <div className="overflow-hidden rounded-[1.5rem] border-[6px] border-zinc-900 bg-gradient-to-b from-emerald-900 to-zinc-950 shadow-lg">
+          <div className="px-3 pb-3 pt-6 text-center text-white">
+            <div className="mx-auto mb-2 grid h-12 w-12 place-items-center rounded-full bg-white/15">
+              <Phone className="h-5 w-5" />
             </div>
-            <p className="text-base font-semibold">{contactName}</p>
-            <p className="text-xs text-white/70 mt-0.5">Ligação · voz Sofia</p>
+            <p className="text-sm font-semibold">{contactName}</p>
+            <p className="mt-0.5 text-[10px] text-white/70">Ligação · Sofia</p>
           </div>
-          <div className="mx-3 mb-4 rounded-xl bg-black/30 px-3 py-3 max-h-[280px] overflow-y-auto">
+          <div className="mx-2.5 mb-3 max-h-[220px] overflow-y-auto rounded-lg bg-black/30 px-2.5 py-2">
             <WhatsAppFormattedText
               text={text || "(sem script)"}
-              className="text-[12px] leading-relaxed text-white/95 whitespace-pre-wrap break-words"
+              className="whitespace-pre-wrap break-words text-[11px] leading-relaxed text-white/95"
             />
           </div>
         </div>
@@ -99,27 +99,27 @@ export function CadenceMobilePreview({
   }
 
   return (
-    <div className={cn("w-full max-w-[280px] mx-auto", className)}>
-      <div className="flex items-center justify-between mb-2 px-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <div className={cn("mx-auto w-full max-w-[280px]", className)}>
+      <div className="mb-1.5 flex items-center justify-between px-0.5">
+        <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
           Prévia WhatsApp
         </p>
-        <span className="text-[9px] text-emerald-700/80 font-medium">ao vivo</span>
+        <span className="text-[9px] font-medium text-emerald-700/80">ao vivo</span>
       </div>
 
-      <div className="rounded-[1.85rem] border-[8px] border-zinc-900 bg-zinc-900 shadow-2xl overflow-hidden">
-        <div className="flex items-center gap-2.5 bg-[#075E54] px-3 py-2.5 text-white">
-          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/20 text-xs font-bold">
+      <div className="overflow-hidden rounded-[1.55rem] border-[6px] border-zinc-900 bg-zinc-900 shadow-lg">
+        <div className="flex items-center gap-2 bg-[#075E54] px-2.5 py-2 text-white">
+          <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/20 text-[10px] font-bold">
             S
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-semibold truncate leading-tight">{contactName}</p>
-            <p className="text-[10px] text-white/70">online</p>
+            <p className="truncate text-[11px] font-semibold leading-tight">{contactName}</p>
+            <p className="text-[9px] text-white/70">online</p>
           </div>
         </div>
 
         <div
-          className="min-h-[360px] max-h-[480px] overflow-y-auto px-2.5 py-3 space-y-2"
+          className="min-h-[260px] max-h-[360px] space-y-1.5 overflow-y-auto px-2 py-2.5"
           style={{
             backgroundColor: "#ECE5DD",
             backgroundImage:

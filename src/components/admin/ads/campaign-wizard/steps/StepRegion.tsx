@@ -4,14 +4,17 @@
  * (e o bônus). NÃO existe mais "adicionar distribuidora inteira" — cada cidade
  * é adicionada individualmente, mantendo a lista limpa.
  */
-import { MapPin, Target, Search, TrendingUp, X, Check, Plus } from "lucide-react";
+import { useMemo } from "react";
+import { MapPin, Target, Search, TrendingUp, X, Check, Plus, RefreshCw } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ResponsiveContainer, BarChart, Bar, XAxis, Cell } from "recharts";
 import { AddressRadiusPicker } from "../../AddressRadiusPicker";
 import { findDistribuidoraForCity } from "@/data/distribuidoraPresets";
+import { dddsFromCampaignGeo } from "@/lib/cityToDdd";
 import type { CityHit } from "@/services/facebookAds";
 import type { WizardState } from "../hooks/useWizardState";
 import type { useRegionLogic } from "../hooks/useRegionLogic";
@@ -34,8 +37,64 @@ export function StepRegion({ state, patch, region }: Props) {
       : "hsl(var(--primary))";
   const chartData = [{ name: "alcance", v: Math.max(4, reachPct) }];
 
+  const inferredDdds = useMemo(
+    () =>
+      dddsFromCampaignGeo({
+        cities: state.geoMode === "cities" ? state.cities : [],
+        addresses:
+          state.geoMode === "radius"
+            ? state.radiusPoints.map((p) => p.address_string || p.name || "")
+            : [],
+      }),
+    [state.geoMode, state.cities, state.radiusPoints],
+  );
+
+  function setRemarketing(on: boolean) {
+    const nextPrefix = on
+      ? (state.namePrefix.trim() ? state.namePrefix : "remarketing")
+      : state.namePrefix.trim().toLowerCase() === "remarketing"
+        ? ""
+        : state.namePrefix;
+    patch({ isRemarketing: on, namePrefix: nextPrefix });
+  }
+
   return (
     <div className="space-y-4">
+      {/* Objetivo: captação vs remarketing (DDDs automáticos) */}
+      <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-[hsl(var(--ads-surface))] p-3 space-y-2">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-[hsl(var(--ads-text))] flex items-center gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald))]" />
+              Esta campanha é remarketing?
+            </div>
+            <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1 leading-relaxed">
+              Ligado: o sistema reconhece as cidades (e vizinhas) e sobe só os DDDs certos
+              na Custom Audience — sem misturar telefone de longe (ex.: 19).
+            </p>
+          </div>
+          <Switch
+            checked={state.isRemarketing}
+            onCheckedChange={setRemarketing}
+            aria-label="Marcar como remarketing"
+          />
+        </div>
+        {state.isRemarketing && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[10px] text-[hsl(var(--ads-muted))]">DDDs que entram automaticamente:</span>
+            {inferredDdds.length === 0 ? (
+              <span className="text-[10px] text-amber-600">Escolha a cidade abaixo para detectar o DDD</span>
+            ) : (
+              inferredDdds.map((d) => (
+                <Badge key={d} variant="secondary" className="text-[10px] px-1.5 py-0">
+                  {d}
+                </Badge>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Modo de geo */}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={() => patch({ geoMode: "cities" })}

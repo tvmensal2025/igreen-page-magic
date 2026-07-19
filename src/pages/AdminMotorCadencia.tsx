@@ -33,6 +33,7 @@ import {
 } from "@/lib/cadenceCalendarMap";
 import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { labelCadenceStage } from "@/lib/cadenceStageLabels";
+import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 
 /**
  * Painel Admin do Motor "Zero Lead Perdido" — calendário Dia 1→10
@@ -457,6 +458,10 @@ export default function AdminMotorCadencia() {
           </div>
         </div>
       </header>
+
+      <div className="mx-auto max-w-6xl px-4 pt-3">
+        <CadenceMissingAlert />
+      </div>
 
       <AlertDialog open={!!pendingToggle} onOpenChange={(o) => { if (!o && !toggling) setPendingToggle(null); }}>
         <AlertDialogContent>

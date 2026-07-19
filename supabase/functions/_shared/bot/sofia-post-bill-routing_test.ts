@@ -17,7 +17,17 @@ Deno.test("pickSofiaDocumentCaptureStep — prefere a7", () => {
   assertEquals(step?.step_key, "a7_ask_document");
 });
 
-Deno.test("buildSofiaDispatchNameVars — primeiro nome", () => {
-  const v = buildSofiaDispatchNameVars({ name: "ROZANA MAZOCK DIAS" });
-  assertEquals(v["{{nome}}"], "ROZANA");
+Deno.test("buildSofiaDispatchNameVars — primeiro nome com fonte confiável", () => {
+  const v = buildSofiaDispatchNameVars({ name: "ROZANA MAZOCK DIAS", name_source: "ocr_conta" });
+  assertEquals(v["{{nome}}"], "Rozana");
+});
+
+Deno.test("buildSofiaDispatchNameVars — rejeita Ixi Kkk", () => {
+  const v = buildSofiaDispatchNameVars({ name: "Ixi Kkk", name_source: "self_introduced" });
+  assertEquals(v["{{nome}}"], "");
+});
+
+Deno.test("buildSofiaDispatchNameVars — push Zap não chama mesmo com nome bonito", () => {
+  const v = buildSofiaDispatchNameVars({ name: "Marcus Medau", name_source: "whatsapp_profile" });
+  assertEquals(v["{{nome}}"], "");
 });

@@ -1,0 +1,29 @@
+---
+description: WhatsApp do consultor é Whapi — não pedir Evolution/reconnect
+alwaysApply: true
+---
+
+# WhatsApp = Whapi (não Evolution)
+
+## Fonte da verdade
+
+- O WhatsApp **em uso** neste projeto/consultor é **Whapi**.
+- `whatsapp_instances.status = needs_reconnect` (Evolution) **não** significa que o Zap está offline.
+- UI do chat já usa `isWhapi` (`useWhatsApp` / `WhatsAppTab`). Health real: status Whapi `AUTH`.
+
+## O que o agente NÃO deve fazer
+
+- Pedir para “conectar o WhatsApp” ou “reconectar Evolution” só porque `whatsapp_instances` está `needs_reconnect` / `connected_phone` null.
+- Tratar Evolution como canal principal de envio/agenda para este consultor.
+- Assumir que agendamento falhou por “Zap desconectado” sem checar Whapi.
+
+## O que fazer
+
+- Ao diagnosticar envio/agenda: priorizar **Whapi** (`whapi-webhook`, `whapiApi`, token Whapi, health `AUTH`).
+- Se algo ainda for só Evolution (ex.: `send-scheduled-messages` via Evolution API), diga que é **código legado no cron**, não que o usuário está desconectado — e proponha alinhar o envio ao Whapi.
+- Mensagens ao usuário: português simples — “seu WhatsApp (Whapi) está ok”; nunca assustar com reconnect Evolution sem evidência Whapi.
+
+## Lembrete técnico
+
+- Agenda manual (`scheduled_messages`) ainda pode gravar `instance_name` Evolution e o cron `send-scheduled-messages` fala com Evolution.
+- Isso é dívida técnica: **corrigir o envio para Whapi**, não mandar o consultor “conectar de novo”.

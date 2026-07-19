@@ -5,6 +5,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { uploadAudioFile } from "./velip.ts";
+import { safeFirstNameForAddress } from "../customer-display-name.ts";
 
 export type AdminClient = ReturnType<typeof createClient>;
 
@@ -36,10 +37,12 @@ export function normalizeCallName(input: string): string {
     .replace(/^_|_$/g, "");
 }
 
-export function firstNameFrom(raw: string | null | undefined): string {
-  const n = String(raw || "").trim();
-  if (!n) return "";
-  return n.split(/\s+/)[0] || "";
+/** Prenome pra intro da ligação. Sem fonte confiável → "" (só o corpo). */
+export function firstNameFrom(
+  raw: string | null | undefined,
+  nameSource?: string | null,
+): string {
+  return safeFirstNameForAddress(raw, nameSource);
 }
 
 function concatMp3Bytes(parts: Uint8Array[]): Uint8Array {
@@ -138,12 +141,14 @@ export async function resolvePersonalizedCallAudio(
     consultantId: string;
     bodyClipId: string;
     rawName: string | null | undefined;
+    /** customers.name_source — whatsapp_profile / unknown → só o corpo. */
+    nameSource?: string | null;
     /** Se true e falhar stitch, devolve velip do corpo. */
     fallbackToBody?: boolean;
   },
 ): Promise<StitchResult> {
   const fallback = opts.fallbackToBody !== false;
-  const display = firstNameFrom(opts.rawName);
+  const display = firstNameFrom(opts.rawName, opts.nameSource);
   const nameNorm = normalizeCallName(display);
 
   const { data: clipRaw } = await admin
@@ -252,6 +257,7 @@ export async function resolveCallDialAudio(
     clipId?: string | null;
     legacyVelipAudioId?: string | null;
     rawName?: string | null;
+    nameSource?: string | null;
     personalize?: boolean;
   },
 ): Promise<StitchResult> {
@@ -268,6 +274,7 @@ export async function resolveCallDialAudio(
       consultantId: opts.consultantId,
       bodyClipId: clipId,
       rawName: opts.rawName,
+      nameSource: opts.nameSource,
       fallbackToBody: true,
     });
   }

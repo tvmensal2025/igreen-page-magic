@@ -264,7 +264,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
 
             <div className="text-xs space-y-1 rounded border border-primary/30 bg-primary/5 p-3">
               <div>📍 <strong>{preset?.nome}</strong> — {selectedCity || "escolha 1 cidade"}</div>
-              <div>💰 <strong>R$ {(Math.max(1000, template.suggested_daily_budget_cents) / 100).toFixed(0)}/dia</strong>, por 7 dias</div>
+              <div>💰 <strong>R$ {(Math.max(517, template.suggested_daily_budget_cents) / 100).toFixed(2).replace(".", ",")}/dia</strong>, por 7 dias</div>
               <div>👥 Idade {template.age_min}-{template.age_max}, LAL da plataforma + exclusão de clientes ativos</div>
               <div>📱 Clientes interessados chegam direto no seu WhatsApp configurado</div>
             </div>

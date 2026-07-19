@@ -193,7 +193,7 @@ Deno.serve(async (req) => {
 
     const { data: targets } = await admin
       .from("voice_campaign_targets")
-      .select("id, phone, name")
+      .select("id, phone, name, customer_id")
       .eq("campaign_id", camp.id)
       .eq("status", "queued")
       .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
@@ -270,10 +270,29 @@ Deno.serve(async (req) => {
         Boolean(cfg.personalize_name) &&
         camp.audio_clip_id
       ) {
+        // Só costura "Olá, Nome" se a fonte for confiável (não push do Zap).
+        let nameSource: string | null = null;
+        let rawName = (t as { name?: string | null }).name;
+        const customerId = (t as { customer_id?: string | null }).customer_id;
+        if (customerId) {
+          const { data: cust } = await admin
+            .from("customers")
+            .select("name, name_source")
+            .eq("id", customerId)
+            .maybeSingle();
+          if (cust) {
+            rawName = (cust as { name?: string | null }).name ?? rawName;
+            nameSource = (cust as { name_source?: string | null }).name_source ?? null;
+          }
+        } else if (rawName) {
+          // Lista digitada pelo consultor na campanha → trata como manual.
+          nameSource = "manual";
+        }
         const st = await resolvePersonalizedCallAudio(admin, {
           consultantId: camp.consultant_id,
           bodyClipId: String(camp.audio_clip_id),
-          rawName: (t as { name?: string | null }).name,
+          rawName,
+          nameSource,
           fallbackToBody: true,
         });
         stitchMeta = {

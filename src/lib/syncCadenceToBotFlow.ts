@@ -6,12 +6,31 @@
 import { supabase } from "@/integrations/supabase/client";
 import {
   MULTICHANNEL_CADENCE_TEMPLATES,
+  OCR_RETRY_PARENT,
+  cadenceAudioUrlKey,
   emptyLibrary,
   resolveBody,
   resolveButtons,
+  validateWhapiButtons,
   type CadenceButton,
+  type CadenceTemplate,
   type SavedCadenceLibrary,
 } from "@/lib/multichannelCadenceTexts";
+
+/** Clip Sofia do toque (chave plain ou sufixo M/F). */
+export function resolveLibAudioClipId(
+  lib: SavedCadenceLibrary,
+  key: string,
+): string | null {
+  const ids = lib.audioClipIds || {};
+  const raw =
+    ids[key] ||
+    ids[cadenceAudioUrlKey(key, "feminino")] ||
+    ids[cadenceAudioUrlKey(key, "masculino")] ||
+    "";
+  const clip = String(raw).trim();
+  return clip || null;
+}
 
 const REMOTE_LIBRARY_SLOT = "multichannel_cadence_v2";
 
@@ -37,6 +56,13 @@ type FlowStepRow = {
   captures: CaptureRow[] | null;
   transitions: TransitionRow[] | null;
   voice_audio_clip_id?: string | null;
+  fallback?: {
+    mode?: string;
+    max_retries?: number;
+    retry_text?: string;
+    then?: string;
+    retry_audio_clip_id?: string | null;
+  } | null;
 };
 
 async function resolveActiveFlowId(
@@ -79,11 +105,14 @@ export async function loadCadenceLibraryFromBotFlow(
     (t) => t.group === "A" && !t.hiddenInPanel,
   ).map((t) => t.key);
 
+  const parentKeys = Object.values(OCR_RETRY_PARENT).map((p) => p.parentKey);
+  const loadKeys = Array.from(new Set([...keys, ...parentKeys]));
+
   const { data: steps, error } = await supabase
     .from("bot_flow_steps")
-    .select("id, step_key, message_text, captures, transitions, voice_audio_clip_id")
+    .select("id, step_key, message_text, captures, transitions, voice_audio_clip_id, fallback")
     .eq("flow_id", flowId)
-    .in("step_key", keys);
+    .in("step_key", loadKeys);
 
   if (error || !steps?.length) return {};
 
@@ -94,13 +123,28 @@ export async function loadCadenceLibraryFromBotFlow(
   for (const raw of steps as FlowStepRow[]) {
     const key = String(raw.step_key || "");
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
-    if (!tpl) continue;
-    if (tpl.channel !== "whatsapp_audio" && String(raw.message_text || "").trim()) {
-      bodies[key] = String(raw.message_text);
+    if (tpl) {
+      if (tpl.channel !== "whatsapp_audio" && String(raw.message_text || "").trim()) {
+        bodies[key] = String(raw.message_text);
+      }
+      const btns = buttonsFromCaptures(raw.captures);
+      if (btns.length) buttons[key] = btns;
+      if (raw.voice_audio_clip_id) audioClipIds[key] = String(raw.voice_audio_clip_id);
     }
-    const btns = buttonsFromCaptures(raw.captures);
-    if (btns.length) buttons[key] = btns;
-    if (raw.voice_audio_clip_id) audioClipIds[key] = String(raw.voice_audio_clip_id);
+
+    // Erro OCR: fallback do passo pai → toques a6_ocr_retry / a7_ocr_retry
+    const retryKey = Object.entries(OCR_RETRY_PARENT).find(
+      ([, p]) => p.parentKey === key,
+    )?.[0];
+    if (retryKey) {
+      const fb = raw.fallback;
+      if (fb?.mode === "retry" && String(fb.retry_text || "").trim()) {
+        bodies[retryKey] = String(fb.retry_text);
+      }
+      if (fb?.retry_audio_clip_id) {
+        audioClipIds[retryKey] = String(fb.retry_audio_clip_id);
+      }
+    }
   }
 
   return { bodies, buttons, audioClipIds };
@@ -181,12 +225,51 @@ const GROUP_C_TO_STAGE: Record<string, string> = {
   c_recall_yearly_call: "RECALL_YEARLY_CALL",
 };
 
-const STAGE_TEXT_SYNC_MAP: Record<string, string> = {
+export const STAGE_TEXT_SYNC_MAP: Record<string, string> = {
   ...GROUP_B_TO_STAGE,
   ...GROUP_C_TO_STAGE,
 };
 
-/** Espelha textos do Multicanal (Grupo B + C) em `cadence_stage_config` (consultant_id = null). */
+/**
+ * ContentContract: patch de conteúdo do motor a partir do painel (função pura,
+ * testável). Botões só entram para canal `whatsapp_buttons`, validados
+ * (máx 3, título ≤ 25). Inválidos → campo fica de fora (motor mantém o que
+ * tem; runtime ainda tem fallback hardcoded). Botões vazios → null (volta ao
+ * fallback hardcoded do motor).
+ */
+export function buildStageConfigPatch(
+  tpl: CadenceTemplate,
+  lib: SavedCadenceLibrary,
+): { body: string; patch: Record<string, unknown>; buttonErrors: string[] } {
+  const body = resolveBody(tpl, lib).trim();
+  const patch: Record<string, unknown> = {};
+  const buttonErrors: string[] = [];
+  if (body) patch.message_text = body;
+  if (tpl.channel === "whatsapp_buttons") {
+    const buttons = resolveButtons(tpl, lib);
+    const v = validateWhapiButtons(buttons);
+    if (!v.ok) {
+      buttonErrors.push(...v.errors.map((e) => `${tpl.key}: ${e}`));
+    } else {
+      patch.buttons = buttons.length > 0
+        ? buttons.map((b) => ({ id: b.id, title: b.title }))
+        : null;
+    }
+  }
+  // Ligação: roteiro em message_text + clip Sofia para o dialer (cadence-tick).
+  if (tpl.channel === "call_script") {
+    const clipId = resolveLibAudioClipId(lib, tpl.key);
+    if (clipId) patch.voice_audio_clip_id = clipId;
+  }
+  return { body, patch, buttonErrors };
+}
+
+/**
+ * Espelha textos do Multicanal (Grupo B + C) em `cadence_stage_config`
+ * (consultant_id = null). Botões (ContentContract) vão junto para os stages
+ * WhatsApp; se a coluna `buttons` ainda não existir no banco, refaz o update
+ * só com texto (compat até a migration rodar).
+ */
 export async function syncCadenceLibraryToStageConfig(
   lib: SavedCadenceLibrary,
 ): Promise<{ updated: string[]; errors: string[] }> {
@@ -195,7 +278,8 @@ export async function syncCadenceLibraryToStageConfig(
   for (const [key, stage] of Object.entries(STAGE_TEXT_SYNC_MAP)) {
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
     if (!tpl) continue;
-    const body = resolveBody(tpl, lib).trim();
+    const { body, patch, buttonErrors } = buildStageConfigPatch(tpl, lib);
+    if (buttonErrors.length) errors.push(...buttonErrors);
     if (!body) continue;
     const { data: existing } = await supabase
       .from("cadence_stage_config")
@@ -204,15 +288,27 @@ export async function syncCadenceLibraryToStageConfig(
       .eq("stage", stage)
       .maybeSingle();
     if (existing?.id) {
-      const { error } = await supabase
+      let { error } = await supabase
         .from("cadence_stage_config")
-        .update({ message_text: body, updated_at: new Date().toISOString() })
+        .update({ ...patch, updated_at: new Date().toISOString() } as never)
         .eq("id", existing.id);
+      if (error && "buttons" in patch) {
+        // Coluna buttons ainda não migrada → grava só o texto.
+        ({ error } = await supabase
+          .from("cadence_stage_config")
+          .update({ message_text: body, updated_at: new Date().toISOString() })
+          .eq("id", existing.id));
+      }
       if (error) { errors.push(`${stage}: ${error.message}`); continue; }
     } else {
-      const { error } = await supabase
+      let { error } = await supabase
         .from("cadence_stage_config")
-        .insert({ stage, message_text: body, enabled: true, delay_hours: 24 });
+        .insert({ stage, enabled: true, delay_hours: 24, ...patch } as never);
+      if (error && "buttons" in patch) {
+        ({ error } = await supabase
+          .from("cadence_stage_config")
+          .insert({ stage, message_text: body, enabled: true, delay_hours: 24 }));
+      }
       if (error) { errors.push(`${stage}: ${error.message}`); continue; }
     }
     updated.push(stage);
@@ -220,24 +316,61 @@ export async function syncCadenceLibraryToStageConfig(
   return { updated, errors };
 }
 
-/** Lê os textos reais do motor (Grupo B + C) para hidratar o painel. */
+/** Lê textos + botões + clips de ligação do motor (Grupo B + C) para hidratar o painel. */
 export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<SavedCadenceLibrary>> {
   const stages = Object.values(STAGE_TEXT_SYNC_MAP);
-  const { data, error } = await supabase
+  type StageRow = {
+    stage: string | null;
+    message_text: string | null;
+    buttons?: unknown;
+    voice_audio_clip_id?: string | null;
+    consultant_id?: string | null;
+  };
+
+  const full = await supabase
     .from("cadence_stage_config")
-    .select("stage, message_text, consultant_id")
+    .select("stage, message_text, buttons, voice_audio_clip_id, consultant_id")
     .is("consultant_id", null)
     .in("stage", stages);
-  if (error || !data?.length) return {};
+
+  let rows: StageRow[] = [];
+  if (!full.error && full.data?.length) {
+    rows = full.data as StageRow[];
+  } else {
+    // Coluna buttons/clip ainda não migrada / select falhou → só textos.
+    const legacy = await supabase
+      .from("cadence_stage_config")
+      .select("stage, message_text, consultant_id")
+      .is("consultant_id", null)
+      .in("stage", stages);
+    if (legacy.error || !legacy.data?.length) return {};
+    rows = legacy.data as StageRow[];
+  }
+
   const stageToKey: Record<string, string> = {};
   for (const [k, s] of Object.entries(STAGE_TEXT_SYNC_MAP)) stageToKey[s] = k;
   const bodies: Record<string, string> = {};
-  for (const row of data) {
+  const buttons: Record<string, CadenceButton[]> = {};
+  const audioClipIds: Record<string, string> = {};
+  for (const row of rows) {
     const key = stageToKey[String(row.stage || "")];
+    if (!key) continue;
     const text = String(row.message_text || "").trim();
-    if (key && text) bodies[key] = text;
+    if (text) bodies[key] = text;
+    const raw = row.buttons;
+    if (Array.isArray(raw)) {
+      const parsed = (raw as Array<{ id?: unknown; title?: unknown }>)
+        .map((b) => ({
+          id: String(b?.id ?? "").trim(),
+          title: String(b?.title ?? "").trim(),
+        }))
+        .filter((b) => b.id && b.title);
+      if (parsed.length) buttons[key] = parsed;
+    }
+    const clip = String(row.voice_audio_clip_id || "").trim();
+    if (clip) audioClipIds[key] = clip;
   }
-  return { bodies };
+  return { bodies, buttons, audioClipIds };
 }
 
 export async function loadCadenceLibraryRemote(
@@ -282,6 +415,35 @@ export async function attachVoiceClipToCadenceSteps(
   const flowId = await resolveActiveFlowId(consultantId, variant);
   if (!flowId || !clipId) return;
 
+  // OCR retry: clip vai em fallback.retry_audio_clip_id do passo pai (não voice_audio_clip_id).
+  const ocrParent = OCR_RETRY_PARENT[cadenceKey];
+  if (ocrParent) {
+    const { data: step } = await supabase
+      .from("bot_flow_steps")
+      .select("id, fallback")
+      .eq("flow_id", flowId)
+      .eq("step_key", ocrParent.parentKey)
+      .maybeSingle();
+    if (!step?.id) return;
+    const prev = (step as FlowStepRow).fallback && typeof (step as FlowStepRow).fallback === "object"
+      ? { ...(step as FlowStepRow).fallback! }
+      : { mode: "retry", max_retries: 2, then: "humano" };
+    await supabase
+      .from("bot_flow_steps")
+      .update({
+        fallback: {
+          ...prev,
+          mode: "retry",
+          max_retries: Number(prev.max_retries ?? 2),
+          then: String(prev.then || "humano"),
+          retry_audio_clip_id: clipId,
+        },
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id", step.id);
+    return;
+  }
+
   const keys = new Set<string>([cadenceKey]);
   if (cadenceKey === "a3_explain_with_buttons") keys.add("a3_audio_explain");
   if (cadenceKey === "a2_audio_activate_name") keys.add("a2_text_ask_bill_value");
@@ -295,6 +457,68 @@ export async function attachVoiceClipToCadenceSteps(
     })
     .eq("flow_id", flowId)
     .in("step_key", [...keys]);
+}
+
+/** Publica texto/áudio dos toques 5b/6b no fallback do capture_conta/documento. */
+async function syncOcrRetryFallbacks(
+  flowId: string,
+  lib: SavedCadenceLibrary,
+): Promise<{ updated: string[]; errors: string[] }> {
+  const updated: string[] = [];
+  const errors: string[] = [];
+
+  for (const [retryKey, meta] of Object.entries(OCR_RETRY_PARENT)) {
+    const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === retryKey);
+    if (!tpl) continue;
+    const body = resolveBody(tpl, lib).trim();
+    const clipId = lib.audioClipIds?.[retryKey] || null;
+
+    const { data: step, error: stepErr } = await supabase
+      .from("bot_flow_steps")
+      .select("id, fallback")
+      .eq("flow_id", flowId)
+      .eq("step_key", meta.parentKey)
+      .maybeSingle();
+
+    if (stepErr) {
+      errors.push(`${retryKey}: ${stepErr.message}`);
+      continue;
+    }
+    if (!step?.id) {
+      // Pai ainda não existe neste fluxo — não quebra publish.
+      continue;
+    }
+
+    const prevFb =
+      (step as FlowStepRow).fallback && typeof (step as FlowStepRow).fallback === "object"
+        ? { ...(step as FlowStepRow).fallback! }
+        : {};
+
+    const fallback = {
+      ...prevFb,
+      mode: "retry",
+      max_retries: Number(prevFb.max_retries ?? 2),
+      then: String(prevFb.then || "humano"),
+      retry_text: body || String(prevFb.retry_text || tpl.body),
+      retry_audio_clip_id: clipId || prevFb.retry_audio_clip_id || null,
+    };
+
+    const { error: upErr } = await supabase
+      .from("bot_flow_steps")
+      .update({
+        fallback,
+        updated_at: new Date().toISOString(),
+      } as never)
+      .eq("id", step.id);
+
+    if (upErr) {
+      errors.push(`${retryKey}: ${upErr.message}`);
+      continue;
+    }
+    updated.push(retryKey);
+  }
+
+  return { updated, errors };
 }
 
 /**
@@ -327,6 +551,11 @@ export async function syncCadenceLibraryToBotFlow(
   );
 
   for (const tpl of syncable) {
+    // Toques OCR retry: sync dedicado (fallback do passo pai), não step_key próprio.
+    if (OCR_RETRY_PARENT[tpl.key]) {
+      continue;
+    }
+
     if (tpl.channel === "whatsapp_audio" && !tpl.buttons?.length) {
       skipped.push(tpl.key);
       continue;
@@ -406,7 +635,7 @@ export async function syncCadenceLibraryToBotFlow(
     }
     if (nextTransitions) patch.transitions = nextTransitions;
 
-    const clipId = lib.audioClipIds?.[tpl.key];
+    const clipId = resolveLibAudioClipId(lib, tpl.key);
     if (clipId) patch.voice_audio_clip_id = clipId;
 
     const { error: upErr } = await supabase
@@ -420,6 +649,10 @@ export async function syncCadenceLibraryToBotFlow(
     }
     updated.push(tpl.key);
   }
+
+  const ocrSync = await syncOcrRetryFallbacks(flowId, lib);
+  updated.push(...ocrSync.updated);
+  errors.push(...ocrSync.errors);
 
   return { updated, skipped, errors };
 }

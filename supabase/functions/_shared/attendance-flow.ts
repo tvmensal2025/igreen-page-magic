@@ -115,6 +115,66 @@ export function parseAttendanceRating(input: {
   return null;
 }
 
+/**
+ * True se a mensagem parece tentativa de nota (curta / fala de avaliação).
+ * Mensagens conversacionais longas NÃO são tentativa — não devem re-pedir nota.
+ */
+export function looksLikeAttendanceRatingAttempt(input: {
+  messageText?: string | null;
+  buttonId?: string | null;
+}): boolean {
+  if (parseAttendanceRating(input) != null) return true;
+  const bid = String(input.buttonId || "").trim();
+  if (bid) return /^rating[_-]?[1-5]$/i.test(bid);
+  const raw = String(input.messageText || "").trim();
+  if (!raw) return false;
+  // Respostas curtas ("oi", "6", "dez", typo) — ainda pode ser tentativa falha.
+  if (raw.length <= 12) return true;
+  // Fala explícita de avaliação sem número válido.
+  if (raw.length <= 40 && /nota|avalia|score|estrel/i.test(raw)) return true;
+  return false;
+}
+
+/** Motivos em que humano/consultor assumiu — robô NÃO deve cutucar nota. */
+export function isHumanAttendancePause(reason: string | null | undefined): boolean {
+  const r = String(reason || "").toLowerCase();
+  return (
+    r.includes("humano") ||
+    r.includes("human") ||
+    r === "manual" ||
+    r.startsWith("handoff")
+  );
+}
+
+/**
+ * Encerra a espera da nota sem gravar score e reabre conversa.
+ * Mantém attendance_rating_requested_at para o cron não reenviar a pesquisa.
+ */
+async function abandonAttendanceRatingWait(
+  supabase: SB,
+  customerId: string,
+  opts?: { keepBotPaused?: boolean },
+): Promise<void> {
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {
+    // null = mesma lógica do re-welcome: pipeline trata como conversa nova
+    conversation_step: null,
+    previous_conversation_step: ATTENDANCE_RATING_STEP,
+    custom_step_retries: 0,
+    custom_step_retries_step: null,
+    last_custom_prompt_at: null,
+    ai_followups_count: 0,
+    updated_at: now,
+  };
+  if (!opts?.keepBotPaused) {
+    patch.bot_paused = false;
+    patch.bot_paused_reason = null;
+    patch.bot_paused_until = null;
+    patch.bot_paused_at = null;
+  }
+  await supabase.from("customers").update(patch).eq("id", customerId).then(() => {}, () => {});
+}
+
 async function resolveConsultantDisplayName(
   supabase: SB,
   consultantId: string | null | undefined,
@@ -644,7 +704,7 @@ function normalizeAttendanceStep(raw: string | null | undefined): string {
     .replace(/^passo_/, "");
 }
 
-/** True se o lead está aguardando digitar a nota (step ou flag pedida sem nota). */
+/** True se o lead está aguardando digitar a nota (só no step explícito). */
 export function isAwaitingAttendanceRating(customer: {
   conversation_step?: string | null;
   attendance_rating?: number | null;
@@ -652,8 +712,9 @@ export function isAwaitingAttendanceRating(customer: {
 }): boolean {
   if (customer.attendance_rating != null) return false;
   const step = normalizeAttendanceStep(customer.conversation_step);
-  if (step === ATTENDANCE_RATING_STEP) return true;
-  return !!customer.attendance_rating_requested_at;
+  // Só prende enquanto o step for a pesquisa. Qualquer outra coisa (null,
+  // welcome, finalizado) = conversa livre — não cutuca nota.
+  return step === ATTENDANCE_RATING_STEP;
 }
 
 /** True se a nota já foi registrada (ou step terminal pós-nota). */
@@ -684,6 +745,8 @@ export interface AttendanceRatingInterceptArgs {
     attendance_rating?: number | null;
     attendance_rating_requested_at?: string | null;
     do_not_contact?: boolean | null;
+    bot_paused?: boolean | null;
+    bot_paused_reason?: string | null;
   };
   remoteJid: string;
   messageText?: string | null;
@@ -698,20 +761,40 @@ export interface AttendanceRatingInterceptArgs {
 
 export async function tryInterceptAttendanceRating(
   args: AttendanceRatingInterceptArgs,
-): Promise<{ intercepted: boolean; rating?: number; invalid?: boolean; media?: boolean }> {
+): Promise<{
+  intercepted: boolean;
+  rating?: number;
+  invalid?: boolean;
+  media?: boolean;
+  /** Saiu da pesquisa sem nota — webhook deve seguir o pipeline normal. */
+  abandoned?: boolean;
+  /** Humano assumiu: inbound salvo, sem outbound do robô. */
+  silent?: boolean;
+}> {
   if (!isAwaitingAttendanceRating(args.customer)) {
     return { intercepted: false };
   }
 
   // Opt-out / reclamação: silencia — não pede nota, não reenvia retry.
   let doNotContact = !!args.customer.do_not_contact;
-  if (!doNotContact) {
+  let botPaused = !!args.customer.bot_paused;
+  let botPausedReason = args.customer.bot_paused_reason ?? null;
+  {
     const { data: row } = await args.supabase
       .from("customers")
-      .select("do_not_contact")
+      .select("do_not_contact, bot_paused, bot_paused_reason")
       .eq("id", args.customer.id)
       .maybeSingle();
-    doNotContact = !!(row as { do_not_contact?: boolean } | null)?.do_not_contact;
+    const r = row as {
+      do_not_contact?: boolean;
+      bot_paused?: boolean;
+      bot_paused_reason?: string | null;
+    } | null;
+    if (r) {
+      doNotContact = !!r.do_not_contact;
+      botPaused = !!r.bot_paused;
+      botPausedReason = r.bot_paused_reason ?? botPausedReason;
+    }
   }
   if (doNotContact) {
     const inboundText = String(args.messageText || args.buttonId || "").slice(0, 200);
@@ -736,90 +819,22 @@ export async function tryInterceptAttendanceRating(
     return { intercepted: true };
   }
 
+  const humanPaused = botPaused && isHumanAttendancePause(botPausedReason);
+
   const rating = parseAttendanceRating({
     messageText: args.messageText,
     buttonId: args.buttonId,
   });
 
   const inboundText = String(args.messageText || args.buttonId || "").slice(0, 200);
-  const isMediaOnly = !!args.isMedia && !rating;
 
-  // PDF/foto/áudio no passo da nota: NÃO trava, NÃO roda OCR — só pede a nota.
-  if (isMediaOnly) {
-    const kind = args.mediaKind || "file";
-    const label = kind === "document" ? "[documento/pdf]"
-      : kind === "image" ? "[imagem]"
-      : kind === "audio" ? "[áudio]"
-      : kind === "video" ? "[vídeo]"
-      : "[arquivo]";
-    if (!args.skipInboundLog) {
-      await args.supabase.from("conversations").insert({
-        customer_id: args.customer.id,
-        message_direction: "inbound",
-        message_text: inboundText || label,
-        message_type: kind === "document" ? "document" : (kind === "image" ? "image" : "text"),
-        conversation_step: ATTENDANCE_RATING_STEP,
-      }).then(() => {}, () => {});
-    }
-    const hint = await resolveAttendanceTpl(
-      args.supabase,
-      args.customer.consultant_id || null,
-      "attendance_rating_media_hint",
-      buildAttendanceRatingMediaHintText(),
-    );
-    try {
-      await args.sendText(args.remoteJid, hint);
-      await args.supabase.from("conversations").insert({
-        customer_id: args.customer.id,
-        message_direction: "outbound",
-        message_text: hint,
-        message_type: "text",
-        conversation_step: ATTENDANCE_RATING_STEP,
-      }).then(() => {}, () => {});
-    } catch (_) { /* best-effort */ }
-    await args.supabase.from("customers").update({
-      conversation_step: ATTENDANCE_RATING_STEP,
-      bot_paused: false,
-      bot_paused_reason: null,
-      bot_paused_until: null,
-      updated_at: new Date().toISOString(),
-    }).eq("id", args.customer.id).then(() => {}, () => {});
-    return { intercepted: true, invalid: true, media: true };
-  }
-
-  // Resposta inválida no passo da nota: re-pede e NÃO deixa o bot genérico falar.
+  // Qualquer msg/mídia que NÃO seja nota 1–5: encerra pesquisa sem nota
+  // e reabre conversa (humano ou bot). Sem retry, sem “responde 1 a 5”.
   if (!rating) {
-    if (!args.skipInboundLog && inboundText) {
-      await args.supabase.from("conversations").insert({
-        customer_id: args.customer.id,
-        message_direction: "inbound",
-        message_text: inboundText,
-        message_type: "text",
-        conversation_step: ATTENDANCE_RATING_STEP,
-      }).then(() => {}, () => {});
-    }
-    const retry = await resolveAttendanceTpl(
-      args.supabase,
-      args.customer.consultant_id || null,
-      "attendance_rating_retry",
-      buildAttendanceRatingRetryText(),
-    );
-    try {
-      await args.sendText(args.remoteJid, retry);
-      await args.supabase.from("conversations").insert({
-        customer_id: args.customer.id,
-        message_direction: "outbound",
-        message_text: retry,
-        message_type: "text",
-        conversation_step: ATTENDANCE_RATING_STEP,
-      }).then(() => {}, () => {});
-    } catch (_) { /* best-effort */ }
-    // Garante step correto caso tenha sido apagado por re-welcome.
-    await args.supabase.from("customers").update({
-      conversation_step: ATTENDANCE_RATING_STEP,
-      updated_at: new Date().toISOString(),
-    }).eq("id", args.customer.id).then(() => {}, () => {});
-    return { intercepted: true, invalid: true };
+    await abandonAttendanceRatingWait(args.supabase, args.customer.id, {
+      keepBotPaused: humanPaused,
+    });
+    return { intercepted: false, abandoned: true };
   }
 
   if (!args.skipInboundLog) {

@@ -5,7 +5,14 @@ import type { Database } from './types';
 const SUPABASE_URL = "https://zlzasfhcxcznaprrragl.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
-const SUPABASE_FETCH_TIMEOUT_MS = 15000;
+const SUPABASE_FETCH_TIMEOUT_MS = 15_000;
+/** Edge functions longas (ex.: facebook-create-campaign ~30–45s). */
+const SUPABASE_FUNCTIONS_TIMEOUT_MS = 90_000;
+
+function resolveTimeoutMs(url: string): number {
+  if (/\/functions\/v1\b|\/functions-proxy\b/.test(url)) return SUPABASE_FUNCTIONS_TIMEOUT_MS;
+  return SUPABASE_FETCH_TIMEOUT_MS;
+}
 
 /**
  * Em DEV, edge functions com CORS restrito (allowlist) quebram quando o Vite
@@ -21,24 +28,32 @@ function rewriteFunctionsUrlForDev(url: string): string {
   );
 }
 
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  if (typeof Request !== "undefined" && input instanceof Request) return input.url;
+  return String(input);
+}
+
 const fetchWithTimeout: typeof fetch = async (input, init?: RequestInit) => {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), SUPABASE_FETCH_TIMEOUT_MS);
   const requestInit = init ?? {};
+  let nextInput: RequestInfo | URL = input;
+  if (typeof input === "string") {
+    nextInput = rewriteFunctionsUrlForDev(input);
+  } else if (input instanceof URL) {
+    nextInput = new URL(rewriteFunctionsUrlForDev(input.href));
+  } else if (typeof Request !== "undefined" && input instanceof Request) {
+    const rewritten = rewriteFunctionsUrlForDev(input.url);
+    if (rewritten !== input.url) {
+      nextInput = new Request(rewritten, input);
+    }
+  }
+
+  const timeoutMs = resolveTimeoutMs(requestUrl(nextInput));
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    let nextInput: RequestInfo | URL = input;
-    if (typeof input === "string") {
-      nextInput = rewriteFunctionsUrlForDev(input);
-    } else if (input instanceof URL) {
-      nextInput = new URL(rewriteFunctionsUrlForDev(input.href));
-    } else if (typeof Request !== "undefined" && input instanceof Request) {
-      const rewritten = rewriteFunctionsUrlForDev(input.url);
-      if (rewritten !== input.url) {
-        nextInput = new Request(rewritten, input);
-      }
-    }
-
     return await fetch(nextInput, {
       ...requestInit,
       signal: requestInit.signal ?? controller.signal,

@@ -442,7 +442,7 @@ ${conhecimentoFocado}${(knowledge || []).map((k: any) => `## ${k.title}\n${k.con
 
 DADOS DO CLIENTE:
 ${JSON.stringify({
-  name: customer.name, cidade: customer.address_city, uf: customer.address_state,
+  name: customer.name, name_source: (customer as any).name_source, cidade: customer.address_city, uf: customer.address_state,
   conta_valor: customer.electricity_bill_value, distribuidora: customer.distribuidora,
   step: stepBefore, status: customer.status,
 }, null, 2)}

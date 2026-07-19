@@ -211,6 +211,7 @@ Deno.serve(async (req) => {
           consultantId,
           slotKey: "a2_audio_activate_name",
           customerName: name,
+          nameSource: "manual",
         });
         if (stitchReady) {
           results.push({
@@ -225,6 +226,7 @@ Deno.serve(async (req) => {
         const r = await ensureOlaGreetIntroMp3(admin, {
           consultantId,
           customerName: name,
+          nameSource: "manual",
         });
         results.push({
           name,
@@ -252,6 +254,7 @@ Deno.serve(async (req) => {
         const r = await ensureNameOnlyIntroMp3(admin, {
           consultantId,
           customerName: name,
+          nameSource: "manual",
         });
         results.push({
           name,
@@ -279,11 +282,13 @@ Deno.serve(async (req) => {
         await ensureNameIntroPairCache(admin, {
           consultantId,
           customerName: name,
+          nameSource: "manual",
         });
         const r = await resolvePersonalizedWaAudio(admin, {
           consultantId,
           slotKey: slot,
           customerName: name,
+          nameSource: "manual",
         });
         results.push({
           name,

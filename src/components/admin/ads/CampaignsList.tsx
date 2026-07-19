@@ -13,6 +13,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { startFacebookOAuth } from "@/services/facebookAds";
 import { ExtendCampaignDialog } from "./ExtendCampaignDialog";
 import { META_CAMPAIGN_PROOF_OR } from "@/lib/metaCampaignProof";
+import { formatCampaignGeo } from "@/lib/campaignGeo";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -24,6 +25,8 @@ interface Campaign {
   created_at: string; rejection_reason: string | null;
   ended_at: string | null; started_at: string | null;
   thumbnail_url: string | null; creative_format: string | null;
+  age_min?: number | null; age_max?: number | null;
+  duration_days?: number | null;
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; meta_lead_actions: number; messaging_conversations_started: number; cost_per_lead_cents: number }
@@ -146,7 +149,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const [campsRes, settingsRes] = await Promise.all([
         supabase
           .from("facebook_campaigns")
-          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,started_at,thumbnail_url,creative_format")
+          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,started_at,thumbnail_url,creative_format,age_min,age_max,duration_days")
           .eq("consultant_id", consultantId)
           .order("created_at", { ascending: false }),
         supabase
@@ -306,6 +309,12 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       if ((data as any)?.activated) {
         toast({ title: "Campanha reativada!", description: "Voltou a rodar." });
         setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: "active", rejection_reason: null } : x));
+      } else if ((data as any)?.pending_review) {
+        toast({
+          title: "Ativação enviada à Meta",
+          description: (data as any)?.reason || "Anúncios em análise (IN_PROCESS). Em breve ficam ativos sozinhos.",
+        });
+        setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: "pending_review", rejection_reason: null } : x));
       } else {
         toast({ title: "Ainda não foi possível reativar", description: (data as any)?.reason || "Veja o motivo no card.", variant: "destructive" });
       }
@@ -457,10 +466,37 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     return <Badge className={`${cls} gap-1`}><Icon className="w-3 h-3" />{h.label}</Badge>;
                   })()}
                 </div>
-                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1 flex-wrap">
-                  <MapPin className="w-3 h-3" />
-                  <span>{(c.cities || []).slice(0, 3).map((x: any) => x.name).join(", ")}{(c.cities || []).length > 3 ? `... +${c.cities.length - 3}` : ""}</span>
+                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1.5 flex-wrap">
+                  {(() => {
+                    const geo = formatCampaignGeo(c.cities);
+                    return (
+                      <>
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <span className="font-medium text-foreground/80">
+                          {geo.mode === "radius" ? "Raio" : geo.mode === "city" ? "Cidade" : "Local"}:
+                        </span>
+                        <span>{geo.summary}</span>
+                        {typeof c.age_min === "number" && typeof c.age_max === "number" && (
+                          <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] text-foreground">
+                            {c.age_min}–{c.age_max} anos
+                          </span>
+                        )}
+                        <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          {c.duration_days && c.duration_days > 0 ? `${c.duration_days} dias` : "Contínuo"}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
+                {(() => {
+                  const geo = formatCampaignGeo(c.cities);
+                  if (geo.lines.length <= 1) return null;
+                  return (
+                    <div className="text-[10px] text-muted-foreground mt-0.5 pl-4">
+                      {geo.lines.join(" · ")}
+                    </div>
+                  );
+                })()}
                 {(() => {
                   const startMs = new Date(c.started_at || c.created_at).getTime();
                   const days = Math.max(1, Math.floor((Date.now() - startMs) / 86400_000));

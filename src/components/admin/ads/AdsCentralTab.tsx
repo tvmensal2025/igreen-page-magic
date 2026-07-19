@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CreateCampaignWizard } from "./campaign-wizard";
 import { CampaignsList } from "./CampaignsList";
+import { MetaAudiencePanel } from "./MetaAudiencePanel";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
 import { CtwaConnectGuide } from "./CtwaConnectGuide";
@@ -210,9 +211,14 @@ export function AdsCentralTab({ consultantId }: Props) {
           </AdsTile>
         )}
         {view === "campaigns" && (
-          <AdsTile delay={0}>
-            <CampaignsList consultantId={consultantId} refreshKey={refreshKey} />
-          </AdsTile>
+          <div className="space-y-4">
+            <AdsTile delay={0}>
+              <MetaAudiencePanel consultantId={consultantId} />
+            </AdsTile>
+            <AdsTile delay={40}>
+              <CampaignsList consultantId={consultantId} refreshKey={refreshKey} />
+            </AdsTile>
+          </div>
         )}
         {view === "performance" && (
           <ResultsDashboard

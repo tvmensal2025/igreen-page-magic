@@ -24,6 +24,8 @@ export interface MakeCallStepInput {
   consultantId: string;
   customerId: string;
   customerName?: string | null;
+  /** customers.name_source — sem fonte confiável → só o corpo. */
+  nameSource?: string | null;
   phoneWhatsapp?: string | null;
   stepKey?: string | null;
   voiceAudioClipId?: string | null;
@@ -165,6 +167,7 @@ export async function handleMakeCallStep(input: MakeCallStepInput): Promise<Make
     consultantId: input.consultantId,
     clipId,
     rawName: input.customerName,
+    nameSource: input.nameSource,
     personalize: !!input.personalizeName,
   });
   if (!resolved.ok || !resolved.velip_audio_id) {

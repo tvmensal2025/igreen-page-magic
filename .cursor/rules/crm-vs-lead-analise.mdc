@@ -1,0 +1,37 @@
+---
+description: Nunca misturar lead em conversa, CRM cadastro em análise e Meta campanha em análise
+alwaysApply: true
+---
+
+# Três “em análise” + bloqueados — nunca misturar
+
+Na UI, evite siglas (DNC, AI_QUALIFYING). Prefira: **em conversa**, **cadastro em análise**, **campanha em análise**, **nunca mais contatar / bloqueado**.
+
+## 1) Lead em conversa (Grupo A / pizza A)
+
+- Lead **novo** falando no WhatsApp; ainda coletando dados.
+- Sinais: cadência NEW | GREETED | AI_QUALIFYING | PAUSED (Grupo A).
+- **Não** tem portal enviado nem step pós-portal.
+- Helper: `isLeadCycleEligibleNotCrmAnalysis`.
+
+## 2) CRM — cadastro em análise (iGreen)
+
+- Já **enviou** o cadastro; aguarda iGreen (24–48h), facial, assinatura.
+- Sinais: `cadastro_em_analise` / `portal_submitted_at` / OTP·facial·assinatura.
+- Mora no **Kanban CRM** — **nunca** na pizza A.
+- Helper: `isCrmCadastroEmAnalise`.
+
+## 3) Meta — campanha em análise
+
+- Anúncio em revisão na Meta. Zero relação com customer/pizza.
+- Helper: `isMetaCampanhaEmAnalise`.
+
+## 4) Bloqueado — nunca mais contatar
+
+- `do_not_contact = true` ou pausa `dnc` / opt-out.
+- **Fora** da pizza e de envios automáticos.
+- Helper: `isNuncaMaisContatar`. Na UI diga “bloqueado” ou “nunca mais contatar”, não “DNC”.
+
+## Armadilha
+
+`status = pending` é **ambíguo**. Não classifique só por status — use step + portal + bloqueio.

@@ -4,6 +4,7 @@
  */
 
 import { isSofiaMulticanalCustomer } from "./cadastro-fixes.ts";
+import { safeFirstNameForAddress } from "../customer-display-name.ts";
 
 export const SOFIA_DOC_STEP_KEY = "a7_ask_document";
 
@@ -30,9 +31,10 @@ export function pickSofiaDocumentCaptureStep(steps: FlowStepRow[]): FlowStepRow 
 }
 
 export function buildSofiaDispatchNameVars(
-  customer: { name?: string | null },
+  customer: { name?: string | null; name_source?: string | null },
 ): Record<string, string> {
-  const first = String(customer.name || "").trim().split(/\s+/)[0] || "Cliente";
+  // Vazio se inválido ou só push-name do Zap — NUNCA fallback "Cliente".
+  const first = safeFirstNameForAddress(customer.name, customer.name_source);
   return {
     "{nome}": first,
     "{{nome}}": first,

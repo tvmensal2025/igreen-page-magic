@@ -273,6 +273,7 @@ async function classifyOne(
     payload.shortcut,
     {
       name: customer.name,
+      name_source: (customer as any).name_source,
       electricity_bill_value: customer.electricity_bill_value != null
         ? Number(customer.electricity_bill_value)
         : null,

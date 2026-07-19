@@ -2,6 +2,9 @@
  * Cidade → DDD (Deno / edge). Espelha src/lib/cityToDdd.ts.
  */
 
+/** Todos os DDDs de Minas Gerais (ANATEL). */
+export const MG_RETARGET_DDD_ALLOWLIST = [31, 32, 33, 34, 35, 37, 38];
+
 const CITY_PRIMARY_DDD: Record<string, number> = {
   uberlandia: 34,
   uberaba: 34,
@@ -17,6 +20,8 @@ const CITY_PRIMARY_DDD: Record<string, number> = {
   "montes claros": 38,
   "governador valadares": 33,
   ipatinga: 31,
+  "brasilandia de minas": 38,
+  brasilandia: 38,
   campinas: 19,
   "sao paulo": 11,
   "ribeirao preto": 16,
@@ -92,6 +97,18 @@ export function resolveRetargetDdds(opts: {
   }
   for (const loc of opts.customLocations || []) {
     const d = primaryDddForCity({ name: loc.name || loc.address_string || "" });
+    if (d) primaries.push(d);
+  }
+  return expandNearbyDdds(primaries);
+}
+
+/** DDDs do mercado do consultor (cidades das campanhas), com vizinhos da macrorregião. */
+export function dddsForConsultantCities(
+  cities: Array<{ key?: string | null; name?: string | null }>,
+): number[] {
+  const primaries: number[] = [];
+  for (const c of cities || []) {
+    const d = primaryDddForCity({ key: c.key ?? undefined, name: c.name ?? undefined });
     if (d) primaries.push(d);
   }
   return expandNearbyDdds(primaries);

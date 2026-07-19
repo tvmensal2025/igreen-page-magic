@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
           // Prioriza customer do consultor que criou o agendamento (evita colisão multi-tenant).
           let custQuery = supabase
             .from("customers")
-            .select("id, name, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
+            .select("id, name, name_source, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
             .eq("phone_whatsapp", phone);
           if (msg.consultant_id) {
             custQuery = custQuery.or(
@@ -193,6 +193,7 @@ Deno.serve(async (req) => {
         // ✅ Renderiza {{nome}}, {nome}, {NOME}, {{valor_conta}}, {{consultor_phone}}, etc.
         const renderedText = renderTemplateVars(msg.message_text, {
           name: customerName,
+          name_source: (cust as any)?.name_source ?? null,
           phone,
           representante,
           representante_phone: representantePhone,

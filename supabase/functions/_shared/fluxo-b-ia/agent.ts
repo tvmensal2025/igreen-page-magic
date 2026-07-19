@@ -103,6 +103,7 @@ export async function processarTurnoFluxoB(input: FluxoBInput): Promise<FluxoBRe
   if (inboundKind === "text" && !billPhotoArrived) {
     const direta = await buscarRespostaDiretaFaq(
       supabase, consultantId, inboundText, customer.name ?? null,
+      (customer as { name_source?: string | null }).name_source ?? null,
     ).catch(() => null);
     if (direta) {
       console.log(`[fluxo-b-ia] resposta DIRETA do FAQ (sem LLM) intent="${direta.intentName}" trigger="${direta.triggerMatched}"`);

@@ -221,6 +221,10 @@ export function flowMediaSlotKeysForCadence(tplKey: string): string[] {
     case "a5_audio_club_benefits":
     case "a5b_after_club_buttons":
       return ["a5_audio_club_benefits"];
+    case "a6_ocr_retry":
+      return ["a6_ocr_retry"];
+    case "a7_ocr_retry":
+      return ["a7_ocr_retry"];
     default:
       return tplKey ? [tplKey] : [];
   }
@@ -444,6 +448,20 @@ export type CadenceTemplate = {
   hiddenInPanel?: boolean;
   /** Até 3. Ausente/vazio = mensagem só texto (ex.: pedir nome). */
   buttons?: CadenceButton[];
+  /**
+   * Toque de conteúdo ligado a outro (ex.: erro OCR → pedido de foto).
+   * Não cria nó no grafo; sync grava no fallback do passo pai.
+   */
+  linkedToStepKey?: string;
+};
+
+/** Toques de retry OCR → passo pai no fluxo (capture_*). */
+export const OCR_RETRY_PARENT: Record<
+  string,
+  { parentKey: string; stepType: "capture_conta" | "capture_documento" }
+> = {
+  a6_ocr_retry: { parentKey: "a6_ask_bill_photo", stepType: "capture_conta" },
+  a7_ocr_retry: { parentKey: "a7_ask_document", stepType: "capture_documento" },
 };
 
 /** Botões padrão de faixa (sempre 3). */
@@ -852,7 +870,9 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     pairedAudioKey: "a2_audio_activate_name",
     notes:
       "Ordem: áudio 2a ACIMA → espera 4s → este texto. AGUARDA valor. Sem botões. Após valor → passo 3. Nunca pular este texto.",
-    body: `{{nome}}, conseguimos ativar o seu benefício!
+    body: `Olá, *{{nome}}*!
+
+Conseguimos ativar o seu benefício!
 
 Para eu calcular a economia, me diga *quanto você paga por mês* na conta de energia.
 
@@ -999,7 +1019,9 @@ Ou seja: você economiza na energia e ainda pode economizar em várias despesas 
     pairedAudioKey: "a5_audio_club_benefits",
     notes:
       "Nunca pular. Ordem: áudio 4a → 4s → este texto + botões. Cadastrar → passo 5 (foto conta). Humano → handoff.",
-    body: `📋 *{{nome}}*, vamos ativar seu benefício?
+    body: `Olá, *{{nome}}*!
+
+📋 Vamos ativar seu benefício?
 
 Toque em *Cadastrar* para continuar 👇`,
     buttons: [...AFTER_CLUB_BUTTONS],
@@ -1022,6 +1044,24 @@ Toque em *Cadastrar* para continuar 👇`,
 Assim valido tudo automaticamente e seguimos com a ativação 💚`,
   },
   {
+    key: "a6_ocr_retry",
+    group: "A",
+    channel: "whatsapp_text",
+    title: "5b — Erro leitura da conta",
+    timing: "Quando o OCR da conta falhar · continua aguardando foto",
+    canGenerateAudio: true,
+    linkedToStepKey: "a6_ask_bill_photo",
+    audioPlacement: "after_text",
+    notes:
+      "Ligado ao passo 5. Não avança o funil — reenvia texto (+ áudio opcional) e continua em aguardando_conta. Sync grava em fallback.retry_* do capture_conta.",
+    body: `⚠️ Não consegui ler a conta. Por favor, envie uma *foto mais nítida e bem iluminada* (sem reflexos).
+
+Dicas:
+• Use boa iluminação
+• Evite reflexos
+• Foque nos dados principais`,
+  },
+  {
     key: "a7_ask_document",
     group: "A",
     channel: "whatsapp_text",
@@ -1030,7 +1070,9 @@ Assim valido tudo automaticamente e seguimos com a ativação 💚`,
     canGenerateAudio: false,
     notes:
       "Motor: CNH = só frente. RG = frente + verso obrigatório. OCR lê nome/CPF/RG/nascimento; se faltar CPF, pede digitar.",
-    body: `📄 *Próximo passo, {{nome}}!*
+    body: `Olá, *{{nome}}*!
+
+📄 *Próximo passo!*
 
 Me envie a foto do seu *documento com foto*:
 
@@ -1041,6 +1083,23 @@ Me envie a foto do seu *documento com foto*:
 Preciso das fotos *nítidas* para continuar seu cadastro ✅`,
   },
   {
+    key: "a7_ocr_retry",
+    group: "A",
+    channel: "whatsapp_text",
+    title: "6b — Erro leitura do documento",
+    timing: "Quando o OCR do documento falhar · continua aguardando foto",
+    canGenerateAudio: true,
+    linkedToStepKey: "a7_ask_document",
+    audioPlacement: "after_text",
+    notes:
+      "Ligado ao passo 6. Não avança o funil — reenvia texto (+ áudio opcional) e continua aguardando o documento. Sync grava em fallback.retry_* do capture_documento.",
+    body: `⚠️ Não consegui ler o documento. Envie uma foto mais nítida do *VERSO* (ou da frente, se for CNH).
+
+Dicas:
+• Boa iluminação, sem reflexo
+• Texto legível (nome, CPF, RG)`,
+  },
+  {
     key: "a8_ask_email",
     group: "A",
     channel: "whatsapp_text",
@@ -1048,7 +1107,9 @@ Preciso das fotos *nítidas* para continuar seu cadastro ✅`,
     timing: "Após documento",
     canGenerateAudio: false,
     notes: "Mesmo padrão do fluxo D (ask_email / step-goal): e-mail = acesso ao app iGreen Club.",
-    body: `📧 *{{nome}}*, qual é o seu *e-mail*?
+    body: `Olá, *{{nome}}*!
+
+📧 Qual é o seu *e-mail*?
 
 É por ele que você acessa o app *iGreen Club* 📱
 
@@ -1063,7 +1124,9 @@ _(cashback, faturas e indicações)_`,
     canGenerateAudio: false,
     notes:
       "Após telefone: passo 9 (portal + digitar OTP). Só DEPOIS do OTP validado → passo 10 (link da facial). Sem 9a/9b.",
-    body: `📱 *{{nome}}*, só confirmar:
+    body: `Olá, *{{nome}}*!
+
+📱 Só confirmar:
 
 O telefone deste WhatsApp é o melhor para contato?
 
@@ -1083,7 +1146,9 @@ O telefone deste WhatsApp é o melhor para contato?
     canGenerateAudio: false,
     notes:
       "Ordem obrigatória: 1) envia cadastro ao portal 2) cliente digita o OTP aqui 3) só então passo 10 com link da facial. NÃO enviar facial neste passo.",
-    body: `🎉 *Pronto, {{nome}}!*
+    body: `Olá, *{{nome}}*!
+
+🎉 *Pronto!*
 
 Já temos todos os dados ✅
 
@@ -1102,7 +1167,9 @@ _(O link da validação facial só vem *depois* do OTP correto.)_`,
     canGenerateAudio: false,
     notes:
       "Nunca antes do OTP. Sistema envia o link da selfie/facial após otp_validated. Placeholder {{link_facial}} quando disponível.",
-    body: `✅ *OTP confirmado, {{nome}}!*
+    body: `Olá, *{{nome}}*!
+
+✅ *OTP confirmado!*
 
 Último passo — abra o *link* 👇
 
@@ -1120,11 +1187,13 @@ Toque em *Assinar documentos* e faça a *validação facial* para comprovar que 
     hiddenInPanel: true,
     notes:
       "Legado. Fluxo atual: telefone → OTP (9) → facial (10). Mantido só por compatibilidade.",
-    body: `{{nome}}, em São Paulo, para concluir a ativação, pode ser necessária a transferência de titularidade da conta, conforme as regras da distribuidora.
+    body: `Olá, *{{nome}}*!
+
+Em São Paulo, para concluir a ativação, pode ser necessária a transferência de titularidade da conta, conforme as regras da distribuidora.
 
 Nossa equipe orienta o passo a passo — sem custo de ativação cobrado por consultor.
 
-Vamos seguir com essa etapa, {{nome}}?`,
+Vamos seguir com essa etapa?`,
     buttons: [
       { id: "continue_sp", title: "Seguir com SP" },
       { id: "human", title: "Falar com humano" },
@@ -1141,7 +1210,9 @@ Vamos seguir com essa etapa, {{nome}}?`,
     hiddenInPanel: true,
     notes:
       "Legado. Fluxo atual: telefone → OTP (9) → facial (10). Mantido só por compatibilidade.",
-    body: `{{nome}}, vamos seguir com o seu cadastro para ativar o benefício.
+    body: `Olá, *{{nome}}*!
+
+Vamos seguir com o seu cadastro para ativar o benefício.
 
 A cobrança é em *boleto único*, na própria conta de energia — sem custo de ativação.
 
@@ -1154,7 +1225,9 @@ Vou te pedir só os dados necessários para concluir.`,
     title: "Handoff — falar com humano",
     timing: "Qualquer botão “Falar com humano”",
     canGenerateAudio: false,
-    body: `Combinado, {{nome}}.
+    body: `Olá, *{{nome}}*!
+
+Combinado.
 
 Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém assume a conversa por aqui.`,
   },
@@ -1167,7 +1240,7 @@ Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém
     canGenerateAudio: false,
     maxChars: 160,
     notes: "Passo send_sms no construtor — não é obrigatório na sequência 1→2→3.",
-    body: `Sofia | iGreen: oi {{nome}}, ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
+    body: `Sofia | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
   },
   {
     key: "a_optional_call_slot",
@@ -1270,7 +1343,9 @@ _Para não receber mais contatos, responda SAIR._`,
     timing: "D+1 · depois das 09h30 · só se precisar",
     canGenerateAudio: false,
     notes: "Oferece continuar de outro jeito: enviar foto, pedir ligação ou encerrar.",
-    body: `*{{nome}}*, prefere continuar de outra forma? 👇
+    body: `Olá, *{{nome}}*!
+
+Prefere continuar de outra forma? 👇
 
 Escolha a opção mais prática pra você:`,
     buttons: [...NEXT_ACTION_BUTTONS],
@@ -1322,7 +1397,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "D+1 · envia às 11h30 · só se silêncio no WA",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, reabri sua analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Reabri sua analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b4_call_1",
@@ -1420,7 +1495,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 6 · envia às 11h30 · sem ligação no mesmo dia",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, novidades e beneficios extras. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Novidades e beneficios extras. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
@@ -1457,7 +1532,9 @@ Sem mensagem longa, sem foto: pra checar seu caso *basta 1 toque*.
     title: "Dia 7 — Outras opções (foto, ligar ou encerrar)",
     timing: "Dia 7 · depois das 10h30 · só se precisar",
     canGenerateAudio: false,
-    body: `*{{nome}}*, ou prefere outra opção? 👇`,
+    body: `Olá, *{{nome}}*!
+
+Ou prefere outra opção? 👇`,
     buttons: [...NEXT_ACTION_BUTTONS],
   },
   {
@@ -1580,7 +1657,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_60D_SMS.",
-    body: `Rafael | iGreen: {{nome}}, sua analise de economia segue disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Sua analise de economia segue disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_60d_call",
@@ -1644,7 +1721,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_90D_SMS.",
-    body: `Rafael | iGreen: {{nome}}, ainda posso retomar sua analise da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Ainda posso retomar sua analise da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_90d_call",
@@ -1708,7 +1785,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_5M_SMS.",
-    body: `Rafael | iGreen: {{nome}}, analise de economia ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Analise de economia ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_5m_call",
@@ -1776,7 +1853,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_8M_SMS.",
-    body: `Rafael | iGreen: {{nome}}, novidades na economia de energia. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Novidades na economia de energia. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_8m_call",
@@ -1840,7 +1917,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_12M_SMS.",
-    body: `Rafael | iGreen: {{nome}}, faz 1 ano — analise ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Faz 1 ano — analise ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_12m_call",
@@ -1904,7 +1981,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_YEARLY_SMS.",
-    body: `Rafael | iGreen: {{nome}}, lembrete anual da analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Lembrete anual da analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_yearly_call",
@@ -1966,7 +2043,7 @@ Qual faixa está sua conta hoje?`,
     theme: "simplified_analysis",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: {{nome}}, agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `Rafael | iGreen: Oi {{nome}}! Agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_cruise_wa",

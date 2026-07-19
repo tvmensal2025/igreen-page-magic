@@ -35,6 +35,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { safeFirstNameForAddress } from "../customer-display-name.ts";
+
 export type PhraseCategory =
   | "followup"
   | "objection"
@@ -58,6 +60,7 @@ export interface PhraseEntry {
 
 export interface RenderCustomer {
   name: string | null;
+  name_source?: string | null;
   electricity_bill_value: number | null;
 }
 
@@ -98,7 +101,7 @@ export function renderPhraseText(
   consultantName = "",
 ): string {
   if (!template) return "";
-  const firstName = String(customer.name ?? "").trim().split(/\s+/)[0] || "";
+  const firstName = safeFirstNameForAddress(customer.name, customer.name_source);
   const valor = customer.electricity_bill_value != null
     ? Number(customer.electricity_bill_value).toLocaleString("pt-BR", {
       minimumFractionDigits: 2,

@@ -67,6 +67,9 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
           {/* Formatos */}
           <div>
             <Label className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald-2))]" /> Formato do anúncio</Label>
+            <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1 mb-1">
+              Padrão: <strong className="text-foreground">Stories / Reels (1080×1920)</strong> — escolha até 4 fotos na biblioteca.
+            </p>
             <div className="grid grid-cols-3 gap-2 mt-2">
               {(Object.keys(FORMAT_SPEC) as AdFormat[]).map((k) => (
                 <button key={k} type="button" onClick={() => patch({ format: k })}

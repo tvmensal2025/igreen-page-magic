@@ -13,6 +13,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { upsertAdTemplate } from "@/services/adTemplates";
 import { isFileValidAny, type AdFile, type AdFormat } from "../wizardHelpers";
+import { dddsFromCampaignGeo } from "@/lib/cityToDdd";
 import type { WizardState, WizardDerived } from "./useWizardState";
 
 interface Deps {
@@ -123,9 +124,24 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
             ? `iGreen — ${state.radiusPoints[0].address_string.slice(0, 40)}`
             : `iGreen — ${state.cities.map((c) => c.name).slice(0, 3).join(", ")}`;
 
+      const remarketingPrefix = state.isRemarketing
+        ? ((state.namePrefix || "").trim() || "remarketing")
+        : (state.namePrefix || "").trim() || undefined;
+      const retargetDdds = state.isRemarketing
+        ? dddsFromCampaignGeo({
+            cities: state.geoMode === "cities" ? state.cities : [],
+            addresses:
+              state.geoMode === "radius"
+                ? state.radiusPoints.map((p) => p.address_string || "")
+                : [],
+          })
+        : [];
+
       const payload: CreateCampaignBody = {
         name: campaignName,
-        name_prefix: (state.namePrefix || "").trim() || undefined,
+        name_prefix: remarketingPrefix,
+        is_remarketing: state.isRemarketing || undefined,
+        retarget_ddds: retargetDdds.length ? retargetDdds : undefined,
         cities: state.geoMode === "cities" ? state.cities.map((c) => ({ key: c.key, name: c.name })) : [],
 
         custom_locations: state.geoMode === "radius"
@@ -141,8 +157,8 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
         placement_mode: state.placementMode,
         placements: state.placementMode === "manual" ? state.placements : undefined,
         initial_message: state.initialMessage.trim() || undefined,
-        // Preferência 30–60: Advantage+ exige age_min≤25 no hard constraint;
-        // o servidor aplica o cap e usa age_max para afunilar qualidade.
+        // Preferência 30–60: Advantage+ exige age_min≤25 e age_max=65 no hard;
+        // o servidor aplica os caps (25/65) e mantém a preferência em telemetria.
         age_min: 30,
         age_max: 60,
         // Rodízio: envia os participantes na ordem da lista para o servidor
@@ -179,8 +195,12 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
           description: activated
             ? wantedRodizio
               ? "Rodízio e dados da campanha foram salvos. A Meta confirmou a campanha como ativa."
-              : "A Meta confirmou a campanha como ativa. A entrega pode levar alguns minutos para começar."
-            : "A campanha foi criada e está em análise ou processamento na Meta. O painel mostrará quando ela ficar ativa.",
+              : state.isRemarketing
+                ? `Remarketing: DDDs ${(result as any)?.retarget_ddds?.join(", ") || retargetDdds.join(", ") || "—"} gravados na Audience. A Meta confirmou ativa.`
+                : "A Meta confirmou a campanha como ativa. A entrega pode levar alguns minutos para começar."
+            : state.isRemarketing
+              ? `Campanha em análise. DDDs de remarketing ${(result as any)?.retarget_ddds?.join(", ") || retargetDdds.join(", ") || "—"} já foram mesclados na Audience.`
+              : "A campanha foi criada e está em análise ou processamento na Meta. O painel mostrará quando ela ficar ativa.",
         });
       }
       try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }

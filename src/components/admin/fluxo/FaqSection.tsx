@@ -21,6 +21,10 @@ import {
   type ObjectionCategory,
 } from "@/lib/objectionShortcuts";
 
+function mediaFilled(m: Media): boolean {
+  return !!(m.media_id || m.slot_key);
+}
+
 type Trigger = { id?: string; qa_id?: string; phrase: string };
 type Media = {
   id?: string;
@@ -147,7 +151,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const seedDefaults = async () => {
     const ok = await confirm({
       title: "Adicionar atalhos padrão de objeção?",
-      description: `Vamos adicionar ${OBJECTION_SHORTCUTS.length} respostas prontas para as objeções mais comuns. Atalhos com o mesmo nome serão preservados.`,
+      description: `Vamos adicionar ${OBJECTION_SHORTCUTS.length} respostas prontas (com lacunas de áudio/vídeo). Atalhos com o mesmo nome serão preservados.`,
       confirmText: "Adicionar atalhos",
       tone: "success",
     });
@@ -330,10 +334,11 @@ export default function FaqSection({ flowId }: { flowId: string }) {
       <div className="flex items-start gap-2 mb-4">
         <HelpCircle className="h-5 w-5 text-primary mt-0.5" />
         <div className="flex-1">
-          <h2 className="text-base font-semibold">Atalhos rápidos</h2>
+          <h2 className="text-base font-semibold">Atalhos / FAQ do fluxo</h2>
           <p className="text-xs text-muted-foreground">
-            A Camila escolhe automaticamente o atalho que casar com a fala do cliente interessado, responde, e <strong>volta ao passo atual</strong> do fluxo.
-            Tem áudio? Ela manda áudio. Não achou aqui? Tenta a Base da IA.
+            Quando a frase do lead casa com um gatilho, o bot responde o texto (e mídia, se preenchida) e <strong>volta ao passo atual</strong>.
+            Cada atalho já vem com lacunas de <strong>áudio</strong> e <strong>vídeo</strong> — preencha só se quiser enriquecer a dúvida.
+            Sem match? Cai na Base da IA.
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -343,7 +348,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
           </Button>
           <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding}>
             {seeding ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            40 atalhos padrão
+            {OBJECTION_SHORTCUTS.length} atalhos padrão
           </Button>
         </div>
       </div>
@@ -411,7 +416,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
           {filtered.length === 0 && (
             <p className="text-sm text-muted-foreground italic py-6 text-center">
               {qas.length === 0
-                ? 'Nenhum atalho ainda. Clique em "40 atalhos padrão" pra começar.'
+                ? `Nenhum atalho ainda. Clique em "${OBJECTION_SHORTCUTS.length} atalhos padrão" pra começar.`
                 : "Nenhum atalho com esse filtro."}
             </p>
           )}
@@ -429,8 +434,8 @@ function getStatus(qa: QA, triggerIndex: Map<string, string[]>) {
   const issues: string[] = [];
   if (qa.triggers.length === 0) issues.push("Sem gatilhos");
   const noText = !qa.text_response || !qa.text_response.trim();
-  const noMedia = qa.medias.length === 0 || qa.medias.every((m) => !m.media_id && !m.slot_key);
-  if (noText && noMedia) issues.push("Sem texto nem mídia");
+  const hasFilledMedia = qa.medias.some(mediaFilled);
+  if (noText && !hasFilledMedia) issues.push("Sem texto nem mídia preenchida");
   // duplicado entre atalhos
   const dup = qa.triggers.filter((t) => (triggerIndex.get(t.phrase.toLowerCase().trim()) || []).length > 1);
   if (dup.length) issues.push(`${dup.length} gatilho(s) duplicado(s) com outro atalho`);
@@ -588,15 +593,43 @@ function QACard(props: {
       </div>
 
       <div>
-        <Label className="text-xs uppercase tracking-wide text-muted-foreground">🎙️ Mídias opcionais</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label className="text-xs uppercase tracking-wide text-muted-foreground">🎙️ Lacunas de mídia (opcional)</Label>
+          {(() => {
+            const filled = qa.medias.filter(mediaFilled).length;
+            const total = qa.medias.length;
+            if (total === 0) return null;
+            return (
+              <Badge variant={filled > 0 ? "default" : "outline"} className="text-[10px]">
+                {filled}/{total} preenchida{filled === 1 ? "" : "s"}
+              </Badge>
+            );
+          })()}
+        </div>
+        <p className="text-[11px] text-muted-foreground mt-1 mb-2">
+          Cada atalho já tem espaço pra <strong>áudio</strong> e <strong>vídeo</strong>. Vazio = só texto. Preencha pra reforçar a dúvida.
+        </p>
         <div className="space-y-2 mt-2">
           {qa.medias.map((m, i) => {
+            const filled = mediaFilled(m);
             const isAudioLib = m.media_kind === "audio" && m.media_id;
             const audioObj = isAudioLib ? availableAudios.find((a) => a.id === m.media_id) : null;
             return (
-              <div key={m.id} className="flex items-center gap-2 p-2 rounded border bg-muted/30">
+              <div
+                key={m.id}
+                className={`flex items-center gap-2 p-2 rounded border ${
+                  filled
+                    ? "bg-primary/5 border-primary/25"
+                    : "bg-muted/20 border-dashed border-muted-foreground/30"
+                }`}
+              >
                 <Badge>{i + 1}</Badge>
                 <Badge variant="secondary">{m.media_kind === "audio" ? "🎙️ Áudio" : "🎬 Vídeo"}</Badge>
+                {!filled && (
+                  <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                    Lacuna vazia
+                  </Badge>
+                )}
                 {m.media_kind === "video" ? (
                   <Select value={m.media_id ?? ""} onValueChange={(v) => props.onUpdateMedia(m, { media_id: v, slot_key: null })}>
                     <SelectTrigger className="flex-1"><SelectValue placeholder="Escolha o vídeo…" /></SelectTrigger>
@@ -660,10 +693,10 @@ function QACard(props: {
                 <Mic className="w-3 h-3 mr-1" /> Gravar áudio agora
               </Button>
               <Button size="sm" variant="outline" onClick={() => props.onAddMedia("audio")}>
-                <Plus className="w-3 h-3 mr-1" /> Áudio da biblioteca
+                <Plus className="w-3 h-3 mr-1" /> + Lacuna áudio
               </Button>
               <Button size="sm" variant="outline" onClick={() => props.onAddMedia("video")}>
-                <Plus className="w-3 h-3 mr-1" /> Vídeo
+                <Plus className="w-3 h-3 mr-1" /> + Lacuna vídeo
               </Button>
             </div>
           )}

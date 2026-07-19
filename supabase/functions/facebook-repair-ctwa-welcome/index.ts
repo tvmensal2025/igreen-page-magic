@@ -13,6 +13,7 @@ import {
   buildCtwaPageWelcomeMessage,
   stripTrackingProtocol,
 } from "../_shared/campaign-tracking.ts";
+import { MG_RETARGET_DDD_ALLOWLIST } from "../_shared/city-to-ddd.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 const OFFICIAL_PIXEL = "708759256921383";
@@ -129,10 +130,41 @@ Deno.serve(async (req) => {
   const adsetIds: string[] = Array.isArray(camp.fb_adset_ids) ? camp.fb_adset_ids.filter(Boolean) : [];
 
   if (dryRun) {
+    const adsetTargeting: Array<Record<string, unknown>> = [];
+    for (const adsetId of adsetIds) {
+      try {
+        const adset = await fbFetch(
+          `/${adsetId}?fields=id,name,status,effective_status,daily_budget,targeting&access_token=${encodeURIComponent(platform.token)}`,
+        );
+        const t = adset?.targeting || {};
+        adsetTargeting.push({
+          id: adset?.id,
+          name: adset?.name,
+          status: adset?.status,
+          effective_status: adset?.effective_status,
+          daily_budget: adset?.daily_budget,
+          custom_audiences: (t.custom_audiences || []).map((a: { id?: string }) => String(a.id)),
+          excluded_custom_audiences: (t.excluded_custom_audiences || []).map((a: { id?: string }) => String(a.id)),
+          geo_locations: t.geo_locations || null,
+          age_min: t.age_min ?? null,
+          age_max: t.age_max ?? null,
+        });
+      } catch (e) {
+        adsetTargeting.push({ id: adsetId, error: (e as Error).message });
+      }
+    }
+    const expectedCustom = platformCustomAud ? String(platformCustomAud) : null;
+    const hasExpected = expectedCustom
+      ? adsetTargeting.some((a) => Array.isArray(a.custom_audiences) && (a.custom_audiences as string[]).includes(expectedCustom))
+      : false;
+    const excludesExpected = expectedCustom
+      ? adsetTargeting.some((a) => Array.isArray(a.excluded_custom_audiences) && (a.excluded_custom_audiences as string[]).includes(expectedCustom))
+      : false;
     return json({
       ok: true,
       dry_run: true,
       campaign_id: camp.id,
+      campaign_name: camp.name,
       new_initial_message: newMsg,
       pixel_id: officialPixel,
       align_audience: alignAudience,
@@ -140,6 +172,10 @@ Deno.serve(async (req) => {
       lookalike_audience_id: platformLal,
       ads: adIds.length,
       adsets: adsetIds.length,
+      adset_targeting: adsetTargeting,
+      retarget_verdict: isRemarketing
+        ? (hasExpected && !excludesExpected ? "RETARGETING_OK" : "RETARGETING_MISMATCH")
+        : "NOT_REMARKETING_CAMPAIGN",
     });
   }
 
@@ -258,7 +294,7 @@ Deno.serve(async (req) => {
   if (alignAudience) {
     try {
       await admin.from("platform_facebook_account").update({
-        retarget_ddd_allowlist: [34],
+        retarget_ddd_allowlist: [...MG_RETARGET_DDD_ALLOWLIST],
         updated_at: new Date().toISOString(),
       }).eq("id", true);
     } catch (e) {

@@ -141,10 +141,11 @@ export function ensureSoftEdges(text: string): string {
 }
 
 /**
- * Cumprimento / chamada com nome: respiro na palavra-guia + chamada no nome.
- * “Olá, Maria.” → “Olá... Maria!”
- * “Então, Maria.” → “Então... Maria!”
- * Nunca cola o nome no início/fim do corte (evita cortar sílaba).
+ * Cumprimento / chamada com nome: chamada CONTÍNUA (vírgula, não reticências).
+ * “Olá, Maria.” → “Olá, Maria!”
+ * “Então, Maria.” → “Então, Maria!”
+ * Reticências geravam pausa longa (cliente ouvia como corte entre "Olá" e o
+ * nome — feedback 19/07/2026). Espelha supabase/functions/_shared/tts-ptbr-anchor.ts.
  */
 export function formatNameGreetForTts(text: string): string {
   let t = softenOverPauses(normalizeSpaces(text));
@@ -152,7 +153,7 @@ export function formatNameGreetForTts(text: string): string {
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : "Então";
     const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
-    if (nome) return `${lead}... ${nome}!`;
+    if (nome) return `${lead}, ${nome}!`;
   }
   t = t.replace(/[.!?…]+$/u, "").trim();
   return t ? `${t}!` : t;

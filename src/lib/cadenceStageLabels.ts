@@ -70,7 +70,7 @@ export function labelPausedReason(reason: string | null | undefined): { label: s
   if (reason === "manual_already_closed") return { label: "Perdido", hint: "Sem interesse ou já fechou" };
   if (reason === "manual_admin_pause") return { label: "Pausado", hint: "Pausado manualmente pelo admin" };
   if (reason === "manual_admin_clear_sla_backlog") {
-    return { label: "Pausado", hint: "Backlog antigo zerado — use Liberar DDD para reativar" };
+    return { label: "Backlog SLA", hint: "Congelado na limpeza do backlog — revise no dashboard (Revisar agora)" };
   }
   if (reason.includes("SLA") || reason.includes("pause")) {
     return { label: "Pausado", hint: reason };

@@ -9,10 +9,19 @@ import {
   normalizeCallName,
 } from "./voice-dialer/call-stitch.ts";
 import {
-  firstNameDisplay,
   inferSpeechGender,
   type SpeechGender,
 } from "./speech-gender.ts";
+import { safeFirstNameForAddress } from "./customer-display-name.ts";
+
+/** Só chama no áudio WA com fonte confiável (nunca push do Zap). */
+function resolveWaDisplayName(
+  customerName: string | null | undefined,
+  nameSource?: string | null,
+): string {
+  return safeFirstNameForAddress(customerName, nameSource) ||
+    firstNameFrom(customerName, nameSource);
+}
 import {
   SOFIA_MODEL_NAME_ONLY,
   SOFIA_MODEL_V3,
@@ -388,11 +397,13 @@ export async function probePersonalizedWaAudioCache(
     consultantId: string;
     slotKey: string;
     customerName: string | null | undefined;
+    /** customers.name_source — sem fonte confiável não personaliza. */
+    nameSource?: string | null;
   },
 ): Promise<boolean> {
   const spec = SPECS[opts.slotKey];
   if (!spec) return false;
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) return false;
   const gender = inferSpeechGender(display);
   const nameNorm = normalizeCallName(display);
@@ -539,13 +550,15 @@ export async function pickSafePersonalizedWaAudio(
     consultantId: string;
     slotKey: string;
     customerName: string | null | undefined;
+    /** customers.name_source — push Zap / unknown → skip áudio nominal. */
+    nameSource?: string | null;
     timeoutMs?: number;
   },
 ): Promise<WaStitchResult> {
   if (!isPersonalizedWaAudioSlot(opts.slotKey)) {
     return { ok: false, error: "not_personalized_slot", mode: "skipped" };
   }
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) {
     return { ok: false, error: "no_name", mode: "skipped" };
   }
@@ -557,12 +570,14 @@ export async function pickSafePersonalizedWaAudio(
     consultantId: opts.consultantId,
     slotKey: opts.slotKey,
     customerName: opts.customerName,
+    nameSource: opts.nameSource,
   };
 
   // Olá+nome + só nome na biblioteca antes de montar stitch (A2/A3/A5).
   await ensureNameIntroPairCache(admin, {
     consultantId: opts.consultantId,
     customerName: opts.customerName,
+    nameSource: opts.nameSource,
   });
 
   // 1) Stitch completo — só se ainda bate com corpo/nome salvos no painel.
@@ -592,6 +607,7 @@ export async function pickSafePersonalizedWaAudio(
     consultantId: opts.consultantId,
     slotKey: opts.slotKey,
     customerName: opts.customerName,
+    nameSource: opts.nameSource,
   });
 
   // 2) Partes Sofia (olá/nome + corpo) — monta stitch uma vez e salva em cache.
@@ -787,9 +803,10 @@ export async function ensureOlaGreetIntroMp3(
   opts: {
     consultantId: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): Promise<WaStitchResult> {
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) return { ok: false, error: "no_name", mode: "skipped" };
   const nameNorm = normalizeCallName(display);
   const gender = inferSpeechGender(display);
@@ -862,9 +879,10 @@ export async function ensureNameIntroPairCache(
   opts: {
     consultantId: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): Promise<NameIntroPairResult> {
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display || !opts.consultantId) {
     const miss: WaStitchResult = { ok: false, error: "no_name", mode: "skipped" };
     return { ola: miss, nome: miss, complete: false };
@@ -927,9 +945,10 @@ export async function ensureNameOnlyIntroMp3(
   opts: {
     consultantId: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): Promise<WaStitchResult> {
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) return { ok: false, error: "no_name", mode: "skipped" };
   const nameNorm = normalizeCallName(display);
   const gender = inferSpeechGender(display);
@@ -977,6 +996,7 @@ export function prefetchPersonalizedWaAudio(
     consultantId: string;
     slotKey?: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): void {
   const slotKey = opts.slotKey || "a2_audio_activate_name";
@@ -1003,6 +1023,7 @@ export async function warmPersonalizedWaAudio(
     consultantId: string;
     slotKey?: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): Promise<WaStitchResult> {
   const slotKey = opts.slotKey || "a2_audio_activate_name";
@@ -1015,6 +1036,7 @@ export async function warmPersonalizedWaAudio(
     consultantId: opts.consultantId,
     slotKey,
     customerName: opts.customerName,
+    nameSource: opts.nameSource,
     timeoutMs: 90_000,
   });
 }
@@ -1031,12 +1053,13 @@ export async function resolvePersonalizedWaAudio(
     consultantId: string;
     slotKey: string;
     customerName: string | null | undefined;
+    nameSource?: string | null;
   },
 ): Promise<WaStitchResult> {
   const spec = SPECS[opts.slotKey];
   if (!spec) return { ok: false, error: "not_personalized_slot" };
 
-  const display = firstNameDisplay(opts.customerName) || firstNameFrom(opts.customerName);
+  const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) return { ok: false, error: "no_name" };
 
   const gender = inferSpeechGender(display);

@@ -16,9 +16,86 @@ import {
 } from "@/components/ui/sheet";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { CADENCE_CALENDAR } from "@/lib/cadenceCalendarMap";
+import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/cadenceCalendarMap";
+import { getTemplate } from "@/lib/multichannelCadenceTexts";
+import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
+import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { isCrmCadastroEmAnalise, isNuncaMaisContatar } from "@/lib/crmVsLeadAnalysis";
 import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
+
+type SliceEditTarget = {
+  label: string;
+  /** Sub-aba Voz: Multicanal ou Kit do ciclo A. */
+  sub: "multichannel" | "kit";
+  cadenceKey?: string;
+};
+
+/** Pizza C — fatia → estágios do calendário (WA/SMS/CALL do mesmo marco). */
+const C_SLICE_STAGES: Record<string, string[]> = {
+  meta: ["CLOSE_LOST", "RETARGET_META", "RETARGET_ADS_15D"],
+  r30: ["RECALL_60D", "RECALL_60D_SMS", "RECALL_60D_CALL"],
+  r90: ["RECALL_90D", "RECALL_90D_SMS", "RECALL_90D_CALL"],
+  r5m: ["RECALL_5M", "RECALL_5M_SMS", "RECALL_5M_CALL"],
+  r8m: ["RECALL_8M", "RECALL_8M_SMS", "RECALL_8M_CALL"],
+  r12m: ["RECALL_12M", "RECALL_12M_SMS", "RECALL_12M_CALL"],
+  ryear: ["RECALL_YEARLY", "RECALL_YEARLY_SMS", "RECALL_YEARLY_CALL"],
+};
+
+function editTargetsForSlice(group: "A" | "B" | "C", stepId: string): SliceEditTarget[] {
+  if (group === "A") {
+    if (stepId === "call1" || stepId === "retry") {
+      return [{ label: "Kit · áudio da ligação", sub: "kit" }];
+    }
+    if (stepId === "sms") {
+      return [{ label: "Kit · SMS se NA", sub: "kit" }];
+    }
+    if (stepId === "open" || stepId === "flow") {
+      return [
+        { label: "Multicanal · pedir nome", sub: "multichannel", cadenceKey: "a1_ask_name" },
+        { label: "Multicanal · áudio ativar", sub: "multichannel", cadenceKey: "a2_audio_activate_name" },
+      ];
+    }
+    return [{ label: "Multicanal · Grupo A", sub: "multichannel", cadenceKey: "a1_ask_name" }];
+  }
+
+  if (group === "B") {
+    const day = CADENCE_CALENDAR.find((d) => d.id === stepId && d.group === "B");
+    return (day?.steps || [])
+      .filter((s) => s.templateKey)
+      .map((s) => ({
+        label: `${CHANNEL_LABEL[s.channel as CadenceChannelUi]} · ${getTemplate(s.templateKey!)?.title ?? s.title}`,
+        sub: "multichannel" as const,
+        cadenceKey: s.templateKey!,
+      }));
+  }
+
+  const stages = C_SLICE_STAGES[stepId] || [];
+  const cDay = CADENCE_CALENDAR.find((d) => d.id === "c");
+  return (cDay?.steps || [])
+    .filter((s) => stages.includes(s.stage) && s.templateKey)
+    .map((s) => ({
+      label: `${CHANNEL_LABEL[s.channel as CadenceChannelUi]} · ${getTemplate(s.templateKey!)?.title ?? s.title}`,
+      sub: "multichannel" as const,
+      cadenceKey: s.templateKey!,
+    }));
+}
+
+function navigateToSliceEdit(target: SliceEditTarget) {
+  try {
+    sessionStorage.setItem("igreen-voz-subtab", target.sub);
+    if (target.cadenceKey) {
+      sessionStorage.setItem("igreen-multichannel-focus-key", target.cadenceKey);
+    }
+  } catch { /* noop */ }
+  window.dispatchEvent(new CustomEvent("igreen-admin-nav", { detail: { tab: "voz" } }));
+  window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: target.sub } }));
+  if (target.cadenceKey) {
+    window.dispatchEvent(
+      new CustomEvent("igreen-multichannel-focus", { detail: { key: target.cadenceKey } }),
+    );
+  }
+}
 
 type CycleStep = { id: string; label: string; short: string };
 
@@ -36,25 +113,61 @@ type SlicePick = {
 };
 
 /**
- * Pizza A — Fila A do ciclo diário (NOVO_CYCLE) + GREETED/NEW de leads reais.
- * AI_QUALIFYING NÃO entra: é conversa/bot ou ruído (sync/cliente) — não é fatia de ciclo.
+ * Pizza A — leads novos em conversa / pré-onda (WhatsApp/manual).
+ * Fora da pizza: cadastro já enviado (CRM), campanha Meta, sync iGreen,
+ * e bloqueados (“nunca mais contatar” / Não Perturbe).
+ * Ver: src/lib/crmVsLeadAnalysis.ts
  */
 const CYCLE_NOVO_STEPS: CycleStep[] = [
   { id: "quente", label: "Pré-onda", short: "Pré" },
   { id: "open", label: "Abre + áudio", short: "Abre" },
-  { id: "flow", label: "Inicia fluxo", short: "Fluxo" },
-  { id: "wait2h", label: "Silêncio ~2h", short: "Silêncio" },
+  { id: "flow", label: "Em conversa", short: "Conversa" },
+  { id: "wait2h", label: "Sem resposta ~2h", short: "Espera" },
   { id: "call1", label: "1ª ligação", short: "Liga" },
-  { id: "retry", label: "Retry se NA", short: "Retry" },
-  { id: "sms", label: "SMS se NA", short: "SMS" },
+  { id: "retry", label: "Religa se não atendeu", short: "Religa" },
+  { id: "sms", label: "SMS se não atendeu", short: "SMS" },
   { id: "close", label: "Fecha + nota", short: "Fecha" },
 ];
 
-/** Só pré-onda de lead novo. AI_QUALIFYING fica de fora da pizza. */
+/** Estágio de cadência → fatia da pizza A (lead novo). */
 const CADENCE_TO_NOVO: Record<string, string> = {
   NEW: "quente",
   GREETED: "quente",
+  /** Lead falando com o bot / consultor — cliente real a validar. */
+  AI_QUALIFYING: "flow",
 };
+
+/** Estágios extras puxados do motor (PAUSED classificado via paused_reason). */
+const NOVO_EXTRA_STAGES = ["AI_QUALIFYING", "PAUSED"] as const;
+
+/** Motivos de pausa = lead congelado / fora do ciclo vivo da pizza. */
+const FROZEN_PAUSE_REASONS = new Set([
+  "manual_admin_clear_sla_backlog",
+  "dnc",
+  "opt_out",
+  "handoff_humano",
+]);
+
+/** Chat já encerrado ou só esperando nota — não é “em conversa” ativa. */
+const DEAD_CONVERSATION_STEPS = new Set([
+  "atendimento_finalizado",
+  "aguardando_avaliacao_atendimento",
+]);
+
+/** PAUSED do Grupo A (respondeu no chat). Bloqueados e retorno B/C ficam de fora. */
+function isPausedGroupA(pausedReason: string | null | undefined): boolean {
+  const r = String(pausedReason || "").trim();
+  if (!r || r === "lead_responded") return true;
+  const lower = r.toLowerCase();
+  if (FROZEN_PAUSE_REASONS.has(lower) || lower.startsWith("dnc:")) return false;
+  const m = /^lead_responded(?::(.+))?$/.exec(r);
+  if (!m) return false;
+  const prev = (m[1] || "").trim();
+  if (!prev || prev === "PAUSED") return true;
+  if (prev === "NEW" || prev === "GREETED" || prev === "AI_QUALIFYING") return true;
+  if (/^(COLD_|RECALL_|SMS_|CALL_|RETARGET_)/.test(prev) || prev === "CLOSE_LOST") return false;
+  return true;
+}
 
 /** Status que já passou do funil / não é lead de ciclo. */
 const EXCLUDED_CYCLE_STATUSES = new Set([
@@ -68,10 +181,20 @@ const EXCLUDED_CYCLE_STATUSES = new Set([
 function isCycleLeadEligible(c: {
   customer_origin?: string | null;
   status?: string | null;
+  conversation_step?: string | null;
+  portal_submitted_at?: string | null;
+  do_not_contact?: boolean | null;
+  paused_reason?: string | null;
 }): boolean {
   if (isIgreenWalletOrigin(c.customer_origin)) return false;
   const st = String(c.status || "").toLowerCase();
   if (EXCLUDED_CYCLE_STATUSES.has(st)) return false;
+  if (isNuncaMaisContatar(c)) return false;
+  if (isCrmCadastroEmAnalise(c)) return false;
+  const step = String(c.conversation_step || "").trim().toLowerCase();
+  if (DEAD_CONVERSATION_STEPS.has(step)) return false;
+  const reason = String(c.paused_reason || "").trim().toLowerCase();
+  if (FROZEN_PAUSE_REASONS.has(reason)) return false;
   return true;
 }
 
@@ -146,9 +269,12 @@ const CADENCE_TO_LONGO: Record<string, string> = {
 };
 
 const ALL_CADENCE_STAGES = [
-  ...Object.keys(CADENCE_TO_NOVO),
-  ...Object.keys(CADENCE_TO_FRIO),
-  ...Object.keys(CADENCE_TO_LONGO),
+  ...new Set([
+    ...Object.keys(CADENCE_TO_NOVO),
+    ...NOVO_EXTRA_STAGES,
+    ...Object.keys(CADENCE_TO_FRIO),
+    ...Object.keys(CADENCE_TO_LONGO),
+  ]),
 ];
 
 function polar(cx: number, cy: number, r: number, angleDeg: number) {
@@ -456,25 +582,32 @@ export function ReheatCyclePizza({
     const rows =
       (qRows as { customer_id: string; queue: string; step: string }[]) || [];
 
-    // 2) Motor unitário — B/C (+ GREETED/NEW em A). Sem AI_QUALIFYING na pizza.
+    // 2) Motor unitário — A (NEW/GREETED/AI_QUALIFYING/PAUSED-A) + B/C.
     let qCad = (supabase as any)
       .from("lead_cadence_state")
-      .select("customer_id, stage, consultant_id, next_action_at")
+      .select("customer_id, stage, consultant_id, next_action_at, paused_reason")
       .in("stage", ALL_CADENCE_STAGES)
       .limit(5000);
     if (consultantId) qCad = qCad.eq("consultant_id", consultantId);
     const { data: cadRows } = await qCad;
     const cadList =
-      (cadRows as { customer_id: string; stage: string; next_action_at: string | null }[]) || [];
+      (cadRows as {
+        customer_id: string;
+        stage: string;
+        next_action_at: string | null;
+        paused_reason: string | null;
+      }[]) || [];
 
-    // Elegibilidade: só lead WhatsApp/manual — exclui sync e quem já virou cliente / passou do funil
+    // Elegibilidade: só lead WhatsApp/manual — exclui sync, bloqueados, congelados, encerrados
     const allIds = [...new Set([...rows.map((r) => r.customer_id), ...cadList.map((c) => c.customer_id)])];
+    const pauseByCustomer = new Map<string, string | null>();
+    for (const c of cadList) pauseByCustomer.set(c.customer_id, c.paused_reason);
     const eligible = new Set<string>();
     const custById = new Map<string, CycleLead>();
     if (allIds.length > 0) {
       const { data: custRows } = await (supabase as any)
         .from("customers")
-        .select("id, name, phone_whatsapp, customer_origin, status")
+        .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
         .in("id", allIds.slice(0, 5000));
       for (const c of (custRows as {
         id: string;
@@ -482,8 +615,16 @@ export function ReheatCyclePizza({
         phone_whatsapp: string | null;
         customer_origin: string | null;
         status: string | null;
+        conversation_step: string | null;
+        portal_submitted_at: string | null;
+        do_not_contact: boolean | null;
       }[]) || []) {
-        if (isCycleLeadEligible(c)) {
+        if (
+          isCycleLeadEligible({
+            ...c,
+            paused_reason: pauseByCustomer.get(c.id) ?? null,
+          })
+        ) {
           eligible.add(c.id);
           custById.set(c.id, {
             id: c.id,
@@ -506,6 +647,25 @@ export function ReheatCyclePizza({
 
     for (const c of cadList) {
       if (!eligible.has(c.customer_id)) continue;
+      // PAUSED do Grupo A = lead novo em conversa (Miriam etc.) → fatia Fluxo
+      if (c.stage === "PAUSED") {
+        if (isPausedGroupA(c.paused_reason)) {
+          bump(aggA, idsA, "flow", c.customer_id);
+        } else {
+          // Retorno B/C: tenta recolocar no estágio salvo em paused_reason
+          const prev = /^lead_responded:(.+)$/.exec(String(c.paused_reason || ""))?.[1];
+          if (prev) {
+            const sliceB = CADENCE_TO_FRIO[prev];
+            if (sliceB) {
+              bump(aggB, idsB, sliceB, c.customer_id);
+              continue;
+            }
+            const sliceC = CADENCE_TO_LONGO[prev];
+            if (sliceC) bump(aggC, idsC, sliceC, c.customer_id);
+          }
+        }
+        continue;
+      }
       const sliceA = CADENCE_TO_NOVO[c.stage];
       if (sliceA) {
         bump(aggA, idsA, sliceA, c.customer_id);
@@ -667,6 +827,10 @@ export function ReheatCyclePizza({
 
   return (
     <div className="premium-card h-full">
+      <CadenceMissingAlert className="mb-3" />
+      {consultantId && (
+        <SlaBacklogLeadsBanner consultantId={consultantId} onOpenChat={onOpenChat} />
+      )}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div className="min-w-0">
           <h3 className="font-heading font-bold text-foreground flex items-center gap-2">
@@ -826,7 +990,7 @@ export function ReheatCyclePizza({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5 items-start justify-items-center">
         <PizzaRing
           title="Grupo A — Lead novo"
-          subtitle="Inbound · sem teto · estado real"
+          subtitle="Pré + conversa · sem bloqueados"
           steps={CYCLE_NOVO_STEPS}
           activeIndex={idxNovo}
           peopleCount={countNovo}
@@ -875,6 +1039,45 @@ export function ReheatCyclePizza({
               {" · "}clique em Conversar pra abrir o chat interno
             </SheetDescription>
           </SheetHeader>
+
+          {slicePick && (() => {
+            const targets = editTargetsForSlice(slicePick.group, slicePick.step.id);
+            if (!targets.length) return null;
+            return (
+              <div className="mt-3 space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Editar toques desta fatia
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {targets.map((t) => (
+                    <Button
+                      key={`${t.sub}-${t.cadenceKey || t.label}`}
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px] gap-1"
+                      onClick={() => {
+                        navigateToSliceEdit(t);
+                        setSlicePick(null);
+                      }}
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      {t.label}
+                    </Button>
+                  ))}
+                </div>
+                {slicePick.group === "A" &&
+                  (slicePick.step.id === "call1" ||
+                    slicePick.step.id === "retry" ||
+                    slicePick.step.id === "sms") && (
+                    <p className="text-[10px] text-muted-foreground leading-snug">
+                      Grupo A (ciclo diário): ligação/SMS vêm do Kit — não do Multicanal B/C.
+                    </p>
+                  )}
+              </div>
+            );
+          })()}
+
           <div className="mt-4 flex-1 overflow-y-auto space-y-2 pr-1">
             {(slicePick?.people || []).length === 0 ? (
               <p className="text-sm text-muted-foreground py-8 text-center">Ninguém nesta fatia agora</p>

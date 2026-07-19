@@ -121,6 +121,7 @@ export async function executeActions(
   // We do the same here so v3 produces identical user-facing strings.
   const vars = {
     name: args.state.customer.name,
+    name_source: (args.state.customer as any)?.nameSource ?? (args.state.customer as any)?.name_source ?? null,
     phone: args.state.customer.phoneWhatsapp,
     cpf: null,
     representante: args.consultantName ?? null,

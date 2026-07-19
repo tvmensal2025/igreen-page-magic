@@ -6,7 +6,7 @@ import { useState } from "react";
 import { Zap, Check, ChevronDown, Sparkles } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
-import { ALL_PLACEMENTS, PLACEMENT_GROUPS } from "../wizardHelpers";
+import { ALL_PLACEMENTS, PLACEMENT_GROUPS, ADS_MIN_DAILY_BUDGET_BRL } from "../wizardHelpers";
 import type { WizardState } from "../hooks/useWizardState";
 import { RodizioBlock } from "../RodizioBlock";
 
@@ -20,27 +20,47 @@ interface Props {
 }
 
 const PRESETS = [
-  { id: "eco", label: "Teste curto", budget: 20, days: 5, hint: "R$ 100 total · só para validar criativo", icon: "🌱" },
-  { id: "std", label: "Recomendado", budget: 25, days: 7, hint: "R$ 175 total · melhor learning / CPL", icon: "⭐" },
-  { id: "custom", label: "Personalizado", budget: 0, days: 0, hint: "você define valor e prazo", icon: "🎛️" },
+  { id: "cont", label: "Contínuo", budget: ADS_MIN_DAILY_BUDGET_BRL, days: 0, hint: "R$ 5,17/dia · mínimo Meta · sem data fim", icon: "♾️" },
+  { id: "std", label: "7 dias", budget: 25, days: 7, hint: "R$ 175 total · teste com prazo", icon: "⭐" },
+  { id: "custom", label: "Personalizado", budget: 0, days: -1, hint: "você define valor e prazo", icon: "🎛️" },
 ] as const;
+
+/** Reexport do mínimo Meta (R$ 5,17). */
+export { ADS_MIN_DAILY_BUDGET_BRL };
+
+function formatBudgetBrl(v: number): string {
+  return v.toLocaleString("pt-BR", {
+    minimumFractionDigits: Number.isInteger(v) ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
+}
 
 export function StepBudget({ open, state, patch, patchFn }: Props) {
   const { budget, duration } = state;
-  const isEco = budget === 20 && duration === 5;
+  const isCont = Math.abs(budget - ADS_MIN_DAILY_BUDGET_BRL) < 0.001 && duration === 0;
   const isStd = budget === 25 && duration === 7;
-  const isCustom = !isEco && !isStd;
+  const isCustom = !isCont && !isStd;
   const [showPlacements, setShowPlacements] = useState(state.placementMode === "manual");
 
   // Estimativa baseada na faixa histórica recente (R$ 3–6 por conversa).
   // Não é promessa: o leilão, público e criativo alteram o CPL.
   const dailyLeads = `${Math.max(1, Math.floor(budget / 6))}–${Math.max(1, Math.floor(budget / 3))}`;
-  const total = duration === 0 ? `${budget * 30}/mês est.` : `${budget * duration}`;
+  const total = duration === 0
+    ? `${formatBudgetBrl(budget * 30)}/mês est.`
+    : formatBudgetBrl(budget * duration);
 
   function selectPreset(id: string) {
-    if (id === "eco") patch({ budget: 20, duration: 5 });
+    if (id === "cont") patch({ budget: ADS_MIN_DAILY_BUDGET_BRL, duration: 0 });
     else if (id === "std") patch({ budget: 25, duration: 7 });
-    else patch({ budget: Math.max(20, budget), duration: Math.max(5, duration) });
+    else patch({ budget: Math.max(ADS_MIN_DAILY_BUDGET_BRL, budget || ADS_MIN_DAILY_BUDGET_BRL), duration: duration === 0 ? 0 : Math.max(0, duration) });
+  }
+
+  function onBudgetSlider(raw: number) {
+    // 1º notch = mínimo Meta exato (5,17); depois sobe em reais inteiros.
+    const next = raw <= ADS_MIN_DAILY_BUDGET_BRL + 0.5
+      ? ADS_MIN_DAILY_BUDGET_BRL
+      : Math.max(6, Math.round(raw));
+    patch({ budget: next });
   }
 
   return (
@@ -50,7 +70,7 @@ export function StepBudget({ open, state, patch, patchFn }: Props) {
         <Label className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald-2))]" /> Preset de orçamento</Label>
         <div className="grid grid-cols-3 gap-2 mt-2">
           {PRESETS.map((p) => {
-            const active = (p.id === "eco" && isEco) || (p.id === "std" && isStd) || (p.id === "custom" && isCustom);
+            const active = (p.id === "cont" && isCont) || (p.id === "std" && isStd) || (p.id === "custom" && isCustom);
             return (
               <button key={p.id} type="button" onClick={() => selectPreset(p.id)}
                 className={`ads-select-card ${active ? "is-active" : ""}`}>
@@ -69,19 +89,38 @@ export function StepBudget({ open, state, patch, patchFn }: Props) {
       <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-primary/5 p-4 text-center">
         <div className="text-[11px] uppercase tracking-wider text-[hsl(var(--ads-muted))]">Conversas estimadas no WhatsApp</div>
         <div className="text-4xl ads-num font-semibold my-1">{dailyLeads}<span className="text-sm font-normal text-[hsl(var(--ads-muted))]">/dia</span></div>
-        <div className="text-[11px] text-[hsl(var(--ads-muted))]">A R$ {budget}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {total}</strong></div>
+        <div className="text-[11px] text-[hsl(var(--ads-muted))]">A R$ {formatBudgetBrl(budget)}/dia × {duration === 0 ? "contínuo" : `${duration} dias`} = <strong className="text-foreground">R$ {total}</strong></div>
         <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-1">Estimativa, não garantia. Criativo, público e leilão alteram o custo.</div>
       </div>
 
       {/* Sliders (sempre visíveis, mas destaque no personalizado) */}
       <div>
-        <Label>Orçamento diário: <span className="text-[hsl(var(--ads-emerald-2))] font-bold">R$ {budget}</span></Label>
-        <Slider min={10} max={500} step={5} value={[budget]} onValueChange={(v) => patch({ budget: v[0] })} className="mt-2" />
-        <div className="flex justify-between text-xs text-[hsl(var(--ads-muted))] mt-1"><span>R$ 10</span><span>R$ 500</span></div>
+        <Label>Orçamento diário: <span className="text-[hsl(var(--ads-emerald-2))] font-bold">R$ {formatBudgetBrl(budget)}</span></Label>
+        <Slider
+          min={ADS_MIN_DAILY_BUDGET_BRL}
+          max={500}
+          step={1}
+          value={[Math.max(ADS_MIN_DAILY_BUDGET_BRL, budget)]}
+          onValueChange={(v) => onBudgetSlider(v[0])}
+          className="mt-2"
+        />
+        <div className="flex justify-between text-xs text-[hsl(var(--ads-muted))] mt-1">
+          <span>R$ {formatBudgetBrl(ADS_MIN_DAILY_BUDGET_BRL)} (mínimo Meta)</span>
+          <span>R$ 500</span>
+        </div>
       </div>
       <div>
-        <Label>Duração: <span className="text-[hsl(var(--ads-emerald-2))] font-bold">{duration === 0 ? "Sem fim (até pausar)" : `${duration} dias`}</span></Label>
+        <Label>
+          Duração:{" "}
+          <span className="text-[hsl(var(--ads-emerald-2))] font-bold">
+            {duration === 0 ? "Sem fim (fica ativo até pausar)" : `${duration} dias`}
+          </span>
+        </Label>
         <Slider min={0} max={30} step={1} value={[duration]} onValueChange={(v) => patch({ duration: v[0] })} className="mt-2" />
+        <div className="flex justify-between text-xs text-[hsl(var(--ads-muted))] mt-1">
+          <span>0 = contínuo</span>
+          <span>30 dias</span>
+        </div>
       </div>
 
       {/* Placements colapsados */}

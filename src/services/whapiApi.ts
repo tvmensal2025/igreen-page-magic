@@ -45,7 +45,8 @@ function normalizeJid(jid: string): string {
 }
 
 export function whapiListChats(): Promise<EvolutionChat[]> {
-  return call<EvolutionChat[]>("list_chats", { count: 100 });
+  // Whapi proxy aceita até 200; lista maior evita sumir conversa antiga/fechada.
+  return call<EvolutionChat[]>("list_chats", { count: 200 });
 }
 
 export function whapiListMessages(

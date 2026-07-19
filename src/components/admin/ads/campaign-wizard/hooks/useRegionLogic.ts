@@ -10,7 +10,7 @@ import {
   type CityHit,
 } from "@/services/facebookAds";
 import { DISTRIBUIDORAS_PRESETS, type DistribuidoraPreset } from "@/data/distribuidoraPresets";
-import { MAX_CITIES_PER_CAMPAIGN } from "../wizardHelpers";
+import { MAX_CITIES_PER_CAMPAIGN, ADS_MIN_DAILY_BUDGET_CENTS } from "../wizardHelpers";
 import type { WizardState } from "./useWizardState";
 
 const PRESET_CACHE_VERSION = "v1";
@@ -70,7 +70,7 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
       try {
         const r = await preflightCampaign({
           cities: state.cities.map((c) => ({ key: c.key, name: c.name })),
-          daily_budget_cents: Math.max(1000, Math.round(state.budget * 100)),
+          daily_budget_cents: Math.max(ADS_MIN_DAILY_BUDGET_CENTS, Math.round(state.budget * 100)),
           duration_days: state.duration > 0 ? state.duration : null,
         });
         patch({ liveReach: r.reach ? { lower: r.reach.lower, upper: r.reach.upper } : null });

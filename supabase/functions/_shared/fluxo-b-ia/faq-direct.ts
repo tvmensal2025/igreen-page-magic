@@ -12,6 +12,7 @@
 // fluxo e os marcadores [PEDIR_FOTO_CONTA]/[FINALIZAR_CADASTRO]).
 
 import { phraseMatchesMessage, QA_GENERIC_SINGLE, QA_STOPWORDS } from "../qa-phrase-match.ts";
+import { safeFirstNameForAddress } from "../customer-display-name.ts";
 
 const STOPWORDS = QA_STOPWORDS;
 
@@ -44,13 +45,13 @@ export type RespostaDireta = {
   triggerMatched: string;
 };
 
-/** Substitui {{nome}} pelo primeiro nome do cliente (ou remove com elegância). */
-function aplicarNome(texto: string, nome: string | null): string {
-  const primeiro = (nome || "").trim().split(/\s+/)[0] || "";
+/** Substitui {{nome}} pelo primeiro nome usável (ou remove com elegância). */
+function aplicarNome(texto: string, nome: string | null, nameSource?: string | null): string {
+  const primeiro = safeFirstNameForAddress(nome, nameSource);
   if (primeiro) {
     return texto.replace(/\{\{\s*nome\s*\}\}/gi, primeiro);
   }
-  // Sem nome: ", {{nome}}" / " {{nome}}" somem; "{{nome}}" vira "você".
+  // Sem nome / nome lixo: ", {{nome}}" / " {{nome}}" somem; "{{nome}}" vira "você".
   return texto
     .replace(/,?\s*\{\{\s*nome\s*\}\}/gi, "")
     .replace(/\{\{\s*nome\s*\}\}/gi, "você");
@@ -66,6 +67,7 @@ export async function buscarRespostaDiretaFaq(
   consultantId: string | null | undefined,
   inboundText: string | null,
   customerName: string | null,
+  customerNameSource?: string | null,
 ): Promise<RespostaDireta | null> {
   const pergunta = String(inboundText || "").trim();
   // Mensagens muito curtas/genéricas (oi, ok, sim) não devem casar FAQ.
@@ -137,7 +139,7 @@ export async function buscarRespostaDiretaFaq(
     }
 
     const qa = qaById.get(melhor.qa_id)!;
-    const texto = aplicarNome(String(qa.text_response), customerName);
+    const texto = aplicarNome(String(qa.text_response), customerName, customerNameSource);
     if (!texto.trim()) return null;
 
     return { texto, intentName: qa.intent_name, triggerMatched: melhor.phrase };

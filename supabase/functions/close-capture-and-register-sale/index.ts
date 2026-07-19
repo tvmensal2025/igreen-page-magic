@@ -125,6 +125,7 @@ Deno.serve(async (req) => {
 
       const snapshot = {
         name: customer.name,
+        name_source: (customer as any).name_source,
         phone: customer.phone_whatsapp,
         cpf: customer.cpf,
         city: customer.address_city,

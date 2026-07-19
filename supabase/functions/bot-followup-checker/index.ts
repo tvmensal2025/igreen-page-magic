@@ -18,6 +18,7 @@ import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import {
@@ -87,7 +88,7 @@ Deno.serve(async (req) => {
     // ─── 1. Candidatos a follow-up #1 ────────────────────────────────
     const { data: candidates } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, conversation_step, followup_count, last_bot_interaction_at, consultant_id")
+      .select("id, name, name_source, phone_whatsapp, conversation_step, followup_count, last_bot_interaction_at, consultant_id")
       .lte("last_bot_interaction_at", sixHoursAgo)
       .gte("last_bot_interaction_at", fortyEightHoursAgo)
       .eq("followup_count", 0)
@@ -140,7 +141,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const firstName = (c.name || "").split(" ")[0] || "";
+      const firstName = safeFirstNameForAddress(c.name, c.name_source);
       const fallback = firstName
         ? `Oi ${firstName}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`
         : `Oi, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`;

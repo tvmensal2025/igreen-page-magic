@@ -12,6 +12,7 @@
 
 import { sendWelcomeHeader, sendAttendanceRatingRequest } from "../attendance-flow.ts";
 import { resolveChannelForCustomer } from "../channel-sender.ts";
+import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
 import {
   playAudioFile,
   makeSMS,
@@ -149,16 +150,23 @@ function renderVars(
   vars: Record<string, string>,
 ): string {
   let out = text;
+  const nome = String(vars.nome || "").trim();
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
+  }
   for (const [k, v] of Object.entries(vars)) {
     out = out.replaceAll(`{{${k}}}`, v).replaceAll(`{{ ${k} }}`, v);
   }
-  return out;
+  if (!nome) {
+    out = scrubEmptyNameGreeting(out);
+  }
+  return out.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 async function loadNames(supabase: SB, customerId: string, consultantId: string | null) {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, tracking_protocol, flow_variant")
+    .select("id, name, name_source, phone_whatsapp, tracking_protocol, flow_variant")
     .eq("id", customerId)
     .maybeSingle();
   let consultor = "iGreen";
@@ -170,10 +178,12 @@ async function loadNames(supabase: SB, customerId: string, consultantId: string 
       .maybeSingle();
     consultor = (c as any)?.display_name || (c as any)?.name || consultor;
   }
-  const nome = ((cust as any)?.name || "").split(" ")[0] || "tudo bem";
+  const nome = safeFirstNameForAddress((cust as any)?.name, (cust as any)?.name_source);
   return {
     cust,
     nome,
+    rawName: (cust as any)?.name ?? null,
+    nameSource: (cust as any)?.name_source ?? null,
     consultor,
     protocolo: String((cust as any)?.tracking_protocol || ""),
   };
@@ -260,7 +270,7 @@ async function runCall(
   kit: CycleKit | null,
 ): Promise<ActionResult> {
   if (!velipConfigured()) return { action: "call", ok: false, detail: "velip_not_configured" };
-  const { cust, nome } = await loadNames(supabase, plan.customer_id, plan.consultant_id);
+  const { cust, rawName, nameSource } = await loadNames(supabase, plan.customer_id, plan.consultant_id);
   if (!cust?.phone_whatsapp) return { action: "call", ok: false, detail: "no_phone" };
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { action: "call", ok: false, detail: "invalid_phone" };
@@ -282,7 +292,8 @@ async function runCall(
       const st = await resolvePersonalizedCallAudio(supabase, {
         consultantId: plan.consultant_id,
         bodyClipId,
-        rawName: nome,
+        rawName,
+        nameSource,
         fallbackToBody: true,
       });
       if (st.ok && st.velip_audio_id) {
@@ -299,7 +310,8 @@ async function runCall(
       const st = await resolvePersonalizedCallAudio(supabase, {
         consultantId: plan.consultant_id,
         bodyClipId,
-        rawName: personalize ? nome : null,
+        rawName: personalize ? rawName : null,
+        nameSource: personalize ? nameSource : null,
         fallbackToBody: true,
       });
       if (st.ok && st.velip_audio_id) {

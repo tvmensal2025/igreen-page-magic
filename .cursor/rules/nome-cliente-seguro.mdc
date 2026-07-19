@@ -1,0 +1,53 @@
+---
+description: Nunca chamar o cliente pelo nome errado (Zap, meme, sem digitar)
+globs: supabase/functions/**/*.ts,src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Nome do cliente — só chamar se digitou / confirmou
+
+## Problema
+
+1. Push-name do WhatsApp grava em `customers.name` com `name_source=whatsapp_profile` — pode ser apelido, status ("Meus Netos Meu Tudo"), meme ("Ixi Kkk") ou telefone.
+2. Na 1ª fase o lead muitas vezes **não digita** o nome → o sistema não deve inventar saudação.
+3. Ligação TTS costurava "Olá, {Nome}" com o mesmo lixo.
+
+## Regra de ouro
+
+**Na dúvida → só o corpo da mensagem/ligação**, sem "Olá Nome".
+
+## Guard canônico
+
+`supabase/functions/_shared/customer-display-name.ts`
+
+| Função | Uso |
+|---|---|
+| `isUsableCustomerName(raw)` | texto parece pessoa? |
+| `isAddressableNameSource(src)` | fonte confiável? |
+| `safeFirstNameForAddress(raw, src)` | prenome ou `""` |
+| `safeFullNameForAddress(raw, src)` | nome curto ou `""` |
+
+### Fontes que PODEM chamar
+
+`self_introduced`, `user_confirmed`, `ocr_conta`, `ocr_doc`, `ocr`, `manual`, `igreen_portal`
+
+### Fontes que NÃO chamam (só corpo)
+
+`whatsapp_profile`, `unknown`, `freeform_multi`, `cadence`, vazio
+
+## Onde plugar
+
+- Templates: `renderTemplateVars({ name, name_source })`
+- Ligação: `resolvePersonalizedCallAudio({ rawName, nameSource })` — sem fonte → só áudio do corpo
+- Captura: `normalizeLeadName` / `extractNome` rejeitam lixo textual
+
+## Exemplos
+
+| name | name_source | Mensagem / ligação |
+|---|---|---|
+| Maria Silva | self_introduced | "Oi Maria, …" / "Olá, Maria!" |
+| Marcus Medau | whatsapp_profile | **só o corpo** (sem "Olá Marcus") |
+| Ixi Kkk | qualquer | só o corpo |
+| (vazio) / unknown | — | só o corpo |
+
+Temas da cadência (`Olá, {{nome}}.`) sem fonte confiável: remove a linha de saudação e envia o texto útil. Ligação TTS: sem intro "Olá, Nome" — só áudio do corpo.

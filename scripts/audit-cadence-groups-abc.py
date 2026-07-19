@@ -230,8 +230,12 @@ def audit() -> AuditReport:
                 "grupo_b",
                 f"Estágio {stage} ({t.key}): botões runtime {runtime_ids} ≠ catálogo {expected_ids}",
             )
-        if stage not in tick_src and "buttonsForStage" not in tick_src:
-            report.add("error", "grupo_b", "cadence-tick não referencia buttonsForStage")
+        if (
+            stage not in tick_src
+            and "buttonsForStage" not in tick_src
+            and "resolveStageButtons" not in tick_src
+        ):
+            report.add("error", "grupo_b", "cadence-tick não referencia buttonsForStage/resolveStageButtons")
 
     for stage, ids in STAGE_BUTTONS_EXPECTED.items():
         if stage.startswith("RECALL"):
@@ -292,8 +296,9 @@ def audit() -> AuditReport:
     # ── cadence-tick sendButtons ──
     if "sendButtons" not in tick_src:
         report.add("error", "cadence-tick", "dispatchWhatsApp não usa sendButtons")
-    if "stageHasButtons" not in tick_src:
-        report.add("error", "cadence-tick", "stageHasButtons não usado no tick")
+    # Dual-read (ContentContract): resolveStageButtons cobre config.buttons + fallback hardcoded.
+    if "stageHasButtons" not in tick_src and "resolveStageButtons" not in tick_src:
+        report.add("error", "cadence-tick", "nem stageHasButtons nem resolveStageButtons usados no tick")
 
     # ── Matriz resumo A→B→C ──
     report.add("info", "fluxo", "Grupo A = bot_flow_steps variant A (cadastro Sofia)")

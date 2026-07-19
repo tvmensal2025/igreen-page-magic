@@ -54,6 +54,11 @@ export function StepReview({ state, derived, patch, publish, consultantId, consu
         />
         <div className="text-[11px] text-[hsl(var(--ads-muted))]">
           Aparece <strong>na frente</strong> do nome padrão no Meta Ads — ajuda a diferenciar campanhas parecidas.
+          {state.isRemarketing && (
+            <span className="block mt-1 text-[hsl(var(--ads-emerald-2))]">
+              Remarketing ligado no passo 1 — DDDs das cidades entram sozinhos na Audience.
+            </span>
+          )}
         </div>
       </Card>
 

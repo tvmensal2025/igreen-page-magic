@@ -2,6 +2,7 @@
 // Usado pelo Fluxo da Camila para extrair dados da mensagem do lead.
 
 import { parseMoneyBR, MONEY_NUM_SRC } from "./parse-money.ts";
+import { isUsableCustomerName } from "./customer-display-name.ts";
 
 const MONEY_NUM_RE = new RegExp(`(${MONEY_NUM_SRC})`);
 const MONEY_BARE_RE = new RegExp(
@@ -194,6 +195,8 @@ function isValidNameCandidate(cleaned: string): boolean {
   if (parts.some(p => p.length < 2)) return false;
   // Rejeita se qualquer palavra for stopword ou ruído de domínio
   if (parts.some(p => isDomainNoise(p))) return false;
+  // Guarda canônica: meme / telefone / interjeição
+  if (!isUsableCustomerName(cleaned)) return false;
   return true;
 }
 

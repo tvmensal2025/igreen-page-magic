@@ -1,38 +1,33 @@
 ---
-description: Produção em ajuste — não enviar automático a clientes (sem apagar nada)
+description: Produção liberada — kill switch só em emergência
 alwaysApply: true
 ---
 
-# Produção: ajuste em andamento
+# Produção: automações liberadas
 
-O sistema está **em produção** e ainda em **ajuste**. Nenhuma mensagem automática deve ir para clientes até validação explícita.
+As automações principais estão **ligadas** (cadência, reheat A com live, agenda, follow-up). Trabalho continua incremental; **não apagar** código/migrations/flags.
 
 ## Regra de ouro
 
-**Não apagar código, migrations, flags nem configurações existentes.** O trabalho é incremental: arrumar, testar, validar.
+**Não apagar** arquivos, funções, guardas nem migrations. Arrumar, testar, validar.
 
-## O que NÃO fazer
+## Envio automático
 
-- Não excluir arquivos, funções, guardas ou migrations.
-- Não reativar envio automático em massa sem pedido explícito do usuário.
-- Não fazer deploy que ligue respostas automáticas para todos os leads de uma vez.
-- Não rodar testes E2E com envio real sem `dryRun`.
+- Permitido com os cadeados atuais (`bot_global_enabled`, toggles, `daily_reheat_settings.enabled` + `live_dispatch_enabled`, DNC, pausa, janela, guarda de nome).
+- **Não** ligar envio em massa novo sem pedido explícito (ex.: novo motor / novo consultor).
+- Testes E2E com envio real: preferir `dryRun` / sandbox.
 
-## Como testar com segurança
-
-- Usar `dryRun` na vendedora / edge functions de teste.
-- Usar modo `dark`/`shadow` do motor quando disponível.
-- Testar um fluxo por vez antes de liberar para produção.
-- Kill switch manual (quando precisar pausar): Super Admin → **Assistente Global** → `bot_global_enabled`.
-
-## Kill switch existente (já no projeto)
+## Kill switch (emergência)
 
 - Flag: `app_settings.bot_global_enabled` (id = `global`)
 - Helper: `supabase/functions/_shared/bot/global-flag.ts` → `isBotGloballyEnabled`
 - UI: `src/components/superadmin/BotGlobalKillSwitch.tsx`
+- Rollback estreito → largo: `live_dispatch_enabled=false` → `daily_reheat.enabled=false` → `cadence_engine=false` → `bot_global_enabled=false`
 
-Usar o kill switch **manualmente** quando quiser pausar tudo — não criar migrations que forcem `false` sem o usuário pedir.
+## Nome do cliente
 
-## Envio manual (permitido)
+Na dúvida (Zap / lixo / não digitou): mensagem e ligação **só com o corpo** — ver `.cursor/rules/nome-cliente-seguro.mdc`.
 
-Consultor pode enviar manualmente via chat, `manual-step-send`, `start-customer-attendance`, etc.
+## Envio manual
+
+Consultor pode enviar via chat, `manual-step-send`, `start-customer-attendance`, etc.

@@ -220,6 +220,10 @@ export interface CreateCampaignBody {
   // gerado pelo sistema no Meta Ads. Serve para diferenciar campanhas
   // similares no mesmo mercado (ex.: "Teste A", "Lote 2").
   name_prefix?: string;
+  /** Remarketing: grava DDDs das cidades na allowlist de Custom Audience. */
+  is_remarketing?: boolean;
+  /** DDDs já inferidos no front (cidade + vizinhos). Servidor valida/merge. */
+  retarget_ddds?: number[];
   // Use cities OU custom_locations. Quando custom_locations vem preenchido,
   // ele substitui as cidades no targeting (segmentação por raio/endereço).
   cities: { key: string; name: string }[];
@@ -276,17 +280,26 @@ export interface CreateCampaignResult {
 export async function createCampaign(body: CreateCampaignBody): Promise<CreateCampaignResult> {
   try {
     const { data, error } = await supabase.functions.invoke("facebook-create-campaign", { body });
+    // Em non-2xx o invoke às vezes preenche `data` com o JSON e `error` genérico.
+    if ((data as any)?.error) {
+      const code = (data as any).code ? `[${(data as any).code}] ` : "";
+      throw new Error(`${code}${(data as any).message || (data as any).error}`);
+    }
     if (error) await throwFunctionError(error);
-    if ((data as any)?.error) throw new Error((data as any).error);
     return data as CreateCampaignResult;
   } catch (err) {
     // Nunca repete o POST nem associa por heurística após timeout: outra aba pode
     // ter criado uma campanha parecida. Sem chave idempotente, o único resultado
     // seguro é pedir conferência na lista antes de qualquer nova publicação.
     const msg = (err as Error)?.message || String(err);
-    const isNetwork = /failed to fetch|network|aborted|timeout|demorou demais/i.test(msg);
+    // "Edge Function returned a non-2xx" NÃO é rede — é erro de negócio com body.
+    const isNetwork =
+      /failed to fetch|failed to send a request|networkerror|aborted|etimedout|demorou demais/i.test(msg) &&
+      !/non-2xx|META_|INSUFFICIENT_|WHATSAPP_/i.test(msg);
     if (!isNetwork) throw err;
-    throw new Error("A resposta do servidor demorou. Não tente publicar de novo agora: atualize a lista de Anúncios e confirme se a campanha apareceu.");
+    throw new Error(
+      "A publicação demorou no navegador, mas a campanha PODE ter sido criada na Meta. Atualize a lista de Anúncios antes de tentar de novo — senão você cria duplicata.",
+    );
   }
 }
 

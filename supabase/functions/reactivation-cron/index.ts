@@ -22,6 +22,7 @@ import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supa
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog } from "../_shared/audit.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 import {
   checkSendQuota,
   registerSend,
@@ -116,13 +117,14 @@ export function renderMessage(
   template: string,
   lead: {
     name: string | null;
+    name_source?: string | null;
     electricity_bill_value: number | null;
     [k: string]: unknown;
   },
   consultantName = "",
 ): string {
   if (!template) return "";
-  const firstName = (lead.name ?? "").trim().split(/\s+/)[0] ?? "";
+  const firstName = safeFirstNameForAddress(lead.name, (lead as { name_source?: string | null }).name_source);
   const valor = lead.electricity_bill_value
     ? Number(lead.electricity_bill_value).toLocaleString("pt-BR", {
         minimumFractionDigits: 2,
@@ -153,11 +155,16 @@ export function renderMessage(
 
   // Limpeza de sobras quando o nome estava vazio.
   if (!firstName) {
-    out = out.replace(/^(Oi|Olá|Ei|E aí)\s*[,!\.]\s*/i, (m) => {
-      const verb = m.trim().replace(/[,!\.]/g, "");
-      return `${verb}! `;
-    });
+    // "Oi tudo bem?" (após tirar "{{nome}},") → "Oi! Tudo bem?"
+    out = out.replace(
+      /^(Oi|Olá|Ei|E aí)\s*[,!.]?\s*/i,
+      (_m, verb: string) => `${verb}! `,
+    );
     out = out.replace(/^\s*,\s*/, "");
+    // Capitaliza a palavra seguinte ao "Oi!"
+    out = out.replace(/^(Oi|Olá|Ei|E aí)!\s+([a-zà-ú])/i, (_m, verb: string, c: string) =>
+      `${verb}! ${c.toUpperCase()}`
+    );
   }
   out = out.replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/[ \t]{2,}/g, " ");
   out = out.replace(/^([a-zà-ú])/, (c) => c.toUpperCase());
@@ -544,7 +551,7 @@ async function fetchCandidates(supabase: SupabaseClient, tpl: any, settings: Rea
 
   const { data: candidates } = await supabase
     .from("customers")
-    .select("id, consultant_id, name, phone_whatsapp, conversation_step, electricity_bill_value, capture_mode, manual_override_reactivate")
+    .select("id, consultant_id, name, name_source, phone_whatsapp, conversation_step, electricity_bill_value, capture_mode, manual_override_reactivate")
     .eq("consultant_id", tpl.consultant_id)
     .eq("conversation_step", tpl.conversation_step)
     .not("status", "in", "(approved,cancelled)")

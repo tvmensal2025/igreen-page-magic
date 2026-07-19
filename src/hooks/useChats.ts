@@ -171,7 +171,94 @@ function digitsOnly(v: string | null | undefined): string {
   return String(v || "").replace(/\D/g, "");
 }
 
-export function useChats(instanceName: string | null, isWhapi: boolean = false) {
+function chatPhoneKeys(chat: ChatItem): string[] {
+  const raw = (chat.sendTargetJid || chat.remoteJid).split("@")[0].replace(/\D/g, "");
+  if (!raw || raw.length < 9) return [];
+  const keys = new Set<string>([raw, raw.slice(-9)]);
+  if (raw.startsWith("55") && raw.length >= 12) keys.add(raw.slice(2));
+  return Array.from(keys);
+}
+
+function phoneKeysFromDigits(digits: string): string[] {
+  const d = digits.replace(/\D/g, "");
+  if (!d || d.length < 9) return [];
+  const keys = new Set<string>([d, d.slice(-9)]);
+  if (d.startsWith("55") && d.length >= 12) keys.add(d.slice(2));
+  return Array.from(keys);
+}
+
+function buildSyntheticChat(phone: string, name: string | null, preview: string, ts: number): ChatItem {
+  const digits = phone.replace(/\D/g, "");
+  const normalized = digits.startsWith("55") ? digits : `55${digits}`;
+  const jid = `${normalized}@s.whatsapp.net`;
+  return {
+    remoteJid: jid,
+    sendTargetJid: jid,
+    name: name || formatPhoneNumber(normalized),
+    lastMessage: preview,
+    lastMessageTimestamp: ts,
+    unreadCount: 0,
+    isGroup: false,
+  };
+}
+
+async function fetchDbSupplementChats(
+  consultantId: string,
+  existing: ChatItem[],
+): Promise<ChatItem[]> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const existingKeys = new Set<string>();
+  for (const c of existing) {
+    for (const k of chatPhoneKeys(c)) existingKeys.add(k);
+  }
+
+  const { data: inbound } = await supabase
+    .from("conversations")
+    .select("message_text, created_at, customer_id")
+    .eq("message_direction", "inbound")
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(150);
+  if (!inbound?.length) return [];
+
+  const customerIds = Array.from(
+    new Set(inbound.map((r) => r.customer_id).filter((id): id is string => !!id)),
+  );
+  if (!customerIds.length) return [];
+
+  const { data: customers } = await supabase
+    .from("customers")
+    .select("id, name, phone_whatsapp")
+    .eq("consultant_id", consultantId)
+    .in("id", customerIds);
+  if (!customers?.length) return [];
+
+  const custById = new Map(customers.map((c) => [c.id, c]));
+  const supplements: ChatItem[] = [];
+  const seenPhones = new Set<string>();
+
+  for (const row of inbound) {
+    const cust = row.customer_id ? custById.get(row.customer_id) : null;
+    if (!cust?.phone_whatsapp) continue;
+    const keys = phoneKeysFromDigits(cust.phone_whatsapp);
+    if (keys.some((k) => existingKeys.has(k)) || keys.some((k) => seenPhones.has(k))) continue;
+    for (const k of keys) seenPhones.add(k);
+    const ts = row.created_at
+      ? Math.floor(new Date(row.created_at).getTime() / 1000)
+      : 0;
+    supplements.push(
+      buildSyntheticChat(
+        cust.phone_whatsapp,
+        cust.name,
+        String(row.message_text || "").slice(0, 120),
+        ts,
+      ),
+    );
+  }
+  return supplements;
+}
+
+export function useChats(instanceName: string | null, isWhapi: boolean = false, consultantId?: string) {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [customerNames, setCustomerNames] = useState<Map<string, string>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
@@ -290,7 +377,22 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
 
       const mapped = deduplicateChats(rawMapped)
         .sort((a, b) => b.lastMessageTimestamp - a.lastMessageTimestamp);
-      setChats(mapped);
+
+      let merged = mapped;
+      if (consultantId) {
+        try {
+          const supplements = await fetchDbSupplementChats(consultantId, mapped);
+          if (supplements.length > 0) {
+            merged = deduplicateChats([...mapped, ...supplements]).sort(
+              (a, b) => b.lastMessageTimestamp - a.lastMessageTimestamp,
+            );
+          }
+        } catch {
+          /* non-critical */
+        }
+      }
+
+      setChats(merged);
       setError(null);
 
       // Fetch profile pictures — skip if another pic fetch is in progress
@@ -309,7 +411,7 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
         }
       }
 
-      const missingPics = mapped
+      const missingPics = merged
         .filter((c) => {
           const targetJid = c.sendTargetJid || c.remoteJid;
           if (!canFetchProfilePicture(targetJid)) return false;
@@ -359,7 +461,7 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
           persistPicCache();
         }).catch(() => { /* non-critical */ })
           .finally(() => { fetchingPicsRef.current = false; });
-      } else if (mapped.some((c) => c.profilePicUrl)) {
+      } else if (merged.some((c) => c.profilePicUrl)) {
         persistPicCache();
       }
     } catch {
@@ -368,7 +470,7 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
       fetchingChatsRef.current = false;
       setIsLoading(false);
     }
-  }, [instanceName, isWhapi, persistPicCache]);
+  }, [instanceName, isWhapi, consultantId, persistPicCache]);
 
   // Supabase Realtime: patch local do chat afetado (evita refetch completo da API).
   // Fallback com debounce se o contato ainda não estiver na lista.
@@ -407,14 +509,16 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
 
           void (async () => {
             let phoneDigits = "";
+            let customerName: string | null = null;
             if (msg.customer_id) {
               try {
                 const { data } = await supabase
                   .from("customers")
-                  .select("phone_whatsapp")
+                  .select("phone_whatsapp, name")
                   .eq("id", msg.customer_id)
                   .maybeSingle();
                 phoneDigits = digitsOnly(data?.phone_whatsapp);
+                customerName = data?.name ?? null;
               } catch {
                 /* fallback abaixo */
               }
@@ -442,7 +546,17 @@ export function useChats(instanceName: string | null, isWhapi: boolean = false) 
               });
             }
 
-            if (!patched) scheduleFullFetch();
+            if (!patched && phoneDigits) {
+              setChats((prev) => {
+                const synthetic = buildSyntheticChat(phoneDigits, customerName, preview, ts);
+                synthetic.unreadCount = 1;
+                return deduplicateChats([synthetic, ...prev]).sort(
+                  (a, b) => b.lastMessageTimestamp - a.lastMessageTimestamp,
+                );
+              });
+            } else if (!patched) {
+              scheduleFullFetch();
+            }
           })();
         },
       )

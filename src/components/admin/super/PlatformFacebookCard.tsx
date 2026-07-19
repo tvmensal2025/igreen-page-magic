@@ -158,8 +158,13 @@ export function PlatformFacebookCard() {
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       toast({
-        title: (data as any)?.created ? "Pixel igreen-tag-site criado" : "Pixel igreen-tag-site já existia",
-        description: `ID: ${(data as any)?.pixel_id}`,
+        title: (data as any)?.created
+          ? "Pixel igreen-oficial-remarketing criado ✅"
+          : (data as any)?.ok
+            ? "Pixel igreen-oficial-remarketing pronto ✅"
+            : "Falha no pixel",
+        description: (data as any)?.message || (data as any)?.page_link_note || `ID: ${(data as any)?.pixel_id}`,
+        variant: (data as any)?.ok === false ? "destructive" : undefined,
       });
       await loadStatus();
     } catch (e: any) {
@@ -331,7 +336,7 @@ export function PlatformFacebookCard() {
               </Button>
               <Button size="sm" variant="secondary" onClick={ensurePixel} disabled={ensuringPixel} className="gap-1.5">
                 {ensuringPixel ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Settings2 className="w-3.5 h-3.5" />}
-                Garantir pixel igreen-tag-site
+                Criar pixel igreen-oficial-remarketing
               </Button>
               <Button size="sm" variant="outline" onClick={loadDiagnose} className="gap-1.5">
                 <Search className="w-3.5 h-3.5" />
@@ -488,6 +493,12 @@ export function PlatformFacebookCard() {
                 title="Pixel ↔ Conta de anúncios"
                 ok={syncReport.pixel_check?.ok}
                 msg={syncReport.pixel_check?.message || syncReport.pixel_check?.error}
+                actionHref={
+                  syncReport.pixel_check?.ok
+                    ? undefined
+                    : "https://business.facebook.com/settings/pixels/1521037349653769"
+                }
+                actionLabel="Abrir Pixel no Business Manager"
               />
               <ReportRow
                 title="Saldo da conta"
@@ -508,7 +519,7 @@ export function PlatformFacebookCard() {
                 ok={syncReport.audiences?.ok}
                 msg={syncReport.audiences?.ok
                   ? `${syncReport.audiences?.uploaded ?? 0} clientes enviados · Lookalike: ${syncReport.audiences?.lal_status || "—"}`
-                  : syncReport.audiences?.error}
+                  : [syncReport.audiences?.error, syncReport.audiences?.hint].filter(Boolean).join(" — ") || "Falha no sync de audiências"}
               />
             </div>
           )}

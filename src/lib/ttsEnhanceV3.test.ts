@@ -23,17 +23,17 @@ describe("enhanceScriptForV3", () => {
     expect(enhanceScriptForV3("Olá.... mundo")).toBe("Olá. mundo");
   });
 
-  it("namePause separa Olá do nome e vira chamada", () => {
+  it("namePause vira chamada contínua (vírgula, sem pausa longa)", () => {
     const out = enhanceScriptForV3("Olá, Maria.", { namePause: true });
-    expect(out).toBe("Olá... Maria!");
+    expect(out).toBe("Olá, Maria!");
     expect(out).not.toContain("[short pause]");
     expect(out).not.toContain("....");
   });
 
-  it("namePause separa Então do nome e vira chamada (passo 3)", () => {
+  it("namePause com Então também é contínuo (passo 3)", () => {
     const out = enhanceScriptForV3("Então, Maria.", { namePause: true });
-    expect(out).toBe("Então... Maria!");
-    expect(formatNameGreetForTts("Então, João.")).toBe("Então... João!");
+    expect(out).toBe("Então, Maria!");
+    expect(formatNameGreetForTts("Então, João.")).toBe("Então, João!");
   });
 
 
@@ -62,14 +62,14 @@ describe("enhanceScriptForV3", () => {
 });
 
 describe("formatNameGreetForTts", () => {
-  it("Olá, Nome. → Olá... Nome!", () => {
-    expect(formatNameGreetForTts("Olá, João.")).toBe("Olá... João!");
+  it("Olá, Nome. → Olá, Nome! (contínuo — reticências soavam como corte)", () => {
+    expect(formatNameGreetForTts("Olá, João.")).toBe("Olá, João!");
   });
 });
 
 describe("prepareTtsSegment", () => {
   it("v2 com namePause ainda formata cumprimento", () => {
-    expect(prepareTtsSegment("Olá, Ana.", MODEL_V2, { namePause: true })).toBe("Olá... Ana!");
+    expect(prepareTtsSegment("Olá, Ana.", MODEL_V2, { namePause: true })).toBe("Olá, Ana!");
   });
 
 

@@ -8,6 +8,8 @@ import {
   isAttendanceDone,
   isAttendanceTerminalStep,
   isAwaitingAttendanceRating,
+  isHumanAttendancePause,
+  looksLikeAttendanceRatingAttempt,
   parseAttendanceRating,
 } from "./attendance-flow.ts";
 
@@ -29,6 +31,20 @@ Deno.test("parseAttendanceRating: buttonId rating_N", () => {
   assertEquals(parseAttendanceRating({ buttonId: "other" }), null);
 });
 
+Deno.test("looksLikeAttendanceRatingAttempt / isHumanAttendancePause", () => {
+  assertEquals(looksLikeAttendanceRatingAttempt({ messageText: "5" }), true);
+  assertEquals(looksLikeAttendanceRatingAttempt({ messageText: "oi" }), true);
+  assertEquals(looksLikeAttendanceRatingAttempt({ messageText: "nota 6" }), true);
+  assertEquals(
+    looksLikeAttendanceRatingAttempt({
+      messageText: "Entra em contato com meu filho depois. Ele quer fazer tambem",
+    }),
+    false,
+  );
+  assertEquals(isHumanAttendancePause("humano_assumiu_whatsapp"), true);
+  assertEquals(isHumanAttendancePause("attendance_rated"), false);
+});
+
 Deno.test("isAwaitingAttendanceRating / isAttendanceDone / terminal", () => {
   assertEquals(
     isAwaitingAttendanceRating({
@@ -38,13 +54,22 @@ Deno.test("isAwaitingAttendanceRating / isAttendanceDone / terminal", () => {
     }),
     true,
   );
+  // Flag sozinha NÃO prende — msg já reabriu conversa (step null).
   assertEquals(
     isAwaitingAttendanceRating({
       conversation_step: null,
       attendance_rating: null,
       attendance_rating_requested_at: "x",
     }),
-    true,
+    false,
+  );
+  assertEquals(
+    isAwaitingAttendanceRating({
+      conversation_step: ATTENDANCE_DONE_STEP,
+      attendance_rating: null,
+      attendance_rating_requested_at: "x",
+    }),
+    false,
   );
   assertEquals(
     isAwaitingAttendanceRating({
