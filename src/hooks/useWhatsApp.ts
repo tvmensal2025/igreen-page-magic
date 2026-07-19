@@ -715,6 +715,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           if (emailSuper || roleSuper) {
             setIsWhapi(true);
             setHasInstance(true);
+            setInstanceName("whapi-superadmin");
             setStatus("connected");
             setPhoneNumber("+55 11 99009-2401");
             setError(null);
@@ -762,6 +763,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         if (isSuperAdmin) {
           setIsWhapi(true);
           setHasInstance(true);
+          setInstanceName("whapi-superadmin");
           setStatus("connected");
           setError(null);
           setIsLoading(false);
@@ -779,6 +781,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             if (isSuper === true) {
               setIsWhapi(true);
               setHasInstance(true);
+              setInstanceName("whapi-superadmin");
               setStatus("connected");
               setPhoneNumber("+55 11 99009-2401");
               setError(null);

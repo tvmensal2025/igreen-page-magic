@@ -286,21 +286,39 @@ export default function PosVendaKanban({
           return;
         }
 
-        // Instância WhatsApp do consultor dono (necessária p/ scheduled_messages).
+        // Instância WhatsApp do consultor dono (Whapi ou Evolution).
         const ownerId = c.assigned_consultant_id || c.consultant_id;
         const { data: inst } = await supabase
           .from("whatsapp_instances")
-          .select("instance_name")
+          .select("instance_name, status")
           .eq("consultant_id", ownerId)
+          .order("updated_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
-        if (!inst?.instance_name) {
-          toast.warning("Reprovado, mas não há instância WhatsApp do consultor para agendar o lembrete.");
+        const status = String(inst?.status || "").toLowerCase();
+        const evoOk =
+          !!inst?.instance_name &&
+          (!status || ["connected", "online", "open"].includes(status));
+
+        // Super admin / Whapi: se Evolution não está saudável, agenda via whapi-superadmin.
+        let scheduleInstance = evoOk ? inst!.instance_name : null;
+        if (!scheduleInstance) {
+          try {
+            const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: ownerId });
+            if (isSuper === true) scheduleInstance = "whapi-superadmin";
+          } catch { /* ignora */ }
+        }
+
+        if (!scheduleInstance) {
+          toast.warning(
+            "Reprovado, mas falta WhatsApp conectado (Whapi ou Evolution) para agendar o lembrete. Conecte e reagende.",
+          );
         } else {
           const when = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
           const { error: schedErr } = await supabase.from("scheduled_messages").insert({
             consultant_id: ownerId,
-            instance_name: inst.instance_name,
+            instance_name: scheduleInstance,
             remote_jid: `${phone}@s.whatsapp.net`,
             message_text: text,
             scheduled_at: when.toISOString(),
@@ -309,7 +327,9 @@ export default function PosVendaKanban({
           if (schedErr) {
             toast.error("Reprovado, mas falhou ao agendar lembrete: " + schedErr.message);
           } else {
-            toast.success(`Lembrete agendado para daqui a ${days} dias.`);
+            toast.success(
+              `Lembrete agendado para daqui a ${days} dias (${scheduleInstance.startsWith("whapi") ? "Whapi" : "Evolution"}).`,
+            );
           }
         }
       }

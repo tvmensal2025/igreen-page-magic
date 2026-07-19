@@ -18,43 +18,117 @@ export interface ResolvedChannel {
 }
 
 /**
+ * Canal de saída do consultor conectado (agenda / lembretes / envios sem customer origin).
+ *
+ * Ordem:
+ * 1) Super admin com Whapi → Whapi
+ * 2) Evolution saudável do consultor → Evolution
+ * 3) Whapi disponível (token) como fallback operacional → Whapi
+ *
+ * Nunca assume Evolution só porque `instance_name` antigo ficou gravado.
+ */
+export async function resolveConsultantOutboundChannel(
+  supabase: any,
+  consultantId: string | null | undefined,
+  env: ChannelEnv & { superadminConsultantId?: string | null },
+  hintInstanceName?: string | null,
+): Promise<ResolvedChannel | UnavailableChannel> {
+  if (!consultantId) {
+    return {
+      unavailable: true,
+      reason: "no_origin_recorded",
+      detail: "consultant_id ausente",
+      instanceName: null,
+      kind: null,
+    };
+  }
+
+  const superId = env.superadminConsultantId ?? null;
+  const isSuper = !!superId && String(superId) === String(consultantId);
+
+  // 1) Super admin / Whapi como canal principal
+  if (isSuper && env.whapiToken) {
+    const name =
+      hintInstanceName?.startsWith("whapi") ? hintInstanceName : "whapi-superadmin";
+    const adapter = getAdapter({
+      kind: "whapi",
+      input: { apiToken: env.whapiToken, instanceName: name },
+    });
+    return { kind: "whapi", instanceName: name, adapter };
+  }
+
+  // 2) Evolution saudável do consultor
+  if (env.evolutionUrl && env.evolutionKey) {
+    let q = supabase
+      .from("whatsapp_instances")
+      .select("instance_name, status, manual_review_required, fatal_lock_until")
+      .eq("consultant_id", consultantId)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (hintInstanceName && !hintInstanceName.startsWith("whapi")) {
+      q = supabase
+        .from("whatsapp_instances")
+        .select("instance_name, status, manual_review_required, fatal_lock_until")
+        .eq("consultant_id", consultantId)
+        .eq("instance_name", hintInstanceName)
+        .limit(1);
+    }
+    const { data: inst } = await q.maybeSingle();
+    const status = String(inst?.status || "").toLowerCase();
+    if (
+      inst?.instance_name &&
+      !inst.manual_review_required &&
+      !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
+      (!status || HEALTHY_STATUSES.has(status) || status === "needs_reconnect")
+    ) {
+      // needs_reconnect: instância Evolution legada pode existir enquanto canal real é Whapi;
+      // só usamos Evolution se status saudável. needs_reconnect → tenta Whapi abaixo.
+      if (!status || HEALTHY_STATUSES.has(status)) {
+        const adapter = getAdapter({
+          kind: "evolution",
+          input: {
+            apiUrl: env.evolutionUrl,
+            apiKey: env.evolutionKey,
+            instanceName: inst.instance_name,
+          },
+        });
+        return { kind: "evolution", instanceName: inst.instance_name, adapter };
+      }
+    }
+  }
+
+  // 3) Whapi só se o consultor já usa Whapi (hint) ou é super admin (já coberto acima).
+  // Não redirecionar consultor Evolution para o token Whapi da plataforma.
+  if (env.whapiToken && hintInstanceName?.startsWith("whapi")) {
+    const adapter = getAdapter({
+      kind: "whapi",
+      input: { apiToken: env.whapiToken, instanceName: hintInstanceName },
+    });
+    return { kind: "whapi", instanceName: hintInstanceName, adapter };
+  }
+
+  return {
+    unavailable: true,
+    reason: "instance_offline",
+    detail:
+      "WhatsApp do consultor indisponível — conecte Whapi ou Evolution e reagende (pendência de canal)",
+    instanceName: hintInstanceName || null,
+    kind: null,
+  };
+}
+
+/**
  * @deprecated Para envios a CLIENTE finais, use `resolveChannelForCustomer`.
- * Não checa saúde da instância — use só para notificar o próprio consultor
- * ou fluxos sem `customerId`.
+ * Preferir `resolveConsultantOutboundChannel` (respeita Whapi do consultor).
  */
 export async function resolveChannel(
   supabase: any,
   consultantId: string,
   env: ChannelEnv,
 ): Promise<ResolvedChannel | null> {
-  const { data: instance } = await supabase
-    .from("whatsapp_instances")
-    .select("instance_name")
-    .eq("consultant_id", consultantId)
-    .limit(1)
-    .maybeSingle();
-
-  if (instance?.instance_name && env.evolutionUrl && env.evolutionKey) {
-    const adapter = getAdapter({
-      kind: "evolution",
-      input: {
-        apiUrl: env.evolutionUrl,
-        apiKey: env.evolutionKey,
-        instanceName: instance.instance_name,
-      },
-    });
-    return { kind: "evolution", instanceName: instance.instance_name, adapter };
-  }
-
-  if (env.whapiToken) {
-    const adapter = getAdapter({
-      kind: "whapi",
-      input: { apiToken: env.whapiToken, instanceName: "whapi-superadmin" },
-    });
-    return { kind: "whapi", instanceName: "whapi-superadmin", adapter };
-  }
-
-  return null;
+  const ch = await resolveConsultantOutboundChannel(supabase, consultantId, env);
+  if (ch && "unavailable" in ch && (ch as { unavailable?: boolean }).unavailable) return null;
+  return ch as ResolvedChannel;
 }
 
 export type ChannelUnavailableReason =

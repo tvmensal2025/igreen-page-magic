@@ -11,6 +11,7 @@ import {
   type AgendamentoTimelineItem,
 } from "@/lib/agendamentosHub";
 import { labelForStageKey } from "@/lib/posVendaSchedule";
+import { resolveScheduleChannel } from "@/lib/scheduleChannel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -178,6 +179,8 @@ function campaignStatusLabel(status: string): string {
 interface AgendamentosHubProps {
   consultantId: string;
   instanceName: string;
+  /** true = consultor no Whapi; agenda dispara via Whapi no cron. */
+  isWhapi?: boolean;
   defaultTab?: AgendamentosHubTab;
   /** Quando true, mostra atalho para abrir como aba principal do Admin */
   showAdminShortcut?: boolean;
@@ -187,6 +190,7 @@ interface AgendamentosHubProps {
 export function AgendamentosHub({
   consultantId,
   instanceName,
+  isWhapi = false,
   defaultTab = "mapa",
   showAdminShortcut = false,
   onOpenChat,
@@ -227,10 +231,16 @@ export function AgendamentosHub({
     stats,
   } = useAgendamentosHub(consultantId);
 
+  const channelReady = resolveScheduleChannel({ isWhapi, instanceName });
+
   const handleCreateManual = async () => {
     if (!phone.trim() || !text.trim() || !scheduledAt) return;
-    if (!instanceName) {
-      toast({ title: "Conecte o WhatsApp para agendar envios manuais", variant: "destructive" });
+    if (!channelReady.ok) {
+      toast({
+        title: "WhatsApp não conectado",
+        description: channelReady.reason,
+        variant: "destructive",
+      });
       return;
     }
     if (new Date(scheduledAt).getTime() <= Date.now()) {
@@ -243,7 +253,7 @@ export function AgendamentosHub({
       const { data: auth } = await supabase.auth.getUser();
       const { error } = await supabase.from("scheduled_messages").insert({
         consultant_id: consultantId,
-        instance_name: instanceName,
+        instance_name: channelReady.instanceName,
         remote_jid: remoteJid,
         message_text: text,
         scheduled_at: new Date(scheduledAt).toISOString(),
@@ -251,7 +261,12 @@ export function AgendamentosHub({
         created_by: auth?.user?.id ?? consultantId,
       });
       if (error) throw error;
-      toast({ title: "Mensagem agendada com sucesso!" });
+      toast({
+        title: "Mensagem agendada com sucesso!",
+        description: channelReady.channel === "whapi"
+          ? "Saída via Whapi (canal conectado)."
+          : "Saída via Evolution (canal conectado).",
+      });
       setPhone("");
       setText("");
       setScheduledAt("");
@@ -1018,17 +1033,24 @@ export function AgendamentosHub({
                 onClick={() => setShowForm(!showForm)}
                 className="gap-2 rounded-xl font-bold text-sm"
                 style={{ background: "var(--gradient-green)" }}
-                disabled={!instanceName}
-                title={!instanceName ? "Conecte o WhatsApp para agendar" : undefined}
+                disabled={!channelReady.ok}
+                title={!channelReady.ok ? channelReady.reason : undefined}
               >
                 <Plus className="w-4 h-4" />
                 Agendar nova
               </Button>
             </div>
 
-            {!instanceName && (
+            {!channelReady.ok && (
               <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                Conecte o WhatsApp na aba Conversas para criar novos agendamentos. A lista do que já está agendado continua aparecendo.
+                {channelReady.reason} A lista do que já está agendado continua aparecendo. Se faltar
+                comprovante de conexão ou outra pendência, resolva na aba Conversas e volte para agendar.
+              </p>
+            )}
+            {channelReady.ok && (
+              <p className="text-[11px] text-muted-foreground">
+                Canal do consultor: <span className="font-semibold text-foreground">{channelReady.channel === "whapi" ? "Whapi" : "Evolution"}</span>
+                {" · "}instância <code className="text-[10px]">{channelReady.instanceName}</code>
               </p>
             )}
 

@@ -541,6 +541,7 @@ const AdminContent = () => {
               <AgendamentosHub
                 consultantId={userId}
                 instanceName={instanceName || ""}
+                isWhapi={!!isWhapi}
                 defaultTab={(pendingHubTab as import("@/lib/agendamentosHub").AgendamentosHubTab | null) ?? undefined}
                 key={pendingHubTab || "agendamentos-default"}
                 onOpenChat={handleOpenChatFromCustomer}

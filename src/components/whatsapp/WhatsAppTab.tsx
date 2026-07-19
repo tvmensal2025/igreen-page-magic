@@ -24,7 +24,12 @@ import {
 const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
 const TemplateManager = lazy(() => import("./TemplateManager").then(m => ({ default: m.TemplateManager })));
 const SchedulePanel = lazy(() => import("./AgendamentosHub").then(m => ({
-  default: (props: { consultantId: string; instanceName: string; onOpenChat?: (phone: string) => void }) => (
+  default: (props: {
+    consultantId: string;
+    instanceName: string;
+    isWhapi?: boolean;
+    onOpenChat?: (phone: string) => void;
+  }) => (
     <m.AgendamentosHub {...props} showAdminShortcut />
   ),
 })));
@@ -517,6 +522,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
               <SchedulePanel
                 consultantId={userId}
                 instanceName={instanceName || ""}
+                isWhapi={!!isWhapi}
                 onOpenChat={handleOpenChatFromCustomer}
               />
             </Suspense>
