@@ -5,7 +5,8 @@ export type AgendamentoTimelineKind =
   | "pos_venda_auto"
   | "bot_followup"
   | "bulk_campaign"
-  | "voice_campaign";
+  | "voice_campaign"
+  | "cadence_send";
 
 export type AgendamentoTimelineStatus = "pending" | "overdue" | "running" | "sent" | "failed";
 
