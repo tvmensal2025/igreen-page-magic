@@ -165,6 +165,7 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
     case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
     case "voice_campaign": return <Phone className="w-3.5 h-3.5 text-info" />;
+    case "cadence_send": return <Flame className="w-3.5 h-3.5 text-primary" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
   }
 }
