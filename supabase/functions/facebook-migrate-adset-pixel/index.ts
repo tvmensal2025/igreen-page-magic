@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
       });
     }
     const tk = platform.token;
-    const correctPixelId = platform.pixel_id || "1521037349653769";
+    const correctPixelId = platform.pixel_id || "708759256921383";
     const warnings: string[] = [];
 
     // 1) Lê adset atual

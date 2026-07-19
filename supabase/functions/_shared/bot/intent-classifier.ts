@@ -19,19 +19,20 @@ const INTENTS: Intent[] = [
 ];
 
 const RX = {
-  quer_cadastrar: /\b(cadastr\w*|quero (me )?(cadastrar|participar)|quero simular|simular|simula[cç][ãa]o|fazer simula|vamos l[áa]|bora|simbora|inscrever|me cadastra|fechado|aceito|quero o desconto|quero economizar)\b/i,
-  quer_humano: /\b(humano|atendente|pessoa real|operador|consultor de verdade|falar com algu[eé]m|falar com (o |a )?\w+|falar com rafael|chamar (o |a )?\w+|atendimento)\b/i,
+  quer_cadastrar: /\b(cadastr\w*|quero (me )?(cadastrar|participar)|quero simular|simular|simula[cç][ãa]o|fazer simula|vamos l[áa]|bora cadastrar|bora fechar|simbora|inscrever|me cadastra|aceito a proposta|quero o desconto|quero economizar)\b/i,
+  quer_humano: /\b(humano|atendente|pessoa real|operador|consultor de verdade|falar com (?:algu[eé]m|humano|atendente|pessoa|consultor)|quero (?:um |uma )?(?:humano|atendente)|chamar (?:o |a )?(?:atendente|humano)|atendimento humano)\b/i,
   saudacao: /^(oi+|ol[áa]|bom dia|boa tarde|boa noite|hey|opa)\b/i,
   ja_assistiu_video: /\b(j[áa]? ?vi|assisti|terminei|acabei de ver|vi sim)\b/i,
   afirmacao: /(^(sim|s|claro|pode|quero|positivo|isso|aceito|1)\b|^[\s]*(👍|✅|1️⃣))/iu,
   negacao: /(^(n[ãa]o|n|nao|negativo|2)\b|^[\s]*(👎|❌|2️⃣))/iu,
-  tem_duvida: /\?|\b(d[úu]vida|d[úu]vidas|tenho d[úu]vida|ainda tenho d[úu]vida|como funciona|como que funciona|quanto|quanto custa|seguro|confi[áa]vel|golpe)\b/i,
-  nao_quer: /\b(n[ãa]o quero|depois|mais tarde|agora n[ãa]o|deixa pra l[áa])\b/i,
+  tem_duvida: /\?|\b(d[úu]vida|d[úu]vidas|tenho d[úu]vida|ainda tenho d[úu]vida|como funciona|como que funciona|quanto|quanto custa|é seguro|confi[áa]vel|é golpe)\b/i,
+  nao_quer: /\b(n[ãa]o quero|mais tarde|agora n[ãa]o|deixa pra l[áa]|depois eu|te aviso depois|me fala depois|vou pensar)\b/i,
 };
 
 function regexClassify(text: string): Intent | null {
   const t = text.trim();
   if (!t) return null;
+  if (/^(bora|fechado|fechou)$/i.test(t)) return "quer_cadastrar";
   if (RX.quer_cadastrar.test(t)) return "quer_cadastrar";
   if (RX.quer_humano.test(t)) return "quer_humano";
   if (RX.nao_quer.test(t)) return "nao_quer";

@@ -190,34 +190,25 @@ Deno.serve(async (req) => {
           .maybeSingle();
         if (selErr) console.error("⚠️ select customer (outboundHuman):", selErr);
 
-        // Guard 2: bot acabou de responder (≤5min) → muito provavelmente é eco do próprio bot.
-        // Janela ampliada: auto-publish encadeia áudio+texto+botões com gaps de segundos.
-        if (cust?.last_bot_reply_at) {
-          const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
-          if (ageMs >= 0 && ageMs <= 300_000) {
-            console.log(`↩️ takeover_skipped_recent_bot_reply age_ms=${ageMs} customer=${cust.id}`);
-            return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-        }
+        // Eco do bot já é filtrado acima (source=api / log de outbound).
+        // NÃO ignorar takeover por last_bot_reply_at: consultor responde no meio
+        // da conversa exatamente quando o bot precisa calar.
 
         if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
-          // Timeout de 24h — takeover por echo/fromMe é falso positivo comum.
-          const pausedUntil = new Date(Date.now() + 24 * 3600_000).toISOString();
+          // Pausa estável (igual portal): sem auto-unpause no próximo inbound.
           const { error: updErr } = await supabase
             .from("customers")
             .update({
               bot_paused: true,
-              bot_paused_reason: "humano_assumiu_whatsapp",
+              bot_paused_reason: "humano_assumiu",
               bot_paused_at: new Date().toISOString(),
-              bot_paused_until: pausedUntil,
+              bot_paused_until: null,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
           if (updErr) console.error("⚠️ update bot_paused (outboundHuman):", updErr);
-          else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, until ${pausedUntil})`);
+          else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
         } else if (!cust) {
           console.warn(`⚠️ Nenhum customer encontrado para ${outPhone} — bot não foi pausado`);
         }
@@ -830,7 +821,7 @@ Deno.serve(async (req) => {
 
     // ─── Partner Attribution (Detection Window: primeiras 3 mensagens) ───
     // 1º) Marcador determinístico `#R{short_code}` (inserido pelo qr-redirect).
-    // 2º) Fallback: `matchKeyword` por substring (legado).
+    // 2º) Fallback: `matchKeyword` EXATO por tokens (legado). Sem fuzzy.
     // ─── Reconciliação de sinal forte do Meta ──────────────────────────────
     // Antes de qualquer decisão de rodízio, se ESTA mensagem trouxe ad_id /
     // ctwa_clid / URL com ad_id que resolve para uma campanha DIFERENTE da
@@ -962,7 +953,7 @@ Deno.serve(async (req) => {
             console.warn(`[lead-attribution] customer=${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
           }
 
-          // 2.1) protocolo profissional no texto só roda DEPOIS dos sinais fortes.
+          // 2.1) protocolo legado OU frase exata (= initial_message) depois dos sinais fortes.
           if (!candidateCampaignId && !strongMetaSignalPresent && messageText) {
             const byProtocol = await resolveCampaignByProtocolOnly(
               supabase,
@@ -971,7 +962,7 @@ Deno.serve(async (req) => {
             );
             if (byProtocol) {
               candidateCampaignId = byProtocol.campaignId;
-              rodizioMatchMethod = "protocol";
+              rodizioMatchMethod = "protocol"; // bucket texto: protocol ou exact_message
             }
           }
 
@@ -1609,13 +1600,11 @@ Deno.serve(async (req) => {
       // Despausamos e seguimos o fluxo normalmente — senão flow D/quick replies
       // ficam mudos.
       const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();
+      // Só auto-despausa recovery automático (lead travado). Takeover humano
+      // (portal ou WhatsApp app) NUNCA despausa sozinho — consultor precisa religar.
       const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
         && !(customer as any).assigned_human_id;
-      // Auto-unpause também quando a pausa veio de echo/outbound `fromMe` (`humano_assumiu_whatsapp`).
-      // Esse motivo é aplicado automaticamente pelo webhook e é a maior fonte de leads travados —
-      // se o cliente respondeu no fluxo, ele claramente ainda quer conversar com o bot.
-      const _isEchoTakeover = _autoReason === "humano_assumiu_whatsapp";
-      if (_isAutoStuckPause || _isEchoTakeover) {
+      if (_isAutoStuckPause) {
         const { error: unpErr } = await supabase
           .from("customers")
           .update({
@@ -1920,7 +1909,7 @@ Deno.serve(async (req) => {
           matchMethod = strong.method;
         }
 
-        // 1) Protocolo só depois dos sinais fortes.
+        // 1) Protocolo legado OU frase exata (= initial_message no banco).
         if (!sourceCampaignId && !strongMetaSignalPresent && messageText) {
           const byProtocol = await resolveCampaignByProtocolOnly(
             supabase,
@@ -1929,12 +1918,9 @@ Deno.serve(async (req) => {
           );
           if (byProtocol) {
             sourceCampaignId = byProtocol.campaignId;
-            matchMethod = "protocol";
+            matchMethod = byProtocol.method;
           }
         }
-
-        // Não atribuir campanha por initial_message: anúncios diferentes podem
-        // começar com o mesmo texto. Só protocolo/AD ID/CTWA escolhem campanha.
 
         // 4) Regex fallback para frases típicas de anúncio (último recurso)
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
@@ -2144,14 +2130,20 @@ Deno.serve(async (req) => {
           }
         } else {
           console.warn(`⚠️ [whapi] Transcrição vazia — status=${transRes.status} body=${JSON.stringify(tj).substring(0, 300)}`);
-          try { await sender.sendText(remoteJid, "Não consegui ouvir direito seu áudio 🙏 Pode me mandar por texto, por favor?"); } catch {}
+          try {
+            const { AUDIO_STT_SOFT_FALLBACK } = await import("../_shared/audio-stt-fallback.ts");
+            await sender.sendText(remoteJid, AUDIO_STT_SOFT_FALLBACK);
+          } catch {}
           return new Response(JSON.stringify({ ok: true, msg: "audio_empty_transcript" }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       } catch (e: any) {
         console.error(`❌ [whapi] Erro ao transcrever áudio:`, e?.message);
-        try { await sender.sendText(remoteJid, "Não consegui ouvir seu áudio agora 🙏 Pode me mandar por texto?"); } catch {}
+        try {
+          const { AUDIO_STT_SOFT_FALLBACK } = await import("../_shared/audio-stt-fallback.ts");
+          await sender.sendText(remoteJid, AUDIO_STT_SOFT_FALLBACK);
+        } catch {}
         return new Response(JSON.stringify({ ok: true, msg: "audio_transcribe_failed" }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -3091,7 +3083,7 @@ Deno.serve(async (req) => {
         tags: { function: "whapi-webhook", kind: "bot_flow_crash" },
         extra: { customer_id: customer.id, step: stepBefore },
       });
-      reply = "Tive um probleminha aqui. Pode me mandar de novo, por favor?";
+      reply = "Tive um probleminha aqui. Pode me mandar de novo? 🙂";
       updates = {};
       await applyTurnResult(reply, updates, stepBefore);
     }

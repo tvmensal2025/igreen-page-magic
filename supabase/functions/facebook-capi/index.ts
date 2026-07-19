@@ -1,6 +1,6 @@
 // Conversions API: envia eventos server-side ao Pixel ou como Offline Conversion.
 // Pode ser chamado por outras edge functions (lead, contact) ou diretamente.
-import { adminClient, fbFetch, FB_GRAPH, sha256Hex } from "../_shared/fb-graph.ts";
+import { adminClient, fbFetch, FB_GRAPH, sha256Hex, loadPlatformAccount } from "../_shared/fb-graph.ts";
 import { decryptToken } from "../_shared/fb-crypto.ts";
 import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
@@ -60,19 +60,25 @@ Deno.serve(async (req) => {
     );
     if (deny) return deny;
 
-    // Modelo centralizado: TODOS os consultores enviam para o Pixel global da plataforma (igreen-app-oficial).
-    // Token + Pixel globais têm prioridade sobre OAuth individual.
+    // Modelo centralizado: Pixel oficial da plataforma (igreen-oficial-remarketing).
     const GLOBAL_TOKEN = Deno.env.get("FACEBOOK_CAPI_ACCESS_TOKEN") ?? "";
-    const GLOBAL_PIXEL = Deno.env.get("FACEBOOK_CAPI_PIXEL_ID") ?? "1521037349653769";
+    const envPixel = Deno.env.get("FACEBOOK_CAPI_PIXEL_ID") ?? "";
+    const platform = await loadPlatformAccount();
+    const GLOBAL_PIXEL = envPixel || platform?.pixel_id || "708759256921383";
+    const platformToken = platform?.token || "";
 
     let token = "";
     let pixelId = "";
-    let tokenSource: "oauth" | "global" = "global";
+    let tokenSource: "oauth" | "global" | "platform" = "global";
 
     if (GLOBAL_TOKEN && GLOBAL_PIXEL) {
       token = GLOBAL_TOKEN;
       pixelId = GLOBAL_PIXEL;
       tokenSource = "global";
+    } else if (platformToken && GLOBAL_PIXEL) {
+      token = platformToken;
+      pixelId = GLOBAL_PIXEL;
+      tokenSource = "platform";
     } else {
       // Fallback raro: OAuth individual (caso o secret global não esteja configurado)
       const { data: conn } = await admin.from("facebook_connections").select("pixel_id,access_token_encrypted").eq("consultant_id", body.consultant_id).maybeSingle();

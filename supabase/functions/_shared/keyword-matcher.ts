@@ -1,6 +1,11 @@
 // supabase/functions/_shared/keyword-matcher.ts
 // Pure module — no I/O, no fetch, no Supabase imports.
-// Responsible for text normalization, fuzzy keyword matching, and link generation.
+// Responsible for text normalization, keyword matching, and link generation.
+//
+// REGRA DE OURO (atribuição de parceiro):
+// Nunca chutar. Só atribui com match EXATO da keyword (tokens contíguos).
+// Fuzzy/Levenshtein foi removido — causava falso positivo real:
+// "Nilza" ≈ "nilma" (distância 1) → lead de teste ia pra parceira Nilma.
 
 export interface KeywordMatchResult {
   partnerId: string;
@@ -37,13 +42,42 @@ export function normalizeText(input: string): string {
     .trim();
 }
 
+/** Tokens normalizados de uma mensagem/keyword. */
+function tokensOf(normalized: string): string[] {
+  return normalized.split(/\s+/).filter(Boolean);
+}
+
 /**
- * Checks if the normalized message text contains a keyword match.
- * Returns the first match found or null.
+ * True quando `kwTokens` aparece como sequência contígua em `msgTokens`.
+ * Ex.: ["indicacao", "nilma"] casa em "oi (indicacao: nilma) #r711377".
+ * Não casa substring frouxa ("luiz" dentro de "luiza") nem typo ("nilza"≠"nilma").
+ */
+export function hasExactTokenSequence(msgTokens: string[], kwTokens: string[]): boolean {
+  if (kwTokens.length === 0) return false;
+  if (kwTokens.length === 1) return msgTokens.includes(kwTokens[0]);
+  for (let i = 0; i <= msgTokens.length - kwTokens.length; i++) {
+    let ok = true;
+    for (let j = 0; j < kwTokens.length; j++) {
+      if (msgTokens[i + j] !== kwTokens[j]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return true;
+  }
+  return false;
+}
+
+/**
+ * Checks if the normalized message text contains an EXACT keyword match.
+ * Returns the best match (longest keyword) or null.
  *
- * Matching strategy:
- *   1. Exact substring match (after normalization)
- *   2. Levenshtein distance ≤ 1 for keywords with 5+ characters (word-level split)
+ * Matching strategy (só o que é seguro para atribuir parceiro):
+ *   1. Normaliza texto e keyword
+ *   2. Exige sequência contígua de tokens idênticos (word-boundary)
+ *   3. Em empate, prefere a keyword mais longa
+ *
+ * NÃO usa fuzzy/Levenshtein. Atribuição determinística preferida: `#R{short_code}`.
  */
 export function matchKeyword(
   messageText: string,
@@ -51,30 +85,26 @@ export function matchKeyword(
 ): KeywordMatchResult | null {
   const normalized = normalizeText(messageText);
   if (!normalized) return null;
+  const msgTokens = tokensOf(normalized);
+
+  let best: KeywordMatchResult | null = null;
+  let bestLen = -1;
 
   for (const partner of partners) {
     for (const kw of partner.keywords) {
       const normKw = normalizeText(kw);
       if (!normKw) continue;
+      const kwTokens = tokensOf(normKw);
+      if (!hasExactTokenSequence(msgTokens, kwTokens)) continue;
 
-      // Exact substring match (post-normalization)
-      if (normalized.includes(normKw)) {
-        return { partnerId: partner.partnerId, keyword: kw, score: 1.0 };
-      }
-
-      // Fuzzy: split message into words, check Levenshtein ≤ 1 for keywords with 5+ chars
-      if (normKw.length >= 5) {
-        const words = normalized.split(/\s+/);
-        for (const word of words) {
-          if (levenshtein(word, normKw) <= 1) {
-            return { partnerId: partner.partnerId, keyword: kw, score: 0.9 };
-          }
-        }
+      if (normKw.length > bestLen) {
+        bestLen = normKw.length;
+        best = { partnerId: partner.partnerId, keyword: kw, score: 1.0 };
       }
     }
   }
 
-  return null;
+  return best;
 }
 
 /**
@@ -100,6 +130,7 @@ export function buildCadastroLink(
 
 /**
  * Standard Levenshtein distance (dynamic programming).
+ * Mantido para utilidade/testes — NÃO usar em atribuição de parceiro.
  */
 export function levenshtein(a: string, b: string): number {
   const m = a.length;

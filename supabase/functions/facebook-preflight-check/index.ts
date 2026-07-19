@@ -1,7 +1,7 @@
 // Pré-voo da campanha: valida token, conta, número WA, e pede reach estimate à Meta.
 // Retorna issues bloqueantes + estimativa de alcance — chamado antes de publicar.
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, fbFetch, getOrCreateWallet, loadCampaignConnection } from "../_shared/fb-graph.ts";
-import { calculateCampaignBudgetRequirement } from "../_shared/campaign-budget.ts";
+import { calculateCampaignBudgetRequirement, META_MIN_DAILY_BUDGET_CENTS } from "../_shared/campaign-budget.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 
 interface PreflightBody {
@@ -147,8 +147,8 @@ Deno.serve(async (req) => {
       if (body.duration_days != null && (body.duration_days < 1 || body.duration_days > 30)) {
         blockers.push("A duração deve ficar entre 1 e 30 dias, ou sem prazo final.");
       }
-      if (dailyCents < 1000) {
-        blockers.push("Orçamento mínimo é R$ 10/dia.");
+      if (dailyCents < META_MIN_DAILY_BUDGET_CENTS) {
+        blockers.push("Orçamento mínimo é R$ 5,17/dia (mínimo da Meta).");
       } else if (liquidBalance < requirement.requiredCents) {
         blockers.push(
           `Saldo insuficiente: esta campanha exige R$ ${(requirement.requiredCents / 100).toFixed(2)} e seu saldo disponível é R$ ${(liquidBalance / 100).toFixed(2)}.`,
@@ -193,7 +193,8 @@ Deno.serve(async (req) => {
           geo.cities = body.cities!.map((c) => ({ key: c.key })).slice(0, 200);
         }
         const ageMin = Math.min(body.age_min ?? 25, 25);
-        const ageMax = Math.min(Math.max(body.age_max ?? 60, ageMin), 65);
+        // Advantage+: age_max hard deve ser 65 (Meta rejeita <65).
+        const ageMax = 65;
         const targeting: Record<string, unknown> = {
           geo_locations: geo,
           age_min: ageMin,

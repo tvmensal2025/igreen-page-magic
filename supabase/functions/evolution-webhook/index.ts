@@ -46,7 +46,7 @@ import {
 import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
-import { isConsultantAIDisabled } from "../_shared/bot/paused.ts";
+import { isConsultantAIDisabled, isCustomerPausedByHuman } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
@@ -486,32 +486,21 @@ Deno.serve(async (req) => {
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-        if (cust?.last_bot_reply_at) {
-          const ageMs = Date.now() - new Date(cust.last_bot_reply_at).getTime();
-          // Janela ampliada (30s → 5min): auto-publish do painel encadeia áudio+texto+botões
-          // com gaps de segundos, e cada um vira um outbound `fromMe`. 30s pausava o bot no meio do fluxo.
-          if (ageMs >= 0 && ageMs <= 300_000) {
-            console.log(`↩️ [evolution] takeover_skipped_recent_bot_reply age_ms=${ageMs}`);
-            return new Response(JSON.stringify({ ok: true, msg: "takeover_skipped_recent_bot_reply" }), {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-        }
+        // Eco do bot já é filtrado (ignored_self_echo / source). Consultor no app
+        // precisa pausar mesmo com bot ativo — não pular por last_bot_reply_at.
         if (cust && (!cust.bot_paused || !cust.assigned_human_id)) {
-          // Timeout de 24h para takeover por echo — se for falso positivo, o bot volta sozinho.
-          const pausedUntil = new Date(Date.now() + 24 * 3600_000).toISOString();
           await supabase
             .from("customers")
             .update({
               bot_paused: true,
-              bot_paused_reason: "humano_assumiu_whatsapp",
+              bot_paused_reason: "humano_assumiu",
               bot_paused_at: new Date().toISOString(),
-              bot_paused_until: pausedUntil,
+              bot_paused_until: null,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
-          console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id}, until ${pausedUntil})`);
+          console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
         }
       } catch (e) {
         console.error("⚠️ [evolution] Falha ao pausar bot via outbound humano:", e);
@@ -523,9 +512,11 @@ Deno.serve(async (req) => {
 
 
     const {
-      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isFile, isButton, mediaKind,
+      remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isButton, mediaKind,
       imageMessage, documentMessage, audioMessage, key, message,
     } = parsed;
+    // isFile pode virar false após STT bem-sucedida (paridade Whapi).
+    let isFile = parsed.isFile;
     // messageText pode ser sobrescrito pela transcrição automática quando o
     // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
     let messageText: string = parsed.messageText;
@@ -978,17 +969,14 @@ Deno.serve(async (req) => {
           matchMethod = strong.method;
         }
 
-        // 1) Protocolo profissional só roda quando não existe sinal forte resolvido.
+        // 1) Protocolo legado OU frase exata (= initial_message no banco).
         if (!sourceCampaignId && !strongMetaSignalPresent && messageText) {
           const byProtocol = await resolveCampaignByProtocolOnly(supabase, instanceData.consultant_id, messageText);
           if (byProtocol) {
             sourceCampaignId = byProtocol.campaignId;
-            matchMethod = "protocol";
+            matchMethod = byProtocol.method;
           }
         }
-
-        // Não atribuir campanha por initial_message: anúncios diferentes podem
-        // começar com o mesmo texto. Só protocolo/AD ID/CTWA escolhem campanha.
 
         // 4) Regex fallback para frases típicas de anúncio (último recurso)
         const adsRegex = /(tenho interesse.*mais informa[çc][õo]es|gostaria de saber mais|quero saber mais|vi seu an[uú]ncio|vim do an[uú]ncio|do an[uú]ncio|pelo an[uú]ncio|vi o an[uú]ncio|facebook|instagram|\bfb ads?\b|\bmeta ads?\b|patrocinad|reels|stories|sponsored)/i;
@@ -1348,8 +1336,8 @@ Deno.serve(async (req) => {
     // 1º) Marcador determinístico `#R{short_code}` (inserido pelo qr-redirect).
     //     É o caminho confiável: imune a edição da keyword, colisões e leads
     //     que só mandam "oi" depois.
-    // 2º) Fallback: `matchKeyword` por substring da keyword no texto (legado,
-    //     usado por QRs antigos e por leads que digitaram a keyword manualmente).
+    // 2º) Fallback: `matchKeyword` EXATO por tokens (legado — QRs antigos /
+    //     keyword digitada). Sem fuzzy: "Nilza"≠"nilma". Preferir `#R{code}`.
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
         const leadSourceText = JSON.stringify((customer as any).lead_source || "").toLowerCase();
@@ -1783,15 +1771,13 @@ Deno.serve(async (req) => {
 
     // ─── 6.1) BOT PAUSED — handoff humano ativo ────────────────────────
     // Se um humano assumiu, NÃO responder. Avisa o consultor (texto/mídia).
-    if ((customer as any).bot_paused === true) {
-      // Auto-unpause quando a pausa veio de echo/outbound `fromMe` (`humano_assumiu_whatsapp`)
-      // ou do cron de recovery (`lead_travado_recovery_*`) e o cliente acabou de mandar mensagem.
-      // Esses motivos são automáticos — se o lead respondeu, ele não está travado nem em atendimento humano.
+    // Usa helper canônico (bot_paused OU assigned_human_id OU until).
+    if (isCustomerPausedByHuman(customer as any)) {
       const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();
-      const _isEchoTakeover = _autoReason === "humano_assumiu_whatsapp";
+      // Só recovery automático. Takeover humano NUNCA despausa sozinho.
       const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
         && !(customer as any).assigned_human_id;
-      if (_isEchoTakeover || _isAutoStuckPause) {
+      if (_isAutoStuckPause) {
         const { error: unpErr } = await supabase
           .from("customers")
           .update({
@@ -1812,7 +1798,7 @@ Deno.serve(async (req) => {
         }
       }
     }
-    if ((customer as any).bot_paused === true) {
+    if (isCustomerPausedByHuman(customer as any)) {
       console.log(`🤝 [handoff] bot pausado para ${customer.id} (motivo: ${(customer as any).bot_paused_reason}). Skip auto-reply.`);
       try {
         const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
@@ -1878,12 +1864,12 @@ Deno.serve(async (req) => {
       try {
         await sender.sendText(
           remoteJid,
-          "Desculpa 😅 não consegui receber sua imagem. Pode reenviar, por favor?"
+          "Desculpa 😅 não consegui receber sua imagem. Pode reenviar?"
         );
         await supabase.from("conversations").insert({
           customer_id: customer.id,
           message_direction: "outbound",
-          message_text: "Desculpa 😅 não consegui receber sua imagem. Pode reenviar, por favor?",
+          message_text: "Desculpa 😅 não consegui receber sua imagem. Pode reenviar?",
           message_type: "text",
           conversation_step: customer.conversation_step,
         });
@@ -1907,14 +1893,9 @@ Deno.serve(async (req) => {
 
     // ─── 7.5) Áudio → transcript (Task 17) ─────────────────────────────
     // Se o cliente mandou áudio E o download deu certo, transcreve via
-    // ai-transcribe-media e injeta o texto como `messageText` para que os
-    // motores conversacionais (`runConversationalFlow`/`ai-agent-router`)
-    // tratem como se fosse texto. O áudio original já está em MinIO via
-    // bloco 7 acima. Se a transcrição falhar, mantemos o comportamento
-    // atual (handler de mídia recebe áudio bruto). Best-effort, never throws.
+    // ai-transcribe-media e injeta o texto como `messageText`.
+    // Paridade com Whapi: se STT falhar/vazia, pede texto e NÃO segue às cegas.
     if (hasAudio && fileBase64 && !messageText) {
-      // Flag global do Superadmin: quando desligada, não transcreve (cai no
-      // comportamento de áudio bruto). Default = ligada (null → trata como true).
       let audioTranscribeOn = true;
       try {
         const { getGlobalAiSettings } = await import("../_shared/ai-config.ts");
@@ -1923,8 +1904,16 @@ Deno.serve(async (req) => {
       } catch (_) { /* fail-safe: mantém ligado */ }
 
       if (!audioTranscribeOn) {
-        console.log("🔇 Transcrição de áudio desligada (ai_audio_transcribe=false) — seguindo com áudio bruto.");
-      } else {
+        console.log("🔇 Transcrição de áudio desligada (ai_audio_transcribe=false) — pedindo texto.");
+        try {
+          const { AUDIO_STT_DISABLED_FALLBACK } = await import("../_shared/audio-stt-fallback.ts");
+          await sender.sendText(remoteJid, AUDIO_STT_DISABLED_FALLBACK);
+        } catch (_) { /* best-effort */ }
+        return new Response(JSON.stringify({ ok: true, msg: "audio_transcribe_disabled" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       try {
         const mt = audioMessage?.mimetype || "audio/ogg";
         console.log(`🎙️ Transcrevendo áudio do cliente (${mt})...`);
@@ -1942,7 +1931,7 @@ Deno.serve(async (req) => {
         if (transcript) {
           console.log(`✅ Transcrição (${transcript.length} chars): "${transcript.substring(0, 120)}"`);
           messageText = transcript;
-          // Atualiza a última conversa inbound com o transcript para histórico/IA.
+          isFile = false;
           try {
             const { data: lastConv } = await supabase.from("conversations")
               .select("id").eq("customer_id", customer.id).eq("message_direction", "inbound")
@@ -1954,11 +1943,24 @@ Deno.serve(async (req) => {
             }
           } catch (_) { /* best-effort */ }
         } else {
-          console.warn("⚠️ Transcrição vazia — seguindo com áudio bruto.");
+          console.warn("⚠️ Transcrição vazia — fallback educado.");
+          try {
+            const { AUDIO_STT_SOFT_FALLBACK } = await import("../_shared/audio-stt-fallback.ts");
+            await sender.sendText(remoteJid, AUDIO_STT_SOFT_FALLBACK);
+          } catch (_) { /* best-effort */ }
+          return new Response(JSON.stringify({ ok: true, msg: "audio_empty_transcript" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
         }
       } catch (e: any) {
-        console.warn("⚠️ Transcrição falhou — seguindo com áudio bruto:", e?.message);
-      }
+        console.warn("⚠️ Transcrição falhou — fallback educado:", e?.message);
+        try {
+          const { AUDIO_STT_SOFT_FALLBACK } = await import("../_shared/audio-stt-fallback.ts");
+          await sender.sendText(remoteJid, AUDIO_STT_SOFT_FALLBACK);
+        } catch (_) { /* best-effort */ }
+        return new Response(JSON.stringify({ ok: true, msg: "audio_transcribe_failed" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
     }
 
@@ -2761,7 +2763,7 @@ Deno.serve(async (req) => {
         tags: { function: "evolution-webhook", kind: "bot_flow_crash" },
         extra: { customer_id: customer.id, step: stepBefore },
       });
-      reply = "🤖 Tive um probleminha técnico ao processar sua mensagem. Pode me enviar novamente, por favor? Se continuar, me responda *MENU* para recomeçarmos juntos. 🙏";
+      reply = "🤖 Tive um probleminha técnico ao processar sua mensagem. Pode me enviar novamente? Se continuar, me responda *MENU* para recomeçarmos juntos. 🙏";
       updates = {};
       try {
         await supabase
@@ -3375,3 +3377,5 @@ Deno.serve(async (req) => {
     }
   }
 });
+
+

@@ -11,18 +11,15 @@
 // saudações de abertura continuam indo pelo LLM (que controla o avanço do
 // fluxo e os marcadores [PEDIR_FOTO_CONTA]/[FINALIZAR_CADASTRO]).
 
-const STOPWORDS = new Set([
-  "nao", "sim", "ok", "oi", "ola", "eai", "opa", "e", "a", "o", "de", "da",
-  "do", "que", "pra", "para", "com", "meu", "minha", "um", "uma", "isso",
-]);
+import { phraseMatchesMessage, QA_GENERIC_SINGLE, QA_STOPWORDS } from "../qa-phrase-match.ts";
+
+const STOPWORDS = QA_STOPWORDS;
 
 // Gatilhos de UMA palavra que, isolados, casam contextos errados com frequência
 // (ex.: "anos" em "tenho 30 anos"; "sair" em "vou sair agora"; "data" em "que
 // data é hoje"). Não removemos da base — apenas ignoramos no match DIRETO, pra
 // não responder a intenção errada. Quando aparecem, o LLM cuida com contexto.
-const GATILHOS_GENERICOS_IGNORADOS = new Set([
-  "anos", "data", "sair", "região", "regiao", "prazo", "obra",
-]);
+const GATILHOS_GENERICOS_IGNORADOS = QA_GENERIC_SINGLE;
 
 function normalizeText(text: string): string {
   return String(text || "")
@@ -34,30 +31,11 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-/** Casa uma frase-gatilho contra a mensagem do cliente. Mesma lógica do knowledge-lookup. */
+/** Casa uma frase-gatilho contra a mensagem do cliente. */
 function phraseMatches(phraseRaw: string, messageRaw: string): boolean {
   const phrase = normalizeText(phraseRaw);
-  const message = normalizeText(messageRaw);
-  if (!phrase || phrase.length < 2 || !message) return false;
-  if (message === phrase) return true;
-  const singleWord = !phrase.includes(" ");
-  if (singleWord) {
-    if (STOPWORDS.has(phrase)) return false;
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(message);
-  }
-  // Frase com várias palavras. Gatilhos genéricos formados só por stopwords
-  // (ex.: "quem é") NÃO devem casar por conteúdo — geram falso positivo
-  // ("quem é o dono" casaria "Nunca ouvi falar"). Exige ao menos 1 palavra
-  // significativa.
-  const palavrasSignificativas = phrase.split(" ").filter((w) => w.length >= 3 && !STOPWORDS.has(w));
-  if (palavrasSignificativas.length === 0) {
-    // Só casa se a mensagem for praticamente idêntica ao gatilho.
-    return message === phrase;
-  }
-  if (phrase.length >= 8 && message.includes(phrase)) return true;
-  // Mensagem curta contida na frase-gatilho (ex.: "é golpe" vs "isso é golpe?").
-  return message.length <= 12 && phrase.includes(message);
+  if (GATILHOS_GENERICOS_IGNORADOS.has(phrase) && !phrase.includes(" ")) return false;
+  return phraseMatchesMessage(phraseRaw, messageRaw);
 }
 
 export type RespostaDireta = {

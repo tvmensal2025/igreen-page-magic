@@ -32,9 +32,9 @@ const A5_SPEC = {
   bodyText: () => "",
 };
 
-Deno.test("buildStitchSlotCandidates: A2 ola_greet usa ola6 (Olá+nome + corpo)", () => {
+Deno.test("buildStitchSlotCandidates: A2 ola_greet usa ola7 (Olá+nome contínuo + corpo)", () => {
   const slots = buildStitchSlotCandidates(A2_SPEC, "masculino", "lucas");
-  assertEquals(slots, ["stitch:a2_audio_activate_name:ola6:masculino:lucas"]);
+  assertEquals(slots, ["stitch:a2_audio_activate_name:ola7:masculino:lucas"]);
 });
 
 Deno.test("buildStitchSlotCandidates: A2 nome_only usa n5 (legado)", () => {
@@ -56,13 +56,12 @@ Deno.test("buildStitchSlotCandidates: A5 nome + clube", () => {
   ]);
 });
 
-Deno.test("buildIntroSlotCandidates: nome só ptbr3 (sem legado/ptbr2)", () => {
+Deno.test("buildIntroSlotCandidates: nome e ola só ptbr3 (sem legado/ptbr2)", () => {
   assertEquals(buildIntroSlotCandidates("nome", "felipe"), [
     "intro:nome:ptbr3:felipe",
   ]);
+  // ola ptbr3 = “Olá, Nome!” contínuo; ptbr2 (“Olá... Nome!”) não é mais candidato.
   assertEquals(buildIntroSlotCandidates("ola", "felipe"), [
-    "intro:ola:ptbr2:felipe",
-    "intro:ola:ptbr:felipe",
-    "intro:ola:felipe",
+    "intro:ola:ptbr3:felipe",
   ]);
 });

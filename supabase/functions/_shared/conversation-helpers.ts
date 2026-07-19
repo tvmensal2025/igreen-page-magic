@@ -2,6 +2,7 @@ import { wantsToAdvance } from "./bot/cadastro-intent.ts";
 import {
   applySofiaCadastroRoutingDefaults,
   isSofiaMulticanalCustomer,
+  isPlausibleAddressNumber,
 } from "./bot/cadastro-fixes.ts";
 import { requiresRgNumber } from "./document-type.ts";
 
@@ -95,7 +96,8 @@ export function getNextMissingStep(
       (consultorEmailNormalized && emailNormalized === consultorEmailNormalized)
     ) step = "ask_email";
     // F03: NUNCA devolver ask_cep ao lead (regra de produto).
-    else if (!v.address_number) step = "ask_number";
+    // Número de casa inválido se for e-mail/CEP colado (caso Salto 19/07).
+    else if (!isPlausibleAddressNumber(v.address_number)) step = "ask_number";
     // complemento é opcional — Sofia C trata como "" quando já há número (OCR)
     else if (v.address_complement === null || v.address_complement === undefined) step = "ask_complement";
     else if (!v.distribuidora || String(v.distribuidora).trim().length < 2) step = "ask_distribuidora";
@@ -469,7 +471,7 @@ export function hasBillEstimateOnly(customer: any): boolean {
 // Heurística leve para "isso parece uma pergunta?". Usada pelo midflow QA
 // para decidir se vale tentar casar uma FAQ no meio do cadastro.
 const RE_MIDFLOW_QUESTION =
-  /\?|\b(quanto|como|porqu[eê]|por\s*qu[eê]|seguro|golpe|funciona|tem\s+taxa|cobra|paga|vou\s+pagar|fatura|conta|garant|cancelar|desisti|prazo|demora|quando|preço|valor\s+da|d[uú]vida)\b/i;
+  /\?|\b(quanto|porqu[eê]|por\s*qu[eê]|é\s+seguro|é\s+golpe|como\s+funciona|tem\s+taxa|vou\s+pagar|fatura|garant|cancelar|desisti|prazo|demora|preço|valor\s+da|d[uú]vida|distribuidora|cemig|fidelidade|titular|cpf|aluguel|painel\s+solar|economiz|interessad)\b|(?:atende\s+(?:na\s+)?minha\s+(?:cidade|regi[aã]o)|tem\s+cobertura|funciona\s+(?:na\s+)?minha\s+cidade|minha\s+cidade|outra\s+cidade|cidade\s+vizinha|(?:nao|não)\s+(?:sou|moro)\s+(?:de|em)\s+\w{4,}|moro\s+em\s+(?!casa\b|apartamento\b|apto\b)\w{4,}|aqui\s+em\s+\w{4,})/i;
 
 export function detectQuestionIntent(text: string): boolean {
   if (!text) return false;

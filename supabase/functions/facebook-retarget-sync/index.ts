@@ -31,6 +31,14 @@ function normEmail(e: string | null): string | null {
   return t.includes("@") ? t : null;
 }
 
+function phoneDdd(ph: string | null): string | null {
+  if (!ph) return null;
+  const d = ph.replace(/\D/g, "");
+  const local = d.startsWith("55") ? d.slice(2) : d;
+  if (local.length < 10) return null;
+  return local.slice(0, 2);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -53,25 +61,77 @@ Deno.serve(async (req) => {
     .eq("status", "active");
 
   const { decryptToken } = await import("../_shared/fb-crypto.ts");
+  const { loadPlatformAccount } = await import("../_shared/fb-graph.ts");
   const results: Array<{ consultant_id: string; audience_id: string; added: number; error?: string }> = [];
+
+  // Fallback: conta da plataforma (Custom Audience compartilhada).
+  type SyncTarget = {
+    consultant_id: string | null;
+    custom_audience_id: string;
+    token: string;
+    scope: "consultant" | "platform";
+  };
+  const targets: SyncTarget[] = [];
 
   for (const c of conns ?? []) {
     if (!c.access_token_encrypted || !c.custom_audience_id) continue;
+    try {
+      targets.push({
+        consultant_id: c.consultant_id,
+        custom_audience_id: c.custom_audience_id,
+        token: await decryptToken(c.access_token_encrypted),
+        scope: "consultant",
+      });
+    } catch (_) { /* token inválido */ }
+  }
 
-    // Leads elegíveis: motor marcou como frio/retarget nos últimos 90 dias.
+  if (targets.length === 0) {
+    const platform = await loadPlatformAccount();
+    const { data: pf } = await admin
+      .from("platform_facebook_account")
+      .select("custom_audience_id")
+      .eq("id", true)
+      .maybeSingle();
+    if (platform?.token && pf?.custom_audience_id) {
+      targets.push({
+        consultant_id: null,
+        custom_audience_id: pf.custom_audience_id,
+        token: platform.token,
+        scope: "platform",
+      });
+    }
+  }
+
+  const { data: pfDdd } = await admin
+    .from("platform_facebook_account")
+    .select("retarget_ddd_allowlist")
+    .eq("id", true)
+    .maybeSingle();
+  const dddAllow: number[] | null = Array.isArray((pfDdd as any)?.retarget_ddd_allowlist) &&
+      (pfDdd as any).retarget_ddd_allowlist.length
+    ? (pfDdd as any).retarget_ddd_allowlist.map(Number).filter((n: number) => n >= 11 && n <= 99)
+    : null;
+
+  for (const c of targets) {
     const cutoff = new Date(Date.now() - 90 * 86400_000).toISOString();
-    const { data: leads } = await admin
+    let leadsQuery = admin
       .from("lead_cadence_state")
       .select("customer_id, stage, updated_at, customer:customers!inner(id, consultant_id, phone_whatsapp, email)")
       .in("stage", [...RETARGET_STAGES])
       .gte("updated_at", cutoff)
-      .eq("customer.consultant_id", c.consultant_id)
       .limit(5000);
+    if (c.consultant_id) {
+      leadsQuery = leadsQuery.eq("customer.consultant_id", c.consultant_id);
+    }
+    const { data: leads } = await leadsQuery;
 
-    if (!leads?.length) { results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: 0 }); continue; }
+    const labelId = c.consultant_id || "platform";
+    if (!leads?.length) {
+      results.push({ consultant_id: labelId, audience_id: c.custom_audience_id, added: 0 });
+      continue;
+    }
 
-    // Filtra opt-outs via customers.do_not_contact (fonte da verdade).
-    const ids = leads.map(l => l.customer_id);
+    const ids = leads.map((l) => l.customer_id);
     const { data: optouts } = await admin
       .from("customers")
       .select("id")
@@ -80,58 +140,119 @@ Deno.serve(async (req) => {
     const blocked = new Set((optouts ?? []).map((o: { id: string }) => o.id));
 
     const rows: Array<[string, string]> = [];
+    const acceptedIds: string[] = [];
+    const logRows: Array<Record<string, unknown>> = [];
     for (const l of leads) {
       if (blocked.has(l.customer_id)) continue;
       const cust = Array.isArray(l.customer) ? l.customer[0] : l.customer;
       const ph = normPhone(cust?.phone_whatsapp ?? null);
       const em = normEmail(cust?.email ?? null);
+      const ddd = phoneDdd(ph);
+      if (dddAllow && dddAllow.length) {
+        const dddNum = ddd ? Number(ddd) : NaN;
+        if (!Number.isFinite(dddNum) || !dddAllow.includes(dddNum)) {
+          logRows.push({
+            audience_id: c.custom_audience_id,
+            customer_id: l.customer_id,
+            consultant_id: cust?.consultant_id || c.consultant_id || null,
+            source: "bulk_retarget",
+            ok: false,
+            detail: `ddd_filtered:${ddd || "none"}`,
+            phone_ddd: ddd,
+          });
+          continue;
+        }
+      }
       const phH = ph ? await sha256Hex(ph) : "";
       const emH = em ? await sha256Hex(em) : "";
-      if (phH || emH) rows.push([phH, emH]);
+      if (phH || emH) {
+        rows.push([phH, emH]);
+        acceptedIds.push(l.customer_id);
+        logRows.push({
+          audience_id: c.custom_audience_id,
+          customer_id: l.customer_id,
+          consultant_id: cust?.consultant_id || c.consultant_id || null,
+          source: "bulk_retarget",
+          ok: true,
+          detail: "queued",
+          phone_ddd: ddd,
+        });
+      }
     }
-    if (!rows.length) { results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: 0 }); continue; }
+    if (!rows.length) {
+      if (logRows.length) await admin.from("meta_audience_sync_log").insert(logRows);
+      results.push({ consultant_id: labelId, audience_id: c.custom_audience_id, added: 0 });
+      continue;
+    }
 
     try {
-      const token = await decryptToken(c.access_token_encrypted);
       const payload = { schema: ["PHONE", "EMAIL"], data: rows };
-      const url = `${GRAPH}/${c.custom_audience_id}/users?access_token=${encodeURIComponent(token)}`;
+      const url = `${GRAPH}/${c.custom_audience_id}/users?access_token=${encodeURIComponent(c.token)}`;
       const resp = await fetch(url, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ payload }),
       });
       const body = await resp.json();
       if (!resp.ok) throw new Error(JSON.stringify(body));
 
-      await admin.from("facebook_connections").update({
-        audience_synced_at: new Date().toISOString(),
-        audience_source_count: rows.length,
-      }).eq("consultant_id", c.consultant_id);
+      if (c.scope === "consultant" && c.consultant_id) {
+        await admin.from("facebook_connections").update({
+          audience_synced_at: new Date().toISOString(),
+          audience_source_count: rows.length,
+        }).eq("consultant_id", c.consultant_id);
+      } else {
+        await admin.from("platform_facebook_account").update({
+          audience_synced_at: new Date().toISOString(),
+          audience_source_count: rows.length,
+        }).eq("id", true);
+      }
 
-      // Marca leads CLOSE_LOST como retargetados (não regride RETARGET_ADS_15D).
-      // Respeita delay de RETARGET_META (24h) — sem next_action_at o tick avançava na hora.
       const retargetMetaDue = new Date(Date.now() + 24 * 3600_000).toISOString();
       await admin.from("lead_cadence_state").update({
         stage: "RETARGET_META",
         next_action_at: retargetMetaDue,
       })
-        .in("customer_id", ids.filter(id => !blocked.has(id)))
+        .in("customer_id", acceptedIds)
         .eq("stage", "CLOSE_LOST");
 
-      // Log agregado no cadence_action_log.
       await admin.from("cadence_action_log").insert({
-        customer_id: ids[0], stage: "RETARGET_META", channel: "meta_audience",
-        status: "sent", cost_cents: 0,
+        customer_id: acceptedIds[0],
+        stage: "RETARGET_META",
+        channel: "meta_audience",
+        status: "sent",
+        cost_cents: 0,
         detail: {
           synced: rows.length,
           audience_id: c.custom_audience_id,
           consultant_id: c.consultant_id,
+          scope: c.scope,
           stages: [...RETARGET_STAGES],
+          ddd_allowlist: dddAllow,
         },
       });
 
-      results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: rows.length });
+      // Marca ok no log (já montados como queued → synced)
+      for (const r of logRows) {
+        if (r.ok) r.detail = "synced";
+      }
+      if (logRows.length) await admin.from("meta_audience_sync_log").insert(logRows);
+
+      results.push({ consultant_id: labelId, audience_id: c.custom_audience_id, added: rows.length });
     } catch (e) {
-      results.push({ consultant_id: c.consultant_id, audience_id: c.custom_audience_id, added: 0, error: String((e as Error).message).slice(0, 200) });
+      for (const r of logRows) {
+        if (r.ok) {
+          r.ok = false;
+          r.detail = `graph_error:${String((e as Error).message).slice(0, 120)}`;
+        }
+      }
+      if (logRows.length) await admin.from("meta_audience_sync_log").insert(logRows);
+      results.push({
+        consultant_id: labelId,
+        audience_id: c.custom_audience_id,
+        added: 0,
+        error: String((e as Error).message).slice(0, 200),
+      });
     }
   }
 

@@ -18,7 +18,9 @@ export interface ButtonIntentResult {
 }
 
 const CONFUSION_RX = /^(?:[\?\.!]+|oi+|hein|hm+|h+a+|que|qual|oque|o que|como assim|n[aã]o entendi|menu|op[cç][oõ]es?|ajuda|help)[\s\?\.!]*$/i;
-const REFUSAL_RX = /\b(n[aã]o (vou|quero|posso|irei|tenho|consigo)|n[aã]o tenho (interesse|tempo)|sair|parar|cancela|desisto|deixa pra l[aá]|sem tempo|depois eu|amanh[aã])\b/i;
+const REFUSAL_RX = /\b(n[aã]o (vou|quero|posso|irei|tenho|consigo)|n[aã]o tenho (interesse|tempo)|sair|parar|cancela|desisto|deixa pra l[aá]|sem tempo|depois eu|amanh[aã] eu)\b/i;
+/** Afirmação curta → 1º botão positivo (não tratar "ok"/"s" como confuso). */
+const AFFIRM_RX = /^(ok|okay|blz|beleza|ss+|sim+|claro|pode|quero|vamos|bora|interessad[oa]|ativar|👍|✅)[\s!.]*$/i;
 
 export async function matchButtonIntent(
   message: string,
@@ -39,6 +41,14 @@ export async function matchButtonIntent(
     }
   }
 
+  // Afirmação curta → botão positivo (antes do length<=2 confused)
+  if (AFFIRM_RX.test(msg)) {
+    const positive = buttons.find((b) =>
+      /sim|quero|ativar|continuar|interess|analis|pode|vamos|bora|segu|ok|aceito/i.test(b.title)
+    ) || buttons[0];
+    return { match: positive.id, refused: false, confused: false, confidence: 0.88, reason: "affirm" };
+  }
+
   // Regex rápidos — depois do número, senão "1", "2", "3" viram confused.
   if (CONFUSION_RX.test(msg) || msg.length <= 2) {
     return { match: null, refused: false, confused: true, confidence: 0.95, reason: "regex_confused" };
@@ -52,12 +62,23 @@ export async function matchButtonIntent(
   const msgN = norm(msg);
   for (const b of buttons) {
     const tN = norm(b.title);
-    if (msgN === tN || msgN.includes(tN) || tN.includes(msgN)) {
+    if (msgN === tN) {
       return { match: b.id, refused: false, confused: false, confidence: 0.9, reason: "title" };
+    }
+    // Só substring se título/msg forem longos o bastante (evita "quero" ⊆ "Quero ativar")
+    if (tN.length >= 8 && msgN.includes(tN)) {
+      return { match: b.id, refused: false, confused: false, confidence: 0.9, reason: "title" };
+    }
+    if (msgN.length >= 8 && tN.includes(msgN)) {
+      return { match: b.id, refused: false, confused: false, confidence: 0.85, reason: "title_short" };
     }
     for (const ph of (b.phrases || [])) {
       const pN = norm(ph);
-      if (pN && (msgN === pN || msgN.includes(pN))) {
+      if (!pN) continue;
+      if (msgN === pN) {
+        return { match: b.id, refused: false, confused: false, confidence: 0.85, reason: "phrase" };
+      }
+      if (pN.length >= 8 && msgN.includes(pN)) {
         return { match: b.id, refused: false, confused: false, confidence: 0.85, reason: "phrase" };
       }
     }

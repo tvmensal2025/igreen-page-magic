@@ -35,6 +35,63 @@ export function looksLikeCepOnly(text: string): boolean {
   return d.length === 8;
 }
 
+/**
+ * Número de residência plausível — rejeita e-mail/CEP colados por engano
+ * (caso Salto 19/07: address_number = "rafael…@icloud.com").
+ */
+export function isPlausibleAddressNumber(value: string | null | undefined): boolean {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  if (looksLikeEmail(v)) return false;
+  if (looksLikeCepOnly(v)) return false;
+  if (v.length > 20) return false;
+  if (/^https?:\/\//i.test(v)) return false;
+  return true;
+}
+
+/** Prompt único pra completar endereço na finalização (nunca ask_name). */
+export const FINALIZE_ADDRESS_PROMPT =
+  "⚠️ Pra finalizar preciso completar o *endereço da instalação*.\n\n" +
+  "Me manda assim (pode colar numa linha):\n" +
+  "*Rua, número, bairro, cidade - UF* e o *CEP* (8 dígitos).\n\n" +
+  "_Ex: Rua Cabreúva, 119, Centro, Salto - SP, 13323072_";
+
+/**
+ * Mapeia erros de validação de endereço → passo certo.
+ * NUNCA devolve ask_name (bug Salto 19/07: CEP/cidade “ignorados” caíam em nome).
+ */
+export function addressValidationRedirect(
+  errors: string[],
+): { step: string; reply: string } | null {
+  const list = Array.isArray(errors) ? errors : [];
+  const has = (rx: RegExp) => list.some((e) => rx.test(String(e || "")));
+  // Número ANTES de Endereço — "Número do endereço inválido" não pode ir pra editing.
+  if (has(/Número/i)) {
+    return {
+      step: "ask_number",
+      reply: "⚠️ Qual o *número* da residência?\n_(Ex: 105 — se não tiver, digite S/N)_",
+    };
+  }
+  if (
+    has(/\bCEP\b/i) ||
+    has(/Cidade/i) ||
+    has(/Estado/i) ||
+    has(/Endereço \(rua\)|rua inválid/i) ||
+    has(/Bairro/i)
+  ) {
+    return { step: "editing_conta_endereco", reply: FINALIZE_ADDRESS_PROMPT };
+  }
+  return null;
+}
+
+/** Extrai CEP (8 dígitos) de um texto livre de endereço. */
+export function extractCepFromText(text: string): string | null {
+  const m = String(text || "").match(/\b(\d{5})-?(\d{3})\b/);
+  if (!m) return null;
+  const d = `${m[1]}${m[2]}`;
+  return d.length === 8 ? d : null;
+}
+
 /** Evita gravar e-mail em address_complement (caso JOSE). */
 export function sanitizeComplement(value: string | null | undefined): string | null {
   if (value == null) return null;
@@ -49,11 +106,18 @@ export function collapseDoubleCurrency(text: string): string {
   return String(text || "").replace(/R\$\s*R\$/gi, "R$");
 }
 
-/** Nome claramente não-nome (cumprimento / ok / opção). */
+/** Nome claramente não-nome (cumprimento / ok / opção / intent / cidade). */
 export function isNonNameReply(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (t.length < 3) return true;
-  return /^(oi|ol[aá]|opa|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5)$/i.test(t);
+  if (/^(oi|ol[aá]|opa|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5)$/i.test(t)) {
+    return true;
+  }
+  // Intents / objeções que NUNCA são nome
+  if (/\b(interessad[oa]|ativar|quero ativar|cadastrar|golpe|furada|fidelidade|titular|aluguel|minha cidade|tem cobertura|cidade vizinha|moro em|sou de|fica em|atende na minha|cemig|economiz|manda (o )?link|depois|vou pensar)\b/i.test(t)) {
+    return true;
+  }
+  return false;
 }
 
 /** Heurística leve de spam (links/zoom/meet em rajada no welcome). */

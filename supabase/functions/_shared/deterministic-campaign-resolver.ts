@@ -1,4 +1,4 @@
-import { resolveCampaignByTrackingProtocol } from "./campaign-tracking.ts";
+import { resolveCampaignByTrackingProtocol, resolveCampaignByExactInitialMessage } from "./campaign-tracking.ts";
 import { findReferralPaths } from "./ctwa-referral-probe.ts";
 import { extractAdIdFromSourceUrl } from "./ctwa-url-extractor.ts";
 
@@ -7,7 +7,8 @@ export type DeterministicCampaignMethod =
   | "ad_id_in_url"
   | "fb_campaign_id"
   | "ctwa_clid"
-  | "protocol";
+  | "protocol"
+  | "exact_message";
 
 export type MetaReferralFields = {
   referral: Record<string, unknown> | null;
@@ -198,6 +199,13 @@ export async function resolveCampaignByProtocolOnly(
   consultantId: string,
   messageText: string | null | undefined,
 ): Promise<CampaignResolution | null> {
-  const campaignId = await resolveCampaignByTrackingProtocol(supabase, consultantId, messageText);
-  return campaignId ? { campaignId, method: "protocol", sourceAdId: null } : null;
+  // 1) Protocolo legado ainda na mensagem (campanhas antigas).
+  const byProtocol = await resolveCampaignByTrackingProtocol(supabase, consultantId, messageText);
+  if (byProtocol) return { campaignId: byProtocol, method: "protocol", sourceAdId: null };
+
+  // 2) Frase limpa única == initial_message no banco (sem protocolo feio no WA).
+  const byExact = await resolveCampaignByExactInitialMessage(supabase, consultantId, messageText);
+  if (byExact) return { campaignId: byExact, method: "exact_message", sourceAdId: null };
+
+  return null;
 }

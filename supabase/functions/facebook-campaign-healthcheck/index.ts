@@ -204,8 +204,47 @@ async function reactivateOne(
       children.slice(0, adsetIds.length),
       children.slice(adsetIds.length),
     );
+
+    // IN_PROCESS / PENDING_REVIEW é normal após ativar — Meta ainda analisa o criativo.
+    // Não tratar como erro: marca pending_review e deixa o cron/healthcheck promover a active.
+    if (resolved.localStatus === "pending_review") {
+      await admin.from("facebook_campaigns").update({
+        status: "pending_review",
+        rejection_reason: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", campaignDbId);
+      return {
+        activated: false,
+        pending_review: true,
+        effective_statuses: resolved.objectStatuses,
+        reason: "Ativação enviada. A Meta ainda analisa os anúncios (IN_PROCESS) — isso é normal e costuma liberar em minutos.",
+      };
+    }
+
+    if (resolved.localStatus === "rejected") {
+      const reason = resolved.issues.length
+        ? resolved.issues.join(" • ")
+        : `Meta rejeitou: ${resolved.objectStatuses.join(", ")}`;
+      await admin.from("facebook_campaigns").update({
+        status: "rejected",
+        rejection_reason: reason,
+        updated_at: new Date().toISOString(),
+      }).eq("id", campaignDbId);
+      return { activated: false, reason };
+    }
+
     if (resolved.localStatus !== "active") {
-      return { activated: false, reason: `Meta ainda não confirmou toda a hierarquia: ${resolved.objectStatuses.join(", ")}` };
+      await admin.from("facebook_campaigns").update({
+        status: "pending_review",
+        rejection_reason: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", campaignDbId);
+      return {
+        activated: false,
+        pending_review: true,
+        effective_statuses: resolved.objectStatuses,
+        reason: `Ativação enviada. Status atual na Meta: ${resolved.objectStatuses.join(", ")}.`,
+      };
     }
 
     await admin.from("facebook_campaigns").update({ status: "active", rejection_reason: null }).eq("id", campaignDbId);

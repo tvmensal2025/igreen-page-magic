@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
 
     const accId = platform.ad_account_id.startsWith("act_") ? platform.ad_account_id : `act_${platform.ad_account_id}`;
     const tk = platform.token;
-    const correctPixelId = platform.pixel_id || "1521037349653769";
+    const correctPixelId = platform.pixel_id || "708759256921383";
 
     // Lista campanhas ativas
     const campRes = await fbFetch(

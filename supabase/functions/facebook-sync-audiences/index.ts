@@ -9,6 +9,8 @@
 //   - sem body / { scope: "consultant" } → comportamento legado: cria
 //     audiência na ad_account do próprio consultor (mantido por compat).
 import { adminClient, authConsultant, corsHeaders, fbFetch, loadCampaignConnection, loadPlatformAccount, sha256Hex } from "../_shared/fb-graph.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { ensureAdAccountInBusiness } from "../_shared/fb-ensure-business.ts";
 
 function normPhone(p: string | null | undefined): string {
   if (!p) return "";
@@ -33,10 +35,8 @@ Deno.serve(async (req) => {
     // na ad_account compartilhada (platform_facebook_account).
     // ============================================================
     if (scope === "platform") {
-      // Auth: aceita SERVICE_ROLE (cron) OU usuário admin autenticado.
-      const authHeader = req.headers.get("Authorization") || "";
-      const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-      const isCron = authHeader === `Bearer ${serviceRole}`;
+      // Auth: aceita SERVICE_ROLE (cron/JWT) OU usuário admin autenticado.
+      const isCron = isServiceRoleAuth(req);
       if (!isCron) {
         const auth = await authConsultant(req);
         if (!auth) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -50,6 +50,46 @@ Deno.serve(async (req) => {
       }
       const accId = platform.ad_account_id;
       const token = platform.token;
+
+      // Meta subcode 1870050: Custom Audience exige ad account dentro de um BM.
+      const biz = await ensureAdAccountInBusiness({
+        token,
+        adAccountId: accId,
+        preferredBusinessId: platform.business_id,
+        admin,
+      });
+      if (!biz.ok) {
+        return new Response(JSON.stringify({
+          error: biz.message,
+          code: "AD_ACCOUNT_NOT_IN_BUSINESS",
+          steps: biz.steps,
+          hint: "business.facebook.com → Configurações → Contas de anúncios → Adicionar esta conta à empresa → Aceitar Termos de Públicos Personalizados.",
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Aceita Termos de Públicos Personalizados (quando o token tiver permissão de admin).
+      try {
+        const tosList = await fbFetch(
+          `/${accId}/customaudiencestos?access_token=${token}`,
+        );
+        const items = (tosList?.data || []) as Array<{ id?: string; tos_id?: string; type?: string }>;
+        for (const t of items) {
+          const tosId = String(t.tos_id || t.id || "");
+          if (!tosId) continue;
+          try {
+            await fbFetch(`/${accId}/customaudiencestos`, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({ tos_id: tosId, access_token: token }),
+            });
+            console.log("[fb-aud] TOS aceito:", tosId);
+          } catch (te) {
+            console.warn("[fb-aud] TOS skip", tosId, (te as Error).message);
+          }
+        }
+      } catch (te) {
+        console.warn("[fb-aud] list TOS:", (te as Error).message);
+      }
 
       // 1) Carrega TODOS os clientes ativos (todos os consultores)
       const { data: customers, error } = await admin
@@ -86,18 +126,40 @@ Deno.serve(async (req) => {
       let customAudId = pf?.custom_audience_id || null;
 
       if (!customAudId) {
-        const r = await fbFetch(`/${accId}/customaudiences`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            name: `iGreen Plataforma — Clientes Ativos`,
-            subtype: "CUSTOM",
-            description: "Sync diário — todos os clientes pagantes da plataforma",
-            customer_file_source: "USER_PROVIDED_ONLY",
-            access_token: token,
-          }),
-        });
-        customAudId = r.id;
+        try {
+          const r = await fbFetch(`/${accId}/customaudiences`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              name: `iGreen Plataforma — Clientes Ativos`,
+              subtype: "CUSTOM",
+              description: "Sync diário — todos os clientes pagantes da plataforma",
+              customer_file_source: "USER_PROVIDED_ONLY",
+              access_token: token,
+            }),
+          });
+          customAudId = r.id;
+        } catch (e) {
+          const msg = String((e as Error).message || e);
+          const tosUrl = `https://business.facebook.com/ads/manage/customaudiences/tos/?act=${String(accId).replace(/^act_/, "")}`;
+          if (/1870090|termos do público|custom audience.*tos|Termos do público/i.test(msg)) {
+            return new Response(JSON.stringify({
+              error: "Aceite os Termos de Públicos Personalizados na Meta (obrigatório 1x por conta).",
+              code: "CUSTOM_AUDIENCE_TOS",
+              hint: tosUrl,
+              steps: biz.steps,
+            }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          if (/1870050|conta comercial|business/i.test(msg)) {
+            return new Response(JSON.stringify({
+              error: msg,
+              code: "AD_ACCOUNT_NOT_IN_BUSINESS",
+              hint: "business.facebook.com → Contas de anúncios → adicionar esta conta à empresa.",
+              steps: biz.steps,
+            }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          throw e;
+        }
       }
 
       // upload em lotes de 5000
@@ -151,6 +213,8 @@ Deno.serve(async (req) => {
         lookalike_audience_id: lalAudId,
         uploaded: rows.length,
         lal_status: lalAudId ? "created" : (canCreateLAL ? "pending_or_failed" : "skipped_low_volume"),
+        business_id: biz.business_id,
+        business_ready: true,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 

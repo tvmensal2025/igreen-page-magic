@@ -6,6 +6,9 @@ verify_jwt = false
 [functions.whapi-webhook]
 verify_jwt = false
 
+[functions.facebook-repair-ctwa-welcome]
+verify_jwt = false
+
 [functions.facebook-oauth-start]
 verify_jwt = true
 

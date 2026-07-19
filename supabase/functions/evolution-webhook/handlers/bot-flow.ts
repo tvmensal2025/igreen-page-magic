@@ -11,6 +11,10 @@ import {
   extractQuestionTail,
   resolveStepReentry,
 } from "../../_shared/bot/step-goal.ts";
+import {
+  resolveOcrFallback,
+  sendOcrRetryMessage,
+} from "../../_shared/bot/ocr-fallback.ts";
 // runFluxoBAI removido — Cérebro IA responde via responderComCerebro no webhook (vendedora apagada).
 import {
   validateCustomerForPortal,
@@ -69,6 +73,7 @@ import {
 } from "../../_shared/conversation-helpers.ts";
 
 import { matchQA } from "./conversational/index.ts";
+import { buildQaStepClose, withQaStepClose } from "../../_shared/qa-step-close.ts";
 import { getTemplate } from "./conversational/templates.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../../_shared/multi-field-extractor.ts";
 import {
@@ -81,6 +86,10 @@ import {
   nextSeparatedCadastroStep,
   isSofiaMulticanalCustomer,
   sofiaCadastroPersistPatch,
+  isPlausibleAddressNumber,
+  addressValidationRedirect,
+  extractCepFromText,
+  FINALIZE_ADDRESS_PROMPT,
 } from "../../_shared/bot/cadastro-fixes.ts";
 import {
   advanceSofiaToDocumentAfterBill,
@@ -91,12 +100,17 @@ import { detectFlowSwitch, CADASTRO_STEPS } from "../../_shared/flow-router.ts";
 import { ocrContaEnergia, ocrDocumentoFrenteVerso, resolveOcrImageForBill, resolveOcrImageForDocument } from "../../_shared/ocr.ts";
 import { normalizeDocumentType, isCNH, friendlyLabel } from "../../_shared/document-type.ts";
 import { detectDocumentTypeDetailed } from "../../_shared/detect-doc-type.ts";
-import { salvageIfDocumentMisroutedAtBillOcr } from "../../_shared/bot/salvage-doc-at-bill-ocr.ts";
+import {
+  salvageIfDocumentMisroutedAtBillOcr,
+  resolveEarlyDocumentStepAfterBill,
+  buildEarlyDocConfirmMessage,
+} from "../../_shared/bot/salvage-doc-at-bill-ocr.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
 import { isTestMode, isCustomerSandbox } from "../../_shared/test-mode.ts";
 import { notifyHandoff } from "../../_shared/notify-consultant.ts";
 import { recordFlowDAlert } from "../../_shared/captation/flow-d-alerts.ts";
+import { phraseMatchesMessage } from "../../_shared/qa-phrase-match.ts";
 import type { BotContext, BotResult } from "./types.ts";
 
 // Trigrama similarity para anti-loop (0..1)
@@ -184,73 +198,54 @@ async function fetchUrlToBase64(url: string, timeoutMs = 15_000): Promise<{ base
   }
 }
 
-/**
- * Resolve fallback de OCR a partir do step configurado no Flow Builder.
- *
- * **Fonte canônica:** este helper é espelhado byte-for-byte de
- * `supabase/functions/whapi-webhook/handlers/bot-flow.ts` (linhas ~110-163).
- * Ambos os webhooks DEVEM manter implementação idêntica — qualquer alteração
- * aqui precisa ser replicada no Whapi (e vice-versa) para preservar
- * comportamento entre canais (ver Requirement 2.5 do spec
- * `flow-d-retry-rules-fix`).
- *
- * Lê o campo `fallback` do bot_flow_step atual (`capture_conta` /
- * `capture_documento`) e retorna o `retry_text` configurado pelo consultor,
- * ou o `defaultRetryText` se não houver. Quando `then === "humano"` e as
- * tentativas esgotaram, sinaliza `escalate = true` para o caller pausar o
- * bot e disparar handoff.
- */
-// ── Resolve fallback de OCR a partir do step configurado no Flow Builder ──
-// Lê o campo `fallback` do bot_flow_step atual (capture_conta / capture_documento)
-// e retorna o retry_text configurado pelo consultor, ou null se não houver.
-// Quando `then === "humano"` e as tentativas esgotaram, pausa o bot.
-interface OcrFallbackResult {
-  retryText: string;
-  escalate: boolean; // true = pausa bot + notifica consultor
-}
-async function resolveOcrFallback(
-  supabase: any,
-  customerId: string,
-  consultantId: string | null | undefined,
-  stepType: "capture_conta" | "capture_documento",
-  attempts: number,
-  defaultRetryText: string,
-  flowVariant?: string | null,
-): Promise<OcrFallbackResult> {
-  try {
-    if (!consultantId) return { retryText: defaultRetryText, escalate: false };
-    const variant = String(flowVariant || "A").toUpperCase();
-    // Busca o fluxo ativo DA variante correta (A/B/C/D) — sem isso herdaria
-    // fallback de outra variante e estouraria com multiple rows.
-    let flowQ = supabase
-      .from("bot_flows").select("id")
-      .eq("consultant_id", consultantId).eq("is_active", true)
-      .eq("variant", variant)
-      .order("created_at", { ascending: true }).limit(1);
-    let { data: flow } = await flowQ.maybeSingle();
-    if (!flow?.id) {
-      // Fallback: primeiro fluxo ativo do consultor (legado, sem variante)
-      const { data: anyFlow } = await supabase
-        .from("bot_flows").select("id")
-        .eq("consultant_id", consultantId).eq("is_active", true)
-        .order("created_at", { ascending: true }).limit(1).maybeSingle();
-      flow = anyFlow;
-    }
-    if (!flow?.id) return { retryText: defaultRetryText, escalate: false };
-    const { data: stepRow } = await supabase
-      .from("bot_flow_steps").select("fallback")
-      .eq("flow_id", flow.id).eq("step_type", stepType).eq("is_active", true)
-      .order("position", { ascending: true }).limit(1).maybeSingle();
-    const fb = (stepRow as any)?.fallback;
-    if (!fb || fb.mode !== "retry") return { retryText: defaultRetryText, escalate: false };
-    const maxRetries = Math.max(1, Number(fb.max_retries ?? 2));
-    const retryText = String(fb.retry_text || defaultRetryText);
-    const escalate = attempts >= maxRetries && String(fb.then || "") === "humano";
-    return { retryText, escalate };
-  } catch (e) {
-    console.warn("[resolveOcrFallback] erro:", (e as any)?.message);
-    return { retryText: defaultRetryText, escalate: false };
+// OCR retry (texto Multicanal + áudio opcional) — ver _shared/bot/ocr-fallback.ts
+
+async function applyOcrRetryReply(opts: {
+  supabase: any;
+  customer: any;
+  updates: any;
+  remoteJid: string;
+  sendText: (jid: string, text: string) => Promise<any>;
+  sendMedia: (jid: string, url: string, caption: string, kind: string, durationSec?: number) => Promise<any>;
+  stepType: "capture_conta" | "capture_documento";
+  attempts: number;
+  defaultRetryText: string;
+  nomeRepresentante: string;
+  conversationStep: string;
+  pauseReason: string;
+}): Promise<string> {
+  const {
+    supabase, customer, updates, remoteJid, sendText, sendMedia,
+    stepType, attempts, defaultRetryText, nomeRepresentante, conversationStep, pauseReason,
+  } = opts;
+  const { retryText, escalate, retryAudioClipId } = await resolveOcrFallback(
+    supabase, customer.id, customer.consultant_id, stepType, attempts, defaultRetryText, (customer as any)?.flow_variant,
+  );
+  const finalText = escalate
+    ? `${retryText}\n\nVou chamar ${nomeRepresentante} para te ajudar pessoalmente 🙌`
+    : retryText;
+  if (escalate) {
+    updates.bot_paused = true;
+    updates.bot_paused_reason = pauseReason;
+    updates.bot_paused_at = new Date().toISOString();
+  } else {
+    updates.conversation_step = conversationStep;
   }
+  const sent = await sendOcrRetryMessage({
+    supabase,
+    remoteJid,
+    customerId: customer.id,
+    conversationStep: String(updates.conversation_step || conversationStep),
+    text: finalText,
+    retryAudioClipId,
+    sendText,
+    sendMedia,
+  });
+  if (sent) {
+    (updates as any).__inline_sent = true;
+    return "";
+  }
+  return finalText;
 }
 
 // ── Auto-resolve CEP from address data (avoid asking user) ──
@@ -751,14 +746,32 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     let courtesyTail = "";
 
     // 2) Orquestrador + RAG quando FAQ não casou (Fluxo D bypassa Cérebro no topo)
-    // KB-only (Superadmin): quando ligado, NÃO usa geração livre — fica só no
-    // que está gravado (FAQ acima). Se a FAQ não casou, cai no fallback seguro
-    // + reentry, sem chamar o orquestrador/LLM. Default seguro = ligado.
+    // KB-only: sem GPT-5.5, mas consulta base gravada (lookup + RAG). FAQ hit = grátis.
     let kbOnly = true;
     try {
       const { isKbOnlyMode } = await import("../../_shared/ai-decisions.ts");
       kbOnly = await isKbOnlyMode();
     } catch (_) { /* fail-safe: mantém ligado */ }
+
+    if (!answer && questionText.trim()) {
+      try {
+        const { resolveKnowledgeAnswer } = await import("../../_shared/bot/kb-answer.ts");
+        const kb = await resolveKnowledgeAnswer(supabase, {
+          question: questionText,
+          consultantId: customer.consultant_id,
+          leadName: String((customer as any).name || "").trim().split(/\s+/)[0] || "",
+          currentStepLabel: stepNow || "Cadastro",
+        });
+        if (kb.text) {
+          answer = kb.text;
+          source = kb.source === "kb" ? "faq" : "ai";
+          patch.ai_followups_count = Number((customer as any).ai_followups_count || 0) + 1;
+          console.log(`[respondAndReentry] knowledge via ${kb.source} kbOnly=${kbOnly}`);
+        }
+      } catch (e) {
+        console.warn("[respondAndReentry] knowledge falhou:", (e as Error).message);
+      }
+    }
 
     if (!answer && questionText.trim() && !kbOnly) {
       try {
@@ -1149,7 +1162,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // ═══════════════════════════════════════════════════════════════════
   try {
     const midflowEnabled = (Deno.env.get("MIDFLOW_QA_ENABLED") ?? "true").toLowerCase() !== "false";
-    const inCadastro = /^(ask_|aguardando_|editing_|confirm)/.test(String((customer as any).conversation_step || ""));
+    const { isCadastroStepForMidflowQa } = await import("../../_shared/bot/kb-answer.ts");
+    const inCadastro = isCadastroStepForMidflowQa(String((customer as any).conversation_step || ""));
     if (
       midflowEnabled &&
       inCadastro &&
@@ -1749,24 +1763,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
   }
 
-  // CTA por etapa do funil — sempre puxa o lead pro próximo passo após responder.
+  // CTA por etapa — reconduz ao passo atual após atalho/FAQ.
   function buildStepNudge(currentStep: string, leadName: string | null): string {
-    const first = (leadName || "").split(/\s+/)[0] || "";
-    const v = first ? `${first}, ` : "";
-    switch (currentStep) {
-      case "welcome":
-      case "menu_inicial":
-      case "qualificacao":
-        return `\n\n${v}me conta: quanto vem em média a sua conta de luz? Assim eu já te calculo a economia. 💡`;
-      case "aguardando_conta":
-        return `\n\n${v}pra eu confirmar tudo certinho, me manda agora a *foto* (ou PDF) da sua conta de luz. 📸`;
-      case "coleta_doc":
-      case "ask_email":
-      case "ask_cep":
-        return `\n\nPara finalizar, continue respondendo por aqui que eu te guio.`;
-      default:
-        return "";
-    }
+    const close = buildQaStepClose(currentStep, { leadName });
+    return close ? `\n\n${close}` : "";
   }
 
   async function trySendConfiguredQa(opts?: { force?: boolean; keepStep?: boolean }): Promise<BotResult | null> {
@@ -1805,16 +1805,26 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       .in("qa_id", qaIds);
     const triggerList = ((triggers as any[]) || []);
 
-    // 1) Match rápido por substring/normalização
+    // 1) Match conservador (word-boundary / frases compostas) — sem includes bruto
     let matchedQaId: string | null = null;
-    const directHit = triggerList.find((t) => {
+    let hitLen = -1;
+    for (const t of triggerList) {
       const phrase = String(t.phrase || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-      if (!phrase) return false;
-      if (normalizedText === phrase || normalizedText.includes(phrase)) return true;
-      // similaridade trigrama alta (typos curtos)
-      return trigramSim(normalizedText, phrase) >= 0.72;
-    });
-    if (directHit) matchedQaId = directHit.qa_id;
+      if (!phrase) continue;
+      if (!phraseMatchesMessage(phrase, normalizedText)) continue;
+      if (phrase.length > hitLen) {
+        matchedQaId = t.qa_id;
+        hitLen = phrase.length;
+      }
+    }
+    if (!matchedQaId) {
+      const fuzzyHit = triggerList.find((t) => {
+        const phrase = String(t.phrase || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+        if (!phrase || phrase.length < 6) return false;
+        return trigramSim(normalizedText, phrase) >= 0.88;
+      });
+      if (fuzzyHit) matchedQaId = fuzzyHit.qa_id;
+    }
 
     // 2) Fallback semântico via IA (só se temos triggers cadastradas e nenhuma bateu)
     if (!matchedQaId && triggerList.length > 0 && geminiApiKey) {
@@ -1888,11 +1898,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     let sentSomething = false;
 
     // F: texto entra como item ordenável junto com mídias
-    const baseText = qa.text_response
+    let baseText = qa.text_response
       ? String(qa.text_response).replaceAll("{nome}", customer.name || "").replaceAll("{representante}", nomeRepresentante || "")
       : "";
     const nudgeStep = qa.is_closing ? "aguardando_conta" : (step || "qualificacao");
-    const nudge = qa.is_closing ? "" : buildStepNudge(nudgeStep, customer.name || null);
+    if (baseText) {
+      const { formatFaqReply } = await import("../../_shared/format-reply.ts");
+      baseText = formatFaqReply(withQaStepClose(baseText, nudgeStep, {
+        leadName: customer.name || null,
+        skip: qa.is_closing,
+      }));
+    }
+    const nudge = "";
     const responseText = (baseText + nudge).trim();
 
     type QaItem = { kind: string; mediaRef?: any; text?: string };
@@ -3154,6 +3171,38 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               }
             }
 
+            // Cobertura / cidade vizinha: responde a dúvida ANTES do no-match rude.
+            if (!nextCustom && hasIntentTxns) {
+              try {
+                const { isCoverageCityIntent, coverageCityReply } = await import("../../_shared/coverage-city-intent.ts");
+                if (isCoverageCityIntent(String(messageText || ""))) {
+                  const cov = coverageCityReply((customer as any)?.name);
+                  console.log(`[custom-step-resolver] coverage-city intent — FAQ antes de no-match`);
+                  const stepNow = String(stepRow.step_key || stepRow.id);
+                  try { await sendText(remoteJid, cov); } catch (_) { /* noop */ }
+                  try {
+                    const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
+                    await reemitStepButtons({
+                      supabase, customerId: customer.id, consultantId: customer.consultant_id || consultorId,
+                      flowVariant: (customer as any)?.flow_variant || "A", stepKey: stepNow,
+                      remoteJid, sendButtons, sendText,
+                    });
+                  } catch (_) { /* noop */ }
+                  return {
+                    reply: "",
+                    updates: {
+                      __inline_sent: true,
+                      custom_step_retries: 0,
+                      custom_step_retries_step: null,
+                      conversation_step: stepNow,
+                    } as any,
+                  };
+                }
+              } catch (e) {
+                console.warn("[custom-step-resolver] coverage-city check:", (e as Error)?.message);
+              }
+            }
+
             // Se há perguntas (intent txns) e a resposta NÃO casou e não há default,
             // aguarda nova mensagem (não pula o passo) — mas só até 2 tentativas;
             // depois escala para humano (anti-loop).
@@ -3969,7 +4018,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             });
           } else {
             updates.conversation_step = "aguardando_conta";
-            reply = ocrFb.retryText;
+            const sent = await sendOcrRetryMessage({
+              supabase,
+              remoteJid,
+              customerId: customer.id,
+              conversationStep: "aguardando_conta",
+              text: ocrFb.retryText,
+              retryAudioClipId: ocrFb.retryAudioClipId ?? null,
+              sendText,
+              sendMedia,
+            });
+            if (sent) {
+              reply = "";
+              (updates as any).__inline_sent = true;
+            } else {
+              reply = ocrFb.retryText;
+            }
           }
         }
       } catch (e) {
@@ -4005,9 +4069,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             representante: nomeRepresentante,
           });
         } else {
-          updates.conversation_step = "aguardando_conta";
-          reply = ocrFb.retryText;
-        }
+            updates.conversation_step = "aguardando_conta";
+            const sent = await sendOcrRetryMessage({
+              supabase,
+              remoteJid,
+              customerId: customer.id,
+              conversationStep: "aguardando_conta",
+              text: ocrFb.retryText,
+              retryAudioClipId: ocrFb.retryAudioClipId ?? null,
+              sendText,
+              sendMedia,
+            });
+            if (sent) {
+              reply = "";
+              (updates as any).__inline_sent = true;
+            } else {
+              reply = ocrFb.retryText;
+            }
+          }
       }
       break;
     }
@@ -4050,6 +4129,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         // Usuário confirmou os dados → blindar contra OCR de doc futuro
         if (updates.name || customer.name) updates.name_source = "user_confirmed";
+
+        // Doc enviado cedo (antes da conta): após SIM da conta, usa o doc já
+        // salvo — não pede foto de novo. Funil continua CONTA → DOCUMENTO.
+        {
+          const _mergedEarly = { ...customer, ...updates };
+          const _earlyDocStep = resolveEarlyDocumentStepAfterBill(_mergedEarly);
+          if (_earlyDocStep) {
+            console.log(`[post-confirm-conta] doc precoce → ${_earlyDocStep} (sem re-pedir foto)`);
+            updates.conversation_step = _earlyDocStep;
+            if (_earlyDocStep === "confirmando_dados_doc") {
+              await sendOptions(remoteJid, buildEarlyDocConfirmMessage(_mergedEarly), [
+                { id: "sim_doc", title: "✅ SIM" },
+                { id: "nao_doc", title: "❌ NÃO" },
+                { id: "editar_doc", title: "✏️ EDITAR" },
+              ]);
+              reply = "";
+            } else {
+              reply = "✅ Conta confirmada!\n\n📸 Agora envie o *VERSO do RG*.\n\nFormatos: JPG, PNG ou PDF";
+            }
+            break;
+          }
+        }
 
         const _valor = Number((customer as any).electricity_bill_value || 0);
         const _rates = discountRates((customer as any)?.flow_variant);
@@ -4853,7 +4954,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             });
           } else {
             updates.conversation_step = "aguardando_doc_verso";
-            reply = ocrFb.retryText;
+            const sent = await sendOcrRetryMessage({
+              supabase,
+              remoteJid,
+              customerId: customer.id,
+              conversationStep: "aguardando_doc_verso",
+              text: ocrFb.retryText,
+              retryAudioClipId: ocrFb.retryAudioClipId ?? null,
+              sendText,
+              sendMedia,
+            });
+            if (sent) {
+              reply = "";
+              (updates as any).__inline_sent = true;
+            } else {
+              reply = ocrFb.retryText;
+            }
           }
         }
       } catch (e) {
@@ -4889,9 +5005,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             representante: nomeRepresentante,
           });
         } else {
-          updates.conversation_step = "aguardando_doc_verso";
-          reply = ocrFb.retryText;
-        }
+            updates.conversation_step = "aguardando_doc_verso";
+            const sent = await sendOcrRetryMessage({
+              supabase,
+              remoteJid,
+              customerId: customer.id,
+              conversationStep: "aguardando_doc_verso",
+              text: ocrFb.retryText,
+              retryAudioClipId: ocrFb.retryAudioClipId ?? null,
+              sendText,
+              sendMedia,
+            });
+            if (sent) {
+              reply = "";
+              (updates as any).__inline_sent = true;
+            } else {
+              reply = ocrFb.retryText;
+            }
+          }
       }
       break;
     }
@@ -5046,12 +5177,69 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     case "editing_conta_endereco": {
       const v = messageText.trim();
       if (v.length < 3) { reply = "❌ Endereço muito curto. Digite novamente:"; break; }
+
+      // CEP puro (8 dígitos) → ViaCEP completa cidade/UF/bairro/rua
+      if (looksLikeCepOnly(v)) {
+        const cepOnly = v.replace(/\D/g, "");
+        updates.cep = cepOnly;
+        try {
+          const viaCep = await buscarEnderecoPorCep(cepOnly);
+          if (viaCep) {
+            if (viaCep.logradouro) updates.address_street = viaCep.logradouro;
+            if (viaCep.bairro) updates.address_neighborhood = viaCep.bairro;
+            if (viaCep.localidade) updates.address_city = viaCep.localidade;
+            if (viaCep.uf) updates.address_state = viaCep.uf;
+          }
+        } catch (e) {
+          console.warn("[editing_conta_endereco] ViaCEP falhou:", (e as Error)?.message);
+        }
+        const mergedCep = { ...customer, ...updates };
+        if (!isPlausibleAddressNumber(mergedCep.address_number)) {
+          updates.conversation_step = "ask_number";
+          reply = `📍 CEP *${cepOnly.replace(/(\d{5})(\d{3})/, "$1-$2")}* anotado` +
+            (updates.address_city ? ` (${updates.address_city}/${updates.address_state})` : "") +
+            ".\n\nAgora qual o *número* da residência? (ex: 105 — ou S/N)";
+          break;
+        }
+        updates.previous_conversation_step = "finalizando";
+        updates.conversation_step = "finalizando";
+        reply = "";
+        break;
+      }
+
       updates.address_street = v;
+      const cepInText = extractCepFromText(v);
+      if (cepInText) {
+        updates.cep = cepInText;
+        try {
+          const viaCep = await buscarEnderecoPorCep(cepInText);
+          if (viaCep) {
+            if (viaCep.bairro && !customer.address_neighborhood) updates.address_neighborhood = viaCep.bairro;
+            if (viaCep.localidade) updates.address_city = viaCep.localidade;
+            if (viaCep.uf) updates.address_state = viaCep.uf;
+            if ((!customer.address_street || String(customer.address_street).trim().length < 8) && viaCep.logradouro) {
+              updates.address_street = viaCep.logradouro;
+            }
+          }
+        } catch (_) { /* best-effort */ }
+      }
+      const cityUf = v.match(/,\s*([A-Za-zÀ-ÿ\s]{2,40})\s*[-/]\s*([A-Za-z]{2})\b/);
+      if (cityUf) {
+        if (!updates.address_city) updates.address_city = cityUf[1].trim();
+        if (!updates.address_state) updates.address_state = cityUf[2].trim().toUpperCase();
+      }
+
       const resumeTo = resumeAfterAddressEdit(customer as any);
       updates.conversation_step = resumeTo;
       const merged = { ...customer, ...updates };
       if (resumeTo === "ask_finalizar") {
-        reply = "✅ Endereço atualizado!\n\n" + getReplyForStep("ask_finalizar", merged);
+        if (!isPlausibleAddressNumber(merged.address_number)) {
+          updates.conversation_step = "ask_number";
+          reply = "✅ Endereço anotado!\n\nAgora qual o *número* da residência? (ex: 105 — ou S/N)";
+          break;
+        }
+        updates.conversation_step = "finalizando";
+        reply = "";
         break;
       }
       await sendOptions(remoteJid, `✅ Endereço atualizado.\n\n` + buildConfirmacaoConta(merged), [
@@ -5510,7 +5698,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         break;
       }
-      updates.address_number = messageText.trim();
+      // E-mail colado no lugar do número (caso Salto 19/07)
+      if (looksLikeEmail(messageText)) {
+        if (!(customer as any).email) updates.email = String(messageText).trim().split(/\s+/)[0].replace(/[.,;]+$/, "").toLowerCase();
+        updates.conversation_step = "ask_number";
+        reply = "Isso parece um *e-mail*. Qual o *número* da residência? (ex: 105 — ou S/N)";
+        break;
+      }
+      const numRaw = messageText.trim();
+      if (!isPlausibleAddressNumber(numRaw)) {
+        reply = "❌ Número inválido. Digite o *número* da residência (ex: 105 — ou S/N):";
+        break;
+      }
+      updates.address_number = numRaw;
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       updates.conversation_step = next;
@@ -5796,6 +5996,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         ]);
         if (!sent) reply = "Toque no botão *✅ Finalizar* acima — ou responda *FINALIZAR* para concluir o cadastro.";
       }
+      break;
+    }
+
+    case "finalizando": {
+      // 🔧 FIX 19/07/2026 (espelha whapi): o custom-step-resolver pode pular
+      // DIRETO para "finalizando" (skip-guard: dados completos). Sem este
+      // case, caía no `default` → "não roteado" → nada enviado e o portal
+      // nunca disparava. Setar updates.conversation_step ativa o bloco
+      // AUTO-FINALIZAÇÃO pós-switch (valida → portal → OTP → facial).
+      updates.conversation_step = "finalizando";
+      reply = "";
       break;
     }
 
@@ -6166,7 +6377,46 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       consultant_email: consultantRow?.igreen_portal_email || null,
       consultant_phone: consultantRow?.phone || null,
     };
-    const validation = validateCustomerForPortal(merged);
+
+    // ── ViaCEP antes de validar: se tem CEP mas falta cidade/UF/bairro, completa.
+    // Evita o loop "CEP inválido → ask_name" (caso Salto 19/07).
+    {
+      const cepDigits = String(merged.cep || "").replace(/\D/g, "");
+      const needsGeo = !merged.address_city || !merged.address_state ||
+        !merged.address_neighborhood || !merged.address_street;
+      if (cepDigits.length === 8 && needsGeo) {
+        try {
+          const viaCep = await buscarEnderecoPorCep(cepDigits);
+          if (viaCep) {
+            if (!merged.address_street && viaCep.logradouro) {
+              merged.address_street = viaCep.logradouro;
+              updates.address_street = viaCep.logradouro;
+            }
+            if (!merged.address_neighborhood && viaCep.bairro) {
+              merged.address_neighborhood = viaCep.bairro;
+              updates.address_neighborhood = viaCep.bairro;
+            }
+            if (!merged.address_city && viaCep.localidade) {
+              merged.address_city = viaCep.localidade;
+              updates.address_city = viaCep.localidade;
+            }
+            if (!merged.address_state && viaCep.uf) {
+              merged.address_state = viaCep.uf;
+              updates.address_state = viaCep.uf;
+            }
+            updates.cep = cepDigits;
+            merged.cep = cepDigits;
+            console.log(
+              `[finalize:viacep] customer=${customer.id} city=${viaCep.localidade}/${viaCep.uf}`,
+            );
+          }
+        } catch (e) {
+          console.warn("[finalize:viacep] falhou:", (e as Error)?.message);
+        }
+      }
+    }
+
+    let validation = validateCustomerForPortal(merged);
     if (!validation.valid) {
       logStructured("warn", "validation_failed", {
         customer_id: customer.id, step: "finalizando", errors: validation.errors,
@@ -6200,7 +6450,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.rescue_attempts = redirectCount + 1;
         
         let redirected = false;
+        // Endereço incompleto (CEP/cidade/UF/rua/bairro/número) → NUNCA ask_name
+        const addrRedirect = addressValidationRedirect(validation.errors);
+        if (addrRedirect) {
+          updates.previous_conversation_step = "finalizando";
+          updates.conversation_step = addrRedirect.step;
+          reply = addrRedirect.reply;
+          redirected = true;
+          console.log(
+            `[finalize:addr-redirect] customer=${customer.id} → ${addrRedirect.step} errors=${validation.errors.join("|")}`,
+          );
+        }
         for (const err of validation.errors) {
+          if (redirected) break;
         // ── Email: placeholder, formato, consultor, ou ausente → volta a perguntar ──
         if (err.includes("Email")) {
           updates.conversation_step = "ask_email";
@@ -6215,12 +6477,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
         if (err.includes("CPF")) { updates.conversation_step = "ask_cpf"; reply = `⚠️ ${err}\n\nQual o seu *CPF*? (apenas números)`; redirected = true; break; }
         if (err.includes("RG")) { updates.conversation_step = "ask_rg"; reply = `⚠️ ${err}\n\nQual o seu *RG*?`; redirected = true; break; }
-        if (err.includes("CEP")) { console.warn(`[validate] ignorando erro CEP (regra: nunca pedir): ${err}`); continue; }
-        if (err.includes("rua") || err.includes("Endereço")) { updates.previous_conversation_step = "finalizando"; updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo*:`; redirected = true; break; }
-        if (err.includes("Número")) { updates.conversation_step = "ask_number"; reply = `⚠️ ${err}\n\nQual o *número* da residência?`; redirected = true; break; }
-        if (err.includes("Bairro")) { updates.previous_conversation_step = "finalizando"; updates.conversation_step = "editing_conta_endereco"; reply = `⚠️ ${err}\n\nDigite o *endereço completo* (rua, número, bairro):`; redirected = true; break; }
-        if (err.includes("Cidade")) { console.warn(`[validate] ignorando erro Cidade (regra: nunca pedir CEP): ${err}`); continue; }
-        if (err.includes("Estado")) { console.warn(`[validate] ignorando erro Estado (regra: nunca pedir CEP): ${err}`); continue; }
+        // CEP/Cidade/Estado/Endereço/Número/Bairro já tratados por addressValidationRedirect
+        if (err.includes("CEP") || err.includes("Cidade") || err.includes("Estado") ||
+            err.includes("rua") || err.includes("Endereço") || err.includes("Bairro") ||
+            err.includes("Número")) {
+          continue;
+        }
         if (err.includes("Valor")) { updates.conversation_step = "ask_bill_value"; reply = `⚠️ ${err}\n\nQual o *valor* da sua conta de luz?`; redirected = true; break; }
         if (err.includes("Distribuidora")) { updates.conversation_step = "ask_distribuidora"; reply = `⚠️ ${err}\n\nQual a *distribuidora* da sua conta de luz? (ex: CPFL, Enel, Cemig)`; redirected = true; break; }
         if (err.includes("instalação") || err.includes("instalacao")) { updates.conversation_step = "ask_installation_number"; reply = `⚠️ ${err}\n\nQual o *número da instalação* da conta? (Campo "Seu Código", 7+ dígitos)`; redirected = true; break; }
@@ -6230,9 +6492,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (err.includes("Nome")) { updates.conversation_step = "ask_name"; reply = `⚠️ ${err}\n\nQual é o seu *nome completo*?`; redirected = true; break; }
       }
       if (!redirected) {
+        // Último recurso: endereço completo — NUNCA ask_name genérico
         const firstError = validation.errors[0] || "Dados incompletos";
-        updates.conversation_step = "ask_name";
-        reply = `⚠️ ${firstError}\n\nQual é o seu *nome completo*?`;
+        const nextMissing = getNextMissingStep(merged);
+        if (nextMissing && nextMissing !== "ask_finalizar" && nextMissing !== "finalizando" && nextMissing !== "ask_name") {
+          updates.conversation_step = nextMissing;
+          reply = `⚠️ ${firstError}\n\n` + getReplyForStep(nextMissing, merged);
+        } else {
+          updates.previous_conversation_step = "finalizando";
+          updates.conversation_step = "editing_conta_endereco";
+          reply = FINALIZE_ADDRESS_PROMPT;
+        }
       }
       // Se o passo redirecionado for ask_phone_confirm, reenviar os botões aqui
       if (updates.conversation_step === "ask_phone_confirm") {

@@ -16,18 +16,24 @@ const ADVANCE_PHRASES = [
   "quero contratar", "quero assinar", "quero cadastrar", "quero me cadastrar",
   "quero aderir", "quero fechar", "quero participar", "quero o desconto",
   "ativar o beneficio", "ativar o benefício", "ativar beneficio", "ativar benefício",
-  "quero ativar", "ativar",
-  "quero sim", "vou querer", "pode fazer", "pode cadastrar", "pode ser",
+  "quero ativar",
+  "quero sim", "vou querer", "pode fazer", "pode cadastrar",
   "me inscreve", "me cadastra", "vamos fechar", "vamos fazer", "vamos sim",
-  "vamos la", "bora fechar", "bora cadastrar", "bora", "partiu", "simbora",
+  "vamos la", "bora fechar", "bora cadastrar", "simbora",
   "como faco para aderir", "como eu faco para cadastrar", "como cadastrar",
-  "aceito a proposta", "aceito sim", "aceito", "topo", "to dentro",
-  "fechado", "fechou", "continuar cadastro", "continuar o cadastro",
+  "aceito a proposta", "aceito sim",
+  "to dentro",
+  "continuar cadastro", "continuar o cadastro",
   "quero continuar", "seguir com cadastro", "fazer cadastro", "faca o cadastro",
   "inscrever", "cadastrar agora", "quero me cadastrar agora",
   "btn_quero_cadastrar", "quero_cadastrar", "sim_cadastrar", "btn_cadastrar",
   "continuar cadastro", "quero me cadastrar",
 ];
+
+/** Comandos curtos exatos (mensagem inteira) — não embutidos em frase ambígua. */
+const ADVANCE_EXACT = new Set([
+  "bora", "partiu", "aceito", "fechou", "fechado", "topo", "ativar", "cadastrar", "cadastro",
+]);
 
 /** Regex de STATUS — checados ANTES de advance. */
 const STATUS_PATTERNS: RegExp[] = [
@@ -82,6 +88,7 @@ export function wantsToAdvance(text: string): boolean {
   if (!raw) return false;
   if (isStatusQuestion(raw)) return false;
   const normalized = stripAccents(raw);
+  if (ADVANCE_EXACT.has(normalized.replace(/[!?.]+$/g, "").trim())) return true;
   // Atalho no início: "cadastrar", "cadastro" como comando (não "cadastrando")
   if (/^(cadastrar|cadastro|inscrever)\b/.test(normalized)) return true;
   if (/^(quero|bora|vamos|partiu|aceito|pode|faz)\b/.test(normalized) && /\bcadastr/.test(normalized)) {

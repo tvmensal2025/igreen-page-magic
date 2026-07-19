@@ -36,6 +36,11 @@ const ADVANCE_NO = [
   "estou me cadastrando",
   "em que passo estou?",
   "?",
+  "bora ver",
+  "pode ser amanhã",
+  "aceito a explicação",
+  "fechado o escritório",
+  "demora pra ativar",
 ];
 
 const STATUS_OK = [

@@ -21,7 +21,7 @@ const cases: Array<[string, string]> = [
   ["como funciona?", "tem_duvida"],
   ["é seguro?", "tem_duvida"],
   ["não quero agora", "nao_quer"],
-  ["depois", "nao_quer"],
+  ["depois eu vejo", "nao_quer"],
 ];
 
 for (const [input, expected] of cases) {
@@ -32,4 +32,12 @@ for (const [input, expected] of cases) {
 
 Deno.test("regexClassify returns null for unknown text", () => {
   assertEquals(regexClassify("blah blah xyz"), null);
+});
+
+Deno.test("regexClassify: 'depois' solto NÃO é nao_quer", () => {
+  assertEquals(regexClassify("depois"), null);
+});
+
+Deno.test("regexClassify: 'bora ver' NÃO é quer_cadastrar", () => {
+  assertEquals(regexClassify("bora ver"), null);
 });

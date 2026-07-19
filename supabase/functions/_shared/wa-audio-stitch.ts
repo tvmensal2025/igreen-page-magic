@@ -244,20 +244,22 @@ export function buildIntroSlotCandidates(
   nameNorm: string,
 ): string[] {
   if (kind === "ola") {
-    return [
-      `intro:ola:ptbr2:${nameNorm}`,
-      `intro:ola:ptbr:${nameNorm}`,
-      `intro:ola:${nameNorm}`,
-    ];
+    // Só ptbr3 — “Olá, Nome!” CONTÍNUO (vírgula). Os ptbr2/ptbr/legado foram
+    // gerados com “Olá... Nome!” (reticências = pausa longa que o cliente
+    // ouvia como corte — feedback 19/07/2026). Ficam no banco, mas o motor
+    // não os reutiliza; regera ptbr3 na primeira necessidade e cacheia.
+    return [`intro:ola:ptbr3:${nameNorm}`];
   }
   // Só ptbr3 — motor regera se faltar; nunca ptbr/ptbr2/legado.
   return [`intro:nome:ptbr3:${nameNorm}`];
 }
 
-/** Versão do stitch A2: Olá+nome (PT-BR) + corpo FIXO M/F (ola6 = 2 cortes, sem nome no meio). */
+/** Versão do stitch A2: Olá+nome (PT-BR contínuo) + corpo FIXO M/F (ola7 = intro ptbr3 sem pausa). */
 function a2StitchVersion(spec: PersonalizeSpec): string {
   if (spec.baseSlot === "a2_audio_activate_name" && spec.introMode === "ola_greet") {
-    return "ola6";
+    // ola6→ola7: intro passou de “Olá... Nome!” para “Olá, Nome!” (contínuo).
+    // Stitches ola6 antigos ficam órfãos (não são candidatos) — sem exclusão.
+    return "ola7";
   }
   // A3/A5: n5 = nome PT-BR ancorado (v2 + contexto); ptbr2 bare-name ignorado.
   return spec.introMode === "nome_only" ? "n5" : "ola3";
@@ -366,7 +368,7 @@ async function findCachedStitchUrl(
         continue;
       }
     }
-    const fromLegacy = !/:ola5:|:n4:|:n5:/.test(hit.slotKey);
+    const fromLegacy = !/:ola5:|:ola7:|:n4:|:n5:/.test(hit.slotKey);
     return {
       url: hit.url,
       slotKey: hit.slotKey,
@@ -712,7 +714,8 @@ async function ensureOlaGreetBytes(
   display: string,
   nameNorm: string,
 ): Promise<Uint8Array> {
-  const canonicalSlot = `intro:ola:ptbr2:${nameNorm}`;
+  // ptbr3 = “Olá, Nome!” contínuo (vírgula) — ptbr2 tinha “Olá... Nome!”.
+  const canonicalSlot = `intro:ola:ptbr3:${nameNorm}`;
   const cached = await findCachedMediaUrl(
     admin,
     consultantId,
@@ -1091,7 +1094,7 @@ export async function resolvePersonalizedWaAudio(
         );
         if (olaHit) {
           const bytes = await downloadUrlBytes(olaHit.url);
-          const canonicalOla = `intro:ola:ptbr2:${nameNorm}`;
+          const canonicalOla = `intro:ola:ptbr3:${nameNorm}`;
           if (olaHit.slotKey !== canonicalOla) {
             await upsertActiveMedia(
               admin,

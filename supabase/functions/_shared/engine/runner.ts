@@ -118,14 +118,13 @@ function findFirstStep(steps: BotFlowStep[]): BotFlowStep | null {
 /**
  * G2 fallback when nothing else has produced an outbound or deferred
  * action AND the inbound was user-driven. Emits the configured
- * step.messageText (or the hardcoded "Pode me responder, por favor? 🙂"
- * literal mandated by Requirement 3.2/3.4) and an `engine_no_match` log.
+ * step.messageText (or a soft nudge — never "pode me responder por favor").
  */
 function emitG2SafeText(
   input: EngineInput,
   step: BotFlowStep,
 ): { outbound: OutboundMessage[]; logs: StructuredLog[]; stateUpdate: Partial<CustomerSnapshot> } {
-  const text = (step.messageText ?? "").trim() || "Pode me responder, por favor? 🙂";
+  const text = (step.messageText ?? "").trim() || "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.";
   const outbound: OutboundMessage[] = [{
     kind: "text",
     text,
@@ -178,7 +177,7 @@ export function runEngine(input: EngineInput): EngineOutput {
     return {
       outbound: [{
         kind: "text",
-        text: "Pode me responder, por favor? 🙂",
+        text: "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.",
         idempotencyContent: `g2-error:${stepId ?? "no-step"}:${input.state?.retries ?? 0}`,
       }],
       stateUpdate: {

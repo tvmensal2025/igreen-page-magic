@@ -51,7 +51,7 @@ import {
   type AvailabilityOverrides,
 } from "../_shared/cadence-availability.ts";
 import { syncCustomerToMetaAudience } from "../_shared/meta-audience-sync.ts";
-import { buttonsForStage, stageHasButtons } from "../_shared/cadence-stage-buttons.ts";
+import { resolveStageButtons } from "../_shared/cadence-stage-buttons.ts";
 import {
   decideAudienceDdd,
   loadCadenceAudienceConfig,
@@ -199,6 +199,8 @@ interface StageConfig {
   window_start_hour: number | null;
   window_end_hour: number | null;
   window_days: number[] | null;
+  /** ContentContract (painel Multicanal). null = fallback hardcoded. */
+  buttons?: unknown;
 }
 
 async function loadStageConfig(
@@ -206,24 +208,36 @@ async function loadStageConfig(
   consultantId: string | null,
   stage: string,
 ): Promise<StageConfig | null> {
-  const cols = "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, voice_audio_clip_id, personalize_name, max_per_lead, window_start_hour, window_end_hour, window_days";
-  if (consultantId) {
-    const { data } = await supabase
-      .from("cadence_stage_config")
-      .select(cols)
-      .eq("consultant_id", consultantId)
-      .eq("stage", stage)
-      .maybeSingle();
-    if (data) return data;
-  }
-  const { data: g } = await supabase
-    .from("cadence_stage_config")
-    .select(cols)
+  // Preferência: colunas do ContentContract (inclui buttons). Se o select falhar
+  // (coluna ainda não migrada em algum ambiente), cai no select legado.
+  const colsFull =
+    "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, voice_audio_clip_id, personalize_name, max_per_lead, window_start_hour, window_end_hour, window_days, buttons";
+  const colsLegacy =
+    "enabled, delay_hours, message_text, media_url, media_type, velip_audio_id, voice_audio_clip_id, personalize_name, max_per_lead, window_start_hour, window_end_hour, window_days";
 
-    .is("consultant_id", null)
-    .eq("stage", stage)
-    .maybeSingle();
-  return g ?? null;
+  async function pick(consultantFilter: string | null): Promise<StageConfig | null> {
+    let q = supabase.from("cadence_stage_config").select(colsFull).eq("stage", stage);
+    q = consultantFilter
+      ? q.eq("consultant_id", consultantFilter)
+      : q.is("consultant_id", null);
+    const { data, error } = await q.maybeSingle();
+    if (!error && data) return data as StageConfig;
+    if (error) {
+      let q2 = supabase.from("cadence_stage_config").select(colsLegacy).eq("stage", stage);
+      q2 = consultantFilter
+        ? q2.eq("consultant_id", consultantFilter)
+        : q2.is("consultant_id", null);
+      const { data: legacy } = await q2.maybeSingle();
+      return (legacy as StageConfig) ?? null;
+    }
+    return null;
+  }
+
+  if (consultantId) {
+    const own = await pick(consultantId);
+    if (own) return own;
+  }
+  return await pick(null);
 }
 
 /** Verifica se `now` (São Paulo) cai na janela específica do estágio. */
@@ -409,11 +423,13 @@ async function dispatchWhatsApp(
       r = await ch.adapter.sendMedia(jid, { kind: mtype, url: cfg.media_url, caption: text } as any, sendCtx);
     } else {
       if (!text.trim()) return { ok: false, detail: "empty_message" };
-      const stageButtons = buttonsForStage(stage);
+      // Dual-read: botões do painel Multicanal (cadence_stage_config.buttons)
+      // quando válidos; fallback hardcoded quando null/inválido.
+      const stageButtons = resolveStageButtons(cfg.buttons, stage);
       const adapterWithButtons = ch.adapter as typeof ch.adapter & {
         sendButtons?: (jid: string, text: string, buttons: unknown, ctx: unknown) => Promise<unknown>;
       };
-      if (stageHasButtons(stage) && stageButtons.length > 0 && typeof adapterWithButtons.sendButtons === "function") {
+      if (stageButtons.length > 0 && typeof adapterWithButtons.sendButtons === "function") {
         r = await adapterWithButtons.sendButtons(jid, text, stageButtons, { ...sendCtx, supabase } as any);
       } else {
         r = await ch.adapter.sendText(jid, text, { ...sendCtx, supabase } as any);

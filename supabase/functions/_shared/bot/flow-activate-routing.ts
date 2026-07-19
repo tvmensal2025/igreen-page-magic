@@ -27,7 +27,7 @@ export type ActivateCustomerLike = {
 };
 
 const ACTIVATE_RX =
-  /\b(ativar(\s+o)?\s+benef[ií]cio|ativar|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar|activate|register|quero\s+ativar)\b/i;
+  /\b(ativar(\s+o)?\s+benef[ií]cio|quero\s+me\s+cadastrar|quero\s+cadastrar|cadastrar(\s+agora)?|continuar\s+cadastro|btn_quero_cadastrar|quero_cadastrar|sim_cadastrar|activate|register|quero\s+ativar)\b|^ativar$/i;
 
 const SIMULATE_RX =
   /\b(simular(\s+economia)?|quero\s+simular|quero_simular|simula[cç][aã]o|simular_completa|simular_rapida)\b/i;
@@ -44,6 +44,17 @@ export function isActivateIntent(messageText?: string | null, buttonId?: string 
   const blob = `${buttonId || ""} ${messageText || ""}`.trim();
   if (!blob) return false;
   if (SIMULATE_RX.test(blob) && !ACTIVATE_RX.test(blob)) return false;
+  // "demora pra ativar / quando ativa" = pergunta de prazo, não CTA
+  if (
+    /\b(demora|prazo|quando|quanto\s+tempo).{0,24}ativ|ativ\w*.{0,24}(demora|prazo|quando)\b/i.test(blob) &&
+    !/\b(quero\s+ativar|ativar\s+(o\s+)?benef)/i.test(blob)
+  ) {
+    return false;
+  }
+  // buttonId canônico (sem exigir frase longa)
+  if (buttonId && /^(ativar|activate|register|cadastrar|quero_cadastrar|btn_quero_cadastrar|sim_cadastrar)$/i.test(String(buttonId))) {
+    return true;
+  }
   return ACTIVATE_RX.test(blob);
 }
 

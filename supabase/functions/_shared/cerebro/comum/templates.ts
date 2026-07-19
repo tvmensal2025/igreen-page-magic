@@ -143,8 +143,8 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   // Titularidade do contrato (no nome de quem fica, dono x inquilino)
   if (/\b(nome de quem|no meu nome|no nome do (?:dono|propriet|titular)|titularidade|titular(?:idade)? (?:da )?conta|contrato (?:em|no) nome|do propriet[áa]rio|do dono|do inquilin|do locador|do locat)\b/.test(t)) return "titularidade";
   if (/aluguel|alugad|inquilin|mudar de casa|mudar de im[óo]vel|se eu mudar|quando eu mudar|quando mudar|se mudar|trocar de casa|n[ãa]o (?:é|eh) min(?:ha|h)a casa/.test(t)) return "aluguel";
-  if (/conta (?:for |fica |é |eh )?baixa|conta baixa|conta pequena|conta de \w+ reais|conta (?:é |eh )?s[óo] (?:de )?\d|s[óo] (?:r\$\s*)?\d{2,3}(?!\d)|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|vale a pena|d[áa] quase nada|pouca coisa|compensa(?:r)?(?:\s|$|\?)/.test(t)) return "conta_baixa";
-  if (/taxa|ades[ãa]o|cobra(?:m|r)? (?:algo|alguma|taxa|pra)|pagar (?:pra|para) entrar|investiment|mensalidade|custo (?:pra|para|de) entrar|tem custo/.test(t)) return "taxa_adesao";
+  if (/conta (?:for |fica |é |eh )?baixa|conta baixa|conta pequena|conta de \w+ reais|conta (?:é |eh )?s[óo] (?:de )?\d|s[óo] (?:r\$\s*)?\d{2,3}(?!\d)|m[êe]s mais baixo|gasto pouco|consumo baixo|n[ãa]o vale a pena|d[áa] quase nada|pouca coisa/.test(t)) return "conta_baixa";
+  if (/\b(taxa\s+de\s+ades[ãa]o|tem\s+taxa|cobra(?:m)?\s+(?:taxa|ades[ãa]o)|pagar\s+(?:pra|para)\s+entrar|ades[ãa]o|mensalidade|custo\s+(?:pra|para|de)\s+entrar|tem\s+custo\s+(?:extra|escondid))\b/.test(t)) return "taxa_adesao";
   if (/boleto|fatura|mesmo? (?:boleto|conta)|onde pago|como pago|dois boleto|vem.*\bboleto|vai vir.*\bboleto|chega(?:m|r).*\bboleto|atras(?:ar|o) o pagamento|pagar (?:a conta|onde)/.test(t)) return "boleto";
   if (/fidelidade|multa|car[êe]ncia|preso|amarrad|tempo de contrato|fica preso/.test(t)) return "fidelidade";
   if (/cancelar|sair (?:quando|a qualquer)|desistir|parar quando/.test(t)) return "cancelar";
@@ -152,15 +152,15 @@ export function classificarObjecao(texto: string): ObjecaoTipo {
   if (/\bcnpj\b|raz[ãa]o social|tem (?:um )?cadastro|registro (?:da )?empresa/.test(t)) return "cnpj";
   // Homologação ANEEL específica
   if (/homologa(?:[çc][ãa]o|d[oa]|r)\s*(?:n[oa])?\s*aneel|aneel.*homolog|registro (?:na )?aneel|lei 14\.?300|garantia escrit/.test(t)) return "homologacao_aneel";
-  if (/golpe|pir[âa]mide|enganad|furad|confi[áa]vel|seguro|é verdade|pegadinha|bom demais|nunca ouvi|medo|receio|cilada|quebrar|falir|sair do mercado|fechar as portas/.test(t)) return "golpe";
-  if (/\bobra\b|reforma|instala|placa|painel|t[ée]cnico|equipamento|mexer (?:na|em) (?:casa|telhado)|mexer.{0,20}(?:fia[çc]|fio)|fia[çc][ãa]o/.test(t)) return "obra";
-  if (/solar|painel solar|energia do sol/.test(t)) return "solar";
+  if (/\b(golpe|pir[âa]mide|enganad|furad[ao]|pegadinha|bom demais(?:\s+pra\s+ser\s+verdade)?|nunca ouvi|cilada|é verdade isso|confi[áa]vel|medo de golpe|é seguro|isso é seguro)\b/.test(t)) return "golpe";
+  if (/\b(obra|reforma|instala(?:r|ção)|placa\s+solar|painel\s+solar|t[ée]cnico\s+em\s+casa|equipamento\s+no\s+telhado|mexer\s+(?:na|em)\s+(?:casa|telhado)|mexer.{0,20}(?:fia[çc]|fio)|fia[çc][ãa]o)\b/.test(t)) return "obra";
+  if (/\b(painel\s+solar|placa\s+solar|energia\s+do\s+sol|energia\s+solar|instalar\s+(?:placa|painel|solar)|é\s+solar)\b/.test(t)) return "solar";
   if (/distribuidora|trocar de (?:empresa|distribuidora)|mudar de (?:empresa|distribuidora|companhia)|enel|cemig|cpfl|light|equatorial|neoenergia/.test(t)) return "distribuidora";
   if (/outra empresa|[óo]rigo|sun mobi|energisol|j[áa] tenho desconto|concorr|diferen[çc]a de voc[êe]s|diferen[çc]a de vcs|qual a diferen/.test(t)) return "outra_empresa";
-  if (/quanto tempo|prazo|demora|quando come[çc]|ativa[çr]|leva quanto/.test(t)) return "prazo";
-  if (/atende (?:em|na|aqui|minha|meu)|cobertura|minha cidade|meu estado|funciona (?:em|na|aqui|na minha)|cobre (?:minha|aqui)/.test(t)) return "cobertura";
+  if (/quanto tempo|prazo|demora|quando come[çc]|ativa[çc][aã]o|leva quanto|quando (?:come[çc]a|ativa)/.test(t)) return "prazo";
+  if (/atende\s+(?:na\s+)?minha\s+(?:cidade|regi[aã]o)|tem\s+cobertura|funciona\s+(?:na\s+)?minha\s+cidade|minha\s+cidade|outra\s+cidade|cidade\s+vizinha|fora\s+da\s+(?:cidade|regi[aã]o)|(?:nao|não)\s+(?:sou|moro|fico)\s+(?:de|em|na)\s+(?!acordo\b)\w{4,}|(?:moro|sou|fico)\s+(?:em|de|na)\s+(?!casa\b|apartamento\b)\w{4,}|aqui\s+em\s+\w{4,}/.test(t)) return "cobertura";
   if (/como (?:voc[êe]s|vcs) ganha|de onde vem|qual o lucro|o que (?:voc[êe]s|vcs) ganha|onde t[áa] o ganho/.test(t)) return "como_ganham";
-  if (/pensar|depois|mais tarde|vou ver|talvez|n[ãa]o sei|deixa eu ver/.test(t)) return "pensar";
+  if (/\b(vou\s+pensar|deixa\s+(?:eu\s+)?pensar|me\s+fala\s+depois|te\s+aviso\s+depois|mais\s+tarde|agora\s+n[ãa]o|deixa\s+pra\s+depois|vou\s+ver\s+(?:com|depois)|falo\s+amanh[ãa]|te\s+falo\s+depois)\b/.test(t)) return "pensar";
   return "generica";
 }
 
@@ -321,8 +321,8 @@ const RESP_OBJECAO_VARIANTES: Record<ObjecaoTipo, string[]> = {
     "em geral *1 a 2 ciclos de fatura* após a aprovação você já vê o desconto na conta.",
   ],
   cobertura: [
-    "a iGreen atende em *21 estados*. Pelo seu cadastro eu já confirmo se cobre sua região, sem compromisso.",
-    "a cobertura já passa de *21 estados* — fazendo o cadastro eu confirmo na hora se atende aí.",
+    "o anúncio pode citar uma cidade, mas a gente atende pela *distribuidora* da sua conta (em Minas, *CEMIG*) — cidade vizinha também entra. No cadastro eu confirmo na hora.",
+    "a cobertura é por *distribuidora*, não só pelo município do anúncio. Em Minas, se for *CEMIG*, a gente confere no cadastro — rapidinho e sem compromisso.",
   ],
   cancelar: [
     "pode cancelar *quando quiser, sem multa*. Você não fica preso a nada.",

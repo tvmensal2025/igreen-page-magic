@@ -8,17 +8,18 @@ import {
   loadConsultantAdSettings,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
-import { calculateCampaignBudgetRequirement } from "../_shared/campaign-budget.ts";
+import { calculateCampaignBudgetRequirement, META_MIN_DAILY_BUDGET_CENTS } from "../_shared/campaign-budget.ts";
 import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { resolveWabaPhone } from "../_shared/resolve-waba-phone.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import {
-  appendTrackingProtocol,
+  buildCtwaPageWelcomeMessage,
   detectTrackingChannel,
   ensureCampaignTrackingProtocol,
-  normalizeTrackingProtocol,
+  stripTrackingProtocol,
 } from "../_shared/campaign-tracking.ts";
 import { normalizeRodizioPartnerIds } from "./rodizio-pool.ts";
+import { mergePlatformRetargetDdds, resolveRetargetDdds } from "../_shared/city-to-ddd.ts";
 
 async function safeNotifyConsultant(
   consultantId: string,
@@ -39,6 +40,10 @@ interface Body {
   // gerado pelo sistema no Gerenciador da Meta, para diferenciar campanhas
   // no mesmo mercado (ex.: "Teste A", "Lote 2"). Máx 40 chars, sanitizado.
   name_prefix?: string;
+  /** Remarketing: grava DDDs das cidades na allowlist de Custom Audience. */
+  is_remarketing?: boolean;
+  /** DDDs já inferidos no front (cidade + vizinhos). Servidor valida/merge. */
+  retarget_ddds?: number[];
   cities: { key: string; name: string }[];
 
   // Segmentação por endereço/raio (sobrepõe cities quando preenchido).
@@ -113,6 +118,14 @@ function campaignErrorResponse(err: unknown) {
     return new Response(JSON.stringify({
       error: "Configuração de público inválida. Removemos o campo de segmentação rejeitado pela Meta; tente publicar novamente.",
       code: "META_TARGETING_INVALID",
+      meta_error: message,
+    }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  // Advantage+: age_max hard < 65 é rejeitado pela Meta.
+  if (/idade máxima|age.?max|menos de 65/i.test(message) || message.includes("1870189") || message.includes("1870190")) {
+    return new Response(JSON.stringify({
+      error: "A Meta exige idade máxima 65 no público Advantage+. Já corrigimos o sistema — publique de novo.",
+      code: "META_AGE_MAX_ADVANTAGE",
       meta_error: message,
     }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
@@ -214,8 +227,8 @@ Deno.serve(async (req) => {
     }
     // Orçamento mínimo operacional; não há teto artificial. O saldo e o prazo
     // continuam limitando o gasto total antes de qualquer chamada à Meta.
-    if (body.daily_budget_cents < 1000) {
-      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 10/dia." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (body.daily_budget_cents < META_MIN_DAILY_BUDGET_CENTS) {
+      return new Response(JSON.stringify({ error: "Orçamento mínimo é R$ 5,17/dia (mínimo da Meta)." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     if (body.duration_days != null && (body.duration_days < 1 || body.duration_days > 30)) {
       return new Response(JSON.stringify({
@@ -260,30 +273,27 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ─── Protocolo rastreável CTWA ───────────────────────────────────────
-    // Toda campanha nova recebe um protocolo alto e profissional (ex.: FB-87321)
-    // dentro da mensagem inicial. Assim o webhook identifica a campanha correta
-    // mesmo quando existem várias campanhas ativas e o Meta não envia ad_id/ctwa.
+    // ─── Protocolo interno (só no banco) + frase limpa no WhatsApp ───────
+    // tracking_protocol fica em facebook_campaigns pra relatório/admin.
+    // O lead NÃO vê protocolo — só a frase comercial (única por consultor).
+    // Atribuição: AD ID / ctwa_clid (Meta) → frase exata → protocolo legado.
     const trackingChannel = detectTrackingChannel({
       placement_mode: body.placement_mode,
       placements: body.placements,
     });
     const trackingProtocol = await ensureCampaignTrackingProtocol(adminClient(), trackingChannel);
-    const trackedInitialMessage = appendTrackingProtocol(
+    const trackedInitialMessage = stripTrackingProtocol(
       buildInitialMessage(body.initial_message, body.distribuidora),
-      trackingProtocol,
-    );
-    // Trava: mensagem CTWA SEM protocolo = matching cego no webhook.
-    if (!normalizeTrackingProtocol(trackedInitialMessage)) {
+    ).trim().slice(0, 280);
+    if (trackedInitialMessage.length < 5) {
       return new Response(JSON.stringify({
-        error: `A mensagem inicial precisa incluir o protocolo rastreável ${trackingProtocol}. Sem isso o rodízio não identifica a campanha.`,
-        code: "MISSING_TRACKING_PROTOCOL",
+        error: "A mensagem inicial do WhatsApp está vazia demais.",
+        code: "MISSING_INITIAL_MESSAGE",
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     // ─── BLOQUEIO: primeira mensagem CTWA precisa ser ÚNICA por consultor ───
-    // Como o protocolo agora faz parte da mensagem, duas campanhas podem usar a
-    // mesma frase comercial sem ficar ambíguas: o protocolo diferencia a origem.
+    // Sem protocolo na frase, a unicidade é o fallback quando a Meta não manda AD ID.
     {
       const norm = (s: string) => (s || "")
         .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -492,17 +502,18 @@ Deno.serve(async (req) => {
     // garantimos a wallet existe; remoção do bypass admin pra zero prejuízo.
     const wallet = await getOrCreateWallet(auth.id);
     void wallet;
-    // PIXEL TRAVADO: todo novo anúncio sai com o pixel oficial da plataforma,
-    // independente do que estiver salvo em platform_facebook_account.pixel_id.
-    const REQUIRED_PIXEL_ID = "1521037349653769";
-    if (platform.pixel_id && platform.pixel_id !== REQUIRED_PIXEL_ID) {
-      console.warn(`[fb-create-campaign] platform.pixel_id=${platform.pixel_id} difere do REQUIRED_PIXEL_ID=${REQUIRED_PIXEL_ID}; usando o travado.`);
+    // PIXEL: sempre o oficial salvo na plataforma (igreen-oficial-remarketing).
+    // Fallback só se o campo estiver vazio (não deve acontecer após ensure-pixel).
+    const OFFICIAL_PIXEL_FALLBACK = "708759256921383";
+    const pixelId = platform.pixel_id || OFFICIAL_PIXEL_FALLBACK;
+    if (!platform.pixel_id) {
+      console.warn(`[fb-create-campaign] platform.pixel_id vazio; usando fallback ${OFFICIAL_PIXEL_FALLBACK}`);
     }
     const conn = {
       token: platform.token,
       ad_account_id: platform.ad_account_id,
       page_id: platform.page_id,
-      pixel_id: REQUIRED_PIXEL_ID,
+      pixel_id: pixelId,
       ig_account_id: platform.ig_account_id,
       whatsapp_phone_number_id: authoritativePhoneId,
       whatsapp_destination_number: authoritativeDigits,
@@ -517,8 +528,11 @@ Deno.serve(async (req) => {
     const REQUESTED_AGE_MIN = body.age_min ?? 30;
     const ageMin = Math.min(REQUESTED_AGE_MIN, 25); // hard cap Meta Advantage+
     const ageMinSuggested = REQUESTED_AGE_MIN > 25 ? REQUESTED_AGE_MIN : null;
-    // Teto 60: energia solar / assinatura — corta 18–24 (curioso) sem apertar demais o topo.
-    const ageMax = Math.min(Math.max(body.age_max ?? 60, ageMin), 60);
+    // Advantage+ (2026): age_max hard NÃO pode ser < 65 (subcode Meta).
+    // Preferência de negócio (ex.: 60) fica só como sugestão/telemetria.
+    const REQUESTED_AGE_MAX = body.age_max ?? 60;
+    const ageMax = 65;
+    const ageMaxSuggested = REQUESTED_AGE_MAX < 65 ? REQUESTED_AGE_MAX : null;
     const today = new Date().toISOString().slice(0, 10);
     const cityNames = (body.cities || []).map((c) => c.name).slice(0, 3).join(", ");
     const locLabel = hasCustomLocations
@@ -538,7 +552,12 @@ Deno.serve(async (req) => {
     const distribTag = body.distribuidora || (hasCustomLocations ? locLabel : (cityNames || "iGreen"));
     const cityPrincipal = body.cities[0]?.name || (hasCustomLocations ? locLabel : cityNames);
     // Prefixo livre do usuário — sanitiza e limita 40 chars, sempre NA FRENTE.
-    const rawPrefix = String(body.name_prefix || "").trim();
+    // Remarketing: força apelido "remarketing" se o front não mandou outro.
+    const wantsRemarketing = body.is_remarketing === true ||
+      String(body.name_prefix || "").toLowerCase().includes("remarketing");
+    const rawPrefix = String(
+      body.name_prefix || (wantsRemarketing ? "remarketing" : ""),
+    ).trim();
     const namePrefix = rawPrefix
       ? rawPrefix.replace(/[\[\]·|\r\n\t]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40)
       : "";
@@ -573,7 +592,8 @@ Deno.serve(async (req) => {
     // CTWA OFICIAL via WABA — número precisa estar conectado à Página no Meta Business
     // Suite (WhatsApp Business API). Otimiza por CONVERSATIONS (mais barato que LINK_CLICKS),
     // atribuição nativa anúncio ↔ primeira mensagem, casa com pixel + CAPI via promoted_object.
-    const hasPixel = !!conn.pixel_id;
+    // Pixel oficial da plataforma (igreen-oficial-remarketing) — não depende do pixel do consultor.
+    const hasPixel = !!pixelId;
     const objective = "OUTCOME_ENGAGEMENT";
     const optimizationGoal = "CONVERSATIONS";
     const pixelEvent = hasPixel ? "LEAD" : null;
@@ -692,12 +712,15 @@ Deno.serve(async (req) => {
       age_min: ageMin,
       age_max: ageMax,
       // Advantage+ Audience (padrão Meta v23+, opt-in explícito).
-      // age_min hard ≤25; age_max afunila qualidade. ageMinSuggested fica logado
-      // para telemetria (Meta rejeita age_min>25 com Advantage+).
+      // age_min hard ≤25; age_max hard = 65 (Meta rejeita <65 com Advantage+).
+      // Preferências 30–60 ficam só em telemetria (ageMinSuggested/ageMaxSuggested).
       targeting_automation: { advantage_audience: 1 },
     };
-    if (ageMinSuggested) {
-      console.log(`[fb-create] age preference=${ageMinSuggested}+ hard_min=${ageMin} hard_max=${ageMax}`);
+    if (ageMinSuggested || ageMaxSuggested) {
+      console.log(
+        `[fb-create] age preference=${ageMinSuggested ?? ageMin}+` +
+          `${ageMaxSuggested ? `-${ageMaxSuggested}` : ""} hard_min=${ageMin} hard_max=${ageMax}`,
+      );
     }
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
     // (recomendação oficial p/ CTWA, distribui em TODOS os elegíveis e otimiza CPL).
@@ -720,13 +743,24 @@ Deno.serve(async (req) => {
         if (igPos.length) (targeting as any).instagram_positions = igPos;
       }
     }
-    // Lookalike de clientes pagantes como âncora (Advantage+ expande a partir dela).
-    // Excluimos a Custom Audience de clientes ativos pra não gastar verba com gente que já é cliente.
+    // Lookalike + Custom Audience:
+    // - Captação: LAL como âncora; exclui CRM (já clientes/leads ativos) pra não gastar verba.
+    // - Remarketing: INCLUI CRM (leads frios do motor) + LAL; não exclui a lista.
     if (platformLalId) {
       (targeting as any).custom_audiences = [{ id: platformLalId }];
     }
     if (platformCustomAudId) {
-      (targeting as any).excluded_custom_audiences = [{ id: platformCustomAudId }];
+      if (wantsRemarketing) {
+        const existing = Array.isArray((targeting as any).custom_audiences)
+          ? (targeting as any).custom_audiences
+          : [];
+        if (!existing.some((a: any) => String(a?.id) === String(platformCustomAudId))) {
+          (targeting as any).custom_audiences = [...existing, { id: platformCustomAudId }];
+        }
+        delete (targeting as any).excluded_custom_audiences;
+      } else {
+        (targeting as any).excluded_custom_audiences = [{ id: platformCustomAudId }];
+      }
     }
     // CTWA WABA: destination=WHATSAPP + promoted_object liga anúncio ↔ número WABA.
     // Tracking specs: messaging_first_reply (Meta nativo) + offsite_conversion via pixel/CAPI.
@@ -739,7 +773,7 @@ Deno.serve(async (req) => {
       { "action.type": ["onsite_conversion.messaging_first_reply"] },
     ];
     if (hasPixel) {
-      trackingSpecs.push({ "action.type": ["offsite_conversion"], fb_pixel: [conn.pixel_id] });
+      trackingSpecs.push({ "action.type": ["offsite_conversion"], fb_pixel: [pixelId] });
     }
     const adsetParams: Record<string, string> = {
       name: `[${consultantTag}] ${distribTag} · Conjunto Principal · ${cityPrincipal}`,
@@ -777,6 +811,17 @@ Deno.serve(async (req) => {
     } catch (e) {
       const msg = String((e as Error)?.message || "");
       console.warn(`[fb-create] adset falhou phone=${waNumberClean} phone_id=${authoritativePhoneId} err=${msg.slice(0, 300)}`);
+      // Evita órfã PAUSED na Meta quando o adset falha depois da campaign.
+      try {
+        await fbFetch(`/${campaignId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ status: "DELETED", access_token: conn.token }),
+        });
+        console.info("[fb-create] orphan campaign deleted after adset failure", campaignId);
+      } catch (delErr) {
+        console.warn("[fb-create] orphan campaign delete failed", campaignId, String((delErr as Error)?.message || "").slice(0, 160));
+      }
       const isWabaMismatch =
         msg.includes("1487246") ||
         msg.includes("2446885") ||
@@ -982,6 +1027,7 @@ Deno.serve(async (req) => {
         message: body.primary_text,
         image_url: thumbUrl,
         call_to_action: { type: "WHATSAPP_MESSAGE", value: { link: waLinkV } },
+        page_welcome_message: buildCtwaPageWelcomeMessage(initialMessageV),
       };
 
       console.log("[fb-create] video ad: age_min=", ageMin, "age_max=", ageMax,
@@ -1145,6 +1191,9 @@ Deno.serve(async (req) => {
         type: "WHATSAPP_MESSAGE",
         value: { link: waLink },
       },
+      // Sem page_welcome_message a Meta usa o default "Can I get more info / saber mais"
+      // e o lead NÃO envia o protocolo — matching fica só no ctwa_clid/ad_id.
+      page_welcome_message: buildCtwaPageWelcomeMessage(initialMessage),
       image_hash,
     });
 
@@ -1204,7 +1253,20 @@ Deno.serve(async (req) => {
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
           body: new URLSearchParams({
             name: `[${consultantTag}] ${distribTag} · Creative Multiformato`,
-            object_story_spec: JSON.stringify({ page_id: conn.page_id }),
+            object_story_spec: JSON.stringify({
+              page_id: conn.page_id,
+              // Welcome CTWA também no caminho asset_feed (senão Meta usa default).
+              link_data: {
+                link: waLink,
+                message: body.primary_text,
+                name: body.headline,
+                call_to_action: {
+                  type: "WHATSAPP_MESSAGE",
+                  value: { link: waLink },
+                },
+                page_welcome_message: buildCtwaPageWelcomeMessage(initialMessage),
+              },
+            }),
             asset_feed_spec: JSON.stringify(assetFeedSpec),
             degrees_of_freedom_spec: JSON.stringify({
               creative_features_spec: { standard_enhancements: { enroll_status: "OPT_IN" } },
@@ -1323,6 +1385,22 @@ Deno.serve(async (req) => {
     const campaignRowId = (insertedCampaign as { id?: string } | null)?.id ?? null;
     if (!campaignRowId) {
       throw new Error("Campanha criada na Meta, mas o portal não retornou o id interno.");
+    }
+
+    // Remarketing: merge DDDs das cidades (e vizinhas) na allowlist da plataforma.
+    let retargetDddsMerged: number[] = [];
+    if (wantsRemarketing) {
+      try {
+        const resolved = resolveRetargetDdds({
+          clientDdds: Array.isArray(body.retarget_ddds) ? body.retarget_ddds : null,
+          cities: body.cities || [],
+          customLocations: body.custom_locations || null,
+        });
+        retargetDddsMerged = await mergePlatformRetargetDdds(admin, resolved);
+        console.log("[fb-create] remarketing DDDs merged:", retargetDddsMerged.join(","));
+      } catch (e) {
+        console.warn("[fb-create] merge retarget DDDs falhou:", (e as Error).message);
+      }
     }
 
     // ─── Rodízio: configura pool + membros em uma única transação ────────
@@ -1515,6 +1593,8 @@ Deno.serve(async (req) => {
       rodizio_pool_id: rodizioPoolId,
       rodizio_members: rodizioMembersCount,
       rodizio_warning: rodizioWarning,
+      is_remarketing: wantsRemarketing,
+      retarget_ddds: retargetDddsMerged,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

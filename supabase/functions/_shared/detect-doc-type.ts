@@ -2,8 +2,8 @@
 // a partir de uma imagem (base64 ou URL pública). Usa Gemini Vision.
 //
 // Estratégia profissional (3 passadas com modelos diferentes):
-//   1. Pass1: gemini-2.5-flash com checklist visual completo + temperature=0.
-//      Aceita direto se confiança >= 0.80.
+//   1. Pass1: gemini-3-flash-preview com checklist visual completo + temperature=0.
+//      Aceita direto se confiança >= 0.80. Fallback interno: 2.5-flash via gateway.
 //   2. Pass2: gemini-2.5-pro com prompt detalhado + raciocínio passo-a-passo.
 //      Aceita se confiança >= 0.60.
 //   3. Pass3 (último recurso): gemini-2.5-flash com regra de desempate
@@ -261,14 +261,24 @@ export async function detectDocumentTypeDetailed(input: DetectInput): Promise<De
   // callGemini cai automaticamente para Lovable Gateway quando o direto falha.
   const apiKey = input.geminiApiKey || "__no_gemini__";
 
-  // ── Pass 1: gemini-2.5-flash + checklist ──
-  const raw1 = await callGemini(PROMPT_PASS1, imagePart, apiKey, "gemini-2.5-flash");
+  // ── Pass 1: gemini-3-flash-preview + checklist (melhor visão atual) ──
+  const raw1 = await callGemini(PROMPT_PASS1, imagePart, apiKey, "gemini-3-flash-preview");
   const parsed1 = parseDetectJson(raw1);
   if (parsed1 && parsed1.confianca >= 0.80) {
     console.log(`🤖 [detectDoc] pass1 confiante: ${parsed1.tipo} (${parsed1.confianca.toFixed(2)}) motivo=${parsed1.motivo || "-"} sinais=${JSON.stringify(parsed1.sinais)}`);
     return { tipo: parsed1.tipo, confianca: parsed1.confianca, source: "gemini_pass1", sinais: parsed1.sinais, motivo: parsed1.motivo };
   }
   if (!parsed1) console.warn(`[detectDoc] pass1 raw vazio/inválido: "${raw1.substring(0, 300)}"`);
+
+  // Se 3-flash falhou/vazio, tenta 2.5-flash antes do pro (mais barato/estável)
+  if (!parsed1 || !raw1) {
+    const raw1b = await callGemini(PROMPT_PASS1, imagePart, apiKey, "gemini-2.5-flash");
+    const parsed1b = parseDetectJson(raw1b);
+    if (parsed1b && parsed1b.confianca >= 0.80) {
+      console.log(`🤖 [detectDoc] pass1b(2.5) confiante: ${parsed1b.tipo} (${parsed1b.confianca.toFixed(2)})`);
+      return { tipo: parsed1b.tipo, confianca: parsed1b.confianca, source: "gemini_pass1", sinais: parsed1b.sinais, motivo: parsed1b.motivo };
+    }
+  }
 
   // ── Pass 2: gemini-2.5-pro ──
   console.log(`🤖 [detectDoc] pass1 ambíguo (${parsed1 ? parsed1.confianca.toFixed(2) : "no-parse"}) — pass2 com 2.5-pro`);

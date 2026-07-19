@@ -1,4 +1,5 @@
 import { isCNH, requiresRgNumber } from "./document-type.ts";
+import { isPlausibleAddressNumber } from "./bot/cadastro-fixes.ts";
 
 export interface ValidationResult {
   valid: boolean;
@@ -126,7 +127,11 @@ export function validateCustomerForPortal(customer: any): ValidationResult {
     if (customer.address_street.trim().length < 12) errors.push("Bairro inválido");
     else warnings.push("Bairro ausente — seguindo com rua completa do OCR");
   }
-  if (!customer.address_number || customer.address_number.trim().length === 0) errors.push("Número do endereço é obrigatório");
+  if (!customer.address_number || customer.address_number.trim().length === 0) {
+    errors.push("Número do endereço é obrigatório");
+  } else if (!isPlausibleAddressNumber(customer.address_number)) {
+    errors.push("Número do endereço inválido");
+  }
   if (!customer.address_city || customer.address_city.trim().length < 2) errors.push("Cidade inválida");
   if (!customer.address_state || customer.address_state.trim().length !== 2) errors.push("Estado (UF) inválido");
   // ── Telefone: deve estar confirmado pelo cliente no chat ──

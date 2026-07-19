@@ -14,6 +14,7 @@ import {
   type CadenceButton,
 } from "./cadence-stage-buttons.ts";
 import { matchButtonIntent, type ButtonOption } from "./ai-button-intent.ts";
+import { isCoverageCityIntent, coverageCityReply } from "./coverage-city-intent.ts";
 
 export const BILL_BUTTON_VALUES: Readonly<Record<string, number>> = {
   bill_low: 200,
@@ -23,23 +24,23 @@ export const BILL_BUTTON_VALUES: Readonly<Record<string, number>> = {
 
 /** Catálogo completo: clique OU digitar o título (Evolution sem botão) → mesmo id. */
 export const CADENCE_BUTTON_CATALOG: ReadonlyArray<ButtonOption> = [
-  { id: "bill_low", title: "Até R$300", phrases: ["ate 300", "até 300", "ate r$300", "baixo", "300"] },
-  { id: "bill_mid", title: "R$300 a R$700", phrases: ["300 a 700", "medio", "médio", "500"] },
-  { id: "bill_high", title: "Acima de R$700", phrases: ["acima de 700", "alto", "800", "900", "1000"] },
+  { id: "bill_low", title: "Até R$300", phrases: ["ate 300", "até 300", "ate r$300", "ate r$ 300"] },
+  { id: "bill_mid", title: "R$300 a R$700", phrases: ["300 a 700", "r$300 a r$700", "de 300 a 700"] },
+  { id: "bill_high", title: "Acima de R$700", phrases: ["acima de 700", "acima de r$700", "mais de 700"] },
   { id: "analyze", title: "Quero analisar", phrases: ["analisar", "quero analisar", "analise", "análise"] },
   { id: "send_photo", title: "Enviar conta", phrases: ["enviar foto", "enviar conta", "mandar foto", "foto da conta"] },
   { id: "register", title: "Cadastrar", phrases: ["cadastrar", "quero cadastrar", "cadastro"] },
-  { id: "activate", title: "Quero ativar", phrases: ["ativar", "quero ativar", "ativar o beneficio", "ativar o benefício"] },
+  { id: "activate", title: "Quero ativar", phrases: ["quero ativar", "ativar o beneficio", "ativar o benefício"] },
   { id: "bill_value", title: "Informar valor", phrases: ["informar valor", "digitar valor"] },
   { id: "more_benefits", title: "Conhecer mais", phrases: ["saber mais", "saber mais beneficio", "conhecer mais", "mais beneficios"] },
-  { id: "how_it_works", title: "Como funciona", phrases: ["como funciona", "explica"] },
-  { id: "explain", title: "Explicar", phrases: ["explica", "me explica"] },
+  { id: "how_it_works", title: "Como funciona", phrases: ["como funciona", "me explica"] },
+  { id: "explain", title: "Explicar", phrases: ["me explica", "explica melhor"] },
   { id: "economy", title: "Economia", phrases: ["economia", "quanto economizo"] },
-  { id: "club", title: "Clube", phrases: ["clube", "beneficios"] },
+  { id: "club", title: "Clube", phrases: ["clube", "beneficios do clube"] },
   { id: "referral", title: "Indicação", phrases: ["indicacao", "indicação", "indicar"] },
-  { id: "call_me", title: "Pode me ligar", phrases: ["me liga", "pode me ligar", "ligar"] },
-  { id: "human", title: "Falar com humano", phrases: ["humano", "atendente", "pessoa"] },
-  { id: "stop", title: "Encerrar", phrases: ["sair", "parar", "encerrar", "cancelar"] },
+  { id: "call_me", title: "Pode me ligar", phrases: ["me liga", "pode me ligar"] },
+  { id: "human", title: "Falar com humano", phrases: ["falar com humano", "quero atendente", "falar com atendente"] },
+  { id: "stop", title: "Encerrar", phrases: ["encerrar", "parar de receber", "sair do fluxo"] },
 ];
 
 const BILL_RANGE_ESTIMATES = new Set([200, 500, 800]);
@@ -96,6 +97,7 @@ export type CadenceInboundInput = {
   customer: {
     id?: string;
     name?: string | null;
+    consultant_id?: string | null;
     origin_recovery?: string | null;
     flow_variant?: string | null;
     conversation_step?: string | null;
@@ -210,12 +212,18 @@ export function resolveCadenceButtonFromText(text: string | null | undefined): s
   }
   for (const b of CADENCE_BUTTON_CATALOG) {
     const tN = norm(b.title);
-    if (msgN === tN || (tN.length >= 4 && (msgN.includes(tN) || tN.includes(msgN)))) {
-      return b.id;
-    }
+    if (msgN === tN) return b.id;
+    if (tN.length >= 8 && msgN.includes(tN)) return b.id;
     for (const ph of b.phrases || []) {
       const pN = norm(ph);
-      if (pN && (msgN === pN || (pN.length >= 4 && msgN.includes(pN)))) return b.id;
+      if (!pN) continue;
+      if (msgN === pN) return b.id;
+      if (pN.length >= 8 && msgN.includes(pN)) return b.id;
+      // palavra única ≥5 com boundary
+      if (!pN.includes(" ") && pN.length >= 5) {
+        const escaped = pN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        if (new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`).test(msgN)) return b.id;
+      }
     }
   }
   return null;
@@ -454,7 +462,18 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
   }
 
-  if (text && /\?|como\s+funciona|seguro|golpe|taxa|pix|pagar|custa/i.test(text)) {
+  if (text && isCoverageCityIntent(text)) {
+    return {
+      handled: true,
+      continueBotFlow: false,
+      updates: { origin_recovery: "cadence", flow_variant: "A", conversation_step: "qualificacao" },
+      reply: `${coverageCityReply(input.customer?.name)}\n\nQual a faixa da sua conta hoje? 👇`,
+      buttons: [...BILL_RANGE_BUTTONS],
+      reason: "cadence_coverage_city",
+    };
+  }
+
+  if (text && /\?|como\s+funciona|é\s+seguro|é\s+golpe|tem\s+taxa|aceita\s+pix|quanto\s+custa|fidelidade|aluguel|titular|economiz|painel\s+solar|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha/i.test(text)) {
     return {
       handled: true,
       continueBotFlow: false,
@@ -511,6 +530,62 @@ const AI_SAFE_BUTTON_IDS = new Set([
   "referral",
 ]);
 
+const CADENCE_FAQ_CTA =
+  "\n\nPara ver se compensa no *seu* caso, escolha a faixa da sua conta hoje 👇";
+
+/**
+ * Usa a base de conhecimento (FAQ + seções IA) quando o lead pergunta
+ * na cadência B/C — em vez de só o texto fixo curto.
+ * Fail-open: se KB/IA falhar, devolve o fallback.
+ */
+export async function enrichCadenceFaqWithKnowledge(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  opts: {
+    question: string;
+    consultantId?: string | null;
+    leadName?: string;
+    fallback: string;
+  },
+): Promise<{ text: string; source: "kb" | "ai" | "fallback" }> {
+  const q = String(opts.question || "").trim();
+  if (q.length < 4) return { text: opts.fallback, source: "fallback" };
+
+  try {
+    const { lookupKnowledge } = await import("./knowledge-lookup.ts");
+    const hit = await lookupKnowledge({
+      supabase,
+      question: q,
+      consultantId: opts.consultantId || undefined,
+    });
+    if (hit.found && hit.confidence >= 0.55 && String(hit.text || "").trim().length >= 24) {
+      const body = String(hit.text).trim().slice(0, 1100);
+      return { text: `${body}${CADENCE_FAQ_CTA}`, source: "kb" };
+    }
+  } catch (e) {
+    console.warn("[cadence-router] lookupKnowledge:", (e as Error).message);
+  }
+
+  try {
+    const { answerFaqWithAI } = await import("./ai-faq-answerer.ts");
+    const ai = await answerFaqWithAI({
+      supabase,
+      question: q,
+      consultantId: opts.consultantId || undefined,
+      leadName: opts.leadName,
+      currentStepLabel: "Retorno cadência (Grupo B/C)",
+    });
+    if (ai.text && ai.confidence >= 0.55 && String(ai.text).trim().length >= 20) {
+      const body = String(ai.text).trim().slice(0, 1100);
+      return { text: `${body}${CADENCE_FAQ_CTA}`, source: "ai" };
+    }
+  } catch (e) {
+    console.warn("[cadence-router] answerFaqWithAI:", (e as Error).message);
+  }
+
+  return { text: opts.fallback, source: "fallback" };
+}
+
 export async function applyCadenceInboundRoute(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -556,6 +631,32 @@ export async function applyCadenceInboundRoute(
 
   const route = resolveCadenceInboundRoute(opts);
   if (!route) return { routed: false, continueBotFlow: true };
+
+  // Pergunta aberta / educativo: enriquecer com a base de conhecimento.
+  const reason = String(route.reason || "");
+  const wantsKb =
+    reason === "cadence_faq_nudge" ||
+    reason.startsWith("cadence_educational_");
+  if (
+    wantsKb &&
+    !route.continueBotFlow &&
+    route.reply &&
+    opts.messageText &&
+    !opts.isFile &&
+    !opts.hasImage &&
+    !opts.hasDocument
+  ) {
+    const enriched = await enrichCadenceFaqWithKnowledge(supabase, {
+      question: String(opts.messageText),
+      consultantId: opts.customer.consultant_id,
+      leadName: firstName(opts.customer),
+      fallback: route.reply,
+    });
+    route.reply = enriched.text;
+    if (enriched.source !== "fallback") {
+      console.log(`[cadence-router] faq via ${enriched.source} reason=${reason}`);
+    }
+  }
 
   const now = new Date().toISOString();
   const updates = { ...route.updates, updated_at: now };

@@ -10,6 +10,9 @@ import {
   nextSeparatedCadastroStep,
   isPrePortalCadastroStep,
   isSofiaMulticanalCustomer,
+  isPlausibleAddressNumber,
+  addressValidationRedirect,
+  extractCepFromText,
 } from "./cadastro-fixes.ts";
 import { getNextMissingStep } from "../conversation-helpers.ts";
 
@@ -118,5 +121,45 @@ Deno.test("looksLikeSpamBlast", () => {
   assertEquals(
     looksLikeSpamBlast("https://zoom.us/j/123 meet.google.com/abc bit.ly/x " + "x".repeat(80)),
     true,
+  );
+});
+
+Deno.test("isPlausibleAddressNumber — rejeita e-mail/CEP (caso Salto)", () => {
+  assertEquals(isPlausibleAddressNumber("119"), true);
+  assertEquals(isPlausibleAddressNumber("S/N"), true);
+  assertEquals(isPlausibleAddressNumber("rafael.idsss@icloud.com"), false);
+  assertEquals(isPlausibleAddressNumber("13323072"), false);
+  assertEquals(isPlausibleAddressNumber(""), false);
+});
+
+Deno.test("addressValidationRedirect — CEP/cidade nunca vira ask_name", () => {
+  const r = addressValidationRedirect(["CEP inválido (deve ter 8 dígitos)", "Cidade inválida"]);
+  assertEquals(r?.step, "editing_conta_endereco");
+  assertEquals(!!r?.reply && !/nome completo/i.test(r.reply), true);
+  const n = addressValidationRedirect(["Número do endereço inválido"]);
+  assertEquals(n?.step, "ask_number");
+});
+
+Deno.test("extractCepFromText", () => {
+  assertEquals(extractCepFromText("Rua Cabreúva, 119, Salto - SP, 13323072"), "13323072");
+  assertEquals(extractCepFromText("CEP 13323-072"), "13323072");
+  assertEquals(extractCepFromText("sem cep aqui"), null);
+});
+
+Deno.test("getNextMissingStep — address_number e-mail pede ask_number", () => {
+  assertEquals(
+    getNextMissingStep({
+      name: "Vinicius Silva",
+      cpf: "52998224725",
+      rg: "123456789",
+      data_nascimento: "01/01/1990",
+      phone_landline: "(11) 99999-8888",
+      phone_contact_confirmed: true,
+      email: "maria@test.com",
+      address_number: "rafael.idsss@icloud.com",
+      address_complement: "",
+      flow_variant: "A",
+    }),
+    "ask_number",
   );
 });

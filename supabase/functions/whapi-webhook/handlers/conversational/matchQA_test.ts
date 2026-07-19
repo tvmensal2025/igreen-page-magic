@@ -65,6 +65,14 @@ Deno.test("mensagem curta 'simular' casa no gatilho 'quero simular'", () => {
   assertEquals(matches("quero simular", "simular"), true);
 });
 
+Deno.test("fragmento 'nao sou' NÃO casa gatilho de cobertura", () => {
+  assertEquals(matches("nao sou de uberlandia", "nao sou"), false);
+});
+
+Deno.test("genérico 'depois' NÃO casa FAQ", () => {
+  assertEquals(matches("depois", "te mando depois"), false);
+});
+
 // ─── Word boundary respeita acento removido ─────────────────────────────
 Deno.test("gatilho 'fraude' casa em 'isso é fraude né'", () => {
   assertEquals(matches("fraude", "isso é fraude né"), true);

@@ -1,6 +1,13 @@
 // Estende prazo e/ou ajusta orçamento diário de uma campanha existente.
-// Body: { campaign_id: uuid, add_days?: number, new_daily_budget_cents?: number, reactivate?: boolean }
+// Body: {
+//   campaign_id: uuid,
+//   add_days?: number,
+//   continuous?: boolean,   // sem data fim + daily_budget
+//   new_daily_budget_cents?: number,
+//   reactivate?: boolean
+// }
 import { adminClient, authConsultant, corsHeaders, FB_GRAPH, loadCampaignConnection } from "../_shared/fb-graph.ts";
+import { META_MIN_DAILY_BUDGET_CENTS } from "../_shared/campaign-budget.ts";
 import { resolveCampaignEffectiveStatus, type MetaObjectState } from "../_shared/campaign-effective-status.ts";
 import { validateCampaignActivationBudget } from "../_shared/validate-campaign-activation.ts";
 import { validateRodizioActivation } from "../_shared/validate-rodizio-activation.ts";
@@ -13,15 +20,16 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const campaignId = String(body?.campaign_id || "");
-    const addDays = Math.max(0, Math.min(60, Number(body?.add_days ?? 0)));
+    const continuous = body?.continuous === true;
+    const addDays = continuous ? 0 : Math.max(0, Math.min(60, Number(body?.add_days ?? 0)));
     const newDailyBudgetCents = body?.new_daily_budget_cents != null
-      ? Math.max(1000, Math.floor(Number(body.new_daily_budget_cents)))
+      ? Math.max(META_MIN_DAILY_BUDGET_CENTS, Math.floor(Number(body.new_daily_budget_cents)))
       : null;
     const reactivate = body?.reactivate === true;
 
     if (!campaignId) return j({ error: "campaign_id obrigatório" }, 400);
-    if (addDays === 0 && newDailyBudgetCents == null) {
-      return j({ error: "Informe add_days ou new_daily_budget_cents" }, 400);
+    if (!continuous && addDays === 0 && newDailyBudgetCents == null) {
+      return j({ error: "Informe continuous, add_days ou new_daily_budget_cents" }, 400);
     }
 
     const admin = adminClient();
@@ -36,29 +44,32 @@ Deno.serve(async (req) => {
     const { data: isSuper } = await admin.rpc("is_super_admin", { _user_id: auth.id });
     if (c.consultant_id !== auth.id && !isSuper) return j({ error: "forbidden" }, 403);
 
+    const nextDailyBudgetCents = newDailyBudgetCents ?? Math.max(META_MIN_DAILY_BUDGET_CENTS, Number(c.daily_budget_cents) || META_MIN_DAILY_BUDGET_CENTS);
+
     if (reactivate) {
       const activationBudget = await validateCampaignActivationBudget(admin, {
         consultantId: c.consultant_id,
-        dailyBudgetCents: newDailyBudgetCents ?? Number(c.daily_budget_cents),
-        durationDays: addDays > 0 ? addDays : null,
+        dailyBudgetCents: nextDailyBudgetCents,
+        durationDays: continuous ? null : (addDays > 0 ? addDays : null),
       });
       if (!activationBudget.ok) return j({ error: activationBudget.error, status: c.status }, 402);
       const rodizio = await validateRodizioActivation(admin, c.id, c.consultant_id);
       if (!rodizio.ok) return j({ error: rodizio.error, status: c.status }, 409);
     }
 
-    // Calcula nova janela usando a fonte persistida pela criação. `ended_at` é
-    // histórico operacional; `end_time_utc` é a data programada na Meta.
     const now = Date.now();
     const storedEnd = c.end_time_utc || c.ended_at;
     const currentEnd = storedEnd ? new Date(storedEnd).getTime() : now;
     const base = Math.max(Number.isFinite(currentEnd) ? currentEnd : now, now);
     const newEndMs = addDays > 0 ? base + addDays * 86400_000 : currentEnd;
     const newEndISO = new Date(newEndMs).toISOString();
-    const nextDurationDays = Math.max(1, Number(c.duration_days || 0) + addDays);
-    const nextDailyBudgetCents = newDailyBudgetCents ?? Number(c.daily_budget_cents);
-    const nextLifetimeBudgetCents = nextDailyBudgetCents * nextDurationDays;
-    const fixedDuration = Number(c.duration_days || 0) > 0 || addDays > 0;
+    const nextDurationDays = continuous
+      ? null
+      : Math.max(1, Number(c.duration_days || 0) + addDays);
+    const nextLifetimeBudgetCents = continuous
+      ? null
+      : nextDailyBudgetCents * (nextDurationDays || 1);
+    const fixedDuration = !continuous && (Number(c.duration_days || 0) > 0 || addDays > 0);
 
     if (!c.fb_campaign_id) {
       return j({ error: "Campanha sem ID da Meta. Nada foi alterado localmente." }, 409);
@@ -72,9 +83,17 @@ Deno.serve(async (req) => {
     const adsetIds = (c.fb_adset_ids || []) as string[];
     const adIds = (c.fb_ad_ids || []) as string[];
     try {
-      // Campanhas com prazo são CBO com lifetime_budget no nível da campanha.
-      // Nunca envia daily_budget ao adset nesse modelo.
-      if (fixedDuration) {
+      if (continuous) {
+        // Troca lifetime → daily e remove fim de prazo nos adsets.
+        await postMeta(c.fb_campaign_id, {
+          daily_budget: String(nextDailyBudgetCents),
+          lifetime_budget: "0",
+        }, token, "campaign continuous budget");
+        for (const adsetId of adsetIds) {
+          // end_time=0 = remove data fim (campanha contínua)
+          await postMeta(adsetId, { end_time: "0" }, token, "adset clear end_time");
+        }
+      } else if (fixedDuration) {
         await postMeta(c.fb_campaign_id, {
           lifetime_budget: String(nextLifetimeBudgetCents),
         }, token, "campaign budget");
@@ -84,14 +103,13 @@ Deno.serve(async (req) => {
         }, token, "campaign budget");
       }
 
-      if (addDays > 0) {
+      if (!continuous && addDays > 0) {
         for (const adsetId of adsetIds) {
           await postMeta(adsetId, { end_time: newEndISO }, token, "adset end_time");
         }
       }
 
       if (reactivate) {
-        // Filhos primeiro, campanha por último. Depois confirma toda a hierarquia.
         for (const adsetId of adsetIds) await postMeta(adsetId, { status: "ACTIVE" }, token, "activate adset");
         for (const adId of adIds) await postMeta(adId, { status: "ACTIVE" }, token, "activate ad");
         await postMeta(c.fb_campaign_id, { status: "ACTIVE" }, token, "activate campaign");
@@ -120,14 +138,21 @@ Deno.serve(async (req) => {
 
     const updatePayload: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
+      daily_budget_cents: nextDailyBudgetCents,
     };
-    if (addDays > 0) {
-      updatePayload.duration_days = nextDurationDays;
-      updatePayload.end_time_utc = newEndISO;
+    if (continuous) {
+      updatePayload.duration_days = null;
+      updatePayload.end_time_utc = null;
       updatePayload.ended_at = null;
+      updatePayload.lifetime_cap_cents = null;
+    } else {
+      if (addDays > 0) {
+        updatePayload.duration_days = nextDurationDays;
+        updatePayload.end_time_utc = newEndISO;
+        updatePayload.ended_at = null;
+      }
+      if (fixedDuration) updatePayload.lifetime_cap_cents = nextLifetimeBudgetCents;
     }
-    if (newDailyBudgetCents != null) updatePayload.daily_budget_cents = newDailyBudgetCents;
-    if (fixedDuration) updatePayload.lifetime_cap_cents = nextLifetimeBudgetCents;
     if (reactivate) {
       updatePayload.status = "active";
       updatePayload.rejection_reason = null;
@@ -147,8 +172,10 @@ Deno.serve(async (req) => {
     return j({
       ok: true,
       status: updatePayload.status || c.status,
-      ended_at: addDays > 0 ? newEndISO : c.end_time_utc,
-      end_time_utc: addDays > 0 ? newEndISO : c.end_time_utc,
+      continuous,
+      ended_at: continuous ? null : (addDays > 0 ? newEndISO : c.end_time_utc),
+      end_time_utc: continuous ? null : (addDays > 0 ? newEndISO : c.end_time_utc),
+      duration_days: continuous ? null : nextDurationDays,
       daily_budget_cents: nextDailyBudgetCents,
       lifetime_budget_cents: fixedDuration ? nextLifetimeBudgetCents : null,
       meta_error: null,

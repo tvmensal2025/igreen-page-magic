@@ -78,6 +78,28 @@ export function appendTrackingProtocol(baseMessage: string, protocol: string | n
   return `${trimmedBase}${block}`.slice(0, MAX_INITIAL_MESSAGE_LEN);
 }
 
+/**
+ * Mensagem de boas-vindas CTWA nativa da Meta.
+ * Sem isso, o clique mostra o default "Hello! Can I get more info on this?"
+ * (em PT costuma virar algo tipo "saber mais") e ignora o ?text= do wa.me.
+ */
+export function buildCtwaPageWelcomeMessage(autofillContent: string): Record<string, unknown> {
+  const content = String(autofillContent || "").trim().slice(0, MAX_INITIAL_MESSAGE_LEN);
+  return {
+    type: "VISUAL_EDITOR",
+    version: 2,
+    landing_screen_type: "welcome_message",
+    media_type: "text",
+    text_format: {
+      customer_action_type: "autofill_message",
+      message: {
+        text: "Oi! Toque em Enviar pra falar com a gente sobre a conta de luz.",
+        autofill_message: { content: content || "Oi! Quero saber mais sobre a redução na conta de luz." },
+      },
+    },
+  };
+}
+
 export function detectTrackingChannel(input: {
   placement_mode?: string | null;
   placements?: string[] | null;
@@ -136,6 +158,51 @@ export async function resolveCampaignByTrackingProtocol(
     return (data as any)?.id ?? null;
   } catch (e) {
     console.warn("[campaign-tracking] lookup exceção:", (e as Error)?.message);
+    return null;
+  }
+}
+
+function normInitialMessage(s: string): string {
+  return (s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Fallback seguro sem protocolo na mensagem: casa frase EXATA (normalizada)
+ * com `facebook_campaigns.initial_message` — só se houver 1 match.
+ * Exige mensagem com ≥ 12 chars normalizados (evita "oi" / "saber mais").
+ */
+export async function resolveCampaignByExactInitialMessage(
+  supabase: SupabaseClient,
+  consultantId: string,
+  text: string | null | undefined,
+): Promise<string | null> {
+  const needle = normInitialMessage(stripTrackingProtocol(text));
+  if (needle.length < 12) return null;
+  try {
+    const { data, error } = await supabase
+      .from("facebook_campaigns")
+      .select("id, initial_message, status")
+      .eq("consultant_id", consultantId)
+      .in("status", ["active", "pending_review"])
+      .not("initial_message", "is", null)
+      .limit(300);
+    if (error) {
+      console.warn("[campaign-tracking] exact initial lookup falhou:", error.message);
+      return null;
+    }
+    const matches = ((data || []) as any[]).filter((c) =>
+      normInitialMessage(stripTrackingProtocol(c.initial_message)) === needle
+    );
+    if (matches.length === 1) return String(matches[0].id);
+    return null;
+  } catch (e) {
+    console.warn("[campaign-tracking] exact initial exceção:", (e as Error)?.message);
     return null;
   }
 }

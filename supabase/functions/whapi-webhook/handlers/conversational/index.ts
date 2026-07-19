@@ -35,6 +35,7 @@ import {
 } from "../../../_shared/bot/flow-activate-routing.ts";
 import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaPrefill } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
+import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 import { handleMakeCallStep } from "../../../_shared/bot/make-call-step.ts";
 
@@ -160,64 +161,17 @@ async function loadFlow(supabase: any, consultantId: string, variant: string = "
 
 // ─── Q&A matching (FAQ) ────────────────────────────────────────────────
 // Procura uma pergunta cadastrada em bot_flow_qa que case com a mensagem do
-// lead. Quando casa, manda mídia + texto e MANTÉM o passo atual (repete),
-// igual ao comportamento de FAQ do bot-flow legado.
-const _norm = (s: string) =>
-  String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+// lead. Match conservador compartilhado em `_shared/qa-phrase-match.ts`.
+import {
+  normalizeQaText,
+  phraseMatchesMessage as phraseMatchesMessageShared,
+} from "../../../_shared/qa-phrase-match.ts";
 
-/**
- * Stopwords curtas que NUNCA devem disparar FAQ sozinhas — casam em quase
- * toda mensagem e gerariam falsos positivos ("não", "sim", "ok"...).
- */
-const QA_STOPWORDS: ReadonlySet<string> = new Set([
-  "nao", "sim", "ok", "oi", "ola", "eai", "opa", "e", "a", "o", "de", "da", "do",
-]);
+const _norm = (s: string) => normalizeQaText(s);
 
-/**
- * Decide se uma `phrase` (gatilho de FAQ, já cadastrada) casa com a `message`
- * do lead. Função pura e testável — extraída de `matchQA`.
- *
- * Ambos os argumentos devem vir já normalizados (`_norm`: minúsculo, sem
- * acento, trim).
- *
- * Regras (em ordem):
- *   1. Igualdade exata.
- *   2. Gatilho de UMA palavra → casa por LIMITE DE PALAVRA dentro da mensagem
- *      (word boundary). Resolve gatilhos curtos legítimos ("golpe", "multa",
- *      "aneel", "cnpj", "lgpd") que o lead escreve dentro de uma frase, sem
- *      o falso positivo de substring ("ap" não casa em "sapato"). Stopwords
- *      ("nao", "sim", "ok") são ignoradas aqui.
- *   3. Gatilho de VÁRIAS palavras (≥ 6 chars) → casa como substring contígua
- *      ("trocar empresa" em "quero trocar empresa agora").
- *   4. Mensagem curta (≤ 8 chars) contida no gatilho ("simular" → "quero
- *      simular").
- */
+/** Re-export testável — mesma lógica endurecida do shared. */
 export function phraseMatchesMessage(phrase: string, message: string): boolean {
-  if (!phrase || phrase.length < 2) return false;
-  if (!message) return false;
-
-  // 1. Igualdade exata.
-  if (message === phrase) return true;
-
-  const isSingleWord = !phrase.includes(" ");
-
-  if (isSingleWord) {
-    // 2. Palavra única → limite de palavra (evita substring acidental).
-    if (QA_STOPWORDS.has(phrase)) return false;
-    // \b não respeita acentos já removidos por _norm; usamos classe de
-    // não-palavra ([^a-z0-9]) como fronteira, tolerando início/fim de string.
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const rx = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i");
-    return rx.test(message);
-  }
-
-  // 3. Frase com várias palavras (≥ 6 chars): substring contígua.
-  if (phrase.length >= 6 && message.includes(phrase)) return true;
-
-  // 4. Mensagem curta contida no gatilho.
-  if (message.length <= 8 && phrase.includes(message)) return true;
-
-  return false;
+  return phraseMatchesMessageShared(phrase, message);
 }
 
 export async function matchQA(
@@ -1209,8 +1163,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   }
   // Se resolveLandingStep avançou o passo, sincroniza stepKey para que
   // _finalize salve conversation_step no passo novo (e não no antigo).
+  // `entryLandedByCapture` marca esse pouso: o dado do passo anterior já
+  // estava salvo (auto-capture do webhook roda ANTES do motor), então o
+  // passo pousado ainda NÃO foi apresentado ao lead — o bloco 1.9 emite.
+  let entryLandedByCapture = false;
   if (currentStep && currentStepRaw && currentStep.id !== currentStepRaw.id) {
     stepKey = currentStep.id;
+    entryLandedByCapture = true;
   }
 
   // ─── Blindagem B: passo de captura NUNCA fica preso no conversacional ──
@@ -1665,13 +1624,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
-    const qaText = formatFaqReply(renderTemplate(qaHit.text || "", {
+    const qaText = formatFaqReply(withQaStepClose(renderTemplate(qaHit.text || "", {
       nome: ctx.customer.name,
       representante: ctx.nomeRepresentante,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
       cpf: (ctx.customer as any).cpf,
-    }));
+    }), stepKey, { leadName: ctx.customer.name }));
     // 🔁 Honra `flow_step_media_order` para o slot virtual __qa__. Se o
     // consultor configurou ordem (ex.: text→audio), respeita; caso contrário,
     // mantém o legado (mídia primeiro, texto depois).
@@ -1822,9 +1781,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         buttons: extractStepButtons(currentStep),
         intents: _guardIntents,
       });
-      if (_guardTransition || hasCapture) {
-        console.log(`[conversational] ✋ handoff IGNORADO — input casa transição/captura configurada (${_guardTransition ? "transition" : "capture"}). Fluxo determinístico assume.`);
+      if (_guardTransition || hasCapture || entryLandedByCapture) {
+        console.log(`[conversational] ✋ handoff IGNORADO — input casa transição/captura configurada (${_guardTransition ? "transition" : hasCapture ? "capture" : "entry-skip-land"}). Fluxo determinístico assume.`);
         // não retorna: deixa o fluxo normal (matchTransition logo abaixo) seguir
+        // (entry-skip-land: o input foi a resposta do funil já salva pelo
+        // auto-capture do webhook — o bloco 1.9 emite o passo pousado.)
       } else {
 
     const stepButtons = extractStepButtons(currentStep);
@@ -1835,6 +1796,27 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     // (1) Passo com botões + texto livre → tenta IA mapear pra botão
     if (stepButtons.length > 0 && !ctx.buttonId) {
+      try {
+        const { isCoverageCityIntent, coverageCityReply } = await import("../../../_shared/coverage-city-intent.ts");
+        if (isCoverageCityIntent(ctx.messageText || "")) {
+          const cov = coverageCityReply((ctx.customer as any)?.name);
+          const btnHint = stepButtons.slice(0, 3).map((b, i) => `${i + 1}) ${b.title}`).join("\n");
+          const reply = `${cov}\n\nQuando quiser, pode seguir por aqui 👇\n${btnHint}`;
+          console.log(`[conversational] coverage-city intent — respondendo FAQ antes do botão`);
+          return _finalize(stepKey, {
+            reply,
+            updates: {
+              conversation_step: stepKey,
+              custom_step_retries: 0,
+              custom_step_retries_step: null,
+              ...restoreDetourUpdates,
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("[conversational] coverage-city check failed:", (e as Error)?.message);
+      }
+
       const intent = await matchButtonIntent(ctx.messageText || "", stepButtons, {
         apiKey: Deno.env.get("LOVABLE_API_KEY"),
       });
@@ -2820,15 +2802,15 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     const userName = vars.nome || ctx.customer.name || "";
     const reformVariants: Record<string, string[]> = {
       default: [
-        "Pode me responder, por favor? 🙂",
-        "Tô aqui esperando sua resposta 😉",
-        "Me conta aí, posso te ajudar!",
-        userName ? `${userName}, me dá um retorno rapidinho? 🙏` : "Me dá um retorno rapidinho? 🙏",
-        "Posso continuar? É só responder aqui 😊",
-        "Sem pressa, mas se puder me responder eu sigo o atendimento 🙂",
+        "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.",
+        "Tô aqui — pode me falar do seu jeito 😊",
+        "Entendi. Se puder me contar um pouquinho mais, eu te ajudo na sequência 🌱",
+        userName ? `${userName}, fico no aguardo quando puder — respondo por aqui 💚` : "Fico no aguardo quando puder — respondo por aqui 💚",
+        "Pode me falar do jeito que for mais fácil pra você 😊",
+        "Sem cobrança — quando puder, me conta que eu sigo com você 🙂",
       ],
       valor: [
-        userName ? `${userName}, me passa só o valor médio da conta de luz, por favor? Pode ser aproximado 😉` : "Me passa só o valor médio da conta de luz, por favor? Pode ser aproximado 😉",
+        userName ? `${userName}, me passa só o valor médio da conta de luz? Pode ser aproximado 😉` : "Me passa só o valor médio da conta de luz? Pode ser aproximado 😉",
         "Quanto vem em média sua conta de luz? Tipo R$ 200, R$ 400...",
         "Pode mandar só o número mesmo, ex: 350 🙏",
         "Me diz uma média da conta — não precisa ser exato, ok?",
@@ -2836,7 +2818,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       ],
       nome: [
         "Como posso te chamar? Só seu primeiro nome já tá ótimo 😊",
-        "Me conta seu nome, por favor 🙂",
+        "Me conta seu nome? 🙂",
         "Qual seu nome? Pode ser só o primeiro 😉",
         "Me diz seu nome pra eu te chamar direitinho 🙏",
       ],
@@ -3084,6 +3066,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // 1.75) GLOBAL KEYWORD RULES — removido em Sprint 2.5 (bot_flow_rules = 0).
   //       Para reativar: restaurar rules-engine.ts e o bloco evaluateRules aqui.
 
+  // 1.9) POUSO POR SKIP NA ENTRADA — o auto-capture do webhook (index.ts) salva
+  // nome/valor/cpf/telefone ANTES do motor rodar; o resolveLandingStep da
+  // entrada então avança o passo (a1→a2, a2→a3) mas ninguém EMITE o passo
+  // pousado: `hasCapture` fica false (o dado já estava no customer) e o turno
+  // caía no reentry do _finalize — o lead recebia só o "tail" da pergunta,
+  // sem áudio Sofia, sem o texto completo e sem botões (bug Marcio 19/07,
+  // 01:00 UTC: a3 saiu como "*O que você prefere agora*?" truncado).
+  // goToStep emite mídia+texto+botões e persiste o conversation_step; o
+  // anti-rep interno do emitStep (10 min) protege contra reemissão.
+  if (entryLandedByCapture && currentStep) {
+    console.log(
+      `[conversational] 🛬 entry-skip land → emitindo "${currentStep.step_key}" ` +
+      `(dado capturado no webhook antes do motor; sem transition p/ este input)`,
+    );
+    return _finalize(stepKey, await goToStep(currentStep, restoreDetourUpdates));
+  }
 
   // 2) FALLBACK (Plano B)
   const fb = currentStep.fallback || { mode: "repeat" };
@@ -3192,7 +3190,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     const retryText = String(
       fb.retry_text ||
       renderStepText(currentStep) ||
-      "Pode me responder, por favor? 🙂",
+      "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.",
     );
     return _finalize(stepKey, {
       reply: retryText,

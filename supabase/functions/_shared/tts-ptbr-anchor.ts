@@ -13,7 +13,10 @@ function normalizeSpaces(text: string): string {
 }
 
 /**
- * “Olá, Maria.” → “Olá... Maria!” (respiro em "Olá..." + chamada expressiva no nome).
+ * “Olá, Maria.” → “Olá, Maria!” — chamada CONTÍNUA (vírgula, não reticências).
+ * As reticências ("Olá... Maria!") geravam pausa longa no eleven_v3 e o
+ * cliente ouvia como CORTE entre o "Olá" e o nome (feedback 19/07/2026:
+ * "foi apenas o olá e depois cortou para o nome — tem que ser junto").
  */
 export function formatNameGreetForTts(text: string): string {
   let t = normalizeSpaces(text);
@@ -21,7 +24,7 @@ export function formatNameGreetForTts(text: string): string {
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
     const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
-    if (nome) return `${lead}... ${nome}!`;
+    if (nome) return `${lead}, ${nome}!`;
   }
   t = t.replace(/[.!?…]+$/u, "").trim();
   return t ? `${t}!` : t;

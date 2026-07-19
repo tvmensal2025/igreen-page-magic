@@ -53,6 +53,10 @@ Deno.test("isActivateIntent vs isSimulateIntent", () => {
   assertEquals(isActivateIntent("quero simular", null), false);
   assertEquals(isSimulateIntent("quero simular", null), true);
   assertEquals(isSimulateIntent("3", "ativar"), false);
+  assertEquals(isActivateIntent("demora pra ativar?", null), false);
+  assertEquals(isActivateIntent("quando ativa o desconto?", null), false);
+  assertEquals(isActivateIntent("quero ativar", null), true);
+  assertEquals(isActivateIntent("ativar", null), true);
 });
 
 Deno.test("hasBillReady", () => {

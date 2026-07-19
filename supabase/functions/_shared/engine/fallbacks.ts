@@ -300,7 +300,7 @@ export const humanoHandler: FallbackHandler = {
 export const SAFE_TEXT_FALLBACK: FallbackHandler = {
   handle(ctx) {
     const text = (ctx.step.messageText ?? "").trim() ||
-      "Desculpa, não entendi. Pode escrever de outro jeito?";
+      "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.";
     return {
       outbound: [{
         kind: "text",

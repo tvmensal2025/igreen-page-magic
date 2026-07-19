@@ -1,6 +1,8 @@
 // Deterministic knowledge lookup for ai-agent-router kb-only mode.
 // Looks up consultant FAQ first, then active knowledge sections. No LLM calls.
 
+import { phraseMatchesMessage as phraseMatchesShared, QA_STOPWORDS } from "./qa-phrase-match.ts";
+
 type LookupResult = {
   found: boolean;
   text: string;
@@ -8,7 +10,7 @@ type LookupResult = {
   confidence: number;
 };
 
-const STOPWORDS = new Set(["nao", "sim", "ok", "oi", "ola", "eai", "opa", "e", "a", "o", "de", "da", "do"]);
+const STOPWORDS = QA_STOPWORDS;
 
 function normalizeText(text: string): string {
   return String(text || "")
@@ -21,18 +23,7 @@ function normalizeText(text: string): string {
 }
 
 function phraseMatches(phraseRaw: string, messageRaw: string): boolean {
-  const phrase = normalizeText(phraseRaw);
-  const message = normalizeText(messageRaw);
-  if (!phrase || phrase.length < 2 || !message) return false;
-  if (message === phrase) return true;
-  const singleWord = !phrase.includes(" ");
-  if (singleWord) {
-    if (STOPWORDS.has(phrase)) return false;
-    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(message);
-  }
-  if (phrase.length >= 6 && message.includes(phrase)) return true;
-  return message.length <= 8 && phrase.includes(message);
+  return phraseMatchesShared(phraseRaw, messageRaw);
 }
 
 function tokenScore(queryRaw: string, haystackRaw: string): number {

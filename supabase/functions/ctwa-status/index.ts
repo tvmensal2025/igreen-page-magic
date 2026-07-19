@@ -15,8 +15,8 @@
 
 import { authConsultant, corsHeaders, loadConsultantAdSettings, loadPlatformAccount } from "../_shared/fb-graph.ts";
 
-// Pixel travado igual em facebook-create-campaign.
-const REQUIRED_PIXEL_ID = "1521037349653769";
+// Pixel oficial = o gravado em platform_facebook_account (igreen-oficial-remarketing).
+const FALLBACK_PIXEL_ID = "708759256921383";
 
 interface Check {
   status: "ok" | "warn" | "fail";
@@ -57,8 +57,11 @@ Deno.serve(async (req) => {
       } else {
         facebook = { status: "ok", label: "Facebook conectado", detail: `Página ${platform.page_id}` };
       }
-      // Pixel é travado — sempre OK quando a plataforma está conectada.
-      pixel = { status: "ok", label: "Pixel configurado", detail: REQUIRED_PIXEL_ID };
+      // Pixel oficial da plataforma (igreen-oficial-remarketing).
+      const pixelId = platform.pixel_id || FALLBACK_PIXEL_ID;
+      pixel = platform.pixel_id
+        ? { status: "ok", label: "Pixel configurado", detail: `${platform.pixel_id}` }
+        : { status: "warn", label: "Pixel fallback", detail: pixelId, hint: "Rode Criar pixel igreen-oficial-remarketing no Super Admin." };
     }
 
     const phone = settings?.whatsapp_destination_number || null;

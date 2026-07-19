@@ -17,6 +17,13 @@ type GeminiLikeResponse = {
   json: () => Promise<any>;
 };
 
+// Cascade: gemini-3-flash (melhor visão atual) → 2.5-flash (estável).
+// Fail-soft: se o preview falhar (402/429/5xx), cai no 2.5 sem quebrar o funil.
+const OCR_MODEL_CHAIN = [
+  "google/gemini-3-flash-preview",
+  "google/gemini-2.5-flash",
+] as const;
+
 async function callGeminiViaLovable(
   prompt: string,
   img: { mime: string; b64: string },
@@ -30,41 +37,59 @@ async function callGeminiViaLovable(
       json: async () => ({ error: { message: "LOVABLE_API_KEY ausente" } }),
     };
   }
-  const body: Record<string, unknown> = {
-    model: "google/gemini-2.5-flash",
-    messages: [{
-      role: "user",
-      content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.b64}` } },
-      ],
-    }],
-    temperature: 0,
-    max_tokens: opts.maxTokens ?? 4096,
+
+  let last: GeminiLikeResponse = {
+    ok: false,
+    status: 500,
+    json: async () => ({ error: { message: "OCR gateway sem resposta" } }),
   };
-  if (opts.responseJson) body.response_format = { type: "json_object" };
 
-  const res = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    timeout: TIMEOUT_GEMINI,
-  });
+  for (const model of OCR_MODEL_CHAIN) {
+    const body: Record<string, unknown> = {
+      model,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: `data:${img.mime};base64,${img.b64}` } },
+        ],
+      }],
+      temperature: 0,
+      max_tokens: opts.maxTokens ?? 4096,
+    };
+    if (opts.responseJson) body.response_format = { type: "json_object" };
 
-  let raw: any = {};
-  try { raw = await res.json(); } catch { /* ignore */ }
-  const text = raw?.choices?.[0]?.message?.content ?? "";
-  const finishReason = raw?.choices?.[0]?.finish_reason ?? null;
-  const errorMsg = raw?.error?.message ?? (res.ok ? undefined : `HTTP ${res.status}`);
-  const shaped = res.ok
-    ? { candidates: [{ content: { parts: [{ text }] }, finishReason }] }
-    : { error: { message: errorMsg } };
+    try {
+      const res = await fetchWithTimeout("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        timeout: TIMEOUT_GEMINI,
+      });
 
-  return {
-    ok: res.ok,
-    status: res.status,
-    json: async () => shaped,
-  };
+      let raw: any = {};
+      try { raw = await res.json(); } catch { /* ignore */ }
+      const text = raw?.choices?.[0]?.message?.content ?? "";
+      const finishReason = raw?.choices?.[0]?.finish_reason ?? null;
+      const errorMsg = raw?.error?.message ?? (res.ok ? undefined : `HTTP ${res.status}`);
+      const shaped = res.ok
+        ? { candidates: [{ content: { parts: [{ text }] }, finishReason }] }
+        : { error: { message: errorMsg } };
+
+      last = { ok: res.ok, status: res.status, json: async () => shaped };
+
+      if (res.ok && text) {
+        if (model !== OCR_MODEL_CHAIN[0]) {
+          console.warn(`[ocr] cascade usou fallback ${model}`);
+        }
+        return last;
+      }
+      console.warn(`[ocr] ${model} falhou status=${res.status} — tentando próximo`);
+    } catch (e) {
+      console.warn(`[ocr] ${model} erro: ${(e as Error).message} — tentando próximo`);
+    }
+  }
+  return last;
 }
 
 
@@ -345,7 +370,7 @@ Retorne APENAS JSON válido:
 
 Se não encontrar um campo, use "". NÃO invente dados.`;
 
-    console.log("🔍 OCR Conta - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
+    console.log("🔍 OCR Conta - Chamando Lovable AI Gateway (gemini-3-flash → 2.5-flash)...");
     const gemRes = await withRetry(
       () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {
@@ -633,7 +658,7 @@ export async function ocrDocumento(imagemUrl: string | null, geminiApiKey: strin
 
     const prompt = buildPromptDocumento(tipo, isVerso);
 
-    console.log("🔍 OCR Doc - Chamando Lovable AI Gateway (google/gemini-2.5-flash)...");
+    console.log("🔍 OCR Doc - Chamando Lovable AI Gateway (gemini-3-flash → 2.5-flash)...");
     const gemRes = await withRetry(
       () => callGeminiViaLovable(prompt, img, { maxTokens: 4096, responseJson: true }),
       {

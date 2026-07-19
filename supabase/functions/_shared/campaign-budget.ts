@@ -13,6 +13,10 @@ export interface CampaignBudgetRequirement {
   coverageDays: number;
 }
 
+/** Mínimo diário Meta em BRL (conta BR): R$ 5,17. */
+export const META_MIN_DAILY_BUDGET_CENTS = 517;
+export const META_MIN_DAILY_BUDGET_BRL = META_MIN_DAILY_BUDGET_CENTS / 100;
+
 /** Mantém pré-voo e criação com a mesma regra de cobertura financeira. */
 export function calculateCampaignBudgetRequirement(input: CampaignBudgetInput): CampaignBudgetRequirement {
   const dailyBudgetCents = Math.max(0, Math.round(Number(input.dailyBudgetCents) || 0));
