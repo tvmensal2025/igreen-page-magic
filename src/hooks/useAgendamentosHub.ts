@@ -149,23 +149,34 @@ export function useAgendamentosHub(consultantId: string) {
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
       setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
 
-      // Mapeia rows do motor para o formato esperado pela timeline.
+      // Mapeia rows do motor + busca nome/telefone dos clientes em 1 query só.
+      const cadenceRows = (cadenceRes.data || []) as Array<{
+        id: string;
+        customer_id: string;
+        stage: string;
+        next_action_at: string;
+        paused_until: string | null;
+      }>;
+      const cadenceCustomerIds = Array.from(new Set(cadenceRows.map((r) => r.customer_id).filter(Boolean)));
+      const cadenceCustomers = cadenceCustomerIds.length
+        ? await supabase
+            .from("customers")
+            .select("id, name, phone_whatsapp")
+            .in("id", cadenceCustomerIds)
+        : { data: [] as Array<{ id: string; name: string | null; phone_whatsapp: string | null }> };
+      const custMap = new Map<string, { name: string | null; phone_whatsapp: string | null }>();
+      for (const c of (cadenceCustomers.data || []) as Array<{ id: string; name: string | null; phone_whatsapp: string | null }>) {
+        custMap.set(c.id, { name: c.name, phone_whatsapp: c.phone_whatsapp });
+      }
       setCadence(
-        ((cadenceRes.data || []) as Array<{
-          id: string;
-          customer_id: string;
-          stage: string;
-          next_action_at: string;
-          paused_until: string | null;
-          customer?: { name: string | null; phone_whatsapp: string | null } | null;
-        }>).map((r) => ({
+        cadenceRows.map((r) => ({
           id: r.id,
           customer_id: r.customer_id,
           stage: r.stage,
           next_action_at: r.next_action_at,
           paused_until: r.paused_until,
-          customer_name: r.customer?.name ?? null,
-          customer_phone: r.customer?.phone_whatsapp ?? null,
+          customer_name: custMap.get(r.customer_id)?.name ?? null,
+          customer_phone: custMap.get(r.customer_id)?.phone_whatsapp ?? null,
         })),
       );
 
