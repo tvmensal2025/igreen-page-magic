@@ -145,6 +145,7 @@ export function buildAgendamentosTimeline(input: {
   botFollowups: BotFollowupRow[];
   bulk: BulkCampaignRow[];
   voice?: VoiceCampaignRow[];
+  cadence?: CadenceScheduleRow[];
 }): AgendamentoTimelineItem[] {
   const now = Date.now();
   const items: AgendamentoTimelineItem[] = [];
