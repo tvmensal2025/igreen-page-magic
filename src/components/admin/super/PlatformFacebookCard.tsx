@@ -597,7 +597,19 @@ export function PlatformFacebookCard() {
   );
 }
 
-function ReportRow({ title, ok, msg }: { title: string; ok?: boolean; msg?: string }) {
+function ReportRow({
+  title,
+  ok,
+  msg,
+  actionHref,
+  actionLabel,
+}: {
+  title: string;
+  ok?: boolean;
+  msg?: string;
+  actionHref?: string;
+  actionLabel?: string;
+}) {
   return (
     <div className={`rounded-lg border p-3 ${ok ? "border-primary/30 bg-primary/5" : "border-warning/30 bg-warning/5"}`}>
       <div className="flex items-center gap-2 font-medium">
@@ -605,6 +617,16 @@ function ReportRow({ title, ok, msg }: { title: string; ok?: boolean; msg?: stri
         {title}
       </div>
       {msg && <p className="text-xs text-muted-foreground mt-1 break-words">{msg}</p>}
+      {actionHref && actionLabel && (
+        <a
+          href={actionHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block mt-2 text-xs font-medium text-primary hover:underline"
+        >
+          {actionLabel}
+        </a>
+      )}
     </div>
   );
 }

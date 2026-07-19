@@ -25,7 +25,7 @@ interface DayRow {
 
 export function MetaAudiencePanel({ consultantId }: Props) {
   const { toast } = useToast();
-  const { isSuperAdmin, isAdmin } = useUserRole();
+  const { isSuperAdmin, isAdmin } = useUserRole(consultantId);
   const canEditDdd = isSuperAdmin || isAdmin;
 
   const [loading, setLoading] = useState(true);
