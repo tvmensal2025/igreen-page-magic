@@ -84,6 +84,8 @@ export function cadenceStageLabel(stage: string): { channel: "WhatsApp" | "Liga√
   if (stage === "AI_QUALIFYING") return { channel: "Sofia", label: "Sofia qualificando" };
   if (stage === "GREETED") return { channel: "Sofia", label: "Sofia inicial" };
   return { channel: "WhatsApp", label: stage };
+}
+
 
 export interface ReactivationSettingsSummary {
   auto_enabled: boolean;
