@@ -103,13 +103,49 @@ export function isCadenceButtonId(id: string | null | undefined): boolean {
   return !!k && ALL_CADENCE_BUTTON_IDS.has(k);
 }
 
+/**
+ * Estágios dos Grupos B/C (onda fria + recall + meta).
+ * NEW / GREETED / AI_QUALIFYING são Grupo A — NÃO são retorno de cadência.
+ */
+export function isCadenceBcStage(stage: string | null | undefined): boolean {
+  const s = String(stage || "").trim();
+  if (!s) return false;
+  return /^(COLD_|RECALL_|SMS_|CALL_|RETARGET_)/.test(s) || s === "CLOSE_LOST";
+}
+
+/** Pré-onda / qualificação = Grupo A (não rotear pelo nudge B/C). */
+export function isCadenceGroupAStage(stage: string | null | undefined): boolean {
+  const s = String(stage || "").trim();
+  return s === "NEW" || s === "GREETED" || s === "AI_QUALIFYING";
+}
+
+function stageFromLeadResponded(reason: string | null | undefined): string | null {
+  const m = /^lead_responded(?::(.+))?$/.exec(String(reason || "").trim());
+  if (!m) return null;
+  return m[1] || null;
+}
+
+/**
+ * Contexto de retorno B/C → Grupo A.
+ * NÃO dispara no primeiro "Oi" de lead GREETED/NEW (Grupo A):
+ * `onLeadInboundResponse` pausa com lead_responded:<STAGE> em qualquer inbound;
+ * se o estágio de origem era Grupo A, o bot-flow/welcome assume.
+ */
 export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
   if (input.customer?.do_not_contact) return false;
   if (isCadenceButtonId(input.buttonId)) return true;
+
+  const fromResponded = stageFromLeadResponded(input.cadencePausedReason);
+  // Explicitamente Grupo A → nunca nudge de cadência (mesmo com origin_recovery legado).
+  if (fromResponded && isCadenceGroupAStage(fromResponded)) return false;
+  if (isCadenceGroupAStage(input.cadenceStage)) return false;
+
+  if (fromResponded && isCadenceBcStage(fromResponded)) return true;
+  if (isCadenceBcStage(input.cadenceStage)) return true;
+
+  // Marcado pelo hook só quando vinha de B/C (ou legado já em recuperação).
   if (String(input.customer?.origin_recovery || "") === "cadence") return true;
-  const reason = String(input.cadencePausedReason || "");
-  if (reason.startsWith("lead_responded")) return true;
-  if (/^(COLD_|RECALL_|SMS_|CALL_)/.test(String(input.cadenceStage || ""))) return true;
+
   return false;
 }
 

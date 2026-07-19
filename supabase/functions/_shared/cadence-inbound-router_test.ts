@@ -104,7 +104,7 @@ Deno.test("resolveCadenceInboundRoute: fora de contexto cadência → null", () 
   assertEquals(r, null);
 });
 
-Deno.test("isCadenceReturnContext: paused_reason lead_responded", () => {
+Deno.test("isCadenceReturnContext: paused_reason lead_responded B/C", () => {
   assertEquals(
     isCadenceReturnContext({
       customer: {},
@@ -112,6 +112,47 @@ Deno.test("isCadenceReturnContext: paused_reason lead_responded", () => {
     }),
     true,
   );
+  assertEquals(
+    isCadenceReturnContext({
+      customer: {},
+      cadencePausedReason: "lead_responded:COLD_1",
+    }),
+    true,
+  );
+});
+
+Deno.test("isCadenceReturnContext: GREETED/NEW/AI_QUALIFYING NÃO é retorno B/C", () => {
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { origin_recovery: "cadence" },
+      cadencePausedReason: "lead_responded:GREETED",
+    }),
+    false,
+  );
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { origin_recovery: "cadence" },
+      cadencePausedReason: "lead_responded:NEW",
+    }),
+    false,
+  );
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { origin_recovery: "cadence" },
+      cadencePausedReason: "lead_responded:AI_QUALIFYING",
+    }),
+    false,
+  );
+});
+
+Deno.test("resolveCadenceInboundRoute: oi com origin_recovery mas GREETED → null (Grupo A)", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { name: "Marilsa", origin_recovery: "cadence" },
+    messageText: "oi",
+    cadencePausedReason: "lead_responded:GREETED",
+    cadenceStage: "PAUSED",
+  });
+  assertEquals(r, null);
 });
 
 Deno.test("resolveCadenceInboundRoute: economy → educativo + faixas", () => {

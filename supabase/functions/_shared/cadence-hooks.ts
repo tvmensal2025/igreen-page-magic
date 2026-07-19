@@ -12,6 +12,7 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { nextBusinessMorning } from "./cadence-engine.ts";
 import { isAutomationEnabled } from "./automation-gate.ts";
 import { loadRetentionSettings } from "./retention-orchestrator.ts";
+import { isCadenceBcStage } from "./cadence-inbound-router.ts";
 
 export async function ensureCadenceState(
   // deno-lint-ignore no-explicit-any
@@ -93,25 +94,32 @@ export async function onLeadInboundResponse(
       stage: "AI_QUALIFYING",
       channel: "system",
       status: "queued",
-      detail: { reason: "inbound_response", resumed_flow: true },
+      detail: {
+        reason: "inbound_response",
+        resumed_flow: true,
+        prev_stage: prevStage || null,
+        from_bc: isCadenceBcStage(prevStage),
+      },
     }).then(() => {}, () => {});
 
-    // 3) Reset da conversa: apaga estado do fluxo custom para que o inbound
-    //    atual seja processado como se fosse novo — reentra no bot_flow ativo
-    //    do consultor (variante A) pelo caminho normal.
-    await supabase
-      .from("customers")
-      .update({
-        conversation_step: null,
-        custom_step_retries: 0,
-        last_custom_prompt_at: null,
-        ai_followups_count: 0,
-        origin_recovery: "cadence",
-      })
-      .eq("id", customer_id);
+    // 3) Só marca origem "cadence" e reseta o fluxo quando o lead VINHA
+    //    de B/C (COLD/RECALL/SMS/CALL). Em GREETED/NEW/AI_QUALIFYING o
+    //    inbound é Grupo A puro — bot-flow/welcome assume, sem nudge B/C.
+    if (isCadenceBcStage(prevStage)) {
+      await supabase
+        .from("customers")
+        .update({
+          conversation_step: null,
+          custom_step_retries: 0,
+          last_custom_prompt_at: null,
+          ai_followups_count: 0,
+          origin_recovery: "cadence",
+        })
+        .eq("id", customer_id);
 
-    // Libera os slots de mídia/áudio para o fluxo reintroduzir welcomes.
-    await supabase.from("ai_slot_dispatch_log").delete().eq("customer_id", customer_id);
+      // Libera slots de mídia/áudio para o fluxo reintroduzir welcomes.
+      await supabase.from("ai_slot_dispatch_log").delete().eq("customer_id", customer_id);
+    }
   } catch (err) {
     console.warn("onLeadInboundResponse failed", err);
   }
