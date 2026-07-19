@@ -239,13 +239,14 @@ export function AgendamentosHub({
     instanceName,
     isConnected: isConnected ?? (isWhapi ? true : undefined),
   });
+  const channelBlockedReason = channelReady.ok ? null : channelReady.reason;
 
   const handleCreateManual = async () => {
     if (!phone.trim() || !text.trim() || !scheduledAt) return;
     if (!channelReady.ok) {
       toast({
         title: "WhatsApp não conectado",
-        description: channelReady.reason,
+        description: channelBlockedReason || "Conecte o WhatsApp para agendar.",
         variant: "destructive",
       });
       return;
@@ -1041,16 +1042,16 @@ export function AgendamentosHub({
                 className="gap-2 rounded-xl font-bold text-sm"
                 style={{ background: "var(--gradient-green)" }}
                 disabled={!channelReady.ok}
-                title={!channelReady.ok ? channelReady.reason : undefined}
+                title={channelBlockedReason || undefined}
               >
                 <Plus className="w-4 h-4" />
                 Agendar nova
               </Button>
             </div>
 
-            {!channelReady.ok && (
+            {channelBlockedReason && (
               <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                {channelReady.reason} A lista do que já está agendado continua aparecendo. Se faltar
+                {channelBlockedReason} A lista do que já está agendado continua aparecendo. Se faltar
                 comprovante de conexão ou outra pendência, resolva na aba Conversas e volte para agendar.
               </p>
             )}

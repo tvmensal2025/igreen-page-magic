@@ -36,12 +36,12 @@ describe("resolveScheduleChannel", () => {
       isConnected: false,
     });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.pending).toBe("whatsapp_disconnected");
+    expect(r.ok === false && r.pending).toBe("whatsapp_disconnected");
   });
 
   it("sem canal → pendência", () => {
     const r = resolveScheduleChannel({ isWhapi: false, instanceName: "" });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.pending).toBe("whatsapp_disconnected");
+    expect(r.ok === false && r.pending).toBe("whatsapp_disconnected");
   });
 });
