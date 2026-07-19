@@ -62,6 +62,29 @@ export interface VoiceCampaignRow {
   created_at: string;
 }
 
+/** Linha do motor de cadência (A→B→C) — 1 lead = 1 próximo envio programado. */
+export interface CadenceScheduleRow {
+  id: string;
+  customer_id: string;
+  stage: string;
+  next_action_at: string;
+  paused_until: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+}
+
+/** Traduz o código do estágio do motor para o que o consultor entende. */
+export function cadenceStageLabel(stage: string): { channel: "WhatsApp" | "Ligação" | "SMS" | "Meta" | "Sofia"; label: string } {
+  if (stage.startsWith("COLD_")) return { channel: "WhatsApp", label: `WhatsApp reengajamento ${stage.replace("COLD_", "")}` };
+  if (stage.startsWith("CALL_")) return { channel: "Ligação", label: `Ligação Sofia ${stage.replace("CALL_", "")}` };
+  if (stage === "SMS_TEMA_2") return { channel: "SMS", label: "SMS tema · Dia 2" };
+  if (stage === "SMS_TEMA_7") return { channel: "SMS", label: "SMS tema · Dia 7" };
+  if (stage.startsWith("SMS_")) return { channel: "SMS", label: `SMS ${stage.replace("SMS_", "")}` };
+  if (stage === "META") return { channel: "Meta", label: "Retargeting Meta" };
+  if (stage === "AI_QUALIFYING") return { channel: "Sofia", label: "Sofia qualificando" };
+  if (stage === "GREETED") return { channel: "Sofia", label: "Sofia inicial" };
+  return { channel: "WhatsApp", label: stage };
+
 export interface ReactivationSettingsSummary {
   auto_enabled: boolean;
   horas_ate_primeiro_followup: number;
