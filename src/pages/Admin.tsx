@@ -173,7 +173,7 @@ const AdminContent = () => {
   }, []);
   const [periodDays, setPeriodDays] = useState(30);
 
-  const { instanceName, isWhapi } = useWhatsApp(userId || "");
+  const { instanceName, isWhapi, connectionStatus } = useWhatsApp(userId || "");
 
   // Presença do consultor: mantém heartbeat na tabela `consultant_presence`
   // a cada 25s. O bot consulta antes de mandar dados de OCR pro cliente —
@@ -542,6 +542,7 @@ const AdminContent = () => {
                 consultantId={userId}
                 instanceName={instanceName || ""}
                 isWhapi={!!isWhapi}
+                isConnected={!!isWhapi || connectionStatus === "connected"}
                 defaultTab={(pendingHubTab as import("@/lib/agendamentosHub").AgendamentosHubTab | null) ?? undefined}
                 key={pendingHubTab || "agendamentos-default"}
                 onOpenChat={handleOpenChatFromCustomer}

@@ -23,9 +23,9 @@ export interface ResolvedChannel {
  * Ordem:
  * 1) Super admin com Whapi → Whapi
  * 2) Evolution saudável do consultor → Evolution
- * 3) Whapi disponível (token) como fallback operacional → Whapi
+ * 3) Hint gravado `whapi*` + mesmo consultor é super admin → Whapi (safety-net)
  *
- * Nunca assume Evolution só porque `instance_name` antigo ficou gravado.
+ * NÃO usa token Whapi da plataforma para consultor Evolution comum.
  */
 export async function resolveConsultantOutboundChannel(
   supabase: any,
@@ -79,27 +79,22 @@ export async function resolveConsultantOutboundChannel(
       inst?.instance_name &&
       !inst.manual_review_required &&
       !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
-      (!status || HEALTHY_STATUSES.has(status) || status === "needs_reconnect")
+      (!status || HEALTHY_STATUSES.has(status))
     ) {
-      // needs_reconnect: instância Evolution legada pode existir enquanto canal real é Whapi;
-      // só usamos Evolution se status saudável. needs_reconnect → tenta Whapi abaixo.
-      if (!status || HEALTHY_STATUSES.has(status)) {
-        const adapter = getAdapter({
-          kind: "evolution",
-          input: {
-            apiUrl: env.evolutionUrl,
-            apiKey: env.evolutionKey,
-            instanceName: inst.instance_name,
-          },
-        });
-        return { kind: "evolution", instanceName: inst.instance_name, adapter };
-      }
+      const adapter = getAdapter({
+        kind: "evolution",
+        input: {
+          apiUrl: env.evolutionUrl,
+          apiKey: env.evolutionKey,
+          instanceName: inst.instance_name,
+        },
+      });
+      return { kind: "evolution", instanceName: inst.instance_name, adapter };
     }
   }
 
-  // 3) Whapi só se o consultor já usa Whapi (hint) ou é super admin (já coberto acima).
-  // Não redirecionar consultor Evolution para o token Whapi da plataforma.
-  if (env.whapiToken && hintInstanceName?.startsWith("whapi")) {
+  // 3) Safety-net: hint whapi* só se for o super admin (nunca consultor Evolution).
+  if (isSuper && env.whapiToken && hintInstanceName?.startsWith("whapi")) {
     const adapter = getAdapter({
       kind: "whapi",
       input: { apiToken: env.whapiToken, instanceName: hintInstanceName },

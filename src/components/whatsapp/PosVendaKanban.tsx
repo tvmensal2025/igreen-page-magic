@@ -301,14 +301,13 @@ export default function PosVendaKanban({
           !!inst?.instance_name &&
           (!status || ["connected", "online", "open"].includes(status));
 
-        // Super admin / Whapi: se Evolution não está saudável, agenda via whapi-superadmin.
-        let scheduleInstance = evoOk ? inst!.instance_name : null;
-        if (!scheduleInstance) {
-          try {
-            const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: ownerId });
-            if (isSuper === true) scheduleInstance = "whapi-superadmin";
-          } catch { /* ignora */ }
-        }
+        // Super admin → sempre Whapi (mesmo com Evolution legado no banco).
+        let scheduleInstance: string | null = null;
+        try {
+          const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: ownerId });
+          if (isSuper === true) scheduleInstance = "whapi-superadmin";
+        } catch { /* ignora */ }
+        if (!scheduleInstance && evoOk) scheduleInstance = inst!.instance_name;
 
         if (!scheduleInstance) {
           toast.warning(

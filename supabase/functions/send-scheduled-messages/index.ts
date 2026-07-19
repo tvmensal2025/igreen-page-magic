@@ -13,7 +13,7 @@ import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
-import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { resolveConsultantConnectedWaPhone } from "../_shared/consultant-wa-phone.ts";
 import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import {
@@ -159,17 +159,21 @@ Deno.serve(async (req) => {
             continue;
           }
           if (cust?.id || phone) {
-            const gate = await assertBotOutboundAllowed(supabase as any, {
+            // Agenda MANUAL do consultor: NÃO usa assertBotOutboundAllowed
+            // (esse gate checa bot_global_enabled e mataria o envio com kill switch).
+            // Mantém só DNC / never-contact.
+            const suppression = await assertCanContact(supabase as any, {
               customerId: (cust as { id?: string } | null)?.id,
               phone,
               consultantId: msg.consultant_id || (cust as { consultant_id?: string } | null)?.consultant_id,
+              channel: "whatsapp",
             });
-            if (!gate.allowed) {
+            if (!suppression.allowed) {
               await supabase
                 .from("scheduled_messages")
                 .update({ status: "skipped", processing_started_at: null })
                 .eq("id", msg.id);
-              console.log(`⏭️ [scheduled] msg ${msg.id} pulada — gate (${gate.reason})`);
+              console.log(`⏭️ [scheduled] msg ${msg.id} pulada — DNC (${suppression.reason})`);
               skippedPaused++;
               continue;
             }

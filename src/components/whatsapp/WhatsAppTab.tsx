@@ -28,6 +28,7 @@ const SchedulePanel = lazy(() => import("./AgendamentosHub").then(m => ({
     consultantId: string;
     instanceName: string;
     isWhapi?: boolean;
+    isConnected?: boolean;
     onOpenChat?: (phone: string) => void;
   }) => (
     <m.AgendamentosHub {...props} showAdminShortcut />
@@ -523,6 +524,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
                 consultantId={userId}
                 instanceName={instanceName || ""}
                 isWhapi={!!isWhapi}
+                isConnected={!!isWhapi || connectionStatus === "connected"}
                 onOpenChat={handleOpenChatFromCustomer}
               />
             </Suspense>

@@ -181,6 +181,8 @@ interface AgendamentosHubProps {
   instanceName: string;
   /** true = consultor no Whapi; agenda dispara via Whapi no cron. */
   isWhapi?: boolean;
+  /** false = desconectado — bloqueia criar agendamento. */
+  isConnected?: boolean;
   defaultTab?: AgendamentosHubTab;
   /** Quando true, mostra atalho para abrir como aba principal do Admin */
   showAdminShortcut?: boolean;
@@ -191,6 +193,7 @@ export function AgendamentosHub({
   consultantId,
   instanceName,
   isWhapi = false,
+  isConnected,
   defaultTab = "mapa",
   showAdminShortcut = false,
   onOpenChat,
@@ -231,7 +234,11 @@ export function AgendamentosHub({
     stats,
   } = useAgendamentosHub(consultantId);
 
-  const channelReady = resolveScheduleChannel({ isWhapi, instanceName });
+  const channelReady = resolveScheduleChannel({
+    isWhapi,
+    instanceName,
+    isConnected: isConnected ?? (isWhapi ? true : undefined),
+  });
 
   const handleCreateManual = async () => {
     if (!phone.trim() || !text.trim() || !scheduledAt) return;

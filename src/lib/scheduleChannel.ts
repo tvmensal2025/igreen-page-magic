@@ -1,6 +1,8 @@
 /**
  * Instância gravada em `scheduled_messages.instance_name` conforme o canal
  * do consultor conectado: Whapi → whapi-superadmin; Evolution → instanceName.
+ *
+ * Exige conexão real (`isConnected`) para não agendar em Evolution offline.
  */
 export type ScheduleChannelReady =
   | { ok: true; instanceName: string; channel: "whapi" | "evolution" }
@@ -9,13 +11,31 @@ export type ScheduleChannelReady =
 export function resolveScheduleChannel(opts: {
   isWhapi?: boolean;
   instanceName?: string | null;
+  /** false = QR/desconectado / needs_reconnect — não permite agendar. */
+  isConnected?: boolean;
 }): ScheduleChannelReady {
   if (opts.isWhapi) {
+    if (opts.isConnected === false) {
+      return {
+        ok: false,
+        reason:
+          "Whapi desconectado ou indisponível. Reconecte na aba Conversas e agende de novo.",
+        pending: "whatsapp_disconnected",
+      };
+    }
     const name =
       opts.instanceName?.startsWith("whapi") ? opts.instanceName : "whapi-superadmin";
     return { ok: true, instanceName: name, channel: "whapi" };
   }
   const name = (opts.instanceName || "").trim();
+  if (opts.isConnected === false) {
+    return {
+      ok: false,
+      reason:
+        "WhatsApp desconectado. Conecte (Whapi ou Evolution) na aba Conversas para agendar. Se houver outra pendência, resolva antes.",
+      pending: "whatsapp_disconnected",
+    };
+  }
   if (name && !name.startsWith("whapi")) {
     return { ok: true, instanceName: name, channel: "evolution" };
   }
