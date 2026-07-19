@@ -14,6 +14,7 @@ import {
   type AgendamentoTimelineItem,
   type BotFollowupRow,
   type BulkCampaignRow,
+  type CadenceScheduleRow,
   type ReactivationSettingsSummary,
   type ScheduledMessageRow,
   type VoiceCampaignRow,
@@ -26,6 +27,7 @@ export function useAgendamentosHub(consultantId: string) {
   const [botFollowups, setBotFollowups] = useState<BotFollowupRow[]>([]);
   const [bulkCampaigns, setBulkCampaigns] = useState<BulkCampaignRow[]>([]);
   const [voiceCampaigns, setVoiceCampaigns] = useState<VoiceCampaignRow[]>([]);
+  const [cadence, setCadence] = useState<CadenceScheduleRow[]>([]);
   const [reactivationSettings, setReactivationSettings] = useState<ReactivationSettingsSummary>(
     DEFAULT_REACTIVATION_SETTINGS,
   );
@@ -47,6 +49,7 @@ export function useAgendamentosHub(consultantId: string) {
         settingsRes,
         templatesRes,
         pendingValidationRes,
+        cadenceRes,
       ] = await Promise.all([
         supabase
           .from("scheduled_messages")
@@ -108,6 +111,15 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("customer_origin", "igreen_sync")
           .not("pos_venda_pending_stage", "is", null)
           .eq("pos_venda_invalid", false),
+        // Motor de cadência A→B→C: TODOS os próximos envios programados (sem limite de horizonte).
+        supabase
+          .from("lead_cadence_state")
+          .select("id, customer_id, stage, next_action_at, paused_until")
+          .eq("consultant_id", consultantId)
+          .not("next_action_at", "is", null)
+          .not("stage", "in", "(WON)")
+          .order("next_action_at", { ascending: true })
+          .limit(1000),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
@@ -136,6 +148,37 @@ export function useAgendamentosHub(consultantId: string) {
       setBotFollowups((followupRes.data || []) as BotFollowupRow[]);
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
       setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
+
+      // Mapeia rows do motor + busca nome/telefone dos clientes em 1 query só.
+      const cadenceRows = (cadenceRes.data || []) as Array<{
+        id: string;
+        customer_id: string;
+        stage: string;
+        next_action_at: string;
+        paused_until: string | null;
+      }>;
+      const cadenceCustomerIds = Array.from(new Set(cadenceRows.map((r) => r.customer_id).filter(Boolean)));
+      const cadenceCustomers = cadenceCustomerIds.length
+        ? await supabase
+            .from("customers")
+            .select("id, name, phone_whatsapp")
+            .in("id", cadenceCustomerIds)
+        : { data: [] as Array<{ id: string; name: string | null; phone_whatsapp: string | null }> };
+      const custMap = new Map<string, { name: string | null; phone_whatsapp: string | null }>();
+      for (const c of (cadenceCustomers.data || []) as Array<{ id: string; name: string | null; phone_whatsapp: string | null }>) {
+        custMap.set(c.id, { name: c.name, phone_whatsapp: c.phone_whatsapp });
+      }
+      setCadence(
+        cadenceRows.map((r) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          stage: r.stage,
+          next_action_at: r.next_action_at,
+          paused_until: r.paused_until,
+          customer_name: custMap.get(r.customer_id)?.name ?? null,
+          customer_phone: custMap.get(r.customer_id)?.phone_whatsapp ?? null,
+        })),
+      );
 
       if (settingsRes.data) {
         const s = settingsRes.data;
@@ -169,6 +212,7 @@ export function useAgendamentosHub(consultantId: string) {
     botFollowups,
     bulk: bulkCampaigns,
     voice: voiceCampaigns,
+    cadence,
   });
 
   const pendingManual = manual.filter((m) => m.status === "pending");

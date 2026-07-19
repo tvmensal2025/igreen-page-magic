@@ -116,6 +116,13 @@ function describeSource(item: AgendamentoTimelineItem): {
         targetTab: "campanhas",
         ctaLabel: "Ver campanhas",
       };
+    case "cadence_send":
+      return {
+        where: "Motor A→B→C (cadência automática)",
+        hint: "Envio programado pelo motor de reengajamento. Para pausar/editar textos, abra Grupo B ou o Motor de Cadência.",
+        targetTab: "grupo-b",
+        ctaLabel: "Abrir Grupo B",
+      };
   }
 }
 
@@ -158,6 +165,7 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
     case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
     case "voice_campaign": return <Phone className="w-3.5 h-3.5 text-info" />;
+    case "cadence_send": return <Flame className="w-3.5 h-3.5 text-primary" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
   }
 }
@@ -738,6 +746,7 @@ export function AgendamentosHub({
                 const filtered = timelineFilter === "all" ? timeline : timeline.filter((i) => i.kind === timelineFilter);
                 const chips: Array<{ id: "all" | AgendamentoTimelineItem["kind"]; label: string }> = [
                   { id: "all", label: "Todos" },
+                  { id: "cadence_send", label: "Motor A→B→C" },
                   { id: "manual_scheduled", label: "Manual" },
                   { id: "pos_venda_auto", label: "Pós-venda" },
                   { id: "bulk_campaign", label: "WA" },
