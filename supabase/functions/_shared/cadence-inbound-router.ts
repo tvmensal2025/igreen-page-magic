@@ -152,15 +152,15 @@ function stageFromLeadResponded(reason: string | null | undefined): string | nul
 
 /**
  * Contexto de retorno B/C → Grupo A.
- * NÃO dispara no primeiro "Oi" de lead GREETED/NEW (Grupo A):
- * `onLeadInboundResponse` pausa com lead_responded:<STAGE> em qualquer inbound;
- * se o estágio de origem era Grupo A, o bot-flow/welcome assume.
- * NÃO dispara no meio do fluxo custom (flow:uuid / a3 / cadastro) — senão
- * "Conhecer mais" digitado vira nudge e pede a conta de novo (loop).
+ * Ordem importa:
+ * 1) Lead DENTRO do fluxo A / pipeline de cadastro → NUNCA intercepta
+ *    (nem com buttonId: a3 usa os mesmos ids more_benefits/activate/human
+ *    e o clique pertence ao flow engine, não à cadência).
+ * 2) Origem Grupo A (GREETED/NEW/AI_QUALIFYING) → não intercepta.
+ * 3) Só então botão de cadência / estágio B/C / origin_recovery.
  */
 export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
   if (input.customer?.do_not_contact) return false;
-  if (isCadenceButtonId(input.buttonId)) return true;
 
   const step = String(input.customer?.conversation_step || "");
   if (isActiveGroupAConversation(step)) return false;
@@ -169,6 +169,8 @@ export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
   // Explicitamente Grupo A → nunca nudge de cadência (mesmo com origin_recovery legado).
   if (fromResponded && isCadenceGroupAStage(fromResponded)) return false;
   if (isCadenceGroupAStage(input.cadenceStage)) return false;
+
+  if (isCadenceButtonId(input.buttonId)) return true;
 
   if (fromResponded && isCadenceBcStage(fromResponded)) return true;
   if (isCadenceBcStage(input.cadenceStage)) return true;
@@ -487,8 +489,28 @@ export type CadenceRouteApplyResult = {
 /**
  * Aplica roteamento no banco e envia resposta (texto ou botões).
  * Chamado pelos webhooks após `onLeadInboundResponse`.
- * Texto livre sem clique → tenta catálogo + IA (matchButtonIntent) antes de decidir.
+ * Texto livre sem clique → catálogo determinístico + IA, MAS:
+ * - só quando o contexto JÁ é retorno B/C (sem depender do botão inferido);
+ * - IA nunca decide human/call_me/stop (nome próprio não pode virar handoff);
+ * - dentro do fluxo A (flow:/a1/ask_*) nada disso roda.
  */
+const AI_SAFE_BUTTON_IDS = new Set([
+  "bill_low",
+  "bill_mid",
+  "bill_high",
+  "analyze",
+  "send_photo",
+  "register",
+  "activate",
+  "bill_value",
+  "more_benefits",
+  "how_it_works",
+  "explain",
+  "economy",
+  "club",
+  "referral",
+]);
+
 export async function applyCadenceInboundRoute(
   // deno-lint-ignore no-explicit-any
   supabase: any,
@@ -501,7 +523,11 @@ export async function applyCadenceInboundRoute(
     };
   },
 ): Promise<CadenceRouteApplyResult> {
-  // Se não veio buttonId, resolve por título/frase e, se preciso, IA.
+  // Gate ANTES de qualquer inferência: o contexto precisa ser retorno B/C
+  // por si só. Sem isso, a IA mapeava o NOME digitado no a1 para "humano".
+  const inCadenceContext = isCadenceReturnContext({ ...opts, buttonId: opts.buttonId ?? null });
+  if (!inCadenceContext) return { routed: false, continueBotFlow: true };
+
   if (!opts.buttonId && opts.messageText && !opts.isFile && !opts.hasImage && !opts.hasDocument) {
     let resolved = resolveCadenceButtonFromText(opts.messageText);
     if (!resolved) {
@@ -510,7 +536,9 @@ export async function applyCadenceInboundRoute(
           apiKey: Deno.env.get("LOVABLE_API_KEY"),
           timeoutMs: 3500,
         });
-        if (intent.match && intent.confidence >= 0.6) {
+        // IA só decide destinos "seguros" (cadastro/educativo). Handoff,
+        // ligação e opt-out exigem clique real ou frase determinística.
+        if (intent.match && intent.confidence >= 0.75 && AI_SAFE_BUTTON_IDS.has(intent.match)) {
           resolved = intent.match;
           console.log(
             `[cadence-router] ai-button-intent match=${intent.match} conf=${intent.confidence} reason=${intent.reason}`,

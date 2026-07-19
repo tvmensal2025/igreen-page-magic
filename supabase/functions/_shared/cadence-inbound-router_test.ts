@@ -218,3 +218,45 @@ Deno.test("valor já salvo + texto ambíguo → avança cadastro (sem loop)", ()
   assertEquals(r?.reason, "cadence_known_bill_forward");
   assertEquals(r?.updates.electricity_bill_value, 450);
 });
+
+Deno.test("nome digitado no a1 (flow) NUNCA vira handoff de cadência", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: {
+      name: "Luciano",
+      origin_recovery: "cadence",
+      conversation_step: "flow:98287e05-a9e9-4490-bbcd-b87faf2956c9",
+    },
+    messageText: "Luciano",
+  });
+  assertEquals(r, null);
+});
+
+Deno.test("buttonId human DENTRO do fluxo A → não intercepta (flow engine decide)", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: {
+      name: "Luciano",
+      origin_recovery: "cadence",
+      conversation_step: "flow:98287e05-a9e9-4490-bbcd-b87faf2956c9",
+    },
+    buttonId: "human",
+    isButton: true,
+  });
+  assertEquals(r, null);
+});
+
+Deno.test("isCadenceReturnContext: dentro de ask_email/aguardando_conta → false", () => {
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { origin_recovery: "cadence", conversation_step: "aguardando_conta" },
+      messageText: "segue a foto",
+    }),
+    false,
+  );
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { origin_recovery: "cadence", conversation_step: "ask_email" },
+      messageText: "luciano@gmail.com",
+    }),
+    false,
+  );
+});

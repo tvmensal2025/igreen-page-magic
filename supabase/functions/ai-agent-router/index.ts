@@ -1105,17 +1105,34 @@ RESPONDA APENAS com o JSON do schema. reply_text deve ser CURTO (1-3 frases). Se
       updates.conversation_step = _ghostToReal[_proposedStep];
     }
     if (hasBill && hasDoc && !["cadastro_portal", "aguardando_otp", "aguardando_facial", "complete", "handoff_humano"].includes(updates.conversation_step || stepBefore)) {
-      updates.conversation_step = "cadastro_portal";
-      // Dispara portal worker via helper compartilhado (rotear por consultant.portal_kind).
-      // Fire-and-forget: não trava o fluxo da IA.
-      (async () => {
-        try {
-          const { dispatchPortalWorker } = await import("../_shared/portal-worker.ts");
-          await dispatchPortalWorker(supabase, customer_id);
-        } catch (e: any) {
-          console.error("portal worker dispatch error:", e?.message);
+      // Funil obrigatório: INTERESSE → CONTA → DOCUMENTO → E-MAIL → telefone →
+      // só então PORTAL/OTP. `getNextMissingStep` decide sem pular etapa —
+      // antes bastava valor+cpf e o portal disparava sem doc/e-mail reais.
+      try {
+        const { getNextMissingStep } = await import("../_shared/conversation-helpers.ts");
+        const { resolvePortalGate } = await import("../_shared/bot/cadastro-fixes.ts");
+        const { data: _consultorEmailRow } = await supabase
+          .from("consultants").select("email").eq("id", consultantId).maybeSingle();
+        const gate = resolvePortalGate(
+          getNextMissingStep(customer, { consultorEmail: (_consultorEmailRow as any)?.email ?? null }),
+        );
+        if (gate.action === "portal") {
+          updates.conversation_step = "cadastro_portal";
+          (async () => {
+            try {
+              const { dispatchPortalWorker } = await import("../_shared/portal-worker.ts");
+              await dispatchPortalWorker(supabase, customer_id);
+            } catch (e: any) {
+              console.error("portal worker dispatch error:", e?.message);
+            }
+          })().catch(() => {});
+        } else {
+          updates.conversation_step = gate.step;
+          console.log(`[ai-agent-router] portal-gate: falta ${gate.step} — sem pular etapa`);
         }
-      })().catch(() => {});
+      } catch (e: any) {
+        console.warn("[ai-agent-router] portal-gate falhou (mantém passo atual):", e?.message);
+      }
     }
 
     // Enviar mídias primeiro (mais humano: áudio chega antes do texto)

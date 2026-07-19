@@ -203,3 +203,21 @@ export function isPrePortalCadastroStep(step: string | null | undefined): boolea
   const s = String(step || "");
   return s === "ask_contaunica" || s === "ask_transferir_titularidade" || s === "ask_finalizar";
 }
+
+/**
+ * Gate do portal na IA livre (ai-agent-router).
+ * Funil obrigatório: INTERESSE → CONTA → DOCUMENTO → E-MAIL → telefone → PORTAL.
+ * Antes: bastava valor + cpf (+rg/nascimento) para despachar o portal — sem
+ * e-mail e sem foto do documento. Agora o próximo passo vem de
+ * `getNextMissingStep`: só vai ao portal quando NADA falta; senão devolve o
+ * passo real faltante (ask_email, ask_doc_frente_manual, …) sem pular etapa.
+ */
+export function resolvePortalGate(
+  nextMissingStep: string,
+): { action: "portal" } | { action: "goto"; step: string } {
+  const s = String(nextMissingStep || "").trim();
+  if (s === "finalizando") return { action: "portal" };
+  // ask_contaunica / ask_finalizar: pré-portal legítimo — pergunta antes.
+  if (!s) return { action: "goto", step: "ask_name" };
+  return { action: "goto", step: s };
+}
