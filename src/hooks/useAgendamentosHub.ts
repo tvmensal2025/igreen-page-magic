@@ -49,6 +49,7 @@ export function useAgendamentosHub(consultantId: string) {
         settingsRes,
         templatesRes,
         pendingValidationRes,
+        cadenceRes,
       ] = await Promise.all([
         supabase
           .from("scheduled_messages")
