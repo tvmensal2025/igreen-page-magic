@@ -225,5 +225,20 @@ export function buildAgendamentosTimeline(input: {
     });
   }
 
+  for (const c of input.cadence || []) {
+    const at = new Date(c.next_action_at);
+    const paused = c.paused_until && new Date(c.paused_until).getTime() > now;
+    const { channel, label } = cadenceStageLabel(c.stage);
+    items.push({
+      id: `cadence-${c.id}`,
+      kind: "cadence_send",
+      title: c.customer_name || c.customer_phone || "Lead",
+      preview: `${channel} · ${label}`,
+      at,
+      status: paused ? "pending" : at.getTime() <= now ? "overdue" : "pending",
+      badge: `Motor A→B→C · ${label}`,
+    });
+  }
+
   return items.sort((a, b) => a.at.getTime() - b.at.getTime());
 }
