@@ -259,6 +259,12 @@ verify_jwt = false
 [functions.cadence-tick]
 verify_jwt = false
 
+[functions.send-scheduled-messages]
+verify_jwt = false
+
+[functions.bulk-scheduler]
+verify_jwt = false
+
 [functions.close-attendance-scheduled]
 verify_jwt = false
 
@@ -272,5 +278,14 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.portal-otp-watchdog]
+verify_jwt = false
+
+[functions.bot-loop-watchdog]
+verify_jwt = false
+
+[functions.production-health-snapshot]
+verify_jwt = false
+
+[functions.super-admin-alerts]
 verify_jwt = false
 

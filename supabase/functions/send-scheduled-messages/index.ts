@@ -207,7 +207,14 @@ Deno.serve(async (req) => {
 
         const quotaKey = channel.instanceName || msg.instance_name;
         const quota = await checkSendQuota(supabase, quotaKey);
-        if (!quota.allowed) {
+        // Whapi (superadmin) não tem linha em whatsapp_instances — instance_not_found
+        // é esperado e NÃO pode adiar a agenda manual para sempre (+30min).
+        const bypassQuota = channel.kind === "whapi" &&
+          (!quota.allowed &&
+            (quota.reason === "instance_not_found" ||
+              quota.reason === "empty_response" ||
+              quota.reason === "rpc_error"));
+        if (!quota.allowed && !bypassQuota) {
           const retryAt = quota.until || quota.next_allowed_at
             || new Date(Date.now() + 30 * 60_000).toISOString();
           await supabase.from("scheduled_messages")
