@@ -116,6 +116,13 @@ function describeSource(item: AgendamentoTimelineItem): {
         targetTab: "campanhas",
         ctaLabel: "Ver campanhas",
       };
+    case "cadence_send":
+      return {
+        where: "Motor A→B→C (cadência automática)",
+        hint: "Envio programado pelo motor de reengajamento. Para pausar/editar textos, abra Grupo B ou o Motor de Cadência.",
+        targetTab: "grupo-b",
+        ctaLabel: "Abrir Grupo B",
+      };
   }
 }
 
