@@ -114,7 +114,7 @@ export function useAgendamentosHub(consultantId: string) {
         // Motor de cadência A→B→C: TODOS os próximos envios programados (sem limite de horizonte).
         supabase
           .from("lead_cadence_state")
-          .select("id, customer_id, stage, next_action_at, paused_until, customer:customers!inner(name, phone_whatsapp)")
+          .select("id, customer_id, stage, next_action_at, paused_until")
           .eq("consultant_id", consultantId)
           .not("next_action_at", "is", null)
           .not("stage", "in", "(WON)")
