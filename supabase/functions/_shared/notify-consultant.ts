@@ -237,7 +237,7 @@ async function shouldSendPersisted(
 
 export async function notifyNewLead(
   consultantId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
 ): Promise<boolean> {
   if (lead?.is_sandbox) {
     console.log(`[notify-new-lead] sandbox_skip lead=${lead.id}`);
@@ -278,7 +278,7 @@ export async function notifyNewLead(
 
 export async function notifyHandoff(
   consultantId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; conversation_step?: string | null; is_sandbox?: boolean | null },
+  lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; conversation_step?: string | null; is_sandbox?: boolean | null },
   lastQuestion: string,
   reason = "duvida_fora_faq",
 ): Promise<boolean> {
@@ -353,6 +353,7 @@ export async function notifyClientReplyWhilePaused(
   lead: {
     id?: string;
     name?: string | null;
+    name_source?: string | null;
     phone_whatsapp?: string | null;
     conversation_step?: string | null;
     tracking_protocol?: string | null;
@@ -400,6 +401,7 @@ export async function notifyInboundWhileBotOff(
   lead: {
     id?: string;
     name?: string | null;
+    name_source?: string | null;
     phone_whatsapp?: string | null;
     conversation_step?: string | null;
     tracking_protocol?: string | null;
@@ -531,7 +533,7 @@ function partnerFooter(step: string): string {
 export async function notifyPartnerNewLead(
   ownerConsultantId: string,
   partnerId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null; tracking_protocol?: string | null },
+  lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null; tracking_protocol?: string | null },
   opts?: { force?: boolean; manual?: boolean },
 ): Promise<{ ok: boolean; reason?: string }> {
   try {
@@ -739,7 +741,7 @@ export async function notifyPartnerStep(
 // (chave única) — nunca avisa 2x o mesmo lead.
 export async function notifySuperAdminUnmatchedLead(
   superAdminConsultantId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
   method: string,
   assignedPartnerName?: string | null,
 ): Promise<boolean> {
@@ -797,7 +799,7 @@ export async function notifySuperAdminUnmatchedLead(
 // via `outbound_message_log.idempotency_key` (nunca avisa 2x o mesmo lead).
 export async function notifyOwnerManualReview(
   ownerConsultantId: string,
-  lead: { id?: string; name?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
+  lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
   reason:
     | "no_campaign_ctwa_phrase"
     | "rodizio_pool_empty"
