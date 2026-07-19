@@ -13,12 +13,37 @@ import {
   BILL_RANGE_BUTTONS,
   type CadenceButton,
 } from "./cadence-stage-buttons.ts";
+import { matchButtonIntent, type ButtonOption } from "./ai-button-intent.ts";
 
 export const BILL_BUTTON_VALUES: Readonly<Record<string, number>> = {
   bill_low: 200,
   bill_mid: 500,
   bill_high: 800,
 };
+
+/** Catálogo completo: clique OU digitar o título (Evolution sem botão) → mesmo id. */
+export const CADENCE_BUTTON_CATALOG: ReadonlyArray<ButtonOption> = [
+  { id: "bill_low", title: "Até R$300", phrases: ["ate 300", "até 300", "ate r$300", "baixo", "300"] },
+  { id: "bill_mid", title: "R$300 a R$700", phrases: ["300 a 700", "medio", "médio", "500"] },
+  { id: "bill_high", title: "Acima de R$700", phrases: ["acima de 700", "alto", "800", "900", "1000"] },
+  { id: "analyze", title: "Quero analisar", phrases: ["analisar", "quero analisar", "analise", "análise"] },
+  { id: "send_photo", title: "Enviar conta", phrases: ["enviar foto", "enviar conta", "mandar foto", "foto da conta"] },
+  { id: "register", title: "Cadastrar", phrases: ["cadastrar", "quero cadastrar", "cadastro"] },
+  { id: "activate", title: "Quero ativar", phrases: ["ativar", "quero ativar", "ativar o beneficio", "ativar o benefício"] },
+  { id: "bill_value", title: "Informar valor", phrases: ["informar valor", "digitar valor"] },
+  { id: "more_benefits", title: "Conhecer mais", phrases: ["saber mais", "saber mais beneficio", "conhecer mais", "mais beneficios"] },
+  { id: "how_it_works", title: "Como funciona", phrases: ["como funciona", "explica"] },
+  { id: "explain", title: "Explicar", phrases: ["explica", "me explica"] },
+  { id: "economy", title: "Economia", phrases: ["economia", "quanto economizo"] },
+  { id: "club", title: "Clube", phrases: ["clube", "beneficios"] },
+  { id: "referral", title: "Indicação", phrases: ["indicacao", "indicação", "indicar"] },
+  { id: "call_me", title: "Pode me ligar", phrases: ["me liga", "pode me ligar", "ligar"] },
+  { id: "human", title: "Falar com humano", phrases: ["humano", "atendente", "pessoa"] },
+  { id: "stop", title: "Encerrar", phrases: ["sair", "parar", "encerrar", "cancelar"] },
+];
+
+const BILL_RANGE_ESTIMATES = new Set([200, 500, 800]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CADASTRO_BUTTON_IDS = new Set([
   "bill_low",
@@ -130,10 +155,15 @@ function stageFromLeadResponded(reason: string | null | undefined): string | nul
  * NÃO dispara no primeiro "Oi" de lead GREETED/NEW (Grupo A):
  * `onLeadInboundResponse` pausa com lead_responded:<STAGE> em qualquer inbound;
  * se o estágio de origem era Grupo A, o bot-flow/welcome assume.
+ * NÃO dispara no meio do fluxo custom (flow:uuid / a3 / cadastro) — senão
+ * "Conhecer mais" digitado vira nudge e pede a conta de novo (loop).
  */
 export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
   if (input.customer?.do_not_contact) return false;
   if (isCadenceButtonId(input.buttonId)) return true;
+
+  const step = String(input.customer?.conversation_step || "");
+  if (isActiveGroupAConversation(step)) return false;
 
   const fromResponded = stageFromLeadResponded(input.cadencePausedReason);
   // Explicitamente Grupo A → nunca nudge de cadência (mesmo com origin_recovery legado).
@@ -147,6 +177,67 @@ export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
   if (String(input.customer?.origin_recovery || "") === "cadence") return true;
 
   return false;
+}
+
+/** Já no Grupo A / fluxo custom / pipeline de cadastro. */
+export function isActiveGroupAConversation(step: string | null | undefined): boolean {
+  const s = String(step || "").trim();
+  if (!s) return false;
+  if (s.startsWith("flow:") || s.startsWith("passo_")) return true;
+  if (UUID_RE.test(s)) return true;
+  if (/^a\d_/.test(s) || s.startsWith("a1_") || s.startsWith("a2_") || s.startsWith("a3_")) return true;
+  if (
+    /^(aguardando_|ask_|confirmando_|processando_|portal_|editing_|finalizando|complete|cadastro_)/.test(s)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Digitar o título do botão (Evolution sem botão nativo) = mesmo que clicar. */
+export function resolveCadenceButtonFromText(text: string | null | undefined): string | null {
+  const msg = String(text || "").trim();
+  if (!msg) return null;
+  // matchButtonIntent síncrono (número/título/frase) — sem await; IA fica no apply*.
+  const norm = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const msgN = norm(msg);
+  const num = msg.match(/^([1-9])\b/);
+  if (num) {
+    // números 1-3 só fazem sentido com BILL_RANGE / ANALYZE — tratado no apply com catálogo
+  }
+  for (const b of CADENCE_BUTTON_CATALOG) {
+    const tN = norm(b.title);
+    if (msgN === tN || (tN.length >= 4 && (msgN.includes(tN) || tN.includes(msgN)))) {
+      return b.id;
+    }
+    for (const ph of b.phrases || []) {
+      const pN = norm(ph);
+      if (pN && (msgN === pN || (pN.length >= 4 && msgN.includes(pN)))) return b.id;
+    }
+  }
+  return null;
+}
+
+/** Nunca troca valor preciso já salvo por faixa estimada (200/500/800). */
+export function mergeBillValue(
+  customer: CadenceInboundInput["customer"],
+  incoming?: number | null,
+): number | undefined {
+  const existing = Number(customer?.electricity_bill_value);
+  const hasExisting = Number.isFinite(existing) && existing > 0;
+  const inc = incoming != null ? Number(incoming) : NaN;
+  const hasIncoming = Number.isFinite(inc) && inc > 0;
+  if (hasExisting && hasIncoming && BILL_RANGE_ESTIMATES.has(inc) && !BILL_RANGE_ESTIMATES.has(existing)) {
+    return existing;
+  }
+  if (hasIncoming) return inc;
+  if (hasExisting) return existing;
+  return undefined;
+}
+
+function existingBill(customer: CadenceInboundInput["customer"]): number | undefined {
+  return mergeBillValue(customer, null);
 }
 
 function firstName(customer: CadenceInboundInput["customer"]): string {
@@ -201,14 +292,24 @@ function conversationalEntryUpdates(
     last_custom_prompt_at: null,
     ai_followups_count: 0,
   };
-  if (billValue != null && Number.isFinite(billValue) && billValue > 0) {
-    u.electricity_bill_value = billValue;
-  }
+  const merged = mergeBillValue(customer, billValue);
+  if (merged != null) u.electricity_bill_value = merged;
   const nm = String(customer?.name || "").trim();
-  if (nm.length >= 2) {
-    u.name_source = "cadence";
-  }
+  if (nm.length >= 2) u.name_source = "cadence";
   return u;
+}
+
+function pushToCadastro(
+  customer: CadenceInboundInput["customer"],
+  reason: string,
+  billValue?: number,
+): CadenceRouteResult {
+  return {
+    handled: true,
+    continueBotFlow: true,
+    updates: conversationalEntryUpdates(customer, billValue),
+    reason,
+  };
 }
 
 function optOutUpdates(): Record<string, unknown> {
@@ -232,11 +333,18 @@ function nudgeReply(customer: CadenceInboundInput["customer"]): string {
 export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceRouteResult | null {
   if (!isCadenceReturnContext(input)) return null;
 
-  const buttonId = String(input.buttonId || "").trim().toLowerCase();
+  let buttonId = String(input.buttonId || "").trim().toLowerCase();
   const text = String(input.messageText || "").trim();
   const hasMedia = !!(input.isFile || input.hasImage || input.hasDocument);
 
-  // Opt-out explícito
+  // Digitou o título do botão (comum no Evolution) → trata como clique.
+  if (!buttonId && text) {
+    const fromText = resolveCadenceButtonFromText(text);
+    if (fromText) buttonId = fromText;
+  }
+
+  const knownBill = existingBill(input.customer);
+
   if (STOP_BUTTON_IDS.has(buttonId) || OPT_OUT_TEXT.test(text)) {
     return {
       handled: true,
@@ -248,19 +356,15 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Foto/PDF direto → cadastro (bot-flow faz OCR)
   if (hasMedia) {
     return {
       handled: true,
       continueBotFlow: true,
-      updates: cadastroUpdates(
-        Number(input.customer?.electricity_bill_value) || undefined,
-      ),
+      updates: cadastroUpdates(knownBill),
       reason: "cadence_media_cadastro",
     };
   }
 
-  // Humano
   if (HUMAN_BUTTON_IDS.has(buttonId) || /\b(me\s+liga|pode\s+ligar|quero\s+ligar|ligar\s+pra\s+mim)\b/i.test(text)) {
     return {
       handled: true,
@@ -274,33 +378,18 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Faixa por botão → passo 3 (a3_explain_with_buttons) + fluxo completo
   if (buttonId in BILL_BUTTON_VALUES) {
-    const billValue = BILL_BUTTON_VALUES[buttonId];
-    return {
-      handled: true,
-      continueBotFlow: true,
-      updates: conversationalEntryUpdates(input.customer, billValue),
-      reason: `cadence_bill_${buttonId}`,
-    };
+    return pushToCadastro(input.customer, `cadence_bill_${buttonId}`, BILL_BUTTON_VALUES[buttonId]);
   }
 
-  // Cadastro direto → fluxo conversacional (a3 se já tem valor, senão do início)
-  if (
-    CADASTRO_BUTTON_IDS.has(buttonId) &&
-    buttonId !== "bill_value"
-  ) {
-    const existing = Number(input.customer?.electricity_bill_value);
-    const billValue = Number.isFinite(existing) && existing > 0 ? existing : undefined;
-    return {
-      handled: true,
-      continueBotFlow: true,
-      updates: conversationalEntryUpdates(input.customer, billValue),
-      reason: `cadence_cadastro_${buttonId}`,
-    };
+  if (CADASTRO_BUTTON_IDS.has(buttonId) && buttonId !== "bill_value") {
+    return pushToCadastro(input.customer, `cadence_cadastro_${buttonId}`, knownBill);
   }
 
   if (buttonId === "bill_value") {
+    if (knownBill != null && knownBill >= 100) {
+      return pushToCadastro(input.customer, "cadence_bill_value_already_known", knownBill);
+    }
     return {
       handled: true,
       continueBotFlow: false,
@@ -314,19 +403,21 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Educativo
+  // Educativo: se já tem valor, NÃO repergunta — empurra ao cadastro
   if (EDUCATIONAL_BUTTON_IDS.has(buttonId)) {
+    if (knownBill != null && knownBill >= 100) {
+      return pushToCadastro(input.customer, `cadence_educational_to_cadastro_${buttonId}`, knownBill);
+    }
     return {
       handled: true,
       continueBotFlow: false,
-      updates: { origin_recovery: "cadence" },
+      updates: { origin_recovery: "cadence", flow_variant: "A" },
       reply: EDUCATIONAL_REPLIES[buttonId] || nudgeReply(input.customer),
       buttons: [...BILL_RANGE_BUTTONS],
       reason: `cadence_educational_${buttonId}`,
     };
   }
 
-  // Valor digitado (Grupo C e B)
   const billValue = extractMoneyFromText(text);
   if (billValue != null && billValue > 0) {
     if (billValue < 100) {
@@ -345,31 +436,22 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
         reason: "cadence_low_bill",
       };
     }
-    return {
-      handled: true,
-      continueBotFlow: true,
-      updates: conversationalEntryUpdates(input.customer, billValue),
-      reason: "cadence_typed_bill",
-    };
+    return pushToCadastro(input.customer, "cadence_typed_bill", billValue);
   }
 
-  // Intenção de cadastro em texto livre → fluxo conversacional completo
   if (
     text &&
-  (wantsToAdvance(text) || isActivateIntent(text, buttonId) ||
-    /\b(analisar|analise|análise|cadastr|ativar|enviar\s+(?:a\s+)?conta|mandar\s+(?:a\s+)?foto)\b/i.test(text))
+    (wantsToAdvance(text) || isActivateIntent(text, buttonId) ||
+      /\b(analisar|analise|análise|cadastr|ativar|enviar\s+(?:a\s+)?conta|mandar\s+(?:a\s+)?foto)\b/i.test(text))
   ) {
-    const existing = Number(input.customer?.electricity_bill_value);
-    const billValue = Number.isFinite(existing) && existing > 0 ? existing : undefined;
-    return {
-      handled: true,
-      continueBotFlow: true,
-      updates: conversationalEntryUpdates(input.customer, billValue),
-      reason: "cadence_intent_cadastro",
-    };
+    return pushToCadastro(input.customer, "cadence_intent_cadastro", knownBill);
   }
 
-  // Dúvida → resposta curta + CTA (nunca vácuo)
+  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
+  if (knownBill != null && knownBill >= 100) {
+    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
+  }
+
   if (text && /\?|como\s+funciona|seguro|golpe|taxa|pix|pagar|custa/i.test(text)) {
     return {
       handled: true,
@@ -382,7 +464,6 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Saudação / mensagem ambígua → nudge com botões
   return {
     handled: true,
     continueBotFlow: false,
@@ -406,6 +487,7 @@ export type CadenceRouteApplyResult = {
 /**
  * Aplica roteamento no banco e envia resposta (texto ou botões).
  * Chamado pelos webhooks após `onLeadInboundResponse`.
+ * Texto livre sem clique → tenta catálogo + IA (matchButtonIntent) antes de decidir.
  */
 export async function applyCadenceInboundRoute(
   // deno-lint-ignore no-explicit-any
@@ -419,6 +501,31 @@ export async function applyCadenceInboundRoute(
     };
   },
 ): Promise<CadenceRouteApplyResult> {
+  // Se não veio buttonId, resolve por título/frase e, se preciso, IA.
+  if (!opts.buttonId && opts.messageText && !opts.isFile && !opts.hasImage && !opts.hasDocument) {
+    let resolved = resolveCadenceButtonFromText(opts.messageText);
+    if (!resolved) {
+      try {
+        const intent = await matchButtonIntent(String(opts.messageText), [...CADENCE_BUTTON_CATALOG], {
+          apiKey: Deno.env.get("LOVABLE_API_KEY"),
+          timeoutMs: 3500,
+        });
+        if (intent.match && intent.confidence >= 0.6) {
+          resolved = intent.match;
+          console.log(
+            `[cadence-router] ai-button-intent match=${intent.match} conf=${intent.confidence} reason=${intent.reason}`,
+          );
+        }
+      } catch (e) {
+        console.warn("[cadence-router] ai-button-intent falhou:", (e as Error).message);
+      }
+    }
+    if (resolved) {
+      opts.buttonId = resolved;
+      opts.isButton = true;
+    }
+  }
+
   const route = resolveCadenceInboundRoute(opts);
   if (!route) return { routed: false, continueBotFlow: true };
 

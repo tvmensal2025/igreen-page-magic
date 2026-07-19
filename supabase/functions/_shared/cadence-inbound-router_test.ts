@@ -164,3 +164,57 @@ Deno.test("resolveCadenceInboundRoute: economy → educativo + faixas", () => {
   assertEquals(r?.reason, "cadence_educational_economy");
   assertEquals(r?.buttons?.[0]?.id, "bill_low");
 });
+
+Deno.test("digitar 'Conhecer mais' com valor salvo → cadastro (sem repergunta)", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { ...baseCustomer, electricity_bill_value: 900 },
+    messageText: "Conhecer mais",
+  });
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.updates.electricity_bill_value, 900);
+  assertEquals(String(r?.reason || "").includes("educational_to_cadastro") || r?.reason === "cadence_cadastro_more_benefits" || String(r?.reason || "").includes("more_benefits"), true);
+});
+
+Deno.test("digitar 'Até R$300' NÃO sobrescreve valor preciso 900", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { ...baseCustomer, electricity_bill_value: 900 },
+    messageText: "Até R$300",
+  });
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.updates.electricity_bill_value, 900);
+});
+
+Deno.test("Grupo C: 'pago 300 reais por mês' → cadastro", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { name: "João", origin_recovery: "cadence" },
+    messageText: "pago 300 reais por mês",
+    cadencePausedReason: "lead_responded:RECALL_5M",
+  });
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.updates.electricity_bill_value, 300);
+  assertEquals(r?.reason, "cadence_typed_bill");
+});
+
+Deno.test("meio do fluxo a3 (flow:uuid) → NÃO intercepta cadência", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: {
+      name: "Marilsa",
+      origin_recovery: "cadence",
+      conversation_step: "flow:975c4ab2-0b8c-4f10-89c3-09ed7eacc270",
+      electricity_bill_value: 900,
+    },
+    messageText: "Conhecer mais",
+    cadencePausedReason: "lead_responded:COLD_1",
+  });
+  assertEquals(r, null);
+});
+
+Deno.test("valor já salvo + texto ambíguo → avança cadastro (sem loop)", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { ...baseCustomer, electricity_bill_value: 450 },
+    messageText: "ok",
+  });
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.reason, "cadence_known_bill_forward");
+  assertEquals(r?.updates.electricity_bill_value, 450);
+});

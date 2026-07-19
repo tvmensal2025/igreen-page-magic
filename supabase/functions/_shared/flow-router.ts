@@ -286,6 +286,19 @@ export function matchTransition(input: MatchTransitionInput): FlowTransition | n
     const n = Number((messageText.match(/^([1-9])(?:\D|$)/) || [])[1] || 0);
     const btn = n > 0 ? visibleButtons[n - 1] : null;
     if (btn?.id) resolvedButtonId = _norm(btn.id);
+    // Digitar o título do botão (Evolution sem botão nativo) = clique
+    if (!resolvedButtonId) {
+      for (const b of visibleButtons) {
+        const t = _norm(b.title);
+        if (!t) continue;
+        if (messageText === t || (t.length >= 4 && (messageText.includes(t) || t.includes(messageText)))) {
+          if (b.id) {
+            resolvedButtonId = _norm(b.id);
+            break;
+          }
+        }
+      }
+    }
   }
 
   // (a) buttonId em trigger_phrases.
