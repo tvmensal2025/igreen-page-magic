@@ -29,6 +29,8 @@ export type RenderVars = {
   representante_display?: string | null;
   /** Telefone do consultor/representante (E.164-BR só dígitos, ex: 5511987654321). Usado para gerar links wa.me/{{consultor_phone}}. */
   representante_phone?: string | null;
+  /** Nome da IA do consultor (`consultants.assistant_name`). Ex.: Sofia, Yasmin. */
+  assistente?: string | null;
   valor_conta?: number | string | null;
   /** Variante do fluxo (A/B/C/D/E/M). Muda as taxas de economia — Fluxo M usa 10-28%. */
   variant?: string | null;
@@ -53,6 +55,14 @@ const REP_KEYS = new Set([
   "atendente",
   "vendedor",
   "vendedora",
+]);
+/** Nome da IA cadastrado pelo consultor (Sofia, Yasmin, Sol…). */
+const ASSISTANT_KEYS = new Set([
+  "assistente",
+  "assistant",
+  "assistant_name",
+  "ia",
+  "bot_name",
 ]);
 // Telefone do consultor — só dígitos, colável direto em wa.me/{{consultor_phone}}.
 const REP_PHONE_KEYS = new Set([
@@ -130,6 +140,8 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (isSlugLike) rep = "consultor";
   }
   if (!rep) rep = "iGreen Energy";
+  // IA do consultor — cada um cadastra em Dados (`assistant_name`).
+  const assistente = String(vars.assistente || "").trim() || "assistente virtual";
   const billNum = typeof vars.valor_conta === "number"
     ? vars.valor_conta
     : Number(vars.valor_conta);
@@ -162,6 +174,7 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     if (key === "link_wa" || key === "wa_link" || key === "link_whatsapp") {
       return repPhoneDigits ? `https://wa.me/${repPhoneDigits}` : "";
     }
+    if (ASSISTANT_KEYS.has(key)) return assistente;
     if (REP_KEYS.has(key)) return rep;
     if (BILL_KEYS.has(key)) return billStr;
     const rates = discountRates(vars.variant);

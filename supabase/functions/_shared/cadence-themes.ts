@@ -32,7 +32,7 @@ Boa notícia: agora dá para começar sua análise só com o valor médio da con
 ${DISP}
 
 Qual faixa está sua conta hoje?`,
-    sms: `Rafael | iGreen: {{nome}}, agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: {{nome}}, agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "tariff_flags",
@@ -43,7 +43,7 @@ As bandeiras amarela e vermelha podem aumentar o valor final da conta.
 O benefício de economia pode ajudar a reduzir o impacto desses aumentos, conforme o consumo e as condições aplicáveis.
 
 Quer análise inicial pelo valor médio? Qual faixa?`,
-    sms: `Rafael | Energia: bandeiras podem subir a conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | Energia: bandeiras podem subir a conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "no_home_panels",
@@ -52,18 +52,18 @@ Quer análise inicial pelo valor médio? Qual faixa?`,
 Para conhecer essa possibilidade de economia, não é necessário instalar placas solares na sua casa, fazer obra ou alterar sua instalação.
 
 A análise pode começar pelo valor médio. Como prefere?`,
-    sms: `Rafael | Energia: sem placas nem obra. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | Energia: sem placas nem obra. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "security",
-    wa: `Olá, {{nome}}. Aqui é o Rafael.
+    wa: `Olá, {{nome}}. Aqui é {{consultor}}.
 
 Reforço: não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
 
 ${DISP}
 
 Como prefere seguir?`,
-    sms: `Rafael | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "benefits_club",
@@ -72,7 +72,7 @@ Como prefere seguir?`,
 O benefício não termina na economia da conta: clientes elegíveis podem ter vantagens em estabelecimentos parceiros, conforme condições vigentes.
 
 O que você quer conhecer?`,
-    sms: `Rafael | iGreen: economia + clube de parceiros. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: economia + clube de parceiros. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "referral_cashback",
@@ -81,7 +81,7 @@ O que você quer conhecer?`,
 Além da própria economia, também podem existir benefícios por indicação, conforme as regras vigentes.
 
 O que você quer conhecer?`,
-    sms: `Rafael | iGreen: economia + indicacao (regras). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: economia + indicacao (regras). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "digital_app",
@@ -92,7 +92,7 @@ Além da economia na conta, clientes elegíveis podem acompanhar o benefício pe
 ${DISP}
 
 Como prefere seguir?`,
-    sms: `Rafael | iGreen: economia no app. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: economia no app. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
 ];
 

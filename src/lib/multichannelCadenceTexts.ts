@@ -9,7 +9,7 @@
  *
  * Áudio WhatsApp e ligação (voz Sofia):
  * - Sempre TTS Sofia (nunca “voz Rafael” no áudio).
- * - Abertura padrão: Sofia = atendente virtual do Rafael, da iGreen Energia.
+ * - Abertura padrão: Sofia = atendente virtual de {{consultor}}, da iGreen Energia.
  *
  * Placeholders: {{nome}}, {{frase_disponibilidade}}, {{abertura_sofia}}
  */
@@ -24,7 +24,7 @@ function tplReplace(text: string, needle: string, value: string): string {
 
 /** Abertura oficial — áudio WA (corpo fixo A2, igual ao salvo no painel/biblioteca). */
 export const SOFIA_OPENING =
-  "Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.";
+  "Eu sou {{assistente}}, assistente virtual de {{consultor}}, gestor da iGreen.";
 
 export const A2_BODY_EXPLAIN = `${SOFIA_OPENING}
 
@@ -627,27 +627,52 @@ export function buildAvailabilityPhrase(
   return { slot: "closed", phrase: closedPhrase };
 }
 
+/** Variáveis de prévia / TTS do Multicanal (painel + geração de áudio). */
+export type CadenceBodyRenderOpts = {
+  nome?: string;
+  now?: Date;
+  valorFormatado?: string;
+  /** Alias de valorFormatado — usado no passo 3 ({{valor_conta}}). */
+  valorConta?: string;
+  economiaMin?: string;
+  economiaMax?: string;
+  /** Ex.: "R$ 40 a R$ 100" — passo 3 {{economia_range}}. */
+  economiaRange?: string;
+  telefone?: string;
+  telefoneMascarado?: string;
+  gender?: SpeechGender;
+  linkFacial?: string;
+  /** Dígitos do WhatsApp do consultor (com DDI 55) → {{consultor_phone}} / {{link_wa}}. */
+  consultorPhone?: string;
+  /**
+   * Nome humano do consultor (Dados → display_name).
+   * {{consultor}} / {{representante}}. Vazio → placeholder fica para o painel avisar.
+   */
+  consultor?: string;
+  /** Nome da IA (Dados → assistant_name). {{assistente}}. */
+  assistente?: string;
+  /** Frases da aba Disponibilidade (lib.bodies). */
+  availabilityOverrides?: AvailabilityOverrides;
+};
+
+/**
+ * Prenome humano a partir de display_name / name.
+ * Slug de login (tvmensal12) → "" — não vaza username no TTS.
+ */
+export function firstNameFromConsultantLabel(raw: string | null | undefined): string {
+  const display = String(raw || "").trim();
+  if (!display) return "";
+  const isSlugLike =
+    !/\s/.test(display) &&
+    display === display.toLowerCase() &&
+    (/\d/.test(display) || display.length >= 9);
+  if (isSlugLike) return "";
+  return display.split(/\s+/)[0] || display;
+}
+
 export function renderCadenceBody(
   body: string,
-  opts: {
-    nome?: string;
-    now?: Date;
-    valorFormatado?: string;
-    /** Alias de valorFormatado — usado no passo 3 ({{valor_conta}}). */
-    valorConta?: string;
-    economiaMin?: string;
-    economiaMax?: string;
-    /** Ex.: "R$ 40 a R$ 100" — passo 3 {{economia_range}}. */
-    economiaRange?: string;
-    telefone?: string;
-    telefoneMascarado?: string;
-    gender?: SpeechGender;
-    linkFacial?: string;
-    /** Dígitos do WhatsApp do consultor (com DDI 55) → {{consultor_phone}} / {{link_wa}}. */
-    consultorPhone?: string;
-    /** Frases da aba Disponibilidade (lib.bodies). */
-    availabilityOverrides?: AvailabilityOverrides;
-  } = {},
+  opts: CadenceBodyRenderOpts = {},
 ): string {
   const nome = (opts.nome || "Cliente").trim() || "Cliente";
   const { phrase } = buildAvailabilityPhrase(
@@ -668,6 +693,10 @@ export function renderCadenceBody(
   const linkWa = consultorPhone
     ? `https://wa.me/${consultorPhone}`
     : "https://wa.me/{{consultor_phone}}";
+  // Dados do consultor — sem inventar "Rafael". Slug/vazio mantém {{…}} p/ o painel bloquear TTS.
+  const consultor = firstNameFromConsultantLabel(opts.consultor);
+  const assistente = String(opts.assistente || "").trim();
+  // abertura_sofia primeiro (injeta {{assistente}}/{{consultor}}); depois resolve identidade.
   return [
     ["{{nome}}", nome],
     ["{{frase_disponibilidade}}", phrase],
@@ -683,6 +712,9 @@ export function renderCadenceBody(
     // Sem telefone: não apagar o placeholder (evita SMS com `https://wa.me/` quebrado na prévia).
     ["{{consultor_phone}}", consultorPhone || "{{consultor_phone}}"],
     ["{{link_wa}}", linkWa],
+    ["{{consultor}}", consultor || "{{consultor}}"],
+    ["{{representante}}", consultor || "{{representante}}"],
+    ["{{assistente}}", assistente || "{{assistente}}"],
     ["{{bem_vindo}}", g.bem_vindo],
     ["{{o_a}}", g.o_a],
     ["{{do_da}}", g.do_da],
@@ -699,14 +731,7 @@ export function renderCadenceBody(
  */
 export function spokenSegmentText(
   seg: AudioSegment,
-  opts: {
-    nome?: string;
-    gender?: SpeechGender;
-    now?: Date;
-    valorFormatado?: string;
-    economiaMin?: string;
-    economiaMax?: string;
-  } = {},
+  opts: CadenceBodyRenderOpts = {},
 ): string {
   const first = firstNameOnly(opts.nome || "Cliente");
   if (seg.kind === "name") {
@@ -718,6 +743,16 @@ export function spokenSegmentText(
     return renderCadenceBody(raw, { ...opts, nome: first }).trim();
   }
   return renderCadenceBody(seg.text, { ...opts, nome: first }).trim();
+}
+
+/** Placeholders de identidade que impedem TTS (áudio sairia “consultor” literal). */
+export function unresolvedConsultantIdentityPlaceholders(text: string): string[] {
+  const missing: string[] = [];
+  if (/\{\{\s*consultor\s*\}\}/i.test(text) || /\{\{\s*representante\s*\}\}/i.test(text)) {
+    missing.push("consultor");
+  }
+  if (/\{\{\s*assistente\s*\}\}/i.test(text)) missing.push("assistente");
+  return missing;
 }
 
 /** Link WhatsApp clicável no SMS (sempre https:// — sem protocolo o celular não abre). */
@@ -1229,7 +1264,7 @@ Vou te pedir só os dados necessários para concluir.`,
 
 Combinado.
 
-Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém assume a conversa por aqui.`,
+Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes alguém assume a conversa por aqui.`,
   },
   {
     key: "a_optional_sms_slot",
@@ -1255,14 +1290,14 @@ Vou transferir você para um atendente da equipe do Rafael. Em instantes alguém
         id: "call_body",
         kind: "fixed",
         label: "1 · Corpo do áudio (fixo · cache)",
-        text: `Olá! Eu sou a Sofia, assistente virtual do Rafael, da iGreen.
+        text: `Olá! Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen.
 
 Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
 
 Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
       },
     ],
-    body: `Olá! Eu sou a Sofia, assistente virtual do Rafael, da iGreen.
+    body: `Olá! Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen.
 
 Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
 
@@ -1281,7 +1316,7 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     canGenerateAudio: false,
     notes:
       "O lead já está no CRM (já mandou mensagem). Se o nome já estiver certo, pula esta etapa e vai direto para a reabertura. Sem botões — o cliente digita o nome.",
-    body: `Olá! 👋 Aqui é o *Rafael Ferreira Dias*, da *iGreen Energia*.
+    body: `Olá! 👋 Aqui é *{{consultor}}*, da *iGreen Energia*.
 
 Estou reabrindo seu atendimento sobre *economia na conta de luz*. ⚡
 
@@ -1298,7 +1333,7 @@ Para agilizar, me diga *seu primeiro nome*, por favor.`,
       "WhatsApp com 3 botões de faixa. Usa o nome que já está no CRM. Se precisar de foto/ligar/encerrar, segue o passo seguinte.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade:
 
@@ -1322,7 +1357,7 @@ _Para não receber mais contatos, responda SAIR._`,
       "Versão para quem pediu informação há bastante tempo. Não diga que há atendimento pendente se não houver histórico.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz um tempo que você pediu informações sobre *economia na conta de luz* — e agora ficou *muito mais simples* começar. ⚡
 
@@ -1364,28 +1399,28 @@ Escolha a opção mais prática pra você:`,
         id: "b2_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com o Rafael.
+Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com {{consultor}}.
 
 Conseguimos iniciar apenas com o valor médio da sua conta. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que o Rafael segue com você.`,
+Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que {{consultor}} segue com você.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com o Rafael.
+Estou retornando porque você já pediu informações sobre economia na conta de luz — e agora ficou muito mais simples começar sua análise com {{consultor}}.
 
 Conseguimos iniciar apenas com o valor médio da sua conta. Sem foto, sem burocracia.
 
 {{frase_disponibilidade}}
 
-Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que o Rafael segue com você.` },
+Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me responder aqui com o valor aproximado da sua conta que {{consultor}} segue com você.` },
     ]),
 
   },
@@ -1397,7 +1432,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "D+1 · envia às 11h30 · só se silêncio no WA",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: Oi {{nome}}! Reabri sua analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Reabri sua analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b4_call_1",
@@ -1412,7 +1447,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
         id: "b4_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
 
@@ -1423,7 +1458,7 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
 
@@ -1470,18 +1505,18 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
         id: "d4_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
+Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para {{consultor}}?
 
 Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para o Rafael?
+Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para {{consultor}}?
 
 Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?` },
     ]),
@@ -1495,7 +1530,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
     timing: "Dia 6 · envia às 11h30 · sem ligação no mesmo dia",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: Oi {{nome}}! Novidades e beneficios extras. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Novidades e beneficios extras. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "b_day7_wa_easy",
@@ -1550,16 +1585,16 @@ Ou prefere outra opção? 👇`,
         id: "d10_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.`,
+Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com {{consultor}} ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
-Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com o Rafael ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
+Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com {{consultor}} ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
     ]),
 
   },
@@ -1635,7 +1670,7 @@ Toggle cadence_retarget_ads_15d (Central de Automações). O anúncio em si roda
     notes: "RECALL_60D (delay 336h ≈ 14d após Meta/ads). Em silêncio → SMS → ligação (toggle cadence_recall_60d).",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *1 mês* que falamos sobre *economia na conta de luz*.
 
@@ -1657,7 +1692,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_60D_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Sua analise de economia segue disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Sua analise de economia segue disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_60d_call",
@@ -1673,7 +1708,7 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "c60_call_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
 
@@ -1682,7 +1717,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?`,
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
 
@@ -1699,7 +1734,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?` },
     notes: "RECALL_90D. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *3 meses* desde nosso contato sobre *reduzir a conta de luz*.
 
@@ -1721,7 +1756,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_90D_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Ainda posso retomar sua analise da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Ainda posso retomar sua analise da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_90d_call",
@@ -1737,7 +1772,7 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "c90_call_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
 
@@ -1746,7 +1781,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
 
@@ -1763,7 +1798,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
     notes: "RECALL_5M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *5 meses* que falamos sobre *economia na conta de luz*.
 
@@ -1785,7 +1820,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_5M_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Analise de economia ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Analise de economia ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_5m_call",
@@ -1801,24 +1836,24 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "c5m_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
 
 Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
 
-Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para o Rafael retornar quando for melhor para você.`,
+Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para {{consultor}} retornar quando for melhor para você.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
 
 Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
 
-Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para o Rafael retornar quando for melhor para você.` },
+Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para {{consultor}} retornar quando for melhor para você.` },
     ]),
   },
   {
@@ -1831,7 +1866,7 @@ Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para 
     notes: "RECALL_8M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *8 meses* desde nosso contato sobre *economia na conta*.
 
@@ -1853,7 +1888,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_8M_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Novidades na economia de energia. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Novidades na economia de energia. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_8m_call",
@@ -1869,7 +1904,7 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "c8m_call_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
 
@@ -1878,7 +1913,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
 
@@ -1895,7 +1930,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
     notes: "RECALL_12M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *1 ano* desde nosso contato sobre economia na conta.
 
@@ -1917,7 +1952,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_12M_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Faz 1 ano — analise ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Faz 1 ano — analise ainda disponivel. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_12m_call",
@@ -1933,7 +1968,7 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "c12m_call_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
 
@@ -1942,7 +1977,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
 
@@ -1959,7 +1994,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
     notes: "RECALL_YEARLY. Em silêncio → SMS → ligação → loop anual.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é o *Rafael Ferreira Dias*, da *iGreen*.
+Aqui é *{{consultor}}*, da *iGreen*.
 
 Lembrete anual: sua *análise de economia na conta* continua disponível.
 
@@ -1981,7 +2016,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     maxChars: 160,
     notes: "RECALL_YEARLY_SMS.",
-    body: `Rafael | iGreen: Oi {{nome}}! Lembrete anual da analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Lembrete anual da analise. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "c_recall_yearly_call",
@@ -1997,7 +2032,7 @@ _Para não receber mais contatos, responda SAIR._`,
         id: "cyear_call_body",
         kind: "fixed",
         label: "2 · Corpo",
-        text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
 
@@ -2006,7 +2041,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
 
@@ -2043,7 +2078,7 @@ Qual faixa está sua conta hoje?`,
     theme: "simplified_analysis",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: Oi {{nome}}! Agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: Oi {{nome}}! Agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_cruise_wa",
@@ -2094,16 +2129,16 @@ O que você quer conhecer primeiro?`,
         id: "cruise_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}} Ferreira Dias, da iGreen Energia.
 
-Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com o Rafael.`,
+Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com {{consultor}}.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou a Sofia, assistente virtual do Rafael Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}} Ferreira Dias, da iGreen Energia.
 
-Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com o Rafael.` },
+Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com {{consultor}}.` },
     ]),
 
   },
@@ -2117,7 +2152,7 @@ Além da possibilidade de economia na conta de energia, existe uma novidade espe
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: sorteio cabine cruzeiro p/2 (regulamento). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: sorteio cabine cruzeiro p/2 (regulamento). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_tariff_flags_wa",
@@ -2146,7 +2181,7 @@ Quer análise inicial pelo valor médio? Qual faixa?`,
     theme: "tariff_flags",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: bandeiras podem subir a conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | Energia: bandeiras podem subir a conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_no_home_panels_wa",
@@ -2176,7 +2211,7 @@ A análise pode começar pelo valor médio. Como prefere?`,
     theme: "no_home_panels",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | Energia: sem placas nem obra. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | Energia: sem placas nem obra. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_security_wa",
@@ -2186,7 +2221,7 @@ A análise pode começar pelo valor médio. Como prefere?`,
     timing: "Alternável",
     theme: "security",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}. Aqui é o Rafael.
+    body: `Olá, {{nome}}. Aqui é {{consultor}}.
 
 Reforço: não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
 
@@ -2204,7 +2239,7 @@ Como prefere seguir?`,
     theme: "security",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_benefits_club_wa",
@@ -2234,7 +2269,7 @@ O que você quer conhecer?`,
     theme: "benefits_club",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: economia + clube de parceiros. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: economia + clube de parceiros. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_referral_cashback_wa",
@@ -2264,7 +2299,7 @@ O que você quer conhecer?`,
     theme: "referral_cashback",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: economia + indicacao (regras). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: economia + indicacao (regras). Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_digital_app_wa",
@@ -2292,7 +2327,7 @@ Como prefere seguir?`,
     theme: "digital_app",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `Rafael | iGreen: economia no app. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: economia no app. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
 ];
 

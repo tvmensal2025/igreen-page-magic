@@ -16,6 +16,7 @@ import {
   emptyLibrary,
   ensureSmsConsultorWaLink,
   filterSegmentsForGender,
+  firstNameFromConsultantLabel,
   hasGeneratedCadenceAudio,
   inferSpeechGender,
   isSofiaStitchMediaSlot,
@@ -24,6 +25,7 @@ import {
   sofiaUploadTargetSlot,
   spokenSegmentText,
   stepMediaLookupKeys,
+  unresolvedConsultantIdentityPlaceholders,
 } from "./multichannelCadenceTexts";
 
 describe("Whapi safety", () => {
@@ -230,6 +232,40 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
       { nome: "Maria Silva" },
     );
     expect(out).toBe("Então, Maria.");
+  });
+
+  it("renderCadenceBody resolve {{consultor}} e {{assistente}} dos Dados", () => {
+    const out = renderCadenceBody(
+      "Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen. {{abertura_sofia}}",
+      {
+        nome: "Maria",
+        consultor: "Abel Olympio",
+        assistente: "Yasmin",
+        consultorPhone: "5514997927003",
+      },
+    );
+    expect(out).toContain("Eu sou Yasmin");
+    expect(out).toContain("de Abel");
+    expect(out).not.toContain("{{consultor}}");
+    expect(out).not.toContain("{{assistente}}");
+    expect(out).not.toContain("Rafael");
+    expect(out).not.toMatch(/\{\{abertura_sofia\}\}/);
+  });
+
+  it("slug de login não vira {{consultor}} no TTS", () => {
+    const out = renderCadenceBody("Aqui é {{consultor}}", {
+      consultor: "tvmensal12",
+      assistente: "Sofia",
+    });
+    expect(out).toContain("{{consultor}}");
+    expect(unresolvedConsultantIdentityPlaceholders(out)).toContain("consultor");
+  });
+
+  it("firstNameFromConsultantLabel — humano vs slug", () => {
+    expect(firstNameFromConsultantLabel("Abel Olympio")).toBe("Abel");
+    expect(firstNameFromConsultantLabel("Rafael Ferreira")).toBe("Rafael");
+    expect(firstNameFromConsultantLabel("tvmensal12")).toBe("");
+    expect(firstNameFromConsultantLabel("")).toBe("");
   });
 
   it("texto+botões apontam áudio parceiro acima (exceto passo 3 unificado)", () => {

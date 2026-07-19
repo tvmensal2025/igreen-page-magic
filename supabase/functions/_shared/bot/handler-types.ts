@@ -17,6 +17,8 @@ export interface BotContext {
   customer: any;
   consultorId: string;
   nomeRepresentante: string;
+  /** Nome da IA cadastrado em Dados (`consultants.assistant_name`). */
+  nomeAssistente?: string;
 
   remoteJid: string;
   phone: string;

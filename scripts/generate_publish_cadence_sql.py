@@ -30,6 +30,11 @@ def q_literal(text: str) -> str:
 
 def main() -> None:
     data = json.loads(PAYLOAD.read_text(encoding="utf-8"))
+    if data.get("_blocked") or str(data.get("_reason", "")).startswith("BLOQUEADO"):
+        raise SystemExit(
+            "ERRO: payload bloqueado (incidente catálogo curto 2026-07-19). "
+            "Não gerar SQL de publish a partir deste arquivo."
+        )
     lines: list[str] = ["BEGIN;"]
 
     for step in data["bot_flow"]["steps"]:

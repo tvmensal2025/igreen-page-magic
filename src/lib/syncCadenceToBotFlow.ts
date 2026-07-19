@@ -266,15 +266,19 @@ export function buildStageConfigPatch(
 
 /**
  * Espelha textos do Multicanal (Grupo B + C) em `cadence_stage_config`
- * (consultant_id = null). Botões (ContentContract) vão junto para os stages
- * WhatsApp; se a coluna `buttons` ainda não existir no banco, refaz o update
- * só com texto (compat até a migration rodar).
+ * **do consultor** (isolado). Não sobrescreve o global nem o de outro parceiro.
+ * Botões (ContentContract) vão junto para os stages WhatsApp.
  */
 export async function syncCadenceLibraryToStageConfig(
   lib: SavedCadenceLibrary,
+  consultantId: string,
 ): Promise<{ updated: string[]; errors: string[] }> {
   const updated: string[] = [];
   const errors: string[] = [];
+  if (!consultantId) {
+    errors.push("motor: consultant_id ausente");
+    return { updated, errors };
+  }
   for (const [key, stage] of Object.entries(STAGE_TEXT_SYNC_MAP)) {
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
     if (!tpl) continue;
@@ -284,7 +288,7 @@ export async function syncCadenceLibraryToStageConfig(
     const { data: existing } = await supabase
       .from("cadence_stage_config")
       .select("id")
-      .is("consultant_id", null)
+      .eq("consultant_id", consultantId)
       .eq("stage", stage)
       .maybeSingle();
     if (existing?.id) {
@@ -293,7 +297,6 @@ export async function syncCadenceLibraryToStageConfig(
         .update({ ...patch, updated_at: new Date().toISOString() } as never)
         .eq("id", existing.id);
       if (error && "buttons" in patch) {
-        // Coluna buttons ainda não migrada → grava só o texto.
         ({ error } = await supabase
           .from("cadence_stage_config")
           .update({ message_text: body, updated_at: new Date().toISOString() })
@@ -303,11 +306,23 @@ export async function syncCadenceLibraryToStageConfig(
     } else {
       let { error } = await supabase
         .from("cadence_stage_config")
-        .insert({ stage, enabled: true, delay_hours: 24, ...patch } as never);
+        .insert({
+          stage,
+          consultant_id: consultantId,
+          enabled: true,
+          delay_hours: 24,
+          ...patch,
+        } as never);
       if (error && "buttons" in patch) {
         ({ error } = await supabase
           .from("cadence_stage_config")
-          .insert({ stage, message_text: body, enabled: true, delay_hours: 24 }));
+          .insert({
+            stage,
+            consultant_id: consultantId,
+            message_text: body,
+            enabled: true,
+            delay_hours: 24,
+          }));
       }
       if (error) { errors.push(`${stage}: ${error.message}`); continue; }
     }
@@ -316,8 +331,12 @@ export async function syncCadenceLibraryToStageConfig(
   return { updated, errors };
 }
 
-/** Lê textos + botões + clips de ligação do motor (Grupo B + C) para hidratar o painel. */
-export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<SavedCadenceLibrary>> {
+/** Lê textos + botões + clips de ligação do motor (Grupo B + C) para hidratar o painel.
+ * Prefere config do consultor; se vazia, cai no global (fallback).
+ */
+export async function loadCadenceLibraryFromStageConfig(
+  consultantId?: string | null,
+): Promise<Partial<SavedCadenceLibrary>> {
   const stages = Object.values(STAGE_TEXT_SYNC_MAP);
   type StageRow = {
     stage: string | null;
@@ -327,25 +346,36 @@ export async function loadCadenceLibraryFromStageConfig(): Promise<Partial<Saved
     consultant_id?: string | null;
   };
 
-  const full = await supabase
-    .from("cadence_stage_config")
-    .select("stage, message_text, buttons, voice_audio_clip_id, consultant_id")
-    .is("consultant_id", null)
-    .in("stage", stages);
-
-  let rows: StageRow[] = [];
-  if (!full.error && full.data?.length) {
-    rows = full.data as StageRow[];
-  } else {
-    // Coluna buttons/clip ainda não migrada / select falhou → só textos.
-    const legacy = await supabase
+  async function fetchRows(filterConsultant: string | null): Promise<StageRow[]> {
+    let q = supabase
+      .from("cadence_stage_config")
+      .select("stage, message_text, buttons, voice_audio_clip_id, consultant_id")
+      .in("stage", stages);
+    q = filterConsultant
+      ? q.eq("consultant_id", filterConsultant)
+      : q.is("consultant_id", null);
+    const full = await q;
+    if (!full.error && full.data?.length) return full.data as StageRow[];
+    let q2 = supabase
       .from("cadence_stage_config")
       .select("stage, message_text, consultant_id")
-      .is("consultant_id", null)
       .in("stage", stages);
-    if (legacy.error || !legacy.data?.length) return {};
-    rows = legacy.data as StageRow[];
+    q2 = filterConsultant
+      ? q2.eq("consultant_id", filterConsultant)
+      : q2.is("consultant_id", null);
+    const legacy = await q2;
+    if (legacy.error || !legacy.data?.length) return [];
+    return legacy.data as StageRow[];
   }
+
+  let rows: StageRow[] = [];
+  if (consultantId) {
+    rows = await fetchRows(consultantId);
+  }
+  if (!rows.length) {
+    rows = await fetchRows(null);
+  }
+  if (!rows.length) return {};
 
   const stageToKey: Record<string, string> = {};
   for (const [k, s] of Object.entries(STAGE_TEXT_SYNC_MAP)) stageToKey[s] = k;
@@ -670,7 +700,7 @@ export async function publishCadenceLibrary(
     errors.push(`remote: ${(e as Error)?.message || e}`);
   }
   const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, variant);
-  const motor = await syncCadenceLibraryToStageConfig(lib);
+  const motor = await syncCadenceLibraryToStageConfig(lib, consultantId);
   return {
     updated: [...sync.updated, ...motor.updated.map((s) => `motor:${s}`)],
     errors: [...errors, ...sync.errors, ...motor.errors],

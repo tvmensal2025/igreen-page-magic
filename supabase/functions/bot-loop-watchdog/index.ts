@@ -10,6 +10,13 @@ import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
+import {
+  resolveChannelForCustomer,
+  isUnavailable,
+  type ChannelEnv,
+} from "../_shared/channel-sender.ts";
+import { registerSend } from "../_shared/anti-ban.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,7 +30,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const startedAt = Date.now();
-  const stats = { scanned: 0, escalated: 0, skipped_recent_alert: 0, errors: 0 };
+  const stats = {
+    scanned: 0,
+    escalated: 0,
+    skipped_recent_alert: 0,
+    skipped_dnc: 0,
+    tip_skipped_suppressed: 0,
+    tip_sent: 0,
+    errors: 0,
+  };
 
   try {
     const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
@@ -90,7 +105,7 @@ Deno.serve(async (req) => {
         // Carrega o cliente
         const { data: customer } = await supabase
           .from("customers")
-          .select("id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, bot_paused_at, consultant_id, customer_origin")
+          .select("id, name, name_source, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, bot_paused_at, consultant_id, customer_origin, do_not_contact")
           .eq("id", row.customer_id!)
           .maybeSingle();
 
@@ -99,6 +114,18 @@ Deno.serve(async (req) => {
         // Regra de ouro: carteira iGreen nunca é tocada por automação proativa.
         if (!isLeadEligible((customer as any).customer_origin)) {
           stats.skipped_recent_alert++;
+          continue;
+        }
+
+        // Bloqueado / nunca mais contatar: não tipa, não escala handoff.
+        const contact = await assertCanContact(supabase, {
+          customerId: customer.id,
+          phone: customer.phone_whatsapp,
+          consultantId: customer.consultant_id,
+          channel: "whatsapp",
+        });
+        if (!contact.allowed) {
+          stats.skipped_dnc++;
           continue;
         }
 
@@ -134,11 +161,22 @@ Deno.serve(async (req) => {
           })
           .eq("id", customer.id);
 
-        // F12: avisa o lead (best-effort Evolution) — sem isso o chat fica no vácuo.
-        // Em quiet hours (21:30–08:00 BRT) a pausa/alerta acontecem normalmente,
-        // mas a mensagem ao lead NÃO sai de madrugada.
+        // Avisa o lead pelo canal de origem (Whapi/Evolution) — sem tip se
+        // quiet hours / DNC / canal indisponível. Pausa+alerta ao consultor seguem.
         try {
           if (isQuietHourBRT()) throw new Error("quiet_hours_skip_lead_notice");
+
+          const tipGate = await assertCanContact(supabase, {
+            customerId: customer.id,
+            phone: customer.phone_whatsapp,
+            consultantId: customer.consultant_id,
+            channel: "whatsapp",
+          });
+          if (!tipGate.allowed) {
+            stats.tip_skipped_suppressed++;
+            throw new Error(`suppressed:${tipGate.reason || "contact"}`);
+          }
+
           const tipKey = reason === "auto_orphan_step_detected"
             ? "watchdog_orphan_tip"
             : "watchdog_loop_tip";
@@ -155,7 +193,7 @@ Deno.serve(async (req) => {
             tipFallback,
           );
           const tip = tipResolved.text || tipFallback;
-          await supabase.from("conversations").insert({
+          const { data: queued } = await supabase.from("conversations").insert({
             customer_id: customer.id,
             message_direction: "outbound",
             message_text: tip,
@@ -163,34 +201,37 @@ Deno.serve(async (req) => {
             conversation_step: customer.conversation_step,
             delivery_status: "queued",
             origin: "automation:bot-loop-watchdog",
-          });
-          const evolutionUrl = Deno.env.get("EVOLUTION_API_URL");
-          const evolutionKey = Deno.env.get("EVOLUTION_API_KEY");
+          }).select("id").maybeSingle();
+
           const phone = String(customer.phone_whatsapp || "").replace(/\D/g, "");
-          const number = phone.startsWith("55") ? phone : phone ? `55${phone}` : "";
-          if (evolutionUrl && evolutionKey && number && customer.consultant_id) {
-            const { data: inst } = await supabase
-              .from("whatsapp_instances")
-              .select("instance_name")
-              .eq("consultant_id", customer.consultant_id)
-              .maybeSingle();
-            if (inst?.instance_name) {
-              const res = await fetch(
-                `${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`,
-                {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", apikey: evolutionKey },
-                  body: JSON.stringify({ number, text: tip }),
-                },
-              );
-              if (res.ok) {
+          if (phone && customer.consultant_id) {
+            const env: ChannelEnv = {
+              evolutionUrl: Deno.env.get("EVOLUTION_API_URL") ?? undefined,
+              evolutionKey: Deno.env.get("EVOLUTION_API_KEY") ?? undefined,
+              whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+            };
+            const channel = await resolveChannelForCustomer(supabase, customer.id, env);
+            if (isUnavailable(channel)) {
+              throw new Error(`channel_unavailable:${channel.reason}`);
+            }
+            const jid = `${phone}@s.whatsapp.net`;
+            const sendCtx = {
+              customerId: customer.id,
+              consultantId: customer.consultant_id,
+              stepId: `bot-loop-watchdog:${reason}`,
+              idempotencyKey: `watchdog-tip:${customer.id}:${reason}:${queued?.id || Date.now()}`,
+              supabase,
+            };
+            const sendRes = await channel.adapter.sendText(jid, tip, sendCtx);
+            if (sendRes.ok) {
+              await registerSend(supabase, channel.instanceName);
+              if (queued?.id) {
                 await supabase
                   .from("conversations")
                   .update({ delivery_status: "sent" })
-                  .eq("customer_id", customer.id)
-                  .eq("message_text", tip)
-                  .eq("delivery_status", "queued");
+                  .eq("id", queued.id);
               }
+              stats.tip_sent++;
             }
           }
         } catch (e) {

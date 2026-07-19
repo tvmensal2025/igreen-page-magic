@@ -16,6 +16,13 @@ def esc(s: str) -> str:
 
 def main() -> int:
     data = json.loads(PAYLOAD.read_text(encoding="utf-8"))
+    if data.get("_blocked") or data.get("_reason", "").startswith("BLOQUEADO"):
+        print(
+            "ERRO: payload bloqueado (incidente catálogo curto 2026-07-19). "
+            "Não gerar SQL de publish a partir deste arquivo.",
+            file=sys.stderr,
+        )
+        return 2
     consultant = data["bot_flow"]["consultant_id"]
     variant = data["bot_flow"]["variant"]
 

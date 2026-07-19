@@ -397,7 +397,7 @@ async function dispatchWhatsApp(
 
   // Carrega consultor p/ substituir {{consultor}} e {{consultor_phone}} — sem
   // isso, o link `wa.me/{{consultor_phone}}` saía literal ou como `wa.me/`.
-  const { consultantName, consultantPhone } = await loadLeadContext(
+  const { consultantName, consultantPhone, assistantName } = await loadLeadContext(
     supabase, row.customer_id, row.consultant_id,
   );
   const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
@@ -418,6 +418,7 @@ async function dispatchWhatsApp(
   const text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
+    assistente: assistantName,
     consultor_phone: consultantPhone,
     frase_disponibilidade: fraseDisponibilidade,
   });
@@ -454,7 +455,7 @@ async function dispatchWhatsApp(
   }
 }
 
-/** Busca telefone + nome do consultor para merge nas variáveis do template. */
+/** Busca telefone + nome + IA do consultor para merge nas variáveis do template. */
 async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
   const { data: cust } = await supabase
     .from("customers")
@@ -462,17 +463,27 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
     .eq("id", customerId).maybeSingle();
   let consultantName = "";
   let consultantPhone = "";
+  let assistantName = "";
   if (consultantId) {
     const { data: c } = await supabase
       .from("consultants")
-      .select("name, display_name")
+      .select("name, display_name, assistant_name")
       .eq("id", consultantId).maybeSingle();
     const display = String(c?.display_name || c?.name || "").trim();
-    consultantName = display.split(" ")[0] || display;
+    // Preferência: display_name humano; evita slug (tvmensal12) virar "nome".
+    const isSlugLike =
+      display.length > 0 &&
+      !/\s/.test(display) &&
+      display === display.toLowerCase() &&
+      (/\d/.test(display) || display.length >= 9);
+    consultantName = isSlugLike
+      ? ""
+      : (display.split(" ")[0] || display);
+    assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim();
     // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
     consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
   }
-  return { cust, consultantName, consultantPhone };
+  return { cust, consultantName, consultantPhone, assistantName };
 }
 
 async function dispatchVoiceCall(
@@ -528,7 +539,7 @@ async function dispatchSMS(
   supabase: any, row: any, stage: Stage, cfg: StageConfig, loadAvail: AvailLoader,
 ): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
-  const { cust, consultantName, consultantPhone } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  const { cust, consultantName, consultantPhone, assistantName } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
 
   const gate = await assertBotOutboundAllowed(supabase, {
@@ -559,6 +570,7 @@ async function dispatchSMS(
   let text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
+    assistente: assistantName,
     consultor_phone: consultantPhone,
     link_wa: consultantPhone ? `https://wa.me/${consultantPhone}` : "",
     frase_disponibilidade: fraseDisponibilidade,

@@ -45,7 +45,9 @@ import {
   loadLibrary,
   ensureSmsConsultorWaLink,
   normalizeConsultantPhoneDigits,
+  firstNameFromConsultantLabel,
   renderCadenceBody,
+  unresolvedConsultantIdentityPlaceholders,
   resolveAudioSegments,
   resolveBody,
   resolveButtons,
@@ -193,6 +195,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   /** WhatsApp CONECTADO (chip) — mesma cascata do QR/ads; nunca notification_phone. */
   const { phone: connectedWaPhone } = useConsultantPhone(consultantId);
   const consultantPhone = normalizeConsultantPhoneDigits(connectedWaPhone || "");
+  /** Nome + IA dos Dados — usados na prévia e no TTS ({{consultor}} / {{assistente}}). */
+  const [consultantDisplayName, setConsultantDisplayName] = useState("");
+  const [consultantAssistantName, setConsultantAssistantName] = useState("");
+  const consultantFirstName = firstNameFromConsultantLabel(consultantDisplayName);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [previewThemeId, setPreviewThemeId] = useState("simplified_analysis");
@@ -207,7 +213,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     (async () => {
       const { data } = await supabase
         .from("consultants")
-        .select("notification_phone, phone")
+        .select("notification_phone, phone, display_name, name, assistant_name")
         .eq("id", consultantId)
         .maybeSingle();
       if (cancelled) return;
@@ -219,6 +225,15 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         setMyWaPhone(mine);
         setTestPhone((prev) => prev || formatBrazilPhone(mine));
       }
+      const display = String(
+        (data as { display_name?: string | null })?.display_name ||
+          (data as { name?: string | null })?.name ||
+          "",
+      ).trim();
+      setConsultantDisplayName(display);
+      setConsultantAssistantName(
+        String((data as { assistant_name?: string | null })?.assistant_name || "").trim(),
+      );
     })();
     return () => {
       cancelled = true;
@@ -233,7 +248,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       const fromFlow: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromBotFlow(consultantId, "A").catch(
         () => ({} as Partial<SavedCadenceLibrary>),
       );
-      const fromStage: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromStageConfig().catch(
+      const fromStage: Partial<SavedCadenceLibrary> = await loadCadenceLibraryFromStageConfig(consultantId).catch(
         () => ({} as Partial<SavedCadenceLibrary>),
       );
       // Prioridade: motor (Grupo B + C) + fluxo WhatsApp (Grupo A) > remoto > localStorage.
@@ -530,6 +545,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       ? `R$ ${savings.minFormatted} a R$ ${savings.maxFormatted}`
       : undefined,
     consultorPhone: consultantPhone || undefined,
+    consultor: consultantFirstName || undefined,
+    assistente: consultantAssistantName || undefined,
     availabilityOverrides: availabilityOverridesFromLibrary(lib),
   };
   const themeSlot = themePlaceholderKind(draft);
@@ -855,9 +872,25 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         if (spokenFull.length < 8) {
           throw new Error("Texto muito curto para gerar áudio.");
         }
+        const missingIdentity = unresolvedConsultantIdentityPlaceholders(spokenFull);
+        if (missingIdentity.length) {
+          throw new Error(
+            "Preencha em Dados o nome (como o lead te chama) e o nome da IA antes de gerar áudio. " +
+              `Faltando: ${missingIdentity.join(", ")}.`,
+          );
+        }
         const spokenSegs = hasSegments
           ? segsForRun.map((s) => spokenSegmentText(s, vars)).filter(Boolean)
           : [spokenFull];
+        for (const seg of spokenSegs) {
+          const miss = unresolvedConsultantIdentityPlaceholders(seg);
+          if (miss.length) {
+            throw new Error(
+              "Preencha em Dados o nome e o nome da IA antes de gerar áudio. " +
+                `Faltando: ${miss.join(", ")}.`,
+            );
+          }
+        }
 
         const result = await generateSofiaSegmented({
           segments: spokenSegs,
@@ -1487,19 +1520,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     const nSeg = t.audioSegments?.length ?? 0;
                     const snippet = renderCadenceBody(
                       resolveBody(t, lib),
-                      {
-                        nome: previewName,
-                        gender: previewGender,
-                        valorFormatado: billParsed.ok ? billParsed.formatted : previewBill,
-                        valorConta: billParsed.ok ? billParsed.formatted : previewBill,
-                        economiaMin: savings?.minFormatted,
-                        economiaMax: savings?.maxFormatted,
-                        economiaRange: savings
-                          ? `R$ ${savings.minFormatted} a R$ ${savings.maxFormatted}`
-                          : undefined,
-                        consultorPhone: consultantPhone || undefined,
-                        availabilityOverrides: availabilityOverridesFromLibrary(lib),
-                      },
+                      previewVars,
                     )
                       .replace(/\s+/g, " ")
                       .trim()
