@@ -111,6 +111,15 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("customer_origin", "igreen_sync")
           .not("pos_venda_pending_stage", "is", null)
           .eq("pos_venda_invalid", false),
+        // Motor de cadência A→B→C: TODOS os próximos envios programados (sem limite de horizonte).
+        supabase
+          .from("lead_cadence_state")
+          .select("id, customer_id, stage, next_action_at, paused_until, customer:customers!inner(name, phone_whatsapp)")
+          .eq("consultant_id", consultantId)
+          .not("next_action_at", "is", null)
+          .not("stage", "in", "(WON)")
+          .order("next_action_at", { ascending: true })
+          .limit(1000),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
