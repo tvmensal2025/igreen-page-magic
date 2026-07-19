@@ -29,6 +29,7 @@ export function useAgendamentosHub(consultantId: string) {
   const [bulkCampaigns, setBulkCampaigns] = useState<BulkCampaignRow[]>([]);
   const [voiceCampaigns, setVoiceCampaigns] = useState<VoiceCampaignRow[]>([]);
   const [cadence, setCadence] = useState<CadenceScheduleRow[]>([]);
+  const [cadenceStageInfo, setCadenceStageInfo] = useState<Record<string, CadenceStageInfo>>({});
   const [reactivationSettings, setReactivationSettings] = useState<ReactivationSettingsSummary>(
     DEFAULT_REACTIVATION_SETTINGS,
   );
