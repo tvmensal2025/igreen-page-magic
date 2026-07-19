@@ -49,3 +49,11 @@ export function resolveScheduleChannel(opts: {
     pending: "whatsapp_disconnected",
   };
 }
+
+/** Helper com narrow via `in` — `tsc -b` não estreita bem o discriminante `ok`. */
+export function scheduleChannelBlockedReason(
+  channel: ScheduleChannelReady,
+): string | null {
+  if ("reason" in channel) return channel.reason;
+  return null;
+}

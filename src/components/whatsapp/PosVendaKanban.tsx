@@ -22,6 +22,7 @@ import PendingApprovalDialog from "./PendingApprovalDialog";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
 import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
+import { resolveScheduleChannel } from "@/lib/scheduleChannel";
 
 type Stage = "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
 
@@ -286,7 +287,7 @@ export default function PosVendaKanban({
           return;
         }
 
-        // Instância WhatsApp do consultor dono (Whapi ou Evolution).
+        // Canal do consultor dono: mesma regra do Hub (`resolveScheduleChannel`).
         const ownerId = c.assigned_consultant_id || c.consultant_id;
         const { data: inst } = await supabase
           .from("whatsapp_instances")
@@ -297,19 +298,23 @@ export default function PosVendaKanban({
           .maybeSingle();
 
         const status = String(inst?.status || "").toLowerCase();
-        const evoOk =
+        const evoConnected =
           !!inst?.instance_name &&
           (!status || ["connected", "online", "open"].includes(status));
 
-        // Super admin → sempre Whapi (mesmo com Evolution legado no banco).
-        let scheduleInstance: string | null = null;
+        let isSuper = false;
         try {
-          const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: ownerId });
-          if (isSuper === true) scheduleInstance = "whapi-superadmin";
+          const { data } = await supabase.rpc("is_super_admin", { _user_id: ownerId });
+          isSuper = data === true;
         } catch { /* ignora */ }
-        if (!scheduleInstance && evoOk) scheduleInstance = inst!.instance_name;
 
-        if (!scheduleInstance) {
+        const channelReady = resolveScheduleChannel({
+          isWhapi: isSuper,
+          instanceName: inst?.instance_name ?? null,
+          isConnected: isSuper || evoConnected,
+        });
+
+        if (!channelReady.ok) {
           toast.warning(
             "Reprovado, mas falta WhatsApp conectado (Whapi ou Evolution) para agendar o lembrete. Conecte e reagende.",
           );
@@ -317,7 +322,7 @@ export default function PosVendaKanban({
           const when = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
           const { error: schedErr } = await supabase.from("scheduled_messages").insert({
             consultant_id: ownerId,
-            instance_name: scheduleInstance,
+            instance_name: channelReady.instanceName,
             remote_jid: `${phone}@s.whatsapp.net`,
             message_text: text,
             scheduled_at: when.toISOString(),
@@ -327,7 +332,7 @@ export default function PosVendaKanban({
             toast.error("Reprovado, mas falhou ao agendar lembrete: " + schedErr.message);
           } else {
             toast.success(
-              `Lembrete agendado para daqui a ${days} dias (${scheduleInstance.startsWith("whapi") ? "Whapi" : "Evolution"}).`,
+              `Lembrete agendado para daqui a ${days} dias (${channelReady.channel === "whapi" ? "Whapi" : "Evolution"}).`,
             );
           }
         }

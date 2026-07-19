@@ -11,7 +11,10 @@ import {
   type AgendamentoTimelineItem,
 } from "@/lib/agendamentosHub";
 import { labelForStageKey } from "@/lib/posVendaSchedule";
-import { resolveScheduleChannel } from "@/lib/scheduleChannel";
+import {
+  resolveScheduleChannel,
+  scheduleChannelBlockedReason,
+} from "@/lib/scheduleChannel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -239,7 +242,7 @@ export function AgendamentosHub({
     instanceName,
     isConnected: isConnected ?? (isWhapi ? true : undefined),
   });
-  const channelBlockedReason = channelReady.ok ? null : channelReady.reason;
+  const channelBlockedReason = scheduleChannelBlockedReason(channelReady);
 
   const handleCreateManual = async () => {
     if (!phone.trim() || !text.trim() || !scheduledAt) return;

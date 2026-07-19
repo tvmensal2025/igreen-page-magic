@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
         if (phone) {
           let custQuery = supabase
             .from("customers")
-            .select("id, name, name_source, electricity_bill_value, consultant_id, bot_paused, assigned_human_id, bot_paused_until, do_not_contact")
+            .select("id, name, name_source, electricity_bill_value, consultant_id, do_not_contact")
             .eq("phone_whatsapp", phone);
           if (msg.consultant_id) {
             custQuery = custQuery.or(
@@ -144,24 +144,9 @@ Deno.serve(async (req) => {
             .order("updated_at", { ascending: false })
             .limit(1)
             .maybeSingle();
-          const paused =
-            !!cust?.do_not_contact ||
-            !!cust?.bot_paused ||
-            !!cust?.assigned_human_id ||
-            (cust?.bot_paused_until && new Date(cust.bot_paused_until).getTime() > Date.now());
-          if (paused) {
-            await supabase
-              .from("scheduled_messages")
-              .update({ status: "skipped", processing_started_at: null })
-              .eq("id", msg.id);
-            console.log(`⏭️ [scheduled] msg ${msg.id} pulada — pausado/opt-out (phone=${phone})`);
-            skippedPaused++;
-            continue;
-          }
+          // Agenda MANUAL: consultor pediu o envio. NÃO pular por bot_paused /
+          // assigned_human_id (isso é gate de bot automático). Só DNC/opt-out.
           if (cust?.id || phone) {
-            // Agenda MANUAL do consultor: NÃO usa assertBotOutboundAllowed
-            // (esse gate checa bot_global_enabled e mataria o envio com kill switch).
-            // Mantém só DNC / never-contact.
             const suppression = await assertCanContact(supabase as any, {
               customerId: (cust as { id?: string } | null)?.id,
               phone,

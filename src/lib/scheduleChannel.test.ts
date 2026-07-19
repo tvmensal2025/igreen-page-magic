@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { resolveScheduleChannel } from "./scheduleChannel";
+import {
+  resolveScheduleChannel,
+  scheduleChannelBlockedReason,
+} from "./scheduleChannel";
 
 describe("resolveScheduleChannel", () => {
   it("Whapi conectado usa whapi-superadmin", () => {
@@ -9,11 +12,13 @@ describe("resolveScheduleChannel", () => {
       expect(r.channel).toBe("whapi");
       expect(r.instanceName).toBe("whapi-superadmin");
     }
+    expect(scheduleChannelBlockedReason(r)).toBeNull();
   });
 
   it("Whapi desconectado bloqueia", () => {
     const r = resolveScheduleChannel({ isWhapi: true, isConnected: false });
     expect(r.ok).toBe(false);
+    expect(scheduleChannelBlockedReason(r)).toMatch(/Whapi desconectado/);
   });
 
   it("Evolution usa instanceName", () => {
@@ -37,6 +42,7 @@ describe("resolveScheduleChannel", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.ok === false && r.pending).toBe("whatsapp_disconnected");
+    expect(scheduleChannelBlockedReason(r)).toMatch(/desconectado/i);
   });
 
   it("sem canal → pendência", () => {
