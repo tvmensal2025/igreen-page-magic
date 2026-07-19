@@ -14,6 +14,7 @@ import {
   type AgendamentoTimelineItem,
   type BotFollowupRow,
   type BulkCampaignRow,
+  type CadenceScheduleRow,
   type ReactivationSettingsSummary,
   type ScheduledMessageRow,
   type VoiceCampaignRow,
@@ -26,6 +27,7 @@ export function useAgendamentosHub(consultantId: string) {
   const [botFollowups, setBotFollowups] = useState<BotFollowupRow[]>([]);
   const [bulkCampaigns, setBulkCampaigns] = useState<BulkCampaignRow[]>([]);
   const [voiceCampaigns, setVoiceCampaigns] = useState<VoiceCampaignRow[]>([]);
+  const [cadence, setCadence] = useState<CadenceScheduleRow[]>([]);
   const [reactivationSettings, setReactivationSettings] = useState<ReactivationSettingsSummary>(
     DEFAULT_REACTIVATION_SETTINGS,
   );
