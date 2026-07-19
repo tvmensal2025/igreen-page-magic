@@ -285,13 +285,18 @@ function cadastroUpdates(billValue?: number): Record<string, unknown> {
 }
 
 /**
- * Entrada no fluxo conversacional Grupo A (passo 3+).
- * conversation_step=null → resolveLandingStep pula a1/a2 se nome/valor já existem
- * e emite a3_explain_with_buttons (áudio + texto + botões).
+ * Entrada no fluxo conversacional Grupo A após retorno de cadência B/C.
+ *
+ * Regra: tempo passou — o gasto pode ter mudado. Sempre limpa o valor da
+ * conta para o motor re-pedir o a2 (áudio + pedir valor). O nome NÃO é
+ * re-pedido: se já existir, resolveLandingStep pula a1 e pousa no a2.
+ *
+ * Faixa/botão/valor digitado na cadência NÃO grava electricity_bill_value
+ * aqui — só sinaliza engajamento; o valor oficial vem do a2.
  */
 function conversationalEntryUpdates(
   customer: CadenceInboundInput["customer"],
-  billValue?: number,
+  _billValue?: number,
 ): Record<string, unknown> {
   const u: Record<string, unknown> = {
     flow_variant: "A",
@@ -301,11 +306,11 @@ function conversationalEntryUpdates(
     custom_step_retries: 0,
     last_custom_prompt_at: null,
     ai_followups_count: 0,
+    // Força a2 (pedir valor de novo). Valor antigo / faixa da cadência não conta.
+    electricity_bill_value: null,
   };
-  const merged = mergeBillValue(customer, billValue);
-  if (merged != null) u.electricity_bill_value = merged;
   const nm = String(customer?.name || "").trim();
-  if (nm.length >= 2) u.name_source = "cadence";
+  if (nm.length >= 2) u.name_source = "cadence"; // TRUSTED → pula a1
   return u;
 }
 
