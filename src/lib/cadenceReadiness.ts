@@ -88,25 +88,32 @@ export async function loadCadenceGaps(): Promise<CadenceGap[]> {
     ]),
   ];
 
-  const [cfgRes, tgRes] = await Promise.all([
+  const [cfgRes, tgRes, userRes] = await Promise.all([
     (supabase as any)
       .from("cadence_stage_config")
-      .select("stage, enabled, voice_audio_clip_id, message_text")
-      .is("consultant_id", null)
+      .select("stage, enabled, voice_audio_clip_id, message_text, consultant_id")
       .in("stage", stageKeys),
     (supabase as any)
       .from("automation_toggles")
       .select("key, enabled")
       .in("key", [...new Set(Object.values(STAGE_TO_TOGGLE))]),
+    supabase.auth.getUser(),
   ]);
 
+  const userId = userRes.data.user?.id ?? null;
   const rows = (cfgRes.data || []) as Array<{
     stage: string;
     enabled: boolean | null;
     voice_audio_clip_id: string | null;
     message_text: string | null;
+    consultant_id: string | null;
   }>;
-  const byStage = new Map(rows.map((r) => [r.stage, r]));
+  const byStage = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (row.consultant_id !== null && row.consultant_id !== userId) continue;
+    const current = byStage.get(row.stage);
+    if (!current || row.consultant_id === userId) byStage.set(row.stage, row);
+  }
   const toggles = new Map(
     ((tgRes.data || []) as Array<{ key: string; enabled: boolean }>).map((t) => [
       t.key,
@@ -115,6 +122,8 @@ export async function loadCadenceGaps(): Promise<CadenceGap[]> {
   );
 
   for (const { key, stage } of VOICE_STAGES) {
+    const toggleKey = STAGE_TO_TOGGLE[stage];
+    if (toggleKey && toggles.get(toggleKey) === false) continue;
     const row = byStage.get(stage);
     const name = humanStepName(stage, key);
     const hasClip = !!(row?.voice_audio_clip_id && String(row.voice_audio_clip_id).trim());

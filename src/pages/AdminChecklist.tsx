@@ -117,12 +117,25 @@ export default function AdminChecklist() {
     }
   };
 
+  const systemDone = useMemo(() => {
+    const okKeys = new Set(auto.filter((a) => a.ok === true).map((a) => a.key));
+    return new Set(
+      ZERO_LEAD_CHECKLIST.filter((it) => it.autoKey && okKeys.has(it.autoKey)).map((it) => it.key),
+    );
+  }, [auto]);
+
+  const effectiveDone = useMemo(() => {
+    const merged = new Set(done);
+    for (const key of systemDone) merged.add(key);
+    return merged;
+  }, [done, systemDone]);
+
   const visible = useMemo(
-    () => (showDone ? ZERO_LEAD_CHECKLIST : ZERO_LEAD_CHECKLIST.filter((i) => !done.has(i.key))),
-    [done, showDone],
+    () => (showDone ? ZERO_LEAD_CHECKLIST : ZERO_LEAD_CHECKLIST.filter((i) => !effectiveDone.has(i.key))),
+    [effectiveDone, showDone],
   );
   const total = ZERO_LEAD_CHECKLIST.length;
-  const completed = done.size;
+  const completed = effectiveDone.size;
   const pct = Math.round((completed / Math.max(total, 1)) * 100);
 
   const autoOk = auto.filter((a) => a.ok === true).length;
@@ -212,7 +225,7 @@ export default function AdminChecklist() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Progresso da sua validação
+              Progresso validado
             </div>
             <div className="text-3xl font-bold mt-1">
               {completed}{" "}
@@ -220,6 +233,11 @@ export default function AdminChecklist() {
                 de {total} itens
               </span>
             </div>
+            {systemDone.size > 0 && (
+              <div className="text-xs text-muted-foreground mt-1">
+                {systemDone.size} item(ns) reconhecido(s) automaticamente pela produção.
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={() => setShowDone((v) => !v)}>
@@ -277,7 +295,8 @@ export default function AdminChecklist() {
                 </div>
                 <div className="space-y-3">
                   {items.map((it) => {
-                    const isDone = done.has(it.key);
+                    const isSystemDone = systemDone.has(it.key);
+                    const isDone = effectiveDone.has(it.key);
                     const autoStatus = it.autoKey ? autoMap.get(it.autoKey) : undefined;
                     return (
                       <Card
@@ -288,6 +307,7 @@ export default function AdminChecklist() {
                       >
                         <Checkbox
                           checked={isDone}
+                          disabled={isSystemDone && !done.has(it.key)}
                           onCheckedChange={(v) => toggle(it.key, Boolean(v))}
                           className="mt-1"
                         />
@@ -307,6 +327,9 @@ export default function AdminChecklist() {
                               >
                                 auto: {autoStatus.ok ? "OK" : "checar"}
                               </Badge>
+                            )}
+                            {isSystemDone && !done.has(it.key) && (
+                              <Badge variant="outline">validado pela produção</Badge>
                             )}
                           </div>
                           <div className="text-sm text-muted-foreground leading-relaxed">

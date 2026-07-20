@@ -220,6 +220,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Texto ≤160 com **https://wa.me/{{consultor_phone}}** e SAIR. Conferir prévia Multicanal.",
     link: "/admin/agendamentos-central",
     group: "grupoB",
+    autoKey: "sms1_wame",
   },
   {
     key: "b4_call1",
@@ -227,6 +228,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Áudio: valor médio / WhatsApp / sem Pix. Só se ainda silêncio.",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day2_wa",
@@ -248,6 +250,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Atualização diferente; espaçada (anti-spam).",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day6_sms",
@@ -255,6 +258,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Sem ligação no mesmo dia. Link wa.me + SAIR.",
     link: "/admin/agendamentos-central",
     group: "grupoB",
+    autoKey: "sms2_wame",
   },
   {
     key: "b_day7_wa",
@@ -283,6 +287,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Encerramento educado; oferece manter análise ou encerrar.",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day10_wa",
@@ -366,6 +371,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Cascata: `whatsapp_instances.connected_phone` → `consultants.phone`. **Nunca** notification_phone.",
     link: "/admin/agendamentos-central",
     group: "sms",
+    autoKey: "sms1_wame",
   },
   {
     key: "sms2_preview",
@@ -389,6 +395,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Áudios stitchados e testados no painel de voz (dryRun / kit).",
     link: "/admin?tab=voz",
     group: "voz",
+    autoKey: "call_clips_ready",
   },
   {
     key: "v2_velip",
@@ -396,6 +403,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Sem Velip, CALL_* falha com `velip_not_configured`.",
     link: "/admin?tab=voz",
     group: "voz",
+    autoKey: "call_clips_velip",
   },
 
   // ── Meta ──
@@ -448,8 +456,16 @@ export type AutoCheckResult = {
 
 export async function runZeroLeadAutoAudit(supabase: {
   from: (t: string) => any;
+  auth?: { getUser?: () => Promise<{ data: { user: { id: string } | null } }> };
 }): Promise<AutoCheckResult[]> {
   const results: AutoCheckResult[] = [];
+  let userId: string | null = null;
+  try {
+    const userRes = await supabase.auth?.getUser?.();
+    userId = userRes?.data.user?.id ?? null;
+  } catch {
+    userId = null;
+  }
 
   const { data: toggles } = await supabase
     .from("automation_toggles")
@@ -557,14 +573,22 @@ export async function runZeroLeadAutoAudit(supabase: {
 
   const { data: stages } = await supabase
     .from("cadence_stage_config")
-    .select("stage, enabled, message_text")
-    .is("consultant_id", null)
+    .select("stage, enabled, message_text, consultant_id, voice_audio_clip_id")
     .in("stage", ["COLD_2", "SMS_TEMA_2", "SMS_TEMA_7"]);
 
-  type StageRow = { stage: string; enabled: boolean; message_text: string | null };
-  const byStage = new Map<string, StageRow>(
-    ((stages ?? []) as StageRow[]).map((s) => [s.stage, s]),
-  );
+  type StageRow = {
+    stage: string;
+    enabled: boolean;
+    message_text: string | null;
+    consultant_id: string | null;
+    voice_audio_clip_id: string | null;
+  };
+  const byStage = new Map<string, StageRow>();
+  for (const row of (stages ?? []) as StageRow[]) {
+    if (row.consultant_id !== null && row.consultant_id !== userId) continue;
+    const current = byStage.get(row.stage);
+    if (!current || row.consultant_id === userId) byStage.set(row.stage, row);
+  }
 
   const cold2 = byStage.get("COLD_2");
   results.push({
@@ -584,6 +608,71 @@ export async function runZeroLeadAutoAudit(supabase: {
     label: "SMS_TEMA_* seeds",
     detail: st2 && st7 ? "OK SMS_TEMA_2 + SMS_TEMA_7" : "Falta seed de SMS tema",
   });
+
+  const { data: productionStages } = await supabase
+    .from("cadence_stage_config")
+    .select("stage, enabled, message_text, consultant_id, voice_audio_clip_id")
+    .in("stage", ["SMS_1", "SMS_2", "CALL_1", "CALL_2", "CALL_3"]);
+
+  const byProductionStage = new Map<string, StageRow>();
+  for (const row of (productionStages ?? []) as StageRow[]) {
+    if (row.consultant_id !== null && row.consultant_id !== userId) continue;
+    const current = byProductionStage.get(row.stage);
+    if (!current || row.consultant_id === userId) byProductionStage.set(row.stage, row);
+  }
+
+  const hasWaMe = (text: string) => /wa\.me\/(\{\{\s*consultor_phone\s*\}\}|55\d{10,13})/i.test(text);
+  const sms1Text = byProductionStage.get("SMS_1")?.message_text || "";
+  const sms2Text = byProductionStage.get("SMS_2")?.message_text || "";
+  results.push({
+    key: "sms1_wame",
+    ok: hasWaMe(sms1Text),
+    label: "SMS D+1 com wa.me",
+    detail: sms1Text ? "Texto salvo no motor" : "SMS_1 sem texto salvo",
+  });
+  results.push({
+    key: "sms2_wame",
+    ok: hasWaMe(sms2Text),
+    label: "SMS Dia 6 com wa.me",
+    detail: sms2Text ? "Texto salvo no motor" : "SMS_2 sem texto salvo",
+  });
+
+  const callRows = ["CALL_1", "CALL_2", "CALL_3"].map((stage) => byProductionStage.get(stage));
+  const clipIds = callRows.map((row) => row?.voice_audio_clip_id).filter(Boolean) as string[];
+  const allCallClips = callRows.every((row) => !!row?.voice_audio_clip_id);
+  results.push({
+    key: "call_clips_ready",
+    ok: allCallClips,
+    label: "CALL_1/2/3 com clip Sofia",
+    detail: `${clipIds.length}/3 clips vinculados no motor`,
+  });
+
+  if (clipIds.length > 0) {
+    const { data: clips } = await supabase
+      .from("voice_audio_clips")
+      .select("id, velip_audio_id")
+      .in("id", clipIds);
+    const velipById = new Map(
+      ((clips ?? []) as Array<{ id: string; velip_audio_id: string | null }>).map((clip) => [
+        clip.id,
+        !!clip.velip_audio_id,
+      ]),
+    );
+    const allVelip = clipIds.length === 3 && clipIds.every((id) => velipById.get(id) === true);
+    results.push({
+      key: "call_clips_velip",
+      ok: allVelip,
+      label: "Clips enviados para Velip",
+      detail: `${clipIds.filter((id) => velipById.get(id) === true).length}/3 clips com Velip`,
+    });
+  } else {
+    results.push({
+      key: "call_clips_velip",
+      ok: false,
+      label: "Clips enviados para Velip",
+      detail: "Nenhum clip de ligação vinculado",
+    });
+  }
 
   const { data: fb } = await supabase
     .from("facebook_connections")
