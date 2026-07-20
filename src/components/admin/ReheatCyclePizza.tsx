@@ -20,8 +20,7 @@ import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/ca
 import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
-import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
-import { isCrmCadastroEmAnalise, isNuncaMaisContatar } from "@/lib/crmVsLeadAnalysis";
+import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
 import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 
 type SliceEditTarget = {
