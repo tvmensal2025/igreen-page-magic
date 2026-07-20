@@ -600,11 +600,13 @@ const AdminContent = () => {
           )}
 
           {userId && activeTab === "conversao" && (
-            <ConversaoCockpit
-              consultantId={userId}
-              initialView={pendingConversaoView ?? undefined}
-              onViewConsumed={() => setPendingConversaoView(null)}
-            />
+            <ForceDesktopLayout minWidth={1280}>
+              <ConversaoCockpit
+                consultantId={userId}
+                initialView={pendingConversaoView ?? undefined}
+                onViewConsumed={() => setPendingConversaoView(null)}
+              />
+            </ForceDesktopLayout>
           )}
 
           {userId && activeTab === "produtos" && (
