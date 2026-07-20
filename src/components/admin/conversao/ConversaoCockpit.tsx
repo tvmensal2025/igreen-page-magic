@@ -459,12 +459,12 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
   }, [selectedIds, rows, exitSelectMode, fetchRows]);
 
   return (
-    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4">
-      <TabsList className="h-9 w-full justify-start gap-1 overflow-x-auto sm:w-auto">
-        <TabsTrigger value="fila" className="px-3">Fila</TabsTrigger>
-        <TabsTrigger value="frases" className="px-3">Frases</TabsTrigger>
-        <TabsTrigger value="resultados" className="px-3">Resultados</TabsTrigger>
-        <TabsTrigger value="config" className="px-3">Ajustes</TabsTrigger>
+    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4 pb-24">
+      <TabsList className="h-10 w-auto justify-start gap-1">
+        <TabsTrigger value="fila" className="px-4">Fila</TabsTrigger>
+        <TabsTrigger value="frases" className="px-4">Frases</TabsTrigger>
+        <TabsTrigger value="resultados" className="px-4">Resultados</TabsTrigger>
+        <TabsTrigger value="config" className="px-4">Ajustes</TabsTrigger>
       </TabsList>
 
       <TabsContent value="fila" className="space-y-3">
