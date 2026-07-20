@@ -76,8 +76,8 @@ function humanizeCloseFailure(body: EndBody): string {
   if (detail) {
     const map: Record<string, string> = {
       whapi_send_returned_false: "WhatsApp recusou o envio para este número",
-      evolution_send_returned_false: "Evolution recusou o envio para este número",
-      whapi_token_missing: "Token Whapi ausente",
+      evolution_send_returned_false: "iGreen Link recusou o envio para este número",
+      whapi_token_missing: "Token iGreen Chat ausente",
     };
     return map[detail] || detail;
   }
@@ -330,7 +330,7 @@ export function CloseAttendanceBatchDialog({
           return;
         }
         const timer = setTimeout(() => {
-          reject(new Error(`Timeout ${Math.round(ms / 1000)}s — Whapi/fila demorou demais; pulando este lead`));
+          reject(new Error(`Timeout ${Math.round(ms / 1000)}s — fila de envio demorou demais; pulando este lead`));
         }, ms);
         const onAbort = () => {
           clearTimeout(timer);
@@ -448,7 +448,7 @@ export function CloseAttendanceBatchDialog({
         setPhase("sending");
         setElapsedSec(0);
         setPauseLeftSec(0);
-        patchResult(lead.id, { status: "running", detail: "Encerramento + pesquisa (fila Whapi)" }, snapshot);
+        patchResult(lead.id, { status: "running", detail: "Encerramento + pesquisa (fila iGreen Chat)" }, snapshot);
 
         const tick = window.setInterval(() => {
           setElapsedSec((s) => s + 1);
@@ -679,7 +679,7 @@ export function CloseAttendanceBatchDialog({
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400">
                 Enviando agora · {elapsedSec}s
-                {elapsedSec >= 20 ? " (fila Whapi — normal)" : ""}
+                {elapsedSec >= 20 ? " (fila iGreen Chat — normal)" : ""}
               </p>
               <p className="text-sm font-medium truncate sensitive-name mt-0.5">
                 {currentLead.name || "Sem nome"}

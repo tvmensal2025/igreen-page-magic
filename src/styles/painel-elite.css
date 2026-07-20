@@ -190,6 +190,9 @@
   border-bottom: 1px solid var(--pe-border);
   flex-wrap: wrap;
 }
+.painel-elite .pe-page-header > * {
+  min-width: 0;
+}
 .painel-elite .pe-page-title {
   font-family: 'Outfit', sans-serif;
   font-size: 22px;
@@ -215,6 +218,11 @@
   padding-bottom: 10px;
   border-bottom: 1px solid var(--pe-border);
   margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.painel-elite .pe-section-header > *,
+.painel-elite .pe-section-head > * {
+  min-width: 0;
 }
 .painel-elite .pe-section-header h2,
 .painel-elite .pe-section-header h3,
@@ -245,11 +253,14 @@
   border: 1px solid var(--pe-border);
   border-radius: var(--pe-radius);
   padding: 16px 18px;
+  padding-right: 48px; /* reserva espaço do ícone absoluto */
   display: flex;
   flex-direction: column;
   gap: 8px;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
   position: relative;
+  min-width: 0;
+  overflow: hidden;
 }
 .painel-elite .pe-card-kpi:hover {
   border-color: var(--pe-accent);
@@ -261,15 +272,21 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--pe-text-label);
+  padding-right: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .painel-elite .pe-kpi-value {
   font-family: 'Outfit', sans-serif;
   font-weight: 600;
-  font-size: 26px;
-  line-height: 1.1;
+  font-size: clamp(1.125rem, 4.5vw, 1.625rem);
+  line-height: 1.2;
   letter-spacing: -0.02em;
   color: var(--pe-text);
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .painel-elite .pe-kpi-icon {
   position: absolute;
@@ -310,6 +327,29 @@
 .painel-elite .pe-kpi-sub {
   font-size: 12px;
   color: var(--pe-text-muted);
+  padding-right: 4px;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+@media (max-width: 480px) {
+  .painel-elite .pe-kpi-value {
+    font-size: clamp(1rem, 5vw, 1.25rem);
+  }
+}
+
+@media (max-width: 640px) {
+  .painel-elite .pe-card-kpi {
+    padding: 12px 14px;
+    padding-right: 44px;
+  }
+  .painel-elite .pe-kpi-value {
+    font-size: clamp(1.05rem, 4.2vw, 1.375rem);
+  }
 }
 
 /* Toolbar / filter chips */
@@ -345,6 +385,10 @@
 .painel-elite .pe-chip.is-active svg { color: var(--pe-accent); }
 
 /* Table */
+.painel-elite .pe-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .painel-elite .pe-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .painel-elite .pe-table thead th {
   font-size: 11px;

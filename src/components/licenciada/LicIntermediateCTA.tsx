@@ -17,7 +17,7 @@ const LicIntermediateCTA = ({ whatsappUrl, consultantId, headline, subtext, emoj
     <section className="relative overflow-hidden">
       <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, transparent, hsl(var(--primary) / 0.05), transparent)' }} />
       <div className="section-container !py-12 text-center relative z-10">
-        <div className="glass-card !p-8 md:!p-12 max-w-3xl mx-auto relative overflow-hidden">
+        <div className="glass-card !p-5 sm:!p-8 md:!p-12 max-w-3xl mx-auto relative overflow-hidden">
           <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full opacity-20" style={{ background: 'radial-gradient(circle, hsl(var(--primary)), transparent)' }} />
           
           <p className="text-4xl mb-4">{emoji}</p>
@@ -28,7 +28,7 @@ const LicIntermediateCTA = ({ whatsappUrl, consultantId, headline, subtext, emoj
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-cta-lg animate-pulse-green inline-block"
+            className="btn-cta-lg animate-pulse-green inline-flex w-full sm:w-auto max-w-full justify-center !px-4 sm:!px-8 text-center"
             onClick={handleClick}
           >
             🚀 Quero garantir minha vaga agora

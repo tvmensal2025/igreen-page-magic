@@ -206,32 +206,65 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     }
   });
 
-  it("passo 2 Olá+nome + corpos M/F; passos 3/4a só nome + corpo fixo", () => {
+  it("passo 2 Olá+nome; passo 3 Nome+não tem segredo; 4a Então+nome", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
     expect(a2?.audioSegments?.length).toBe(3);
     expect(a2?.audioSegments?.[0]?.kind).toBe("name");
-    expect(a2?.audioSegments?.[0]?.text).toBe("Olá, {{nome}}.");
+    expect(a2?.audioSegments?.[0]?.text).toBe("Olá, {{nome}}! Tudo bem?");
+    expect(a2?.title).toMatch(/tudo bem/i);
     expect(a2?.audioSegments?.filter((s) => s.genderVariant).length).toBe(2);
     expect(a3?.audioSegments?.length).toBe(2);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
-    expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}.");
+    expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}, não tem segredo.");
     expect(a3?.audioSegments?.[1]?.kind).toBe("fixed");
-    expect(a3?.audioSegments?.some((s) => /então/i.test(s.text))).toBe(false);
     expect(a5?.audioSegments?.length).toBe(2);
     expect(a5?.audioSegments?.[0]?.kind).toBe("name");
-    expect(a5?.audioSegments?.[0]?.text).toBe("{{nome}}.");
+    expect(a5?.audioSegments?.[0]?.text).toBe("Então, {{nome}}.");
     expect(a5?.audioSegments?.[1]?.kind).toBe("fixed");
-    expect(a5?.audioSegments?.some((s) => s.kind === "name")).toBe(true);
   });
 
-  it("spokenSegmentText Então, Nome. (legado)", () => {
+  it("ligações usam Olá+nome+tudo bem (nunca só o nome)", () => {
+    const calls = MULTICHANNEL_CADENCE_TEMPLATES.filter(
+      (t) => t.channel === "call_script" && t.audioSegments?.some((s) => s.kind === "name"),
+    );
+    expect(calls.length).toBeGreaterThan(5);
+    for (const t of calls) {
+      const nameSeg = t.audioSegments!.find((s) => s.kind === "name")!;
+      expect(nameSeg.text, t.key).toMatch(/Olá,\s*\{\{nome\}\}!\s*Tudo bem\?/);
+      expect(nameSeg.text, t.key).not.toBe("{{nome}}");
+      expect(nameSeg.text, t.key).not.toBe("{{nome}}.");
+    }
+  });
+
+  it("spokenSegmentText Então, Nome. (passo 4a)", () => {
     const out = spokenSegmentText(
       { id: "x", kind: "name", label: "", text: "Então, {{nome}}." },
       { nome: "Maria Silva" },
     );
     expect(out).toBe("Então, Maria.");
+  });
+
+  it("spokenSegmentText Nome, não tem segredo (passo 3)", () => {
+    const out = spokenSegmentText(
+      { id: "x", kind: "name", label: "", text: "{{nome}}, não tem segredo." },
+      { nome: "Maria Silva" },
+    );
+    expect(out).toBe("Maria, não tem segredo.");
+  });
+
+  it("spokenSegmentText sem nome → string vazia (pula intro; evita TTS Cliente)", () => {
+    const a3 = spokenSegmentText(
+      { id: "x", kind: "name", label: "", text: "{{nome}}, não tem segredo." },
+      { nome: "" },
+    );
+    const a5 = spokenSegmentText(
+      { id: "y", kind: "name", label: "", text: "Então, {{nome}}." },
+      {},
+    );
+    expect(a3).toBe("");
+    expect(a5).toBe("");
   });
 
   it("renderCadenceBody resolve {{consultor}} e {{assistente}} dos Dados", () => {
@@ -276,14 +309,16 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a5b?.pairedAudioKey).toBe("a5_audio_club_benefits");
   });
 
-  it("passo 2 usa Olá+nome; passos 3 e 4a só o nome", () => {
+  it("passo 2 usa Olá+nome+tudo bem; passo 3 Nome+não tem segredo; 4a Então+nome", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
-    expect(a2?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Olá, {{nome}}.");
-    expect(a3?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("{{nome}}.");
+    const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
+    expect(a2?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Olá, {{nome}}! Tudo bem?");
+    expect(a3?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("{{nome}}, não tem segredo.");
+    expect(a5?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Então, {{nome}}.");
   });
 
-  it("spokenSegmentText com {{nome}} puro = só o nome (passo 3)", () => {
+  it("spokenSegmentText com {{nome}} puro = só o nome (legado)", () => {
     const out = spokenSegmentText(
       { id: "x", kind: "name", label: "", text: "{{nome}}" },
       { nome: "Maria Silva" },
@@ -291,12 +326,12 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(out).toBe("Maria.");
   });
 
-  it("spokenSegmentText com Olá, {{nome}}. (passo 2)", () => {
+  it("spokenSegmentText Olá+nome+tudo bem (passo 2a = ligação)", () => {
     const out = spokenSegmentText(
-      { id: "x", kind: "name", label: "", text: "Olá, {{nome}}." },
+      { id: "x", kind: "name", label: "", text: "Olá, {{nome}}! Tudo bem?" },
       { nome: "Maria Silva" },
     );
-    expect(out).toBe("Olá, Maria.");
+    expect(out).toBe("Olá, Maria! Tudo bem?");
   });
 
   it("2a tem corpos fixos Sofia/Rafael gestor (2 áudios M/F)", () => {

@@ -37,8 +37,6 @@ const AdminSofiaNameAudios = lazy(() => import("./pages/AdminSofiaNameAudios"));
 const ConsultantMessages = lazy(() => import("./pages/ConsultantMessages"));
 const AjudaPage = lazy(() => import("./pages/AjudaPage"));
 const AdminTourEditor = lazy(() => import("./pages/AdminTourEditor"));
-const AdminChecklist = lazy(() => import("./pages/AdminChecklist"));
-
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const ConexaoProductPage = lazy(() => import("./pages/ConexaoProductPage"));
@@ -124,7 +122,7 @@ const App = () => (
               <Route path="/admin/protocolos" element={<ProtectedRoute><AdminProtocolsPage /></ProtectedRoute>} />
               <Route path="/admin/motor" element={<ProtectedRoute><AdminMotorCadencia /></ProtectedRoute>} />
               <Route path="/admin/agendamentos-central" element={<ProtectedRoute><AdminAgendamentosCentral /></ProtectedRoute>} />
-              <Route path="/admin/checklist" element={<ProtectedRoute><AdminChecklist /></ProtectedRoute>} />
+              <Route path="/admin/checklist" element={<Navigate to="/admin/agendamentos-central" replace />} />
               <Route path="/consultor/mensagens" element={<ProtectedRoute><ConsultantMessages /></ProtectedRoute>} />
               <Route path="/ajuda" element={<ProtectedRoute><AjudaPage /></ProtectedRoute>} />
               <Route path="/admin/ajuda/editor" element={<ProtectedRoute><AdminTourEditor /></ProtectedRoute>} />

@@ -69,7 +69,7 @@ function buildSofiaSpokenText(opts: {
   if (!opts.personalize) return body;
   const nome = firstName(opts.leadName) || "cliente";
   // Um único trecho (sem concat de MP3) = mesma voz contínua e natural.
-  return `Olá, ${nome}. ${body}`;
+  return `Olá, ${nome}! Tudo bem? ${body}`;
 }
 
 async function generateSofiaMp3(text: string): Promise<Blob> {
@@ -503,7 +503,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
             <p className="flex items-center gap-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
               <Zap className="h-4 w-4 shrink-0" style={{ color: "var(--pe-emerald)" }} />
               <span>
-                Liga no seu celular com áudio Sofia (voz profissional ElevenLabs). Nunca usa TTS da Velip.
+                Liga no seu celular com áudio Sofia (voz profissional ElevenLabs). Nunca usa TTS genérico.
               </span>
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -552,7 +552,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           >
             <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
               Corpo + nome (opcional) saem num <strong>único áudio Sofia</strong> — mesma voz do Estúdio.
-              Sem TTS Velip.
+              Sem TTS genérico.
             </p>
 
             <div className="space-y-1.5">
@@ -643,7 +643,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
                       disabled={sofiaBusy}
                     />
                     <p className="text-[10px] text-muted-foreground">
-                      Entra no áudio Sofia: &quot;Olá, Maria.&quot; — não usa voz Velip.
+                      Entra no áudio Sofia: &quot;Olá, Maria.&quot; — não usa voz genérica.
                     </p>
                   </div>
                   <div className="space-y-1">

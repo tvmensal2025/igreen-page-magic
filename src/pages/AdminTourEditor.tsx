@@ -105,16 +105,17 @@ export default function AdminTourEditor() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b bg-card/50 backdrop-blur sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Link to="/admin"><Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <h1 className="text-xl font-bold">Editor de Ajuda & Tour</h1>
-          <div className="ml-auto flex items-center gap-2">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-wrap items-center gap-3">
+          <Link to="/admin"><Button variant="ghost" size="icon" className="shrink-0"><ArrowLeft className="h-5 w-5" /></Button></Link>
+          <h1 className="text-lg sm:text-xl font-bold min-w-0 truncate">Editor de Ajuda & Tour</h1>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => start()}>
-              <Play className="h-4 w-4 mr-2" /> Prévia do tour
+              <Play className="h-4 w-4 sm:mr-2" /> <span className="hidden sm:inline">Prévia do tour</span>
             </Button>
             <Button size="sm" onClick={regenerateAll} disabled={generating}>
-              {generating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-              Regenerar tudo com IA
+              {generating ? <Loader2 className="h-4 w-4 sm:mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 sm:mr-2" />}
+              <span className="hidden sm:inline">Regenerar tudo com IA</span>
+              <span className="sm:hidden">IA</span>
             </Button>
           </div>
         </div>
@@ -122,7 +123,7 @@ export default function AdminTourEditor() {
 
       <main className="max-w-6xl mx-auto px-4 py-6">
         <Tabs defaultValue="steps">
-          <TabsList>
+          <TabsList className="w-full sm:w-auto h-auto flex flex-wrap justify-start">
             <TabsTrigger value="steps">Tour ({steps.length} passos)</TabsTrigger>
             <TabsTrigger value="articles">Artigos ({articles.length})</TabsTrigger>
           </TabsList>
@@ -134,13 +135,13 @@ export default function AdminTourEditor() {
               const dirty = Object.keys(d).length > 0;
               return (
                 <Card key={s.id} className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Badge>Passo {s.order_index}</Badge>
-                    <Badge variant="outline" className="font-mono text-[10px]">{s.route}</Badge>
-                    {s.selector && <Badge variant="secondary" className="font-mono text-[10px]">{s.selector}</Badge>}
-                    {dirty && <Badge variant="secondary" className="ml-auto">não salvo</Badge>}
+                    <Badge variant="outline" className="font-mono text-[10px] max-w-full truncate">{s.route}</Badge>
+                    {s.selector && <Badge variant="secondary" className="font-mono text-[10px] max-w-full truncate">{s.selector}</Badge>}
+                    {dirty && <Badge variant="secondary" className="sm:ml-auto">não salvo</Badge>}
                   </div>
-                  <div className="grid gap-2 md:grid-cols-2">
+                  <div className="grid gap-2 grid-cols-1 md:grid-cols-2">
                     <Input placeholder="Título" value={cur.title} onChange={(e) => patchStep(s.id, { title: e.target.value })} />
                     <Input placeholder="Texto do link (opcional)" value={cur.cta_label || ""} onChange={(e) => patchStep(s.id, { cta_label: e.target.value })} />
                     <Input placeholder="Rota exata (ex.: /admin?tab=whatsapp)" value={cur.route} onChange={(e) => patchStep(s.id, { route: e.target.value })} />
@@ -148,7 +149,7 @@ export default function AdminTourEditor() {
                   </div>
                   <Textarea rows={3} placeholder="Texto do balão" value={cur.body} onChange={(e) => patchStep(s.id, { body: e.target.value })} />
                   <Input placeholder="Link do botão (ex.: /admin/motor)" value={cur.cta_href || ""} onChange={(e) => patchStep(s.id, { cta_href: e.target.value })} />
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Button size="sm" variant="outline" onClick={() => regenerateStep(s.order_index)} disabled={saving === `gen-${s.order_index}`}>
                       {saving === `gen-${s.order_index}` ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-2" />}
                       Regenerar com IA
@@ -174,16 +175,16 @@ export default function AdminTourEditor() {
               const dirty = Object.keys(d).length > 0;
               return (
                 <Card key={a.id} className="p-4 space-y-3">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <select
-                      className="border rounded-md px-2 py-1 text-xs bg-background"
+                      className="border rounded-md px-2 py-1 text-xs bg-background min-w-0 flex-1 sm:flex-none"
                       value={cur.category}
                       onChange={(e) => patchArticle(a.id, { category: e.target.value })}
                     >
                       {ARTICLE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                     </select>
                     <select
-                      className="border rounded-md px-2 py-1 text-xs bg-background"
+                      className="border rounded-md px-2 py-1 text-xs bg-background min-w-0 flex-1 sm:flex-none"
                       value={cur.related_tour_step_id || ""}
                       onChange={(e) => patchArticle(a.id, { related_tour_step_id: e.target.value || null })}
                     >
@@ -191,7 +192,7 @@ export default function AdminTourEditor() {
                       {steps.map((s) => <option key={s.id} value={s.id}>Passo {s.order_index}: {s.title}</option>)}
                     </select>
                     {dirty && <Badge variant="secondary">não salvo</Badge>}
-                    <Button size="icon" variant="ghost" className="ml-auto h-8 w-8" onClick={() => deleteArticle(a.id)}>
+                    <Button size="icon" variant="ghost" className="ml-auto h-8 w-8 shrink-0" onClick={() => deleteArticle(a.id)}>
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>

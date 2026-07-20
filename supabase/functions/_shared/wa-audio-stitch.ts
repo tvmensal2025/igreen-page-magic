@@ -30,6 +30,8 @@ import {
   VOICE_SETTINGS_V3_GREET,
   buildNameOnlyTtsText,
   buildOlaGreetTtsText,
+  buildNomeNaoTemSegredoTtsText,
+  buildEntaoNomeTtsText,
 } from "./tts-ptbr-anchor.ts";
 
 const SOFIA_VOICE_ID = SOFIA_VOICE;
@@ -72,10 +74,12 @@ type PersonalizeSpec = {
   /** Prefixo de cache / slot base */
   baseSlot: string;
   /**
-   * ola_greet = “Olá, Nome.” (um corte) + corpo
-   * nome_only = só o nome + corpo (sem Então)
+   * ola_greet = “Olá, Nome! Tudo bem?” (passo 2 / ligação)
+   * nome_nao_segredo = “Nome, não tem segredo.” (passo 3)
+   * entao_nome = “Então, Nome.” (passo 4a)
+   * nome_only = legado só o nome
    */
-  introMode: "ola_greet" | "nome_only";
+  introMode: "ola_greet" | "nome_nao_segredo" | "entao_nome" | "nome_only";
   /** Se true, corpo muda com gênero (bem-vindo/bem-vinda). */
   genderedBody: boolean;
   bodyText: (gender: SpeechGender) => string;
@@ -84,28 +88,28 @@ type PersonalizeSpec = {
 const SPECS: Record<string, PersonalizeSpec> = {
   a2_audio_activate_name: {
     baseSlot: "a2_audio_activate_name",
-    // Passo 2: Olá+nome (ptbr2/ola6 · 200+ nomes) + corpo FIXO M/F — passos 3/4a usam só nome.
+    // Passo 2: Olá+nome+tudo bem? (igual ligação) + corpo FIXO M/F
     introMode: "ola_greet",
     genderedBody: true,
     bodyText: (g) => A2_BODY_TEXT[g],
   },
   a3_explain_with_buttons: {
     baseSlot: "a3_explain_with_buttons",
-    // Passo 3: só o nome + explicação (sem Então)
-    introMode: "nome_only",
+    // Passo 3: “Nome, não tem segredo.” + explicação
+    introMode: "nome_nao_segredo",
     genderedBody: false,
     bodyText: () => A3_BODY_TEXT,
   },
   a3_audio_explain: {
     baseSlot: "a3_explain_with_buttons",
-    introMode: "nome_only",
+    introMode: "nome_nao_segredo",
     genderedBody: false,
     bodyText: () => A3_BODY_TEXT,
   },
   a5_audio_club_benefits: {
     baseSlot: "a5_audio_club_benefits",
-    // Passo 4a: só o nome + corpo do clube (sem Olá de novo)
-    introMode: "nome_only",
+    // Passo 4a: “Então, Nome.” + corpo do clube
+    introMode: "entao_nome",
     genderedBody: false,
     bodyText: () => A5_BODY_TEXT,
   },
@@ -122,6 +126,11 @@ async function synthesizePhraseMp3(
   const key = (Deno.env.get("ELEVENLABS_API_KEY") || "").trim();
   if (!key) throw new Error("ELEVENLABS_API_KEY_missing");
 
+  // Regra de ouro: Sofia profissional + pt-BR. Nunca texto vazio (ElevenLabs 400).
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean.length < 2) throw new Error("tts_text_empty");
+  if (clean.length > 500) throw new Error("tts_text_too_long");
+
   const clip = opts?.clip || "ola_greet";
   const modelId = clip === "name_only" ? SOFIA_MODEL_NAME_ONLY : SOFIA_MODEL;
   const voice_settings = clip === "name_only"
@@ -129,16 +138,15 @@ async function synthesizePhraseMp3(
     : { ...VOICE_SETTINGS_V3_GREET };
 
   const payload: Record<string, unknown> = {
-    text,
+    text: clean,
     model_id: modelId,
     voice_settings,
+    // ISO 639-1 — ancora português (BR) na Sofia profissional.
     language_code: "pt",
   };
 
-  // Nome isolado (“Fernandinho,”) sem contexto → eleven_v3 infere espanhol.
-  // v2 + previous/next_text ancora PT-BR e dá entonação de chamada (não de fim de frase).
-  // next_text começando com "deixa eu te explicar..." induz cadência descendente
-  // suave (callout), como quem chama a pessoa antes de continuar falando.
+  // Nome isolado (“Fernandinho,”) sem contexto → modelo pode inferir espanhol.
+  // v2 + previous/next_text ancora PT-BR. v3 rejeita previous_text (400).
   if (clip === "name_only") {
     payload.previous_text = "Então, olha só, ";
     payload.next_text = " deixa eu te explicar uma coisa rapidinho.";
@@ -155,9 +163,12 @@ async function synthesizePhraseMp3(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
-    throw new Error(err?.detail?.message || err?.message || `elevenlabs_${res.status}`);
+    const detail = err?.detail?.message || err?.message || `elevenlabs_${res.status}`;
+    throw new Error(typeof detail === "string" ? detail : `elevenlabs_${res.status}`);
   }
-  return new Uint8Array(await res.arrayBuffer());
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength < 256) throw new Error("elevenlabs_empty_audio");
+  return bytes;
 }
 
 async function uploadMp3(
@@ -249,28 +260,45 @@ export function isForbiddenNomeIntroSlot(slotKey: string): boolean {
 }
 
 export function buildIntroSlotCandidates(
-  kind: "nome" | "ola",
+  kind: "nome" | "ola" | "nome_nao_segredo" | "entao_nome",
   nameNorm: string,
 ): string[] {
   if (kind === "ola") {
-    // Só ptbr3 — “Olá, Nome!” CONTÍNUO (vírgula). Os ptbr2/ptbr/legado foram
-    // gerados com “Olá... Nome!” (reticências = pausa longa que o cliente
-    // ouvia como corte — feedback 19/07/2026). Ficam no banco, mas o motor
-    // não os reutiliza; regera ptbr3 na primeira necessidade e cacheia.
-    return [`intro:ola:ptbr3:${nameNorm}`];
+    // ptbr4 = “Olá, Nome! Tudo bem?” (igual ligação). ptbr3 = legado sem “tudo bem”.
+    return [`intro:ola:ptbr4:${nameNorm}`];
   }
-  // Só ptbr3 — motor regera se faltar; nunca ptbr/ptbr2/legado.
+  if (kind === "nome_nao_segredo") {
+    return [`intro:nome_nao_segredo:v1:${nameNorm}`];
+  }
+  if (kind === "entao_nome") {
+    return [`intro:entao_nome:v1:${nameNorm}`];
+  }
+  // legado só-nome
   return [`intro:nome:ptbr3:${nameNorm}`];
 }
 
-/** Versão do stitch A2: Olá+nome (PT-BR contínuo) + corpo FIXO M/F (ola7 = intro ptbr3 sem pausa). */
+function introKindForSpec(
+  spec: PersonalizeSpec,
+): "nome" | "ola" | "nome_nao_segredo" | "entao_nome" {
+  if (spec.introMode === "ola_greet") return "ola";
+  if (spec.introMode === "nome_nao_segredo") return "nome_nao_segredo";
+  if (spec.introMode === "entao_nome") return "entao_nome";
+  return "nome";
+}
+
+function isPhraseIntroMode(mode: PersonalizeSpec["introMode"]): boolean {
+  return mode === "nome_only" || mode === "nome_nao_segredo" || mode === "entao_nome";
+}
+
+/** Versão do stitch: muda quando a intro muda (invalida cache antigo). */
 function a2StitchVersion(spec: PersonalizeSpec): string {
   if (spec.baseSlot === "a2_audio_activate_name" && spec.introMode === "ola_greet") {
-    // ola6→ola7: intro passou de “Olá... Nome!” para “Olá, Nome!” (contínuo).
-    // Stitches ola6 antigos ficam órfãos (não são candidatos) — sem exclusão.
-    return "ola7";
+    // ola7→ola8: intro = “Olá, Nome! Tudo bem?” (igual ligação).
+    return "ola8";
   }
-  // A3/A5: n5 = nome PT-BR ancorado (v2 + contexto); ptbr2 bare-name ignorado.
+  if (spec.introMode === "nome_nao_segredo") return "ns1"; // Nome, não tem segredo
+  if (spec.introMode === "entao_nome") return "en1"; // Então, Nome
+  // legado só-nome
   return spec.introMode === "nome_only" ? "n5" : "ola3";
 }
 
@@ -332,8 +360,8 @@ async function isStitchCacheFresh(
   );
   if (bodyMs != null && stitchMs < bodyMs) return false;
 
-  if (spec.introMode === "nome_only") {
-    for (const introKey of buildIntroSlotCandidates("nome", nameNorm)) {
+  if (isPhraseIntroMode(spec.introMode)) {
+    for (const introKey of buildIntroSlotCandidates(introKindForSpec(spec), nameNorm)) {
       const introMs = await slotUpdatedAtMs(admin, consultantId, introKey);
       if (introMs != null && stitchMs < introMs) return false;
     }
@@ -345,7 +373,7 @@ async function isStitchCacheFresh(
   }
 
   // ola6 legado: nunca reutilizar após A2 passar a nome_only (n5).
-  if (/:ola6:/.test(stitchSlotKey) && spec.introMode === "nome_only") return false;
+  if (/:ola6:/.test(stitchSlotKey) && isPhraseIntroMode(spec.introMode)) return false;
 
   return true;
 }
@@ -377,7 +405,7 @@ async function findCachedStitchUrl(
         continue;
       }
     }
-    const fromLegacy = !/:ola5:|:ola7:|:n4:|:n5:/.test(hit.slotKey);
+    const fromLegacy = !/:ola5:|:ola7:|:ola8:|:n4:|:n5:/.test(hit.slotKey);
     return {
       url: hit.url,
       slotKey: hit.slotKey,
@@ -416,17 +444,17 @@ export async function probePersonalizedWaAudioCache(
   const bodyUrl = await findActiveUrl(admin, opts.consultantId, bodySlot);
   if (!bodyUrl) return false;
 
-  // Todos os passos A2/A3/A5: intro:nome:ptbr3 + corpo FIXO __body_* (salvo no painel).
-  if (spec.introMode === "nome_only") {
+  // Passos A3/A5 (frase+nome) e legado só-nome: intro + corpo FIXO.
+  if (isPhraseIntroMode(spec.introMode)) {
     const nomeHit = await findCachedMediaUrl(
       admin,
       opts.consultantId,
-      buildIntroSlotCandidates("nome", nameNorm),
+      buildIntroSlotCandidates(introKindForSpec(spec), nameNorm),
     );
     return !!(nomeHit && bodyUrl);
   }
 
-  // A2 ola_greet: intro:ola:ptbr2 + corpo FIXO __body_* (200+ nomes em cache).
+  // A2 ola_greet: intro:ola:ptbr4 (“Olá, Nome! Tudo bem?”) + corpo FIXO __body_*.
   if (spec.baseSlot === "a2_audio_activate_name" && spec.introMode === "ola_greet") {
     const olaHit = await findCachedMediaUrl(
       admin,
@@ -541,8 +569,10 @@ export type WaStitchResult = {
 };
 
 /**
- * Regra de ouro: MP3 da prévia do painel (com Maria/Rodrigo) NUNCA vai ao WhatsApp.
- * Só stitch Sofia completo (nome+corpo) — nunca corpo-only / TTS genérico.
+ * Regra de ouro: MP3 da prévia do painel (Maria/Rodrigo) NUNCA vai ao WhatsApp.
+ * - Com nome confiável → stitch Sofia (intro pt-BR + corpo).
+ * - Sem nome (A3/A5) → só o corpo fixo Sofia (pula a intro).
+ * - A2 sem nome → skip áudio (corpo é M/F e precisa do nome/gênero).
  */
 export async function pickSafePersonalizedWaAudio(
   admin: any,
@@ -558,12 +588,32 @@ export async function pickSafePersonalizedWaAudio(
   if (!isPersonalizedWaAudioSlot(opts.slotKey)) {
     return { ok: false, error: "not_personalized_slot", mode: "skipped" };
   }
+  const spec = SPECS[opts.slotKey];
   const display = resolveWaDisplayName(opts.customerName, opts.nameSource);
   if (!display) {
-    return { ok: false, error: "no_name", mode: "skipped" };
+    // Sem nome: A3/A5 usam só o corpo fixo; A2 (gênero) não arrisca áudio errado.
+    if (!spec || spec.genderedBody) {
+      return { ok: false, error: "no_name", mode: "skipped" };
+    }
+    try {
+      const url = await ensureBodyUrl(
+        admin,
+        opts.consultantId,
+        spec.baseSlot,
+        "masculino",
+        spec.bodyText("masculino"),
+        false,
+      );
+      return { ok: true, url, mode: "body_only", cached: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: (e as Error)?.message || "body_only_failed",
+        mode: "skipped",
+      };
+    }
   }
 
-  const spec = SPECS[opts.slotKey];
   const gender = inferSpeechGender(display);
   const nameNorm = normalizeCallName(display);
   const resolveOpts = {
@@ -661,19 +711,22 @@ async function downloadUrlBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-/** Só o nome — passo 3 (e cache compartilhado). */
-async function ensureNameBytes(
+/** Intro com frase + nome — passo 3 (“Nome, não tem segredo”) / 4a (“Então, Nome”) / legado só-nome. */
+async function ensurePhraseIntroBytes(
   admin: any,
   consultantId: string,
   display: string,
   nameNorm: string,
+  introMode: PersonalizeSpec["introMode"],
 ): Promise<Uint8Array> {
-  const canonicalSlot = `intro:nome:ptbr3:${nameNorm}`;
-  const cached = await findCachedMediaUrl(
-    admin,
-    consultantId,
-    buildIntroSlotCandidates("nome", nameNorm),
-  );
+  const kind = introMode === "nome_nao_segredo"
+    ? "nome_nao_segredo"
+    : introMode === "entao_nome"
+    ? "entao_nome"
+    : "nome";
+  const candidates = buildIntroSlotCandidates(kind, nameNorm);
+  const canonicalSlot = candidates[0]!;
+  const cached = await findCachedMediaUrl(admin, consultantId, candidates);
   if (cached) {
     try {
       const bytes = await downloadUrlBytes(cached.url);
@@ -683,55 +736,73 @@ async function ensureNameBytes(
           consultantId,
           canonicalSlot,
           cached.url,
-          `Sofia intro · nome · pt-BR v3 · ${display}`,
+          `Sofia intro · ${introMode} · ${display}`,
         );
       }
       return bytes;
     } catch { /* regenera */ }
   }
 
-  const ttsText = buildNameOnlyTtsText(display);
-  if (!ttsText) throw new Error("tts_nome_empty");
+  const ttsText = introMode === "nome_nao_segredo"
+    ? buildNomeNaoTemSegredoTtsText(display)
+    : introMode === "entao_nome"
+    ? buildEntaoNomeTtsText(display)
+    : buildNameOnlyTtsText(display);
+  if (!ttsText) throw new Error("tts_intro_empty");
+
+  // Frases completas → v3 (como Olá+nome). Só-nome legado → v2 ancorado.
+  const clip: "ola_greet" | "name_only" =
+    introMode === "nome_only" ? "name_only" : "ola_greet";
 
   let bytes: Uint8Array | null = null;
-  let lastErr = "tts_nome_failed";
+  let lastErr = "tts_intro_failed";
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      bytes = await synthesizePhraseMp3(ttsText, { clip: "name_only" });
+      bytes = await synthesizePhraseMp3(ttsText, { clip });
       break;
     } catch (e) {
-      lastErr = (e as Error)?.message || "tts_nome_failed";
-      console.warn(`[wa-stitch] TTS nome=${display} attempt=${attempt}/2 falhou: ${lastErr}`);
+      lastErr = (e as Error)?.message || "tts_intro_failed";
+      console.warn(`[wa-stitch] TTS intro=${introMode} name=${display} attempt=${attempt}/2 falhou: ${lastErr}`);
       if (attempt < 2) await new Promise((r) => setTimeout(r, 800));
     }
   }
   if (!bytes) throw new Error(lastErr);
 
   try {
-    const slug = `intro-nome-ptbr3-${nameNorm}-${Date.now()}`.slice(0, 80);
+    const slug = `${canonicalSlot.replace(/:/g, "-")}-${Date.now()}`.slice(0, 80);
     const url = await uploadMp3(bytes, consultantId, slug);
     await upsertActiveMedia(
       admin,
       consultantId,
       canonicalSlot,
       url,
-      `Sofia intro · nome · pt-BR v3 · ${display}`,
+      `Sofia intro · ${introMode} · ${display}`,
     );
   } catch (e) {
-    console.warn(`[wa-stitch] cache nome falhou (segue com bytes):`, (e as Error)?.message);
+    console.warn(`[wa-stitch] cache intro falhou (segue com bytes):`, (e as Error)?.message);
   }
   return bytes;
 }
 
-/** “Olá, Nome.” juntos — passo 2. Nunca TTS se já existe Olá/stitch Sofia. */
+/** Só o nome — legado (prewarm / alias). */
+async function ensureNameBytes(
+  admin: any,
+  consultantId: string,
+  display: string,
+  nameNorm: string,
+): Promise<Uint8Array> {
+  return ensurePhraseIntroBytes(admin, consultantId, display, nameNorm, "nome_only");
+}
+
+/** “Olá, Nome! Tudo bem?” — passo 2 / ligação. Nunca TTS se já existe Olá/stitch Sofia. */
 async function ensureOlaGreetBytes(
   admin: any,
   consultantId: string,
   display: string,
   nameNorm: string,
 ): Promise<Uint8Array> {
-  // ptbr3 = “Olá, Nome!” contínuo (vírgula) — ptbr2 tinha “Olá... Nome!”.
-  const canonicalSlot = `intro:ola:ptbr3:${nameNorm}`;
+  // ptbr4 = “Olá, Nome! Tudo bem?” (igual ligação).
+  const canonicalSlot = `intro:ola:ptbr4:${nameNorm}`;
   const cached = await findCachedMediaUrl(
     admin,
     consultantId,
@@ -744,9 +815,9 @@ async function ensureOlaGreetBytes(
         await upsertActiveMedia(
           admin,
           consultantId,
-          cached.slotKey.includes(":ptbr") ? cached.slotKey : `intro:ola:${nameNorm}`,
+          canonicalSlot,
           cached.url,
-          `Sofia intro · Olá+nome · ${display}`,
+          `Sofia intro · Olá+nome+tudo bem · ${display}`,
         );
       }
       return bytes;
@@ -779,14 +850,14 @@ async function ensureOlaGreetBytes(
   if (!bytes) throw new Error(lastErr);
 
   try {
-    const slug = `intro-ola-ptbr-${nameNorm}-${Date.now()}`.slice(0, 80);
+    const slug = `intro-ola-ptbr4-${nameNorm}-${Date.now()}`.slice(0, 80);
     const url = await uploadMp3(bytes, consultantId, slug);
     await upsertActiveMedia(
       admin,
       consultantId,
       canonicalSlot,
       url,
-      `Sofia intro · Olá+nome · pt-BR · ${display}`,
+      `Sofia intro · Olá+nome+tudo bem · pt-BR · ${display}`,
     );
   } catch (e) {
     console.warn(`[wa-stitch] cache Olá+nome falhou (segue com bytes):`, (e as Error)?.message);
@@ -871,8 +942,9 @@ export type NameIntroPairResult = {
 };
 
 /**
- * Nome fora da base: ElevenLabs gera Olá+Nome e só Nome; salva intro:ola + intro:nome
- * para os próximos atendimentos (A2 usa Olá; A3/A5 usam só nome).
+ * Nome fora da base: ElevenLabs gera Olá+Nome e só Nome; salva intro:ola + intro:nome.
+ * A2 usa Olá; A3/A5 geram frase+nome sob demanda (nome_nao_segredo / entao_nome).
+ * Sempre Sofia profissional + language_code pt.
  */
 export async function ensureNameIntroPairCache(
   admin: any,
@@ -1044,8 +1116,8 @@ export async function warmPersonalizedWaAudio(
 /**
  * Resolve URL final personalizada.
  * A2: “Olá, Nome.” (PT-BR) + corpo FIXO M/F (2 cortes)
- * A2: Olá+nome (PT-BR) + corpo FIXO · A3/A5: só o nome + corpo FIXO
- * Em runtime SÓ gera Olá+nome e/ou Nome — nunca regenera o corpo fixo.
+ * A2: Olá+nome (PT-BR) + corpo FIXO · A3: “Nome, não tem segredo” + corpo · A5: “Então, Nome” + corpo
+ * Em runtime SÓ gera a intro com nome — nunca regenera o corpo fixo.
  */
 export async function resolvePersonalizedWaAudio(
   admin: any,
@@ -1101,14 +1173,14 @@ export async function resolvePersonalizedWaAudio(
     })();
 
     let parts: Uint8Array[];
-    if (spec.introMode === "nome_only") {
+    if (isPhraseIntroMode(spec.introMode)) {
       const [nameBytes, bodyBytes] = await Promise.all([
-        ensureNameBytes(admin, opts.consultantId, display, nameNorm),
+        ensurePhraseIntroBytes(admin, opts.consultantId, display, nameNorm, spec.introMode),
         bodyPromise,
       ]);
       parts = [nameBytes, bodyBytes];
     } else {
-      // A2: só Olá+Nome (PT-BR) + corpo FIXO — em paralelo. Sem “só o nome” no meio.
+      // A2: só Olá+Nome (PT-BR) + corpo FIXO — em paralelo.
       const introPromise = (async () => {
         const olaHit = await findCachedMediaUrl(
           admin,
@@ -1117,14 +1189,14 @@ export async function resolvePersonalizedWaAudio(
         );
         if (olaHit) {
           const bytes = await downloadUrlBytes(olaHit.url);
-          const canonicalOla = `intro:ola:ptbr3:${nameNorm}`;
+          const canonicalOla = `intro:ola:ptbr4:${nameNorm}`;
           if (olaHit.slotKey !== canonicalOla) {
             await upsertActiveMedia(
               admin,
               opts.consultantId,
               canonicalOla,
               olaHit.url,
-              `Sofia intro · Olá+nome · pt-BR · ${display}`,
+              `Sofia intro · Olá+nome+tudo bem · pt-BR · ${display}`,
             );
           }
           return bytes;
@@ -1142,7 +1214,11 @@ export async function resolvePersonalizedWaAudio(
     const merged = await concatMp3Parts(parts);
     const slug = `stitch-${spec.baseSlot}-${stitchVer}-${gender}-${nameNorm}-${Date.now()}`.slice(0, 80);
     const finalUrl = await uploadMp3(merged, opts.consultantId, slug);
-    const label = spec.introMode === "nome_only"
+    const label = spec.introMode === "nome_nao_segredo"
+      ? `Sofia stitch · ${display}, não tem segredo · explicação`
+      : spec.introMode === "entao_nome"
+      ? `Sofia stitch · Então ${display} · clube`
+      : spec.introMode === "nome_only"
       ? (spec.baseSlot.startsWith("a3")
         ? `Sofia stitch · ${display} · explicação`
         : `Sofia stitch · ${display} · ${gender}`)

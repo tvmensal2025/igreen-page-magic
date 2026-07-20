@@ -55,7 +55,7 @@ function reasonLabel(reason: string | null | undefined): string {
   if (!r) return "—";
   const lower = r.toLowerCase();
   if (lower.includes("bk") || lower.includes("do_not_disturb") || lower.includes("não perturbe")) {
-    return "Não perturbe (retorno Velip)";
+    return "Não perturbe (retorno iGreen Fone)";
   }
   if (lower.includes("ik") || lower.includes("nonexistent") || lower.includes("inexistente")) {
     return "Número inexistente";

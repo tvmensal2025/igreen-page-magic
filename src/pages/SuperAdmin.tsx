@@ -315,22 +315,22 @@ const SuperAdmin = () => {
 
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-2xl backdrop-saturate-150">
-        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
+        <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8 min-h-16 py-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center shadow-lg shadow-primary/20">
               <Shield className="w-5 h-5 text-primary-foreground" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold font-heading text-foreground">Super Admin</h1>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-bold font-heading text-foreground truncate">Super Admin</h1>
                 <Badge className="bg-primary/10 text-primary border-primary/20 text-[10px] font-medium">v2</Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Gerenciamento da plataforma</p>
+              <p className="text-xs text-muted-foreground hidden sm:block">Gerenciamento da plataforma</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
             <Button variant="outline" size="sm" onClick={() => window.location.assign("/super-admin/suporte")} className="gap-2">
-              <Shield className="w-4 h-4" /> Suporte Remoto
+              <Shield className="w-4 h-4" /> <span className="hidden sm:inline">Suporte Remoto</span>
             </Button>
             <ThemeToggle />
             <Button variant="ghost" size="icon" onClick={loadConsultants} disabled={loadingData} className="text-muted-foreground hover:text-foreground">
@@ -346,18 +346,18 @@ const SuperAdmin = () => {
       {/* Tab Navigation */}
       <nav className="border-b border-border/50 bg-background/60 backdrop-blur-xl">
         <div className="max-w-[1760px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto scrollbar-thin">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
               return (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  className={`relative flex items-center gap-2 px-4 py-3.5 text-sm font-medium whitespace-nowrap transition-all rounded-t-lg ${
+                  className={`relative flex items-center gap-2 px-3 sm:px-4 py-3.5 text-sm font-medium whitespace-nowrap transition-all rounded-t-lg shrink-0 ${
                     isActive 
                       ? "text-primary" 
                       : "text-muted-foreground hover:text-foreground"
                   }`}>
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4 h-4 shrink-0" />
                   {tab.label}
                   {tab.count !== undefined && (
                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${isActive ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
@@ -377,14 +377,14 @@ const SuperAdmin = () => {
         {activeTab === "consultores" && (
           <>
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
               {statCards.map((stat) => (
-                <div key={stat.label} className={`premium-card !p-4 group border ${stat.border} hover:scale-[1.02] transition-transform`}>
+                <div key={stat.label} className={`premium-card !p-4 group border min-w-0 ${stat.border} hover:scale-[1.02] transition-transform`}>
                   <div className={`w-9 h-9 rounded-xl bg-gradient-to-br ${stat.gradient} flex items-center justify-center mb-3`}>
                     <stat.icon className={`w-4.5 h-4.5 ${stat.iconColor}`} />
                   </div>
-                  <p className="text-2xl font-bold text-foreground tracking-tight">{stat.value}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 font-medium">{stat.label}</p>
+                  <p className="text-2xl font-bold text-foreground tracking-tight truncate">{stat.value}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 font-medium truncate">{stat.label}</p>
                 </div>
               ))}
             </div>
@@ -411,8 +411,8 @@ const SuperAdmin = () => {
             <StuckLeadsWidget />
 
             {/* Search */}
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1 max-w-md">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-0 max-w-md">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   placeholder="Buscar por nome, licença ou telefone..."
@@ -421,7 +421,7 @@ const SuperAdmin = () => {
                   className="pl-10 h-10 bg-card/50 border-border/50 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary/30"
                 />
               </div>
-              <Badge variant="outline" className="text-xs py-1.5 px-3 border-border/50">
+              <Badge variant="outline" className="text-xs py-1.5 px-3 border-border/50 shrink-0">
                 {filtered.length} consultor(es)
               </Badge>
             </div>
@@ -451,7 +451,7 @@ const SuperAdmin = () => {
                       <div key={c.id} className="premium-card !p-0 overflow-hidden group">
                         <div className="p-5">
                           {/* Top: Avatar + Name + Actions */}
-                          <div className="flex items-start justify-between gap-4 mb-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3 sm:gap-4 mb-5">
                             <div className="flex items-center gap-3.5 min-w-0">
                               <div className={`relative w-11 h-11 rounded-xl bg-gradient-to-br ${c.approved ? "from-primary/20 to-primary/10" : "from-warning/20 to-warning/10"} flex items-center justify-center shrink-0 ${activity.ring}`}>
                                 <span className={`text-sm font-bold ${c.approved ? "text-primary" : "text-warning"}`}>
@@ -464,9 +464,9 @@ const SuperAdmin = () => {
                                 )}
                               </div>
                               <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-0.5">
+                                <div className="flex flex-wrap items-center gap-2 mb-0.5">
                                   <h3 className="font-semibold text-foreground truncate">{c.name}</h3>
-                                  <Badge className={`text-[10px] px-2 py-0 h-5 font-medium border ${
+                                  <Badge className={`text-[10px] px-2 py-0 h-5 font-medium border shrink-0 ${
                                     c.approved
                                       ? "bg-primary/10 text-primary border-primary/20"
                                       : "bg-warning/10 text-warning border-warning/20"
@@ -474,15 +474,15 @@ const SuperAdmin = () => {
                                     {c.approved ? "Aprovado" : "Pendente"}
                                   </Badge>
                                 </div>
-                                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                                  <span>{c.license}</span>
-                                  <span className="w-1 h-1 rounded-full bg-border" />
-                                  <span>{c.phone}</span>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                                  <span className="truncate">{c.license}</span>
+                                  <span className="w-1 h-1 rounded-full bg-border hidden sm:inline-block" />
+                                  <span className="truncate">{c.phone}</span>
                                 </div>
                               </div>
                             </div>
 
-                            <div className="flex items-center gap-1 shrink-0 opacity-70 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1 shrink-0 flex-wrap opacity-70 group-hover:opacity-100 transition-opacity">
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg"

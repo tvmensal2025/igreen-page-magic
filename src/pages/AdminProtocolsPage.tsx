@@ -104,19 +104,19 @@ export default function AdminProtocolsPage() {
 
   return (
     <div className="container max-w-7xl mx-auto p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <Button variant="ghost" size="icon" asChild className="shrink-0">
             <Link to="/admin"><ArrowLeft className="h-4 w-4" /></Link>
           </Button>
-          <div>
-            <h1 className="text-2xl font-bold">Protocolos</h1>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold truncate">Protocolos</h1>
             <p className="text-sm text-muted-foreground">
               Dois códigos distintos — não confundir
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0}>
+        <Button variant="outline" size="sm" onClick={exportCsv} disabled={filtered.length === 0} className="shrink-0">
           <Download className="h-4 w-4 mr-2" /> Exportar CSV
         </Button>
       </div>
@@ -189,7 +189,7 @@ export default function AdminProtocolsPage() {
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[720px]">
               <thead className="border-b bg-muted/40">
                 <tr className="text-left">
                   <th className="p-3">Protocolo</th>

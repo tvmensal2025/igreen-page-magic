@@ -139,32 +139,32 @@ export default function SaudeProducao() {
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
+      <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl md:text-3xl font-bold">Saúde de Produção</h1>
           <p className="text-sm text-muted-foreground">Visão em tempo real do funil, origens, infraestrutura e clientes interessados travados.</p>
         </div>
-        <Button onClick={loadAll} disabled={refreshing} variant="outline" className="gap-2">
+        <Button onClick={loadAll} disabled={refreshing} variant="outline" className="gap-2 shrink-0">
           <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Atualizar
         </Button>
       </header>
 
       {/* Checklist go-live */}
       <Card className="p-4 md:p-6 mb-6 border-primary/20">
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-primary" /> Checklist Go-Live</h2>
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2"><CheckCircle2 className="h-5 w-5 shrink-0 text-primary" /> Checklist Go-Live</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
           {checklist.map((c) => (
-            <div key={c.label} className={`p-3 rounded-lg border ${c.ready ? "border-primary/30 bg-primary/5" : "border-warning/30 bg-warning/5"}`}>
+            <div key={c.label} className={`min-w-0 p-3 rounded-lg border ${c.ready ? "border-primary/30 bg-primary/5" : "border-warning/30 bg-warning/5"}`}>
               <div className="flex items-center gap-2">
-                {c.ready ? <CheckCircle2 className="h-4 w-4 text-primary" /> : <AlertTriangle className="h-4 w-4 text-warning" />}
-                <span className="text-xs font-medium">{c.label}</span>
+                {c.ready ? <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" /> : <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />}
+                <span className="text-xs font-medium truncate">{c.label}</span>
               </div>
               <div className="text-lg font-bold mt-1">{c.ok}/{c.total}</div>
             </div>
           ))}
         </div>
-        <div className="mt-4 flex items-center justify-between">
-          <div className="text-sm text-muted-foreground">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 text-sm text-muted-foreground">
             {checklist.every((c) => c.ready) ? "✅ Todos os consultores prontos para produção." : "⚠️ Alguns consultores ainda precisam de ajustes."}
           </div>
           <Badge variant={checklist.every((c) => c.ready) ? "default" : "secondary"}>

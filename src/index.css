@@ -176,9 +176,21 @@ html {
     @apply border-border;
   }
 
+  html, body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  #root {
+    min-width: 0;
+    max-width: 100%;
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -370,7 +382,7 @@ html {
   }
 
   .stat-block .stat-number {
-    @apply text-4xl sm:text-5xl md:text-6xl font-black tracking-[-0.02em];
+    @apply text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black tracking-[-0.02em];
     background: var(--gradient-green-vibrant);
     -webkit-background-clip: text;
     background-clip: text;
@@ -1175,4 +1187,16 @@ body[data-captacao-bar-open] .wa-message-composer-shell {
 /* Cookie banner: evita que FAB/composer fiquem cobertos no painel admin */
 body[data-cookie-banner] .painel-elite {
   padding-bottom: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Cookie banner: FABs e CTAs fixos das páginas públicas */
+body[data-cookie-banner] .wa-float,
+body[data-cookie-banner] .public-bottom-cta {
+  bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Cookie banner: espaço no rodapé de formulários / composers públicos */
+body[data-cookie-banner] .public-page-safe-bottom,
+body[data-cookie-banner] .assistente-composer {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }

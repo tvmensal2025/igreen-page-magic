@@ -318,8 +318,8 @@ export default function AdminSofiaNameAudios() {
         });
         if (fnErr) throw fnErr;
 
-        // ptbr3 = “Olá, Nome!” contínuo — mesmo namespace que o motor procura.
-        const slotKey = `intro:ola:ptbr3:${nameNorm}`;
+        // ptbr4 = “Olá, Nome! Tudo bem?” — mesmo namespace que o motor / ligação.
+        const slotKey = `intro:ola:ptbr4:${nameNorm}`;
         await supabase
           .from("ai_media_library")
           .update({ active: false })

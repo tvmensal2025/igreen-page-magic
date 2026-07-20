@@ -90,15 +90,15 @@ export default function AdminReconIgreen() {
 
   return (
     <div className="container mx-auto p-6 space-y-6 max-w-6xl">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold">Recon iGreen</h1>
           <p className="text-sm text-muted-foreground">
             Mapeamento automático de todos os endpoints e telas do portal iGreen (rafael.ids@icloud.com).
             Cron roda a cada 30s.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={seed} disabled={seeding} variant="outline">
             {seeding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RotateCw className="w-4 h-4 mr-2" />}
             Enfileirar tudo
@@ -111,7 +111,7 @@ export default function AdminReconIgreen() {
         </div>
       </div>
 
-      <div className="grid grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
         <StatCard label="Total" value={totals.total} />
         <StatCard label="Pending" value={totals.pending} tone="yellow" />
         <StatCard label="Running" value={totals.running} tone="blue" />

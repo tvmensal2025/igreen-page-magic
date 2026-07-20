@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Mic, RefreshCw, Play, Settings2, MessageSquare, Loader2, MessageCircle } from "lucide-react";
+import { RefreshCw, Play, Settings2, MessageSquare, Loader2, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -811,34 +811,6 @@ export function ReheatCyclePizza({
               Rodar ciclo agora
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs gap-1.5"
-            onClick={() => {
-              try { sessionStorage.setItem("igreen-voz-subtab", "multichannel"); } catch { /* noop */ }
-              window.dispatchEvent(new CustomEvent("igreen-admin-nav", { detail: { tab: "voz" } }));
-              window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: "multichannel" } }));
-            }}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Editar mensagens
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs gap-1.5"
-            onClick={() => {
-              try { sessionStorage.setItem("igreen-voz-subtab", "kit"); } catch { /* noop */ }
-              window.dispatchEvent(new CustomEvent("igreen-admin-nav", { detail: { tab: "voz" } }));
-              window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: "kit" } }));
-            }}
-          >
-            <Mic className="w-3.5 h-3.5" />
-            Áudios
-          </Button>
           {admin && (
             <Button
               type="button"

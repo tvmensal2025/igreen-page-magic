@@ -198,6 +198,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   /** Nome + IA dos Dados — usados na prévia e no TTS ({{consultor}} / {{assistente}}). */
   const [consultantDisplayName, setConsultantDisplayName] = useState("");
   const [consultantAssistantName, setConsultantAssistantName] = useState("");
+  /** null = ainda carregando; true = bot + motor + live ligados. */
+  const [autoDispatchLive, setAutoDispatchLive] = useState<boolean | null>(null);
   const consultantFirstName = firstNameFromConsultantLabel(consultantDisplayName);
   const draftTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const publishTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -239,6 +241,38 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       cancelled = true;
     };
   }, [consultantId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [appRes, reheatRes, toggleRes] = await Promise.all([
+        supabase.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle(),
+        supabase
+          .from("daily_reheat_settings")
+          .select("enabled, live_dispatch_enabled")
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("automation_toggles")
+          .select("enabled")
+          .eq("key", "cadence_engine")
+          .maybeSingle(),
+      ]);
+      if (cancelled) return;
+      const botOn = !!(appRes.data as { bot_global_enabled?: boolean } | null)?.bot_global_enabled;
+      const reheat = reheatRes.data as {
+        enabled?: boolean;
+        live_dispatch_enabled?: boolean;
+      } | null;
+      const engineOn = !!(toggleRes.data as { enabled?: boolean } | null)?.enabled;
+      setAutoDispatchLive(
+        botOn && !!reheat?.enabled && !!reheat?.live_dispatch_enabled && engineOn,
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -578,9 +612,9 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         return;
       }
       setPreviewGender(inferSpeechGender(first));
-      const phrase = `Olá, ${first}.`;
+      const phrase = `Olá, ${first}! Tudo bem?`;
       const prepared = prepareTtsSegment(phrase, MODEL_V3, { namePause: true }).trim();
-      // prepared ≈ "Olá, Maria..." (final calmo)
+      // prepared ≈ “Olá, Maria! Tudo bem?” (igual ligação)
       const hit = await getCachedTTS(prepared, VOICE_SOFIA_PROFESSIONAL, MODEL_V3);
       if (!cancelled) setNameInCache(!!hit);
     };
@@ -734,7 +768,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const addButton = (preset?: { id: string; title: string; emoji?: string }) => {
     if (draftButtons.length >= WHAPI_MAX_BUTTONS) {
       toast({
-        title: "Limite Whapi",
+        title: "Limite iGreen Chat",
         description: `No máximo ${WHAPI_MAX_BUTTONS} botões por mensagem.`,
         variant: "destructive",
       });
@@ -811,7 +845,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const handleCopy = async () => {
     const lines = [preview];
     if (draftButtons.length) {
-      lines.push("", "Botões Whapi:");
+      lines.push("", "Botões iGreen Chat:");
       draftButtons.forEach((b, i) => lines.push(`${i + 1}. [${b.id}] ${b.title}`));
     }
     await navigator.clipboard.writeText(lines.join("\n"));
@@ -901,51 +935,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         totalGenerated += result.generated;
         totalCuts += result.total;
 
-        const storageKey = cadenceAudioUrlKey(selected.key, gender);
-        const slug = `multichannel-${storageKey}`.slice(0, 80);
-        const file = new File([result.blob], `${slug}.mp3`, { type: "audio/mpeg" });
-        let publicUrl: string;
-        try {
-          const up = await uploadMedia(file, undefined, {
-            scope: "admin",
-            consultant_id: consultantId,
-            kind: "audio",
-            slug,
-          });
-          publicUrl = up.url;
-        } catch {
-          const path = `${consultantId}/multichannel/${storageKey}-${Date.now()}.mp3`;
-          const { error: upErr } = await supabase.storage
-            .from("ai-agent-media")
-            .upload(path, result.blob, { upsert: false, contentType: "audio/mpeg" });
-          if (upErr) throw upErr;
-          publicUrl = supabase.storage.from("ai-agent-media").getPublicUrl(path).data.publicUrl;
-        }
-
-        const genderLabel = gender ? ` (${gender})` : "";
-        const { data: clip, error: clipErr } = await supabase
-          .from("voice_audio_clips")
-          .insert({
-            consultant_id: consultantId,
-            name: `[Multicanal] ${selected.title}${genderLabel}`.slice(0, 120),
-            audio_url: publicUrl,
-            voice_id: VOICE_SOFIA_PROFESSIONAL,
-            model_id: MODEL_V3,
-            is_call_body: selected.channel === "call_script",
-          })
-          .select("id")
-          .single();
-        if (clipErr) throw clipErr;
-
-        nextUrls = { ...nextUrls, [storageKey]: publicUrl };
-        nextClipIds = {
-          ...nextClipIds,
-          [storageKey]: String((clip as { id: string }).id),
-        };
-
-        // Corpo fixo (sem nome) — motor costura Olá+nome (passo 2) ou só nome (3/4a) em runtime.
-        const bodySegs = segsForRun.filter((s) => s.kind !== "name");
-        if (bodySegs.length > 0 && hasSegments) {
+        // Ligação: o clip do Motor deve ser SÓ o corpo (sem nome).
+        // Runtime costura “Olá, Nome! Tudo bem?” + corpo (personalize_name).
+        const bodySegs = hasSegments
+          ? segsForRun.filter((s) => s.kind !== "name")
+          : [];
+        let bodyUrlForCall: string | null = null;
+        let bodyBlobForCall: Blob | null = null;
+        if (bodySegs.length > 0) {
           const bodySpoken = bodySegs
             .map((s) => spokenSegmentText(s, vars))
             .filter(Boolean);
@@ -960,7 +957,6 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             const bodyFile = new File([bodyResult.blob], `${bodySlug}.mp3`, {
               type: "audio/mpeg",
             });
-            let bodyUrl: string;
             try {
               const upBody = await uploadMedia(bodyFile, undefined, {
                 scope: "admin",
@@ -968,7 +964,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 kind: "audio",
                 slug: bodySlug,
               });
-              bodyUrl = upBody.url;
+              bodyUrlForCall = upBody.url;
             } catch {
               const path = `${consultantId}/multichannel/${bodyKey}-${Date.now()}.mp3`;
               const { error: upErr } = await supabase.storage
@@ -978,10 +974,11 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   contentType: "audio/mpeg",
                 });
               if (upErr) throw upErr;
-              bodyUrl = supabase.storage.from("ai-agent-media").getPublicUrl(path).data
+              bodyUrlForCall = supabase.storage.from("ai-agent-media").getPublicUrl(path).data
                 .publicUrl;
             }
-            nextUrls = { ...nextUrls, [bodyKey]: bodyUrl };
+            bodyBlobForCall = bodyResult.blob;
+            nextUrls = { ...nextUrls, [bodyKey]: bodyUrlForCall };
             totalReused += bodyResult.reused;
             totalGenerated += bodyResult.generated;
             totalCuts += bodyResult.total;
@@ -999,8 +996,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   consultant_id: consultantId,
                   slot_key: bodyKey,
                   kind: "audio",
-                  label: `Sofia corpo · ${selected.title}${genderLabel}`.slice(0, 120),
-                  url: bodyUrl,
+                  label: `Sofia corpo · ${selected.title}${gender ? ` (${gender})` : ""}`.slice(0, 120),
+                  url: bodyUrlForCall,
                   text_content: bodyTextContent.slice(0, 8000),
                   active: true,
                   send_order: 0,
@@ -1016,6 +1013,54 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             }
           }
         }
+
+        const isCall = selected.channel === "call_script";
+        const clipBlob = isCall && bodyBlobForCall ? bodyBlobForCall : result.blob;
+        const storageKey = cadenceAudioUrlKey(selected.key, gender);
+        const slug = `multichannel-${storageKey}${isCall ? "-body" : ""}`.slice(0, 80);
+        const file = new File([clipBlob], `${slug}.mp3`, { type: "audio/mpeg" });
+        let publicUrl: string;
+        if (isCall && bodyUrlForCall) {
+          publicUrl = bodyUrlForCall;
+        } else {
+          try {
+            const up = await uploadMedia(file, undefined, {
+              scope: "admin",
+              consultant_id: consultantId,
+              kind: "audio",
+              slug,
+            });
+            publicUrl = up.url;
+          } catch {
+            const path = `${consultantId}/multichannel/${storageKey}-${Date.now()}.mp3`;
+            const { error: upErr } = await supabase.storage
+              .from("ai-agent-media")
+              .upload(path, clipBlob, { upsert: false, contentType: "audio/mpeg" });
+            if (upErr) throw upErr;
+            publicUrl = supabase.storage.from("ai-agent-media").getPublicUrl(path).data.publicUrl;
+          }
+        }
+
+        const genderLabel = gender ? ` (${gender})` : "";
+        const { data: clip, error: clipErr } = await supabase
+          .from("voice_audio_clips")
+          .insert({
+            consultant_id: consultantId,
+            name: `[Multicanal] ${selected.title}${genderLabel}${isCall ? " · corpo" : ""}`.slice(0, 120),
+            audio_url: publicUrl,
+            voice_id: VOICE_SOFIA_PROFESSIONAL,
+            model_id: MODEL_V3,
+            is_call_body: isCall,
+          })
+          .select("id")
+          .single();
+        if (clipErr) throw clipErr;
+
+        nextUrls = { ...nextUrls, [storageKey]: publicUrl };
+        nextClipIds = {
+          ...nextClipIds,
+          [storageKey]: String((clip as { id: string }).id),
+        };
 
         // Alias legado do passo 3 unificado
         if (selected.key === "a3_explain_with_buttons") {
@@ -1332,7 +1377,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         <div className="min-w-0">
           <h3 className="text-base font-semibold tracking-tight">Biblioteca Multicanal</h3>
           <p className="mt-0.5 text-[12px] text-muted-foreground">
-            Clique no toque para editar · Sofia em cortes · envio automático OFF
+            Clique no toque para editar · Sofia em cortes · envio automático{" "}
+            {autoDispatchLive === null ? "…" : autoDispatchLive ? "ON" : "OFF"}
           </p>
           <p className="mt-0.5 text-[11px] text-muted-foreground/80">
             Agora ({avail.slot}): “{avail.phrase}”
@@ -1434,7 +1480,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 (~15d).{" "}
                 <span className="text-foreground font-medium">Cada marco longo</span> = WhatsApp com
                 análise → SMS se silêncio → ligação Sofia se silêncio (60d, 90d, 5m, 8m, 12m, anual).
-                Toggles OFF até validar a onda B.
+                Toggles de recall/Meta na Central de Automações / Motor.
               </p>
               <p className="text-foreground/90">
                 Ao publicar: textos/botões WA sincronizam no motor (ContentContract). SMS/call
@@ -1593,7 +1639,18 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 tab={inspectorTab}
                 onTabChange={setInspectorTab}
                 title={`#${Math.max(1, listIdx + 1)} · ${selected.title}`}
-                description={`${selected.timing} · ${channelLabel(selected.channel)}`}
+                description={`${selected.timing} · ${channelLabel(selected.channel)} · use tela cheia para prévia ao lado`}
+                preview={(
+                  <CadenceMobilePreview
+                    text={preview}
+                    buttons={previewButtons}
+                    channel={selected.channel}
+                    contactName="Sofia · iGreen"
+                    audioUrl={previewAudioUrl}
+                    showAudio={showAudioAboveButtons}
+                    audioPlacement={audioPlacement}
+                  />
+                )}
                 contentTab={(
                   <>
                 <CadenceSendOrderGuide
@@ -1690,7 +1747,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     </div>
                     <p className="text-[10px] text-muted-foreground">
                       {selected.channel === "sms"
-                        ? "Envia o texto atual (com variáveis substituídas) via Velip SMS para o número informado."
+                        ? "Envia o texto atual (com variáveis substituídas) via SMS iGreen Fone para o número informado."
                         : "Usa o áudio Sofia já gerado deste passo. Se ainda não existir, gere o áudio primeiro."}
                     </p>
                   </div>
@@ -2009,9 +2066,11 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                           Áudio = nome + corpo fixo.
                         </>
                       ) : selected.key === "a5_audio_club_benefits" ? (
-                        <>Passo 4a: só o nome → corpo fixo do clube.</>
+                        <>Passo 4a: Então + nome → corpo fixo do clube.</>
+                      ) : selected.key === "a3_explain_with_buttons" ? (
+                        <>Passo 3: Nome + “não tem segredo” → corpo fixo.</>
                       ) : selected.key === "a2_audio_activate_name" ? (
-                        <>Passo 2a: Olá + nome → corpo fixo M/F.</>
+                        <>Passo 2a: Olá + nome + tudo bem? → corpo fixo M/F (igual ligação).</>
                       ) : (
                         <>Aprove cada corte antes de gerar o MP3.</>
                       )
@@ -2240,29 +2299,28 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   </>
                 )}
                 footer={(
-                  <>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-0.5 px-2 text-[11px]"
+                    className="h-8 gap-0.5 px-2 text-[12px]"
                     disabled={listIdx <= 0}
                     onClick={() => {
                       if (listIdx > 0) openInspector(list[listIdx - 1]!.key, inspectorTab);
                     }}
                   >
-                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <ChevronLeft className="h-4 w-4" />
                     Ant.
                   </Button>
-                  <span className="px-1 text-[10px] tabular-nums text-muted-foreground">
+                  <span className="px-1.5 text-[12px] tabular-nums text-muted-foreground">
                     {listIdx + 1}/{list.length}
                   </span>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-7 gap-0.5 px-2 text-[11px]"
+                    className="h-8 gap-0.5 px-2 text-[12px]"
                     disabled={listIdx < 0 || listIdx >= list.length - 1}
                     onClick={() => {
                       if (listIdx >= 0 && listIdx < list.length - 1) {
@@ -2271,19 +2329,19 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     }}
                   >
                     Próx.
-                    <ChevronRight className="h-3.5 w-3.5" />
+                    <ChevronRight className="h-4 w-4" />
                   </Button>
                   <div className="ml-auto flex flex-wrap gap-1.5">
                     <Button
                       onClick={handleSave}
                       disabled={saving}
                       size="sm"
-                      className="h-7 gap-1 text-[11px]"
+                      className="h-8 gap-1.5 text-[12px]"
                     >
                       {saving ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
-                        <Save className="h-3 w-3" />
+                        <Save className="h-3.5 w-3.5" />
                       )}
                       Salvar
                     </Button>
@@ -2291,35 +2349,24 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 gap-1 px-2 text-[11px]"
+                      className="h-8 gap-1 px-2.5 text-[12px]"
                       onClick={handleCopy}
+                      aria-label="Copiar"
                     >
-                      <Copy className="h-3 w-3" />
+                      <Copy className="h-3.5 w-3.5" />
                     </Button>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 gap-1 px-2 text-[11px]"
+                      className="h-8 gap-1 px-2.5 text-[12px]"
                       onClick={handleResetOne}
+                      aria-label="Restaurar"
                     >
-                      <RotateCcw className="h-3 w-3" />
+                      <RotateCcw className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>
-
-                <div className="rounded-lg border border-border/50 p-2 lg:hidden">
-                  <CadenceMobilePreview
-                    text={preview}
-                    buttons={previewButtons}
-                    channel={selected.channel}
-                    contactName="Sofia · iGreen"
-                    audioUrl={previewAudioUrl}
-                    showAudio={showAudioAboveButtons}
-                    audioPlacement={audioPlacement}
-                  />
-                </div>
-                  </>
                 )}
               />
             )}

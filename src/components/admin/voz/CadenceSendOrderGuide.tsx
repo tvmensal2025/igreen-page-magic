@@ -111,7 +111,7 @@ export function buildSendOrderSteps(
       id: "buttons",
       tab: "botoes",
       label: `${n} Botões`,
-      detail: "Até 3 Whapi",
+      detail: "Até 3 botões",
       done: opts?.buttonsDone,
     });
   }

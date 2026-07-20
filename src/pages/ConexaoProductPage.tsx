@@ -70,7 +70,7 @@ const ConexaoProductPage = () => {
         title={`${product.name} – ${consultant.name}`}
         description={product.heroSubtitle}
       />
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background overflow-x-hidden">
         {/* ═══ HERO ═══ */}
         <HeroSection product={product} whatsappUrl={whatsappUrl} />
 
@@ -136,7 +136,7 @@ function HeroSection({ product, whatsappUrl }: HeroProps) {
             href={whatsappUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-block bg-[#25D366] hover:bg-[#20bd5a] text-white font-heading font-bold text-sm sm:text-base md:text-lg px-8 py-4 rounded-full shadow-lg transition-all duration-300 hover:scale-105 animate-pulse"
+            className="inline-flex max-w-full items-center justify-center bg-[#25D366] hover:bg-[#20bd5a] text-white font-heading font-bold text-sm sm:text-base md:text-lg px-5 sm:px-8 py-3.5 sm:py-4 rounded-full shadow-lg transition-all duration-300 hover:scale-105 animate-pulse text-center"
           >
             {product.ctaLabel}
           </a>
@@ -190,9 +190,9 @@ function AboutSection({ section }: { section: ProductSection }) {
         <div className="glass-card max-w-3xl mx-auto p-6 md:p-8">
           <ul className="space-y-4">
             {section.items?.map((item, i) => (
-              <li key={i} className="flex items-start gap-3 text-foreground/90">
+              <li key={i} className="flex items-start gap-3 text-foreground/90 min-w-0">
                 <span className="text-lg shrink-0">✅</span>
-                <span>{item}</span>
+                <span className="min-w-0 break-words">{item}</span>
               </li>
             ))}
           </ul>
@@ -272,9 +272,9 @@ function BenefitsSection({ section }: { section: ProductSection }) {
         )}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
           {section.items?.map((item, i) => (
-            <div key={i} className="glass-card p-5 flex items-start gap-3">
+            <div key={i} className="glass-card p-5 flex items-start gap-3 min-w-0">
               <span className="text-lg shrink-0">✅</span>
-              <span className="text-foreground/90 text-sm">{item}</span>
+              <span className="text-foreground/90 text-sm min-w-0 break-words">{item}</span>
             </div>
           ))}
         </div>
@@ -302,7 +302,7 @@ function GallerySection({ section, productSlug }: { section: ProductSection; pro
               alt={`${section.title} ${i + 1}`}
               loading="lazy"
               decoding="async"
-              className="rounded-2xl w-full h-auto object-cover shadow-md hover:scale-[1.02] transition-transform duration-300"
+              className="rounded-2xl w-full max-w-full h-auto object-cover shadow-md hover:scale-[1.02] transition-transform duration-300"
             />
           ))}
         </div>
@@ -330,10 +330,10 @@ function FAQSection({ section }: { section: ProductSection }) {
               <button
                 type="button"
                 onClick={() => setOpenIndex(openIndex === i ? null : i)}
-                className="w-full flex items-center justify-between p-5 text-left"
+                className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 text-left min-w-0"
                 aria-expanded={openIndex === i}
               >
-                <span className="font-heading font-semibold text-foreground pr-4">
+                <span className="font-heading font-semibold text-foreground min-w-0 pr-2 break-words">
                   {item.question}
                 </span>
                 <svg
@@ -428,47 +428,47 @@ function ConsultorSection({ consultant, whatsappUrl, product }: ConsultorSection
 
       <div className="section-container relative z-10">
         <div className="badge-green mx-auto mb-6">Seu consultor</div>
-        <h2 className="section-heading mb-2">{consultant.name}</h2>
+        <h2 className="section-heading mb-2 break-words px-1">{consultant.name}</h2>
         <p
-          className="text-center font-heading font-bold text-lg mb-12"
+          className="text-center font-heading font-bold text-base sm:text-lg mb-12 break-words px-1"
           style={{ color: "hsl(var(--primary))" }}
         >
           Consultor(a) {product.brandName} — ID {displayId}
         </p>
 
-        <div className="grid md:grid-cols-2 gap-12 items-center max-w-4xl mx-auto">
-          <div className="relative group">
+        <div className="grid md:grid-cols-2 gap-8 md:gap-12 items-center max-w-4xl mx-auto">
+          <div className="relative group min-w-0">
             <div className="media-glow" />
             <img
               src={photo}
               alt={`${consultant.name} - Consultor(a) ${product.brandName}`}
               loading="lazy"
               decoding="async"
-              className="rounded-2xl w-full max-w-sm mx-auto shadow-lg relative z-10 transition-transform duration-500 group-hover:scale-[1.02]"
+              className="rounded-2xl w-full max-w-sm max-w-full mx-auto shadow-lg relative z-10 transition-transform duration-500 group-hover:scale-[1.02]"
               style={{ boxShadow: "var(--shadow-green)" }}
             />
           </div>
 
-          <div>
-            <h3 className="font-heading font-bold text-2xl mb-6 text-foreground">
+          <div className="min-w-0">
+            <h3 className="font-heading font-bold text-xl sm:text-2xl mb-6 text-foreground break-words">
               {consultant.name}
             </h3>
             <div className="space-y-4 mb-10">
-              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
+              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3 min-w-0">
                 <span className="text-lg shrink-0">✅</span>
-                <span className="text-foreground/90">
+                <span className="text-foreground/90 min-w-0 break-words">
                   Estou muito feliz com seu interesse em conhecer a {product.brandName} e será um grande prazer tê-lo(a) conosco
                 </span>
               </div>
-              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
+              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3 min-w-0">
                 <span className="text-lg shrink-0">✅</span>
-                <span className="text-foreground/90">
+                <span className="text-foreground/90 min-w-0 break-words">
                   Estou à disposição para tirar todas as suas dúvidas e fornecer o melhor suporte. Pode contar comigo!
                 </span>
               </div>
-              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
+              <div className="glass-card !p-4 !rounded-xl flex items-start gap-3 min-w-0">
                 <span className="text-lg shrink-0">✅</span>
-                <span className="text-foreground/90">
+                <span className="text-foreground/90 min-w-0 break-words">
                   Envie uma mensagem e comece a aproveitar todos os benefícios da {product.brandName} hoje mesmo
                 </span>
               </div>
@@ -488,15 +488,15 @@ function ConsultorSection({ consultant, whatsappUrl, product }: ConsultorSection
       </div>
 
       {/* Footer */}
-      <footer className="bg-card/50 py-10 text-center mt-16 border-t border-border">
+      <footer className="bg-card/50 py-10 px-4 text-center mt-16 border-t border-border public-page-safe-bottom">
         <img
           src="/images/logo-colorida-igreen.png"
           alt="iGreen Energy"
           loading="lazy"
           decoding="async"
-          className="mx-auto mb-4 w-36"
+          className="mx-auto mb-4 w-36 max-w-full h-auto"
         />
-        <p className="text-muted-foreground font-heading text-sm tracking-wider">
+        <p className="text-muted-foreground font-heading text-sm tracking-wider break-words px-2">
           {consultant.name?.toUpperCase()} | CONSULTOR(A) {product.brandName.toUpperCase()}
           {displayId ? ` ID ${displayId}` : ""}
         </p>

@@ -79,18 +79,18 @@ const LicHeroSection = ({ cadastroUrl, whatsappUrl, consultantId }: LicHeroSecti
         </div>
 
         {/* Social proof stats */}
-        <div className="grid grid-cols-3 gap-4 md:gap-12 max-w-3xl mx-auto mt-16 md:mt-20 pt-10 border-t border-border">
-          <div className="text-center">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 md:gap-12 max-w-3xl mx-auto mt-16 md:mt-20 pt-10 border-t border-border px-1">
+          <div className="text-center min-w-0">
             <AnimatedCounter target={600} suffix="mil+" />
-            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Clientes ativos</p>
+            <p className="text-[10px] sm:text-xs md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading leading-tight">Clientes<br className="sm:hidden" /> ativos</p>
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-0">
             <AnimatedCounter target={500} suffix="+" />
-            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Usinas solares</p>
+            <p className="text-[10px] sm:text-xs md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading leading-tight">Usinas<br className="sm:hidden" /> solares</p>
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-0">
             <AnimatedCounter target={27} />
-            <p className="text-[10px] md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading">Estados</p>
+            <p className="text-[10px] sm:text-xs md:text-sm mt-2 text-muted-foreground uppercase tracking-wider font-heading leading-tight">Estados</p>
           </div>
         </div>
       </div>

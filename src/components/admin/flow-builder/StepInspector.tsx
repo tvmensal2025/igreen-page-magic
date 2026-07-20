@@ -77,7 +77,7 @@ function MakeCallClipBinder({
               {(c.name || c.id.slice(0, 8)) +
                 (c.voice_id === VOICE_SOFIA ? " · Sofia" : "") +
                 (c.is_call_body ? " · corpo" : "") +
-                (c.velip_audio_id ? " · Velip" : "")}
+                (c.velip_audio_id ? " · iGreen Fone" : "")}
             </SelectItem>
           ))}
         </SelectContent>

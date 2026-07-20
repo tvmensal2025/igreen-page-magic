@@ -195,24 +195,26 @@ export default function AdminMetaAds() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => navigate("/admin")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <h1 className="text-base font-semibold">📊 Tracking Meta Ads</h1>
             <p className="text-xs text-muted-foreground">
               Métricas por campanha: clientes interessados recebidos, conversões, CAC.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handleImport} disabled={importing}>
-            {importing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Download className="mr-1 h-3 w-3" />}
-            Importar do Meta
-          </Button>
-          <Button size="sm" onClick={() => { setEditingCampaign(null); setFormOpen(true); }}>
-            <Plus className="mr-1 h-3 w-3" />
-            Nova campanha
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={handleImport} disabled={importing}>
+              {importing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <Download className="mr-1 h-3 w-3" />}
+              Importar do Meta
+            </Button>
+            <Button size="sm" onClick={() => { setEditingCampaign(null); setFormOpen(true); }}>
+              <Plus className="mr-1 h-3 w-3" />
+              Nova campanha
+            </Button>
+          </div>
         </div>
       </header>
 
@@ -257,7 +259,7 @@ export default function AdminMetaAds() {
         </div>
 
         {/* Totais */}
-        <div className="grid gap-3 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Card className="p-3">
             <p className="text-xs text-muted-foreground">Clientes interessados recebidos</p>
             <p className="text-2xl font-bold">{totals.totalLeads}</p>

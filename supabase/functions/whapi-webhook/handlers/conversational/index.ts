@@ -473,14 +473,14 @@ async function sendStepMedia(
         clearInterval(presenceKeepAlive);
       }
 
-      // Só stitch Sofia completo (nome personalizado). Nunca corpo-only / TTS genérico.
-      if (safe.ok && safe.url && safe.mode === "stitch") {
+      // Só stitch Sofia (nome+corpo) ou corpo fixo sem nome — nunca prévia Maria/Rodrigo.
+      if (safe.ok && safe.url && (safe.mode === "stitch" || safe.mode === "body_only")) {
         medias = [
           ...nonAudio,
           {
             id: null,
             kind: "audio",
-            label: `sofia ${slotKey} · ${safe.displayName || ""} · ${safe.mode || "safe"}`,
+            label: `sofia ${slotKey} · ${safe.displayName || "sem-nome"} · ${safe.mode || "safe"}`,
             url: String(safe.url),
             slot_key: slotKey,
             send_order: 0,

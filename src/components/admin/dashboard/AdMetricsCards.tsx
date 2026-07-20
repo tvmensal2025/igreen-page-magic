@@ -18,7 +18,7 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
@@ -54,7 +54,7 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
           Aguardando o primeiro sync de métricas do Meta (roda a cada 30 min).
         </div>
       )}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         {cards.map((c) => (
           <Card
             key={c.label}

@@ -32,7 +32,7 @@ async function call<T>(action: string, payload: Record<string, unknown> = {}): P
       const j = await res.json();
       detail = (j?.error && (j.error.message || JSON.stringify(j.error))) || j?.message || detail;
     } catch { /* ignore */ }
-    throw new Error(detail || "Erro Whapi");
+    throw new Error(detail || "Erro iGreen Chat");
   }
   return (await res.json()) as T;
 }

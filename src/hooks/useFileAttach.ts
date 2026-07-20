@@ -35,7 +35,7 @@ export function useFileAttach(context?: FileAttachContext) {
     setUploadProgress(0);
     try {
       if (file.type === "audio/webm" || /\.webm$/i.test(file.name)) {
-        toast.error("WhatsApp/Whapi não aceita áudio .webm. Use .ogg, .mp3 ou .m4a.");
+        toast.error("WhatsApp não aceita áudio .webm. Use .ogg, .mp3 ou .m4a.");
         return;
       }
       const inferKind = (mime: string, name: string) => {

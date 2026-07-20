@@ -46,7 +46,7 @@ export function formatDurationSec(sec: number | null | undefined): string {
 
 export function dncSourceLabel(source: string | null | undefined): string {
   const s = String(source || "").toLowerCase();
-  if (s === "velip_callback") return "Automático (Velip)";
+  if (s === "velip_callback") return "Automático (iGreen Fone)";
   if (s === "admin_ui") return "Manual";
   return source || "Manual";
 }

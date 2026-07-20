@@ -65,7 +65,7 @@ const LicenciadaPage = () => {
         title={`Licenciado ${consultant.name} – iGreen Energy`}
         description={`Descubra como se tornar um Licenciado iGreen Energy com ${consultant.name} e receba comissões recorrentes`}
       />
-      <div className="min-h-screen">
+      <div className="min-h-screen overflow-x-hidden">
         <LicHeroSection cadastroUrl={consultant.licenciada_cadastro_url || consultant.cadastro_url} whatsappUrl={whatsappUrl} consultantId={consultant.id} />
         <LicUrgencyBanner />
         <LicAboutSection />

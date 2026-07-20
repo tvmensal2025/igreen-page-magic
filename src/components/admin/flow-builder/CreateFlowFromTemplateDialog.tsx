@@ -195,7 +195,7 @@ export default function CreateFlowFromTemplateDialog({
       w.push("Bloco 'Finalizar cadastro' será adicionado automaticamente — sem ele o lead não chega ao portal.");
     }
     if (renderStyle === "list-interactive" && variant !== "D") {
-      w.push("Lista interativa só funciona em fluxos via Whapi (fluxo D). Em outros cai em texto numerado.");
+      w.push("Lista interativa só funciona em fluxos via iGreen Chat (fluxo D). Em outros cai em texto numerado.");
     }
     if (aiProvider !== "none" && enabledBlockIds.includes("duvidas_ia") === false) {
       w.push("Você ativou IA mas não incluiu o bloco de dúvidas — a IA não vai ser usada.");
@@ -321,7 +321,7 @@ export default function CreateFlowFromTemplateDialog({
                 <RadioGroup
                   value={variant}
                   onValueChange={(v) => setVariant(v)}
-                  className="grid grid-cols-6 gap-2 sm:grid-cols-8"
+                  className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8"
                   disabled={busy}
                 >
                   {ALL_VARIANTS.map((v) => {
@@ -373,12 +373,12 @@ export default function CreateFlowFromTemplateDialog({
                     {
                       v: "buttons" as const,
                       label: "🔘 Botões interativos (até 3)",
-                      sub: "Cliente vê botões clicáveis. Funciona em Evolution e Whapi.",
+                      sub: "Cliente vê botões clicáveis. Funciona em iGreen Link e iGreen Chat.",
                     },
                     {
                       v: "list-interactive" as const,
                       label: "📋 Lista interativa (até 10)",
-                      sub: "Menu suspenso com várias opções. Só funciona via Whapi (fluxo D).",
+                      sub: "Menu suspenso com várias opções. Só funciona via iGreen Chat (fluxo D).",
                     },
                     {
                       v: "text-numbered" as const,
@@ -413,7 +413,7 @@ export default function CreateFlowFromTemplateDialog({
                 <RadioGroup
                   value={aiProvider}
                   onValueChange={(v) => setAiProvider(v as AiProvider)}
-                  className="grid grid-cols-3 gap-2"
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-3"
                   disabled={busy}
                 >
                   {[

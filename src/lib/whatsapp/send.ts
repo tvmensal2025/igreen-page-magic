@@ -55,7 +55,7 @@ const FRIENDLY: Record<string, string> = {
   instance_disconnected:
     "WhatsApp do consultor desconectado. Reconecte em /admin/conexao.",
   whapi_send_failed: "WhatsApp recusou o envio. Veja o detalhe e tente de novo.",
-  whapi_network: "Sem resposta da Whapi (rede). Tente novamente em alguns segundos.",
+  whapi_network: "Sem resposta do iGreen Chat (rede). Tente novamente em alguns segundos.",
   partial_send: "Parte dos itens não foi enviada. Tente reenviar só o que faltou.",
   internal_error: "Erro interno no servidor.",
   client_timeout: "Servidor demorou demais (20s). Tente de novo.",

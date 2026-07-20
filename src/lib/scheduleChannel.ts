@@ -19,7 +19,7 @@ export function resolveScheduleChannel(opts: {
       return {
         ok: false,
         reason:
-          "Whapi desconectado ou indisponível. Reconecte na aba Conversas e agende de novo.",
+          "iGreen Chat desconectado ou indisponível. Reconecte na aba Conversas e agende de novo.",
         pending: "whatsapp_disconnected",
       };
     }
@@ -32,7 +32,7 @@ export function resolveScheduleChannel(opts: {
     return {
       ok: false,
       reason:
-        "WhatsApp desconectado. Conecte (Whapi ou Evolution) na aba Conversas para agendar. Se houver outra pendência, resolva antes.",
+        "WhatsApp desconectado. Conecte o canal (iGreen Chat ou iGreen Link) na aba Conversas para agendar. Se houver outra pendência, resolva antes.",
       pending: "whatsapp_disconnected",
     };
   }
@@ -45,7 +45,7 @@ export function resolveScheduleChannel(opts: {
   return {
     ok: false,
     reason:
-      "Conecte o WhatsApp (Whapi ou Evolution) para agendar. Se faltar conexão ou outra pendência, resolva na aba Conversas e tente de novo.",
+      "Conecte o WhatsApp (iGreen Chat ou iGreen Link) para agendar. Se faltar conexão ou outra pendência, resolva na aba Conversas e tente de novo.",
     pending: "whatsapp_disconnected",
   };
 }

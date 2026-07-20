@@ -263,7 +263,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "c",
     label: "Grupo C — Longo prazo",
-    subtitle: "Meta + cada marco: WA análise → SMS se silêncio → ligação se silêncio. OFF até validar onda B.",
+    subtitle: "Meta + cada marco: WA análise → SMS se silêncio → ligação se silêncio. Toggles no Motor.",
     group: "C",
     steps: [
       {

@@ -176,7 +176,7 @@ export function VoiceDashboardPanel({ consultantId, customers = [] }: Props) {
       </VozSection>
 
       {m?.by_velip && m.by_velip.length > 0 && (
-        <VozSection title="Motivos Velip (30d)">
+        <VozSection title="Motivos iGreen Fone (30d)">
           <ul className="grid gap-1 sm:grid-cols-2 text-sm">
             {m.by_velip.map((row) => (
               <li

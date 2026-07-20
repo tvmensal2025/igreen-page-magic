@@ -340,7 +340,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
               {c.name}
               {vLabel ? ` · ${vLabel}` : ""}
               {c.is_call_body ? " · corpo" : ""}
-              {c.velip_audio_id ? "" : " · sem Velip"}
+              {c.velip_audio_id ? "" : " · sem iGreen Fone"}
             </SelectItem>
           );
         })}
@@ -447,7 +447,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
         <div>
           <Label htmlFor="kit-personalize">Personalizar com nome (Sofia)</Label>
           <p className="text-[11px] text-muted-foreground mt-0.5">
-            Costura &quot;Olá, {"{Nome}"}.&quot; na mesma voz Sofia + corpo (cache 1x por nome).
+            Costura &quot;Olá, {"{Nome}"}! Tudo bem?&quot; na mesma voz Sofia + corpo (cache 1x por nome).
           </p>
         </div>
       </div>
@@ -461,7 +461,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
           disabled
         />
         <p className="text-[11px] text-muted-foreground">
-          Regra: sem clip Sofia a ligação <strong>não sai</strong>. TTS Velip desativado.
+          Regra: sem clip Sofia a ligação <strong>não sai</strong>. TTS genérico desativado.
         </p>
       </div>
     </div>
@@ -639,7 +639,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
                 ? "Ligado — cron pode enviar"
                 : "Ligado — falta conteúdo no checklist"
               : "Desligado (padrão seguro)"}
-            {savingGates ? " · salvando…" : ""} · teto Whapi {gates?.cap}/dia
+            {savingGates ? " · salvando…" : ""} · teto iGreen Chat {gates?.cap}/dia
           </p>
           <label className="flex items-center justify-between gap-3 text-sm">
             <span>Toggle Central <code className="text-xs">daily_reheat</code></span>

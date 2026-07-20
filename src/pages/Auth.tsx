@@ -221,7 +221,7 @@ const Auth = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden bg-background">
+    <div className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-x-hidden bg-background public-page-safe-bottom">
       {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full bg-primary/5 blur-3xl animate-float" />
@@ -254,7 +254,7 @@ const Auth = () => {
 
         <div className="relative">
           <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
-          <form onSubmit={recoveryMode ? handleSetNewPassword : forgotMode ? handleForgotPassword : handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-7 sm:p-8 rounded-2xl border border-border shadow-xl">
+          <form onSubmit={recoveryMode ? handleSetNewPassword : forgotMode ? handleForgotPassword : handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-5 sm:p-8 rounded-2xl border border-border shadow-xl w-full">
             <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
 
             {!isLogin && !forgotMode && !recoveryMode && (
@@ -349,12 +349,12 @@ const Auth = () => {
           </p>
         ) : null}
 
-        <div className="flex items-center justify-center gap-4 pt-2">
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground/60">
-            <Zap className="w-3 h-3" /><span>PLATAFORMA PARA O CONSULTOR</span>
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-2 px-1">
+          <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground/60">
+            <Zap className="w-3 h-3 shrink-0" /><span>PLATAFORMA PARA O CONSULTOR</span>
           </div>
-          <div className="w-1 h-1 rounded-full bg-muted-foreground/20" />
-          <div className="text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
+          <div className="w-1 h-1 rounded-full bg-muted-foreground/20 hidden sm:block" />
+          <div className="text-[10px] sm:text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
         </div>
       </div>
     </div>

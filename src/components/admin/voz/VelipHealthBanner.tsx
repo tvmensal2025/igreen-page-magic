@@ -1,11 +1,12 @@
 /**
- * Banner de saúde da conexão Velip — aparece no topo da aba Ligação.
- * Mostra saldo Velip + gasto hoje / semana / mês do consultor logado.
+ * Banner de saúde da conexão de telefonia — aparece no topo da aba Ligação.
+ * Mostra saldo + gasto hoje / semana / mês do consultor logado.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AlertCircle, CheckCircle2, Loader2, RefreshCw, Wallet, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PROVIDER_UI } from "@/lib/providerDisplayNames";
 
 interface Spend {
   spend_today: number;
@@ -48,7 +49,7 @@ export function VelipHealthBanner() {
   if (!state) {
     return (
       <div className="flex items-center gap-2 rounded-md border border-border/40 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Verificando conexão Velip…
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Verificando conexão {PROVIDER_UI.fone}…
       </div>
     );
   }
@@ -57,9 +58,9 @@ export function VelipHealthBanner() {
     return (
       <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
         <div className="flex items-center gap-2 font-medium">
-          <AlertCircle className="h-4 w-4" /> Velip não conectado
+          <AlertCircle className="h-4 w-4" /> {PROVIDER_UI.fone} não conectado
         </div>
-        <p className="mt-1">Configure <code>VELIP_API_TOKEN</code> e <code>VELIP_WEBHOOK_AUTH</code> nos secrets para começar a discar.</p>
+        <p className="mt-1">Configure os secrets de telefonia no servidor para começar a discar.</p>
       </div>
     );
   }
@@ -69,7 +70,7 @@ export function VelipHealthBanner() {
       <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 font-medium">
-            <AlertCircle className="h-4 w-4" /> Velip indisponível — {state.error || "erro desconhecido"}
+            <AlertCircle className="h-4 w-4" /> {PROVIDER_UI.fone} indisponível — {state.error || "erro desconhecido"}
           </div>
           <Button size="sm" variant="ghost" onClick={load} disabled={busy}>
             <RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
@@ -97,7 +98,7 @@ export function VelipHealthBanner() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="h-3.5 w-3.5" />
-          <span className="font-medium">Velip conectado</span>
+          <span className="font-medium">{PROVIDER_UI.fone} conectado</span>
           {state.webhook_configured === false && (
             <span className={isOk ? "text-amber-100" : "text-amber-700 dark:text-amber-300"}>(webhook sem auth)</span>
           )}
@@ -113,11 +114,11 @@ export function VelipHealthBanner() {
         </Button>
       </div>
       <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {/* API v2 da Velip não expõe saldo — quando null, orientar o painel deles */}
+        {/* API de saldo pode não expor valor — quando null, orientar painel interno */}
         <Metric
           icon={<Wallet className="h-3 w-3" />}
           label="Saldo"
-          value={saldo == null ? "ver painel Velip" : fmt(saldo)}
+          value={saldo == null ? `ver painel ${PROVIDER_UI.fone}` : fmt(saldo)}
           strong={saldo != null}
           onGreen={isOk}
         />

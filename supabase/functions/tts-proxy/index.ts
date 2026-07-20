@@ -88,18 +88,25 @@ Deno.serve(async (req) => {
     });
   }
 
-  const text = (body.text || "").trim();
-  if (!text) {
-    return new Response(JSON.stringify({ error: "Campo 'text' obrigatório" }), {
+  // Regra de ouro: PT-BR + texto válido. Texto vazio/lixo → 400 (nunca ElevenLabs 400 opaco).
+  const text = (body.text || "").replace(/\s+/g, " ").trim();
+  if (text.length < 2) {
+    return new Response(JSON.stringify({ error: "Campo 'text' obrigatório (mín. 2 caracteres)" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  if (text.length > 2500) {
+    return new Response(JSON.stringify({ error: "Texto TTS longo demais (máx. 2500)" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
-  const voiceId = body.voice_id || DEFAULT_VOICE;
-  const modelId = body.model_id || DEFAULT_MODEL;
+  // Multicanal / WhatsApp / ligação: default Sofia profissional. Outras vozes só se o
+  // cliente pedir explicitamente (Estúdio). Idioma SEMPRE pt (Brasil) — ignora override.
+  const voiceId = (body.voice_id || "").trim() || DEFAULT_VOICE;
+  const modelId = body.model_id === MODEL_V2 ? MODEL_V2 : (body.model_id || DEFAULT_MODEL);
   const voiceSettings = body.voice_settings ?? defaultVoiceSettings(modelId);
-  // Default PT-BR — nomes isolados sem isso saem com sotaque espanhol.
-  const languageCode = (body.language_code || "pt").trim() || "pt";
+  const languageCode = "pt";
 
   try {
     const elRes = await fetch(
@@ -128,8 +135,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Retorna o áudio direto ao cliente
     const audioData = await elRes.arrayBuffer();
+    // MP3 válido começa com ID3 ou frame 0xFFEx — evita devolver JSON/erro mascarado.
+    const head = new Uint8Array(audioData.slice(0, 3));
+    const looksMp3 =
+      audioData.byteLength >= 100 &&
+      ((head[0] === 0x49 && head[1] === 0x44 && head[2] === 0x33) || head[0] === 0xff);
+    if (!looksMp3) {
+      return new Response(JSON.stringify({ error: "Resposta ElevenLabs inválida (não é MP3)" }), {
+        status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(audioData, {
       status: 200,
       headers: {
@@ -137,6 +154,8 @@ Deno.serve(async (req) => {
         "Content-Type": "audio/mpeg",
         "Content-Length": String(audioData.byteLength),
         "Cache-Control": "no-store",
+        "X-Sofia-Voice": voiceId === DEFAULT_VOICE ? "1" : "0",
+        "X-Tts-Lang": languageCode,
       },
     });
   } catch (e: unknown) {

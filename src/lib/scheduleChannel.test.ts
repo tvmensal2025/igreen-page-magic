@@ -18,7 +18,7 @@ describe("resolveScheduleChannel", () => {
   it("Whapi desconectado bloqueia", () => {
     const r = resolveScheduleChannel({ isWhapi: true, isConnected: false });
     expect(r.ok).toBe(false);
-    expect(scheduleChannelBlockedReason(r)).toMatch(/Whapi desconectado/);
+    expect(scheduleChannelBlockedReason(r)).toMatch(/iGreen Chat desconectado/);
   });
 
   it("Evolution usa instanceName", () => {

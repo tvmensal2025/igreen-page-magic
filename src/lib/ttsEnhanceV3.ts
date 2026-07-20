@@ -144,17 +144,19 @@ export function ensureSoftEdges(text: string): string {
  * Cumprimento / chamada com nome: chamada CONTÍNUA (vírgula, não reticências).
  * “Olá, Maria.” → “Olá, Maria!”
  * “Então, Maria.” → “Então, Maria!”
+ * “Maria, não tem segredo.” → “Maria, não tem segredo!”
  * Reticências geravam pausa longa (cliente ouvia como corte entre "Olá" e o
  * nome — feedback 19/07/2026). Espelha supabase/functions/_shared/tts-ptbr-anchor.ts.
  */
 export function formatNameGreetForTts(text: string): string {
   let t = softenOverPauses(normalizeSpaces(text));
-  const m = t.match(/^(olá|então)\s*[,.]?\s*(.+)$/i);
+  const m = t.match(/^(olá|então|oi)\s*[,.]?\s*(.+)$/i);
   if (m) {
-    const lead = /^olá$/i.test(m[1]) ? "Olá" : "Então";
+    const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
     const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
     if (nome) return `${lead}, ${nome}!`;
   }
+  // Frase completa com nome (ex.: “Nome, não tem segredo.”) — mantém a frase, fecha com !.
   t = t.replace(/[.!?…]+$/u, "").trim();
   return t ? `${t}!` : t;
 }

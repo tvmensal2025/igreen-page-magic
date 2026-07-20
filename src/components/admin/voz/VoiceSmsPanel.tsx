@@ -244,7 +244,7 @@ export function VoiceSmsPanel({ consultantId, customers = [] }: Props) {
     if (!message.trim()) return toast.error("Escreva a mensagem");
     if (recipients.length === 0) return toast.error("Adicione ao menos 1 telefone ou contato");
     if (totalChars > 160) {
-      toast.message("Texto > 160 chars: a Velip corta em 1 parte (cuttext). Prefira enxugar.");
+      toast.message("Texto > 160 chars: o SMS corta em 1 parte. Prefira enxugar.");
     }
     setBusy(true);
     try {
@@ -283,7 +283,7 @@ export function VoiceSmsPanel({ consultantId, customers = [] }: Props) {
 
   return (
     <VozCampaignShell
-      title="SMS pela Velip"
+      title="SMS pelo iGreen Fone"
       subtitle="Templates editáveis · {{nome}} puxa o nome do contato pelo número. DELIVRD = entregue."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">

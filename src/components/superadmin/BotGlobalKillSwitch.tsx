@@ -51,13 +51,13 @@ export function BotGlobalKillSwitch() {
   const off = !enabled;
 
   return (
-    <div className={`rounded-xl border p-4 transition-colors ${off ? "border-destructive/60 bg-destructive/10" : "border-border bg-card"}`}>
-      <div className="flex items-start gap-3">
-        <div className={`p-2 rounded-lg ${off ? "bg-destructive/20 text-destructive" : "bg-primary/15 text-primary"}`}>
+      <div className={`rounded-xl border p-4 transition-colors ${off ? "border-destructive/60 bg-destructive/10" : "border-border bg-card"}`}>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className={`p-2 rounded-lg shrink-0 ${off ? "bg-destructive/20 text-destructive" : "bg-primary/15 text-primary"}`}>
           {off ? <PowerOff className="w-5 h-5" /> : <Power className="w-5 h-5" />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h3 className="font-bold text-sm">Assistente Global</h3>
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${off ? "bg-destructive text-destructive-foreground" : "bg-primary/20 text-primary"}`}>
               {off ? "DESLIGADO" : "ATIVO"}
@@ -73,7 +73,7 @@ export function BotGlobalKillSwitch() {
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : off ? "Reativar" : "Pausar"}
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent className="w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-destructive" />

@@ -43,7 +43,7 @@ const RECALL_TOGGLES = [
 
 /**
  * Aba Motor — liga/desliga motor + estágios Grupo B.
- * Recalls (Grupo C) ficam OFF por padrão até validar a onda curta.
+ * Recalls (Grupo C) têm toggle próprio; status real aparece nos badges abaixo.
  */
 export function AgendamentosMotorPanel() {
   const [loading, setLoading] = useState(true);
@@ -203,7 +203,7 @@ export function AgendamentosMotorPanel() {
       <div className="flex flex-wrap gap-2 text-[11px]">
         <Badge variant={slaCount > 0 ? "destructive" : "secondary"}>{slaCount} SLA</Badge>
         <Badge variant="outline">{dueCount} due ~1h</Badge>
-        <Badge variant={toggleMap.cadence_retarget_ads_15d ? "destructive" : "secondary"}>
+        <Badge variant={toggleMap.cadence_retarget_ads_15d ? "default" : "secondary"}>
           Meta ads: {toggleMap.cadence_retarget_ads_15d ? "ON" : "OFF"}
         </Badge>
       </div>
@@ -225,15 +225,15 @@ export function AgendamentosMotorPanel() {
       </div>
 
       <div className="rounded-xl border border-violet-500/20 p-3 space-y-2">
-        <p className="text-xs font-semibold">Grupo C — recalls (deixe OFF até validar B)</p>
+        <p className="text-xs font-semibold">Grupo C — recalls (status real nos badges)</p>
         <div className="flex flex-wrap gap-1.5">
           {RECALL_TOGGLES.map((key) => (
-            <Badge key={key} variant={toggleMap[key] ? "destructive" : "secondary"} className="text-[10px] font-mono">
+            <Badge key={key} variant={toggleMap[key] ? "default" : "secondary"} className="text-[10px] font-mono">
               {key.replace("cadence_", "")}: {toggleMap[key] ? "ON" : "OFF"}
             </Badge>
           ))}
         </div>
-        <p className="text-[10px] text-muted-foreground">Ligue recalls na página completa do Motor, um a um.</p>
+        <p className="text-[10px] text-muted-foreground">Status dos recalls; ajuste fino na página completa do Motor.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">

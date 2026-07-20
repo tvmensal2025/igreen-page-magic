@@ -57,8 +57,8 @@ export default function InstallPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-6 space-y-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 public-page-safe-bottom">
+      <Card className="w-full max-w-md p-5 sm:p-6 space-y-6">
         <div className="flex flex-col items-center text-center space-y-3">
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Smartphone className="w-8 h-8 text-primary" />

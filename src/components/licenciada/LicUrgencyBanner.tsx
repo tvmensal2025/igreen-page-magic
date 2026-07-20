@@ -47,18 +47,18 @@ const LicUrgencyBanner = () => {
       <div className="absolute inset-0 opacity-20" style={{ background: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.1) 10px, rgba(0,0,0,0.1) 20px)' }} />
       
       <div className="section-container !py-0 relative z-10 text-center">
-        <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl md:text-3xl animate-pulse">🔥</span>
-            <div className="text-left">
+        <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-8 min-w-0">
+          <div className="flex items-center gap-2 min-w-0 px-1">
+            <span className="text-2xl md:text-3xl animate-pulse shrink-0">🔥</span>
+            <div className="text-left min-w-0">
               <p className="text-white/90 text-xs md:text-sm font-heading uppercase tracking-widest font-bold">Vagas limitadas</p>
-              <p className="text-white font-heading font-black text-lg md:text-2xl leading-tight">
+              <p className="text-white font-heading font-black text-base sm:text-lg md:text-2xl leading-tight">
                 Essa oportunidade não vai esperar por você
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {[
               { value: pad(timeLeft.hours), label: "horas" },
               { value: pad(timeLeft.minutes), label: "min" },
@@ -75,7 +75,7 @@ const LicUrgencyBanner = () => {
           </div>
         </div>
         
-        <p className="text-white/80 text-sm mt-3 font-heading">
+        <p className="text-white/80 text-sm mt-3 font-heading px-2 leading-relaxed">
           ⚠️ As condições exclusivas de hoje podem mudar a qualquer momento. <strong className="text-white">Não perca essa chance!</strong>
         </p>
       </div>

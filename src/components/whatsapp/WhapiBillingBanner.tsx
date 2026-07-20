@@ -36,12 +36,12 @@ export function WhapiBillingBanner({ enabled }: Props) {
       <div className="flex-1 min-w-0">
         <b>
           {isUnpaid
-            ? "Canal WhatsApp (Whapi) bloqueado por falta de pagamento."
-            : "Canal Whapi foi removido no painel."}
+            ? "Canal WhatsApp (iGreen Chat) bloqueado por falta de pagamento."
+            : "Canal iGreen Chat foi removido no painel."}
         </b>{" "}
         <span className="opacity-80">
           {isUnpaid
-            ? "Nenhuma mensagem será enviada até regularizar na Whapi."
+            ? "Nenhuma mensagem será enviada até regularizar a cobrança."
             : "Crie um canal novo e atualize o token."}
         </span>
       </div>

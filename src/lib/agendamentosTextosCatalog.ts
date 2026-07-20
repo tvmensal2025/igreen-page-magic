@@ -244,7 +244,7 @@ export const TEXTOS_CATALOGO: TextoCatalogItem[] = [
         stage.startsWith("COLD")
           ? "WhatsApp da sequência Zero Lead Perdido."
           : stage.startsWith("CALL")
-            ? "Texto TTS / áudio da ligação Velip."
+            ? "Texto TTS / áudio da ligação iGreen Fone."
             : "SMS de fallback da cadência.",
       fonte: "cadence_stage_config" as const,
       cadenceStage: stage,

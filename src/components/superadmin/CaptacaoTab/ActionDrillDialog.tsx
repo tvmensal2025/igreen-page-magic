@@ -99,9 +99,9 @@ export function ActionDrillDialog({ open, onOpenChange, action }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+      <DialogContent className="max-w-3xl w-[calc(100%-2rem)] max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="flex flex-wrap items-center gap-2 min-w-0">
             {action?.label}
             {action && (
               <Badge variant={action.impact === "high" ? "default" : "outline"} className="text-[10px]">
@@ -112,7 +112,7 @@ export function ActionDrillDialog({ open, onOpenChange, action }: Props) {
           <DialogDescription>{action?.detail}</DialogDescription>
         </DialogHeader>
 
-        <div className="overflow-auto flex-1 -mx-6 px-6">
+        <div className="overflow-auto flex-1 -mx-6 px-6 min-w-0">
           {loading ? (
             <div className="py-12 flex items-center justify-center text-muted-foreground">
               <Loader2 className="w-5 h-5 animate-spin mr-2" />
@@ -138,14 +138,14 @@ function RenderRows({ type, rows, waLink, brl }: { type: string; rows: any[]; wa
       <div className="space-y-1.5">
         <p className="text-xs text-muted-foreground mb-2">{rows.length} leads parados (mais antigos primeiro)</p>
         {rows.map((r) => (
-          <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2">
+          <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2">
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-foreground truncate">{r.name || "Sem nome"} <span className="text-muted-foreground font-normal">· {r.phone}</span></p>
               <p className="text-[10px] text-muted-foreground">
                 {r.status} · var {r.flow_variant || "A"} · última msg {r.last_message_at ? formatDistanceToNow(new Date(r.last_message_at), { locale: ptBR, addSuffix: true }) : "nunca"}
               </p>
             </div>
-            <Button size="sm" variant="outline" asChild className="gap-1 h-7 text-[11px]">
+            <Button size="sm" variant="outline" asChild className="gap-1 h-7 text-[11px] shrink-0">
               <a href={waLink(r.phone)} target="_blank" rel="noopener noreferrer">
                 <MessageCircle className="w-3 h-3" /> WhatsApp
               </a>
@@ -161,7 +161,7 @@ function RenderRows({ type, rows, waLink, brl }: { type: string; rows: any[]; wa
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground mb-2">Performance por variante (últimos 30 dias)</p>
         {rows.map((r) => (
-          <div key={r.variant} className="grid grid-cols-4 gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2 text-xs">
+          <div key={r.variant} className="grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg border border-border/40 bg-card/40 px-3 py-2 text-xs">
             <div className="font-bold">Variante {r.variant}</div>
             <div>{r.total} leads</div>
             <div>{r.approved} aprov.</div>

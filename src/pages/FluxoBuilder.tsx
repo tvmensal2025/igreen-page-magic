@@ -297,7 +297,7 @@ export default function FluxoBuilder() {
 
   if (loading && !steps.length) {
     return (
-      <div className="h-screen flex items-center justify-center bg-background">
+      <div className="h-[100dvh] flex items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -340,14 +340,14 @@ export default function FluxoBuilder() {
 
             )}
 
-            <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2">
+            <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-2">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm font-bold truncate flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/10 text-[10px] font-black text-primary border border-primary/20">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-sm font-bold truncate flex items-center gap-2 min-w-0">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-primary/10 text-[10px] font-black text-primary border border-primary/20">
                       {editingVariant}
                     </span>
-                    <span>{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
+                    <span className="truncate">{flowNames[editingVariant] || VARIANT_LABEL[editingVariant]}</span>
                   </h2>
                   {editingVariant === "B" && userId ? (
                     <FluxoBHeaderStats
@@ -365,10 +365,10 @@ export default function FluxoBuilder() {
               </div>
 
 
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1 shrink-0">
                 <ViewToggle value={viewMode} onChange={setViewMode} className="mr-2" />
                 <TooltipProvider delayDuration={150}>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setGalleryOpen(true)}>
@@ -465,12 +465,12 @@ export default function FluxoBuilder() {
             </div>
           </header>
 
-          <main className="mx-auto grid gap-6 px-4 py-6 max-w-7xl lg:grid-cols-[1fr_380px]">
+          <main className="mx-auto grid gap-6 px-4 py-6 max-w-7xl min-w-0 lg:grid-cols-[1fr_380px]">
             <div className="min-w-0">
               {viewMode === "lista" && (
                 <div className="space-y-4">
                   {crud.readOnlyHerdado && (
-                    <div className="flex items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium">Este é o modelo padrão do fluxo</p>
                         <p className="text-xs text-muted-foreground">
@@ -489,7 +489,7 @@ export default function FluxoBuilder() {
                     </div>
                   )}
                   {!crud.readOnlyHerdado && !isSuperAdmin && syncMode === "custom" && (
-                    <div className="flex items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-amber-700 dark:text-amber-300">
                           Fluxo personalizado — não recebe mais atualizações do modelo padrão
@@ -531,7 +531,7 @@ export default function FluxoBuilder() {
                       O perfil padrão é "auto" (precisão alta + custo baixo, escolhe modelo conforme pergunta). */}
 
                   {flowConflicts.involvedCount > 0 && !crud.readOnlyHerdado && (
-                    <div key={`conflicts-${flowId ?? "x"}`} className="flex items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                    <div key={`conflicts-${flowId ?? "x"}`} className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-warning/40 bg-warning/5 p-3">
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-warning-foreground">
                           {flowConflicts.involvedCount} passos com possível ambiguidade

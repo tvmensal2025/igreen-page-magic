@@ -70,7 +70,7 @@ const ConsultantPage = () => {
         title={`${consultant.name} – iGreen Energy`}
         description={`Descubra como receber até 20% de desconto na sua conta de luz com ${consultant.name}, consultor(a) iGreen Energy`}
       />
-      <div className="min-h-screen">
+      <div className="min-h-screen overflow-x-hidden">
         <HeroSection cadastroUrl={consultant.cadastro_url} whatsappUrl={whatsappUrl} consultantId={consultant.id} />
 
         {(consultant as { solar_public_widget_enabled?: boolean }).solar_public_widget_enabled && (

@@ -23,17 +23,22 @@ import {
 // Heavy panels — load only when their sub-tab is opened
 const BulkProPanel = lazy(() => import("./bulk-pro/BulkProPanel").then(m => ({ default: m.BulkProPanel })));
 const TemplateManager = lazy(() => import("./TemplateManager").then(m => ({ default: m.TemplateManager })));
-const SchedulePanel = lazy(() => import("./AgendamentosHub").then(m => ({
-  default: (props: {
-    consultantId: string;
-    instanceName: string;
-    isWhapi?: boolean;
-    isConnected?: boolean;
-    onOpenChat?: (phone: string) => void;
-  }) => (
-    <m.AgendamentosHub {...props} showAdminShortcut />
-  ),
-})));
+const AgendamentosHubLazy = lazy(() =>
+  import("./AgendamentosHub").then((m) => {
+    if (!m.AgendamentosHub) throw new Error("AgendamentosHub export missing");
+    return { default: m.AgendamentosHub };
+  }),
+);
+/** Wrapper estável — evita componente anônimo no .then() do lazy (quebra no HMR). */
+function SchedulePanel(props: {
+  consultantId: string;
+  instanceName: string;
+  isWhapi?: boolean;
+  isConnected?: boolean;
+  onOpenChat?: (phone: string) => void;
+}) {
+  return <AgendamentosHubLazy {...props} showAdminShortcut />;
+}
 const WhatsAppDashboard = lazy(() => import("./WhatsAppDashboard").then(m => ({ default: m.WhatsAppDashboard })));
 const AIAgentTab = lazy(() => import("@/components/admin/AIAgentTab").then(m => ({ default: m.AIAgentTab })));
 const AutoMessageLog = lazy(() => import("./AutoMessageLog").then(m => ({ default: m.AutoMessageLog })));

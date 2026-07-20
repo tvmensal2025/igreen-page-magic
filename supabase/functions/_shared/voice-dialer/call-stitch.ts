@@ -1,11 +1,7 @@
-/**
- * Costura intro "Olá, {Nome}." (ElevenLabs) + corpo MP3 → upload Velip.
- * Usado por voice-call-stitch e voice-dialer-cron.
- */
-
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { uploadAudioFile } from "./velip.ts";
 import { safeFirstNameForAddress } from "../customer-display-name.ts";
+import { buildCallNameGreetTtsText } from "../tts-ptbr-anchor.ts";
 
 export type AdminClient = ReturnType<typeof createClient>;
 
@@ -26,6 +22,8 @@ interface VoiceRenderRow {
 
 const DEFAULT_VOICE = "EJV7H2baGt5ab95tOoSG";
 const DEFAULT_MODEL = "eleven_v3";
+/** Bump invalida cache voice_call_renders (intro muda). */
+const CALL_INTRO_CACHE_TAG = "ci_v2_tudobem";
 
 export function normalizeCallName(input: string): string {
   return (input || "")
@@ -75,7 +73,7 @@ export async function concatMp3Parts(parts: Uint8Array[]): Promise<Uint8Array> {
 }
 
 function voiceSettingsForModel(modelId: string): Record<string, unknown> {
-  if (modelId === "eleven_v3") {
+  if (modelId === "eleven_v3" || modelId.startsWith("eleven_v3")) {
     return {
       stability: 0.5,
       similarity_boost: 0.75,
@@ -93,6 +91,11 @@ function voiceSettingsForModel(modelId: string): Record<string, unknown> {
   };
 }
 
+function stitchModelKey(baseModel: string): string {
+  const base = (baseModel || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
+  return `${base}:${CALL_INTRO_CACHE_TAG}`;
+}
+
 export async function synthesizeIntroMp3(opts: {
   displayName: string;
   voiceId: string;
@@ -100,8 +103,12 @@ export async function synthesizeIntroMp3(opts: {
 }): Promise<Uint8Array> {
   const key = (Deno.env.get("ELEVENLABS_API_KEY") || "").trim();
   if (!key) throw new Error("ELEVENLABS_API_KEY_missing");
-  const text = `Olá, ${opts.displayName}!`;
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${opts.voiceId}`, {
+  // Nunca só o nome — cumprimento profissional completo (PT-BR).
+  const text = buildCallNameGreetTtsText(opts.displayName);
+  if (!text || text.length < 4) throw new Error("tts_call_intro_empty");
+  const modelId = (opts.modelId || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
+  const voiceId = (opts.voiceId || "").trim() || DEFAULT_VOICE;
+  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -109,9 +116,9 @@ export async function synthesizeIntroMp3(opts: {
     },
     body: JSON.stringify({
       text,
-      model_id: opts.modelId,
+      model_id: modelId,
       language_code: "pt",
-      voice_settings: voiceSettingsForModel(opts.modelId),
+      voice_settings: voiceSettingsForModel(modelId),
     }),
     signal: AbortSignal.timeout(60_000),
   });
@@ -120,7 +127,9 @@ export async function synthesizeIntroMp3(opts: {
     const msg = err?.detail?.message || err?.message || `elevenlabs_${res.status}`;
     throw new Error(msg);
   }
-  return new Uint8Array(await res.arrayBuffer());
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength < 256) throw new Error("elevenlabs_empty_audio");
+  return bytes;
 }
 
 export interface StitchResult {
@@ -160,8 +169,9 @@ export async function resolvePersonalizedCallAudio(
 
   if (!clip?.audio_url) return { ok: false, error: "body_clip_not_found" };
 
-  const voiceId = String(clip.voice_id || DEFAULT_VOICE);
-  const modelId = String(clip.model_id || DEFAULT_MODEL);
+  const voiceId = String(clip.voice_id || DEFAULT_VOICE).trim() || DEFAULT_VOICE;
+  const baseModel = String(clip.model_id || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
+  const modelId = stitchModelKey(baseModel);
   const bodyVelip = clip.velip_audio_id ? String(clip.velip_audio_id) : null;
 
   // Sem nome → só o corpo
@@ -197,7 +207,7 @@ export async function resolvePersonalizedCallAudio(
     const introBytes = await synthesizeIntroMp3({
       displayName: display,
       voiceId,
-      modelId,
+      modelId: baseModel,
     });
 
     const merged = await concatMp3Parts([introBytes, bodyBytes]);
@@ -246,7 +256,7 @@ export async function resolvePersonalizedCallAudio(
  * para cadência, cron (personalize), reheat e make_call.
  *
  * - personalize=false → só garante corpo no Velip (sem ElevenLabs).
- * - personalize=true  → stitch Olá,{Nome} + corpo (cache voice_call_renders;
+ * - personalize=true  → stitch “Olá, Nome! Tudo bem?” + corpo (cache voice_call_renders;
  *   ElevenLabs só se ainda não houver render).
  * - Sem clipId → devolve velipAudioId legado se existir.
  */

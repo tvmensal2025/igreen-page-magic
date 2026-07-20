@@ -46,11 +46,11 @@ export default function AdminFluxoB() {
   return (
     <div className="min-h-screen bg-background p-6">
       <div className="max-w-7xl mx-auto space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Link to="/admin"><Button variant="ghost" size="sm"><ArrowLeft className="w-4 h-4 mr-2" />Admin</Button></Link>
-          <div>
-            <h1 className="text-3xl font-bold flex items-center gap-2">
-              <Sparkles className="w-7 h-7 text-primary" />Painel da IA — Fluxo B
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold sm:text-3xl flex flex-wrap items-center gap-2">
+              <Sparkles className="w-7 h-7 shrink-0 text-primary" />Painel da IA — Fluxo B
             </h1>
             <p className="text-sm text-muted-foreground">
               Persona, base de conhecimento, simulador e distribuição por consultor.
@@ -59,11 +59,11 @@ export default function AdminFluxoB() {
         </div>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="persona"><Sparkles className="h-4 w-4 mr-2" />Persona</TabsTrigger>
-            <TabsTrigger value="knowledge"><BookOpen className="h-4 w-4 mr-2" />Conhecimento</TabsTrigger>
-            <TabsTrigger value="simulator"><FlaskConical className="h-4 w-4 mr-2" />Simulador</TabsTrigger>
-            <TabsTrigger value="consultor"><User className="h-4 w-4 mr-2" />Por Consultor</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4">
+            <TabsTrigger value="persona" className="gap-1 text-xs sm:text-sm"><Sparkles className="h-4 w-4 shrink-0" /><span className="truncate">Persona</span></TabsTrigger>
+            <TabsTrigger value="knowledge" className="gap-1 text-xs sm:text-sm"><BookOpen className="h-4 w-4 shrink-0" /><span className="truncate">Conhecimento</span></TabsTrigger>
+            <TabsTrigger value="simulator" className="gap-1 text-xs sm:text-sm"><FlaskConical className="h-4 w-4 shrink-0" /><span className="truncate">Simulador</span></TabsTrigger>
+            <TabsTrigger value="consultor" className="gap-1 text-xs sm:text-sm"><User className="h-4 w-4 shrink-0" /><span className="truncate">Por Consultor</span></TabsTrigger>
           </TabsList>
 
           <TabsContent value="persona" className="mt-4">

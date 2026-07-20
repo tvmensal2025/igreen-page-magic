@@ -503,18 +503,18 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
   return (
     <div className="space-y-3">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 h-9">
+        <TabsList className="grid h-auto w-full grid-cols-2 sm:grid-cols-4 sm:h-9">
           <TabsTrigger value="database" className="text-xs gap-1" disabled={disabled}>
-            <Users className="w-3.5 h-3.5" /> Base
+            <Users className="w-3.5 h-3.5 shrink-0" /> Base
           </TabsTrigger>
           <TabsTrigger value="extract" className="text-xs gap-1" disabled={disabled}>
-            <Globe className="w-3.5 h-3.5" /> Extrair
+            <Globe className="w-3.5 h-3.5 shrink-0" /> Extrair
           </TabsTrigger>
           <TabsTrigger value="paste" className="text-xs gap-1" disabled={disabled}>
-            <ClipboardPaste className="w-3.5 h-3.5" /> Colar
+            <ClipboardPaste className="w-3.5 h-3.5 shrink-0" /> Colar
           </TabsTrigger>
           <TabsTrigger value="import" className="text-xs gap-1" disabled={disabled}>
-            <FileSpreadsheet className="w-3.5 h-3.5" /> Importar
+            <FileSpreadsheet className="w-3.5 h-3.5 shrink-0" /> Importar
           </TabsTrigger>
         </TabsList>
 

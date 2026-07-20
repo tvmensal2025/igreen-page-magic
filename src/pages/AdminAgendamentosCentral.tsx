@@ -19,7 +19,6 @@ import {
   Settings2,
   BookOpen,
   FileText,
-  ClipboardCheck,
 } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CentralAutomacoesControle } from "@/components/admin/CentralAutomacoesControle";
@@ -215,12 +214,6 @@ export default function AdminAgendamentosCentral() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 sm:justify-end shrink-0">
-              <Button asChild variant="outline" size="sm" className="rounded-xl gap-1.5 border-emerald-500/40">
-                <Link to="/admin/checklist">
-                  <ClipboardCheck className="h-3.5 w-3.5" />
-                  Checklist v5
-                </Link>
-              </Button>
               {userId && (
                 <Button
                   variant="default"
@@ -440,7 +433,7 @@ export default function AdminAgendamentosCentral() {
                   <Link to="/admin/reaquecimento">Reaquecimento</Link>
                 </Button>
                 <Button variant="outline" size="sm" className="rounded-xl" asChild>
-                  <Link to="/admin/voz">Voz / Velip</Link>
+                  <Link to="/admin/voz">Voz / iGreen Fone</Link>
                 </Button>
               </CardContent>
             </Card>

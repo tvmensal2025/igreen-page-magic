@@ -122,8 +122,8 @@ export function SystemHealthPanel() {
 
   return (
     <Card className="p-5 mb-4 bg-card/50 border-border/50">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
           <h3 className="text-sm font-semibold">Saúde do sistema</h3>
           {ok && !evolutionDown && !globalPaused ? (
             <Badge className="bg-primary/20 text-primary border-primary/40">🟢 Operacional</Badge>
@@ -131,12 +131,12 @@ export function SystemHealthPanel() {
             <Badge className="bg-destructive/20 text-destructive border-destructive/40">🔴 Atenção</Badge>
           )}
         </div>
-        <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
+        <Button size="sm" variant="ghost" onClick={load} disabled={loading} className="shrink-0">
           <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-4">
         <Metric label="Decisões IA / 24h" value={data.decisions24h} good={data.decisions24h > 0} />
         <Metric label="Transições / 24h" value={data.transitions24h} good={data.transitions24h > 0} />
         <Metric label="Erros / 24h" value={data.errors24h} good={data.errors24h === 0} />
@@ -151,12 +151,12 @@ export function SystemHealthPanel() {
       </div>
 
       {globalPaused && (
-        <div className="flex items-center justify-between p-3 rounded-lg bg-warning/10 border border-warning/30">
-          <div className="flex items-center gap-2 text-sm">
-            <AlertTriangle className="w-4 h-4 text-warning" />
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg bg-warning/10 border border-warning/30">
+          <div className="flex items-center gap-2 text-sm min-w-0">
+            <AlertTriangle className="w-4 h-4 text-warning shrink-0" />
             <span><strong>{data.pausedGlobal}</strong> conversas estão com bot DESLIGADO (pausa manual global).</span>
           </div>
-          <Button size="sm" onClick={unpauseGlobal} disabled={unpausing} className="gap-1">
+          <Button size="sm" onClick={unpauseGlobal} disabled={unpausing} className="gap-1 shrink-0">
             <Power className="w-3.5 h-3.5" />
             {unpausing ? "Religando..." : "Religar bot global"}
           </Button>
@@ -168,7 +168,7 @@ export function SystemHealthPanel() {
           <div className="flex items-center gap-2 font-medium text-destructive">
             <WifiOff className="w-4 h-4 text-destructive" />
             <span>
-              {data.instancesNeedReconnect} instância(s) Evolution caída(s) — reabrir QR no painel Evolution:
+              {data.instancesNeedReconnect} instância(s) iGreen Link caída(s) — reabrir QR no painel iGreen Link:
             </span>
           </div>
           <ul className="space-y-1.5 pl-1">

@@ -42,8 +42,8 @@ const ConsultantSection = ({
 
       <div className="section-container relative z-10">
         <div className="badge-green mx-auto mb-6">Seu consultor</div>
-        <h2 className="section-heading mb-2">{name}</h2>
-        <p className="text-center font-heading font-bold text-lg mb-12" style={{ color: 'hsl(var(--primary))' }}>
+        <h2 className="section-heading mb-2 px-2 break-words">{name}</h2>
+        <p className="text-center font-heading font-bold text-lg mb-12 px-2 break-words" style={{ color: 'hsl(var(--primary))' }}>
           Consultor(a) iGreen Energy — ID {displayId}
         </p>
 
@@ -61,7 +61,7 @@ const ConsultantSection = ({
           </div>
 
           <div>
-            <h3 className="font-heading font-bold text-2xl mb-6 text-foreground">{name}</h3>
+            <h3 className="font-heading font-bold text-2xl mb-6 text-foreground break-words">{name}</h3>
             <div className="space-y-4 mb-10">
               <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
                 <span className="text-lg shrink-0">✅</span>
@@ -89,9 +89,9 @@ const ConsultantSection = ({
         </div>
       </div>
 
-      <footer className="bg-card/50 py-10 text-center mt-16 border-t border-border">
-        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" decoding="async" className="mx-auto mb-4 w-36" />
-        <p className="text-muted-foreground font-heading text-sm tracking-wider">
+      <footer className="bg-card/50 py-10 px-4 text-center mt-16 border-t border-border">
+        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" decoding="async" className="mx-auto mb-4 w-36 max-w-full h-auto" />
+        <p className="text-muted-foreground font-heading text-sm tracking-wider break-words px-2">
           {name.toUpperCase()} | CONSULTOR(A) IGREEN ENERGY{displayId ? ` ID ${displayId}` : ""}
         </p>
       </footer>

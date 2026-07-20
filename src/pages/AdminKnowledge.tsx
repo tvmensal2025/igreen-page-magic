@@ -125,19 +125,19 @@ export default function AdminKnowledge({ embedded = false }: { embedded?: boolea
         </Card>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="atalhos" className="gap-2">
-              <Zap className="h-4 w-4" />
-              Atalhos rápidos
+          <TabsList className="grid w-full grid-cols-2 h-auto">
+            <TabsTrigger value="atalhos" className="gap-1 sm:gap-2 text-xs sm:text-sm px-2 py-2">
+              <Zap className="h-4 w-4 shrink-0" />
+              <span className="truncate">Atalhos rápidos</span>
               {shortcutsCount !== null && (
-                <Badge variant="secondary" className="ml-1">{shortcutsCount}</Badge>
+                <Badge variant="secondary" className="ml-1 shrink-0">{shortcutsCount}</Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="ia" className="gap-2">
-              <Brain className="h-4 w-4" />
-              Base da IA
+            <TabsTrigger value="ia" className="gap-1 sm:gap-2 text-xs sm:text-sm px-2 py-2">
+              <Brain className="h-4 w-4 shrink-0" />
+              <span className="truncate">Base da IA</span>
               {iaCount !== null && (
-                <Badge variant="secondary" className="ml-1">{iaCount}</Badge>
+                <Badge variant="secondary" className="ml-1 shrink-0">{iaCount}</Badge>
               )}
             </TabsTrigger>
           </TabsList>

@@ -49,11 +49,14 @@ export default function AjudaPage() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
-          <Link to="/admin"><Button variant="ghost" size="icon" aria-label="Voltar ao painel"><ArrowLeft className="h-5 w-5" /></Button></Link>
-          <BookOpen className="h-5 w-5 text-primary" />
-          <div><h1 className="text-lg font-bold sm:text-xl">Central de ajuda</h1><p className="hidden text-xs text-muted-foreground sm:block">Encontre um guia, abra a tela certa ou peça ajuda à IA.</p></div>
-          <Button variant="outline" size="sm" className="ml-auto" onClick={() => void start()}><Play className="mr-2 h-4 w-4" /><span className="hidden sm:inline">Conhecer a plataforma</span><span className="sm:hidden">Tour</span></Button>
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 min-w-0">
+          <Link to="/admin"><Button variant="ghost" size="icon" aria-label="Voltar ao painel" className="shrink-0"><ArrowLeft className="h-5 w-5" /></Button></Link>
+          <BookOpen className="h-5 w-5 text-primary shrink-0" />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-bold sm:text-xl truncate">Central de ajuda</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">Encontre um guia, abra a tela certa ou peça ajuda à IA.</p>
+          </div>
+          <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={() => void start()}><Play className="mr-2 h-4 w-4" /><span className="hidden sm:inline">Conhecer a plataforma</span><span className="sm:hidden">Tour</span></Button>
         </div>
       </header>
 
@@ -104,7 +107,7 @@ export default function AjudaPage() {
       </main>
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto sm:rounded-2xl">
+        <DialogContent className="max-h-[90vh] max-w-2xl w-[calc(100%-2rem)] overflow-y-auto sm:rounded-2xl">
           {selected && <>
             <DialogHeader className="pr-8"><div className="mb-2"><Badge variant="secondary">{selected.category}</Badge></div><DialogTitle className="text-xl sm:text-2xl">{selected.title}</DialogTitle><DialogDescription>{selected.summary}</DialogDescription></DialogHeader>
             {selected.video_url && <div className="aspect-video overflow-hidden rounded-xl border bg-muted"><iframe src={selected.video_url} title={`Vídeo: ${selected.title}`} className="h-full w-full" allowFullScreen /></div>}

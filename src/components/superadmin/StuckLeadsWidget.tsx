@@ -188,17 +188,17 @@ export function StuckLeadsWidget() {
 
   return (
     <div className="premium-card p-5">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 rounded-xl bg-warning/10 flex items-center justify-center">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-9 h-9 rounded-xl bg-warning/10 flex items-center justify-center shrink-0">
             <AlertTriangle className="w-4.5 h-4.5 text-warning" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold text-foreground">Clientes interessados Travados</h3>
             <p className="text-xs text-muted-foreground">Sem resposta há mais de 10 min</p>
           </div>
         </div>
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center shrink-0">
           <Badge variant="outline" className="text-xs">
             {leads.length} parado(s)
           </Badge>
@@ -281,7 +281,7 @@ export function StuckLeadsWidget() {
             return (
               <div
                 key={lead.id}
-                className={`flex items-center justify-between gap-3 p-3 rounded-lg border transition-colors ${
+                className={`flex flex-wrap items-center justify-between gap-3 p-3 rounded-lg border transition-colors ${
                   isSelected
                     ? "border-primary/40 bg-primary/5"
                     : "border-border/40 bg-card/40 hover:bg-card/70"
@@ -329,7 +329,7 @@ export function StuckLeadsWidget() {
       )}
 
       <AlertDialog open={pendingAction !== null} onOpenChange={(o) => !o && setPendingAction(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingAction && actionConfig[pendingAction].title}</AlertDialogTitle>
             <AlertDialogDescription>

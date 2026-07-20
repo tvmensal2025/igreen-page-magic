@@ -23,11 +23,11 @@ export default function SaudeBot() {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-5">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="shrink-0">
             <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
           </Button>
-          <div>
+          <div className="min-w-0">
             <h1 className="text-xl sm:text-2xl font-bold">Saúde do bot</h1>
             <p className="text-xs text-muted-foreground">Tudo que precisa da sua atenção pra Camila não travar.</p>
           </div>

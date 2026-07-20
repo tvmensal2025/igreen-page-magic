@@ -145,13 +145,13 @@ export const STEP_TYPE_OPTIONS: { value: string; label: string; emoji: string; h
     value: "send_sms",
     emoji: "📩",
     label: "Enviar SMS",
-    hint: "Opcional: dispara SMS neste ponto do fluxo (Velip). Encaixe onde quiser.",
+    hint: "Opcional: dispara SMS neste ponto do fluxo (iGreen Fone). Encaixe onde quiser.",
   },
   {
     value: "make_call",
     emoji: "📞",
     label: "Fazer ligação",
-    hint: "Opcional: agenda/dispara ligação (Sofia/Velip) neste ponto. Encaixe onde quiser.",
+    hint: "Opcional: agenda/dispara ligação (Sofia / iGreen Fone) neste ponto. Encaixe onde quiser.",
   },
 ];
 

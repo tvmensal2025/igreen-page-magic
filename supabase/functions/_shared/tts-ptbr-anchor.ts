@@ -30,13 +30,23 @@ export function formatNameGreetForTts(text: string): string {
   return t ? `${t}!` : t;
 }
 
-/** Passo 2 — Olá + nome (eleven_v3 + language_code pt). */
+/**
+ * Cumprimento profissional — WhatsApp A2 e ligação PSTN (mesma frase).
+ * “Olá, Maria! Tudo bem?”
+ */
+export function buildOlaTudoBemTtsText(display: string): string {
+  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!nome) return "";
+  return `Olá, ${nome}! Tudo bem?`;
+}
+
+/** @deprecated Preferir buildOlaTudoBemTtsText — mesmo texto. */
 export function buildOlaGreetTtsText(display: string): string {
-  return formatNameGreetForTts(`Olá, ${display}.`);
+  return buildOlaTudoBemTtsText(display);
 }
 
 /**
- * Passo 3/4 — só o nome no áudio final, como chamada suave ("Nome,").
+ * Passo 3/4 legado — só o nome no áudio final, como chamada suave ("Nome,").
  * Vírgula dá cadência de callout PT-BR (entonação descendente natural),
  * evita o corte abrupto do "!" e conecta melhor com o corpo costurado depois.
  * Texto enviado ao ElevenLabs: só o nome; PT-BR via previous_text/next_text no v2.
@@ -44,6 +54,25 @@ export function buildOlaGreetTtsText(display: string): string {
 export function buildNameOnlyTtsText(display: string): string {
   const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
   return nome ? `${nome},` : "";
+}
+
+/** Passo 3 — “Nome, não tem segredo.” (frase + nome; sem nome → string vazia). */
+export function buildNomeNaoTemSegredoTtsText(display: string): string {
+  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!nome) return "";
+  return formatNameGreetForTts(`${nome}, não tem segredo.`);
+}
+
+/** Passo 4a — “Então, Nome.” (sem nome → string vazia). */
+export function buildEntaoNomeTtsText(display: string): string {
+  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!nome) return "";
+  return formatNameGreetForTts(`Então, ${nome}.`);
+}
+
+/** Ligação = mesma intro do WhatsApp A2. */
+export function buildCallNameGreetTtsText(display: string): string {
+  return buildOlaTudoBemTtsText(display);
 }
 
 

@@ -178,10 +178,14 @@ export async function setCachedTTS(
     .upload(`${hash}.mp3`, blob, { contentType: "audio/mpeg", upsert: true });
 }
 
-/** “Olá... Nome...” / “Então... Nome...” — cortes com nome (pausa obrigatória). */
+/** “Olá, Nome.” / “Então, Nome.” / “Nome, não tem segredo.” — cortes com nome (pausa obrigatória). */
 export function isNameGreetPhrase(text: string): boolean {
   const t = text.trim();
-  return /^(olá|então)\b/i.test(t) && t.length < 80;
+  if (!t || t.length >= 120) return false;
+  if (/^(olá|então|oi)\b/i.test(t)) return true;
+  if (/não\s+tem\s+segredo/i.test(t)) return true;
+  if (/tudo\s+bem\s*\?/i.test(t)) return true;
+  return false;
 }
 
 export type TtsGenerateResult = {
@@ -231,9 +235,11 @@ export async function generateSofiaSegment(opts: {
     },
     body: JSON.stringify({
       text: spoken,
-      voice_id: opts.voiceId,
+      voice_id: opts.voiceId || VOICE_SOFIA_PROFESSIONAL,
       model_id: modelId,
       voice_settings,
+      // Regra de ouro: sempre PT-BR (proxy também força "pt").
+      language_code: "pt",
     }),
   });
   if (!res.ok) {
@@ -242,7 +248,7 @@ export async function generateSofiaSegment(opts: {
   }
   const blob = await res.blob();
   if (!(await isValidMp3(blob))) throw new Error("Resposta TTS inválida (não é MP3)");
-  await setCachedTTS(spoken, blob, opts.voiceId, modelId);
+  await setCachedTTS(spoken, blob, opts.voiceId || VOICE_SOFIA_PROFESSIONAL, modelId);
   return { blob, fromCache: false, spoken };
 }
 

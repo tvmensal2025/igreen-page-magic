@@ -531,7 +531,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                 onContactsChange={setContacts}
                 instanceName={instanceName}
               />
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-xl bg-[#0d7a5f]/5 border border-[#0d7a5f]/20 p-3 text-center">
                   <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Selecionados</p>
                   <p className="text-2xl font-bold text-[#0d7a5f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{deduped.length}</p>
@@ -666,7 +666,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               )}
 
               {/* Stats */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[
                   { label: "Total", val: stats.total, cls: "text-foreground" },
                   { label: "Enviadas", val: stats.sent, cls: "text-primary" },

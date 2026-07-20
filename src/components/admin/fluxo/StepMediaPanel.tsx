@@ -290,7 +290,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
       return;
     }
     if (kind === "audio" && /\.webm$/i.test(file.name)) {
-      toast.error("Whapi não aceita áudio .webm. Use .ogg, .mp3 ou .m4a — ou grave pelo botão 'Gravar' aqui no painel.");
+      toast.error("O WhatsApp não aceita áudio .webm. Use .ogg, .mp3 ou .m4a — ou grave pelo botão 'Gravar' aqui no painel.");
       return;
     }
     setUploading(kind);

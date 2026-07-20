@@ -759,7 +759,7 @@ export default function Tutorial() {
   }, [query]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900 overflow-x-hidden public-page-safe-bottom">
       <SEOHead
         title="Tutorial completo — iGreen Cloud"
         description="Guia passo a passo de todas as funções da plataforma iGreen Cloud: site público, área do consultor, admin e super admin. Feito para leigos, com ilustrações."
@@ -805,23 +805,23 @@ export default function Tutorial() {
               Tudo sobre cada página, cada botão e cada ícone — do site público até o super admin.
               Escrito para leigos, com ilustrações, passo a passo e dicas de quando usar.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <a href="#boas-vindas" className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 font-semibold">
+            <div className="mt-6 flex flex-col sm:flex-row flex-wrap gap-3">
+              <a href="#boas-vindas" className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 font-semibold">
                 <Play className="w-4 h-4" /> Começar
               </a>
-              <a href="#topbar" className="inline-flex items-center gap-2 rounded-lg bg-white border border-slate-300 hover:border-emerald-500 px-5 py-2.5 font-semibold text-slate-800">
-                <Star className="w-4 h-4 text-emerald-600" /> O que faz o sino, IA e o olho?
+              <a href="#topbar" className="inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-slate-300 hover:border-emerald-500 px-5 py-2.5 font-semibold text-slate-800 text-center">
+                <Star className="w-4 h-4 text-emerald-600 shrink-0" /> O que faz o sino, IA e o olho?
               </a>
             </div>
           </div>
           <div>
-            <img src={heroImg} alt="Tutorial iGreen Cloud" width={1280} height={720} className="w-full rounded-3xl shadow-lg border border-white" />
+            <img src={heroImg} alt="Tutorial iGreen Cloud" width={1280} height={720} className="w-full max-w-full h-auto rounded-3xl shadow-lg border border-white" />
           </div>
         </div>
       </div>
 
       {/* Body: sidebar + content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid md:grid-cols-[260px_1fr] gap-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid md:grid-cols-[260px_1fr] gap-8 public-page-safe-bottom">
         {/* TOC */}
         <aside className="hidden md:block">
           <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-2">

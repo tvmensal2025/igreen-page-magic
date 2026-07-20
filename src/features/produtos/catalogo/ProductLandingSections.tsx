@@ -85,7 +85,7 @@ function HeroSection({ product, ctaUrl }: HeroProps) {
               href={ctaUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block bg-[#25D366] hover:bg-[#20bd5a] text-white font-heading font-bold text-sm sm:text-base md:text-lg px-8 py-4 rounded-full shadow-lg transition-all duration-300 hover:scale-105 animate-pulse"
+              className="inline-flex max-w-full items-center justify-center bg-[#25D366] hover:bg-[#20bd5a] text-white font-heading font-bold text-sm sm:text-base md:text-lg px-5 sm:px-8 py-3.5 sm:py-4 rounded-full shadow-lg transition-all duration-300 hover:scale-105 animate-pulse text-center"
             >
               {product.ctaLabel}
             </a>

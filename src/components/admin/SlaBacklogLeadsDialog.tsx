@@ -7,6 +7,7 @@ import {
   MessageCircle,
   PauseCircle,
   RefreshCw,
+  UserMinus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -124,6 +125,32 @@ export function SlaBacklogLeadsDialog({
     onChanged?.();
   }
 
+  /** Já cliente / família — sai do ciclo sem bloquear o Zap manual. */
+  async function forgetIds(ids: string[]) {
+    if (!ids.length) return;
+    setBusy(true);
+    for (let i = 0; i < ids.length; i += 80) {
+      const { error } = await supabase
+        .from("lead_cadence_state")
+        .update({
+          stage: "WON",
+          paused_until: null,
+          paused_reason: "manual_won",
+          next_action_at: null,
+        } as never)
+        .in("id", ids.slice(i, i + 80));
+      if (error) {
+        toast.error(error.message);
+        setBusy(false);
+        return;
+      }
+    }
+    toast.success(`${ids.length} esquecido(s) — fora do ciclo (já cliente)`);
+    setBusy(false);
+    await reload();
+    onChanged?.();
+  }
+
   async function dncIds(ids: string[]) {
     if (!ids.length) return;
     setBusy(true);
@@ -196,7 +223,19 @@ export function SlaBacklogLeadsDialog({
         <MessageCircle className="h-3.5 w-3.5 shrink-0" />
         Ver conversa
       </Button>
-      <div className={cn("flex gap-1.5", compact && "w-full")}>
+      <div className={cn("flex gap-1.5 flex-wrap", compact && "w-full")}>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={cn("gap-1", compact ? "flex-1 h-8 text-xs min-w-[5.5rem]" : "h-8 text-xs")}
+          disabled={busy}
+          onClick={() => void forgetIds([row.id])}
+          title="Já cliente / fora do ciclo — sem automação"
+        >
+          <UserMinus className="h-3 w-3" />
+          Esquecer
+        </Button>
         <Button
           type="button"
           size="sm"
@@ -204,6 +243,7 @@ export function SlaBacklogLeadsDialog({
           className={cn("gap-1", compact ? "flex-1 h-8 text-xs" : "h-8 text-xs")}
           disabled={busy}
           onClick={() => void releaseIds([row.id])}
+          title="Volta à onda do motor"
         >
           <CheckCircle2 className="h-3 w-3" />
           Liberar
@@ -215,9 +255,10 @@ export function SlaBacklogLeadsDialog({
           className={cn("gap-1", compact ? "flex-1 h-8 text-xs" : "h-8 text-xs")}
           disabled={busy}
           onClick={() => void dncIds([row.id])}
+          title="Nunca mais contatar"
         >
           <Ban className="h-3 w-3" />
-          DNC
+          Bloquear
         </Button>
       </div>
     </div>
@@ -232,8 +273,8 @@ export function SlaBacklogLeadsDialog({
             Leads pausados — backlog SLA
           </DialogTitle>
           <DialogDescription className="text-left text-sm">
-            Clique em <strong>Ver conversa</strong> para ler o histórico no WhatsApp antes de liberar ou
-            bloquear. Liberar volta ao motor; DNC = nunca mais contatar.
+            <strong>Esquecer</strong> = já cliente / fora do ciclo (sem automação, Zap manual ok).{" "}
+            <strong>Liberar</strong> = volta à onda. <strong>Bloquear</strong> = nunca mais contatar.
           </DialogDescription>
         </DialogHeader>
 
@@ -284,6 +325,15 @@ export function SlaBacklogLeadsDialog({
             <>
               {/* Mobile: cards legíveis */}
               <div className="md:hidden space-y-3 py-2">
+                <label className="flex items-center gap-2 px-1 py-1.5 rounded-md border border-border/50 bg-muted/40">
+                  <Checkbox
+                    checked={visible.length > 0 && selectedIds.length === visible.length}
+                    onCheckedChange={(v) => toggleAll(v === true)}
+                  />
+                  <span className="text-xs font-medium">
+                    Selecionar todos ({visible.length})
+                  </span>
+                </label>
                 {visible.map((row) => (
                   <div
                     key={row.id}
@@ -343,7 +393,7 @@ export function SlaBacklogLeadsDialog({
                   <TableHead>Estágio</TableHead>
                   <TableHead>Chat</TableHead>
                   <TableHead className="min-w-[160px]">Se liberar →</TableHead>
-                  <TableHead className="text-right min-w-[220px]">Ações</TableHead>
+                  <TableHead className="text-right min-w-[280px]">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -407,9 +457,9 @@ export function SlaBacklogLeadsDialog({
           )}
         </div>
 
-        <DialogFooter className="px-6 py-4 border-t flex-col sm:flex-row gap-2">
-          <p className="text-[10px] text-muted-foreground sm:mr-auto sm:text-left text-center">
-            {selectedIds.length} selecionado(s) · liberar = fila imediata · DNC = sem automação nem recall
+        <DialogFooter className="px-6 py-4 border-t flex-col sm:flex-row gap-2 sm:flex-wrap">
+          <p className="text-[10px] text-muted-foreground sm:mr-auto sm:text-left text-center w-full sm:w-auto">
+            {selectedIds.length} selecionado(s) · Esquecer = já cliente · Liberar = onda · Bloquear = nunca mais
           </p>
           <Button
             type="button"
@@ -421,10 +471,20 @@ export function SlaBacklogLeadsDialog({
           </Button>
           <Button
             type="button"
+            variant="outline"
             disabled={busy || selectedIds.length === 0}
             onClick={() => void releaseIds(selectedIds)}
           >
             Liberar selecionados
+          </Button>
+          <Button
+            type="button"
+            disabled={busy || selectedIds.length === 0}
+            onClick={() => void forgetIds(selectedIds)}
+            className="gap-1.5"
+          >
+            <UserMinus className="h-3.5 w-3.5" />
+            Esquecer selecionados
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -478,7 +538,8 @@ export function SlaBacklogLeadsBanner({
             {count} lead(s) pausados no backlog SLA
           </span>
           <span className="block text-[11px] text-amber-900/80 dark:text-amber-100/80">
-            Abra <strong>Ver conversa</strong> em cada lead para ler o histórico antes de decidir.
+            Use <strong>Esquecer</strong> para já-cliente/família, <strong>Liberar</strong> para voltar à onda, ou{" "}
+            <strong>Bloquear</strong> se nunca mais contatar.
           </span>
         </div>
         <Button type="button" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>

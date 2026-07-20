@@ -126,7 +126,7 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
           <h2 className="pe-page-title">Ligação · SMS</h2>
           <p className="pe-page-sub">
             Textos do plano multicanal em <strong>Textos Multicanal</strong>. Kit diário em{" "}
-            <strong>Programação do ciclo</strong>. Envio automático permanece desligado.
+            <strong>Programação do ciclo</strong>. Status do envio automático fica no Multicanal e na Pizza A·B·C.
           </p>
         </div>
       </div>

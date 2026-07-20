@@ -110,7 +110,7 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
         status: "OFFLINE",
         checking: false,
         lastCheckedAt: Date.now(),
-        error: e?.message || "Falha ao consultar canal Whapi",
+        error: e?.message || "Falha ao consultar canal iGreen Chat",
       }));
     }
   }, [enabled]);

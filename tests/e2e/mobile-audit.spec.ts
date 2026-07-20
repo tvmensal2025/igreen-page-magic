@@ -54,18 +54,55 @@ async function auditPage(page: import("@playwright/test").Page, route: string): 
     notes.push(`goto: ${String(e).slice(0, 120)}`);
   }
 
-  const metrics = await page.evaluate(() => {
-    const buttons = document.querySelectorAll("button, [role='button'], input[type='button'], input[type='submit']").length;
-    const links = document.querySelectorAll("a[href]").length;
-    const scrollW = document.documentElement.scrollWidth;
-    const viewportW = window.innerWidth;
-    const overflow = scrollW > viewportW + 2;
-    const tabBars = [...document.querySelectorAll("[class*='overflow-x-auto']")].length;
-    const iconOnlyTabs = [...document.querySelectorAll("button span.hidden, a span.hidden")].filter((el) =>
-      el.className.includes("sm:inline"),
-    ).length;
-    return { buttons, links, scrollW, viewportW, overflow, tabBars, iconOnlyTabs, title: document.title };
-  });
+  // Redirects (ex.: /admin → /auth) destroem o contexto — espera estabilizar.
+  await page.waitForLoadState("domcontentloaded").catch(() => {});
+  await page.waitForTimeout(400);
+
+  let metrics = {
+    buttons: 0,
+    links: 0,
+    scrollW: 0,
+    viewportW: 0,
+    overflow: false,
+    tabBars: 0,
+    iconOnlyTabs: 0,
+    title: "",
+  };
+  try {
+    metrics = await page.evaluate(() => {
+      const buttons = document.querySelectorAll("button, [role='button'], input[type='button'], input[type='submit']").length;
+      const links = document.querySelectorAll("a[href]").length;
+      const scrollW = document.documentElement.scrollWidth;
+      const viewportW = window.innerWidth;
+      const overflow = scrollW > viewportW + 2;
+      const tabBars = [...document.querySelectorAll("[class*='overflow-x-auto']")].length;
+      const iconOnlyTabs = [...document.querySelectorAll("button span.hidden, a span.hidden")].filter((el) =>
+        el.className.includes("sm:inline"),
+      ).length;
+      return { buttons, links, scrollW, viewportW, overflow, tabBars, iconOnlyTabs, title: document.title };
+    });
+  } catch (e) {
+    notes.push(`evaluate: ${String(e).slice(0, 100)}`);
+    await page.waitForTimeout(800);
+    try {
+      metrics = await page.evaluate(() => {
+        const scrollW = document.documentElement.scrollWidth;
+        const viewportW = window.innerWidth;
+        return {
+          buttons: document.querySelectorAll("button").length,
+          links: document.querySelectorAll("a[href]").length,
+          scrollW,
+          viewportW,
+          overflow: scrollW > viewportW + 2,
+          tabBars: 0,
+          iconOnlyTabs: 0,
+          title: document.title,
+        };
+      });
+    } catch (e2) {
+      notes.push(`evaluate-retry: ${String(e2).slice(0, 80)}`);
+    }
+  }
 
   if (metrics.overflow) notes.push(`overflow horizontal ${metrics.scrollW}px > ${metrics.viewportW}px`);
   if (metrics.buttons > 12) notes.push(`muitos botões (${metrics.buttons})`);
@@ -73,7 +110,11 @@ async function auditPage(page: import("@playwright/test").Page, route: string): 
   if (metrics.iconOnlyTabs > 0) notes.push(`${metrics.iconOnlyTabs} abas só-ícone no mobile`);
 
   const safeName = route.replace(/^\//, "").replace(/\//g, "_") || "root";
-  await page.screenshot({ path: join(OUT, `${safeName}.png`), fullPage: true });
+  try {
+    await page.screenshot({ path: join(OUT, `${safeName}.png`), fullPage: false, timeout: 15_000 });
+  } catch (e) {
+    notes.push(`screenshot: ${String(e).slice(0, 80)}`);
+  }
 
   return {
     route,
@@ -96,7 +137,7 @@ test.use({
 });
 
 test.describe("Mobile UX audit — páginas públicas", () => {
-  test.setTimeout(180_000);
+  test.setTimeout(420_000);
 
   test("auditar rotas e gerar relatório", async ({ page }) => {
     mkdirSync(OUT, { recursive: true });

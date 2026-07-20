@@ -435,13 +435,13 @@ export default function AdminMotorCadencia() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-10 border-b bg-card/80 backdrop-blur-md">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
           <Button variant="ghost" size="icon" onClick={() => navigate("/admin")}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-semibold flex items-center gap-2">
-              {enabled ? <Zap className="h-4 w-4 text-green-500" /> : <ZapOff className="h-4 w-4 text-muted-foreground" />}
+            <h1 className="text-base font-semibold flex flex-wrap items-center gap-2">
+              {enabled ? <Zap className="h-4 w-4 text-green-500 shrink-0" /> : <ZapOff className="h-4 w-4 text-muted-foreground shrink-0" />}
               Motor (tela técnica)
             </h1>
             <p className="text-xs text-muted-foreground truncate">
@@ -464,7 +464,7 @@ export default function AdminMotorCadencia() {
       </div>
 
       <AlertDialog open={!!pendingToggle} onOpenChange={(o) => { if (!o && !toggling) setPendingToggle(null); }}>
-        <AlertDialogContent>
+        <AlertDialogContent className="w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingToggle?.kind === "engine"
@@ -482,7 +482,7 @@ export default function AdminMotorCadencia() {
               ) : (
                 <span className="block">
                   Leads neste marco podem receber WhatsApp/SMS/ligação automática.
-                  Deixe OFF até validar.
+                  Confirme se o texto/áudio do marco está ok antes de ligar.
                 </span>
               )}
             </AlertDialogDescription>
@@ -546,9 +546,6 @@ export default function AdminMotorCadencia() {
                   Grupo C — Longo prazo
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="sm">
-                <Link to="/admin/checklist">Checklist v5</Link>
-              </Button>
             </div>
           </div>
         </Card>
@@ -568,15 +565,15 @@ export default function AdminMotorCadencia() {
                 A imagem do anúncio fica no <strong className="text-foreground">Meta Ads Manager</strong> (ou campanhas do portal).
               </p>
               <div className="flex flex-wrap gap-2 text-xs">
-                <Badge variant={retargetAdsOff ? "secondary" : "destructive"}>
-                  cadence_retarget_ads_15d: {retargetAdsOff ? "OFF (recomendado)" : "ON"}
+                <Badge variant={retargetAdsOff ? "secondary" : "default"}>
+                  cadence_retarget_ads_15d: {retargetAdsOff ? "OFF" : "ON"}
                 </Badge>
-                <Badge variant={retargetSyncOff ? "secondary" : "destructive"}>
-                  facebook_retarget_sync: {retargetSyncOff ? "OFF (recomendado)" : "ON"}
+                <Badge variant={retargetSyncOff ? "secondary" : "default"}>
+                  facebook_retarget_sync: {retargetSyncOff ? "OFF" : "ON"}
                 </Badge>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Deixe Meta OFF até validar a onda curta (Dia 1→10) e ter Custom Audience ativa.
+                Meta só sobe público (hash). Criativo/imagem ficam no Ads Manager.
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button asChild variant="outline" size="sm">
@@ -703,7 +700,7 @@ export default function AdminMotorCadencia() {
           <h2 className="text-sm font-semibold flex items-center gap-2 mb-3">
             <Clock className="h-4 w-4" /> Janela de disparo (horário comercial)
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div>
               <Label className="text-xs">Seg-Sex início</Label>
               <Input type="number" min={0} max={23} value={window.weekday_start} onChange={(e) => setWindow({ ...window, weekday_start: +e.target.value })} />
@@ -889,7 +886,7 @@ export default function AdminMotorCadencia() {
                                     <Label className="text-[10px] text-muted-foreground">
                                       Mídia opcional só deste WhatsApp (não é criativo Meta)
                                     </Label>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                       <Input
                                         placeholder="URL áudio/imagem/vídeo (opcional)"
                                         value={row.media_url || ""}
@@ -911,7 +908,7 @@ export default function AdminMotorCadencia() {
 
                                 {step.channel === "voice" && (
                                   <div className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5">
-                                    <Label className="text-xs">Áudio Sofia (ElevenLabs → Velip)</Label>
+                                    <Label className="text-xs">Áudio Sofia (ElevenLabs → iGreen Fone)</Label>
                                     <select
                                       className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                                       value={row.voice_audio_clip_id || ""}
@@ -930,7 +927,7 @@ export default function AdminMotorCadencia() {
                                           {(c.name || c.id.slice(0, 8)) +
                                             (c.voice_id === VOICE_SOFIA ? " · Sofia" : "") +
                                             (c.is_call_body ? " · corpo" : "") +
-                                            (c.velip_audio_id ? " · no Velip" : " · falta upload Velip")}
+                                            (c.velip_audio_id ? " · no iGreen Fone" : " · falta upload iGreen Fone")}
                                         </option>
                                       ))}
                                     </select>
@@ -944,14 +941,14 @@ export default function AdminMotorCadencia() {
                                       <div>
                                         <Label htmlFor={`pers-${step.stage}`} className="text-xs">Personalizar com nome</Label>
                                         <p className="text-[11px] text-muted-foreground">
-                                          Costura &quot;Olá, {"{Nome}"}.&quot; (cache ElevenLabs).
+                                          Costura &quot;Olá, {"{Nome}"}! Tudo bem?&quot; (cache ElevenLabs).
                                         </p>
                                       </div>
                                     </div>
                                     {techMode && (
                                       <Input
                                         className="h-8 text-xs"
-                                        placeholder="velip_audio_id legado"
+                                        placeholder="id de áudio legado"
                                         value={row.velip_audio_id || ""}
                                         onChange={(e) => patchStage(step.stage, { velip_audio_id: e.target.value || null })}
                                       />

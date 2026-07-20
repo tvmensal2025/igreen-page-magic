@@ -27,7 +27,10 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 // Heavy panels — lazy load on demand
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
-const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => ({ default: m.DashboardTab })));
+const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => {
+  if (!m.DashboardTab) throw new Error("DashboardTab export missing");
+  return { default: m.DashboardTab };
+}));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
 const IGreenSyncStatusBar = lazy(() => import("@/components/admin/IGreenSyncStatusBar").then(m => ({ default: m.IGreenSyncStatusBar })));
@@ -39,20 +42,20 @@ const NotificationCenter = lazy(() => import("@/components/admin/NotificationCen
 const AIChatPanel = lazy(() => import("@/components/admin/AIChatPanel").then(m => ({ default: m.AIChatPanel })));
 const WhatsAppTab = lazy(() => import("@/components/whatsapp/WhatsAppTab").then(m => ({ default: m.WhatsAppTab })));
 const CrmTabs = lazy(() => import("@/components/whatsapp/CrmTabs").then(m => ({ default: m.CrmTabs })));
-const PosVendaKanban = lazy(() => import("@/components/whatsapp/PosVendaKanban"));
-
+const PosVendaKanban = lazy(() => import("@/components/whatsapp/PosVendaKanban").then(m => ({ default: m.default })));
 const CustomerManager = lazy(() => import("@/components/whatsapp/CustomerManager").then(m => ({ default: m.CustomerManager })));
-
 const MaterialsTab = lazy(() => import("@/components/admin/MaterialsTab").then(m => ({ default: m.MaterialsTab })));
 const PanfletoModal = lazy(() => import("@/components/admin/PanfletoModal").then(m => ({ default: m.PanfletoModal })));
-
 const AdsCentralTab = lazy(() => import("@/components/admin/ads/AdsCentralTab").then(m => ({ default: m.AdsCentralTab })));
 const CaptacaoPanel = lazy(() => import("@/components/captacao/CaptacaoPanel").then(m => ({ default: m.CaptacaoPanel })));
 const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTab").then(m => ({ default: m.ParceirosTab })));
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub").then(m => ({ default: m.AgendamentosHub })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
-const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => ({ default: m.VozTab })));
+const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => {
+  if (!m.VozTab) throw new Error("VozTab export missing");
+  return { default: m.VozTab };
+}));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
 const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
@@ -448,8 +451,8 @@ const AdminContent = () => {
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
         : activeTab === "academy" || activeTab === "produtos"
-          ? "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full p-0"
-          : "flex-1 min-h-0 overflow-y-auto overflow-x-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8 space-y-6"}>
+          ? "flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full p-0"
+          : "flex-1 min-h-0 overflow-y-auto overflow-x-hidden w-full min-w-0 px-3 sm:px-6 lg:px-10 py-5 sm:py-8 space-y-5 sm:space-y-6"}>
 
         {/* OCR Review Banner removido (2026-07-18):
             confirmação sempre é feita pelo próprio cliente no WhatsApp

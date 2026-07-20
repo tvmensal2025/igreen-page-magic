@@ -24,8 +24,8 @@ export default function ResetApp() {
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-background px-6">
-      <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-lg space-y-5 text-center">
+    <main className="min-h-screen flex items-center justify-center bg-background px-4 sm:px-6 public-page-safe-bottom">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-6 sm:p-8 shadow-lg space-y-5 text-center">
         <h1 className="text-2xl font-semibold">Recuperar acesso</h1>
         <p className="text-sm text-muted-foreground">
           Se o sistema não está abrindo ou aparece em branco, clique em

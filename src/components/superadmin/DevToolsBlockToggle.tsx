@@ -88,7 +88,7 @@ export function DevToolsBlockToggle() {
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : off ? "Ativar" : "Desativar"}
             </Button>
           </AlertDialogTrigger>
-          <AlertDialogContent>
+          <AlertDialogContent className="w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-warning" />

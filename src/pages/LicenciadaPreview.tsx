@@ -24,7 +24,7 @@ const DEFAULT_WHATSAPP = "https://wa.me/5500000000000?text=Ol%C3%A1,%20gostaria%
 const LicenciadaPreview = () => (
   <>
     <SEOHead title="Licenciado iGreen Energy" description="Descubra como se tornar um Licenciado iGreen Energy" />
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <LicHeroSection />
       <LicUrgencyBanner />
       <LicAboutSection />

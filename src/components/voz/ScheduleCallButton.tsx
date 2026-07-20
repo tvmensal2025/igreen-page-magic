@@ -138,7 +138,7 @@ export function ScheduleCallButton({
             </DialogTitle>
             <DialogDescription>
               {contactName ? `Para ${contactName} · ${phone}` : `Para ${phone}`}
-              {" · "}só áudio Sofia (sem TTS Velip)
+              {" · "}só áudio Sofia (sem TTS genérico)
             </DialogDescription>
           </DialogHeader>
 

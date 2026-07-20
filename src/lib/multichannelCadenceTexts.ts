@@ -113,26 +113,54 @@ export const SEG_SOFIA_OPENING: AudioSegment = {
 };
 
 /**
- * Padrão A2 WhatsApp: “Olá, Nome.” no 1º corte; na explicação só o nome de novo.
- * Cache `intro:ola:ptbr2:{norm}` + `intro:nome:ptbr3:{norm}` (PT-BR ancorado). A3 usa SEG_NAME_ONLY.
+ * @deprecated Nunca usar em ligação nem WhatsApp novo — nome isolado soa amador.
+ * Preferir SEG_NAME_GREET / SEG_CALL_NAME_GREET / SEG_NAME_NAO_SEGREDO / SEG_ENTAO_NOME.
  */
 export const SEG_NAME_ONLY: AudioSegment = {
   id: "name_only",
   kind: "name",
-  label: "Só o nome (variável · cache por nome · PT-BR)",
+  label: "(legado) Só o nome — NÃO usar",
   text: "{{nome}}.",
   reusable: true,
 };
 
+/** Passo 3: “Nome, não tem segredo.” — se não houver nome, o motor pula este corte. */
+export const SEG_NAME_NAO_SEGREDO: AudioSegment = {
+  id: "name_nao_segredo",
+  kind: "name",
+  label: "Nome + não tem segredo (variável · cache por nome)",
+  text: "{{nome}}, não tem segredo.",
+  reusable: true,
+};
+
+/** Passo 4a clube: “Então, Nome.” — se não houver nome, o motor pula este corte. */
+export const SEG_ENTAO_NOME: AudioSegment = {
+  id: "entao_nome",
+  kind: "name",
+  label: "Então + nome (variável · cache por nome)",
+  text: "Então, {{nome}}.",
+  reusable: true,
+};
+
 /**
- * Passo 2 WhatsApp: “Olá, {Nome}.” (1º corte). Passo 3 usa SEG_NAME_ONLY.
+ * Padrão profissional — WhatsApp A2 e ligação: “Olá, Nome! Tudo bem?”
+ * Cache `intro:ola:ptbr4:{norm}`. Passo 3 usa SEG_NAME_NAO_SEGREDO; 4a usa SEG_ENTAO_NOME.
  */
 export const SEG_NAME_GREET: AudioSegment = {
   id: "name_greet_ola",
   kind: "name",
-  label: "Olá + nome (profissional · cache por nome)",
-  text: "Olá, {{nome}}.",
+  label: "Olá + nome + tudo bem? (profissional · cache por nome)",
+  text: "Olá, {{nome}}! Tudo bem?",
   reusable: true,
+};
+
+/**
+ * Ligação PSTN — mesma frase do WhatsApp A2 (SEG_NAME_GREET).
+ */
+export const SEG_CALL_NAME_GREET: AudioSegment = {
+  ...SEG_NAME_GREET,
+  id: "call_name_greet",
+  label: "Olá + nome + tudo bem? (ligação · profissional)",
 };
 
 /** @deprecated Ligações / cadências B. WhatsApp A2 usa SEG_NAME_GREET. */
@@ -516,7 +544,7 @@ export function validateWhapiButtons(buttons: CadenceButton[] | undefined): {
   const errors: string[] = [];
   if (!buttons || buttons.length === 0) return { ok: true, errors };
   if (buttons.length > WHAPI_MAX_BUTTONS) {
-    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões Whapi (recebeu ${buttons.length})`);
+    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões iGreen Chat (recebeu ${buttons.length})`);
   }
   for (const b of buttons) {
     if (!b.id?.trim()) errors.push("Botão sem id");
@@ -726,23 +754,26 @@ export function renderCadenceBody(
 /**
  * Texto falado de um corte para TTS/cache.
  * - `name` com template “Olá, {{nome}}.” → “Olá, Nome.”
- * - `name` com só “{{nome}}.” → “Nome.” (passo 3: Então é corte fixo à parte)
- * - `name` com “Então, {{nome}}.” → “Então, Nome.” (legado)
+ * - `name` com “{{nome}}, não tem segredo.” → “Nome, não tem segredo.” (passo 3)
+ * - `name` com “Então, {{nome}}.” → “Então, Nome.” (passo 4a)
+ * - `name` com só “{{nome}}.” → “Nome.” (legado)
  */
 export function spokenSegmentText(
   seg: AudioSegment,
   opts: CadenceBodyRenderOpts = {},
 ): string {
-  const first = firstNameOnly(opts.nome || "Cliente");
+  const first = firstNameOnly(opts.nome || "");
   if (seg.kind === "name") {
+    // Sem nome confiável → corte vazio (painel/motor pulam; não TTS "Cliente").
+    if (!first) return "";
     const raw = (seg.text || "").trim();
-    // Só o nome (passo 3): Então fica no corte fixo.
+    // Só o nome (legado): Então fica no corte fixo.
     if (!raw || raw === "{{nome}}" || raw === "{{nome}}." || raw === "{{nome}}!") {
       return `${first}.`;
     }
     return renderCadenceBody(raw, { ...opts, nome: first }).trim();
   }
-  return renderCadenceBody(seg.text, { ...opts, nome: first }).trim();
+  return renderCadenceBody(seg.text, { ...opts, nome: first || "Cliente" }).trim();
 }
 
 /** Placeholders de identidade que impedem TTS (áudio sairia “consultor” literal). */
@@ -864,16 +895,16 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     key: "a2_audio_activate_name",
     group: "A",
     channel: "whatsapp_audio",
-    title: "2a — Áudio: Olá+{{nome}} · Sofia/Rafael",
+    title: "2a — Áudio: Olá+{{nome}} tudo bem?",
     timing: "Após nome salvo · antes de pedir valor",
     canGenerateAudio: true,
     notes:
-      "2 cortes: 1) Olá+Nome (variável · PT-BR · cache 200+ nomes) 2) corpo FIXO M/F (sem {{nome}} · já gerado no painel). Motor NÃO regenera corpo.",
+      "2 cortes: 1) Olá+Nome+tudo bem? (mesma frase das ligações · cache) 2) corpo FIXO M/F (sem {{nome}}). Motor NÃO regenera corpo.",
     audioSegments: [
       {
         ...SEG_NAME_GREET,
         id: "a2_name",
-        label: "1 · Olá + nome (único corte variável · PT-BR)",
+        label: "1 · Olá + nome + tudo bem? (único corte variável · PT-BR)",
       },
       {
         id: "a2_body_feminino",
@@ -891,7 +922,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: A2_BODY_EXPLAIN },
     ]),
   },
@@ -922,7 +953,7 @@ Pode ser só o número — por exemplo: 350 ou 850,00.`,
     canGenerateAudio: true,
     audioPlacement: "before_text",
     notes:
-      "Ordem: 1) áudio Nome+explicação (corpo FIXO) 2) 4s 3) texto economia + botões (Saber mais / Ativar / Humano). Sem Olá de novo.",
+      "Ordem: 1) áudio “Nome, não tem segredo” + explicação (corpo FIXO) 2) 4s 3) texto economia + botões. Sem Olá de novo. Sem nome → só o corpo.",
     body: `Perfeito, *{{nome}}*!
 
 Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.
@@ -931,9 +962,9 @@ Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8%
     buttons: [...AFTER_EXPLAIN_BUTTONS],
     audioSegments: [
       {
-        ...SEG_NAME_ONLY,
+        ...SEG_NAME_NAO_SEGREDO,
         id: "a3_name",
-        label: "1 · Só o nome (variável · PT-BR · cache por nome)",
+        label: "1 · Nome + não tem segredo (variável · PT-BR · cache por nome)",
       },
       {
         id: "a3_body",
@@ -965,9 +996,9 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
       "Chave legada: o áudio é editado/gerado no passo 3 (texto + áudio + botões). Mantida para URLs antigas.",
     audioSegments: [
       {
-        ...SEG_NAME_ONLY,
+        ...SEG_NAME_NAO_SEGREDO,
         id: "a3_name",
-        label: "1 · Só o nome (variável · cache por nome)",
+        label: "1 · Nome + não tem segredo (variável · cache por nome)",
       },
       {
         id: "a3_body",
@@ -987,7 +1018,7 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "{{nome}}." },
+      { text: "{{nome}}, não tem segredo." },
       {
         text: `Deixa eu te explicar de um jeito simples como funciona o benefício.
 
@@ -1007,16 +1038,16 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
     key: "a5_audio_club_benefits",
     group: "A",
     channel: "whatsapp_audio",
-    title: "4a — Áudio clube (nome + benefício)",
+    title: "4a — Áudio clube (Então + nome + benefício)",
     timing: "Após Saber mais benefício · áudio → 4s → 4b",
     canGenerateAudio: true,
     notes:
-      "2 cortes: 1) só o Nome (PT-BR) 2) corpo FIXO do clube/benefício (sem {{nome}}). Ordem: áudio ACIMA → 4b.",
+      "2 cortes: 1) Então + Nome (PT-BR) 2) corpo FIXO do clube/benefício (sem {{nome}}). Sem nome → só o corpo. Ordem: áudio ACIMA → 4b.",
     audioSegments: [
       {
-        ...SEG_NAME_ONLY,
+        ...SEG_ENTAO_NOME,
         id: "a5_name",
-        label: "1 · Só o nome (variável · PT-BR · cache por nome)",
+        label: "1 · Então + nome (variável · PT-BR · cache por nome)",
       },
       {
         id: "a5_body",
@@ -1032,7 +1063,7 @@ Ou seja: você economiza na energia e ainda pode economizar em várias despesas 
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "{{nome}}." },
+      { text: "Então, {{nome}}." },
       {
         text: `Eu sempre gosto de lembrar que o benefício vai muito além da economia na conta de energia.
 
@@ -1394,7 +1425,7 @@ Escolha a opção mais prática pra você:`,
     canGenerateAudio: true,
     notes: "Sempre voz Sofia. Abertura fixa; o nome entra só no cumprimento.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "b2_body",
         kind: "fixed",
@@ -1442,7 +1473,7 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     timing: "D+1 · entre 15h e 17h · só se ainda silêncio",
     canGenerateAudio: true,
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "b4_body",
         kind: "fixed",
@@ -1457,7 +1488,7 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
@@ -1500,7 +1531,7 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     timing: "Dia 4 · entre 14h30 e 17h · espaçada (anti-spam)",
     canGenerateAudio: true,
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "d4_body",
         kind: "fixed",
@@ -1513,7 +1544,7 @@ Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para {{consultor}}?
@@ -1580,7 +1611,7 @@ Ou prefere outra opção? 👇`,
     timing: "Dia 10 · envia às 15h · encerramento educado da onda",
     canGenerateAudio: true,
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "d10_body",
         kind: "fixed",
@@ -1591,7 +1622,7 @@ Estou concluindo esta sequência para não ficar insistindo. Você prefere mante
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com {{consultor}} ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
@@ -1703,7 +1734,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_60D_CALL. Clip Sofia no Motor.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "c60_call_body",
         kind: "fixed",
@@ -1716,7 +1747,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?`,
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
@@ -1767,7 +1798,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_90D_CALL.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "c90_call_body",
         kind: "fixed",
@@ -1780,7 +1811,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
@@ -1831,7 +1862,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_5M_CALL. Clip Sofia no Motor.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "c5m_body",
         kind: "fixed",
@@ -1846,7 +1877,7 @@ Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para 
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
@@ -1899,7 +1930,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_8M_CALL.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "c8m_call_body",
         kind: "fixed",
@@ -1912,7 +1943,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
@@ -1963,7 +1994,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_12M_CALL.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "c12m_call_body",
         kind: "fixed",
@@ -1976,7 +2007,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
@@ -2027,7 +2058,7 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: true,
     notes: "RECALL_YEARLY_CALL.",
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "cyear_call_body",
         kind: "fixed",
@@ -2040,7 +2071,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}." },
+      { text: "Olá, {{nome}}! Tudo bem?" },
       { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
@@ -2124,7 +2155,7 @@ O que você quer conhecer primeiro?`,
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: true,
     audioSegments: [
-      { ...SEG_NAME_GREET, label: "1 · Olá + nome (único corte variável)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
       {
         id: "cruise_body",
         kind: "fixed",

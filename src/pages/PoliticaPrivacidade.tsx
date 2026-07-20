@@ -3,8 +3,8 @@ import { Link } from "react-router-dom";
 
 export default function PoliticaPrivacidade() {
   return (
-    <main className="min-h-screen bg-background text-foreground py-12 px-4">
-      <article className="max-w-3xl mx-auto prose prose-invert prose-sm sm:prose-base">
+    <main className="min-h-screen bg-background text-foreground py-12 px-4 sm:px-6 public-page-safe-bottom">
+      <article className="max-w-3xl mx-auto prose prose-invert prose-sm sm:prose-base overflow-x-hidden">
         <h1 className="text-3xl font-bold mb-2">Política de Privacidade</h1>
         <p className="text-sm text-muted-foreground">Última atualização: 21/05/2026</p>
 

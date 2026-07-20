@@ -25,7 +25,7 @@ export function validateContractButtons(
   const errors: string[] = [];
   if (!buttons || buttons.length === 0) return { ok: true, errors };
   if (buttons.length > WHAPI_MAX_BUTTONS) {
-    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões (Whapi)`);
+    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões (iGreen Chat)`);
   }
   for (const b of buttons) {
     if (!String(b?.id || "").trim()) errors.push("Botão sem id");

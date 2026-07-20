@@ -181,23 +181,23 @@ export default function SuperAdminRemoteSupport() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-4">
+    <div className="min-h-screen bg-background p-4 sm:p-6">
       <div className="max-w-7xl mx-auto space-y-4">
 
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/super-admin")}>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/super-admin")} className="shrink-0">
               <ArrowLeft className="size-4 mr-1" /> Voltar
             </Button>
-            <div>
-              <h1 className="text-2xl font-bold">Suporte Remoto</h1>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold truncate">Suporte Remoto</h1>
               <p className="text-sm text-muted-foreground">Atenda pedidos ou inicie uma sessão.</p>
             </div>
           </div>
         </header>
 
         <Tabs defaultValue="queue">
-          <TabsList>
+          <TabsList className="w-full sm:w-auto h-auto flex flex-wrap justify-start gap-1">
             <TabsTrigger value="queue">Fila ({pending.length})</TabsTrigger>
             <TabsTrigger value="active">Ativas ({active.length})</TabsTrigger>
             <TabsTrigger value="start">Iniciar sessão</TabsTrigger>
@@ -215,7 +215,7 @@ export default function SuperAdminRemoteSupport() {
             )}
             {pending.map(s => (
               <Card key={s.id}>
-                <CardContent className="p-4 flex items-center gap-3">
+                <CardContent className="p-4 flex flex-wrap items-center gap-3">
                   <Badge variant={s.status === "pending_code" ? "default" : "secondary"}>
                     {s.status === "pending_code" ? "Aguardando código" : "Novo pedido"}
                   </Badge>
@@ -225,6 +225,7 @@ export default function SuperAdminRemoteSupport() {
                       {new Date(s.created_at).toLocaleString()} · por: {s.initiated_by}
                     </div>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   {s.status === "requested" ? (
                     <Button
                       size="sm"
@@ -273,6 +274,7 @@ export default function SuperAdminRemoteSupport() {
                       : <X className="size-4" />
                     }
                   </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -289,7 +291,7 @@ export default function SuperAdminRemoteSupport() {
             )}
             {active.map(s => (
               <Card key={s.id}>
-                <CardContent className="p-4 flex items-center gap-3">
+                <CardContent className="p-4 flex flex-wrap items-center gap-3">
                   <Badge className="bg-primary text-white">ATIVA</Badge>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{consultantName(s.requester_id)}</div>
@@ -297,6 +299,7 @@ export default function SuperAdminRemoteSupport() {
                       desde {s.started_at ? new Date(s.started_at).toLocaleTimeString() : "—"}
                     </div>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <Button size="sm" onClick={() => setSelectedSession(s)}>
                     <Eye className="size-4 mr-1" /> Abrir
                   </Button>
@@ -321,6 +324,7 @@ export default function SuperAdminRemoteSupport() {
                       : <Square className="size-4" />
                     }
                   </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -775,19 +779,19 @@ function SessionWorkbench({
       <DialogContent
         className={
           isFullscreen
-            ? "max-w-none w-screen h-screen p-0 border-0 rounded-none"
-            : "max-w-7xl h-[92vh] flex flex-col"
+            ? "max-w-none w-screen h-[100dvh] p-0 border-0 rounded-none"
+            : "max-w-7xl w-[calc(100%-2rem)] h-[85dvh] sm:h-[92vh] flex flex-col overflow-hidden"
         }
       >
         {!isFullscreen && (
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <DialogTitle className="flex flex-wrap items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
                 <Eye className="size-5" />
               </span>
-              <span className="flex flex-col">
+              <span className="flex flex-col min-w-0">
                 <span className="text-base font-semibold leading-tight">Suporte remoto</span>
-                <span className="text-xs font-normal text-muted-foreground">{consultantName}</span>
+                <span className="text-xs font-normal text-muted-foreground truncate">{consultantName}</span>
               </span>
               <StatusPill status={status} />
             </DialogTitle>
@@ -796,14 +800,14 @@ function SessionWorkbench({
 
         {/* Entrada de código */}
         {status === "pending_code" && (
-          <div className="flex items-center gap-2 p-3 rounded-md bg-muted">
+          <div className="flex flex-wrap items-center gap-2 p-3 rounded-md bg-muted">
             <Input
               placeholder="Código de 6 dígitos"
               value={codeInput}
               onChange={e => setCodeInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
               onKeyDown={e => e.key === "Enter" && codeInput.length === 6 && handleVerifyCode()}
               maxLength={6}
-              className="font-mono text-lg tracking-[0.3em] max-w-[220px]"
+              className="font-mono text-lg tracking-[0.3em] w-full max-w-[220px] min-w-0"
               autoFocus
             />
             <Button
@@ -993,7 +997,7 @@ function SessionWorkbench({
 
         {/* Confirmação de encerramento */}
         <Dialog open={confirmEnd} onOpenChange={setConfirmEnd}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md w-[calc(100%-2rem)] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Encerrar sessão de suporte?</DialogTitle>
             </DialogHeader>
@@ -1365,7 +1369,8 @@ function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
     <Card>
       <CardContent className="p-0">
         <ScrollArea className="h-[60vh]">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-muted sticky top-0">
               <tr>
                 <th className="p-2 text-left font-medium">Quando</th>
@@ -1398,6 +1403,7 @@ function HistoryView({ consultants }: { consultants: ConsultantRow[] }) {
               ))}
             </tbody>
           </table>
+          </div>
         </ScrollArea>
       </CardContent>
     </Card>

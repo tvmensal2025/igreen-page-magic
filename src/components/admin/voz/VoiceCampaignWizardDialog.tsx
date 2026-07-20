@@ -501,7 +501,7 @@ export function VoiceCampaignWizardDialog({
           {step === 2 && (
             <div className="space-y-4">
               <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
-                Regra: ligações usam só <strong>áudio Sofia</strong> (Estúdio). TTS Velip desativado.
+                Regra: ligações usam só <strong>áudio Sofia</strong> (Estúdio). TTS genérico desativado.
               </p>
               <div className="space-y-3">
                   <div className="space-y-1.5">
@@ -633,9 +633,9 @@ export function VoiceCampaignWizardDialog({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="auto">Automático (≥30 alvos = Lote Velip)</SelectItem>
+                    <SelectItem value="auto">Automático (≥30 alvos = Lote iGreen Fone)</SelectItem>
                     <SelectItem value="single">1‑a‑1 (cron a cada 5 min)</SelectItem>
-                    <SelectItem value="batch">Lote (CreateCampaign Velip)</SelectItem>
+                    <SelectItem value="batch">Lote (campanha iGreen Fone)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -677,7 +677,7 @@ export function VoiceCampaignWizardDialog({
                 </p>
               )}
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-[var(--pe-radius)] border p-3 text-center" style={{ borderColor: "var(--pe-emerald-20)", background: "var(--pe-emerald-10)" }}>
                   <p className="text-[10px] uppercase font-semibold" style={{ color: "var(--pe-text-muted)" }}>Contatos</p>
                   <p className="text-2xl font-bold" style={{ color: "var(--pe-emerald-strong)" }}>{contacts.length}</p>
@@ -737,7 +737,7 @@ export function VoiceCampaignWizardDialog({
                     </Button>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {[
                       { label: "Total", val: campaign?.total ?? 0 },
                       { label: "Discados", val: campaign?.dialed ?? 0 },

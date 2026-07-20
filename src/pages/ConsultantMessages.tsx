@@ -126,10 +126,10 @@ export default function ConsultantMessages() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" asChild><Link to="/consultor"><ArrowLeft className="h-4 w-4" /></Link></Button>
-          <div>
-            <h1 className="text-2xl font-bold">Minhas mensagens</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="ghost" size="icon" asChild className="shrink-0"><Link to="/consultor"><ArrowLeft className="h-4 w-4" /></Link></Button>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl font-bold">Minhas mensagens</h1>
             <p className="text-sm text-muted-foreground">
               Personalize o que o sistema envia no seu nome. As variáveis entre <code>{"{{ }}"}</code> são substituídas automaticamente.
             </p>
@@ -171,8 +171,8 @@ export default function ConsultantMessages() {
                         ))}
                       </div>
                     )}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                      <div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                      <div className="min-w-0">
                         <label className="text-xs text-muted-foreground">URL do áudio (opcional)</label>
                         <Input
                           value={d.audio_url}
@@ -180,7 +180,7 @@ export default function ConsultantMessages() {
                           onChange={e => patchDraft(t.template_key, { audio_url: e.target.value })}
                         />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <label className="text-xs text-muted-foreground">"Digitando..." (ms)</label>
                         <Input
                           type="number"
@@ -196,7 +196,7 @@ export default function ConsultantMessages() {
                         <span className="text-sm">{d.is_active ? "Ativa" : "Desativada"}</span>
                       </div>
                     </div>
-                    <div className="flex justify-end gap-2">
+                    <div className="flex flex-wrap justify-end gap-2">
                       {isOwn && (
                         <Button variant="ghost" size="sm" onClick={() => resetToDefault(t)}>
                           <RotateCcw className="h-3.5 w-3.5 mr-1" />Voltar ao padrão

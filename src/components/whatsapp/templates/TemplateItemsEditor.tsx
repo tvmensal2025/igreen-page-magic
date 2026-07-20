@@ -130,7 +130,7 @@ function ItemCard({
 
       <div className="p-3 space-y-3">
         {/* Tipo */}
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-5">
           {ITEM_TYPES.map((t) => {
             const Icon = t.icon;
             const active = item.message_type === t.value;

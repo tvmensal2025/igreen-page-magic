@@ -32,24 +32,24 @@ export function KpisRow({ kpis }: Props) {
 
   return (
     <TooltipProvider delayDuration={150}>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {cards.map((c) => (
-          <div key={c.label} className={`rounded-xl border ${c.ring} bg-card/50 backdrop-blur p-4 hover:scale-[1.02] transition`}>
-            <div className="flex items-center justify-between mb-2">
-              <c.icon className={`w-4 h-4 ${c.color}`} />
+          <div key={c.label} className={`rounded-xl border ${c.ring} bg-card/50 backdrop-blur p-4 hover:scale-[1.02] transition min-w-0`}>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <c.icon className={`w-4 h-4 shrink-0 ${c.color}`} />
               {c.tooltip ? (
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="w-3 h-3 text-muted-foreground/60 cursor-help" />
+                    <Info className="w-3 h-3 text-muted-foreground/60 cursor-help shrink-0" />
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs">{c.tooltip}</TooltipContent>
                 </Tooltip>
               ) : (
-                <Activity className="w-3 h-3 text-muted-foreground/30" />
+                <Activity className="w-3 h-3 text-muted-foreground/30 shrink-0" />
               )}
             </div>
-            <p className="text-xl font-bold text-foreground tabular-nums tracking-tight">{c.value}</p>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1 font-semibold">{c.label}</p>
+            <p className="text-xl font-bold text-foreground tabular-nums tracking-tight truncate">{c.value}</p>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mt-1 font-semibold truncate">{c.label}</p>
           </div>
         ))}
       </div>

@@ -147,13 +147,13 @@ test.describe("Admin logado — auditoria mobile completa", () => {
     const rows: Array<{ tab: string; label: string; metrics: AuditMetrics; screenshot: string }> = [];
 
     await login(page);
-    await page.screenshot({ path: join(OUT, "00-login-ok.png"), fullPage: true });
+    await page.screenshot({ path: join(OUT, "00-login-ok.png"), fullPage: false, timeout: 15_000 });
 
     for (const tab of ADMIN_TABS) {
       await gotoAdminTab(page, tab.id);
       const metrics = await measurePage(page);
       const shot = `${tab.id}.png`;
-      await page.screenshot({ path: join(OUT, shot), fullPage: true });
+      await page.screenshot({ path: join(OUT, shot), fullPage: false, timeout: 15_000 }).catch(() => {});
       rows.push({ tab: tab.id, label: tab.label, metrics, screenshot: shot });
     }
 
@@ -168,7 +168,7 @@ test.describe("Admin logado — auditoria mobile completa", () => {
         await firstChat.click();
         await page.waitForTimeout(2000);
         const waMetrics = await measurePage(page);
-        await page.screenshot({ path: join(OUT, "whatsapp-chat-open.png"), fullPage: true });
+        await page.screenshot({ path: join(OUT, "whatsapp-chat-open.png"), fullPage: false, timeout: 15_000 }).catch(() => {});
         rows.push({
           tab: "whatsapp-chat",
           label: "WhatsApp — conversa aberta",
@@ -185,7 +185,7 @@ test.describe("Admin logado — auditoria mobile completa", () => {
       await lead.click();
       await page.waitForTimeout(2000);
       const capMetrics = await measurePage(page);
-      await page.screenshot({ path: join(OUT, "captacao-lead-open.png"), fullPage: true });
+      await page.screenshot({ path: join(OUT, "captacao-lead-open.png"), fullPage: false, timeout: 15_000 }).catch(() => {});
       rows.push({
         tab: "captacao-lead",
         label: "Captação — lead selecionado",
@@ -203,7 +203,7 @@ test.describe("Admin logado — auditoria mobile completa", () => {
         await page.waitForTimeout(1500);
         const m = await measurePage(page);
         const name = `produtos-${sub.replace(/\./g, "")}.png`;
-        await page.screenshot({ path: join(OUT, name), fullPage: true });
+        await page.screenshot({ path: join(OUT, name), fullPage: false, timeout: 15_000 }).catch(() => {});
         rows.push({ tab: `produtos-${sub}`, label: `Produtos — ${sub}`, metrics: m, screenshot: name });
       }
     }

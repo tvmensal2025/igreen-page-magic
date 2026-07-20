@@ -168,7 +168,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-[280px] p-2" side="top">
-          <div className="grid grid-cols-8 gap-0.5">
+          <div className="grid grid-cols-4 gap-0.5 sm:grid-cols-8">
             {QUICK_EMOJIS.map((em) => (
               <button
                 key={em}

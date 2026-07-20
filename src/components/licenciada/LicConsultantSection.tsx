@@ -45,7 +45,7 @@ const LicConsultantSection = ({
             />
           </div>
           <div>
-            <h3 className="font-heading font-bold text-2xl mb-6 text-foreground">{name}</h3>
+            <h3 className="font-heading font-bold text-2xl mb-6 text-foreground break-words">{name}</h3>
             <div className="space-y-4 mb-10">
               <div className="glass-card !p-4 !rounded-xl flex items-start gap-3">
                 <span className="text-lg shrink-0">✅</span>
@@ -67,9 +67,9 @@ const LicConsultantSection = ({
         </div>
       </div>
 
-      <footer className="bg-card/50 py-10 text-center mt-16 border-t border-border">
-        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" className="mx-auto mb-4 w-36" />
-        <p className="text-muted-foreground font-heading text-sm tracking-wider">
+      <footer className="bg-card/50 py-10 px-4 text-center mt-16 border-t border-border">
+        <img src="/images/logo-colorida-igreen.png" alt="iGreen Energy" loading="lazy" className="mx-auto mb-4 w-36 max-w-full h-auto" />
+        <p className="text-muted-foreground font-heading text-sm tracking-wider break-words px-2">
           {name.toUpperCase()} | LICENCIADO E LÍDER DE EXPANSÃO IGREEN ENERGY ID {displayId}
         </p>
       </footer>

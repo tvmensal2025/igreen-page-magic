@@ -222,9 +222,6 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
           <Button variant="ghost" size="sm" className="h-7 text-[11px] gap-1" disabled={loading} onClick={() => void load()}>
             <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} /> Atualizar status
           </Button>
-          <Button asChild variant="ghost" size="sm" className="h-7 text-[11px]">
-            <Link to="/admin/checklist">Checklist go-live</Link>
-          </Button>
         </div>
       </div>
 

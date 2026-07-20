@@ -198,14 +198,14 @@ const CadastroPage = () => {
         description={`Cadastre-se e tenha de 8% a 20% de desconto na conta de luz. Cadastro rápido em 3 minutos via WhatsApp com ${consultant.name}.`}
       />
 
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background overflow-x-hidden">
         {/* Header */}
         <header className="border-b border-border bg-card/70 backdrop-blur-md sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <BrandLogo className="h-10 md:h-12" />
-            <div className="text-right">
+          <div className="container mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-3 min-w-0">
+            <BrandLogo className="h-10 md:h-12 w-auto shrink-0 max-w-[40vw]" />
+            <div className="text-right min-w-0">
               <p className="text-sm text-muted-foreground">Seu consultor</p>
-              <p className="font-bold text-foreground sensitive-name">{consultant.name}</p>
+              <p className="font-bold text-foreground sensitive-name truncate">{consultant.name}</p>
             </div>
           </div>
         </header>
@@ -240,7 +240,7 @@ const CadastroPage = () => {
             />
           </div>
 
-          <div className="container mx-auto px-4 py-16 md:py-24 relative z-10">
+          <div className="container mx-auto px-4 sm:px-6 py-16 md:py-24 relative z-10">
             {/* Badge */}
             <div className="flex justify-center mb-6">
               <div className="inline-flex items-center gap-2 bg-primary/20 backdrop-blur-md px-5 py-2.5 rounded-full border border-primary/30">
@@ -258,25 +258,25 @@ const CadastroPage = () => {
             </div>
 
             {/* Title */}
-            <h1 className="text-center mb-3">
-              <span className="block text-3xl md:text-5xl lg:text-6xl font-black text-white font-heading leading-tight">
+            <h1 className="text-center mb-3 px-1">
+              <span className="block text-2xl sm:text-3xl md:text-5xl lg:text-6xl font-black text-white font-heading leading-tight break-words">
                 Cadastre-se e tenha{" "}
                 <span className="text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, #FF8C00, #FFD700, #FF8C00)' }}>
                   8% a 20% de desconto
                 </span>
               </span>
-              <span className="block text-2xl md:text-4xl lg:text-5xl font-black text-white font-heading mt-2">
+              <span className="block text-xl sm:text-2xl md:text-4xl lg:text-5xl font-black text-white font-heading mt-2">
                 na sua conta de luz
               </span>
             </h1>
 
-            <p className="text-white/70 text-center text-base md:text-lg max-w-2xl mx-auto mb-10">
+            <p className="text-white/70 text-center text-sm sm:text-base md:text-lg max-w-2xl mx-auto mb-10 px-1">
               Sem instalar placas solares, sem obras, sem custos — energia solar por assinatura com cadastro em 3 minutos
             </p>
 
             {/* QR Code Card - Centralizado como hero principal */}
-            <div className="max-w-md mx-auto mb-10">
-              <div className="relative bg-white rounded-3xl p-6 md:p-8 shadow-2xl"
+            <div className="max-w-md mx-auto mb-10 w-full min-w-0">
+              <div className="relative bg-white rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl w-full min-w-0"
                 style={{
                   boxShadow: '0 0 60px rgba(0, 183, 79, 0.25), 0 25px 80px rgba(0,0,0,0.3)'
                 }}
@@ -370,17 +370,17 @@ const CadastroPage = () => {
             </div>
 
             {/* Stats */}
-            <div className="flex justify-center gap-8 md:gap-16">
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-black text-white">600mil+</div>
+            <div className="flex flex-wrap justify-center gap-6 sm:gap-8 md:gap-16 px-2">
+              <div className="text-center min-w-[4.5rem]">
+                <div className="text-2xl sm:text-3xl md:text-4xl font-black text-white">600mil+</div>
                 <div className="text-white/50 text-xs uppercase tracking-wider">Clientes</div>
               </div>
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-black text-white">500+</div>
+              <div className="text-center min-w-[4.5rem]">
+                <div className="text-2xl sm:text-3xl md:text-4xl font-black text-white">500+</div>
                 <div className="text-white/50 text-xs uppercase tracking-wider">Usinas</div>
               </div>
-              <div className="text-center">
-                <div className="text-3xl md:text-4xl font-black text-white">27</div>
+              <div className="text-center min-w-[4.5rem]">
+                <div className="text-2xl sm:text-3xl md:text-4xl font-black text-white">27</div>
                 <div className="text-white/50 text-xs uppercase tracking-wider">Estados</div>
               </div>
             </div>
@@ -389,7 +389,7 @@ const CadastroPage = () => {
 
         {/* Benefits Section */}
         <section className="py-16 md:py-20 section-gradient">
-          <div className="container mx-auto px-4">
+          <div className="container mx-auto px-4 sm:px-6">
             <h2 className="text-2xl md:text-4xl font-black text-foreground text-center mb-3 font-heading">
               Por que fazer seu cadastro agora?
             </h2>
@@ -418,7 +418,7 @@ const CadastroPage = () => {
 
         {/* How it works - detailed steps */}
         <section className="py-16 md:py-20 bg-background">
-          <div className="container mx-auto px-4">
+          <div className="container mx-auto px-4 sm:px-6">
             <h2 className="text-2xl md:text-4xl font-black text-foreground text-center mb-3 font-heading">
               Como funciona o processo?
             </h2>
@@ -435,13 +435,13 @@ const CadastroPage = () => {
                 { step: "5", title: "Confirme os Dados", description: "Revise as informações extraídas e confirme." },
                 { step: "6", title: "Receba o Link", description: "Em minutos você recebe o link para assinar e ativar seu desconto!" },
               ].map((item) => (
-                <div key={item.step} className="flex gap-4 items-start premium-card hover:border-primary/20 transition-colors">
+                <div key={item.step} className="flex gap-3 sm:gap-4 items-start premium-card hover:border-primary/20 transition-colors min-w-0">
                   <div className="flex-shrink-0 w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold text-lg">
                     {item.step}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h3 className="font-bold text-foreground text-base mb-1">{item.title}</h3>
-                    <p className="text-muted-foreground text-sm">{item.description}</p>
+                    <p className="text-muted-foreground text-sm break-words">{item.description}</p>
                   </div>
                 </div>
               ))}
@@ -455,7 +455,7 @@ const CadastroPage = () => {
         }}>
           <SolarPanelSVG className="absolute -bottom-10 -right-10 w-48 h-48 text-white opacity-[0.04] rotate-12" />
           
-          <div className="container mx-auto px-4 text-center relative z-10">
+          <div className="container mx-auto px-4 sm:px-6 text-center relative z-10 public-page-safe-bottom">
             <h2 className="text-2xl md:text-4xl font-black text-white mb-4 font-heading">
               Pronto para economizar?
             </h2>
@@ -482,9 +482,9 @@ const CadastroPage = () => {
         </section>
 
         {/* Footer */}
-        <footer className="bg-card py-10 text-center border-t border-border">
-          <BrandLogo className="mx-auto mb-4 w-36" />
-          <p className="text-muted-foreground text-sm tracking-wider sensitive-name">
+        <footer className="bg-card py-10 px-4 text-center border-t border-border">
+          <BrandLogo className="mx-auto mb-4 w-36 max-w-full h-auto" />
+          <p className="text-muted-foreground text-sm tracking-wider sensitive-name break-words px-2">
             {consultant.name.toUpperCase()} | CONSULTOR(A) IGREEN ENERGY
             {consultant.igreen_id && ` ID ${consultant.igreen_id}`}
           </p>

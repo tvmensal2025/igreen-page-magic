@@ -111,7 +111,7 @@ function describeSource(item: AgendamentoTimelineItem): {
       };
     case "voice_campaign":
       return {
-        where: "Ligação (Velip)",
+        where: "Ligação (iGreen Fone)",
         hint: "Excluir cancela a campanha de ligação. Para acompanhar o progresso, abra a aba Ligação.",
         targetTab: "campanhas",
         ctaLabel: "Ver campanhas",
@@ -283,8 +283,8 @@ export function AgendamentosHub({
       toast({
         title: "Mensagem agendada com sucesso!",
         description: channelReady.channel === "whapi"
-          ? "Saída via Whapi (canal conectado)."
-          : "Saída via Evolution (canal conectado).",
+          ? "Saída via iGreen Chat (canal conectado)."
+          : "Saída via iGreen Link (canal conectado).",
       });
       setPhone("");
       setText("");
@@ -1069,7 +1069,7 @@ export function AgendamentosHub({
             )}
             {channelReady.ok && (
               <p className="text-[11px] text-muted-foreground">
-                Canal do consultor: <span className="font-semibold text-foreground">{channelReady.channel === "whapi" ? "Whapi" : "Evolution"}</span>
+                Canal do consultor: <span className="font-semibold text-foreground">{channelReady.channel === "whapi" ? "iGreen Chat" : "iGreen Link"}</span>
                 {" · "}instância <code className="text-[10px]">{channelReady.instanceName}</code>
               </p>
             )}
@@ -1187,7 +1187,7 @@ export function AgendamentosHub({
               <div>
                 <p className="text-sm font-bold">Campanhas</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Disparo WhatsApp e campanhas de ligação (Velip) agendadas ou em andamento.
+                  Disparo WhatsApp e campanhas de ligação (iGreen Fone) agendadas ou em andamento.
                 </p>
               </div>
               <div className="flex gap-2">

@@ -8,7 +8,7 @@ const WhatsAppFloat = ({ url, onClickTrack }: WhatsAppFloatProps) => (
     href={url}
     target="_blank"
     rel="noopener noreferrer"
-    className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-lg"
+    className="wa-float fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 shadow-lg"
     style={{ background: "#25D366" }}
     aria-label="Falar no WhatsApp"
     onClick={onClickTrack}

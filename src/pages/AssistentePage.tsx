@@ -198,9 +198,9 @@ export default function AssistentePage() {
   );
 
   return (
-    <div className="h-[100dvh] bg-gradient-to-b from-[#060a07] via-[#0a1210] to-[#060a07] flex flex-col overflow-hidden">
+    <div className="h-[100dvh] bg-gradient-to-b from-[#060a07] via-[#0a1210] to-[#060a07] flex flex-col overflow-hidden overflow-x-hidden">
       {/* Header */}
-      <header className="shrink-0 border-b border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-4 py-3 flex items-center gap-3">
+      <header className="shrink-0 border-b border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-3 sm:px-4 py-3 flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="relative">
           <img
             src={igreenLogo}
@@ -253,15 +253,15 @@ export default function AssistentePage() {
               )}
 
               {/* Bubble */}
-              <div className="max-w-[82%] space-y-2">
+              <div className="max-w-[82%] min-w-0 space-y-2">
                 <div
-                  className={`rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed ${
+                  className={`rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed break-words ${
                     msg.role === "user"
                       ? "bg-gradient-to-br from-primary to-primary text-white rounded-br-md shadow-lg shadow-emerald-500/15"
                       : "bg-white/[0.04] text-white/90 rounded-bl-md border border-white/[0.06] backdrop-blur-sm"
                   }`}
                 >
-                  <div className="prose prose-invert prose-sm max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-strong:text-white prose-headings:text-white">
+                  <div className="prose prose-invert prose-sm max-w-none min-w-0 break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0 prose-strong:text-white prose-headings:text-white">
                     <ReactMarkdown
                       components={{
                         a: ({ href, children }) => (
@@ -346,21 +346,21 @@ export default function AssistentePage() {
 
           {/* Suggestions */}
           {messages.length === 1 && !loading && (
-            <div className="grid grid-cols-2 gap-2 pt-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-3">
               {SUGGESTIONS.map((s, i) => {
                 const Icon = s.icon;
                 return (
                   <button
                     key={i}
                     onClick={() => sendMessage(s.text)}
-                    className="text-left text-[12px] px-3 py-3 rounded-xl flex items-start gap-2.5
+                    className="text-left text-[12px] px-3 py-3 rounded-xl flex items-start gap-2.5 min-w-0
                       bg-white/[0.03] hover:bg-primary/10
                       border border-white/[0.05] hover:border-primary/20
                       text-white/50 hover:text-white/85
                       transition-all duration-200 active:scale-[0.97] group"
                   >
                     <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary/40 group-hover:text-primary transition-colors" />
-                    <span>{s.text}</span>
+                    <span className="min-w-0 break-words">{s.text}</span>
                   </button>
                 );
               })}
@@ -370,8 +370,8 @@ export default function AssistentePage() {
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-3 py-3 safe-area-pb">
-        <div className="max-w-2xl mx-auto flex gap-2">
+      <div className="assistente-composer shrink-0 border-t border-primary/10 bg-gradient-to-r from-[#0a1210]/95 via-[#0d1a14]/95 to-[#0a1210]/95 backdrop-blur-2xl px-3 py-3 safe-area-pb">
+        <div className="max-w-2xl mx-auto flex gap-2 min-w-0">
           <input
             ref={inputRef}
             value={input}
@@ -379,12 +379,12 @@ export default function AssistentePage() {
             onKeyDown={handleKeyDown}
             placeholder="Pergunte sobre a iGreen..."
             disabled={loading}
-            className="flex-1 h-12 px-5 text-sm bg-white/[0.04] border border-white/[0.08] rounded-2xl
+            className="flex-1 min-w-0 h-12 px-4 sm:px-5 text-sm bg-white/[0.04] border border-white/[0.08] rounded-2xl
               focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/30
               text-white placeholder:text-white/25 disabled:opacity-40 transition-all"
           />
           <Button
-            className="h-12 w-12 p-0 rounded-2xl bg-gradient-to-br from-primary to-primary hover:from-primary hover:to-primary text-white shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-30 disabled:shadow-none"
+            className="h-12 w-12 shrink-0 p-0 rounded-2xl bg-gradient-to-br from-primary to-primary hover:from-primary hover:to-primary text-white shadow-lg shadow-emerald-500/20 transition-all disabled:opacity-30 disabled:shadow-none"
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || loading}
           >

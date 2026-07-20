@@ -232,7 +232,7 @@ export default function ProposalPublicPage() {
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="fixed bottom-4 inset-x-4 z-40 mx-auto max-w-md flex items-center justify-center gap-2 rounded-2xl bg-[#0e8028] hover:bg-[#0a6b22] text-white font-semibold py-3.5 shadow-2xl transition-colors"
+          className="public-bottom-cta fixed bottom-4 inset-x-4 z-40 mx-auto max-w-md flex items-center justify-center gap-2 rounded-2xl bg-[#0e8028] hover:bg-[#0a6b22] text-white font-semibold py-3.5 shadow-2xl transition-colors"
         >
           <FileText className="h-5 w-5" />
           Ver minha proposta
