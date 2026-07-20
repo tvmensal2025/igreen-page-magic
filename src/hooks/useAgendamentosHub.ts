@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { LEAD_ORIGIN_FILTER } from "@/lib/leadOrigin";
+import { isCycleLeadEligible } from "@/lib/cycleEligibility";
 import {
   buildUpcomingPosVendaMessages,
   groupSentStageKeys,
