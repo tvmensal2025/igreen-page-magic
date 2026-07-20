@@ -257,6 +257,7 @@ export function buildAgendamentosTimeline(input: {
       title: c.customer_name || c.customer_phone || "Lead",
       preview: rendered || `${channel} · ${label}`,
       audio_url: info?.audio_url ?? null,
+      buttons: info?.buttons ?? null,
       at,
       status: paused ? "pending" : at.getTime() <= now ? "overdue" : "pending",
       badge: `Motor A→B→C · ${label}`,
