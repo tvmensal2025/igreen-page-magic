@@ -506,7 +506,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
         ) : filtered.length === 0 ? (
           <EmptyState unclassified={metrics.unclassified} onClassifyAll={classifyAll} />
         ) : (
-          <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-3 gap-2.5">
             {filtered.length > 50 ? (
               filtered.map((r) => (
                 <LeadCard
@@ -627,9 +627,9 @@ function FilaToolbar({
 
   return (
     <div className="space-y-2.5 rounded-xl border border-border/50 bg-card p-3">
-      {/* KPIs + ações */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* KPIs + ações — linha única em desktop virtual */}
+      <div className="flex flex-nowrap items-end gap-3">
+        <div className="grid min-w-0 flex-1 grid-cols-4 gap-2">
           <Kpi label="Na fila" value={String(metrics.total)} icon={<MessageSquare className="h-3 w-3" />} />
           <Kpi
             label="Quentes parados"
@@ -641,17 +641,17 @@ function FilaToolbar({
           <Kpi label="Chance média" value={`${metrics.avgChance}%`} icon={<TrendingUp className="h-3 w-3" />} />
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <Button variant="outline" size="sm" className="h-8" onClick={onReload} disabled={loading || !!bulk}>
+          <Button variant="outline" size="sm" className="h-8 whitespace-nowrap" onClick={onReload} disabled={loading || !!bulk}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Recarregar
           </Button>
           {metrics.unclassified > 0 && (
-            <Button size="sm" className="h-8 gap-1.5" onClick={onClassifyAll} disabled={!!bulk}>
+            <Button size="sm" className="h-8 gap-1.5 whitespace-nowrap" onClick={onClassifyAll} disabled={!!bulk}>
               {bulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
               Classificar {metrics.unclassified}
             </Button>
           )}
           {metrics.unclassified === 0 && metrics.classified > 0 && (
-            <Button size="sm" variant="outline" className="h-8 gap-1.5" onClick={onClassifyStale} disabled={!!bulk || staleLoading}>
+            <Button size="sm" variant="outline" className="h-8 gap-1.5 whitespace-nowrap" onClick={onClassifyStale} disabled={!!bulk || staleLoading}>
               {staleLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               Reclassificar 24h
             </Button>
@@ -669,9 +669,10 @@ function FilaToolbar({
         </div>
       )}
 
-      {/* Filtros + seleção */}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-2.5">
-        <div className="w-40">
+
+      {/* Filtros + seleção — sem wrap: cabe no 1280 virtual */}
+      <div className="flex flex-nowrap items-center gap-2 border-t border-border/40 pt-2.5">
+        <div className="w-40 shrink-0">
           <Combobox
             options={tempOptions}
             value={tempFilter}
@@ -681,7 +682,7 @@ function FilaToolbar({
             className="h-8"
           />
         </div>
-        <div className="w-36">
+        <div className="w-36 shrink-0">
           <Combobox
             options={(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => ({
               value: o,
@@ -695,7 +696,7 @@ function FilaToolbar({
           />
         </div>
         {hasPartners && (
-          <div className="w-44">
+          <div className="w-44 shrink-0">
             <Combobox
               options={partnerOptions}
               value={partnerFilter}
@@ -706,15 +707,16 @@ function FilaToolbar({
             />
           </div>
         )}
-        <div className="relative">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar nome / resumo"
-            className="h-8 w-44 pl-7 text-xs sm:w-52"
+            className="h-8 w-full pl-7 text-xs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
 
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           {!selectMode ? (
@@ -753,16 +755,22 @@ function Kpi({ label, value, icon, tone = "default" }: {
   label: string; value: string; icon: React.ReactNode;
   tone?: "default" | "danger" | "warn";
 }) {
-  const toneCls = tone === "danger" ? "text-destructive" : tone === "warn" ? "text-warning" : "text-foreground";
+  const toneCls =
+    tone === "danger"
+      ? "text-destructive"
+      : tone === "warn"
+        ? "text-amber-700 dark:text-amber-400"
+        : "text-foreground";
   return (
-    <div className="rounded-lg bg-muted/30 px-2.5 py-2">
-      <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-        {icon} {label}
+    <div className="rounded-lg border border-border/40 bg-muted/30 px-2.5 py-2">
+      <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {icon} <span className="truncate">{label}</span>
       </div>
-      <div className={`mt-0.5 text-lg font-semibold tabular-nums ${toneCls}`}>{value}</div>
+      <div className={`mt-0.5 text-lg font-bold tabular-nums leading-tight ${toneCls}`}>{value}</div>
     </div>
   );
 }
+
 
 function LeadCard({ lead, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify, lite }: {
   lead: LeadRow; stepLabelText: string; classifying: boolean;
