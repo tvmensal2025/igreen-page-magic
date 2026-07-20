@@ -836,10 +836,51 @@ function _decodeBillBase64(b64, label = 'conta') {
   } catch { return null; }
 }
 
+/** Extrai bucket+path de URL do Supabase Storage (/object/public|sign|authenticated/...). */
+function _parseSupabaseStorageUrl(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(
+      /\/storage\/v1\/object\/(?:public|sign|authenticated)\/([^/]+)\/(.+)$/,
+    );
+    if (!m) return null;
+    return {
+      bucket: decodeURIComponent(m[1]),
+      path: decodeURIComponent(m[2]),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Baixa um arquivo de uma URL http(s) (MinIO/Supabase) em { buffer, mime, filename }.
-// Usa fetch nativo (Node 20). Retorna null em falha (caller decide o gate).
+// Bucket `whatsapp-media` é PRIVADO — fetch em /object/public/ retorna HTTP 400.
+// Com service role, baixa via Storage API e só faz fallback de fetch se falhar.
 async function _downloadToFile(url, label = 'doc') {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) return null;
+
+  const parsed = _parseSupabaseStorageUrl(url);
+  if (parsed && supabase) {
+    try {
+      const { data, error } = await supabase.storage.from(parsed.bucket).download(parsed.path);
+      if (!error && data) {
+        const buffer = Buffer.from(await data.arrayBuffer());
+        if (buffer.length >= 100) {
+          let mime = (data.type || '').split(';')[0].trim() || 'application/octet-stream';
+          if (!/^(image\/(jpeg|png)|application\/pdf)$/.test(mime)) mime = _sniffMime(buffer);
+          console.log(`  ⬇ storage.download ${label} ok ${parsed.bucket}/${parsed.path.slice(0, 60)} (${buffer.length}b)`);
+          return { buffer, mime, filename: `${label}.${_extFromMime(mime)}` };
+        }
+      } else {
+        console.warn(
+          `  ⚠ storage.download ${label}: ${error?.message || 'empty'} ${parsed.bucket}/${parsed.path.slice(0, 80)}`,
+        );
+      }
+    } catch (e) {
+      console.warn(`  ⚠ storage.download ${label} falhou: ${e.message}`);
+    }
+  }
+
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(20_000) });
     if (!r.ok) {

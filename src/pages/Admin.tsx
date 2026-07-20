@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -77,6 +77,7 @@ const AdminContent = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -113,6 +114,7 @@ const AdminContent = () => {
   useEffect(() => {
     try { window.localStorage.setItem(ADMIN_ACTIVE_TAB_KEY, activeTab); } catch {}
   }, [activeTab]);
+
   const [pendingAiSubTab, setPendingAiSubTab] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     const tab = new URLSearchParams(window.location.search).get("tab");
@@ -134,17 +136,38 @@ const AdminContent = () => {
   });
   const [pendingChatMessage, setPendingChatMessage] = useState<string | undefined>(undefined);
 
+  // Deep-link / tour: /admin?tab=… muda a aba mesmo com Admin já montado
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    let mutated = false;
-    if (params.get("phone")) { params.delete("phone"); mutated = true; }
-    if (params.get("tab")) { params.delete("tab"); mutated = true; }
-    if (mutated) {
-      const qs = params.toString();
-      window.history.replaceState({}, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+    const params = new URLSearchParams(location.search);
+    const tab = params.get("tab");
+    const phone = params.get("phone");
+    const section = params.get("section");
+    if (!tab && !phone && !section) return;
+
+    if (tab) {
+      let resolved: AdminTabId | null = null;
+      if (tab === "performance" || tab === "anuncios" || tab === "central-anuncios") resolved = "central-anuncios";
+      else if (tab === "whatsapp" || tab === "historico" || (AI_SUB_TABS as readonly string[]).includes(tab)) resolved = "whatsapp";
+      else if (tab === "preview") resolved = "links";
+      else if (tab === "captacao" || tab === "game" || tab === "modo-game") resolved = "captacao";
+      else if (tab === "rede") resolved = "dashboard";
+      else if (tab === "dashboard" || ADMIN_TAB_IDS.includes(tab as AdminTabId)) resolved = tab as AdminTabId;
+
+      if (resolved) setActiveTab(resolved);
+      if ((AI_SUB_TABS as readonly string[]).includes(tab)) setPendingAiSubTab(tab);
     }
-  }, []);
+    if (section === "envio_massa" || section === "agendamentos") setPendingWhatsAppSub(section);
+    if (phone) setPendingChatPhone(phone);
+
+    params.delete("tab");
+    params.delete("section");
+    params.delete("phone");
+    const qs = params.toString();
+    const nextUrl = `${location.pathname}${qs ? `?${qs}` : ""}`;
+    const currentUrl = `${location.pathname}${location.search}`;
+    if (nextUrl !== currentUrl) navigate(nextUrl, { replace: true });
+  }, [location.pathname, location.search, navigate]);
+
   const [qrPanfleto, setQrPanfleto] = useState<{ url: string; label: string } | null>(null);
   const [panfletoOpen, setPanfletoOpen] = useState(false);
   const [aiChatOpen, setAiChatOpen] = useState(false);
@@ -153,6 +176,16 @@ const AdminContent = () => {
     const h = () => setSettingsOpen(true);
     window.addEventListener("open-admin-settings", h);
     return () => window.removeEventListener("open-admin-settings", h);
+  }, []);
+
+  useEffect(() => {
+    const openSidebar = () => {
+      setSidebarOpen(true);
+      setSidebarCollapsed(false);
+      try { window.localStorage.setItem("pe:sidebar-collapsed", "0"); } catch {}
+    };
+    window.addEventListener("igreen-open-sidebar", openSidebar);
+    return () => window.removeEventListener("igreen-open-sidebar", openSidebar);
   }, []);
 
   useEffect(() => {
@@ -463,7 +496,16 @@ const AdminContent = () => {
 
         <Suspense fallback={<div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 border-4 border-[var(--pe-emerald)] border-t-transparent rounded-full" /></div>}>
           {activeTab === "dashboard" && userId && (
-            <DashboardTab userId={userId} form={form} onFormUpdate={handleFormChange} periodDays={periodDays} onPeriodChange={setPeriodDays} onOpenChat={handleOpenChatFromCustomer} />
+            <DashboardTab
+              userId={userId}
+              form={form}
+              onFormUpdate={handleFormChange}
+              periodDays={periodDays}
+              onPeriodChange={setPeriodDays}
+              onOpenChat={handleOpenChatFromCustomer}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
+            />
           )}
 
 

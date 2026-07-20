@@ -1,31 +1,34 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { phraseMatchesMessage } from "./qa-phrase-match.ts";
 
-Deno.test("golpe / multa / aneel com word-boundary", () => {
-  assertEquals(phraseMatchesMessage("golpe", "Isso não é golpe?"), true);
-  assertEquals(phraseMatchesMessage("multa", "Tem multa se eu cancelar?"), true);
-  assertEquals(phraseMatchesMessage("aneel", "É regulamentado pela ANEEL?"), true);
-  assertEquals(phraseMatchesMessage("golpe", "fui golpeado"), false);
+Deno.test("frases compostas de FAQ casam", () => {
+  assertEquals(phraseMatchesMessage("é golpe", "Isso não é golpe?"), true);
+  assertEquals(phraseMatchesMessage("tem multa", "Tem multa se eu cancelar?"), true);
+  assertEquals(phraseMatchesMessage("regulamentado pela aneel", "É regulamentado pela ANEEL?"), true);
+  assertEquals(phraseMatchesMessage("qual o cnpj", "Qual o CNPJ de vocês?"), true);
+  assertEquals(phraseMatchesMessage("tem fidelidade", "vocês tem fidelidade?"), true);
 });
 
-Deno.test("genéricos soltos NÃO disparam", () => {
+Deno.test("genéricos soltos NÃO disparam (mesmo como gatilho no DB)", () => {
+  assertEquals(phraseMatchesMessage("golpe", "Isso não é golpe?"), false);
+  assertEquals(phraseMatchesMessage("multa", "Tem multa se eu cancelar?"), false);
+  assertEquals(phraseMatchesMessage("fidelidade", "tem fidelidade"), false);
   assertEquals(phraseMatchesMessage("depois", "te mando depois"), false);
   assertEquals(phraseMatchesMessage("ativar", "demora pra ativar"), false);
   assertEquals(phraseMatchesMessage("conta", "manda a conta"), false);
-  assertEquals(phraseMatchesMessage("link", "tem link?"), false);
   assertEquals(phraseMatchesMessage("taxa", "taxa de disponibilidade"), false);
-  assertEquals(phraseMatchesMessage("solar", "energia solar"), false);
+  assertEquals(phraseMatchesMessage("aneel", "é da aneel"), false);
 });
 
-Deno.test("fragmento curto NÃO casa gatilho longo (falso positivo cobertura)", () => {
+Deno.test("fragmento curto NÃO casa gatilho longo", () => {
   assertEquals(phraseMatchesMessage("nao sou de uberlandia", "nao sou"), false);
   assertEquals(phraseMatchesMessage("moro em araguari", "moro em"), false);
   assertEquals(phraseMatchesMessage("me fala depois", "depois"), false);
 });
 
-Deno.test("atalho legítimo de uma palavra", () => {
+Deno.test("atalho legítimo de uma palavra (não genérica)", () => {
   assertEquals(phraseMatchesMessage("quero simular", "simular"), true);
-  assertEquals(phraseMatchesMessage("é golpe", "golpe"), true);
+  assertEquals(phraseMatchesMessage("serasa", "vai pro serasa"), true);
 });
 
 Deno.test("frase composta exige contiguidade", () => {

@@ -25,6 +25,7 @@ import { checkAndMarkWebhookDedupe } from "../../../_shared/bot/dedupe.ts";
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS as CADASTRO_STEPS_SHARED } from "../../../_shared/flow-router.ts";
 import { matchButtonIntent, extractStepButtons } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
+import { safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
 import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
 import {
   resolveCanonicalFlowVariant,
@@ -39,6 +40,7 @@ import {
   isActivateIntent,
 } from "../../../_shared/bot/flow-activate-routing.ts";
 import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaPrefill } from "../../../_shared/bot/cadastro-fixes.ts";
+import { assignProtocolToCustomer } from "../../../_shared/protocol.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
@@ -281,14 +283,15 @@ function extractCaptures(messageText: string, configured: DbCapture[]): Extracte
   const out: ExtractedCaptures = {};
   if (!messageText) return out;
   const enabled = new Set((configured || []).filter(c => c.enabled !== false).map(c => c.field));
-  if (enabled.has("electricity_bill_value")) {
+  // Telefone antes de valor: "03481914644" NÃO pode virar R$ 34.819 (bug Isa).
+  const phoneHit = extractTelefone(messageText);
+  if (enabled.has("phone_whatsapp") && phoneHit) {
+    out.phone_whatsapp = phoneHit;
+  }
+  if (enabled.has("electricity_bill_value") && !phoneHit) {
     // Permissivo: "200", "200 reais", "uns 200" — evita travar no passo do valor.
     const v = extractValorPermissivo(messageText);
     if (v != null) out.electricity_bill_value = v;
-  }
-  if (enabled.has("phone_whatsapp")) {
-    const p = extractTelefone(messageText);
-    if (p) out.phone_whatsapp = p;
   }
   if (enabled.has("cpf")) {
     const c = extractCPF(messageText);
@@ -1318,9 +1321,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   }
   if (!currentStep) {
     console.log(`[conversational] unknown step="${stepKey}" → restart at firstActive=${firstActive?.id} (steps=${dbSteps.length})`);
+    let protocoloBoot = String((ctx.customer as any).tracking_protocol || "").trim();
+    if (!protocoloBoot) {
+      try {
+        const assigned = await assignProtocolToCustomer(ctx.supabase, ctx.customer.id, {
+          partnerId: (ctx.customer as any).referral_partner_id || null,
+          consultantId: consultantId || ctx.customer.consultant_id || null,
+          consultantName: ctx.nomeRepresentante || null,
+        });
+        protocoloBoot = String(assigned?.protocol || "").trim();
+        if (protocoloBoot) (ctx.customer as any).tracking_protocol = protocoloBoot;
+      } catch (e) {
+        console.warn("[conversational] assignProtocol (boot) falhou:", (e as Error).message);
+      }
+    }
     const vars = {
       nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
+      protocolo: protocoloBoot,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
       cpf: (ctx.customer as any).cpf,
@@ -1400,17 +1418,23 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         anyMediaSent = true;
       }
 
-      // Restart não passa por emitStep — marca name_ask_sent_at aqui.
+      // Restart não passa por emitStep — marca name_ask + abre atendimento (welcome).
       try {
         const asksNameNow =
           String(cursor.step_type || "") === "capture_name" ||
           (Array.isArray(cursor.captures) &&
             cursor.captures.some((c: any) => c?.field === "name" && c?.enabled !== false)) ||
           /nome|ask_name/i.test(String(cursor.slot_key || cursor.step_key || ""));
-        if (asksNameNow && ctx.customer?.id && !(ctx.customer as any).name_ask_sent_at) {
+        if (asksNameNow && ctx.customer?.id) {
           const ts = new Date().toISOString();
-          await ctx.supabase.from("customers").update({ name_ask_sent_at: ts }).eq("id", ctx.customer.id);
-          (ctx.customer as any).name_ask_sent_at = ts;
+          const patch: Record<string, string> = {};
+          if (!(ctx.customer as any).name_ask_sent_at) patch.name_ask_sent_at = ts;
+          // A1 com protocolo = atendimento aberto automaticamente (UI + cadeados).
+          if (!(ctx.customer as any).welcome_sent_at) patch.welcome_sent_at = ts;
+          if (Object.keys(patch).length > 0) {
+            await ctx.supabase.from("customers").update(patch).eq("id", ctx.customer.id);
+            Object.assign(ctx.customer as any, patch);
+          }
         }
       } catch (_) { /* best-effort */ }
 
@@ -1450,34 +1474,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   /** true se resolveLandingStep avançou após captura neste turno (emite o pouso, não re-avança). */
   let postCaptureLanded = false;
   try {
-    const extracted = extractCaptures(ctx.messageText || "", currentStep.captures || []);
-    if (extracted.electricity_bill_value != null) captureUpdates.electricity_bill_value = extracted.electricity_bill_value;
-    // Fallback contextual: se este passo claramente pergunta valor da conta
-    // (slot/text/title mencionam valor|conta|luz) e o lead respondeu com um número plausível,
-    // captura mesmo sem `captures` configurado e mesmo com texto extra ("200 mas ou menos").
-    if (extracted.electricity_bill_value == null && !ctx.customer.electricity_bill_value) {
-      const stepHaystack = `${currentStep.message_text || ""} ${(currentStep as any).title || ""} ${currentStep.slot_key || ""}`.toLowerCase();
-      const isValueStep = /\bvalor\b|\bconta\b|\bluz\b|electricity|bill/.test(stepHaystack);
-      if (isValueStep) {
-        const permissive = extractValorPermissivo(ctx.messageText || "");
-        if (permissive != null) {
-          captureUpdates.electricity_bill_value = permissive;
-          console.log(`[capture-fallback] valor=${permissive} via permissivo no step ${currentStep.step_key}`);
-        }
-      }
-    }
-    if (extracted.phone_whatsapp && !ctx.customer.phone_whatsapp) captureUpdates.phone_whatsapp = extracted.phone_whatsapp;
-    if (extracted.cpf) captureUpdates.cpf = extracted.cpf;
-    // Nome: se o passo atual é um "pergunta nome" (título/slot menciona nome,
-    // ou tem capture explícita de name habilitada), sobrescreve.
-    // Caso contrário, mantém a guarda anti-sobrescrita.
-    // EXCEÇÃO CRÍTICA: se name_source vier de OCR (ocr_conta/ocr_doc) ou
-    // user_confirmed, NUNCA sobrescreve por captura de texto livre — só os
-    // passos editing_* explícitos podem trocar (no bot-flow.ts).
-    const TRUSTED_LOCK = new Set(["ocr_conta", "ocr_doc", "user_confirmed"]);
-    const nameLocked = TRUSTED_LOCK.has(String((ctx.customer as any).name_source || ""));
-    // Detecta pergunta de nome também pela ÚLTIMA outbound — compensa cascade
-    // que avança o currentStep antes do lead responder a pergunta anterior.
+    // Detecta "pedido de nome" ANTES de capturar valor — evita RG/CPF/telefone
+    // virar electricity_bill_value no A1 (bug Isa: branding "Conta de Luz" no
+    // message_text fazia isValueStep=true no passo a1_ask_name).
     let lastOutboundWasNameQuestion = false;
     try {
       const { data: lastOut } = await ctx.supabase
@@ -1489,7 +1488,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         .limit(1)
         .maybeSingle();
       const txt = String((lastOut as any)?.message_text || "");
-      lastOutboundWasNameQuestion = /qual\s+(?:é\s+)?(?:o\s+)?(?:seu\s+)?nome|como\s+(?:posso\s+)?(?:te\s+)?(?:chamar|chamo)|me\s+diz(?:a)?\s+(?:seu\s+)?nome|informe\s+(?:seu\s+)?(?:primeiro\s+)?nome|agilizar\s+seu\s+atendimento/i.test(txt);
+      lastOutboundWasNameQuestion = /qual\s+(?:é\s+)?(?:o\s+)?(?:seu\s+)?(?:primeiro\s+)?nome|como\s+(?:posso\s+)?(?:te\s+)?(?:chamar|chamo)|me\s+diz(?:a)?\s+(?:o\s+)?(?:seu\s+)?(?:primeiro\s+)?nome|informe\s+(?:seu\s+)?(?:primeiro\s+)?nome|agilizar\s+(?:seu\s+)?atendimento|primeiro\s+nome/i.test(txt);
     } catch { /* best-effort */ }
     const stepIsAskName =
       lastOutboundWasNameQuestion ||
@@ -1498,6 +1497,47 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       String(currentStep.step_type || "") === "capture_name" ||
       (Array.isArray(currentStep.captures) &&
         currentStep.captures.some((c: any) => c?.field === "name" && c?.enabled !== false));
+
+    const extracted = extractCaptures(ctx.messageText || "", currentStep.captures || []);
+    // No pedido de nome: SÓ nome. Número (RG/CPF/tel) NÃO vira conta nem CPF.
+    if (!stepIsAskName && extracted.electricity_bill_value != null) {
+      captureUpdates.electricity_bill_value = extracted.electricity_bill_value;
+    }
+    // Fallback contextual: só no passo que realmente pede valor da conta.
+    // NÃO usar message_text — o A1 tem "Conta de Luz" no branding e disparava
+    // captura falsa (Isa / "03481914644" → R$ 34.819).
+    if (
+      !stepIsAskName &&
+      extracted.electricity_bill_value == null &&
+      !ctx.customer.electricity_bill_value
+    ) {
+      const hasBillCapture = Array.isArray(currentStep.captures) &&
+        currentStep.captures.some((c: any) => c?.field === "electricity_bill_value" && c?.enabled !== false);
+      const stepMeta = `${(currentStep as any).title || ""} ${currentStep.slot_key || ""} ${currentStep.step_key || ""}`.toLowerCase();
+      const isValueStep = hasBillCapture ||
+        /ask_bill|bill_value|valor_conta|electricity_bill/i.test(stepMeta) ||
+        (/\bvalor\b/.test(stepMeta) && /\b(conta|luz|bill)\b/.test(stepMeta));
+      if (isValueStep) {
+        const permissive = extractValorPermissivo(ctx.messageText || "");
+        if (permissive != null) {
+          captureUpdates.electricity_bill_value = permissive;
+          console.log(`[capture-fallback] valor=${permissive} via permissivo no step ${currentStep.step_key}`);
+        }
+      }
+    }
+    if (!stepIsAskName && extracted.phone_whatsapp && !ctx.customer.phone_whatsapp) {
+      captureUpdates.phone_whatsapp = extracted.phone_whatsapp;
+    }
+    if (!stepIsAskName && extracted.cpf) captureUpdates.cpf = extracted.cpf;
+    // Nome: se o passo atual é um "pergunta nome" (título/slot menciona nome,
+    // ou tem capture explícita de name habilitada), sobrescreve.
+    // Caso contrário, mantém a guarda anti-sobrescrita.
+    // EXCEÇÃO CRÍTICA: se name_source vier de OCR (ocr_conta/ocr_doc) ou
+    // user_confirmed, NUNCA sobrescreve por captura de texto livre — só os
+    // passos editing_* explícitos podem trocar (no bot-flow.ts).
+    const TRUSTED_LOCK = new Set(["ocr_conta", "ocr_doc", "user_confirmed"]);
+    const nameLocked = TRUSTED_LOCK.has(String((ctx.customer as any).name_source || ""));
+    // stepIsAskName / lastOutboundWasNameQuestion já calculados acima.
     // Quando a pergunta foi de nome (passo atual OU última outbound), sobrescreve
     // mesmo whatsapp_profile/freeform_multi anteriores — o nome digitado é mais confiável.
     const currentNameSource = String((ctx.customer as any).name_source || "");
@@ -1874,7 +1914,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             ).catch(() => {});
           } catch (_) { /* noop */ }
           return _finalize(stepKey, {
-            reply: "Vou chamar alguém do time pra te ajudar — em instantes te respondem por aqui 🙌",
+            reply: "Pode escolher uma das opções acima, ou me explicar com outras palavras? Continuo te atendendo por aqui 🙌",
             updates: {
               conversation_step: stepKey,
               bot_paused: true,
@@ -1952,8 +1992,38 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }
     }
 
-    // (3) Sem botões e sem recusa → notifica humano + mensagem amigável (nunca silêncio)
+    // (3) Sem botões e sem recusa.
+    // Grupo A / captura (a1 nome, a2 valor…): NUNCA “chama alguém do time” nem
+    // pausa — o lead continua com o mesmo consultor; só re-pede o dado do passo.
+    // Handoff humano fica só fora do funil determinístico (passos sem captura).
     if (!ctx.buttonId) {
+      const stepKeyStr = String(currentStep.step_key || currentStep.slot_key || stepKey || "");
+      const slotKeyStr = String(currentStep.slot_key || "");
+      const variantA = String((ctx.customer as any)?.flow_variant || "").toUpperCase() === "A";
+      const isGrupoAStep =
+        variantA ||
+        /^a\d+_/i.test(stepKeyStr) ||
+        /^a\d+_/i.test(slotKeyStr) ||
+        isCaptureStep;
+      if (isGrupoAStep) {
+        console.log(
+          `[conversational] 🔁 baixa confiança no Grupo A/captura — re-pede passo (sem handoff/pausa) step=${stepKeyStr} variant=${(ctx.customer as any)?.flow_variant || ""}`,
+        );
+        const nudgeAskName = /nome|ask_name|capture_name/i.test(
+          `${stepKeyStr} ${currentStep.step_type || ""} ${slotKeyStr}`,
+        );
+        const reply = nudgeAskName
+          ? "Desculpa, não peguei direito 😅 Me manda só seu *primeiro nome* (ou nome completo), por favor?"
+          : "Não consegui entender essa mensagem 😅 Pode repetir de outro jeito, ou responder o que pedi acima?";
+        return _finalize(stepKey, {
+          reply,
+          updates: {
+            conversation_step: stepKey,
+            custom_step_retries: prevRefusals + 1,
+            ...restoreDetourUpdates,
+          },
+        });
+      }
       try {
         await notifyHandoff(
           consultantId || ctx.customer.consultant_id,
@@ -1962,8 +2032,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           "low_confidence_handoff",
         ).catch(() => {});
       } catch (_) { /* noop */ }
+      // Fora do Grupo A: avisa o MESMO consultor (não troca dono) e pausa pra ele assumir.
       return _finalize(stepKey, {
-        reply: "Deixa eu chamar alguém do time pra te responder direitinho — já já te respondem por aqui 🙌",
+        reply: "Deixa eu te responder com calma — já já continuo por aqui 🙌",
         updates: {
           conversation_step: stepKey,
           bot_paused: true,
@@ -2145,9 +2216,26 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // aqui dispara TDZ "Cannot access 'goToStep' before initialization".)
 
 
+  // Protocolo no A1 (autoridade): gera ANTES de renderizar {{protocolo}}.
+  let protocolo = String((ctx.customer as any).tracking_protocol || "").trim();
+  if (!protocolo) {
+    try {
+      const assigned = await assignProtocolToCustomer(ctx.supabase, ctx.customer.id, {
+        partnerId: (ctx.customer as any).referral_partner_id || null,
+        consultantId: consultantId || ctx.customer.consultant_id || null,
+        consultantName: ctx.nomeRepresentante || null,
+      });
+      protocolo = String(assigned?.protocol || "").trim();
+      if (protocolo) (ctx.customer as any).tracking_protocol = protocolo;
+    } catch (e) {
+      console.warn("[conversational] assignProtocol falhou:", (e as Error).message);
+    }
+  }
+
   const vars = {
     nome: captureUpdates.name || ctx.customer.name, nome_source: (captureUpdates as any).name_source || (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
+    protocolo,
     valor_conta: captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value,
     telefone: captureUpdates.phone_whatsapp || ctx.customer.phone_whatsapp,
     cpf: captureUpdates.cpf || (ctx.customer as any).cpf,
@@ -2279,18 +2367,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }
     } catch (_e) { /* best-effort */ }
 
-    // Marca name_ask_sent_at quando emitimos pedido de nome — libera "Maria" (1 palavra)
-    // no auto-capture do webhook e no extractNome.
+    // Marca name_ask_sent_at + abre atendimento quando emitimos o A1 (pedido de nome).
     try {
       const asksNameNow =
         String(st.step_type || "") === "capture_name" ||
         (Array.isArray(st.captures) &&
           st.captures.some((c: any) => c?.field === "name" && c?.enabled !== false)) ||
         /nome|ask_name/i.test(String(st.slot_key || st.step_key || ""));
-      if (asksNameNow && ctx.customer?.id && !(ctx.customer as any).name_ask_sent_at) {
+      if (asksNameNow && ctx.customer?.id) {
         const ts = new Date().toISOString();
-        await ctx.supabase.from("customers").update({ name_ask_sent_at: ts }).eq("id", ctx.customer.id);
-        (ctx.customer as any).name_ask_sent_at = ts;
+        const patch: Record<string, string> = {};
+        if (!(ctx.customer as any).name_ask_sent_at) patch.name_ask_sent_at = ts;
+        if (!(ctx.customer as any).welcome_sent_at) patch.welcome_sent_at = ts;
+        if (Object.keys(patch).length > 0) {
+          await ctx.supabase.from("customers").update(patch).eq("id", ctx.customer.id);
+          Object.assign(ctx.customer as any, patch);
+        }
       }
     } catch (_) { /* best-effort */ }
 
@@ -2925,6 +3017,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         reply: await getTemplate(ctx.supabase, "aguardando_humano", "avisado", vars),
         updates: { conversation_step: "aguardando_humano", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
       };
+    }
+    // A9 "Quero outro": pede o número novo e NÃO avança (nem só repete o confirm).
+    if (t.goto_special === "ask_other_phone") {
+      const nome = safeFirstNameForAddress(
+        (ctx.customer as any)?.name,
+        (ctx.customer as any)?.name_source,
+      );
+      return _finalize(stepKey, {
+        reply: `${nome ? nome + ", " : ""}me manda o *outro número* com DDD (ex.: 34 99999-0000) que eu atualizo aqui 📱`,
+        updates: {
+          conversation_step: stepKey,
+          phone_contact_confirmed: false,
+          ...captureUpdates,
+          ...restoreDetourUpdates,
+        },
+      });
     }
     if (t.goto_special === "repeat" || (!t.goto_step_id && !t.goto_special)) return repeatCurrent();
     let nextStep = dbSteps.find((s) => s.id === t.goto_step_id);

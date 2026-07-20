@@ -172,6 +172,23 @@ export async function runAttendanceBatch(opts: RunAttendanceBatchOptions): Promi
       continue;
     }
 
+    // Minha página = só meus leads. Nunca abre atendimento de outro consultor no lote.
+    try {
+      const { data: ownerRow } = await supabase
+        .from("customers")
+        .select("consultant_id")
+        .eq("id", lead.id)
+        .maybeSingle();
+      const ownerId = String((ownerRow as { consultant_id?: string } | null)?.consultant_id || "");
+      if (ownerId && ownerId !== consultantId) {
+        results[i] = { id: lead.id, status: "failed", detail: "Lead de outro consultor" };
+        emit();
+        continue;
+      }
+    } catch {
+      // fail-open só se a checagem quebrar — a edge ainda bloqueia forbidden
+    }
+
     if (needsChannel && !instanceName) {
       results[i] = { id: lead.id, status: "failed", detail: "WhatsApp desconectado" };
       emit();

@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { HELP_SYSTEM_KNOWLEDGE, formatHelpArticles } from "../_shared/help-system-knowledge.ts";
+import { HELP_SYSTEM_KNOWLEDGE, resolveHelpKnowledge } from "../_shared/help-system-knowledge.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,7 +37,7 @@ async function loadKnowledge(supabaseUrl: string, supabaseKey: string): Promise<
       .select("category, title, body, video_url")
       .eq("is_active", true)
       .order("order_index", { ascending: true });
-    helpKnowledge += formatHelpArticles(articles || []);
+    helpKnowledge += resolveHelpKnowledge(articles || []);
 
     const { data: extraData } = await sb.from("settings").select("value").eq("key", "ai_knowledge_extra").maybeSingle();
     if (extraData?.value) {

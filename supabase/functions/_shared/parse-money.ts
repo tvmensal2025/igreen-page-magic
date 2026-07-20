@@ -59,11 +59,25 @@ export function parseMoneyBR(input: string | number | null | undefined): number 
 }
 
 /**
+ * CPF / RG / telefone (8+ dígitos sem R$/vírgula/ponto monário) não é valor de conta.
+ * Bug Isa 2026-07-20: "03481914644" no pedido de nome → R$ 34.819.
+ */
+export function looksLikeIdNotMoney(text: string | null | undefined): boolean {
+  const raw = String(text ?? "").trim();
+  if (!raw) return false;
+  if (/r\$|\breais?\b|\bconta\b|\bvalor\b/i.test(raw)) return false;
+  if (/[.,]/.test(raw)) return false; // "850,00" / "1.688" são dinheiro
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 8;
+}
+
+/**
  * Extrai o primeiro valor monetário de uma mensagem de chat.
  * Retorna null se não achar número válido.
  */
 export function extractMoneyFromText(text: string | null | undefined): number | null {
   if (!text) return null;
+  if (looksLikeIdNotMoney(text)) return null;
   const m = String(text).match(MONEY_IN_TEXT_RE);
   if (!m) return null;
   return parseMoneyBR(m[1]);

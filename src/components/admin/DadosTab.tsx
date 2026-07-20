@@ -342,11 +342,11 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               id="display_name"
               value={form.display_name}
               onChange={(e) => onFormChange({ display_name: e.target.value })}
-              placeholder={form.name || "Ex.: Abel Olympio"}
+              placeholder={form.name || "Ex.: Maria Silva"}
               className="bg-secondary border-border"
             />
             <p className="text-xs text-muted-foreground">
-              Aparece nas mensagens automáticas (ex.: "Já avisei o Abel Olympio"). Se deixar em branco, usamos o nome completo acima.
+              Aparece nas mensagens automáticas (ex.: &quot;Já avisei a Maria Silva&quot;). Use o seu próprio nome — nunca o de outro consultor. Se deixar em branco, usamos o nome completo acima.
             </p>
           </div>
           <div className="space-y-2">

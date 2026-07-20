@@ -552,11 +552,14 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     if (newCustomerId) setCustomerId(newCustomerId);
   }, []);
 
-  // Auto-scroll robusto: usa sentinel + ResizeObserver pra acompanhar mídias
-  // que carregam depois (áudio/imagem/vídeo). Só rola se o usuário já estiver
-  // perto do fim — assim quem rolou pra cima lendo histórico não é puxado.
+  // Auto-scroll estável: pin no fim só quando o usuário já está perto do
+  // bottom. Evita o loop sobe/desce que vinha de ResizeObserver no scroller
+  // + virtualizer.measureElement + schedule agressivo (rAF×2 + timeouts).
   const bottomRef = useRef<HTMLDivElement>(null);
+  const virtualContentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
+  const lastPinnedMsgIdRef = useRef<string | null>(null);
+  const scrollSettleTimersRef = useRef<number[]>([]);
 
   const rowVirtualizer = useVirtualizer({
     count: messages.length,
@@ -566,38 +569,47 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     getItemKey: (index) => messages[index]?.id ?? index,
   });
 
-  const forceScrollToBottom = useCallback(() => {
+  const pinToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (messages.length > 0) {
-      try {
-        rowVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
-      } catch { /* ignore */ }
-    }
     el.scrollTop = el.scrollHeight;
-  }, [messages.length, rowVirtualizer]);
+  }, []);
 
   const scheduleScrollToBottom = useCallback((force = false) => {
     if (!force && !stickToBottomRef.current) return;
-    const run = () => {
-      const el = scrollRef.current;
-      if (!el) return;
-      el.scrollTop = el.scrollHeight;
-    };
-    run();
+    for (const t of scrollSettleTimersRef.current) window.clearTimeout(t);
+    scrollSettleTimersRef.current = [];
+    pinToBottom();
     requestAnimationFrame(() => {
-      run();
-      requestAnimationFrame(run);
+      pinToBottom();
+      requestAnimationFrame(pinToBottom);
     });
-    window.setTimeout(run, 80);
-    window.setTimeout(run, 240);
-  }, []);
+    scrollSettleTimersRef.current = [
+      window.setTimeout(pinToBottom, 80),
+      window.setTimeout(pinToBottom, 240),
+    ];
+  }, [pinToBottom]);
 
+  // Só ao trocar de conversa — não re-pin em todo poll/remeasure.
   useEffect(() => {
     stickToBottomRef.current = true;
-    forceScrollToBottom();
+    lastPinnedMsgIdRef.current = null;
     scheduleScrollToBottom(true);
-  }, [chat?.remoteJid, forceScrollToBottom, scheduleScrollToBottom]);
+    return () => {
+      for (const t of scrollSettleTimersRef.current) window.clearTimeout(t);
+      scrollSettleTimersRef.current = [];
+    };
+  }, [chat?.remoteJid, scheduleScrollToBottom]);
+
+  // Mensagem nova no fim → um pin curto (sem settle multiplo empilhado).
+  const lastMsgId = messages.length > 0 ? messages[messages.length - 1]?.id ?? null : null;
+  useEffect(() => {
+    if (!lastMsgId || lastPinnedMsgIdRef.current === lastMsgId) return;
+    lastPinnedMsgIdRef.current = lastMsgId;
+    if (!stickToBottomRef.current) return;
+    pinToBottom();
+    requestAnimationFrame(pinToBottom);
+  }, [lastMsgId, pinToBottom]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -630,22 +642,38 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     return () => el.removeEventListener("scroll", onScroll);
   }, [hasMoreOlder, isLoadingOlder, loadOlderMessages, isWhapi]);
 
+  // Mídia/PDF que carregam aumentam a altura do container virtualizado.
+  // Observa SÓ esse container (não o scroller nem cada bolha) e só pin se a
+  // altura cresceu — corta o feedback loop medida → scroll → remonta → medida.
   useEffect(() => {
-    const scroller = scrollRef.current;
-    const sentinel = bottomRef.current;
-    if (!scroller || !sentinel) return;
+    const content = virtualContentRef.current;
+    if (!content) return;
 
-    const scrollToBottom = () => scheduleScrollToBottom();
+    let raf = 0;
+    let lastHeight = content.getBoundingClientRect().height;
 
-    scrollToBottom();
+    const onResize = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const next = content.getBoundingClientRect().height;
+        if (next <= lastHeight + 1) {
+          lastHeight = Math.max(lastHeight, next);
+          return;
+        }
+        lastHeight = next;
+        if (!stickToBottomRef.current) return;
+        pinToBottom();
+      });
+    };
 
-    const ro = new ResizeObserver(scrollToBottom);
-    ro.observe(scroller);
-    // Observa também todas as bolhas (mídia carregando muda altura)
-    const children = scroller.querySelectorAll<HTMLElement>("[data-msg-bubble]");
-    children.forEach((c) => ro.observe(c));
-    return () => ro.disconnect();
-  }, [messages, scheduleScrollToBottom]);
+    const ro = new ResizeObserver(onResize);
+    ro.observe(content);
+    return () => {
+      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [chat?.remoteJid, pinToBottom]);
 
   // Unified helper to resolve JID for media/audio/document sends.
   // Prioridade: telefone real do cliente (mesma fonte do bot) → fallback p/ JID
@@ -1163,6 +1191,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </p>
         )}
         <div
+          ref={virtualContentRef}
           style={{
             height: rowVirtualizer.getTotalSize(),
             width: "100%",
@@ -1374,6 +1403,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
               customerId={customerId!}
               customerName={chat?.name}
               phoneNumber={phoneNumber}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
               inline
             />
           </div>
@@ -1390,6 +1421,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           customerId={customerId}
           customerName={chat?.name}
           phoneNumber={phoneNumber}
+          instanceName={instanceName}
+          isWhapi={isWhapi}
         />
       )}
 

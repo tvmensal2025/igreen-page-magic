@@ -7,6 +7,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker } from "../_shared/portal-worker.ts";
 import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts";
 import { notifyPartnerStep } from "../_shared/notify-consultant.ts";
+import { preflightPortalDocuments } from "../_shared/storage-download.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,7 +101,9 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const customerId = String(body?.customerId || body?.customer_id || "").trim();
-    const sendNotice = body?.sendNotice !== false; // default true
+    // sendNotice: default true só com bot ATIVO. Com bot_paused, só envia se
+    // a UI passou explicitamente sendNotice=true (após diálogo de confirmação).
+    const sendNoticeRaw = body?.sendNotice;
     if (!customerId) return jres({ error: "customerId obrigatório" }, 400);
 
     // Identifica quem apertou (best-effort)
@@ -121,11 +124,17 @@ Deno.serve(async (req) => {
 
     const { data: customer, error: fetchErr } = await supabase
       .from("customers")
-      .select("id, consultant_id, phone_whatsapp, name, status, conversation_step, name_mismatch_flag, name_mismatch_acknowledged_at, document_back_url, electricity_bill_photo_url, igreen_link, customer_origin")
+      .select("id, consultant_id, phone_whatsapp, name, status, conversation_step, bot_paused, name_mismatch_flag, name_mismatch_acknowledged_at, document_front_url, document_back_url, electricity_bill_photo_url, electricity_boleto_photo_url, bill_base64, document_front_base64, document_back_base64, document_type, igreen_link, customer_origin")
       .eq("id", customerId)
       .maybeSingle();
 
     if (fetchErr || !customer) return jres({ error: "Cliente não encontrado" }, 404);
+
+    // Guarda server-side: bot pausado → aviso WhatsApp só com sendNotice=true explícito.
+    // Evita que retry/cron/UI com capture_mode=auto mande "enviando cadastro" sozinho.
+    const sendNotice = customer.bot_paused
+      ? sendNoticeRaw === true
+      : sendNoticeRaw !== false;
 
     // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados
     // (`igreen_sync` = carteira XLSX/worker; `igreen_extension` = extensão
@@ -145,7 +154,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (TERMINAL.has(String(customer.conversation_step || "")) || TERMINAL.has(String(customer.status || ""))) {
+    // Já em OTP/assinatura/concluído → não re-dispara.
+    // Falha recuperável (worker_offline / missing_documents) pode reentrar
+    // mesmo com conversation_step=portal_submitting (senão o botão Retry
+    // e o cron ficam bloqueados por "already_dispatched").
+    const step = String(customer.conversation_step || "");
+    const status = String(customer.status || "");
+    const ADVANCED = new Set([
+      "awaiting_otp", "aguardando_otp", "validating_otp", "validando_otp",
+      "registered_igreen", "cadastro_concluido", "approved", "active",
+    ]);
+    if (ADVANCED.has(step) || ADVANCED.has(status)) {
+      return jres({
+        ok: true,
+        already: true,
+        mode: "already_dispatched",
+        status: customer.status,
+        step: customer.conversation_step,
+        message: "Lead já está em processamento no portal.",
+      });
+    }
+    const canRetryFailure =
+      status === "worker_offline" || status === "missing_documents";
+    if ((TERMINAL.has(step) || TERMINAL.has(status)) && !canRetryFailure) {
       return jres({
         ok: true,
         already: true,
@@ -179,6 +210,28 @@ Deno.serve(async (req) => {
       }, 400);
     }
 
+    // Pré-voo: arquivos precisam ser BAIXÁVEIS (bucket privado). Sem isso o
+    // worker devolve 422 e o cliente já teria recebido "estamos enviando…".
+    const docsOk = await preflightPortalDocuments(supabase, {
+      ...(customer as any),
+      ...(full as any),
+    });
+    if (!docsOk.ok) {
+      console.warn(`[finalize-capture] customer=${customerId} docs ilegíveis: ${docsOk.missing.join(", ")}`);
+      await supabase.from("customers").update({
+        status: "awaiting_manual_submit",
+        portal2_status: "blocked_missing_documents",
+        error_message: `Documentos ilegíveis/ausentes: ${docsOk.missing.join(", ")}`,
+        last_portal_dispatch_error: `docs_unreadable:${docsOk.missing.join(",")}`,
+      }).eq("id", customerId);
+      return jres({
+        ok: false,
+        error: "docs_unreadable",
+        missing: docsOk.missing,
+        message: "Os anexos não puderam ser lidos. Reanexe conta e documento antes de finalizar.",
+      }, 400);
+    }
+
     // Regenera igreen_link do consultor dono (mesmo guard do bot-flow)
     const updates: Record<string, any> = {
       status: "portal_submitting",
@@ -209,22 +262,24 @@ Deno.serve(async (req) => {
       return jres({ error: "Falha ao marcar lead", detail: upErr.message }, 500);
     }
 
-    // Avisa o cliente no WhatsApp (não bloqueia) — só se o consultor pediu
-    if (sendNotice) await sendWhatsAppNotice(supabase, customer);
-
     // 📣 Avisa o parceiro: cadastro completo (validação OK, indo pro portal)
     if (customer.consultant_id) {
       notifyPartnerStep(customer.consultant_id, customerId, "cadastro_complete")
         .catch((e) => console.warn("[finalize-capture] notify cadastro_complete:", e?.message));
     }
 
-    // Dispara o worker
+    // Dispara o worker PRIMEIRO — só avisa o cliente se o despacho aceitou.
+    // Nunca prometer OTP/código com worker offline ou docs quebrados.
     const dispatch = await dispatchPortalWorker(supabase, customerId);
 
-    // 📣 Avisa o parceiro: enviado ao portal (só quando dispatch OK)
-    if (dispatch.ok && customer.consultant_id) {
-      notifyPartnerStep(customer.consultant_id, customerId, "portal_sent")
-        .catch((e) => console.warn("[finalize-capture] notify portal_sent:", e?.message));
+    if (dispatch.ok) {
+      if (sendNotice) await sendWhatsAppNotice(supabase, customer);
+      if (customer.consultant_id) {
+        notifyPartnerStep(customer.consultant_id, customerId, "portal_sent")
+          .catch((e) => console.warn("[finalize-capture] notify portal_sent:", e?.message));
+      }
+    } else {
+      console.warn(`[finalize-capture] customer=${customerId} dispatch falhou — sem aviso WhatsApp (${dispatch.error || dispatch.mode})`);
     }
 
     return jres({
@@ -232,6 +287,7 @@ Deno.serve(async (req) => {
       mode: dispatch.mode,
       status: dispatch.ok ? "portal_submitting" : "worker_offline",
       error: dispatch.error,
+      noticeSent: !!(dispatch.ok && sendNotice),
     });
   } catch (e: any) {
     console.error("[finalize-capture] fatal", e?.message || e);

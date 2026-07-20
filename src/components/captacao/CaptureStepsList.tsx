@@ -22,6 +22,7 @@ interface StepRow {
   id: string;
   title: string | null;
   step_key: string | null;
+  slot_key: string | null;
   position: number;
   message_text: string | null;
   media_order: unknown;
@@ -92,7 +93,7 @@ export function CaptureStepsList({ consultantId, customerId, sentSteps, onSent, 
 
       const { data: stepsData } = await supabase
         .from("bot_flow_steps")
-        .select("id, title, step_key, position, message_text, media_order, flow_id")
+        .select("id, title, step_key, slot_key, position, message_text, media_order, flow_id")
         .in("flow_id", flowIds)
         .eq("is_active", true)
         .order("position", { ascending: true });

@@ -17,6 +17,7 @@ import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { resolveConsultantMessage } from "../_shared/consultant-template.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
 
 interface Body { customerId: string; consultantId: string; restart?: boolean }
 
@@ -82,13 +83,25 @@ Deno.serve(async (req) => {
       .eq("id", customerId)
       .maybeSingle();
     if (error || !customer) return json({ ok: false, error: "customer_not_found" }, 404);
+    // Sempre o DONO do lead. Quem clica não pode abrir como outra pessoa.
+    const ownerConsultantId = String(customer.consultant_id || consultantId || "").trim();
+    if (!ownerConsultantId) return json({ ok: false, error: "missing_consultant" }, 400);
     if (customer.consultant_id && customer.consultant_id !== consultantId) {
-      return json({ ok: false, error: "forbidden" }, 403);
+      return json({
+        ok: false,
+        error: "forbidden",
+        message: "Este lead pertence a outro consultor — não é possível abrir o atendimento no nome de outra pessoa.",
+      }, 403);
+    }
+    // Se o lead ainda não tinha dono, amarra ao consultor da sessão.
+    if (!customer.consultant_id && consultantId) {
+      await supabase.from("customers").update({ consultant_id: consultantId }).eq("id", customerId);
+      (customer as { consultant_id?: string }).consultant_id = consultantId;
     }
 
     const suppression = await assertCanContact(supabase, {
       customerId,
-      consultantId,
+      consultantId: ownerConsultantId,
       phone: (customer as { phone_whatsapp?: string }).phone_whatsapp,
       channel: "whatsapp",
     });
@@ -133,13 +146,16 @@ Deno.serve(async (req) => {
     const { data: consultant } = await supabase
       .from("consultants")
       .select("name, display_name")
-      .eq("id", consultantId)
+      .eq("id", ownerConsultantId)
       .maybeSingle();
-    const consultantName = (consultant as { display_name?: string; name?: string } | null)?.display_name
-      || (consultant as { name?: string } | null)?.name || "seu consultor";
+    const consultantName = resolvePublicConsultantLabel(
+      (consultant as { name?: string } | null)?.name,
+      (consultant as { display_name?: string } | null)?.display_name,
+      "seu consultor",
+    );
 
-    // Resolve template do consultor (fallback = default do admin ou vazio → header padrão).
-    const tpl = await resolveConsultantMessage(supabase, consultantId, "start_attendance", {
+    // Resolve template do DONO (nunca de outro consultor logado).
+    const tpl = await resolveConsultantMessage(supabase, ownerConsultantId, "start_attendance", {
       saudacao: greetingByHour(),
       consultor: consultantName,
       nome: (customer as { name?: string }).name || "",
@@ -160,7 +176,7 @@ Deno.serve(async (req) => {
 
     let result = await sendWelcomeHeader(supabase, {
       customerId,
-      consultantId,
+      consultantId: ownerConsultantId,
       env: channelEnv,
       superadminConsultantId: channelEnv.superadminConsultantId,
       customTemplate,
@@ -171,7 +187,7 @@ Deno.serve(async (req) => {
       await new Promise((r) => setTimeout(r, 800));
       result = await sendWelcomeHeader(supabase, {
         customerId,
-        consultantId,
+        consultantId: ownerConsultantId,
         env: channelEnv,
         superadminConsultantId: channelEnv.superadminConsultantId,
         customTemplate,

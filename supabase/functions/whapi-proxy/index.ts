@@ -490,12 +490,17 @@ function mapMessage(m: any, chatId: string) {
     message.conversation = preview || "▢ Resposta";
   } else if (t === "carousel") {
     message.conversation = preview || "Carrossel";
+  } else if (t === "action" || t === "call" || t === "system" || t === "poll" || t === "reaction") {
+    // Tipos com preview humano (apagada, chamada, etc.) — sem inventar "sem conteúdo".
+    if (preview) message.conversation = preview;
   } else if (preview) {
     message.conversation = preview;
   } else if (t && t !== "unknown") {
     const fallback = formatWhapiInteractive(m).text;
-    message.conversation = fallback || `📎 ${t}`;
+    if (fallback) message.conversation = fallback;
+    // Sem fallback: deixa message vazio → front filtra a bolha.
   }
+  // type unknown / vazio sem preview → message {} → omitido no chat.
 
   const tsRaw = Number(m.timestamp || 0);
   const messageTimestamp = tsRaw > 10_000_000_000 ? Math.floor(tsRaw / 1000) : tsRaw;
@@ -511,6 +516,19 @@ function mapMessage(m: any, chatId: string) {
     status: m.status === "read" ? 4 : m.status === "delivered" ? 3 : m.status === "sent" ? 2 : 1,
     message,
   };
+}
+
+/** True se o mapeamento Evolution tem algo que a bolha consegue mostrar. */
+function hasMappedContent(mapped: { message?: Record<string, unknown> }): boolean {
+  const msg = mapped.message;
+  if (!msg || typeof msg !== "object") return false;
+  const keys = Object.keys(msg).filter((k) => k !== "messageContextInfo");
+  if (keys.length === 0) return false;
+  if (typeof msg.conversation === "string" && !msg.conversation.trim()) {
+    // conversation vazia sozinha = sem conteúdo
+    return keys.some((k) => k !== "conversation");
+  }
+  return true;
 }
 
 function normalizeChatId(raw: string): string {
@@ -610,7 +628,9 @@ Deno.serve(async (req) => {
           }
           return json(r.status, { error: r.data });
         }
-        const list = (r.data?.messages || []).map((m: any) => mapMessage(m, chatId));
+        const list = (r.data?.messages || [])
+          .map((m: any) => mapMessage(m, chatId))
+          .filter(hasMappedContent);
         return json(200, list);
       }
 

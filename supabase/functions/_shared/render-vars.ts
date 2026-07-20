@@ -17,6 +17,7 @@ import {
   safeFullNameForAddress,
   scrubEmptyNameGreeting,
 } from "./customer-display-name.ts";
+import { resolvePublicConsultantLabel } from "./consultant-public-label.ts";
 
 export type RenderVars = {
   name?: string | null;
@@ -124,20 +125,19 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   // "Sou a *assistente virtual* do  e vou..." (espaço duplo + asterisco órfão
   // limpo abaixo). Bug confirmado em produção (cliente JOSINETE em 23/05).
   //
-  // Prioridade: `representante_display` (consultants.display_name — nome
-  // humano cadastrado explicitamente) → `representante` (legacy name) →
-  // genérico. Se o legacy `name` for slug-like (ex: "abelolympio"), cai
-  // pro genérico para não vazar o username.
+  // Prioridade segura: se display_name e name parecem pessoas DIFERENTES
+  // (ex.: Rafael com display Abel), usa o name do dono — nunca vaza outro.
   const displayName = String(vars.representante_display || "").trim();
-  let rep = displayName || String(vars.representante || "").trim();
-  if (!displayName) {
-    // Só roda a heurística slug-like se NÃO veio display_name explícito.
+  const legacyName = String(vars.representante || "").trim();
+  let rep = resolvePublicConsultantLabel(legacyName, displayName, "");
+  if (!rep) {
+    // slug-like legado sem display → genérico
     const isSlugLike =
-      rep.length > 0 &&
-      !/\s/.test(rep) &&
-      rep === rep.toLowerCase() &&
-      (/\d/.test(rep) || rep.length >= 9);
-    if (isSlugLike) rep = "consultor";
+      legacyName.length > 0 &&
+      !/\s/.test(legacyName) &&
+      legacyName === legacyName.toLowerCase() &&
+      (/\d/.test(legacyName) || legacyName.length >= 9);
+    rep = isSlugLike ? "consultor" : legacyName;
   }
   if (!rep) rep = "iGreen Energy";
   // IA do consultor — cada um cadastra em Dados (`assistant_name`).

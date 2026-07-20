@@ -9,6 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useTour } from "@/features/onboarding/useTour";
+import { useGuideCoach } from "@/features/onboarding/GuideCoachProvider";
 import type { TourArticle } from "@/features/onboarding/types";
 import { HELP_CATEGORIES, mergeHelpArticles, searchHelpCatalog, type HelpArticle } from "@/features/help/helpCatalog";
 
@@ -22,6 +23,7 @@ export default function AjudaPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const { start, steps } = useTour();
+  const { startGuide } = useGuideCoach();
 
   useEffect(() => {
     const load = async () => {
@@ -45,6 +47,10 @@ export default function AjudaPage() {
 
   const openDestination = (href: string) => href.startsWith("http") ? window.open(href, "_blank", "noopener,noreferrer") : navigate(href);
   const startRelatedTour = (article: HelpArticle) => article.related_tour_step_id ? void start({ stepId: article.related_tour_step_id }) : void start();
+  const leadAndExplain = (article: HelpArticle) => {
+    setSelected(null);
+    startGuide(article);
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,9 +118,21 @@ export default function AjudaPage() {
             <DialogHeader className="pr-8"><div className="mb-2"><Badge variant="secondary">{selected.category}</Badge></div><DialogTitle className="text-xl sm:text-2xl">{selected.title}</DialogTitle><DialogDescription>{selected.summary}</DialogDescription></DialogHeader>
             {selected.video_url && <div className="aspect-video overflow-hidden rounded-xl border bg-muted"><iframe src={selected.video_url} title={`Vídeo: ${selected.title}`} className="h-full w-full" allowFullScreen /></div>}
             <ol className="space-y-4 py-2">{selected.steps.map((step, itemIndex) => <li key={`${selected.id}-${itemIndex}`} className="flex gap-3"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">{itemIndex + 1}</span><p className="pt-0.5 text-sm leading-relaxed sm:text-base">{step}</p></li>)}</ol>
-            <DialogFooter className="gap-2 border-t pt-4 sm:justify-between">
-              {selected.related_tour_step_id && <Button variant="outline" onClick={() => { setSelected(null); startRelatedTour(selected); }}><Play className="mr-2 h-4 w-4" />Mostrar na tela</Button>}
-              <Button className="sm:ml-auto" onClick={() => openDestination(selected.href)}>Abrir página<ExternalLink className="ml-2 h-4 w-4" /></Button>
+            <DialogFooter className="gap-2 border-t pt-4 flex-col sm:flex-row sm:justify-between">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="default" onClick={() => leadAndExplain(selected)}>
+                  <Play className="mr-2 h-4 w-4" />Me leve e explique
+                </Button>
+                {selected.related_tour_step_id && (
+                  <Button variant="outline" onClick={() => { setSelected(null); startRelatedTour(selected); }}>
+                    <Play className="mr-2 h-4 w-4" />Tour completo
+                  </Button>
+                )}
+              </div>
+              <Button variant="outline" onClick={() => openDestination(selected.href)}>
+                Abrir página
+                <ExternalLink className="ml-2 h-4 w-4" />
+              </Button>
             </DialogFooter>
           </>}
         </DialogContent>

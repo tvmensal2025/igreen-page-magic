@@ -19,6 +19,9 @@ import {
   Hand,
   Flag,
   Megaphone,
+  History,
+  CheckCheck,
+  Check,
   type LucideProps,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -35,6 +38,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/cadenceCalendarMap";
@@ -44,6 +48,9 @@ import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog"
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
 import { formatBrazilPhone, normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
+
+import { isAddressableNameSource, isUsableCustomerName, formatPersonName } from "@/lib/customerDisplayName";
+import { formatDurationSec, velipOutcomeLabel } from "@/components/admin/voz/voiceOutcomeLabels";
 
 type LucideIcon = ComponentType<LucideProps>;
 
@@ -142,6 +149,7 @@ type CycleStep = {
 type CycleLead = {
   id: string;
   name: string | null;
+  nameSource: string | null;
   phone: string | null;
   status: string | null;
   stage: string | null;
@@ -154,6 +162,742 @@ type SlicePick = {
   step: CycleStep;
   people: CycleLead[];
 };
+
+type SliceHistoryItem = {
+  id: string;
+  customerId: string;
+  name: string | null;
+  phone: string | null;
+  stage: string;
+  channel: string;
+  status: string;
+  at: string;
+  messageBody: string | null;
+  /** exact = log; sms_log = voice_sms_log; reconstructed = template atual */
+  bodySource: "exact" | "sms_log" | "conversation" | "reconstructed" | null;
+  withName: boolean | null;
+  /** WhatsApp: sent/delivered/read/played · SMS: DELIVRD… */
+  delivery: string | null;
+  deliveryLabel: string;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  /** Ligação: segundos escutados (Velip). */
+  listenSec: number | null;
+  /** Ligação: rótulo do resultado (Atendida / Não atendeu…). */
+  callOutcome: string | null;
+};
+
+/** Fatia da pizza → estágios do motor que geram histórico. */
+function stagesForSlice(group: "A" | "B" | "C", stepId: string): string[] {
+  if (group === "A") {
+    const map: Record<string, string[]> = {
+      ask_name: ["NEW"],
+      flow: ["AI_QUALIFYING"],
+      wait: ["GREETED"],
+      nudge: ["A_NUDGE"],
+      sms: ["A_SMS"],
+      call1: ["A_CALL"],
+      retry: ["A_CALL_RETRY"],
+    };
+    return map[stepId] || [];
+  }
+  if (group === "B") {
+    const day = CADENCE_CALENDAR.find((d) => d.id === stepId && d.group === "B");
+    return (day?.steps || []).map((s) => s.stage);
+  }
+  return C_SLICE_STAGES[stepId] || [];
+}
+
+function formatHistoryWhen(iso: string): string {
+  return new Date(iso).toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function labelDelivery(channel: string, delivery: string | null, status: string): string {
+  const d = String(delivery || "").toUpperCase();
+  const s = String(status || "").toLowerCase();
+  if (channel === "sms") {
+    if (d === "DELIVRD" || s === "delivered") return "SMS entregue";
+    if (d === "UNDELIV" || d === "EXPIRED" || s === "failed") return "SMS não entregue";
+    if (s === "sent") return "SMS enviado";
+    if (s === "queued") return "Na fila / passou";
+    return delivery || status || "—";
+  }
+  if (channel === "whatsapp") {
+    const low = String(delivery || status || "").toLowerCase();
+    if (low === "played") return "Escutou o áudio";
+    if (low === "read") return "Visualizou";
+    if (low === "delivered") return "Entregue (não abriu)";
+    if (low === "sent") return "Enviado";
+    if (low === "failed") return "Falhou";
+    if (s === "sent") return "Enviado";
+    if (s === "queued") return "Na fila / passou";
+    return delivery || status || "—";
+  }
+  if (channel === "voice") {
+    if (s === "sent") return "Ligação disparada";
+    if (s === "failed") return "Ligação falhou";
+    if (s === "queued") return "Na fila / passou";
+  }
+  if (s === "sent") return "Disparado";
+  if (s === "queued") return "Passou / avançou";
+  if (s === "failed") return "Falhou";
+  return status || "—";
+}
+
+/** Heurística p/ logs antigos sem flag with_name. */
+function inferWithName(body: string | null): boolean | null {
+  if (!body) return null;
+  const t = body.trim();
+  if (/^(Oi|Olá|Ola)\s*,/i.test(t)) return false;
+  if (/^(Oi|Olá|Ola)\s+[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/u.test(t)) return true;
+  if (/\*[A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-záéíóúâêôãõç]{1,20}\*/u.test(t.slice(0, 80))) return true;
+  return null;
+}
+
+function phoneDigits(raw: string | null | undefined): string {
+  return String(raw || "").replace(/\D/g, "");
+}
+
+/** Canal do estágio no motor (espelho enxuto do STAGE_MAP). */
+const STAGE_CHANNEL: Record<string, "whatsapp" | "sms" | "voice" | "system" | "meta_audience"> = {
+  NEW: "system",
+  GREETED: "system",
+  AI_QUALIFYING: "system",
+  A_NUDGE: "whatsapp",
+  A_SMS: "sms",
+  A_CALL: "voice",
+  A_CALL_RETRY: "voice",
+  COLD_1: "whatsapp",
+  SMS_1: "sms",
+  CALL_1: "voice",
+  COLD_2: "whatsapp",
+  SMS_TEMA_2: "sms",
+  CALL_2: "voice",
+  SMS_2: "sms",
+  COLD_3: "whatsapp",
+  SMS_TEMA_7: "sms",
+  CALL_3: "voice",
+  COLD_4: "whatsapp",
+  RECALL_60D: "whatsapp",
+  RECALL_60D_SMS: "sms",
+  RECALL_60D_CALL: "voice",
+  RECALL_90D: "whatsapp",
+  RECALL_90D_SMS: "sms",
+  RECALL_90D_CALL: "voice",
+  RECALL_5M: "whatsapp",
+  RECALL_5M_SMS: "sms",
+  RECALL_5M_CALL: "voice",
+  RECALL_8M: "whatsapp",
+  RECALL_8M_SMS: "sms",
+  RECALL_8M_CALL: "voice",
+  RECALL_12M: "whatsapp",
+  RECALL_12M_SMS: "sms",
+  RECALL_12M_CALL: "voice",
+  RECALL_YEARLY: "whatsapp",
+  RECALL_YEARLY_SMS: "sms",
+  RECALL_YEARLY_CALL: "voice",
+};
+
+const STAGE_NEXT: Record<string, string> = {
+  NEW: "GREETED",
+  GREETED: "A_NUDGE",
+  AI_QUALIFYING: "A_NUDGE",
+  A_NUDGE: "A_SMS",
+  A_SMS: "A_CALL",
+  A_CALL: "A_CALL_RETRY",
+  A_CALL_RETRY: "COLD_1",
+};
+
+function isOutboundChannel(ch: string | undefined): ch is "whatsapp" | "sms" | "voice" {
+  return ch === "whatsapp" || ch === "sms" || ch === "voice";
+}
+
+/**
+ * Qual estágio pré-visualizar para quem está na fatia agora.
+ * Se o estágio atual já dispara WA/SMS/voz → esse. Senão, o próximo toque real.
+ */
+function previewStageForLead(
+  stage: string | null | undefined,
+  sliceStepId: string,
+  group: "A" | "B" | "C",
+): string | null {
+  const st = String(stage || "").trim();
+  if (st && isOutboundChannel(STAGE_CHANNEL[st])) return st;
+  if (st && STAGE_NEXT[st] && isOutboundChannel(STAGE_CHANNEL[STAGE_NEXT[st]])) {
+    return STAGE_NEXT[st];
+  }
+  const sliceStages = stagesForSlice(group, sliceStepId);
+  for (const s of sliceStages) {
+    if (isOutboundChannel(STAGE_CHANNEL[s])) return s;
+  }
+  for (const s of sliceStages) {
+    const n = STAGE_NEXT[s];
+    if (n && isOutboundChannel(STAGE_CHANNEL[n])) return n;
+  }
+  return sliceStages[0] || null;
+}
+
+type StepPreviewTemplate = {
+  stage: string;
+  channel: "whatsapp" | "sms" | "voice" | "system" | "meta_audience";
+  template: string | null;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  consultor: string;
+  consultorPhone: string;
+};
+
+function buildPersonPreview(
+  tpl: StepPreviewTemplate | undefined,
+  person: { name: string | null; nameSource: string | null },
+): {
+  body: string | null;
+  withName: boolean;
+  mediaUrl: string | null;
+  mediaType: string | null;
+  channel: string;
+  stage: string;
+} | null {
+  if (!tpl) return null;
+  const first = safeFirstNameUi(person.name, person.nameSource);
+  const body = tpl.template
+    ? renderHistoryTemplate(tpl.template, {
+        nome: first,
+        consultor: tpl.consultor,
+        consultor_phone: tpl.consultorPhone,
+      })
+    : null;
+  return {
+    body,
+    withName: !!first,
+    mediaUrl: tpl.mediaUrl,
+    mediaType: tpl.mediaType,
+    channel: tpl.channel,
+    stage: tpl.stage,
+  };
+}
+
+async function loadStepPreviewTemplates(
+  consultantId: string | undefined,
+  stages: string[],
+): Promise<Record<string, StepPreviewTemplate>> {
+  const out: Record<string, StepPreviewTemplate> = {};
+  if (!stages.length) return out;
+
+  const { data: cfgRows } = await (supabase as any)
+    .from("cadence_stage_config")
+    .select("stage, message_text, media_url, media_type, voice_audio_clip_id, consultant_id")
+    .in("stage", stages);
+
+  const cfgByStage = new Map<string, StageCfgHit>();
+  for (const cfg of (cfgRows as StageCfgHit[]) || []) {
+    const st = String(cfg.stage);
+    const existing = cfgByStage.get(st);
+    if (!existing) {
+      cfgByStage.set(st, cfg);
+      continue;
+    }
+    if (consultantId && cfg.consultant_id === consultantId) cfgByStage.set(st, cfg);
+    else if (!existing.consultant_id && cfg.consultant_id == null) cfgByStage.set(st, cfg);
+  }
+
+  let consultor = "";
+  let consultorPhone = "";
+  if (consultantId) {
+    const { data: cons } = await (supabase as any)
+      .from("consultants")
+      .select("name, display_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const display = String(cons?.display_name || cons?.name || "").trim();
+    const isSlug =
+      display.length > 0 &&
+      !/\s/.test(display) &&
+      display === display.toLowerCase() &&
+      (/\d/.test(display) || display.length >= 9);
+    consultor = isSlug ? "" : (display.split(/\s+/)[0] || display);
+    const { data: waInst } = await (supabase as any)
+      .from("whatsapp_instances")
+      .select("connected_phone")
+      .eq("consultant_id", consultantId)
+      .order("updated_at", { ascending: false })
+      .limit(5);
+    for (const w of (waInst as { connected_phone: string | null }[]) || []) {
+      const dig = phoneDigits(w.connected_phone);
+      if (dig.length >= 10) {
+        consultorPhone = dig.startsWith("55") ? dig : `55${dig}`;
+        break;
+      }
+    }
+  }
+
+  const clipIds = [
+    ...new Set(
+      [...cfgByStage.values()]
+        .map((c) => c.voice_audio_clip_id)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const clipUrlById = new Map<string, string>();
+  if (clipIds.length) {
+    const { data: clips } = await (supabase as any)
+      .from("voice_audio_clips")
+      .select("id, audio_url")
+      .in("id", clipIds);
+    for (const cl of (clips as { id: string; audio_url: string | null }[]) || []) {
+      if (cl.audio_url) clipUrlById.set(cl.id, cl.audio_url);
+    }
+  }
+
+  for (const stage of stages) {
+    const cfg = cfgByStage.get(stage);
+    const ch = STAGE_CHANNEL[stage] || "system";
+    const mediaUrl =
+      cfg?.media_url ||
+      (cfg?.voice_audio_clip_id ? clipUrlById.get(cfg.voice_audio_clip_id) || null : null);
+    out[stage] = {
+      stage,
+      channel: ch,
+      template: cfg?.message_text ?? null,
+      mediaUrl,
+      mediaType: cfg?.media_type || (mediaUrl ? "audio" : null),
+      consultor,
+      consultorPhone,
+    };
+  }
+  return out;
+}
+
+function safeFirstNameUi(name: string | null | undefined, nameSource: string | null | undefined): string {
+  if (!isAddressableNameSource(nameSource)) return "";
+  if (!isUsableCustomerName(name)) return "";
+  const first = String(name || "").trim().split(/\s+/)[0] || "";
+  return first ? formatPersonName(first).split(/\s+/)[0] || "" : "";
+}
+
+/** Espelho enxuto do scrub do motor — remove saudação com {{nome}} vazio. */
+function scrubEmptyNameUi(template: string): string {
+  let out = String(template || "");
+  const greet = "(?:Oi|Ol[aá]|Hey|Eae|E a[ií]|Bom dia|Boa tarde|Boa noite)";
+  out = out.replace(
+    new RegExp(`^\\*?\\s*${greet}\\s*,?\\s*\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\\s*\\*?\\s*`, "gimsu"),
+    "",
+  );
+  out = out.replace(new RegExp(`\\b${greet}\\s*,?\\s*\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\\s*`, "gi"), "");
+  out = out.replace(/\*?\s*\{\{\s*nome\s*\}\}\s*\*?/gi, " ");
+  out = out.replace(/\{\{\s*nome\s*\}\}/gi, "");
+  return out;
+}
+
+function renderHistoryTemplate(
+  tpl: string,
+  vars: { nome: string; consultor: string; consultor_phone: string },
+): string {
+  let out = tpl;
+  if (!vars.nome.trim()) out = scrubEmptyNameUi(out);
+  out = out.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => {
+    if (k === "nome") return vars.nome;
+    if (k === "consultor" || k === "representante") return vars.consultor;
+    if (k === "consultor_phone") return vars.consultor_phone;
+    if (k === "link_wa") return vars.consultor_phone ? `https://wa.me/${vars.consultor_phone}` : "";
+    return "";
+  });
+  if (!vars.nome.trim()) out = scrubEmptyNameUi(out);
+  return out
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\*Oi,\s*\*!\s*/i, "")
+    .replace(/^\*,\s*/gm, "")
+    .trim();
+}
+
+type StageCfgHit = {
+  stage: string;
+  message_text: string | null;
+  media_url: string | null;
+  media_type: string | null;
+  voice_audio_clip_id: string | null;
+  consultant_id: string | null;
+};
+
+async function loadSliceHistory(
+  consultantId: string | undefined,
+  group: "A" | "B" | "C",
+  stepId: string,
+): Promise<SliceHistoryItem[]> {
+  const stages = stagesForSlice(group, stepId);
+  if (!stages.length) return [];
+
+  let q = (supabase as any)
+    .from("cadence_action_log")
+    .select("id, customer_id, stage, channel, status, detail, created_at")
+    .in("stage", stages)
+    .order("created_at", { ascending: false })
+    .limit(40);
+  if (consultantId) q = q.eq("consultant_id", consultantId);
+  const { data: logs, error } = await q;
+  if (error) {
+    console.warn("[ReheatCyclePizza] cadence_action_log", error.message);
+    return [];
+  }
+  const rows = (logs as {
+    id: string;
+    customer_id: string;
+    stage: string;
+    channel: string;
+    status: string;
+    detail: Record<string, unknown> | null;
+    created_at: string;
+  }[]) || [];
+  if (!rows.length) return [];
+
+  const custIds = [...new Set(rows.map((r) => r.customer_id))];
+  const { data: custRows } = await (supabase as any)
+    .from("customers")
+    .select("id, name, name_source, phone_whatsapp")
+    .in("id", custIds);
+  const custMap = new Map<
+    string,
+    { name: string | null; nameSource: string | null; phone: string | null }
+  >();
+  for (const c of (custRows as {
+    id: string;
+    name: string | null;
+    name_source: string | null;
+    phone_whatsapp: string | null;
+  }[]) || []) {
+    custMap.set(c.id, { name: c.name, nameSource: c.name_source, phone: c.phone_whatsapp });
+  }
+
+  // Templates atuais (consultor > global) p/ reconstruir corpo de envios antigos.
+  const { data: cfgRows } = await (supabase as any)
+    .from("cadence_stage_config")
+    .select("stage, message_text, media_url, media_type, voice_audio_clip_id, consultant_id")
+    .in("stage", stages);
+  const cfgByStage = new Map<string, StageCfgHit>();
+  for (const cfg of (cfgRows as StageCfgHit[]) || []) {
+    const st = String(cfg.stage);
+    const existing = cfgByStage.get(st);
+    if (!existing) {
+      cfgByStage.set(st, cfg);
+      continue;
+    }
+    // Preferência: override do consultor sobre o global.
+    if (consultantId && cfg.consultant_id === consultantId) cfgByStage.set(st, cfg);
+    else if (!existing.consultant_id && cfg.consultant_id == null) cfgByStage.set(st, cfg);
+  }
+
+  let consultorFirst = "";
+  let consultorPhone = "";
+  if (consultantId) {
+    const { data: cons } = await (supabase as any)
+      .from("consultants")
+      .select("name, display_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const display = String(cons?.display_name || cons?.name || "").trim();
+    const isSlug =
+      display.length > 0 &&
+      !/\s/.test(display) &&
+      display === display.toLowerCase() &&
+      (/\d/.test(display) || display.length >= 9);
+    consultorFirst = isSlug ? "" : (display.split(/\s+/)[0] || display);
+    const { data: waInst } = await (supabase as any)
+      .from("whatsapp_instances")
+      .select("connected_phone")
+      .eq("consultant_id", consultantId)
+      .order("updated_at", { ascending: false })
+      .limit(5);
+    for (const w of (waInst as { connected_phone: string | null }[]) || []) {
+      const dig = phoneDigits(w.connected_phone);
+      if (dig.length >= 10) {
+        consultorPhone = dig.startsWith("55") ? dig : `55${dig}`;
+        break;
+      }
+    }
+  }
+
+  const clipIds = [
+    ...new Set(
+      [...cfgByStage.values()]
+        .map((c) => c.voice_audio_clip_id)
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const clipUrlById = new Map<string, string>();
+  if (clipIds.length) {
+    const { data: clips } = await (supabase as any)
+      .from("voice_audio_clips")
+      .select("id, audio_url")
+      .in("id", clipIds);
+    for (const cl of (clips as { id: string; audio_url: string | null }[]) || []) {
+      if (cl.audio_url) clipUrlById.set(cl.id, cl.audio_url);
+    }
+  }
+
+  // Delivery WA: conversations outbound próximas a cada envio.
+  const waCustomerIds = [...new Set(rows.filter((r) => r.channel === "whatsapp").map((r) => r.customer_id))];
+  type ConvHit = {
+    delivery: string | null;
+    body: string | null;
+    at: string;
+    step: string | null;
+    mediaType: string | null;
+  };
+  const convsByCustomer = new Map<string, ConvHit[]>();
+  if (waCustomerIds.length) {
+    const since = new Date(Date.now() - 21 * 86400_000).toISOString();
+    const { data: convs } = await (supabase as any)
+      .from("conversations")
+      .select("customer_id, message_text, delivery_status, created_at, conversation_step, message_direction, message_type")
+      .in("customer_id", waCustomerIds)
+      .eq("message_direction", "outbound")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(400);
+    for (const c of (convs as {
+      customer_id: string;
+      message_text: string | null;
+      delivery_status: string | null;
+      created_at: string;
+      conversation_step: string | null;
+      message_type: string | null;
+    }[]) || []) {
+      const list = convsByCustomer.get(c.customer_id) || [];
+      list.push({
+        delivery: c.delivery_status,
+        body: c.message_text,
+        at: c.created_at,
+        step: c.conversation_step,
+        mediaType: c.message_type,
+      });
+      convsByCustomer.set(c.customer_id, list);
+    }
+  }
+
+  const findWaNear = (customerId: string, stage: string, atIso: string): ConvHit | null => {
+    const list = convsByCustomer.get(customerId) || [];
+    const t = new Date(atIso).getTime();
+    const cadenceStep = `cadence:${stage}`;
+    let best: ConvHit | null = null;
+    let bestDiff = Infinity;
+    for (const c of list) {
+      const diff = Math.abs(new Date(c.at).getTime() - t);
+      const stepBonus = c.step === cadenceStep ? -60_000 : 0;
+      const score = diff + stepBonus;
+      if (diff < 8 * 60_000 && score < bestDiff) {
+        bestDiff = score;
+        best = c;
+      }
+    }
+    return best;
+  };
+
+  // SMS: corpo/entrega em voice_sms_log.
+  const smsPhones = [
+    ...new Set(
+      rows
+        .filter((r) => r.channel === "sms")
+        .map((r) => phoneDigits(custMap.get(r.customer_id)?.phone))
+        .filter((p) => p.length >= 10),
+    ),
+  ];
+  const smsLogs: {
+    phone: string;
+    message: string;
+    status: string;
+    delivery_status: string | null;
+    created_at: string;
+  }[] = [];
+  if (smsPhones.length && consultantId) {
+    const { data: smsRows } = await (supabase as any)
+      .from("voice_sms_log")
+      .select("phone, message, status, delivery_status, created_at")
+      .eq("consultant_id", consultantId)
+      .order("created_at", { ascending: false })
+      .limit(80);
+    for (const s of (smsRows as typeof smsLogs) || []) {
+      const dig = phoneDigits(s.phone);
+      if (smsPhones.some((p) => dig.endsWith(p.slice(-11)) || p.endsWith(dig.slice(-11)))) {
+        smsLogs.push(s);
+      }
+    }
+  }
+
+  const findSmsNear = (phone: string | null, atIso: string) => {
+    const dig = phoneDigits(phone);
+    if (!dig) return null;
+    const t = new Date(atIso).getTime();
+    let best: (typeof smsLogs)[0] | null = null;
+    let bestDiff = Infinity;
+    for (const s of smsLogs) {
+      const sd = phoneDigits(s.phone);
+      if (!(sd.endsWith(dig.slice(-11)) || dig.endsWith(sd.slice(-11)))) continue;
+      const diff = Math.abs(new Date(s.created_at).getTime() - t);
+      if (diff < bestDiff && diff < 10 * 60_000) {
+        bestDiff = diff;
+        best = s;
+      }
+    }
+    return best;
+  };
+
+  // Ligação: voice_call_logs por telefone + janela.
+  const callPhones = [
+    ...new Set(
+      rows
+        .filter((r) => r.channel === "voice")
+        .map((r) => phoneDigits(custMap.get(r.customer_id)?.phone))
+        .filter((p) => p.length >= 10),
+    ),
+  ];
+  const callLogs: {
+    to_phone: string | null;
+    velip_status: string | null;
+    velip_time_sec: number | null;
+    duration_sec: number | null;
+    status: string | null;
+    created_at: string;
+  }[] = [];
+  if (callPhones.length && consultantId) {
+    const { data: callRows } = await (supabase as any)
+      .from("voice_call_logs")
+      .select("to_phone, velip_status, velip_time_sec, duration_sec, status, created_at")
+      .eq("consultant_id", consultantId)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    for (const c of (callRows as typeof callLogs) || []) {
+      const dig = phoneDigits(c.to_phone);
+      if (callPhones.some((p) => dig.endsWith(p.slice(-11)) || p.endsWith(dig.slice(-11)))) {
+        callLogs.push(c);
+      }
+    }
+  }
+
+  const findCallNear = (phone: string | null, atIso: string) => {
+    const dig = phoneDigits(phone);
+    if (!dig) return null;
+    const t = new Date(atIso).getTime();
+    let best: (typeof callLogs)[0] | null = null;
+    let bestDiff = Infinity;
+    for (const c of callLogs) {
+      const sd = phoneDigits(c.to_phone);
+      if (!(sd.endsWith(dig.slice(-11)) || dig.endsWith(sd.slice(-11)))) continue;
+      const diff = Math.abs(new Date(c.created_at).getTime() - t);
+      if (diff < bestDiff && diff < 30 * 60_000) {
+        bestDiff = diff;
+        best = c;
+      }
+    }
+    return best;
+  };
+
+  return rows.map((r) => {
+    const cust = custMap.get(r.customer_id);
+    const detail = r.detail || {};
+    const cfg = cfgByStage.get(r.stage);
+    const firstName = safeFirstNameUi(cust?.name, cust?.nameSource);
+    let messageBody =
+      typeof detail.message_body === "string" ? detail.message_body : null;
+    let bodySource: SliceHistoryItem["bodySource"] = messageBody ? "exact" : null;
+    let withName =
+      typeof detail.with_name === "boolean" ? detail.with_name : null;
+    let delivery: string | null =
+      typeof detail.delivery_status === "string" ? detail.delivery_status : null;
+    let mediaUrl =
+      typeof detail.media_url === "string"
+        ? detail.media_url
+        : cfg?.media_url ||
+          (cfg?.voice_audio_clip_id ? clipUrlById.get(cfg.voice_audio_clip_id) || null : null);
+    let mediaType =
+      typeof detail.media_type === "string"
+        ? detail.media_type
+        : cfg?.media_type || (mediaUrl ? "audio" : null);
+    let listenSec: number | null = null;
+    let callOutcome: string | null = null;
+
+    if (r.channel === "whatsapp") {
+      const near = findWaNear(r.customer_id, r.stage, r.created_at);
+      if (near) {
+        delivery = near.delivery || delivery;
+        if (!messageBody && near.body && near.body !== "[áudio]") {
+          messageBody = near.body;
+          bodySource = "conversation";
+        }
+        if (near.mediaType === "audio") mediaType = "audio";
+      }
+    } else if (r.channel === "sms") {
+      const sms = findSmsNear(cust?.phone ?? null, r.created_at);
+      if (sms) {
+        if (!messageBody) {
+          messageBody = sms.message;
+          bodySource = "sms_log";
+        }
+        delivery = sms.delivery_status || sms.status;
+      }
+    } else if (r.channel === "voice") {
+      const call = findCallNear(cust?.phone ?? null, r.created_at);
+      if (call) {
+        listenSec = call.velip_time_sec ?? call.duration_sec ?? null;
+        callOutcome = velipOutcomeLabel(call.velip_status) || call.status;
+        delivery = call.velip_status || call.status;
+      }
+      if (!mediaUrl && cfg?.voice_audio_clip_id) {
+        mediaUrl = clipUrlById.get(cfg.voice_audio_clip_id) || null;
+        if (mediaUrl) mediaType = "audio";
+      }
+    }
+
+    // Fallback: reconstrói o texto que o motor enviaria com as regras de nome.
+    if (!messageBody && cfg?.message_text && (r.channel === "whatsapp" || r.channel === "sms")) {
+      messageBody = renderHistoryTemplate(cfg.message_text, {
+        nome: firstName,
+        consultor: consultorFirst,
+        consultor_phone: consultorPhone,
+      });
+      bodySource = "reconstructed";
+      if (withName == null) withName = !!firstName;
+    }
+
+    if (withName == null) withName = firstName ? true : inferWithName(messageBody);
+    if (withName == null && cust?.nameSource === "whatsapp_profile") withName = false;
+
+    let deliveryLabel = labelDelivery(r.channel, delivery, r.status);
+    if (r.channel === "voice" && callOutcome) {
+      const dur = listenSec != null ? formatDurationSec(listenSec) : null;
+      deliveryLabel = dur && dur !== "—" ? `${callOutcome} · ${dur}` : callOutcome;
+    } else if (r.channel === "whatsapp" && String(delivery || "").toLowerCase() === "played") {
+      deliveryLabel = "Escutou o áudio";
+    }
+
+    return {
+      id: r.id,
+      customerId: r.customer_id,
+      name: cust?.name ?? null,
+      phone: cust?.phone ?? null,
+      stage: r.stage,
+      channel: r.channel,
+      status: r.status,
+      at: r.created_at,
+      messageBody,
+      bodySource,
+      withName,
+      delivery,
+      deliveryLabel,
+      mediaUrl,
+      mediaType,
+      listenSec,
+      callOutcome,
+    };
+  });
+}
 
 /** Countdown exato até `next_action_at` (atualiza com `nowMs`). */
 function formatExactCountdown(iso: string | null | undefined, nowMs: number): {
@@ -508,7 +1252,9 @@ function PizzaRing({
           {peopleCount === 1 ? "1 pessoa" : `${peopleCount} pessoas`} no ciclo
         </p>
         {onSliceClick && (
-          <p className="text-[10px] text-muted-foreground mt-0.5">Passe o mouse ou clique na fatia</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">
+            Clique na fatia · quem está agora + histórico de envios
+          </p>
         )}
       </div>
 
@@ -528,7 +1274,7 @@ function PizzaRing({
           const large = a1 - a0 > 180 ? 1 : 0;
           const has = (perStep[s.id] || 0) > 0;
           const current = activeIndex >= 0 && i === activeIndex;
-          const clickable = !!onSliceClick && has;
+          const clickable = !!onSliceClick;
           const count = perStep[s.id] || 0;
           const tip = s.hint
             ? `${s.label} · ${count} ${count === 1 ? "pessoa" : "pessoas"} — ${s.hint}`
@@ -579,8 +1325,8 @@ function PizzaRing({
           return (
             <g
               key={`l-${s.id}`}
-              className={cn(has && onSliceClick && "cursor-pointer")}
-              onClick={() => has && onSliceClick?.(s)}
+              className={cn(onSliceClick && "cursor-pointer")}
+              onClick={() => onSliceClick?.(s)}
             >
               <title>{tip}</title>
               {Icon && (
@@ -675,14 +1421,16 @@ function PizzaRing({
               <button
                 type="button"
                 key={`b-${s.id}`}
-                disabled={nStep <= 0 || !onSliceClick}
+                disabled={!onSliceClick}
                 onClick={() => onSliceClick?.(s)}
                 title={s.label}
                 className={cn(
                   "text-[10px] tracking-wide tabular-nums transition-colors",
                   nStep > 0
                     ? "text-foreground/90 hover:text-primary cursor-pointer"
-                    : "text-muted-foreground/50 cursor-default",
+                    : onSliceClick
+                      ? "text-muted-foreground/70 hover:text-primary cursor-pointer"
+                      : "text-muted-foreground/50 cursor-default",
                 )}
               >
                 <span className="font-medium">{s.short}</span>
@@ -694,14 +1442,13 @@ function PizzaRing({
             <button
               type="button"
               key={`b-${s.id}`}
-              disabled={nStep <= 0 || !onSliceClick}
+              disabled={!onSliceClick}
               onClick={() => onSliceClick?.(s)}
               title={s.hint || s.label}
               className={cn(
                 "flex items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                nStep > 0
-                  ? "hover:bg-primary/10 cursor-pointer"
-                  : "opacity-55 cursor-default",
+                onSliceClick ? "hover:bg-primary/10 cursor-pointer" : "cursor-default",
+                nStep <= 0 && "opacity-55",
               )}
             >
               {Icon ? (
@@ -785,6 +1532,11 @@ export function ReheatCyclePizza({
   const [slicePick, setSlicePick] = useState<SlicePick | null>(null);
   /** Relógio vivo no sheet — countdown exato até a próxima fase. */
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [sliceHistory, setSliceHistory] = useState<SliceHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [sheetTab, setSheetTab] = useState<"now" | "history">("now");
+  const [stepPreviews, setStepPreviews] = useState<Record<string, StepPreviewTemplate>>({});
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     if (!slicePick) return;
@@ -792,6 +1544,42 @@ export function ReheatCyclePizza({
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [slicePick]);
+
+  useEffect(() => {
+    if (!slicePick) {
+      setSliceHistory([]);
+      setStepPreviews({});
+      setSheetTab("now");
+      return;
+    }
+    let cancelled = false;
+    setHistoryLoading(true);
+    setPreviewLoading(true);
+    const preferHistory = (slicePick.people?.length || 0) === 0;
+    setSheetTab(preferHistory ? "history" : "now");
+
+    const previewStages = new Set<string>();
+    for (const s of stagesForSlice(slicePick.group, slicePick.step.id)) previewStages.add(s);
+    for (const p of slicePick.people) {
+      const ps = previewStageForLead(p.stage, slicePick.step.id, slicePick.group);
+      if (ps) previewStages.add(ps);
+      if (p.stage && STAGE_NEXT[p.stage]) previewStages.add(STAGE_NEXT[p.stage]);
+    }
+
+    void loadSliceHistory(consultantId, slicePick.group, slicePick.step.id).then((items) => {
+      if (cancelled) return;
+      setSliceHistory(items);
+      setHistoryLoading(false);
+    });
+    void loadStepPreviewTemplates(consultantId, [...previewStages]).then((map) => {
+      if (cancelled) return;
+      setStepPreviews(map);
+      setPreviewLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slicePick, consultantId]);
   const [countNovo, setCountNovo] = useState(0);
   const [countFrio, setCountFrio] = useState(0);
   const [countLongo, setCountLongo] = useState(0);
@@ -881,11 +1669,12 @@ export function ReheatCyclePizza({
     if (allIds.length > 0) {
       const { data: custRows } = await (supabase as any)
         .from("customers")
-        .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
+        .select("id, name, name_source, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
         .in("id", allIds.slice(0, 5000));
       for (const c of (custRows as {
         id: string;
         name: string | null;
+        name_source: string | null;
         phone_whatsapp: string | null;
         customer_origin: string | null;
         status: string | null;
@@ -905,6 +1694,7 @@ export function ReheatCyclePizza({
           custById.set(c.id, {
             id: c.id,
             name: c.name,
+            nameSource: c.name_source,
             phone: c.phone_whatsapp,
             status: c.status,
             stage: cad?.stage ?? null,
@@ -1288,35 +2078,11 @@ export function ReheatCyclePizza({
                 <span className="block mb-1.5 text-muted-foreground">{slicePick.step.hint}</span>
               ) : null}
               {slicePick?.people.length === 1
-                ? "1 pessoa nesta etapa"
-                : `${slicePick?.people.length ?? 0} pessoas nesta etapa`}
-              {" · "}ordenadas pela próxima ação · clique em Conversar pra abrir o chat
-              {slicePick && (() => {
-                const overdue = slicePick.people.filter(
-                  (p) => p.nextActionAt && new Date(p.nextActionAt).getTime() <= nowMs,
-                ).length;
-                const soon = slicePick.people.filter((p) => {
-                  if (!p.nextActionAt) return false;
-                  const t = new Date(p.nextActionAt).getTime();
-                  return t > nowMs && t - nowMs < 3_600_000;
-                }).length;
-                if (!overdue && !soon) return null;
-                return (
-                  <span className="block mt-1 text-[11px]">
-                    {overdue > 0 ? (
-                      <span className="text-amber-700 dark:text-amber-400 font-medium">
-                        {overdue} atrasado{overdue > 1 ? "s" : ""}
-                      </span>
-                    ) : null}
-                    {overdue > 0 && soon > 0 ? " · " : null}
-                    {soon > 0 ? (
-                      <span className="text-sky-700 dark:text-sky-400 font-medium">
-                        {soon} na próxima 1h
-                      </span>
-                    ) : null}
-                  </span>
-                );
-              })()}
+                ? "1 pessoa nesta etapa agora"
+                : `${slicePick?.people.length ?? 0} pessoas nesta etapa agora`}
+              {sliceHistory.length > 0
+                ? ` · ${sliceHistory.length} no histórico recente`
+                : ""}
             </SheetDescription>
           </SheetHeader>
 
@@ -1358,92 +2124,325 @@ export function ReheatCyclePizza({
             );
           })()}
 
-          <div className="mt-4 flex-1 overflow-y-auto space-y-2 pr-1">
-            {(slicePick?.people || []).length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">Ninguém nesta fatia agora</p>
-            ) : (
-              (slicePick?.people || []).map((p) => {
-                const phoneCheck = p.phone ? validateBrazilPhone(p.phone) : { valid: false };
-                const canChat = !!onOpenChat && phoneCheck.valid;
-                const countdown = formatExactCountdown(p.nextActionAt, nowMs);
-                const nextLabel = labelNextCadenceAction(p.stage);
-                const stageLabel = p.stage ? labelCadenceStage(p.stage, "short") : null;
-                const phoneLabel = p.phone ? formatBrazilPhone(p.phone) || p.phone : "Sem WhatsApp";
-                const whenExact = p.nextActionAt
-                  ? new Date(p.nextActionAt).toLocaleString("pt-BR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : null;
-                return (
-                  <div
-                    key={p.id}
-                    className={cn(
-                      "flex items-center gap-2 rounded-lg border px-3 py-2.5",
-                      countdown.tone === "overdue"
-                        ? "border-amber-500/50 bg-amber-500/5"
-                        : countdown.tone === "soon"
-                          ? "border-sky-500/40 bg-sky-500/5"
-                          : "border-border/60 bg-card/50",
-                    )}
+          <Tabs
+            value={sheetTab}
+            onValueChange={(v) => setSheetTab(v as "now" | "history")}
+            className="mt-3 flex-1 flex flex-col min-h-0"
+          >
+            <TabsList className="grid w-full grid-cols-2 h-9">
+              <TabsTrigger value="now" className="text-xs gap-1">
+                Agora
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  {slicePick?.people.length ?? 0}
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="history" className="text-xs gap-1">
+                <History className="w-3 h-3" />
+                Histórico
+                <Badge variant="secondary" className="h-4 px-1 text-[10px]">
+                  {historyLoading ? "…" : sliceHistory.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="now" className="mt-3 flex-1 overflow-y-auto space-y-2 pr-1 data-[state=inactive]:hidden">
+              {(slicePick?.people || []).length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Ninguém nesta fatia agora.
+                  <button
+                    type="button"
+                    className="block mx-auto mt-2 text-xs text-primary underline-offset-2 hover:underline"
+                    onClick={() => setSheetTab("history")}
                   >
-                    <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <p className="text-sm font-medium truncate sensitive-name">
-                          {p.name || "Sem nome"}
-                        </p>
-                        {stageLabel ? (
-                          <Badge
-                            variant="secondary"
-                            className="h-5 shrink-0 px-1.5 text-[10px] font-normal"
-                            title={p.stage || undefined}
-                          >
-                            {stageLabel}
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="text-[11px] text-muted-foreground truncate">{phoneLabel}</p>
-                      <p
-                        className={cn(
-                          "text-[11px] font-medium truncate flex items-center gap-1",
-                          countdown.tone === "overdue" && "text-amber-700 dark:text-amber-400",
-                          countdown.tone === "soon" && "text-sky-700 dark:text-sky-400",
-                          countdown.tone === "later" && "text-foreground/80",
-                          countdown.tone === "none" && "text-muted-foreground font-normal",
-                        )}
-                        title={whenExact ? `Agenda: ${whenExact}` : undefined}
-                      >
-                        <Clock3 className="w-3 h-3 shrink-0 opacity-70" />
-                        <span className="truncate">
-                          {countdown.text}
-                          {nextLabel ? ` · próximo: ${nextLabel}` : ""}
-                          {whenExact && countdown.tone !== "none" ? ` · ${whenExact}` : ""}
-                        </span>
-                      </p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 gap-1.5 shrink-0"
-                      disabled={!canChat}
-                      title={canChat ? "Abrir conversa interna" : "Sem telefone válido"}
-                      onClick={() => {
-                        if (!canChat || !p.phone) return;
-                        onOpenChat?.(normalizeBrazilPhone(p.phone));
-                        setSlicePick(null);
-                      }}
+                    Ver quem já passou
+                  </button>
+                </p>
+              ) : (
+                (slicePick?.people || []).map((p) => {
+                  const phoneCheck = p.phone ? validateBrazilPhone(p.phone) : { valid: false };
+                  const canChat = !!onOpenChat && phoneCheck.valid;
+                  const countdown = formatExactCountdown(p.nextActionAt, nowMs);
+                  const nextLabel = labelNextCadenceAction(p.stage);
+                  const stageLabel = p.stage ? labelCadenceStage(p.stage, "short") : null;
+                  const phoneLabel = p.phone ? formatBrazilPhone(p.phone) || p.phone : "Sem WhatsApp";
+                  const whenExact = p.nextActionAt
+                    ? new Date(p.nextActionAt).toLocaleString("pt-BR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : null;
+                  const previewStage = slicePick
+                    ? previewStageForLead(p.stage, slicePick.step.id, slicePick.group)
+                    : null;
+                  const preview = buildPersonPreview(
+                    previewStage ? stepPreviews[previewStage] : undefined,
+                    { name: p.name, nameSource: p.nameSource },
+                  );
+                  const previewIsCurrent =
+                    !!p.stage && !!previewStage && p.stage === previewStage;
+                  const channelLabel =
+                    preview?.channel === "sms"
+                      ? "SMS"
+                      : preview?.channel === "voice"
+                        ? "Ligação"
+                        : preview?.channel === "whatsapp"
+                          ? "WhatsApp"
+                          : "Toque";
+                  return (
+                    <div
+                      key={p.id}
+                      className={cn(
+                        "rounded-lg border px-3 py-2.5 space-y-2",
+                        countdown.tone === "overdue"
+                          ? "border-amber-500/50 bg-amber-500/5"
+                          : countdown.tone === "soon"
+                            ? "border-sky-500/40 bg-sky-500/5"
+                            : "border-border/60 bg-card/50",
+                      )}
                     >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      Conversar
-                    </Button>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                      <div className="flex items-center gap-2">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className="text-sm font-medium truncate sensitive-name">
+                              {p.name || "Sem nome"}
+                            </p>
+                            {stageLabel ? (
+                              <Badge
+                                variant="secondary"
+                                className="h-5 shrink-0 px-1.5 text-[10px] font-normal"
+                                title={p.stage || undefined}
+                              >
+                                {stageLabel}
+                              </Badge>
+                            ) : null}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate">{phoneLabel}</p>
+                          <p
+                            className={cn(
+                              "text-[11px] font-medium truncate flex items-center gap-1",
+                              countdown.tone === "overdue" && "text-amber-700 dark:text-amber-400",
+                              countdown.tone === "soon" && "text-sky-700 dark:text-sky-400",
+                              countdown.tone === "later" && "text-foreground/80",
+                              countdown.tone === "none" && "text-muted-foreground font-normal",
+                            )}
+                            title={whenExact ? `Agenda: ${whenExact}` : undefined}
+                          >
+                            <Clock3 className="w-3 h-3 shrink-0 opacity-70" />
+                            <span className="truncate">
+                              {countdown.text}
+                              {nextLabel ? ` · próximo: ${nextLabel}` : ""}
+                              {whenExact && countdown.tone !== "none" ? ` · ${whenExact}` : ""}
+                            </span>
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 shrink-0"
+                          disabled={!canChat}
+                          title={canChat ? "Abrir conversa interna" : "Sem telefone válido"}
+                          onClick={() => {
+                            if (!canChat || !p.phone) return;
+                            onOpenChat?.(normalizeBrazilPhone(p.phone));
+                            setSlicePick(null);
+                          }}
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          Conversar
+                        </Button>
+                      </div>
+
+                      {previewLoading ? (
+                        <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Carregando prévia…
+                        </p>
+                      ) : preview && (preview.body || preview.mediaUrl) ? (
+                        <div className="rounded-md bg-background/80 border border-border/50 px-2.5 py-2 space-y-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {previewIsCurrent
+                                ? `Prévia · ${channelLabel} que será enviado`
+                                : `Prévia · próximo ${channelLabel}`}
+                            </p>
+                            {preview.withName ? (
+                              <Badge className="h-4 shrink-0 px-1 text-[9px] bg-emerald-600/15 text-emerald-800 dark:text-emerald-300 border-0">
+                                Com nome
+                              </Badge>
+                            ) : (
+                              <Badge className="h-4 shrink-0 px-1 text-[9px] bg-amber-600/15 text-amber-800 dark:text-amber-300 border-0">
+                                Sem nome
+                              </Badge>
+                            )}
+                          </div>
+                          {preview.mediaUrl &&
+                          (preview.mediaType === "audio" || preview.channel === "voice") ? (
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-muted-foreground">Áudio da ligação</p>
+                              <audio
+                                controls
+                                preload="metadata"
+                                src={preview.mediaUrl}
+                                className="w-full h-8"
+                              />
+                            </div>
+                          ) : null}
+                          {preview.body ? (
+                            <p className="text-[12px] leading-snug whitespace-pre-wrap break-words text-foreground">
+                              {preview.body}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : previewStage ? (
+                        <p className="text-[11px] text-muted-foreground italic">
+                          Sem template configurado para {labelCadenceStage(previewStage, "short")}.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })
+              )}
+            </TabsContent>
+
+            <TabsContent value="history" className="mt-3 flex-1 overflow-y-auto space-y-2 pr-1 data-[state=inactive]:hidden">
+              {historyLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Carregando histórico…
+                </div>
+              ) : sliceHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">
+                  Ainda sem registro nesta fatia.
+                  <span className="block text-[11px] mt-1">
+                    Envios futuros gravam horário, visualização e o texto exato (com/sem nome).
+                  </span>
+                </p>
+              ) : (
+                sliceHistory.map((h) => {
+                  const phoneCheck = h.phone ? validateBrazilPhone(h.phone) : { valid: false };
+                  const canChat = !!onOpenChat && phoneCheck.valid;
+                  const phoneLabel = h.phone ? formatBrazilPhone(h.phone) || h.phone : "Sem WhatsApp";
+                  const saw =
+                    h.channel === "whatsapp" &&
+                    (String(h.delivery || "").toLowerCase() === "read" ||
+                      String(h.delivery || "").toLowerCase() === "played");
+                  return (
+                    <div
+                      key={h.id}
+                      className="rounded-lg border border-border/60 bg-card/50 px-3 py-2.5 space-y-1.5"
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 flex-1 space-y-0.5">
+                          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                            <p className="text-sm font-medium truncate sensitive-name">
+                              {h.name || "Sem nome"}
+                            </p>
+                            <Badge variant="outline" className="h-5 shrink-0 px-1.5 text-[10px]">
+                              {labelCadenceStage(h.stage, "short")}
+                            </Badge>
+                            {h.withName === true && (
+                              <Badge className="h-5 shrink-0 px-1.5 text-[10px] bg-emerald-600/15 text-emerald-800 dark:text-emerald-300 border-0">
+                                Com nome
+                              </Badge>
+                            )}
+                            {h.withName === false && (
+                              <Badge className="h-5 shrink-0 px-1.5 text-[10px] bg-amber-600/15 text-amber-800 dark:text-amber-300 border-0">
+                                Sem nome
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-muted-foreground truncate">{phoneLabel}</p>
+                          <p className="text-[11px] flex items-center gap-1 text-foreground/80">
+                            <Clock3 className="w-3 h-3 shrink-0 opacity-70" />
+                            {formatHistoryWhen(h.at)}
+                            <span className="text-muted-foreground">·</span>
+                            {saw ? (
+                              <span className="inline-flex items-center gap-0.5 text-sky-700 dark:text-sky-400 font-medium">
+                                <CheckCheck className="w-3 h-3" />
+                                Visualizou
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5">
+                                {h.channel === "whatsapp" && h.status === "sent" ? (
+                                  <Check className="w-3 h-3 opacity-70" />
+                                ) : null}
+                                {h.deliveryLabel}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        {canChat && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 shrink-0"
+                            onClick={() => {
+                              if (!h.phone) return;
+                              onOpenChat?.(normalizeBrazilPhone(h.phone));
+                              setSlicePick(null);
+                            }}
+                          >
+                            <MessageCircle className="w-3.5 h-3.5" />
+                            Conversar
+                          </Button>
+                        )}
+                      </div>
+                      {h.mediaUrl && (h.mediaType === "audio" || h.channel === "voice") ? (
+                        <div className="rounded-md bg-muted/40 border border-border/40 px-2.5 py-2 space-y-1.5">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Áudio enviado
+                            {h.callOutcome
+                              ? ` · ${h.callOutcome}`
+                              : String(h.delivery || "").toLowerCase() === "played"
+                                ? " · escutou"
+                                : String(h.delivery || "").toLowerCase() === "read"
+                                  ? " · visualizou"
+                                  : ""}
+                            {h.listenSec != null && h.listenSec > 0
+                              ? ` · ${formatDurationSec(h.listenSec)}`
+                              : ""}
+                          </p>
+                          <audio controls preload="metadata" src={h.mediaUrl} className="w-full h-8" />
+                          {h.channel === "voice" && !h.callOutcome && h.status === "sent" ? (
+                            <p className="text-[10px] text-muted-foreground">
+                              Aguardando retorno da operadora (atendeu / recusou / tempo).
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      {h.messageBody ? (
+                        <div className="rounded-md bg-muted/40 border border-border/40 px-2.5 py-2">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-1">
+                            {h.channel === "sms"
+                              ? "SMS enviado"
+                              : h.channel === "whatsapp"
+                                ? "WhatsApp enviado"
+                                : "Mensagem"}
+                            {h.bodySource === "reconstructed"
+                              ? " · reconstruído do template"
+                              : h.bodySource === "sms_log"
+                                ? " · log Velip"
+                                : ""}
+                          </p>
+                          <p className="text-[12px] leading-snug whitespace-pre-wrap break-words text-foreground">
+                            {h.messageBody}
+                          </p>
+                        </div>
+                      ) : h.channel === "whatsapp" || h.channel === "sms" ? (
+                        <p className="text-[11px] text-muted-foreground italic">
+                          Sem texto neste toque (pode ter sido só áudio/sistema).
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })
+              )}
+            </TabsContent>
+          </Tabs>
         </SheetContent>
       </Sheet>
     </div>

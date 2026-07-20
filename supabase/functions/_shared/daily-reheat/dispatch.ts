@@ -11,6 +11,8 @@
  */
 
 import { sendWelcomeHeader, sendAttendanceRatingRequest } from "../attendance-flow.ts";
+import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
+import { assignProtocolToCustomer } from "../protocol.ts";
 import { resolveChannelForCustomer } from "../channel-sender.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
 import {
@@ -198,14 +200,36 @@ async function runOpenAttendance(
   kit: CycleKit | null,
   env: Record<string, string>,
 ): Promise<ActionResult> {
-  const { nome, consultor, protocolo } = await loadNames(
+  const { data: stepRow } = await supabase
+    .from("customers")
+    .select("conversation_step, welcome_sent_at")
+    .eq("id", plan.customer_id)
+    .maybeSingle();
+  if (isActiveConversationalFunnelStep((stepRow as any)?.conversation_step)) {
+    return { action: "open_attendance", ok: true, detail: "already_in_funnel" };
+  }
+
+  const { nome, consultor, protocolo: existingProto } = await loadNames(
     supabase,
     plan.customer_id,
     plan.consultant_id,
   );
+  // Gera o número ANTES de montar o texto — evita "Protocolo —" sem código.
+  const assigned = await assignProtocolToCustomer(supabase, plan.customer_id, {
+    consultantId: plan.consultant_id || null,
+  });
+  const protocolo = String(assigned?.protocol || existingProto || "").trim();
   const raw =
     kit?.wa_open_text?.trim() ||
-    `Oi {{nome}}, aqui é {{consultor}} da iGreen.\n\nProtocolo {{protocolo}} — vou te ajudar com a conta de luz.`;
+    `*iGreen | Conta de Luz Mais Barata 🌱*
+
+Olá! Aqui é *{{consultor}}*, *Gestor* da *iGreen*.
+
+Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
+
+📋 *Protocolo:* {{protocolo}}
+
+Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.`;
   const text = renderVars(raw, { nome, consultor, protocolo });
   const audio = kit ? weekdayWaAudioUrl(kit) : null;
 
@@ -215,13 +239,18 @@ async function runOpenAttendance(
     env: env as any,
     customTemplate: { text, audio_url: audio, typing_delay_ms: 0 },
   });
-  if (!r.ok && (r as any).skipped !== "already_sent") {
+  if (!r.ok && (r as any).skipped !== "already_sent" && (r as any).skipped !== "already_in_funnel") {
     return { action: "open_attendance", ok: false, detail: (r as any).code || "welcome_failed" };
   }
   return {
     action: "open_attendance",
     ok: true,
-    detail: (r as any).skipped === "already_sent" ? "already_sent" : "opened",
+    detail:
+      (r as any).skipped === "already_sent"
+        ? "already_sent"
+        : (r as any).skipped === "already_in_funnel"
+          ? "already_in_funnel"
+          : "opened",
   };
 }
 
@@ -431,6 +460,22 @@ export async function dispatchCandidate(
     };
   }
 
+  // Fail-closed: se o lead já está no meio do Grupo A / flow, não ciclar
+  // open/ligação/SMS por cima (mesmo se a fila foi planejada antes).
+  {
+    const { data: live } = await supabase
+      .from("customers")
+      .select("conversation_step")
+      .eq("id", plan.customer_id)
+      .maybeSingle();
+    if (isActiveConversationalFunnelStep((live as any)?.conversation_step)) {
+      return {
+        ok: false,
+        results: [{ action: "wait", ok: false, detail: "already_in_funnel" }],
+      };
+    }
+  }
+
   // Orquestrador atômico: daily reheat não pode disputar o cliente com a
   // jornada A/B/C nem com follow-ups (fail-closed: erro = não tocar hoje).
   const hasRealAction = plan.planned_actions.some((a) => a !== "wait");
@@ -460,9 +505,15 @@ export async function dispatchCandidate(
     let res: ActionResult;
     if (action === "open_attendance") res = await runOpenAttendance(supabase, plan, kit, env);
     else if (action === "send_audio") {
-      // Se open_attendance já mandou audio_url no template, evita duplicar no mesmo tick
+      // Se open_attendance já mandou audio_url no template, evita duplicar no mesmo tick.
+      // Mid-funnel / already_sent: não manda áudio por cima do fluxo A.
       const opened = results.find((r) => r.action === "open_attendance" && r.ok);
-      if (opened && kit && weekdayWaAudioUrl(kit)) {
+      if (
+        opened &&
+        (opened.detail === "already_in_funnel" || opened.detail === "already_sent")
+      ) {
+        res = { action: "send_audio", ok: true, detail: `skipped_${opened.detail}` };
+      } else if (opened && kit && weekdayWaAudioUrl(kit)) {
         res = { action: "send_audio", ok: true, detail: "bundled_in_open" };
       } else {
         res = await runSendAudio(supabase, plan, kit, env);
@@ -628,11 +679,14 @@ export async function dispatchPlans(
       details.push({ customer_id: plan.customer_id, ok: r.ok, results: r.results });
       if (!r.ok) {
         failed++;
+        const skipDetail = r.results.find((x) => !x.ok)?.detail || "dispatch_failed";
+        const asSkipped =
+          skipDetail === "already_in_funnel" || skipDetail.startsWith("dnc:");
         let q = supabase
           .from("daily_reheat_queue")
           .update({
-            status: "blocked",
-            skip_reason: r.results.find((x) => !x.ok)?.detail || "dispatch_failed",
+            status: asSkipped ? "skipped" : "blocked",
+            skip_reason: skipDetail,
             updated_at: new Date().toISOString(),
           })
           .eq("customer_id", plan.customer_id)

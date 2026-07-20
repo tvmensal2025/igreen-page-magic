@@ -27,7 +27,11 @@ import {
   CANONICAL_FLOW_VARIANT,
   resolveCanonicalFlowVariant,
 } from "./bot/canonical-flow-variant.ts";
-import { isSofiaMulticanalConversationStep } from "./bot/cadastro-fixes.ts";
+import {
+  isActiveConversationalFunnelStep,
+  isSofiaMulticanalConversationStep,
+} from "./bot/cadastro-fixes.ts";
+import { resolvePublicConsultantLabel } from "./consultant-public-label.ts";
 
 export const ATTENDANCE_RATING_STEP = "aguardando_avaliacao_atendimento";
 /** Step terminal após nota registrada — bots/crons devem ignorar. */
@@ -39,7 +43,8 @@ export const ATTENDANCE_TERMINAL_STEPS = new Set<string>([
   ATTENDANCE_DONE_STEP,
 ]);
 
-const NAME_ASK_TEXT = "Para começarmos, me conta seu *nome completo*?";
+const NAME_ASK_TEXT =
+  "Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.";
 
 export interface SendWelcomeResult {
   ok: boolean;
@@ -190,12 +195,12 @@ async function resolveConsultantDisplayName(
     .select("name, display_name")
     .eq("id", consultantId)
     .maybeSingle();
-  const display = String((data as any)?.display_name || "").trim();
-  const name = String((data as any)?.name || "").trim();
-  // Prefere display_name; se name parece login (sem espaço / minúsculo), usa display.
-  if (display) return display.split(/\s+/).slice(0, 2).join(" ");
-  if (name && /\s/.test(name)) return name.split(/\s+/).slice(0, 2).join(" ");
-  return name || null;
+  const label = resolvePublicConsultantLabel(
+    (data as any)?.name,
+    (data as any)?.display_name,
+    "",
+  );
+  return label || null;
 }
 
 /**
@@ -300,12 +305,61 @@ export async function sendWelcomeHeader(
     }
     return { ok: true, skipped: "already_sent", protocol: customer.tracking_protocol || undefined };
   }
+
+  // Já no meio do Grupo A / flow builder: NÃO manda "Oi X, Protocolo…" de novo.
+  // Garante protocolo + welcome_sent_at em silêncio (UI do consultor) e preserva o passo.
+  const prevStepEarly = String((customer as any).conversation_step || "");
+  if (isActiveConversationalFunnelStep(prevStepEarly)) {
+    const consultantId = customer.consultant_id || args.consultantId || null;
+    const consultantName = await resolveConsultantDisplayName(supabase, consultantId);
+    let partnerName: string | null = null;
+    if (customer.referral_partner_id) {
+      const { data: p } = await supabase
+        .from("referral_partners")
+        .select("nome")
+        .eq("id", customer.referral_partner_id)
+        .maybeSingle();
+      partnerName = (p as { nome?: string } | null)?.nome ?? null;
+    }
+    const protoRes = await assignProtocolToCustomer(supabase, customerId, {
+      partnerId: customer.referral_partner_id || null,
+      partnerName,
+      consultantId,
+      consultantName,
+    });
+    let protocol = protoRes?.protocol || customer.tracking_protocol || "";
+    if (!protocol) {
+      const stamp = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+      const short = String(customerId).replace(/-/g, "").slice(0, 4).toUpperCase();
+      protocol = `IGR-${stamp}-${short}`;
+      await supabase.from("customers").update({ tracking_protocol: protocol }).eq("id", customerId)
+        .then(() => {}, () => {});
+    }
+    const nowIso = new Date().toISOString();
+    await supabase.from("customers").update({
+      welcome_sent_at: nowIso,
+      tracking_protocol: protocol,
+      conversation_step: prevStepEarly,
+      flow_variant: resolveCanonicalFlowVariant((customer as any).flow_variant),
+    }).eq("id", customerId).then(() => {}, () => {});
+    return { ok: true, skipped: "already_in_funnel", protocol };
+  }
   // Sempre 55+DDD+número no JID — phone sem DDI (11 dígitos) gerava destino inválido.
   // Não força UPDATE no banco aqui (pode colidir com unique phone+consultant).
   const digits = normalizePhone(String(customer.phone_whatsapp || ""));
   if (!digits || digits.length < 12) return { ok: false, code: "no_phone", skipped: "no_phone" };
 
-  const consultantId = args.consultantId || customer.consultant_id || null;
+  // DONO DO LEAD manda no nome/protocolo — nunca o caller de outra pessoa.
+  const consultantId = customer.consultant_id || args.consultantId || null;
+  if (
+    customer.consultant_id &&
+    args.consultantId &&
+    String(customer.consultant_id) !== String(args.consultantId)
+  ) {
+    console.warn(
+      `[welcome-header] caller=${args.consultantId} ≠ owner=${customer.consultant_id} — usando DONO do lead`,
+    );
+  }
   const consultantName = await resolveConsultantDisplayName(supabase, consultantId);
 
   let partnerName: string | null = null;

@@ -3,6 +3,7 @@
 
 import { parseMoneyBR, MONEY_NUM_SRC } from "./parse-money.ts";
 import { isUsableCustomerName } from "./customer-display-name.ts";
+import { toNationalPhoneDigits } from "./portal-phone.ts";
 
 const MONEY_NUM_RE = new RegExp(`(${MONEY_NUM_SRC})`);
 const MONEY_BARE_RE = new RegExp(
@@ -43,8 +44,33 @@ function cpfValido(cpf: string): boolean {
   return d2 === parseInt(digits[10]);
 }
 
+/**
+ * True se a mensagem inteira (ou o núcleo numérico) parece telefone BR.
+ * Bug Isa 2026-07-20: "03481914644" virava R$ 34.819 via extractValorPermissivo
+ * (regex de dinheiro pegava os 6 primeiros dígitos).
+ */
+export function looksLikeBrazilPhoneMessage(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  // Mensagem só com dígitos/separadores de telefone (sem "R$", "reais", etc.)
+  if (/r\$|\breais?\b|\bconta\b|\bvalor\b/i.test(trimmed)) return false;
+  const national = toNationalPhoneDigits(trimmed);
+  if (national.length !== 10 && national.length !== 11) return false;
+  const ddd = parseInt(national.slice(0, 2), 10);
+  return DDDS_VALIDOS.has(ddd);
+}
+
+/** Sequência longa de dígitos (≥8) sem formatação monetária → telefone/CPF/ID, não conta. */
+function looksLikeLongDigitId(text: string): boolean {
+  const raw = String(text || "").trim();
+  if (!raw || /[.,]/.test(raw) || /r\$|\breais?\b/i.test(raw)) return false;
+  const digits = raw.replace(/\D/g, "");
+  return digits.length >= 8 && digits.length === raw.replace(/[\s()-]/g, "").replace(/\D/g, "").length;
+}
+
 export function extractValor(text: string): number | null {
   if (!text) return null;
+  if (looksLikeBrazilPhoneMessage(text) || looksLikeLongDigitId(text)) return null;
   const t = text.toLowerCase().trim();
   // 1) Regex direto: "R$ 380,50", "$380", "380 reais", "uns 400", "350.00", "1.688,15"
   const moneyHint = /r?\$|\breais?\b|\bconta\b|\bluz\b|\bvalor\b|\bpila\b|\bmangos?\b|\bcontos?\b/i.test(t);
@@ -74,6 +100,8 @@ export function extractValor(text: string): number | null {
 /** Fallback permissivo para o contexto "valor da conta": qualquer número 30..50000 na mensagem. */
 export function extractValorPermissivo(text: string): number | null {
   if (!text) return null;
+  // Telefone / ID longo nunca é valor de conta (mesmo que um prefixo case no MONEY_NUM).
+  if (looksLikeBrazilPhoneMessage(text) || looksLikeLongDigitId(text)) return null;
   const direct = extractValor(text);
   if (direct != null) return direct;
   const m = text.match(MONEY_NUM_RE);
@@ -85,6 +113,12 @@ export function extractValorPermissivo(text: string): number | null {
 
 export function extractTelefone(text: string): string | null {
   if (!text) return null;
+  // Preferência: normalização canônica (aceita 034…, 55…, (34) 9…).
+  const national = toNationalPhoneDigits(text.trim());
+  if (national.length === 10 || national.length === 11) {
+    const ddd = parseInt(national.slice(0, 2), 10);
+    if (DDDS_VALIDOS.has(ddd)) return national;
+  }
   const m = text.match(/(?:\+?55\s*)?\(?(\d{2})\)?\s*9?\s*(\d{4})[-\s]?(\d{4})/);
   if (!m) return null;
   const ddd = parseInt(m[1]);
@@ -138,6 +172,9 @@ const STOPWORDS_NOME = new Set([
   "recomendou","recomendado","recomenda","recomendar","recomendação","recomendacao",
   "indicou","indicado","indica","indicar","indicação","indicacao",
   "mandou","mandado","manda","mandar",
+  // correção / verbo no passado — "Escrevi errado", "Digitei errado" NÃO são nome
+  "escrevi","digitei","errei","falei","enganei","corrigi","corrijo",
+  "errado","errada","errados","erradas","correto","correta",
   // NÃO listar nomes próprios comuns (rafael, etc.): o lead pode se chamar
   // assim. Indicação do QR ("horacio te recomendou") já é bloqueada no hard-block
   // no topo de extractNome — não precisa blacklist de prenome.
@@ -180,10 +217,40 @@ function isDomainNoise(word: string): boolean {
   return false;
 }
 
+const NAME_PARTICLES = new Set(["de", "da", "do", "dos", "das", "e"]);
+
 function capitalizeName(raw: string): string {
-  return raw.trim().split(/\s+/).slice(0, 3)
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+  // Até 5 partes: "Manoel Bento de Oliveira" / "Ana Paula da Silva Santos"
+  // Hífen em prenome composto: "Maria-Clara"
+  return raw.trim().split(/\s+/).slice(0, 5)
+    .map((w, i) => {
+      const low = w.toLowerCase();
+      if (i > 0 && NAME_PARTICLES.has(low)) return low;
+      // Sufixos comuns BR
+      if (i > 0 && /^(jr|júnior|junior|filho|filha|neto|neta)$/i.test(low)) {
+        return low === "jr" ? "Jr." : titleCaseHyphenated(w);
+      }
+      return titleCaseHyphenated(w);
+    })
     .join(" ");
+}
+
+function titleCaseHyphenated(part: string): string {
+  return part
+    .split("-")
+    .map((p) => {
+      if (!p) return p;
+      // Apóstrofo: D'Angelo
+      if (p.includes("'")) {
+        return p.split("'").map((s, i) => {
+          if (!s) return s;
+          const base = s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+          return i === 0 ? base : base;
+        }).join("'");
+      }
+      return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+    })
+    .join("-");
 }
 
 function isValidNameCandidate(cleaned: string): boolean {
@@ -191,10 +258,26 @@ function isValidNameCandidate(cleaned: string): boolean {
   if (/\d/.test(cleaned)) return false;
   if (PALAVROES.test(cleaned)) return false;
   const parts = cleaned.toLowerCase().split(/\s+/);
-  // Rejeita partes com menos de 2 letras (ex: "Ainda N" gerado de "ainda não")
-  if (parts.some(p => p.length < 2)) return false;
-  // Rejeita se qualquer palavra for stopword ou ruído de domínio
-  if (parts.some(p => isDomainNoise(p))) return false;
+  // Rejeita partes com menos de 2 letras (ex: "Ainda N"), exceto partículas (e)
+  // e sufixos Jr. (após strip do ponto vira "jr")
+  const NAME_SUFFIXES = new Set(["jr", "junior", "júnior", "filho", "filha", "neto", "neta"]);
+  if (parts.some(p => {
+    const bare = p.replace(/\./g, "");
+    if (NAME_PARTICLES.has(bare) || NAME_SUFFIXES.has(bare)) return false;
+    // hífen: cada lado ≥2
+    if (bare.includes("-")) return bare.split("-").some((s) => s.length < 2);
+    return bare.length < 2;
+  })) return false;
+  // Partículas (de/da/do) não contam como ruído — nomes BR comuns
+  const contentParts = parts.filter((p) => !NAME_PARTICLES.has(p.replace(/\./g, "")));
+  if (contentParts.length === 0) return false;
+  // Rejeita se qualquer palavra de conteúdo for stopword ou ruído de domínio
+  // (sufixos Filho/Jr não são stopword)
+  if (contentParts.some(p => {
+    const bare = p.replace(/\./g, "");
+    if (NAME_SUFFIXES.has(bare)) return false;
+    return isDomainNoise(bare.split("-")[0] || bare);
+  })) return false;
   // Guarda canônica: meme / telefone / interjeição
   if (!isUsableCustomerName(cleaned)) return false;
   return true;
@@ -222,19 +305,19 @@ export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | 
   // 1) Frase estruturada com gatilho explícito: "sou X", "me chamo X", "meu nome é X".
   //    Removido o gatilho frouxo `nome:?\s?` (matchava "limpa nome te recomendou" do QR).
   //    Mantemos "nome:" com dois-pontos obrigatórios pra forms tipo "Nome: João".
-  const m = text.match(/(?:\bsou\b|\bme chamo\b|\bmeu nome [eé]\s|\baqui [eé] o?\s?|\bnome:\s?)\s*([a-zà-ÿ]{2,}(?:\s+[a-zà-ÿ]{2,}){0,3})/i);
+  const m = text.match(/(?:\bsou\b|\bme chamo\b|\bmeu nome [eé]\s|\baqui [eé] o?\s?|\bnome:\s?)\s*([a-zà-ÿ]{2,}(?:[''-][a-zà-ÿ]+)?(?:\s+[a-zà-ÿ]{2,}(?:[''-][a-zà-ÿ]+)?){0,4})/i);
   if (m) {
     const cleaned = capitalizeName(m[1]);
     if (isValidNameCandidate(cleaned)) return cleaned;
   }
-  // 2) Resposta crua: 1-3 palavras só com letras
+  // 2) Resposta crua: 1-5 palavras (letras, hífen, apóstrofo) — nome completo BR
   const trimmed = text.trim().replace(/[.!?,;:]+$/g, "");
-  if (trimmed.length > 0 && trimmed.length <= 60) {
-    const onlyLetters = /^[a-zà-ÿ]+(?:\s+[a-zà-ÿ]+){0,2}$/i.test(trimmed);
-    if (onlyLetters) {
+  if (trimmed.length > 0 && trimmed.length <= 80) {
+    const onlyNameChars = /^[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?(?:\s+[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?){0,4}$/i.test(trimmed);
+    if (onlyNameChars) {
       const wordCount = trimmed.split(/\s+/).length;
       // 1 palavra única: só aceita quando o bot pediu o nome.
-      // 2-3 palavras: aceita (combinação rara de substantivos comuns juntos).
+      // 2-5 palavras: aceita (ex.: "Manoel Bento de Oliveira", "José Silva Filho").
       if (wordCount === 1 && !opts.allowSingleWord) return null;
       const cleaned = capitalizeName(trimmed);
       if (isValidNameCandidate(cleaned)) return cleaned;

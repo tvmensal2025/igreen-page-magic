@@ -93,25 +93,40 @@ export async function assignProtocolToCustomer(
 export function buildWelcomeHeaderGreeting(consultantName?: string | null): string {
   const who = (consultantName || "").trim();
   const lines = [
-    `Olá! ${greetingForNow()} 👋`,
+    `Olá! ${greetingForNow()}`,
     "Este é o canal de atendimento especializado da *iGreen Energy*.",
   ];
   if (who) lines.push(`Você será atendido(a) por *${who}*.`);
   return lines.join("\n");
 }
 
-/** Bloco profissional: Atendimento iniciado + consultor + protocolo.
- * Sem linhas unicode (━━━) — no WhatsApp Web/mobile elas quebram o visual.
- * Protocolo em *negrito* numa linha só (continua detectável pelos webhooks). */
+/**
+ * Bloco profissional de abertura (marca + protocolo).
+ */
 export function buildWelcomeHeaderProtocol(
   protocol: string,
   consultantName?: string | null,
 ): string {
-  const who = (consultantName || "").trim();
+  const who = (consultantName || "").trim() || "seu consultor";
+  const proto = String(protocol || "").trim();
   return [
-    "✅ *Atendimento iniciado*",
+    "*iGreen | Conta de Luz Mais Barata 🌱*",
     "",
-    who ? `👤 Consultor(a): *${who}*` : null,
-    `📋 Chamado: *${protocol}*`,
+    `Olá! Aqui é *${who}*, *Gestor* da *iGreen*.`,
+    "",
+    "Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.",
+    proto ? `\n📋 *Protocolo:* ${proto}` : null,
   ].filter((l) => l !== null).join("\n");
+}
+
+/** Texto único A1 / abertura: cabeçalho + pedido do nome. */
+export function buildGrupoAOpenAttendanceText(opts: {
+  consultantName?: string | null;
+  protocol?: string | null;
+}): string {
+  const header = buildWelcomeHeaderProtocol(
+    String(opts.protocol || "").trim(),
+    opts.consultantName,
+  );
+  return `${header}\n\nPara agilizar seu atendimento, por favor, informe seu *primeiro nome*.`;
 }

@@ -366,6 +366,18 @@ function ensureSmsWaLink(text: string, consultorPhone: string): string {
     .trim();
 }
 
+type DispatchResult = {
+  ok: boolean;
+  detail: string;
+  theme_id?: string;
+  /** Texto exatamente enviado (já com {{nome}} resolvido ou vazio). */
+  message_body?: string;
+  /** true = usou prenome confiável; false = só o corpo. */
+  with_name?: boolean;
+  media_url?: string;
+  media_type?: string;
+};
+
 async function dispatchWhatsApp(
   supabase: any,
   env: { evolutionUrl?: string; evolutionKey?: string; whapiToken: string },
@@ -373,7 +385,7 @@ async function dispatchWhatsApp(
   stage: Stage,
   cfg: StageConfig,
   loadAvail: AvailLoader,
-): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
+): Promise<DispatchResult> {
   const { data: cust } = await supabase
     .from("customers")
     .select("id, name, name_source, phone_whatsapp, consultant_id")
@@ -452,8 +464,31 @@ async function dispatchWhatsApp(
     }
     if (!(r as any)?.ok) return { ok: false, detail: `send_failed:${(r as any)?.detail ?? "?"}` };
     await registerSend(supabase, ch.instanceName);
+    const externalId = String((r as any)?.messageId || "").trim() || null;
+    const bodyForLog =
+      mtype === "audio" && cfg.media_url
+        ? "[áudio]"
+        : (text || "").trim() || (cfg.media_url ? `[${mtype}]` : "");
+    await supabase.from("conversations").insert({
+      customer_id: row.customer_id,
+      message_direction: "outbound",
+      message_text: bodyForLog || null,
+      message_type: mtype === "audio" ? "audio" : mtype === "image" || mtype === "video" ? mtype : "text",
+      conversation_step: `cadence:${stage}`,
+      external_message_id: externalId,
+      delivery_status: "sent",
+      origin: "cadence",
+    }).then(() => {}, () => {});
     const themeTag = themeId ? `:theme_${themeId}` : "";
-    return { ok: true, detail: `sent_via_${ch.kind}${themeTag}`, theme_id: themeId };
+    return {
+      ok: true,
+      detail: `sent_via_${ch.kind}${themeTag}`,
+      theme_id: themeId,
+      message_body: bodyForLog || undefined,
+      with_name: !!firstName,
+      media_url: cfg.media_url || undefined,
+      media_type: mtype,
+    };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }
@@ -541,7 +576,7 @@ async function dispatchVoiceCall(
 
 async function dispatchSMS(
   supabase: any, row: any, stage: Stage, cfg: StageConfig, loadAvail: AvailLoader,
-): Promise<{ ok: boolean; detail: string; theme_id?: string }> {
+): Promise<DispatchResult> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
   const { cust, consultantName, consultantPhone, assistantName } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
@@ -593,9 +628,22 @@ async function dispatchSMS(
       error: r.ok ? null : (r.error ?? "velip_error"),
       raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
     });
-    if (!r.ok) return { ok: false, detail: `velip:${r.error || "sms_failed"}` };
+    if (!r.ok) {
+      return {
+        ok: false,
+        detail: `velip:${r.error || "sms_failed"}`,
+        message_body: text,
+        with_name: !!firstName,
+      };
+    }
     const themeTag = themeId ? `:theme_${themeId}` : "";
-    return { ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}${themeTag}`, theme_id: themeId };
+    return {
+      ok: true,
+      detail: `sms_sent:${r.cdls_id ?? "?"}${themeTag}`,
+      theme_id: themeId,
+      message_body: text,
+      with_name: !!firstName,
+    };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }
@@ -1008,10 +1056,12 @@ Deno.serve(async (req) => {
             }
           } else {
             await markEffectSending(supabase, eff.effectId);
-            let res: { ok: boolean; detail: string; theme_id?: string };
+            let res: DispatchResult;
             if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
-            else if (def.channel === "voice") res = await dispatchVoiceCall(supabase, row, stage, cfg);
-            else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
+            else if (def.channel === "voice") {
+              const voice = await dispatchVoiceCall(supabase, row, stage, cfg);
+              res = { ok: voice.ok, detail: voice.detail };
+            } else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
             status = res.ok ? "sent" : "failed";
             detail = {
               ...detail,
@@ -1019,6 +1069,10 @@ Deno.serve(async (req) => {
               via: "evo_or_whapi",
               effect_id: eff.effectId,
               ...(res.theme_id ? { theme_id: res.theme_id } : {}),
+              ...(res.message_body != null ? { message_body: res.message_body } : {}),
+              ...(typeof res.with_name === "boolean" ? { with_name: res.with_name } : {}),
+              ...(res.media_url ? { media_url: res.media_url } : {}),
+              ...(res.media_type ? { media_type: res.media_type } : {}),
             };
             if (res.ok) {
               sent++;

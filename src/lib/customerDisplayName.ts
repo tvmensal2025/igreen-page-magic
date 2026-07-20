@@ -18,6 +18,7 @@ export const ADDRESSABLE_NAME_SOURCES = new Set([
 const BAD_NAME_TOKENS = new Set([
   "ixi", "kkk", "kkkk", "haha", "rsrs", "oi", "ola", "olá", "ok", "sim", "nao", "não",
   "cliente", "lead", "teste", "whatsapp", "contato", "energia", "igreen",
+  "escrevi", "digitei", "errei", "errado", "errada",
 ]);
 
 export function isUsableCustomerName(raw: string | null | undefined): boolean {

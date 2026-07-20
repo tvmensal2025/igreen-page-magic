@@ -10,6 +10,8 @@ import {
   nextSeparatedCadastroStep,
   isPrePortalCadastroStep,
   isSofiaMulticanalCustomer,
+  isActiveConversationalFunnelStep,
+  isSofiaMulticanalConversationStep,
   isPlausibleAddressNumber,
   addressValidationRedirect,
   extractCepFromText,
@@ -76,6 +78,24 @@ Deno.test("nextSeparatedCadastroStep — Grupo A (passo a*) pula boleto → fina
     nextSeparatedCadastroStep({ flow_variant: "A", conversation_step: "a10_portal_otp_facial" }),
     "finalizando",
   );
+});
+
+Deno.test("isActiveConversationalFunnelStep — bloqueia welcome mid-fluxo", () => {
+  assertEquals(isSofiaMulticanalConversationStep("a2_ask_bill_value"), true);
+  assertEquals(isActiveConversationalFunnelStep("a1_ask_name"), true);
+  assertEquals(isActiveConversationalFunnelStep("a2_ask_bill_value"), true);
+  assertEquals(
+    isActiveConversationalFunnelStep("flow:d247403b-81fd-4a2a-89f3-b8bc6f1bc9ca"),
+    true,
+  );
+  assertEquals(
+    isActiveConversationalFunnelStep("d247403b-81fd-4a2a-89f3-b8bc6f1bc9ca"),
+    true,
+  );
+  assertEquals(isActiveConversationalFunnelStep(null), false);
+  assertEquals(isActiveConversationalFunnelStep(""), false);
+  assertEquals(isActiveConversationalFunnelStep("welcome"), false);
+  assertEquals(isActiveConversationalFunnelStep("complete"), false);
 });
 
 Deno.test("getNextMissingStep — Sofia A (Grupo A) após a9 vai direto a finalizando", () => {

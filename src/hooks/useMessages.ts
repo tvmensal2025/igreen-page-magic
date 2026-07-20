@@ -195,14 +195,12 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
   } else if (m?.pollCreationMessage || m?.pollCreationMessageV3) {
     const name = (m.pollCreationMessage || m.pollCreationMessageV3)?.name;
     text = name ? `📊 Enquete: ${name}` : "📊 Enquete";
-  } else {
-    const inferred = m && typeof m === "object" ? Object.keys(m).find((k) => k !== "messageContextInfo") : undefined;
-    if (inferred) {
-      text = "📎 Mensagem não suportada neste formato";
-    } else if (msg.message && typeof msg.message === "object" && Object.keys(msg.message).length === 0) {
-      text = "📎 Mensagem sem conteúdo legível";
-    }
+  } else if (m?.protocolMessage) {
+    // Revoke/edit/protocolo do WhatsApp — sem corpo legível; some do chat.
+    text = "";
   }
+  // Tipos sem mapeamento (ou message: {}): texto fica vazio e a bolha é filtrada.
+  // Nunca inventar "📎 Mensagem sem conteúdo legível" — isso polui o chat.
 
   return {
     id: msg.key.id,
@@ -223,6 +221,24 @@ function mapMessage(msg: EvolutionMessage): ChatMessage {
     interactiveFooter,
     interactiveButtons,
   };
+}
+
+/** Bolha só entra no chat se tiver texto, mídia ou botões. */
+function hasRenderableContent(m: ChatMessage): boolean {
+  if (m.mediaType) return true;
+  if (m.interactiveButtons && m.interactiveButtons.length > 0) return true;
+  if (m.interactiveHeader?.trim() || m.interactiveFooter?.trim()) return true;
+  const t = (m.text || "").trim();
+  if (!t) return false;
+  // Placeholders legados — nunca mostrar de novo.
+  if (
+    t === "📎 Mensagem sem conteúdo legível" ||
+    t === "📎 Mensagem não suportada neste formato" ||
+    t === "Mensagem sem texto legível"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 const PAGE_SIZE = 200;
@@ -366,6 +382,7 @@ export function useMessages(
     const clearedAtMs = clearedAtRef.current;
     return unique
       .map((msg) => mapMessage(msg))
+      .filter((m) => hasRenderableContent(m))
       .filter((m) => clearedAtMs === 0 || m.timestamp * 1000 >= clearedAtMs)
       .sort((a, b) => {
         if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
@@ -457,18 +474,37 @@ export function useMessages(
             byId.set(m.id, m);
           }
         }
-        // Limpa otimistas expirados / cleared
+        // Limpa otimistas expirados / cleared / bolhas sem conteúdo
         const merged = Array.from(byId.values()).filter((m) => {
           if (clearedAtMs > 0 && m.timestamp * 1000 < clearedAtMs) return false;
           if (m.id.startsWith("temp-")) {
             return Date.now() - m.timestamp * 1000 < 60_000;
           }
-          return true;
+          return hasRenderableContent(m);
         });
-        return merged.sort((a, b) => {
+        const next = merged.sort((a, b) => {
           if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
           return String(a.id || "").localeCompare(String(b.id || ""));
         });
+        // Evita novo array a cada poll de 6s quando nada mudou — isso rearmava
+        // virtualizer/ResizeObserver e fazia o chat “pular” sem mensagem nova.
+        if (
+          prev.length === next.length &&
+          prev.every((m, i) => {
+            const n = next[i]!;
+            return (
+              m.id === n.id &&
+              m.text === n.text &&
+              m.status === n.status &&
+              m.mediaUrl === n.mediaUrl &&
+              m.mediaBase64 === n.mediaBase64 &&
+              m.deliveryError === n.deliveryError
+            );
+          })
+        ) {
+          return prev;
+        }
+        return next;
       });
 
       const fallbackSendTarget = raw.find((msg) => msg.key.remoteJidAlt)?.key.remoteJidAlt;

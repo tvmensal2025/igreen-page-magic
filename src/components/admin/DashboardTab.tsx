@@ -50,9 +50,19 @@ interface DashboardTabProps {
   periodDays: number;
   onPeriodChange: (days: number) => void;
   onOpenChat?: (phone: string, suggestedMessage?: string) => void;
+  instanceName?: string | null;
+  isWhapi?: boolean;
 }
 
-export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenChat }: DashboardTabProps) {
+export function DashboardTab({
+  userId,
+  form,
+  periodDays,
+  onPeriodChange,
+  onOpenChat,
+  instanceName,
+  isWhapi,
+}: DashboardTabProps) {
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
@@ -633,7 +643,12 @@ export function DashboardTab({ userId, form, periodDays, onPeriodChange, onOpenC
 
       <TopConsumersCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} onOpenChat={onOpenChat} />
       <GeographyCard customers={filteredMetrics?.filteredCustomers} />
-      <RetentionCard customers={filteredMetrics?.filteredCustomers} consultantId={userId} />
+      <RetentionCard
+        customers={filteredMetrics?.filteredCustomers}
+        consultantId={userId}
+        instanceName={instanceName}
+        isWhapi={isWhapi}
+      />
 
       {/* Cadastros da Equipe — no final, após aniversariantes */}
       {analytics?.allCustomers && (

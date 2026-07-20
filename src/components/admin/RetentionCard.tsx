@@ -36,12 +36,44 @@ import {
   getPreferredBirthdayTemplate,
   isValidWhatsAppPhone,
   markRetentionWhatsAppOpenedToday,
-  openBirthdayWhatsApp,
   pickRandomBirthdayMessage,
   retentionPhoneKey,
   setPreferredBirthdayTemplate,
   wasRetentionWhatsAppOpenedToday,
 } from "@/lib/birthdayMessages";
+import { sendWhatsAppMessage } from "@/services/messageSender";
+
+/** Envia texto pela instância conectada (Whapi/Evolution) — não abre wa.me. */
+async function sendRetentionViaInstance(opts: {
+  instanceName?: string | null;
+  isWhapi?: boolean;
+  phone: string;
+  text: string;
+  customerId?: string;
+  conversationStep: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { instanceName, isWhapi, phone, text, customerId, conversationStep } = opts;
+  if (!isValidWhatsAppPhone(phone)) {
+    return { ok: false, error: "Sem WhatsApp cadastrado" };
+  }
+  if (!isWhapi && !instanceName) {
+    return { ok: false, error: "WhatsApp desconectado — reconecte na aba Conversas" };
+  }
+  const result = await sendWhatsAppMessage({
+    instanceName: instanceName || (isWhapi ? "whapi-superadmin" : ""),
+    phone,
+    mediaCategory: "text",
+    text,
+    isWhapi: !!isWhapi,
+    customerId: customerId || null,
+    conversationStep,
+    intent: "reply",
+  });
+  if (result.status === "failed") {
+    return { ok: false, error: result.error || "Falha ao enviar" };
+  }
+  return { ok: true };
+}
 
 /** Templates locais de reativação — usam {{nome}} igual aniversário. */
 const REACTIVATION_TEMPLATES: readonly string[] = [
@@ -173,14 +205,18 @@ function previewMessage(text: string): string {
 
 /**
  * Editor de pré-visualização — mostra o texto exato que vai pro WhatsApp,
- * deixa editar, sortear outra e só envia quando o consultor clica em "Abrir WhatsApp".
+ * deixa editar, sortear outra e envia pela instância conectada ao clicar em Enviar.
  */
 function MessagePreviewEditor({
   initialText,
   templates,
   customerName,
+  customerId,
   phone,
   consultantId,
+  instanceName,
+  isWhapi,
+  conversationStep,
   onBack,
   onSent,
   accent = "accent",
@@ -188,14 +224,19 @@ function MessagePreviewEditor({
   initialText: string;
   templates: readonly string[];
   customerName?: string | null;
+  customerId?: string;
   phone: string;
   consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
+  conversationStep: string;
   onBack: () => void;
   onSent: () => void;
   accent?: "accent" | "primary";
 }) {
   const { toast } = useToast();
   const [text, setText] = useState(initialText);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     setText(initialText);
@@ -206,26 +247,42 @@ function MessagePreviewEditor({
     setText(fillBirthdayMessage(tpl, customerName));
   };
 
-  const send = () => {
+  const send = async () => {
     if (!text.trim()) {
       toast({ title: "Escreva uma mensagem antes de enviar", variant: "destructive" });
       return;
     }
     if (wasRetentionWhatsAppOpenedToday(consultantId, phone)) {
       toast({
-        title: "Já aberto hoje para este número",
+        title: "Já enviado hoje para este número",
         description: "Mesmo WhatsApp em outro cadastro — não manda de novo no mesmo dia.",
         variant: "destructive",
       });
       return;
     }
-    if (!openBirthdayWhatsApp(phone, text)) {
-      toast({ title: "Sem WhatsApp cadastrado", variant: "destructive" });
-      return;
+    setSending(true);
+    try {
+      const result = await sendRetentionViaInstance({
+        instanceName,
+        isWhapi,
+        phone,
+        text,
+        customerId,
+        conversationStep,
+      });
+      if (!result.ok) {
+        toast({ title: result.error, variant: "destructive" });
+        return;
+      }
+      markRetentionWhatsAppOpenedToday(consultantId, phone);
+      toast({
+        title: "Mensagem enviada",
+        description: `Enviada para ${customerName || "o cliente"} pelo WhatsApp conectado.`,
+      });
+      onSent();
+    } finally {
+      setSending(false);
     }
-    markRetentionWhatsAppOpenedToday(consultantId, phone);
-    toast({ title: "📱 Abrindo WhatsApp", description: `Mensagem pronta para ${customerName || "o cliente"}.` });
-    onSent();
   };
 
   return (
@@ -251,6 +308,7 @@ function MessagePreviewEditor({
         onChange={(e) => setText(e.target.value)}
         rows={7}
         className="text-xs leading-relaxed resize-none"
+        disabled={sending}
       />
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">{text.length} caracteres</span>
@@ -260,10 +318,11 @@ function MessagePreviewEditor({
         type="button"
         size="sm"
         className={`w-full h-9 gap-1.5 text-xs font-bold ${accent === "accent" ? "bg-accent text-accent-foreground hover:bg-accent/90" : ""}`}
-        onClick={send}
+        onClick={() => void send()}
+        disabled={sending}
       >
-        <Send className="w-3.5 h-3.5" />
-        Abrir WhatsApp com esta mensagem
+        {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+        Enviar pelo WhatsApp conectado
       </Button>
     </div>
   );
@@ -273,8 +332,11 @@ function MessagePreviewEditor({
 function MessageButton({
   customer,
   consultantId,
+  instanceName,
+  isWhapi,
   templates,
   preferredTemplate,
+  conversationStep,
   triggerLabel,
   triggerIcon,
   triggerClassName,
@@ -282,11 +344,16 @@ function MessageButton({
   headerTitle,
   headerSub,
   accent = "accent",
+  sentTick,
+  onSentExternal,
 }: {
   customer: CustomerWithMeta;
   consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
   templates: readonly string[];
   preferredTemplate?: string;
+  conversationStep: string;
   triggerLabel: string;
   triggerIcon: React.ReactNode;
   triggerClassName: string;
@@ -294,6 +361,8 @@ function MessageButton({
   headerTitle: string;
   headerSub: string;
   accent?: "accent" | "primary";
+  sentTick?: number;
+  onSentExternal?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [screen, setScreen] = useState<"list" | "edit">("list");
@@ -303,6 +372,10 @@ function MessageButton({
   );
   const hasPhone = isValidWhatsAppPhone(customer.phone_whatsapp);
   const dupCount = customer._dupCount && customer._dupCount > 1 ? customer._dupCount : 0;
+
+  useEffect(() => {
+    setAlreadyToday(wasRetentionWhatsAppOpenedToday(consultantId, customer.phone_whatsapp));
+  }, [consultantId, customer.phone_whatsapp, sentTick]);
 
   useEffect(() => {
     if (!open) {
@@ -324,7 +397,7 @@ function MessageButton({
     return (
       <span
         className="text-[10px] font-semibold text-muted-foreground px-1.5 py-0.5 rounded-md bg-muted/60"
-        title="WhatsApp já foi aberto hoje para este número (inclui outros cadastros com o mesmo zap)"
+        title="Mensagem já enviada hoje para este número (inclui outros cadastros com o mesmo zap)"
       >
         já hoje
       </span>
@@ -422,7 +495,7 @@ function MessageButton({
               <div className="px-3 py-2 border-t border-border/40 bg-muted/20">
                 <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                   <MessageCircle className="w-3 h-3" />
-                  Você vê e edita antes de mandar. Mesmo número = 1 envio/dia.
+                  Envia pela instância conectada. Mesmo número = 1 envio/dia.
                 </p>
               </div>
             </div>
@@ -431,12 +504,17 @@ function MessageButton({
               initialText={selectedText}
               templates={templates}
               customerName={customer.name}
+              customerId={customer.id}
               phone={customer.phone_whatsapp || ""}
               consultantId={consultantId}
+              instanceName={instanceName}
+              isWhapi={isWhapi}
+              conversationStep={conversationStep}
               onBack={() => setScreen("list")}
               onSent={() => {
                 setAlreadyToday(true);
                 setOpen(false);
+                onSentExternal?.();
               }}
               accent={accent}
             />
@@ -447,21 +525,145 @@ function MessageButton({
   );
 }
 
-function BirthdayMessageButton({
+/** Nome clicável — envia direto a mensagem preferida/sorteada pela instância conectada. */
+function RetentionCustomerName({
   customer,
   consultantId,
+  instanceName,
+  isWhapi,
+  templates,
   preferredTemplate,
+  conversationStep,
+  sentTick,
+  onSent,
 }: {
   customer: CustomerWithMeta;
   consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
+  templates: readonly string[];
   preferredTemplate?: string;
+  conversationStep: string;
+  /** Quando o botão Parabenizar/Mandar oi marca envio, o nome também mostra "já hoje". */
+  sentTick?: number;
+  onSent?: () => void;
+}) {
+  const { toast } = useToast();
+  const [sending, setSending] = useState(false);
+  const [alreadyToday, setAlreadyToday] = useState(() =>
+    wasRetentionWhatsAppOpenedToday(consultantId, customer.phone_whatsapp),
+  );
+  const hasPhone = isValidWhatsAppPhone(customer.phone_whatsapp);
+
+  useEffect(() => {
+    setAlreadyToday(wasRetentionWhatsAppOpenedToday(consultantId, customer.phone_whatsapp));
+  }, [consultantId, customer.phone_whatsapp, sentTick]);
+
+  const handleClick = async () => {
+    if (!hasPhone) {
+      toast({ title: "Sem WhatsApp cadastrado", variant: "destructive" });
+      return;
+    }
+    if (alreadyToday || wasRetentionWhatsAppOpenedToday(consultantId, customer.phone_whatsapp)) {
+      toast({
+        title: "Já enviado hoje para este número",
+        description: "Mesmo WhatsApp em outro cadastro — não manda de novo no mesmo dia.",
+        variant: "destructive",
+      });
+      setAlreadyToday(true);
+      return;
+    }
+    const tpl = preferredTemplate || pickRandom(templates);
+    const text = fillBirthdayMessage(tpl, customer.name);
+    setSending(true);
+    try {
+      const result = await sendRetentionViaInstance({
+        instanceName,
+        isWhapi,
+        phone: customer.phone_whatsapp || "",
+        text,
+        customerId: customer.id,
+        conversationStep,
+      });
+      if (!result.ok) {
+        toast({ title: result.error, variant: "destructive" });
+        return;
+      }
+      markRetentionWhatsAppOpenedToday(consultantId, customer.phone_whatsapp);
+      setAlreadyToday(true);
+      toast({
+        title: "Mensagem enviada",
+        description: `Enviada para ${customer.name || "o cliente"} pelo WhatsApp conectado.`,
+      });
+      onSent?.();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void handleClick()}
+      disabled={sending || alreadyToday || !hasPhone}
+      title={
+        alreadyToday
+          ? "Já enviado hoje"
+          : !hasPhone
+            ? "Sem WhatsApp cadastrado"
+            : "Clique para enviar pelo WhatsApp conectado"
+      }
+      className={`min-w-0 w-full text-left group disabled:cursor-default ${
+        alreadyToday || !hasPhone
+          ? ""
+          : "hover:opacity-90 cursor-pointer"
+      }`}
+    >
+      <p
+        className={`text-sm font-semibold truncate flex items-center gap-1.5 ${
+          alreadyToday || !hasPhone
+            ? "text-foreground"
+            : "text-primary group-hover:underline underline-offset-2"
+        }`}
+      >
+        {sending && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+        {customer.name || "Sem nome"}
+      </p>
+      {(customer._dupCount || 0) > 1 && (
+        <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
+          {customer._dupCount} cadastros · mesmo WhatsApp
+        </p>
+      )}
+    </button>
+  );
+}
+
+function BirthdayMessageButton({
+  customer,
+  consultantId,
+  instanceName,
+  isWhapi,
+  preferredTemplate,
+  sentTick,
+  onSent,
+}: {
+  customer: CustomerWithMeta;
+  consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
+  preferredTemplate?: string;
+  sentTick?: number;
+  onSent?: () => void;
 }) {
   return (
     <MessageButton
       customer={customer}
       consultantId={consultantId}
+      instanceName={instanceName}
+      isWhapi={isWhapi}
       templates={BIRTHDAY_MESSAGE_TEMPLATES}
       preferredTemplate={preferredTemplate}
+      conversationStep="retention_birthday"
       triggerLabel="Parabenizar"
       triggerIcon={<Gift className="w-3 h-3" />}
       triggerClassName="h-7 gap-1 px-2 text-[10px] rounded-lg border-primary/40 text-primary hover:bg-primary/10"
@@ -469,6 +671,8 @@ function BirthdayMessageButton({
       headerTitle="Parabenizar"
       headerSub="Mensagens prontas — clique pra ver e editar antes de enviar"
       accent="accent"
+      sentTick={sentTick}
+      onSentExternal={onSent}
     />
   );
 }
@@ -476,15 +680,26 @@ function BirthdayMessageButton({
 function ReactivationMessageButton({
   customer,
   consultantId,
+  instanceName,
+  isWhapi,
+  sentTick,
+  onSent,
 }: {
   customer: CustomerWithMeta;
   consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
+  sentTick?: number;
+  onSent?: () => void;
 }) {
   return (
     <MessageButton
       customer={customer}
       consultantId={consultantId}
+      instanceName={instanceName}
+      isWhapi={isWhapi}
       templates={REACTIVATION_TEMPLATES}
+      conversationStep="retention_reactivation"
       triggerLabel="Mandar oi"
       triggerIcon={<MessageCircle className="w-3 h-3" />}
       triggerClassName="h-7 gap-1 px-2 text-[10px] rounded-lg border-primary/40 text-primary hover:bg-primary/10"
@@ -492,6 +707,8 @@ function ReactivationMessageButton({
       headerTitle="Reativar"
       headerSub="Mensagens curtas — clique pra ver e editar antes de enviar"
       accent="primary"
+      sentTick={sentTick}
+      onSentExternal={onSent}
     />
   );
 }
@@ -678,9 +895,13 @@ function BirthdaySettingsDialog({
 export function RetentionCard({
   customers,
   consultantId,
+  instanceName,
+  isWhapi,
 }: {
   customers: Customer[] | undefined;
   consultantId?: string;
+  instanceName?: string | null;
+  isWhapi?: boolean;
 }) {
   const list = customers ?? [];
   const now = new Date();
@@ -691,6 +912,9 @@ export function RetentionCard({
   const [preferredTemplate, setPreferredTemplate] = useState(() =>
     getPreferredBirthdayTemplate(consultantId),
   );
+  /** Incrementa ao enviar — sincroniza “já hoje” entre nome e botão. */
+  const [sentTick, setSentTick] = useState(0);
+  const bumpSent = () => setSentTick((n) => n + 1);
 
   const { data: settings } = useAutomationSettings(consultantId);
   const queueEnabled = !!settings?.auto_wa_aniversariante;
@@ -730,7 +954,7 @@ export function RetentionCard({
           <div>
             <h3 className="font-heading font-black text-sm tracking-tight">REATIVAR CLIENTES PARADOS</h3>
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Sem avanço há +30 dias — mande um oi
+              Sem avanço há +30 dias — clique no nome ou mande um oi
             </p>
           </div>
         </header>
@@ -743,18 +967,27 @@ export function RetentionCard({
                 key={c.id}
                 className="grid grid-cols-[1fr_auto_auto] items-center gap-3 px-5 py-2.5 hover:bg-muted/30"
               >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{c.name || "Sem nome"}</p>
-                  {(c._dupCount || 0) > 1 && (
-                    <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
-                      {c._dupCount} cadastros · mesmo WhatsApp
-                    </p>
-                  )}
-                </div>
+                <RetentionCustomerName
+                  customer={c}
+                  consultantId={consultantId}
+                  instanceName={instanceName}
+                  isWhapi={isWhapi}
+                  templates={REACTIVATION_TEMPLATES}
+                  conversationStep="retention_reactivation"
+                  sentTick={sentTick}
+                  onSent={bumpSent}
+                />
                 <span className="text-xs tabular-nums text-destructive font-bold">
                   {daysSince(c.created_at)}d
                 </span>
-                <ReactivationMessageButton customer={c} consultantId={consultantId} />
+                <ReactivationMessageButton
+                  customer={c}
+                  consultantId={consultantId}
+                  instanceName={instanceName}
+                  isWhapi={isWhapi}
+                  sentTick={sentTick}
+                  onSent={bumpSent}
+                />
               </li>
             ))}
           </ol>
@@ -781,7 +1014,7 @@ export function RetentionCard({
               </span>
             </div>
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Hoje e do mês — configure e parabenize
+              Clique no nome para enviar · ou configure e parabenize
             </p>
           </div>
           <Button
@@ -821,23 +1054,28 @@ export function RetentionCard({
                 <ul className="space-y-1.5 max-h-[200px] overflow-y-auto">
                   {aniversariantesHoje.map(({ c, b }) => (
                     <li key={c.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-2 py-0.5">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
-                          {c.name || "Sem nome"}
-                        </p>
-                        {(c._dupCount || 0) > 1 && (
-                          <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
-                            {c._dupCount} cadastros · mesmo WhatsApp
-                          </p>
-                        )}
-                      </div>
+                      <RetentionCustomerName
+                        customer={c}
+                        consultantId={consultantId}
+                        instanceName={instanceName}
+                        isWhapi={isWhapi}
+                        templates={BIRTHDAY_MESSAGE_TEMPLATES}
+                        preferredTemplate={preferredTemplate}
+                        conversationStep="retention_birthday"
+                        sentTick={sentTick}
+                        onSent={bumpSent}
+                      />
                       <span className="text-xs tabular-nums text-primary font-bold">
                         {ageThisYear(b.year)} anos
                       </span>
                       <BirthdayMessageButton
                         customer={c}
                         consultantId={consultantId}
+                        instanceName={instanceName}
+                        isWhapi={isWhapi}
                         preferredTemplate={preferredTemplate}
+                        sentTick={sentTick}
+                        onSent={bumpSent}
                       />
                     </li>
                   ))}
@@ -862,16 +1100,17 @@ export function RetentionCard({
                         key={c.id}
                         className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 py-0.5"
                       >
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground truncate">
-                            {c.name || "Sem nome"}
-                          </p>
-                          {(c._dupCount || 0) > 1 && (
-                            <p className="text-[10px] text-amber-700 dark:text-amber-300 truncate">
-                              {c._dupCount} cadastros · mesmo WhatsApp
-                            </p>
-                          )}
-                        </div>
+                        <RetentionCustomerName
+                          customer={c}
+                          consultantId={consultantId}
+                          instanceName={instanceName}
+                          isWhapi={isWhapi}
+                          templates={BIRTHDAY_MESSAGE_TEMPLATES}
+                          preferredTemplate={preferredTemplate}
+                          conversationStep="retention_birthday"
+                          sentTick={sentTick}
+                          onSent={bumpSent}
+                        />
                         <span className="text-[11px] tabular-nums text-muted-foreground">
                           {String(b.day).padStart(2, "0")}/{String(b.month).padStart(2, "0")}
                         </span>
@@ -881,7 +1120,11 @@ export function RetentionCard({
                         <BirthdayMessageButton
                           customer={c}
                           consultantId={consultantId}
+                          instanceName={instanceName}
+                          isWhapi={isWhapi}
                           preferredTemplate={preferredTemplate}
+                          sentTick={sentTick}
+                          onSent={bumpSent}
                         />
                       </li>
                     );

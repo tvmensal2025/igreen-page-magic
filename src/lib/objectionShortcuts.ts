@@ -59,6 +59,51 @@ export const SHORTCUT_RETURN_TO_CADASTRO =
 /** CNPJ oficial alinhado à base de conhecimento / Reclame Aqui. */
 export const IGREEN_CNPJ = "44.159.238/0001-30";
 
+/**
+ * Padrões únicos e completos — vários atalhos (gatilhos diferentes) compartilham
+ * o mesmo texto/áudio pra não repetir quase a mesma fala com pequena variação.
+ */
+export const FAQ_PADRAO = {
+  confianca: qaPadrao(
+    "{{nome}}, entendo a desconfiança — é sua conta de luz e tem que ser sério. 😊\n\n" +
+      "A *iGreen* é *100% legal*: regulamentada pela *ANEEL* (geração compartilhada, Lei 14.300/2022), " +
+      "*CNPJ* " +
+      IGREEN_CNPJ +
+      ", no mercado desde *2017*, com escritório físico e mais de *700 mil clientes*. 🌱\n\n" +
+      "Você assina *energia limpa* por assinatura e recebe *desconto* previsto no contrato — " +
+      "*sem instalar nada* em casa, *sem fidelidade* e *sem multa*. ⚡",
+  ),
+  preco: qaPadrao(
+    "{{nome}}, sobre custo: *zero adesão*, *zero taxa escondida*, *zero mensalidade extra*. 😊\n\n" +
+      "Você *não paga pra entrar* e *não paga a mais* no fim do mês. A fatura *iGreen* " +
+      "*substitui* parte da conta da concessionária (já com *desconto* contratualizado) — *não soma*. ⚡\n\n" +
+      "O percentual fica *claro no contrato antes de assinar*. Se não vier como combinado, a *iGreen* corrige. " +
+      "Sem pegadinha, sem letra miúda. 🌱",
+  ),
+  cancelamento: qaPadrao(
+    "{{nome}}, pode ficar tranquilo: *zero fidelidade* e *zero multa*. 😊\n\n" +
+      "Cancela quando quiser pelo *app* da iGreen ou pelo *WhatsApp* do atendimento — " +
+      "o encerramento leva de *30 a 90 dias*, *sem taxa*. 🌱\n\n" +
+      "Não fica amarrado: o contrato deixa isso explícito desde o início. ⚡",
+  ),
+  tecnico: qaPadrao(
+    "{{nome}}, funciona assim: você *não troca de concessionária* e *não tem obra* em casa. 😊\n\n" +
+      "A energia continua chegando pela mesma empresa da sua cidade. A *iGreen* só injeta " +
+      "*energia limpa* na rede e aplica o *desconto* na fatura — *sem placa* no telhado. ⚡\n\n" +
+      "Serve pra *apartamento*, casa ou comércio, desde que a *conta de luz* esteja no seu nome. 🌱",
+  ),
+  cadastro: qaPadrao(
+    "{{nome}}, sem pressa com o documento. 😊\n\n" +
+      "RG/CNH (e os dados do cadastro) são exigência da *ANEEL* pra te cadastrar como *titular*. " +
+      "Vão direto pra plataforma segura da *iGreen* — *não ficam comigo* — e são protegidos pela *LGPD*. 🌱\n\n" +
+      "É o mesmo tipo de segurança de qualquer contratação de energia séria. ⚡",
+  ),
+} as const;
+
+function qaPadrao(body: string): string {
+  return body.trim();
+}
+
 function qa(body: string): string {
   return body.trim();
 }
@@ -72,30 +117,20 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
   {
     category: "Confiança",
     name: "É golpe / furada",
-    triggers: ["é golpe", "isso é golpe", "parece golpe", "golpe", "furada", "enganação", "fraude", "picaretagem"],
-    text: qa(
-      "Imagina, {{nome}} 😅\n\nEntendo seu receio — é normal desconfiar. 🌱\n\nA *iGreen* é regulamentada pela *ANEEL*, tem *CNPJ* " +
-        IGREEN_CNPJ +
-        ", escritório físico e mais de *700 mil clientes* ativos. ⚡\n\nVocê assina *energia limpa* por assinatura e recebe *desconto* na conta — *sem instalar nada* em casa.",
-    ),
+    triggers: ["é golpe", "isso é golpe", "parece golpe", "parece furada", "é furada", "é enganação", "é fraude", "é picaretagem"],
+    text: FAQ_PADRAO.confianca,
   },
   {
     category: "Confiança",
     name: "Não confio nessa empresa",
     triggers: ["não confio", "nao confio", "desconfio de vocês", "desconfio de voce", "não confio nisso", "suspeito de vocês"],
-    text: qa(
-      "Faz total sentido desconfiar, {{nome}} 😊\n\nÉ sua *conta de luz* — tem que ser sério mesmo. 🌱\n\nA *iGreen* existe desde *2017*, é parceira de geradoras autorizadas pela *ANEEL* e opera com *CNPJ* regular (" +
-        IGREEN_CNPJ +
-        "). ⚡\n\nO *desconto* vem no contrato, com percentual definido *antes* de você assinar.",
-    ),
+    text: FAQ_PADRAO.confianca,
   },
   {
     category: "Confiança",
     name: "Nunca ouvi falar",
     triggers: ["nunca ouvi falar", "não conheço a igreen", "nao conheco a igreen", "primeira vez que ouço", "quem é a igreen"],
-    text: qa(
-      "Tranquilo, {{nome}}! 😊\n\nA *iGreen* atua desde *2017* no Brasil, com escritório físico e mais de *700 mil clientes*. 🌱\n\nÉ *energia limpa* por assinatura: você economiza na conta *sem obra* e *sem equipamento* em casa. ⚡",
-    ),
+    text: FAQ_PADRAO.confianca,
   },
   {
     category: "Confiança",
@@ -117,19 +152,13 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Confiança",
     name: "CNPJ / regulamentação",
     triggers: ["qual o cnpj", "cnpj da igreen", "é regulamentado", "regulamentado pela aneel", "autorizado pela aneel", "empresa legal"],
-    text: qa(
-      "Sim, {{nome}}! 😊\n\n*CNPJ* " +
-        IGREEN_CNPJ +
-        ", regulada pela *ANEEL* na modalidade de *geração compartilhada* (Lei 14.300/2022). 🌱\n\n*100% legal* — o *desconto* fica previsto no contrato antes da assinatura. ⚡",
-    ),
+    text: FAQ_PADRAO.confianca,
   },
   {
     category: "Confiança",
     name: "Há quanto tempo existe",
     triggers: ["há quanto tempo existe", "quantos anos de mercado", "quando foi fundada", "quando começou", "quanto tempo no mercado"],
-    text: qa(
-      "A *iGreen* está no mercado desde *2017*, {{nome}} 😊\n\nSão mais de *7 anos* operando *energia limpa* por assinatura no Brasil. 🌱⚡\n\nEmpresa consolidada, com centenas de milhares de clientes ativos.",
-    ),
+    text: FAQ_PADRAO.confianca,
   },
   {
     category: "Confiança",
@@ -152,7 +181,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     name: "É pirâmide / multinível",
     triggers: [
       "é pirâmide",
-      "piramide",
+      "é piramide",
       "é multinível",
       "marketing multinível",
       "esquema de pirâmide",
@@ -170,9 +199,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Preço",
     name: "É caro / não tenho dinheiro",
     triggers: ["tô sem dinheiro", "to sem dinheiro", "muito caro", "estou apertado", "sem grana", "tô quebrado"],
-    text: qa(
-      "Pelo contrário, {{nome}} 😊\n\nVocê *não paga nada a mais*. Só passa a pagar uma fatura *iGreen menor* no lugar da parte de energia da concessionária. ⚡\n\n*Sem custo* de adesão, *sem instalação*, *sem mensalidade extra*. 🌱",
-    ),
+    text: FAQ_PADRAO.preco,
   },
   {
     category: "Preço",
@@ -186,25 +213,19 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Preço",
     name: "Desconto é falso",
     triggers: ["desconto falso", "desconto é mentira", "propaganda enganosa", "isso não é verdade", "mentira esse desconto"],
-    text: qa(
-      "Entendo a desconfiança, {{nome}} 😊\n\nO *desconto* vem *contratualizado* — você assina prevendo o percentual exato. 🌱\n\nSe não vier como combinado, a *iGreen* é obrigada a corrigir conforme o contrato. ⚡\n\nTransparência total, sem letra miúda.",
-    ),
+    text: FAQ_PADRAO.preco,
   },
   {
     category: "Preço",
     name: "Tem taxa escondida",
     triggers: ["taxa escondida", "tem custo extra", "tem pegadinha", "letra miúda", "custo oculto", "tem surpresa na conta"],
-    text: qa(
-      "*Zero taxa escondida*, {{nome}} 😊\n\nVocê paga só a fatura mensal da *iGreen* (já com *desconto*). ⚡\n\n*Sem adesão*, *sem instalação*, *sem fidelidade*. Tudo está no contrato. 🌱",
-    ),
+    text: FAQ_PADRAO.preco,
   },
   {
     category: "Preço",
     name: "Vou pagar a mais no fim",
     triggers: ["vou pagar mais", "vai sair mais caro", "conta vai dobrar", "vai somar mais", "conta vai crescer"],
-    text: qa(
-      "Não, {{nome}} 😊\n\nA fatura *iGreen* *substitui* parte da fatura da concessionária — *não soma*. ⚡\n\nNo fim do mês você paga *menos* do que pagava antes. 🌱",
-    ),
+    text: FAQ_PADRAO.preco,
   },
   {
     category: "Preço",
@@ -218,9 +239,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Preço",
     name: "Pagar pra entrar",
     triggers: ["pagar pra entrar", "tem adesão", "custo de adesão", "taxa de entrada", "tem mensalidade"],
-    text: qa(
-      "*Zero*, {{nome}} 😊\n\nAdesão *gratuita*, *sem mensalidade*, *sem instalação*. 🌱\n\nVocê só passa a pagar a fatura mensal que já paga — só que com *desconto*. ⚡",
-    ),
+    text: FAQ_PADRAO.preco,
   },
 
   // ── Cobrança ───────────────────────────────────────────────────────────
@@ -247,7 +266,8 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
       "o que não abate",
       "taxa de disponibilidade",
       "iluminação pública",
-      "cosip",
+      "taxa cosip",
+      "taxa de cosip",
       "desconto na conta toda",
       "abate na conta toda",
     ],
@@ -307,22 +327,18 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Técnico",
     name: "Trocar de empresa",
     triggers: ["trocar de empresa", "mudar de concessionária", "sair da enel", "trocar fornecedor"],
-    text: qa(
-      "Você *não troca de empresa*, {{nome}} 😊\n\nA concessionária continua entregando a energia em casa. 🌱\n\nA *iGreen* só fornece a *energia limpa* que vai pra rede. *Nada muda* na sua casa. ⚡",
-    ),
+    text: FAQ_PADRAO.tecnico,
   },
   {
     category: "Técnico",
     name: "Mexer na fiação",
     triggers: ["mexer na fiação", "técnico em casa", "obra na minha casa", "instalação em casa", "vão instalar algo"],
-    text: qa(
-      "*Zero obra*, {{nome}}! 😊\n\nNinguém vai na sua casa — não mexemos em nada. 🌱\n\nTudo é feito na conta: a *energia limpa* vai pra rede e abate a sua. ⚡",
-    ),
+    text: FAQ_PADRAO.tecnico,
   },
   {
     category: "Técnico",
     name: "E se faltar luz",
-    triggers: ["se faltar luz", "e se faltar energia", "apagão", "ficar sem energia"],
+    triggers: ["se faltar luz", "e se faltar energia", "se tiver apagão", "ficar sem energia"],
     text: qa(
       "Faltou luz? Você liga pra *concessionária* igual antes, {{nome}} 😊\n\nA entrega da energia continua sendo dela. ⚡\n\nA *iGreen* só aplica o *desconto* na fatura. 🌱",
     ),
@@ -331,9 +347,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Técnico",
     name: "Placa solar / painel",
     triggers: ["placa solar", "painel no telhado", "instalar placa", "painel solar", "equipamento no telhado"],
-    text: qa(
-      "Nada disso, {{nome}}! 😊\n\nAs usinas solares são da *iGreen*, longe da sua casa. 🌱\n\nVocê só recebe o *desconto* — *sem placa*, sem inversor, sem nada no telhado. ⚡",
-    ),
+    text: FAQ_PADRAO.tecnico,
   },
   {
     category: "Técnico",
@@ -361,9 +375,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Técnico",
     name: "Funciona pra apartamento",
     triggers: ["funciona em apartamento", "funciona no apartamento", "funciona em condomínio", "funciona no prédio"],
-    text: qa(
-      "Funciona sim, {{nome}}! 😊\n\nApartamento, casa, comércio — qualquer imóvel com *conta de luz* no seu nome serve. 🌱⚡",
-    ),
+    text: FAQ_PADRAO.tecnico,
   },
   {
     category: "Técnico",
@@ -435,25 +447,19 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Cancelamento",
     name: "Fidelidade / multa",
     triggers: ["tem fidelidade", "contrato com multa", "fico amarrado", "prazo de contrato", "contrato preso", "pago multa para cancelar"],
-    text: qa(
-      "*Zero fidelidade*, {{nome}}! 😊\n\nCancela quando quiser — *sem multa*, sem burocracia. 🌱\n\nÉ só avisar pelo app ou WhatsApp do atendimento. ⚡",
-    ),
+    text: FAQ_PADRAO.cancelamento,
   },
   {
     category: "Cancelamento",
     name: "Posso cancelar quando quiser",
     triggers: ["posso cancelar quando quiser", "quero cancelar", "quero desistir", "quero encerrar"],
-    text: qa(
-      "Sempre, {{nome}}! 😊\n\n*Sem multa*, *sem fidelidade*. 🌱\n\nCancelamento em até *30 dias* após solicitar. ⚡",
-    ),
+    text: FAQ_PADRAO.cancelamento,
   },
   {
     category: "Cancelamento",
     name: "Como faço pra cancelar",
     triggers: ["como faço pra cancelar", "como cancelar o contrato", "processo de cancelamento"],
-    text: qa(
-      "Pelo app da *iGreen* ou pelo *WhatsApp* do atendimento, {{nome}} 😊\n\nEm até *30 dias* o contrato encerra — *sem multa*. 🌱⚡",
-    ),
+    text: FAQ_PADRAO.cancelamento,
   },
   {
     category: "Cancelamento",
@@ -465,9 +471,7 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
       "demora pra cancelar",
       "atendimento não responde",
     ],
-    text: qa(
-      "Entendo o medo, {{nome}} 😊\n\nNo contrato: *sem fidelidade* e *sem multa*. O pedido é pelo *app* ou *WhatsApp* do atendimento, com prazo de até *30 dias*. 🌱\n\nSe travar, você tem *Reclame Aqui* e canais oficiais — e a *iGreen* responde e resolve a maioria dos casos. ⚡",
-    ),
+    text: FAQ_PADRAO.cancelamento,
   },
   {
     category: "Cancelamento",
@@ -491,33 +495,25 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
     category: "Cadastro",
     name: "Não vou mandar foto da conta",
     triggers: ["não vou mandar foto", "não mando foto da conta", "privacidade da conta", "não envio a conta"],
-    text: qa(
-      "Entendo, {{nome}} 😊\n\nEsse passo serve só pra confirmar o *titular* e o *valor* da conta — exigência da *ANEEL* no cadastro. ⚡\n\nOs dados vão direto pra plataforma segura da *iGreen*, protegidos pela *LGPD*. 🌱",
-    ),
+    text: FAQ_PADRAO.cadastro,
   },
   {
     category: "Cadastro",
     name: "Não vou mandar RG/CNH",
     triggers: ["não vou mandar documento", "não mando rg", "não mando cnh", "não envio identidade", "não mando doc"],
-    text: qa(
-      "Sem pressa, {{nome}} 😊\n\nO documento é exigência da *ANEEL* pra cadastrar você como titular. 🌱\n\nVai direto pra plataforma segura da *iGreen* — não fica comigo, e tudo é protegido pela *LGPD*. ⚡",
-    ),
+    text: FAQ_PADRAO.cadastro,
   },
   {
     category: "Cadastro",
     name: "Por que precisam do CPF",
     triggers: ["por que precisa do cpf", "por que pedem cpf", "dados pessoais meus", "privacidade dos dados"],
-    text: qa(
-      "Pra cadastrar você como titular da conta na *iGreen*, {{nome}} — igual qualquer contratação de energia. 😊\n\nDados ficam protegidos pela *LGPD*, com criptografia e controle de acesso. 🌱⚡",
-    ),
+    text: FAQ_PADRAO.cadastro,
   },
   {
     category: "Cadastro",
     name: "E se vazarem meus dados",
     triggers: ["vão vazar meus dados", "medo de vazar dados", "segurança dos dados", "dados protegidos", "proteção lgpd"],
-    text: qa(
-      "A *iGreen* segue a *LGPD* à risca, {{nome}} 😊\n\nDados criptografados, servidores seguros — e você pode pedir exclusão a qualquer momento. 🌱⚡",
-    ),
+    text: FAQ_PADRAO.cadastro,
   },
   {
     category: "Cadastro",
@@ -641,6 +637,13 @@ export function assertNoDuplicateTriggers(shortcuts: ObjectionShortcut[] = OBJEC
 export const RESERVED_FLOW_KEYWORDS = [
   "sim", "não", "nao", "ok", "certo", "beleza", "vamos", "valor",
   "r$", "foto", "documento", "doc", "rg", "cnh", "cpf",
+  // Genéricos que casam contexto errado se usados sozinhos no FAQ
+  "fidelidade", "multa", "golpe", "furada", "depois", "sair", "data", "ap",
+  "cobertura", "obra", "ativar", "link", "conta", "taxa", "solar", "pagar",
+  "seguro", "prazo", "cancelar", "pix", "ceo", "dono", "aqui", "moro",
+  "cidade", "ligar", "explica", "humano", "mentira", "scam", "aneel",
+  "cnpj", "lgpd", "anos", "placa", "juros", "caro", "sede", "sócio",
+  "enel", "cemig", "light", "spc", "cosip", "apagão", "piramide",
 ];
 
 assertNoDuplicateTriggers();

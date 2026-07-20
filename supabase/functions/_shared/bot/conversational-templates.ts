@@ -23,6 +23,10 @@ export interface TemplateVars {
   /** customers.name_source — sem fonte confiável não chama. */
   nome_source?: string | null;
   representante?: string | null;
+  /** Alias de representante em alguns templates do painel. */
+  consultor?: string | null;
+  /** Protocolo de atendimento (IGR-XXX-####). Nunca enviar placeholder vazio. */
+  protocolo?: string | null;
   valor_conta?: number | string | null;
   telefone?: string | null;
   cpf?: string | null;
@@ -69,7 +73,9 @@ function fmtEconomiaRange(v: number | string | null | undefined): string {
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   const nome = safeFirstNameForAddress(vars.nome, vars.nome_source);
-  const rep = (String(vars.representante || "").trim()) || "iGreen Energy";
+  const rep =
+    (String(vars.representante || vars.consultor || "").trim()) || "iGreen Energy";
+  const protocolo = String(vars.protocolo || "").trim();
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
   const econAnual = fmtEconomiaAnual(vars.valor_conta);
@@ -84,6 +90,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   }
   out = replaceVar(out, "nome", nome);
   out = replaceVar(out, "representante", rep);
+  out = replaceVar(out, "consultor", rep);
+  out = replaceVar(out, "protocolo", protocolo);
   out = replaceVar(out, "valor_conta", valor);
   out = replaceVar(out, "economia_mensal", econMensal);
   out = replaceVar(out, "economia_anual", econAnual);
@@ -93,6 +101,16 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "economia_faixa", econRange);
   out = replaceVar(out, "telefone", tel);
   out = replaceVar(out, "cpf", cpf);
+  // Sem número: remove linha de protocolo (evita "Protocolo —" / "Protocolo: *").
+  if (!protocolo) {
+    out = out
+      .replace(/^.*📋\s*\*?Protocolo.*$/gmi, "")
+      .replace(/^.*\bProtocolo\b\s*[—–:-]?\s*\*?.*$/gmi, (line) => {
+        const t = line.replace(/\*+/g, "").trim();
+        return /^(📋\s*)?Protocolo\b/i.test(t) ? "" : line;
+      })
+      .replace(/\n{3,}/g, "\n\n");
+  }
   out = out
     .replace(/\*\s*\*/g, "")
     .replace(/_\s*_/g, "")

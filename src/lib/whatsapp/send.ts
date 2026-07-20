@@ -30,7 +30,7 @@ export interface SendStepResult {
   data?: any;
 }
 
-const CLIENT_TIMEOUT_MS = 20_000;
+const CLIENT_TIMEOUT_MS = 55_000; // áudio Sofia (stitch) pode levar ~45s no 1º envio
 
 const FRIENDLY: Record<string, string> = {
   unauthorized: "Sessão expirada — faça login novamente.",
@@ -58,7 +58,7 @@ const FRIENDLY: Record<string, string> = {
   whapi_network: "Sem resposta do iGreen Chat (rede). Tente novamente em alguns segundos.",
   partial_send: "Parte dos itens não foi enviada. Tente reenviar só o que faltou.",
   internal_error: "Erro interno no servidor.",
-  client_timeout: "Servidor demorou demais (20s). Tente de novo.",
+  client_timeout: "Servidor demorou demais (áudio/personalização). Tente de novo.",
   empty_send_ok: "Edge respondeu OK mas não disparou nada. Veja se o passo tem mídia/texto.",
 };
 

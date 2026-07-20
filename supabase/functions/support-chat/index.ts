@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { HELP_SYSTEM_KNOWLEDGE, formatHelpArticles } from "../_shared/help-system-knowledge.ts";
+import { HELP_SYSTEM_KNOWLEDGE, resolveHelpKnowledge } from "../_shared/help-system-knowledge.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,16 +13,20 @@ Seu trabalho:
 - Responder rápido e direto, em português, com TOM de pessoa que ajuda (não corporativo).
 - Sempre que possível, OLHE os dados do consultor abaixo (saldo, conexão FB, campanha, etc) e responda com base neles.
 - Se o consultor pedir algo fora do escopo do iGreen Energy, redirecione com gentileza.
-- Quando o problema é claro, dê o passo-a-passo numerado em até 5 passos. Sem enrolar.
+- Quando o problema é claro, dê o passo-a-passo numerado em até 8 passos. Sem enrolar.
+- Em CADA passo diga ONDE clicar: item do menu esquerdo, nome da aba e nome do botão (iguais aos da tela).
+- Termine com "Abra: [nome] — [rota]" quando houver página.
 - Se faltar dado para diagnosticar, faça UMA pergunta objetiva.
 - Para erros do Facebook (rejeição de anúncio, WhatsApp Business, saldo, conexão expirada, baixo alcance) dê a solução prática.
-- NUNCA invente preços, números de telefone, links, ou políticas. Se não souber, diga "vou pedir para o suporte humano te chamar".
+- NUNCA invente preços, números de telefone, links, botões ou políticas. Se não souber, diga "vou pedir para o suporte humano te chamar".
 
 Regras importantes:
 - Para anúncios e carteira, consulte os DADOS ATUAIS DO CONSULTOR antes de informar saldo, mínimo, taxa, situação ou motivo de reprovação.
 - Para comissão, pagamento e situação de cliente, explique apenas o que estiver confirmado nos dados ou na documentação publicada.
 - Uma resposta manual pode pausar a automação da conversa. Oriente o consultor a conferir o estado atual antes de reativar.
-- Nunca afirme que uma automação está ligada, funcionando ou disponível sem evidência nos dados fornecidos.`;
+- Nunca afirme que uma automação está ligada, funcionando ou disponível sem evidência nos dados fornecidos.
+- Não diga "robô"; diga "assistente automática". Não use a sigla DNC; diga "bloqueado" ou "nunca mais contatar".
+- O WhatsApp em uso é Whapi; não peça reconectar Evolution só por status antigo.`;
 
 Deno.serve(async (req) => {
   const json = (o: unknown, status = 200) =>
@@ -66,7 +70,7 @@ Deno.serve(async (req) => {
       ctx.carteira = w ? { saldo_reais: ((w.balance_cents || 0) / 100).toFixed(2), gasto_total_reais: ((w.total_spent_cents || 0) / 100).toFixed(2) } : null;
       ctx.facebook = fb;
       ctx.campanhas_recentes = camp;
-      publishedHelp = formatHelpArticles(articles || []);
+      publishedHelp = resolveHelpKnowledge(articles || []);
     } catch (e) {
       console.warn("[support-chat] ctx error", e);
     }

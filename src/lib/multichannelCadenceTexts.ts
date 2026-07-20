@@ -954,9 +954,16 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     timing: "T+0 · AGUARDA resposta com o nome",
     canGenerateAudio: false,
     notes:
-      "OBRIGATÓRIO aguardar. Sem botões. Salvar em customer.name. Só depois → passo 2. Texto oficial curto (agilizar).",
-    // Evitar `*Olá!* *Para…*` (WhatsApp cola em `*Olá!Para…*` sem espaço).
-    body: `*Olá!* Para agilizar seu atendimento, informe seu *primeiro nome*.`,
+      "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação Gestor + protocolo + pedido do nome.",
+    body: `*iGreen | Conta de Luz Mais Barata 🌱*
+
+Olá! Aqui é *{{representante}}*, *Gestor* da *iGreen*.
+
+Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
+
+📋 *Protocolo:* {{protocolo}}
+
+Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.`,
   },
   {
     key: "a2_audio_activate_name",

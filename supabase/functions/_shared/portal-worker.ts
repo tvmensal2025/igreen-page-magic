@@ -7,6 +7,7 @@
 // banco apenas para auditoria — o roteamento é sempre Portal 2.
 
 import { resolvePortalWhatsapp } from "./portal-phone.ts";
+import { looksLikeFileRef, preflightPortalDocuments } from "./storage-download.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -93,7 +94,7 @@ async function checkDocsPresentForPortal2(supabase: any, customerId: string): Pr
     .from("customers")
     .select(`
       document_type,
-      electricity_bill_photo_url, bill_base64,
+      electricity_bill_photo_url, electricity_boleto_photo_url, bill_base64,
       document_front_url, document_front_base64,
       document_back_url, document_back_base64
     `)
@@ -102,24 +103,26 @@ async function checkDocsPresentForPortal2(supabase: any, customerId: string): Pr
 
   if (!c) return { ok: false, missing: ["customer não encontrado"] };
 
-  const hasFile = (v: any) =>
-    typeof v === "string" &&
-    v.trim() !== "" &&
-    v !== "evolution-media:pending" &&
-    v !== "collected" &&
-    v !== "nao_aplicavel" &&
-    (v.startsWith("http") || v.startsWith("data:") || v.length > 200);
-
+  // Presença rápida (evita round-trip se nem URL existe)
+  const quickMissing: string[] = [];
   const isCnh =
     String(c.document_back_url || "") === "nao_aplicavel" ||
     String(c.document_type || "").toLowerCase().includes("cnh");
+  if (!looksLikeFileRef(c.electricity_bill_photo_url) && !looksLikeFileRef(c.bill_base64) &&
+      !looksLikeFileRef(c.electricity_boleto_photo_url)) {
+    quickMissing.push("conta de energia");
+  }
+  if (!looksLikeFileRef(c.document_front_url) && !looksLikeFileRef(c.document_front_base64)) {
+    quickMissing.push("documento (frente)");
+  }
+  if (!isCnh && !looksLikeFileRef(c.document_back_url) && !looksLikeFileRef(c.document_back_base64)) {
+    quickMissing.push("documento (verso)");
+  }
+  if (quickMissing.length) return { ok: false, missing: quickMissing };
 
-  const missing: string[] = [];
-  if (!hasFile(c.electricity_bill_photo_url) && !hasFile(c.bill_base64)) missing.push("conta de energia");
-  if (!hasFile(c.document_front_url) && !hasFile(c.document_front_base64)) missing.push("documento (frente)");
-  if (!isCnh && !hasFile(c.document_back_url) && !hasFile(c.document_back_base64)) missing.push("documento (verso)");
-
-  return { ok: missing.length === 0, missing };
+  // Confirma bytes baixáveis (bucket privado) — senão o worker 422-a em loop
+  const deep = await preflightPortalDocuments(supabase, c);
+  return deep.ok ? { ok: true, missing: [] } : { ok: false, missing: deep.missing };
 }
 
 // Exportada para teste de propriedade (Property 7 do spec rodizio-leads-anuncio).
@@ -302,7 +305,8 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
       console.warn(`[portal-worker] customer=${customerId} despacho bloqueado — ${msg}`);
       if (!TERMINAL_STATUSES.has(currentStatus)) {
         await supabase.from("customers").update({
-          status: "missing_documents",
+          status: "awaiting_manual_submit",
+          portal2_status: "blocked_missing_documents",
           error_message: msg,
           last_portal_dispatch_error: msg.slice(0, 200),
         }).eq("id", customerId);

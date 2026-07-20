@@ -17,6 +17,10 @@ export const QA_GENERIC_SINGLE: ReadonlySet<string> = new Set([
   "medo", "obra", "prazo", "anos", "data", "sair", "regiao", "região", "ligar",
   "explica", "humano", "baixo", "alto", "medio", "médio", "amanha", "amanhã",
   "talvez", "interessado", "interessada",
+  "fidelidade", "multa", "golpe", "furada", "enganacao", "fraude", "picaretagem",
+  "scam", "aneel", "cnpj", "lgpd", "pix", "ceo", "dono", "mentira", "placa",
+  "juros", "caro", "sede", "socio", "enel", "cemig", "light", "spc", "cosip",
+  "apagao", "piramide", "ap", "cancelar",
 ]);
 
 export function normalizeQaText(text: string): string {

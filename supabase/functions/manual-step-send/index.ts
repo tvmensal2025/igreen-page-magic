@@ -565,6 +565,73 @@ Deno.serve(async (req) => {
       .eq("is_draft", false)
       .order("send_order", { ascending: true });
     let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+
+    // Sofia A2/A3/A5: áudio real está em __body (+ intro com nome). Lookup
+    // exato do slot_key não acha nada — e NUNCA devemos mandar MP3 de prévia
+    // (Maria/Rodrigo). Mesmo caminho do bot (sendStepMedia / wa-audio-stitch).
+    const needsAudioPart = body.part === "all" || body.part === "audio";
+    if (needsAudioPart && slotKey) {
+      try {
+        const { isPersonalizedWaAudioSlot, pickSafePersonalizedWaAudio } = await import(
+          "../_shared/wa-audio-stitch.ts"
+        );
+        if (isPersonalizedWaAudioSlot(String(slotKey))) {
+          const nonAudio = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
+          medias = nonAudio;
+          const safe = await pickSafePersonalizedWaAudio(supabase, {
+            consultantId: body.consultantId,
+            slotKey: String(slotKey),
+            customerName: (customer as any)?.name,
+            nameSource: (customer as any)?.name_source,
+            // Manual: cache costurado costuma ser rápido; gera no máx. ~45s.
+            timeoutMs: 45_000,
+          });
+          if (safe.ok && safe.url && (safe.mode === "stitch" || safe.mode === "body_only")) {
+            medias = [
+              ...nonAudio,
+              {
+                id: `sofia-${slotKey}`,
+                kind: "audio",
+                label: `sofia ${slotKey} · ${safe.displayName || "sem-nome"} · ${safe.mode}`,
+                url: String(safe.url),
+                slot_key: slotKey,
+                send_order: 0,
+                duration_sec: null,
+                transcript: null,
+              },
+            ];
+            console.log(
+              `[manual-step-send] wa-audio SAFE slot=${slotKey} name=${safe.displayName} mode=${safe.mode} cached=${safe.cached}`,
+            );
+          } else {
+            console.warn(
+              `[manual-step-send] wa-audio SKIP slot=${slotKey} err=${safe.error} — segue só texto/botões`,
+            );
+          }
+        } else if (medias.length === 0) {
+          // Fallback: corpo gravado como slot__body / slot__body_gender
+          const { data: bodyRows } = await supabase
+            .from("ai_media_library")
+            .select("id, kind, url, slot_key, send_order, duration_sec, transcript, label")
+            .eq("consultant_id", body.consultantId)
+            .like("slot_key", `${slotKey}__body%`)
+            .eq("active", true)
+            .eq("is_draft", false)
+            .order("send_order", { ascending: true });
+          const extras = ((bodyRows as any[]) || []).filter((m) => !!m?.url);
+          if (extras.length) {
+            medias = extras;
+            console.log(`[manual-step-send] fallback ${slotKey}__body* → ${extras.length} mídia(s)`);
+          }
+        }
+      } catch (stitchErr) {
+        console.warn(
+          "[manual-step-send] wa-stitch erro:",
+          (stitchErr as Error)?.message || stitchErr,
+        );
+      }
+    }
+
     // Envio manual ignora a regra de variante (override humano).
     if (variant === "B") {
       console.log(`[manual-step-send] variant=B detected but manual override — audios kept`);
@@ -1199,7 +1266,7 @@ async function buildContinuationPatch(supabase: any, sender: any, remoteJid: str
     }
 
     // Próximo é message — despacha conteúdo, atualiza cursor de conversation_step.
-    const sentNext = await sendConfiguredStep(supabase, sender, remoteJid, consultantId, customer.id, next, vars, variant);
+    const sentNext = await sendConfiguredStep(supabase, sender, remoteJid, consultantId, customer.id, next, vars, variant, customer);
     if (sentNext) patch.last_custom_prompt_at = new Date().toISOString();
     patch.conversation_step = next.id;
 
@@ -1218,7 +1285,7 @@ async function buildContinuationPatch(supabase: any, sender: any, remoteJid: str
   return patch;
 }
 
-async function sendConfiguredStep(supabase: any, sender: any, remoteJid: string, consultantId: string, customerId: string, step: any, vars: Record<string, string>, variant: string = "A") {
+async function sendConfiguredStep(supabase: any, sender: any, remoteJid: string, consultantId: string, customerId: string, step: any, vars: Record<string, string>, variant: string = "A", customer?: any) {
   const applyVars = (s: string) => Object.entries(vars).reduce((acc, [k, v]) => acc.split(k).join(v), s);
   const slotKey = step.slot_key || step.step_key;
   const { data: mediaRows } = await supabase
@@ -1229,7 +1296,56 @@ async function sendConfiguredStep(supabase: any, sender: any, remoteJid: string,
     .eq("active", true)
     .eq("is_draft", false)
     .order("send_order", { ascending: true });
-  const rawRows = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+  let rawRows = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+
+  // Mesmo stitch Sofia do envio principal (A2/A3/A5).
+  if (slotKey) {
+    try {
+      const { isPersonalizedWaAudioSlot, pickSafePersonalizedWaAudio } = await import(
+        "../_shared/wa-audio-stitch.ts"
+      );
+      if (isPersonalizedWaAudioSlot(String(slotKey))) {
+        const nonAudio = rawRows.filter((m) => String(m.kind).toLowerCase() !== "audio");
+        const safe = await pickSafePersonalizedWaAudio(supabase, {
+          consultantId,
+          slotKey: String(slotKey),
+          customerName: customer?.name,
+          nameSource: customer?.name_source,
+          timeoutMs: 45_000,
+        });
+        if (safe.ok && safe.url && (safe.mode === "stitch" || safe.mode === "body_only")) {
+          rawRows = [
+            ...nonAudio,
+            {
+              id: `sofia-${slotKey}`,
+              kind: "audio",
+              label: `sofia ${slotKey} · ${safe.mode}`,
+              url: String(safe.url),
+              slot_key: slotKey,
+              send_order: 0,
+              duration_sec: null,
+              transcript: null,
+            },
+          ];
+        } else {
+          rawRows = nonAudio;
+        }
+      } else if (rawRows.length === 0) {
+        const { data: bodyRows } = await supabase
+          .from("ai_media_library")
+          .select("id, kind, url, slot_key, send_order, duration_sec, transcript, label")
+          .eq("consultant_id", consultantId)
+          .like("slot_key", `${slotKey}__body%`)
+          .eq("active", true)
+          .eq("is_draft", false)
+          .order("send_order", { ascending: true });
+        rawRows = ((bodyRows as any[]) || []).filter((m) => !!m?.url);
+      }
+    } catch (e) {
+      console.warn("[manual-step-send/continue] stitch:", (e as Error)?.message || e);
+    }
+  }
+
   const items: Array<{ kind: string; text?: string; media?: any }> = [];
   for (const m of rawRows) {
     // Envio manual (continuação) ignora a regra de variante B
@@ -1247,12 +1363,29 @@ async function sendConfiguredStep(supabase: any, sender: any, remoteJid: string,
     return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
   });
 
+  // Botões do passo (captures._buttons) — última mensagem como interactive.
+  let stepButtons: { id: string; title: string }[] = [];
+  try {
+    const caps = Array.isArray(step.captures) ? step.captures : [];
+    const found = caps.find((c: any) => c?.field === "_buttons" && c?.enabled !== false);
+    if (found && Array.isArray(found.value)) {
+      stepButtons = found.value
+        .map((b: any) => ({ id: String(b?.id || ""), title: String(b?.title || "").trim() }))
+        .filter((b: { id: string; title: string }) => b.id && b.title);
+    }
+  } catch { /* ignore */ }
+
   const { canSendMediaOnce } = await import("../_shared/media-dedupe.ts");
   let sent = false;
   for (let i = 0; i < items.length; i++) {
     const it: any = items[i];
+    const isLast = i === items.length - 1;
     if (it.kind === "text" && it.text) {
-      await sender.sendText(remoteJid, it.text);
+      if (isLast && stepButtons.length > 0 && typeof sender.sendButtons === "function") {
+        await sender.sendButtons(remoteJid, it.text, stepButtons);
+      } else {
+        await sender.sendText(remoteJid, it.text);
+      }
       await supabase.from("conversations").insert({ customer_id: customerId, message_direction: "outbound", message_text: it.text, message_type: "text", conversation_step: step.step_key || step.id });
       sent = true;
     } else if (it.media?.url) {

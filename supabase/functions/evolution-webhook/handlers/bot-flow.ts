@@ -3646,7 +3646,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const v = first ? `${first}, ` : "";
 
         // Lead recusa mandar a foto → aceita seguir só com o valor.
+        // Grupo A / Sofia: NÃO — exige foto da conta (OCR). Sem bypass.
         if (txt && RE_REFUSE_BILL.test(txt)) {
+          const variant = String((customer as any)?.flow_variant || "").toUpperCase();
+          const isGrupoA = variant === "A" || variant === "C" ||
+            /^a\d+_/i.test(String((customer as any)?.conversation_step || ""));
+          if (isGrupoA) {
+            reply = `${first ? first + ", " : ""}pra seguir o cadastro preciso da *foto da conta de luz* 📸\n\nQuando puder, manda aqui (página com o valor e os dados da unidade). Sem a foto não consigo avançar.`;
+            break;
+          }
           const billVal = Number((customer as any).electricity_bill_value || 0);
           if (billVal >= 30) {
             reply = `Tranquilo, ${first || "vamos"}! Já tenho o valor que você passou (R$ ${billVal.toFixed(0)}), seguimos sem a foto então 👍\n\nPra fechar o cadastro me manda só uma foto da *frente do seu documento* (RG ou CNH, tanto faz — eu reconheço sozinho).`;
@@ -5448,11 +5456,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const rawResp: string = isButton ? String(buttonId ?? "") : messageText.toLowerCase().trim();
       // Evolution renderiza sendOptions como texto numerado, então "1"/"2" sempre
       // chegam como texto. Aceitamos numérico independente de isButton.
-      const numKey = ({ "1": "sim_phone", "2": "editar_phone" } as Record<string,string>)[rawResp] ?? rawResp;
+      const numKey = ({
+        "1": "sim_phone",
+        "2": "editar_phone",
+        "phone_ok": "sim_phone",
+        "phone_other": "editar_phone",
+        "sim, este número": "sim_phone",
+        "quero outro": "editar_phone",
+      } as Record<string, string>)[rawResp] ?? rawResp;
       const sim = numKey === "sim_phone"
         || /^(sim|s|isso|isso\s+mesmo|é\s+meu|eh\s+meu|confirmo|pode|certo|correto|positivo)\b/.test(rawResp);
       const editar = numKey === "editar_phone"
-        || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado)\b/.test(rawResp);
+        || /^(n[aã]o|n|editar|outro|outro\s+n[uú]mero|trocar|mudar|errado|quero\s+outro)\b/.test(rawResp);
 
       // Cliente digitou um telefone em vez de Sim/Não (caso Osmar: "034 99992-7145").
       // Brasil só — DDI 55 fixo via toNationalPhoneDigits.
@@ -6212,14 +6227,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const link = customer.link_facial || customer.link_assinatura;
       const txt = (messageText || "").toLowerCase().trim();
       const confirmou = /\b(pronto|prontinho|conclu[ií]do|conclui|conclu[ií]|finalizei|terminei|terminado|finalizado|fiz|feito|feita|ok|okay|okk?|certo|sim|j[aá]\s+(assinei|fiz|tirei|validei|terminei|terminado)|assinei|tirei|validei|selfie|liberado|consegui)\b/i.test(txt);
-      if (confirmou && link) {
+      // Produção: NÃO concluir facial só por texto. Watchdog/portal confirma.
+      if (confirmou && link && isCustomerSandbox(customer)) {
         updates.facial_confirmed_at = new Date().toISOString();
         updates.conversation_step = "cadastro_em_analise";
         updates.status = "cadastro_concluido";
         const _firstName = safeFirstNameForAddress(customer.name, (customer as any).name_source);
         reply = `🎉 *Validação facial confirmada!*\n\nPrimeiro, parabéns ${_firstName ? _firstName + " " : ""}por dar esse passo rumo à economia! 💚\n\nSeu cadastro foi enviado para a equipe da *iGreen Energy* e agora entra na fila de análise.\n\n⏳ A aprovação costuma sair em *24 a 48 horas úteis*.\n\nAssim que estiver aprovado eu te aviso por aqui com os próximos passos. Pode relaxar — daqui em diante é com a gente. ☀️`;
+      } else if (confirmou && link && !isCustomerSandbox(customer)) {
+        reply = "Recebi ✅ Estou aguardando a *confirmação oficial* da validação facial no portal.\n\nAssim que o sistema liberar, eu te aviso por aqui — não precisa mandar de novo.";
       } else if (link) {
-        reply = "📸 *Última etapa: Validação Facial*\n\n👉 Abra este link no seu celular e siga as instruções:\n" + `${link}\n\n` + "Quando terminar a selfie, me responda *PRONTO* aqui que finalizamos seu cadastro! ✅";
+        reply = "📸 *Última etapa: Validação Facial*\n\n👉 Abra este link no seu celular e siga as instruções:\n" + `${link}\n\n` + "Quando terminar a selfie, *aguarde a confirmação automática* por aqui. Se demorar, me avisa que eu checo o status. ✅";
       } else {
         reply = "⏳ Estamos preparando o link da validação facial. Você será notificado em instantes!";
       }
@@ -6588,11 +6606,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       }
 
       if (!(updates as any).__inline_sent) {
-      await sendText(remoteJid,
-        "✅ *Todos os dados coletados com sucesso!* 🎉\n\n" +
-        "⏳ Estamos processando seu cadastro no portal...\n\n" +
-        "📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!"
-      );
+      // Aviso ao lead SÓ depois do dispatch OK — nunca prometer OTP com docs/worker falhando.
       }
 
       console.log(`✅ Lead completo: ${merged.name} (${merged.id}) - disparando worker-portal`);
@@ -6609,7 +6623,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           mode: dr.mode,
           status: dr.status,
         });
-        if (!dr.ok && dr.mode !== "not_configured") {
+        if (dr.ok) {
+          if (!(updates as any).__inline_sent) {
+            await sendText(remoteJid,
+              "✅ *Todos os dados coletados com sucesso!* 🎉\n\n" +
+              "⏳ Estamos processando seu cadastro no portal...\n\n" +
+              "📱 Em breve você receberá um *código de verificação no WhatsApp*. Quando receber, *digite aqui*!"
+            );
+          }
+        } else if (dr.error === "missing_documents") {
+          console.warn(`[lead_complete] docs ilegíveis customer=${customer.id} — sem aviso de OTP`);
+          if (!(updates as any).__inline_sent) {
+            try {
+              await sendText(remoteJid,
+                "Recebi seus dados, mas preciso que você *reenvie a conta de luz e o documento* (foto nítida) pra eu concluir o cadastro. Pode mandar de novo?"
+              );
+            } catch (_) {}
+          }
+        } else if (dr.mode !== "not_configured") {
           try {
             await sendText(remoteJid,
               "⏳ Estamos com um pequeno atraso no processamento. Em até *alguns minutos* você receberá o link para continuar pelo celular.\n\n" +

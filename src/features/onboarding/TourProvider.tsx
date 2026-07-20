@@ -2,12 +2,17 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, HelpCircle, MessageCircle, Play, RefreshCw, Sparkles, X } from "lucide-react";
 import { useTour } from "./useTour";
+import { GuideCoach } from "./GuideCoach";
+import { useGuideCoach } from "./GuideCoachProvider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 const INTERNAL_ROUTES = ["/admin", "/ajuda", "/consultor", "/super-admin", "/experiments"];
 const TARGET_PADDING = 8;
+/** Abas do Admin demoram a montar após navigate — mais tentativas que o padrão antigo. */
+const LOCATE_ATTEMPTS = 24;
+const LOCATE_INTERVAL_MS = 300;
 
 type TargetRect = { top: number; left: number; width: number; height: number };
 
@@ -15,8 +20,14 @@ export function TourProvider() {
   const location = useLocation();
   const navigate = useNavigate();
   const tour = useTour();
+  const guide = useGuideCoach();
   const { ready, shouldAutoStart, progress, open, current, index, total, start, resume, restart, next, prev, dismiss } = tour;
   const [targetRect, setTargetRect] = useState<TargetRect | null>(null);
+
+  useEffect(() => {
+    if (!open || !current?.selector?.includes("menu-")) return;
+    window.dispatchEvent(new CustomEvent("igreen-open-sidebar"));
+  }, [open, current?.id, current?.selector]);
 
   useEffect(() => {
     if (!ready || !location.pathname.startsWith("/admin") || !shouldAutoStart) return;
@@ -31,23 +42,49 @@ export function TourProvider() {
     }
     let attempts = 0;
     let timer = 0;
+    let cancelled = false;
+
+    const measure = (element: HTMLElement) => {
+      element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      window.setTimeout(() => {
+        if (cancelled) return;
+        const rect = element.getBoundingClientRect();
+        if (rect.width < 2 && rect.height < 2) {
+          if (attempts++ < LOCATE_ATTEMPTS) timer = window.setTimeout(locate, LOCATE_INTERVAL_MS);
+          else setTargetRect(null);
+          return;
+        }
+        setTargetRect({
+          top: rect.top - TARGET_PADDING,
+          left: rect.left - TARGET_PADDING,
+          width: rect.width + TARGET_PADDING * 2,
+          height: rect.height + TARGET_PADDING * 2,
+        });
+      }, 280);
+    };
+
     const locate = () => {
       const element = document.querySelector<HTMLElement>(current.selector || "");
       if (!element) {
-        if (attempts++ < 12) timer = window.setTimeout(locate, 250);
+        if (attempts++ < LOCATE_ATTEMPTS) timer = window.setTimeout(locate, LOCATE_INTERVAL_MS);
         else setTargetRect(null);
         return;
       }
-      element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-      window.setTimeout(() => {
-        const rect = element.getBoundingClientRect();
-        setTargetRect({ top: rect.top - TARGET_PADDING, left: rect.left - TARGET_PADDING, width: rect.width + TARGET_PADDING * 2, height: rect.height + TARGET_PADDING * 2 });
-      }, 250);
+      measure(element);
     };
-    locate();
-    const refresh = () => locate();
+
+    // Pequeno atraso inicial para a rota/?tab= terminar de renderizar
+    timer = window.setTimeout(locate, 200);
+    const refresh = () => {
+      attempts = 0;
+      locate();
+    };
     window.addEventListener("resize", refresh);
-    return () => { window.clearTimeout(timer); window.removeEventListener("resize", refresh); };
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener("resize", refresh);
+    };
   }, [open, current?.id, current?.selector, location.pathname, location.search]);
 
   const isInternal = INTERNAL_ROUTES.some((route) => location.pathname === route || location.pathname.startsWith(`${route}/`));
@@ -56,6 +93,8 @@ export function TourProvider() {
   const hasProgress = !!progress && (progress.current_step ?? 0) > 0 && !progress.completed_at;
   const percentage = total > 0 ? ((index + 1) / total) * 100 : 0;
   const isLast = index >= total - 1;
+  const guideActive = guide.active;
+  const showFab = !open && !guideActive;
 
   return (
     <>
@@ -83,7 +122,7 @@ export function TourProvider() {
               </div>
               <div className="space-y-3 px-5 py-4">
                 <p id="tour-description" className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{current.body || "Este conteúdo está sendo preparado."}</p>
-                {current.selector && !targetRect && <p className="text-xs text-muted-foreground">O item não está visível nesta tela. Você ainda pode seguir para o próximo passo.</p>}
+                {current.selector && !targetRect && <p className="text-xs text-muted-foreground">O item ainda não apareceu nesta tela. Use o botão abaixo para abrir a área ou siga para o próximo passo.</p>}
                 {current.cta_href && (
                   <Button variant="outline" size="sm" onClick={() => current.cta_href?.startsWith("http") ? window.open(current.cta_href, "_blank", "noopener,noreferrer") : navigate(current.cta_href)}>
                     {current.cta_label || "Abrir esta área"}<ExternalLink className="ml-2 h-3.5 w-3.5" />
@@ -103,7 +142,21 @@ export function TourProvider() {
         </div>
       )}
 
-      {!open && (
+      {!open && guideActive && (
+        <GuideCoach
+          article={guideActive.article}
+          stepIndex={guideActive.stepIndex}
+          onStepIndexChange={guide.setStepIndex}
+          onClose={guide.closeGuide}
+          onOpenFullTour={() => {
+            const stepId = guideActive.article.related_tour_step_id;
+            guide.closeGuide();
+            void start(stepId ? { stepId } : undefined);
+          }}
+        />
+      )}
+
+      {showFab && (
         <div className="fixed bottom-5 right-4 z-[90] sm:right-5" data-tour="help-fab">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

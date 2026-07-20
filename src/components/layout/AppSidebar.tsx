@@ -150,6 +150,7 @@ export function AppSidebar({
         key={item.id}
         type="button"
         onClick={() => handleItemClick(item)}
+        data-tour={`menu-${item.id}`}
         className={`pe-nav-item w-full text-left ${isActive ? "is-active" : ""}`}
         aria-current={isActive ? "page" : undefined}
         title={collapsed ? item.label : undefined}

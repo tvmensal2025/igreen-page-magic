@@ -26,6 +26,7 @@ export function useCustomerAttendance(
   const [attendanceRatingRequestedAt, setAttendanceRatingRequestedAt] = useState<string | null>(null);
   const [attendanceRating, setAttendanceRating] = useState<number | null>(null);
   const [doNotContact, setDoNotContact] = useState(false);
+  const [ownerConsultantId, setOwnerConsultantId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
 
@@ -44,6 +45,7 @@ export function useCustomerAttendance(
       setAttendanceRatingRequestedAt(null);
       setAttendanceRating(null);
       setDoNotContact(false);
+      setOwnerConsultantId(null);
       return;
     }
     // Colunas de avaliação podem ainda não existir no banco (migration pendente).
@@ -51,13 +53,13 @@ export function useCustomerAttendance(
     let data: Record<string, unknown> | null = null;
     const full = await supabase
       .from("customers")
-      .select("welcome_sent_at, tracking_protocol, attendance_rating_requested_at, attendance_rating, do_not_contact")
+      .select("welcome_sent_at, tracking_protocol, attendance_rating_requested_at, attendance_rating, do_not_contact, consultant_id")
       .eq("id", customerId)
       .maybeSingle();
     if (full.error) {
       const minimal = await supabase
         .from("customers")
-        .select("welcome_sent_at, tracking_protocol, do_not_contact")
+        .select("welcome_sent_at, tracking_protocol, do_not_contact, consultant_id")
         .eq("id", customerId)
         .maybeSingle();
       data = (minimal.data as Record<string, unknown> | null) ?? null;
@@ -72,6 +74,7 @@ export function useCustomerAttendance(
     const rating = data?.attendance_rating;
     setAttendanceRating(typeof rating === "number" ? rating : null);
     setDoNotContact(!!data?.do_not_contact);
+    setOwnerConsultantId((data?.consultant_id as string | null | undefined) ?? null);
   }, [customerId]);
 
   useEffect(() => {
@@ -151,6 +154,15 @@ export function useCustomerAttendance(
       });
       return;
     }
+    // Padrão: minha página = só MEU atendimento. Lead de outro consultor não abre aqui.
+    if (ownerConsultantId && ownerConsultantId !== consultantId) {
+      toast({
+        title: "Lead de outro consultor",
+        description: "Neste painel só abre atendimento dos seus leads — nunca no nome de outra pessoa.",
+        variant: "destructive",
+      });
+      return;
+    }
     setStarting(true);
     const doInvoke = () => supabase.functions.invoke("start-customer-attendance", {
       body: { customerId, consultantId, restart: opts?.restart === true },
@@ -178,7 +190,7 @@ export function useCustomerAttendance(
     } finally {
       setStarting(false);
     }
-  }, [customerId, consultantId, starting, toast, refresh, go, doNotContact]);
+  }, [customerId, consultantId, ownerConsultantId, starting, toast, refresh, go, doNotContact]);
 
   const restartAttendance = useCallback(() => startAttendance({ restart: true }), [startAttendance]);
 

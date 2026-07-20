@@ -177,10 +177,10 @@ Deno.test("11.3: RG sem verso — gate bloqueia, dispatchPortalWorker NÃO envia
     assertEquals(r.resultadoPortal?.ok, false);
     // PROVA central: nenhum POST /submit-lead aconteceu — o Cérebro não contorna o gate.
     assert(!stub.enviouSubmitLead(), "submit-lead não deveria ter sido chamado com verso de RG ausente");
-    // O helper marca o customer como missing_documents.
+    // O helper marca o customer como awaiting_manual_submit (docs ilegíveis).
     assert(
-      sb.updates.some((u) => u.status === "missing_documents"),
-      "esperava status missing_documents no customer",
+      sb.updates.some((u) => u.status === "awaiting_manual_submit"),
+      "esperava status awaiting_manual_submit no customer",
     );
   } finally {
     stub.restaurar();

@@ -51,11 +51,12 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const a1 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a1_ask_name");
     expect(a1?.buttons ?? []).toHaveLength(0);
     expect(a1?.timing.toLowerCase()).toContain("aguarda");
-    expect(a1?.body).toMatch(/nome/i);
+    expect(a1?.body).toMatch(/iGreen \| Conta de Luz Mais Barata 🌱/);
+    expect(a1?.body).toMatch(/\*Gestor\* da \*iGreen\*/);
+    expect(a1?.body).toMatch(/📋 \*Protocolo:\* \{\{protocolo\}\}/);
     expect(a1?.body).toMatch(/agilizar seu atendimento/i);
-    expect(a1?.body).toBe(
-      "*Olá!* Para agilizar seu atendimento, informe seu *primeiro nome*.",
-    );
+    expect(a1?.body).toMatch(/primeiro nome/i);
+    expect(a1?.body).toContain("{{representante}}");
   });
 
   it("2 áudio+texto chamam pelo nome e pedem valor", () => {

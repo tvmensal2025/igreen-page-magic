@@ -46,6 +46,9 @@ const BAD_NAME_TOKENS = new Set([
   "energia", "igreen", "luz", "conta", "fatura",
   // apelidos genéricos de status WA
   "meus", "netos", "tudo", "amor", "baby", "bebe", "bebê",
+  // correção / verbo — "Escrevi Errado" nunca é prenome
+  "escrevi", "digitei", "errei", "falei", "enganei",
+  "errado", "errada", "errados", "erradas",
 ]);
 
 const EMOJI_CLASS = String.raw`[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]`;
@@ -141,8 +144,15 @@ export function safeFullNameForAddress(
 export function scrubEmptyNameGreeting(template: string): string {
   let out = String(template || "");
 
-  // Prefixo emoji (COLD: "💡 Oi *{{nome}}*!")
-  out = out.replace(new RegExp(`^${EMOJI_CLASS}+\\s*`, "gu"), "");
+  // Prefixo emoji só em saudação nominal ("💡 Oi {{nome}}!"), NÃO em
+  // "🌱 *Atendimento iniciado*" / "📋 Protocolo".
+  out = out.replace(
+    new RegExp(
+      `^${EMOJI_CLASS}+\\s*(?=\\*?\\s*(?:${GREET}\\b|\\{\\{\\s*nome\\s*\\}\\}))`,
+      "gu",
+    ),
+    "",
+  );
 
   // Saudação + placeholder no início — cobre `Oi {{nome}},`, `*Oi, {{nome}}*!`, `Oi *{{nome}}*!`
   out = out.replace(
@@ -172,9 +182,17 @@ export function scrubEmptyNameGreeting(template: string): string {
   out = out.replace(/\s*\*?\s*\{\{\s*nome\s*\}\}\s*\*?/gi, " ");
 
   // Pós-substituição: saudação órfã (`*Oi!`, `Oi,`, etc.)
-  out = out.replace(new RegExp(`^${EMOJI_CLASS}+\\s*`, "gu"), "");
   out = out.replace(
-    new RegExp(`^\\*?\\s*${GREET}\\s*,?\\s*\\*?\\s*[,.!]?\s*\\*?\\s*${EMOJI_CLASS}?\\s*`, "gimu"),
+    new RegExp(
+      `^${EMOJI_CLASS}+\\s*(?=\\*?\\s*(?:${GREET}\\b|\\{\\{\\s*nome\\s*\\}\\}))`,
+      "gu",
+    ),
+    "",
+  );
+  // Pós-substituição: saudação órfã só no INÍCIO da mensagem (`Oi!` / `Olá,`).
+  // Sem flag `m` — senão apaga "Olá! Aqui é Rafael…" no meio do A1.
+  out = out.replace(
+    new RegExp(`^\\*?\\s*${GREET}\\s*,?\\s*\\*?\\s*[,.!]?\s*\\*?\\s*${EMOJI_CLASS}?\\s*`, "giu"),
     "",
   );
   // ": !" / ": ," órfãos após tirar Oi Nome

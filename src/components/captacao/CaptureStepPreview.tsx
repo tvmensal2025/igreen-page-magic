@@ -8,6 +8,8 @@ interface StepLike {
   id: string;
   title: string | null;
   step_key: string | null;
+  /** Slot de mídia (pode diferir do step_key, ex.: A2). */
+  slot_key?: string | null;
   message_text: string | null;
   media_order: unknown;
   variant: string;
@@ -97,18 +99,33 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
       const apply = (s: string) => Object.entries(vars).reduce((acc, [k, v]) => acc.split(k).join(v), s);
       const txt = step.message_text ? apply(String(step.message_text)) : "";
 
-      const slotKey = step.step_key;
+      // Preferência: slot_key do passo (A2 = a2_audio_activate_name) → step_key.
+      const mediaSlot = String(step.slot_key || step.step_key || "").trim();
       let rows: MediaItem[] = [];
-      if (slotKey) {
+      if (mediaSlot) {
         const { data: mediaRows } = await supabase
           .from("ai_media_library")
           .select("id, kind, url, slot_key, send_order, duration_sec, transcript, label")
           .eq("consultant_id", consultantId)
-          .eq("slot_key", slotKey)
+          .eq("slot_key", mediaSlot)
           .eq("active", true)
           .eq("is_draft", false)
           .order("send_order", { ascending: true });
         rows = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
+
+        // Sofia A2/A3/A5: áudio fica em __body* — preview mostra o corpo.
+        if (rows.filter((m) => String(m.kind).toLowerCase() === "audio").length === 0) {
+          const { data: bodyRows } = await supabase
+            .from("ai_media_library")
+            .select("id, kind, url, slot_key, send_order, duration_sec, transcript, label")
+            .eq("consultant_id", consultantId)
+            .like("slot_key", `${mediaSlot}__body%`)
+            .eq("active", true)
+            .eq("is_draft", false)
+            .order("send_order", { ascending: true });
+          const extras = ((bodyRows as any[]) || []).filter((m) => !!m?.url);
+          if (extras.length) rows = [...rows, ...extras];
+        }
       }
 
       let skipped = 0;
@@ -127,7 +144,7 @@ export function CaptureStepPreview({ open, onOpenChange, consultantId, customerI
       lastLoadedKeyRef.current = loadKey;
     })();
     return () => { mounted = false; };
-  }, [open, step?.id, step?.variant, step?.step_key, step?.message_text, customerId, consultantId]);
+  }, [open, step?.id, step?.variant, step?.step_key, step?.slot_key, step?.message_text, customerId, consultantId]);
 
   // Reset cache key quando o dialog fecha, pra recarregar na próxima abertura.
   useEffect(() => {

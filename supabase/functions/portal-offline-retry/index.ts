@@ -27,13 +27,15 @@ Deno.serve(async (req) => {
   const cutoff = new Date(Date.now() - LOOKBACK_HOURS * 3600_000).toISOString();
 
   // 1) Leads parados em worker_offline (caminho original).
+  //    NÃO retentar blocked_missing_documents — docs ilegíveis precisam de
+  //    reanexo humano; loop 1/min só martela o worker e queima confiança.
   const { data: offlineLeads, error } = await supabase
     .from("customers")
-    .select("id, name, portal_retry_count, finalized_at, portal_last_retry_at")
+    .select("id, name, portal_retry_count, finalized_at, portal_last_retry_at, portal2_status, last_portal_dispatch_error")
     .eq("status", "worker_offline")
     .gte("finalized_at", cutoff)
     .order("portal_last_retry_at", { ascending: true, nullsFirst: true })
-    .limit(MAX_PER_RUN);
+    .limit(MAX_PER_RUN * 2);
 
   if (error) {
     console.error("[portal-offline-retry] query error", error);
@@ -63,7 +65,19 @@ Deno.serve(async (req) => {
   for (const l of [...(offlineLeads || []), ...(retryReadyLeads || [])]) {
     if (seen.has(l.id)) continue;
     seen.add(l.id);
+    // Docs quebrados: sai do loop automático (humano reanexa).
+    const p2 = String(l.portal2_status || "");
+    const err = String(l.last_portal_dispatch_error || "");
+    if (
+      p2 === "blocked_missing_documents" ||
+      err.includes("Documentos obrigatórios") ||
+      err.includes("docs_unreadable") ||
+      err.includes("missing_documents")
+    ) {
+      continue;
+    }
     leads.push(l);
+    if (leads.length >= MAX_PER_RUN) break;
   }
 
   const results: any[] = [];
@@ -82,11 +96,19 @@ Deno.serve(async (req) => {
     const dispatch = await dispatchPortalWorker(supabase, lead.id);
     // Em sucesso: marca submitting. Para leads retry_ready, limpa o marcador
     // para não reprocessar em loop (o worker agora tem o job de novo).
-    await supabase.from("customers").update({
+    // Se docs ilegíveis: trava em missing_documents (cron não retenta).
+    const patch: Record<string, unknown> = {
       portal_retry_count: tries,
       portal_last_retry_at: new Date().toISOString(),
-      ...(dispatch.ok ? { status: "portal_submitting", portal2_status: "submitting" } : {}),
-    }).eq("id", lead.id);
+    };
+    if (dispatch.ok) {
+      patch.status = "portal_submitting";
+      patch.portal2_status = "submitting";
+    } else if (dispatch.error === "missing_documents") {
+      patch.status = "awaiting_manual_submit";
+      patch.portal2_status = "blocked_missing_documents";
+    }
+    await supabase.from("customers").update(patch).eq("id", lead.id);
 
     results.push({
       id: lead.id,

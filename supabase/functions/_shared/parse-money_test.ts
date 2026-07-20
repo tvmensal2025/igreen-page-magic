@@ -55,6 +55,19 @@ Deno.test("extractValorPermissivo: mesmos casos US/BR", () => {
   assertAlmostEquals(extractValorPermissivo("1.688,15")!, 1688.15, 0.001);
 });
 
+Deno.test("extractValorPermissivo: telefone NÃO vira conta (bug Isa 2026-07-20)", () => {
+  // "03481914644" → regex de dinheiro pegava "034819" = R$ 34.819
+  assertEquals(extractValorPermissivo("03481914644"), null);
+  assertEquals(extractValor("03481914644"), null);
+  assertEquals(extractValorPermissivo("3481914644"), null);
+  assertEquals(extractValorPermissivo("(34) 8191-4644"), null);
+  assertEquals(extractValorPermissivo("34 98191-4644"), null);
+  // Valores reais de conta continuam ok
+  assertEquals(extractValorPermissivo("350"), 350);
+  assertEquals(extractValorPermissivo("850,00"), 850);
+  assertEquals(extractValorPermissivo("1200"), 1200);
+});
+
 Deno.test("extractMoneyFromText: simulação rápida (caso real 3298043187)", () => {
   assertEquals(extractMoneyFromText("350.00"), 350);
   assertEquals(extractMoneyFromText("200.0"), 200);
@@ -63,4 +76,13 @@ Deno.test("extractMoneyFromText: simulação rápida (caso real 3298043187)", ()
   assertEquals(extractMoneyFromText("350,00"), 350);
   assertAlmostEquals(extractMoneyFromText("1.688,15")!, 1688.15, 0.001);
   assertEquals(extractMoneyFromText("oi"), null);
+});
+
+Deno.test("extractMoneyFromText: RG/CPF no pedido de nome NÃO vira conta (bug Isa)", () => {
+  assertEquals(extractMoneyFromText("03481914644"), null);
+  assertEquals(extractMoneyFromText("3481914644"), null);
+  assertEquals(extractMoneyFromText("12345678901"), null);
+  // Conta real continua ok
+  assertEquals(extractMoneyFromText("350"), 350);
+  assertEquals(extractMoneyFromText("850,00"), 850);
 });

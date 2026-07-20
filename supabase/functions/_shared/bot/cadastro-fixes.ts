@@ -173,6 +173,27 @@ export function isSofiaMulticanalConversationStep(
 }
 
 /**
+ * Lead já no meio do funil conversacional (Grupo A / flow builder).
+ * Nesses passos NÃO se envia welcome/protocolo automático (daily-reheat / abrir chamado).
+ * Bug real 2026-07-20: reheat mandou "Oi X, Protocolo…" no meio do A2.
+ */
+export function isActiveConversationalFunnelStep(
+  step: string | null | undefined,
+): boolean {
+  const s = String(step || "").trim();
+  if (!s) return false;
+  if (isSofiaMulticanalConversationStep(s)) return true;
+  if (/^flow:/i.test(s)) return true;
+  // UUID puro = passo do flow builder (às vezes sem prefixo flow:)
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Sofia Multicanal (Grupo A): variante A é a base desde 2026-07-17.
  * Variante C permanece só para leads legados até migração completa.
  */

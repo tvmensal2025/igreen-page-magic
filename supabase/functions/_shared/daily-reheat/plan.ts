@@ -4,6 +4,7 @@
  */
 
 import { firstStep, stepDef, type CycleQueue } from "./cycle.ts";
+import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -146,6 +147,8 @@ function baseGuards(c: any): string[] {
   if (c.do_not_contact) g.push("do_not_contact");
   if (TERMINAL_STEPS.has(c.conversation_step || "")) g.push("terminal_step");
   if (c.capture_mode === "manual") g.push("capture_manual");
+  // Já no A1–A11 / flow:* — não abrir protocolo nem ciclar ligação/SMS por cima.
+  if (isActiveConversationalFunnelStep(c.conversation_step)) g.push("already_in_funnel");
   return g;
 }
 
@@ -412,7 +415,9 @@ export async function loadDueQueuePlans(
   const ids = rows.map((r: any) => r.customer_id);
   const { data: custs } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, do_not_contact, bot_paused, assigned_human_id")
+    .select(
+      "id, name, phone_whatsapp, do_not_contact, bot_paused, assigned_human_id, conversation_step",
+    )
     .in("id", ids);
   const byId = new Map((custs || []).map((c: any) => [c.id, c]));
 
@@ -420,7 +425,12 @@ export async function loadDueQueuePlans(
   for (const r of rows as any[]) {
     const c = byId.get(r.customer_id);
     if (!c) continue;
-    if (c.do_not_contact || c.bot_paused || c.assigned_human_id) {
+    if (
+      c.do_not_contact ||
+      c.bot_paused ||
+      c.assigned_human_id ||
+      isActiveConversationalFunnelStep(c.conversation_step)
+    ) {
       await supabase
         .from("daily_reheat_queue")
         .update({
@@ -429,7 +439,9 @@ export async function loadDueQueuePlans(
             ? "do_not_contact"
             : c.bot_paused
               ? "bot_paused"
-              : "assigned_human",
+              : c.assigned_human_id
+                ? "assigned_human"
+                : "already_in_funnel",
           updated_at: new Date().toISOString(),
         })
         .eq("customer_id", r.customer_id)

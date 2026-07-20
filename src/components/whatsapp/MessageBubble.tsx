@@ -451,10 +451,12 @@ function LinkifiedText({ text }: { text: string }) {
 
 export function MessageBubble({ message, onLoadMedia, consultantId, customerId, onAttachToCapture, onTemplateSaved }: MessageBubbleProps) {
   const { fromMe, text, timestamp, status, mediaType, interactiveHeader, interactiveFooter, interactiveButtons } = message;
-  const showText = text && mediaType !== "audio" && mediaType !== "sticker";
+  const showText = !!(text && mediaType !== "audio" && mediaType !== "sticker");
   const hasMedia = !!mediaType;
   const hasInteractive = !!(interactiveButtons && interactiveButtons.length > 0);
-  const isEmptyShell = !showText && !hasMedia && !hasInteractive;
+  const isEmptyShell =
+    !showText && !hasMedia && !hasInteractive && !interactiveHeader && !interactiveFooter;
+
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogFocus, setDialogFocus] = useState<"name" | "shortcut">("name");
@@ -482,6 +484,9 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
       setAttaching(null);
     }
   }, [loadedUrl, onLoadMedia, message, onAttachToCapture]);
+
+  // Protocolo / unknown sem corpo: não renderiza bolha fantasma.
+  if (isEmptyShell) return null;
 
   return (
     <div className={`group flex ${fromMe ? "justify-end" : "justify-start"} mb-1.5`}>
@@ -584,9 +589,6 @@ export function MessageBubble({ message, onLoadMedia, consultantId, customerId, 
           <div className="mt-1.5 text-[10px] text-muted-foreground">
             <LinkifiedText text={interactiveFooter} />
           </div>
-        )}
-        {isEmptyShell && (
-          <p className="text-xs italic text-muted-foreground">Mensagem sem texto legível</p>
         )}
 
         <div className="flex items-center justify-end gap-1 mt-0.5">

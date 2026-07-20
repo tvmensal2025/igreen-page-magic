@@ -97,7 +97,7 @@ export default function AdminKnowledge({ embedded = false }: { embedded?: boolea
               </div>
               <div>
                 <p className="font-semibold">1. Atalhos rápidos</p>
-                <p className="text-xs text-muted-foreground">Resposta exata por palavra-chave. Com áudio/vídeo opcional.</p>
+                <p className="text-xs text-muted-foreground">Resposta pronta por frase (ex.: “tem fidelidade”). Evite palavra sola genérica.</p>
               </div>
             </div>
             <div className="flex gap-3">

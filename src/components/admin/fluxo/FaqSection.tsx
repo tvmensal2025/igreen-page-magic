@@ -10,16 +10,18 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   HelpCircle, Plus, Trash2, X, ChevronUp, ChevronDown,
-  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2, Globe2, Lock,
+  Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2, Globe2, Lock, Headphones,
 } from "lucide-react";
 import { useUserRole } from "@/hooks/useUserRole";
 import { toast } from "sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
+import { FaqAudioReviewDialog } from "@/components/admin/fluxo/FaqAudioReviewDialog";
 import {
   OBJECTION_SHORTCUTS, OBJECTION_CATEGORIES, CATEGORY_EMOJI,
   formatIntentName, parseIntentName, RESERVED_FLOW_KEYWORDS,
   type ObjectionCategory,
 } from "@/lib/objectionShortcuts";
+import { PRIORITY_FAQ_INTENTS } from "@/lib/qaFaqAudioPriority";
 
 function mediaFilled(m: Media): boolean {
   return !!(m.media_id || m.slot_key);
@@ -48,7 +50,15 @@ type QA = {
 };
 type Slot = { slot_key: string; label: string; video_url: string | null };
 type LibraryVideo = { id: string; label: string; url: string | null };
-type LibraryAudio = { id: string; label: string; url: string | null };
+type LibraryAudio = {
+  id: string;
+  label: string;
+  url: string | null;
+  slot_key?: string | null;
+  text_content?: string | null;
+  intent_tags?: string[] | null;
+  is_draft?: boolean;
+};
 
 export default function FaqSection({ flowId }: { flowId: string }) {
   const confirm = useConfirm();
@@ -63,6 +73,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const [search, setSearch] = useState("");
   const [seeding, setSeeding] = useState(false);
   const [seedingPack, setSeedingPack] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   useEffect(() => { supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null)); }, []);
 
@@ -75,7 +86,8 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         .eq("kind", "video").eq("active", true).not("url", "is", null)
         .order("priority", { ascending: false }).order("created_at", { ascending: false }),
       supabase
-        .from("ai_media_library").select("id, label, url")
+        .from("ai_media_library")
+        .select("id, label, url, slot_key, text_content, intent_tags, is_draft")
         .eq("kind", "audio").eq("active", true).not("url", "is", null)
         .order("created_at", { ascending: false }),
       supabase.from("bot_flow_qa").select("*").or(`flow_id.eq.${flowId},is_public.eq.true`).order("position"),
@@ -150,57 +162,37 @@ export default function FaqSection({ flowId }: { flowId: string }) {
 
   const seedDefaults = async () => {
     const ok = await confirm({
-      title: "Adicionar atalhos padrão de objeção?",
-      description: `Vamos adicionar ${OBJECTION_SHORTCUTS.length} respostas prontas (com lacunas de áudio/vídeo). Atalhos com o mesmo nome serão preservados.`,
-      confirmText: "Adicionar atalhos",
+      title: `Sincronizar ${OBJECTION_SHORTCUTS.length} atalhos padrão?`,
+      description: `Atualiza texto e gatilhos (frases compostas) dos ${OBJECTION_SHORTCUTS.length} atalhos oficiais. Cria os que faltarem. Mídia já preenchida não é apagada.`,
+      confirmText: "Sincronizar",
       tone: "success",
     });
     if (!ok) return;
     setSeeding(true);
-    let added = 0, skipped = 0;
+    let okCount = 0;
     try {
       for (const s of OBJECTION_SHORTCUTS) {
         const intentName = formatIntentName(s);
-        const exists = qas.some((q) => q.intent_name === intentName);
-        if (exists) { skipped++; continue; }
-        const { error } = await supabase.rpc("seed_objection_shortcut", {
+        const { error } = await supabase.rpc("refresh_objection_shortcut", {
           _flow_id: flowId,
           _intent_name: intentName,
           _text_response: s.text,
           _triggers: s.triggers,
         });
         if (error) { console.error(error); continue; }
-        added++;
+        okCount++;
       }
-      toast.success(`${added} atalhos adicionados${skipped ? `, ${skipped} já existiam` : ""}`);
+      toast.success(`${okCount} atalhos sincronizados com gatilhos limpos`);
       await load();
     } finally {
       setSeeding(false);
     }
   };
 
+  /** @deprecated Pacote curto de 15 — redireciona para o seed completo de 50. */
   const seedIgreenPack = async () => {
-    const ok = await confirm({
-      title: "Adicionar o pacote iGreen FAQ (15 atalhos)?",
-      description: "Adiciona as 15 respostas oficiais e revisadas da iGreen (golpe, taxa escondida, fidelidade, LGPD, etc). Atalhos com o mesmo nome são preservados — nada é sobrescrito.",
-      confirmText: "Adicionar pacote",
-      tone: "success",
-    });
-    if (!ok) return;
-    setSeedingPack(true);
-    try {
-      const { data, error } = await supabase.rpc("seed_igreen_faq_pack", { _flow_id: flowId });
-      if (error) {
-        console.error(error);
-        toast.error("Erro ao adicionar o pacote");
-        return;
-      }
-      const added = Number(data ?? 0);
-      toast.success(added > 0 ? `${added} atalho(s) do pacote iGreen adicionados` : "Todos os atalhos do pacote já existiam");
-      await load();
-    } finally {
-      setSeedingPack(false);
-    }
+    toast.message("Pacote completo", { description: `Usando os ${OBJECTION_SHORTCUTS.length} atalhos padrão (o pacote de 15 foi aposentado).` });
+    await seedDefaults();
   };
 
   const updateQA = async (id: string, patch: Partial<QA>) => {
@@ -242,6 +234,15 @@ export default function FaqSection({ flowId }: { flowId: string }) {
   const addTrigger = async (qa: QA, phrase: string) => {
     const p = phrase.trim();
     if (!p) return;
+    const pNorm = p.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (RESERVED_FLOW_KEYWORDS.some((k) => k.toLowerCase() === pNorm || k.toLowerCase() === p.toLowerCase())) {
+      toast.error("Use uma frase completa (ex.: tem fidelidade). Palavra sola genérica é bloqueada.");
+      return;
+    }
+    if (!p.includes(" ") && p.length <= 8) {
+      toast.error("Prefira frases com 2+ palavras pra não casar errado.");
+      return;
+    }
     // duplicado dentro do mesmo atalho
     if (qa.triggers.some((t) => t.phrase.toLowerCase() === p.toLowerCase())) {
       toast.error("Esse gatilho já está aqui");
@@ -337,21 +338,30 @@ export default function FaqSection({ flowId }: { flowId: string }) {
           <h2 className="text-base font-semibold">Atalhos / FAQ do fluxo</h2>
           <p className="text-xs text-muted-foreground">
             Quando a frase do lead casa com um gatilho, o bot responde o texto (e mídia, se preenchida) e <strong>volta ao passo atual</strong>.
-            Cada atalho já vem com lacunas de <strong>áudio</strong> e <strong>vídeo</strong> — preencha só se quiser enriquecer a dúvida.
+            Use <strong>frases completas</strong> (ex.: “tem fidelidade”) — palavra sola genérica é bloqueada.
             Sem match? Cai na Base da IA.
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button variant="default" size="sm" onClick={seedIgreenPack} disabled={seedingPack}>
-            {seedingPack ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            Pacote iGreen (15)
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+          <Button variant="secondary" size="sm" onClick={() => setReviewOpen(true)}>
+            <Headphones className="w-3 h-3 mr-1" />
+            Revisar áudios ({PRIORITY_FAQ_INTENTS.length} padrões)
           </Button>
-          <Button variant="outline" size="sm" onClick={seedDefaults} disabled={seeding}>
-            {seeding ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
-            {OBJECTION_SHORTCUTS.length} atalhos padrão
+          <Button variant="default" size="sm" onClick={seedDefaults} disabled={seeding || seedingPack}>
+            {seeding || seedingPack ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}
+            Sincronizar {OBJECTION_SHORTCUTS.length} atalhos
           </Button>
         </div>
       </div>
+
+      <FaqAudioReviewDialog
+        open={reviewOpen}
+        onOpenChange={setReviewOpen}
+        flowId={flowId}
+        qas={qas}
+        availableAudios={availableAudios}
+        onChanged={load}
+      />
 
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2 mb-3">

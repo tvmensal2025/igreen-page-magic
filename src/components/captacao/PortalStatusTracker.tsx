@@ -260,7 +260,10 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
     if (retrying) return;
     setRetrying(true);
     try {
-      const { data, error } = await supabase.functions.invoke("finalize-capture", { body: { customerId, consultantId } });
+      // Retry NÃO avisa o cliente de novo (já pode ter recebido aviso / bot pausado).
+      const { data, error } = await supabase.functions.invoke("finalize-capture", {
+        body: { customerId, consultantId, sendNotice: false },
+      });
       if (error || (data as any)?.error) throw new Error((data as any)?.error || error?.message);
       sonnerToast.success("Reenviado ao portal");
       onRetry?.();

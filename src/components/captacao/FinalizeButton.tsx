@@ -35,7 +35,6 @@ export function FinalizeButton({
   allStepsSent,
   pendingStepsCount,
   botPaused,
-  captureMode,
 }: Props) {
   const [sending, setSending] = useState(false);
   const [askNotice, setAskNotice] = useState(false);
@@ -44,8 +43,10 @@ export function FinalizeButton({
   const blockers: string[] = [...missing];
   if (!allStepsSent) blockers.push(`${pendingStepsCount} passo(s) do fluxo`);
 
-  const isManual = (captureMode || "manual") === "manual";
-  const shouldAsk = isManual && !!botPaused;
+  // Bot pausado (humano assumiu) → NUNCA avisar o cliente sem confirmação,
+  // independente de capture_mode (auto/manual). Antes só perguntava em
+  // manual+pausado; com capture_mode=auto o aviso ia sozinho.
+  const shouldAsk = !!botPaused;
 
   const runFinalize = async (sendNotice: boolean) => {
     if (sending) return;
@@ -129,9 +130,9 @@ export function FinalizeButton({
           <AlertDialogHeader>
             <AlertDialogTitle>Avisar o cliente no WhatsApp?</AlertDialogTitle>
             <AlertDialogDescription>
-              O bot está desligado para este cliente interessado. Deseja enviar a mensagem
-              "Estamos enviando seu cadastro ao portal" agora? Você pode cadastrar
-              sem enviar nada também.
+              O bot está pausado neste cliente (você assumiu o atendimento).
+              Deseja enviar a mensagem &quot;Estamos enviando seu cadastro ao portal&quot;
+              agora? Você pode cadastrar sem enviar nada também.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">
