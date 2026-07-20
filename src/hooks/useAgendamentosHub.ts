@@ -153,27 +153,69 @@ export function useAgendamentosHub(consultantId: string) {
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
       setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
 
-      // Mapeia rows do motor + busca nome/telefone dos clientes em 1 query só.
+      // Mapeia rows do motor + busca dados dos clientes em 1 query só.
+      // Aplica o MESMO filtro de elegibilidade da Pizza A·B·C para que
+      // "Próximos envios" reflita exatamente quem está no ciclo vivo.
       const cadenceRows = (cadenceRes.data || []) as Array<{
         id: string;
         customer_id: string;
         stage: string;
         next_action_at: string;
         paused_until: string | null;
+        paused_reason: string | null;
       }>;
       const cadenceCustomerIds = Array.from(new Set(cadenceRows.map((r) => r.customer_id).filter(Boolean)));
       const cadenceCustomers = cadenceCustomerIds.length
         ? await supabase
             .from("customers")
-            .select("id, name, phone_whatsapp")
+            .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
             .in("id", cadenceCustomerIds)
-        : { data: [] as Array<{ id: string; name: string | null; phone_whatsapp: string | null }> };
-      const custMap = new Map<string, { name: string | null; phone_whatsapp: string | null }>();
-      for (const c of (cadenceCustomers.data || []) as Array<{ id: string; name: string | null; phone_whatsapp: string | null }>) {
-        custMap.set(c.id, { name: c.name, phone_whatsapp: c.phone_whatsapp });
+        : { data: [] as Array<{
+            id: string;
+            name: string | null;
+            phone_whatsapp: string | null;
+            customer_origin: string | null;
+            status: string | null;
+            conversation_step: string | null;
+            portal_submitted_at: string | null;
+            do_not_contact: boolean | null;
+          }> };
+      const custMap = new Map<string, {
+        name: string | null;
+        phone_whatsapp: string | null;
+        customer_origin: string | null;
+        status: string | null;
+        conversation_step: string | null;
+        portal_submitted_at: string | null;
+        do_not_contact: boolean | null;
+      }>();
+      for (const c of (cadenceCustomers.data || []) as Array<{
+        id: string;
+        name: string | null;
+        phone_whatsapp: string | null;
+        customer_origin: string | null;
+        status: string | null;
+        conversation_step: string | null;
+        portal_submitted_at: string | null;
+        do_not_contact: boolean | null;
+      }>) {
+        custMap.set(c.id, {
+          name: c.name,
+          phone_whatsapp: c.phone_whatsapp,
+          customer_origin: c.customer_origin,
+          status: c.status,
+          conversation_step: c.conversation_step,
+          portal_submitted_at: c.portal_submitted_at,
+          do_not_contact: c.do_not_contact,
+        });
       }
+      const eligibleCadence = cadenceRows.filter((r) => {
+        const c = custMap.get(r.customer_id);
+        if (!c) return false;
+        return isCycleLeadEligible({ ...c, paused_reason: r.paused_reason });
+      });
       setCadence(
-        cadenceRows.map((r) => ({
+        eligibleCadence.map((r) => ({
           id: r.id,
           customer_id: r.customer_id,
           stage: r.stage,
