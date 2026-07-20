@@ -139,8 +139,8 @@ const CADENCE_TO_NOVO: Record<string, string> = {
 /** Estágios extras puxados do motor (PAUSED classificado via paused_reason). */
 const NOVO_EXTRA_STAGES = ["AI_QUALIFYING", "PAUSED"] as const;
 
-/** Estágios extras puxados do motor (PAUSED classificado via paused_reason). */
-const NOVO_EXTRA_STAGES = ["AI_QUALIFYING", "PAUSED"] as const;
+
+
 
 
 /**
