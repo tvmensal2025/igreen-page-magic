@@ -10,12 +10,18 @@ export type AgendamentoTimelineKind =
 
 export type AgendamentoTimelineStatus = "pending" | "overdue" | "running" | "sent" | "failed";
 
+export interface CadenceButton {
+  id: string;
+  title: string;
+}
+
 export interface AgendamentoTimelineItem {
   id: string;
   kind: AgendamentoTimelineKind;
   title: string;
   preview?: string | null;
   audio_url?: string | null;
+  buttons?: CadenceButton[] | null;
   at: Date;
   status: AgendamentoTimelineStatus;
   badge: string;
