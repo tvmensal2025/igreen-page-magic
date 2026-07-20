@@ -1490,10 +1490,15 @@ function TimelineItemDialog({
                 </>
               )}
             </div>
-          ) : item.preview ? (
-            <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">Prévia</p>
-              <p className="text-sm whitespace-pre-wrap">{item.preview}</p>
+          ) : item.preview || item.audio_url ? (
+            <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-2">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Prévia</p>
+              {item.preview && (
+                <p className="text-sm whitespace-pre-wrap">{item.preview}</p>
+              )}
+              {item.audio_url && (
+                <audio controls src={item.audio_url} className="w-full h-9" preload="none" />
+              )}
             </div>
           ) : null}
         </div>
