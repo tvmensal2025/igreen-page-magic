@@ -11039,6 +11039,30 @@ export type Database = {
         }
         Relationships: []
       }
+      support_chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       template_items: {
         Row: {
           created_at: string
@@ -13764,6 +13788,14 @@ export type Database = {
         Args: { _consultant_id: string; _variant: string }
         Returns: string
       }
+      sync_objection_shortcut_all: {
+        Args: {
+          _intent_name: string
+          _text_response: string
+          _triggers: string[]
+        }
+        Returns: number
+      }
       try_acquire_customer_lock: {
         Args: { p_customer: string; p_ttl_ms: number }
         Returns: string
@@ -13879,6 +13911,10 @@ export type Database = {
         | "RECALL_12M_CALL"
         | "RECALL_YEARLY_SMS"
         | "RECALL_YEARLY_CALL"
+        | "A_NUDGE"
+        | "A_SMS"
+        | "A_CALL"
+        | "A_CALL_RETRY"
       lead_temperature:
         | "hot"
         | "warm"
@@ -14079,6 +14115,10 @@ export const Constants = {
         "RECALL_12M_CALL",
         "RECALL_YEARLY_SMS",
         "RECALL_YEARLY_CALL",
+        "A_NUDGE",
+        "A_SMS",
+        "A_CALL",
+        "A_CALL_RETRY",
       ],
       lead_temperature: ["hot", "warm", "cold", "dead", "objection", "rescue"],
       product_family: [
