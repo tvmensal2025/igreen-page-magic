@@ -27,32 +27,32 @@ html {
     --popover: 0 0% 100%;
     --popover-foreground: 215 28% 17%;
 
-    --primary: 152 100% 33%;          /* verde iGreen #00A859 */
+    --primary: 152 100% 28%;          /* verde iGreen mais forte p/ contraste */
     --primary-foreground: 0 0% 100%;
-    --primary-text: 150 100% 24%;     /* verde escuro #007A3D — p/ texto verde sobre fundo claro (AA) */
+    --primary-text: 150 100% 20%;     /* verde escuro — texto verde sobre fundo claro (AA+) */
 
-    --secondary: 152 14% 94%;
+    --secondary: 152 14% 90%;
     --secondary-foreground: 215 28% 17%;
 
-    --muted: 150 12% 93%;
-    --muted-foreground: 220 9% 46%;   /* texto secundário #6B7280 */
+    --muted: 150 12% 90%;
+    --muted-foreground: 220 15% 32%;  /* texto secundário mais escuro (era cinza claro demais) */
 
-    --accent: 152 55% 94%;            /* verde claro de apoio #E8F8EF */
-    --accent-foreground: 150 100% 22%;/* verde escuro #007A3D */
+    --accent: 152 55% 88%;            /* verde claro de apoio (mais saturado) */
+    --accent-foreground: 150 100% 18%;/* verde escuro */
 
-    --destructive: 0 72% 51%;         /* erro #DC2626 */
+    --destructive: 0 78% 45%;         /* erro mais forte */
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 13% 91%;            /* cinza de borda #E5E7EB */
-    --input: 220 13% 91%;
-    --ring: 152 100% 33%;
+    --border: 220 15% 80%;            /* borda visível (antes sumia) */
+    --input: 220 15% 80%;
+    --ring: 152 100% 28%;
 
-    /* Cores semânticas de estado */
-    --success: 152 100% 33%;          /* #00A859 */
+    /* Cores semânticas de estado — todas mais saturadas */
+    --success: 152 100% 28%;
     --success-foreground: 0 0% 100%;
-    --warning: 38 92% 50%;            /* #F59E0B */
+    --warning: 32 95% 44%;            /* âmbar mais forte */
     --warning-foreground: 0 0% 100%;
-    --info: 221 83% 53%;              /* #2563EB */
+    --info: 221 83% 45%;              /* azul mais forte */
     --info-foreground: 0 0% 100%;
 
     /* ── Paleta local do módulo Produtos/Vendas (Sage & Cream) ──
