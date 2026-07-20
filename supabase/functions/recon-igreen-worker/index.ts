@@ -7,6 +7,7 @@
 //  4. persiste em igreen_recon_routes + endpoints em igreen_endpoint_discovery
 //  5. marca done/error
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveIgreenSyncWorker } from "../_shared/igreen-sync-worker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,17 +77,14 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Resolver credenciais + worker_url
-    const { data: settings } = await supabase.from("app_settings").select("*").limit(1).maybeSingle();
-    const workerUrl =
-      (settings as any)?.igreen_sync_worker_url ||
-      Deno.env.get("IGREEN_SYNC_WORKER_URL") ||
-      "";
-    if (!workerUrl) {
+    // Resolver URL oficial do sync worker (settings → env → fallback hardcoded)
+    const worker = await resolveIgreenSyncWorker(supabase);
+    if (!worker?.url) {
       return new Response(JSON.stringify({ ok: false, error: "worker_url_missing" }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const workerUrl = worker.url;
 
     // Pega email/senha do rafael (ou primeiro consultor com credenciais)
     const { data: cons } = await supabase

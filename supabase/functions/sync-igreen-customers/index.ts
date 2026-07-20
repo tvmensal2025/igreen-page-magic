@@ -1,10 +1,15 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { enqueueProactiveWaCandidates } from "../_shared/igreen-automation.ts";
+import {
+  IGREEN_SYNC_WORKER_OFFICIAL_URL,
+  resolveIgreenSyncWorker,
+} from "../_shared/igreen-sync-worker.ts";
 
 // =====================================================
 // sync-igreen-customers
 // Estratégia única: delega o login/scraping para o Playwright Worker na VPS
-// (IGREEN_SYNC_WORKER_URL). Toda a normalização e upsert continua aqui.
+// (oficial: IGREEN_SYNC_WORKER_OFFICIAL_URL / settings.igreen_sync_worker_url).
+// Toda a normalização e upsert continua aqui.
 // =====================================================
 
 const corsHeaders = {
@@ -205,32 +210,8 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   return record;
 }
 
-// =====================================================
-// Resolve worker URL + secret (mesmo padrão do portal-worker)
-// =====================================================
-async function resolveSyncWorker(
-  // deno-lint-ignore no-explicit-any
-  supabase: any,
-): Promise<{ url: string; secret: string } | null> {
-  const { data: settingsRows } = await supabase.from("settings").select("key, value");
-  const settings: Record<string, string> = {};
-  settingsRows?.forEach((s: { key: string; value: string }) => { settings[s.key] = s.value; });
-
-  const url = (
-    settings.igreen_sync_worker_url ||
-    Deno.env.get("IGREEN_SYNC_WORKER_URL") ||
-    ""
-  ).replace(/\/$/, "");
-  const secret =
-    settings.igreen_sync_worker_secret ||
-    Deno.env.get("IGREEN_SYNC_WORKER_SECRET") ||
-    settings.worker_secret ||
-    Deno.env.get("WORKER_SECRET") ||
-    "";
-
-  if (!url) return null;
-  return { url, secret };
-}
+// Resolve worker URL + secret — ver `_shared/igreen-sync-worker.ts` (URL oficial).
+const resolveSyncWorker = resolveIgreenSyncWorker;
 
 async function callWorker(
   worker: { url: string; secret: string },
@@ -527,25 +508,32 @@ async function runSyncAllBackgroundPhase(
     if (fullCustomers.length > 0) {
       try {
         out.customers_full = await persistCustomers(supabase, consultantId, fullCustomers, igreenAccountId);
-        out.portfolio_full = await markOutOfPortfolio(supabase, consultantId, fullCustomers);
+        out.portfolio_full = await markOutOfPortfolio(supabase, consultantId, fullCustomers, igreenAccountId);
       } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
     }
 
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || [], igreenAccountId); }
     catch (e) { out.network_error = e instanceof Error ? e.message : String(e); }
-    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics);
+    out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics, igreenAccountId);
     // Persiste SEMPRE tudo (não depende de toggle). A página nunca fica vazia.
-    out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || []);
-    out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || []);
-    out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || []);
-    out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || []);
-    out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {});
+    out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || [], igreenAccountId);
+    out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || [], igreenAccountId);
+    out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || [], igreenAccountId);
+    out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || [], igreenAccountId);
+    out.cashback = await persistCashback(supabase, consultantId, r.data?.cashback || {}, igreenAccountId);
+    if (r.data?.portal_extras) {
+      try {
+        out.portal_extras = await persistPortalExtras(supabase, consultantId, r.data.portal_extras, igreenAccountId);
+      } catch (e) {
+        out.portal_extras_error = e instanceof Error ? e.message : String(e);
+      }
+    }
     // v18: cobertura total das páginas (telecom/linhas, faturas, comissoes,
     // seguros/apolices, sinistros, network history). Só roda se o worker
     // devolveu `full_extras` (worker v18+).
     if (r.data?.full_extras) {
       try {
-        out.full_extras = await persistFullExtras(supabase, consultantId, r.data.full_extras);
+        out.full_extras = await persistFullExtras(supabase, consultantId, r.data.full_extras, igreenAccountId);
       } catch (e) {
         out.full_extras_error = e instanceof Error ? e.message : String(e);
         console.warn("[full_extras] persist error:", out.full_extras_error);
@@ -631,7 +619,7 @@ async function runSyncAllBackgroundPhase(
           .maybeSingle();
         if (lastRun?.id) {
           const extras: Record<string, unknown> = {};
-          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics","full_extras","full_extras_error"]) {
+          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics","full_extras","full_extras_error","portal_extras","portal_extras_error","portfolio_full"]) {
             if (out[k] != null) extras[k] = out[k];
           }
           extras._background_finished_at = new Date().toISOString();
@@ -728,10 +716,11 @@ function scheduleSyncAllBackgroundPhase(...args: any[]): void {
 // igreen_seguros_customers), network.history (snapshot mensal).
 // =====================================================
 // deno-lint-ignore no-explicit-any
-async function persistFullExtras(supabase: any, consultantId: string | null, fullExtras: any): Promise<Record<string, unknown>> {
+async function persistFullExtras(supabase: any, consultantId: string | null, fullExtras: any, igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !fullExtras?.blocks) return { skipped: true };
   const summary: Record<string, unknown> = {};
   const blocks = fullExtras.blocks as Record<string, { items?: any[]; data?: any; single?: boolean }>;
+  const accountField = igreenAccountId ? { igreen_account_id: igreenAccountId } : {};
 
   const strOrNull = (v: unknown): string | null => {
     if (v == null || v === "") return null;
@@ -771,6 +760,7 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
   if (linhas.length) {
     const rows = linhas.map((it: any) => ({
       consultant_id: consultantId,
+      ...accountField,
       idcnxtelecom: strOrNull(it.idcnxtelecom ?? it.idConexao ?? it.id),
       msisdn: strOrNull(it.msisdn ?? it.numero ?? it.linha ?? it.telefone) ?? `auto:${stableIntId(JSON.stringify(it))}`,
       iccid: strOrNull(it.iccid ?? it.chipIccid),
@@ -782,7 +772,11 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
       cancelada_em: dateOrNull(it.canceladaEm ?? it.dataCancelamento ?? it.cancelada_em),
       raw: it,
     }));
-    summary.telecom_linhas = await upsertBatch("igreen_telecom_linhas", rows, "consultant_id,msisdn");
+    summary.telecom_linhas = await upsertBatch(
+      "igreen_telecom_linhas",
+      rows,
+      igreenAccountId ? "consultant_id,igreen_account_id,msisdn" : "consultant_id,msisdn",
+    );
   }
 
   // Telecom → faturas
@@ -790,6 +784,7 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
   if (faturas.length) {
     const rows = faturas.map((it: any) => ({
       consultant_id: consultantId,
+      ...accountField,
       idcnxtelecom: strOrNull(it.idcnxtelecom ?? it.idConexao ?? it.id) ?? String(stableIntId(JSON.stringify(it))),
       msisdn: strOrNull(it.msisdn ?? it.numero ?? it.linha),
       mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia ?? it.vencimento),
@@ -799,7 +794,11 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
       pago_em: dateOrNull(it.pagoEm ?? it.dataPagamento),
       raw: it,
     }));
-    summary.telecom_faturas = await upsertBatch("igreen_telecom_faturas", rows, "consultant_id,idcnxtelecom,mes_referencia");
+    summary.telecom_faturas = await upsertBatch(
+      "igreen_telecom_faturas",
+      rows,
+      igreenAccountId ? "consultant_id,igreen_account_id,idcnxtelecom,mes_referencia" : "consultant_id,idcnxtelecom,mes_referencia",
+    );
   }
 
   // Telecom → comissões
@@ -807,6 +806,7 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
   if (telecomComissoes.length) {
     const rows = telecomComissoes.map((it: any) => ({
       consultant_id: consultantId,
+      ...accountField,
       mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia),
       origem: strOrNull(it.origem ?? it.tipo ?? it.categoria),
       valor_cents: centsFromValor(it.valor ?? it.valorComissao),
@@ -815,7 +815,11 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
       external_id: strOrNull(it.id ?? it.idComissao) ?? String(stableIntId(JSON.stringify(it))),
       raw: it,
     }));
-    summary.telecom_comissoes = await upsertBatch("igreen_telecom_comissoes", rows, "consultant_id,external_id,mes_referencia");
+    summary.telecom_comissoes = await upsertBatch(
+      "igreen_telecom_comissoes",
+      rows,
+      igreenAccountId ? "consultant_id,igreen_account_id,external_id,mes_referencia" : "consultant_id,external_id,mes_referencia",
+    );
   }
 
   // Seguros → comissões
@@ -823,6 +827,7 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
   if (segurosComissoes.length) {
     const rows = segurosComissoes.map((it: any) => ({
       consultant_id: consultantId,
+      ...accountField,
       mes_referencia: mesRef(it.mesReferencia ?? it.mes ?? it.competencia),
       origem: strOrNull(it.origem ?? it.tipo ?? it.categoria),
       valor_cents: centsFromValor(it.valor ?? it.valorComissao),
@@ -831,7 +836,11 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
       external_id: strOrNull(it.id ?? it.idComissao) ?? String(stableIntId(JSON.stringify(it))),
       raw: it,
     }));
-    summary.seguros_comissoes = await upsertBatch("igreen_seguros_comissoes", rows, "consultant_id,external_id,mes_referencia");
+    summary.seguros_comissoes = await upsertBatch(
+      "igreen_seguros_comissoes",
+      rows,
+      igreenAccountId ? "consultant_id,igreen_account_id,external_id,mes_referencia" : "consultant_id,external_id,mes_referencia",
+    );
   }
 
   // Seguros → sinistros/renovações → enriquecem igreen_seguros_customers por apolice
@@ -860,44 +869,186 @@ async function persistFullExtras(supabase: any, consultantId: string | null, ful
         patch.cashback_previsto_cents = centsFromValor(v.renov.cashback ?? v.renov.valorCashback);
       }
       if (Object.keys(patch).length === 0) continue;
-      const { error } = await supabase.from("igreen_seguros_customers")
+      let q = supabase.from("igreen_seguros_customers")
         .update(patch).eq("consultant_id", consultantId).eq("apolice_id", apoliceId);
+      if (igreenAccountId) q = q.eq("igreen_account_id", igreenAccountId);
+      const { error } = await q;
       if (!error) updated++;
     }
     summary.seguros_enrich_updated = updated;
   }
 
-  // Rede → snapshot mensal
+  // Rede → snapshot mensal — SÓ conta principal (evita subconta sobrescrever)
   const netHist = blocks["network.history"]?.items || [];
   if (Array.isArray(netHist) && netHist.length) {
-    const rows = netHist.filter((h: any) => h.mes).map((h: any) => ({
-      consultant_id: consultantId,
-      mes_referencia: h.mes,
-      payload: { count: h.count ?? (h.items?.length || 0), error: h.error ?? null, items: h.items?.slice(0, 500) ?? null },
-    }));
-    summary.network_snapshots = await upsertBatch("igreen_network_snapshots", rows, "consultant_id,mes_referencia");
+    let allowNetworkSnap = true;
+    if (igreenAccountId) {
+      const { data: acc } = await supabase.from("igreen_portal_accounts")
+        .select("position").eq("id", igreenAccountId).maybeSingle();
+      if (acc && Number(acc.position) > 1) {
+        allowNetworkSnap = false;
+        summary.network_snapshots_skipped = "subaccount";
+      }
+    }
+    if (allowNetworkSnap) {
+      const rows = netHist.filter((h: any) => h.mes).map((h: any) => ({
+        consultant_id: consultantId,
+        ...accountField,
+        mes_referencia: String(h.mes).slice(0, 7),
+        payload: {
+          count: h.count ?? (Array.isArray(h.items) ? h.items.length : 0),
+          error: h.error ?? null,
+          items: Array.isArray(h.items) ? h.items.slice(0, 500) : null,
+        },
+      }));
+      summary.network_snapshots = await upsertBatch(
+        "igreen_network_snapshots",
+        rows,
+        igreenAccountId ? "consultant_id,igreen_account_id,mes_referencia" : "consultant_id,mes_referencia",
+      );
+    }
   }
 
-  summary.per_route_summary = fullExtras.per_route_summary || null;
+  summary.per_route = fullExtras.per_route_summary || null;
   return summary;
 }
 
+// Persiste extras de portal por conta (campanha Gusttavo, financeiro, expansão…).
+// deno-lint-ignore no-explicit-any
+async function persistPortalExtras(
+  supabase: any,
+  consultantId: string | null,
+  extras: any,
+  igreenAccountId: string | null = null,
+): Promise<Record<string, unknown>> {
+  if (!consultantId || !extras) return { skipped: true };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
+  const mes = new Date().toISOString().slice(0, 7);
+  const out: Record<string, unknown> = {};
+
+  // Atualiza JSON na métrica da conta (cria linha se não existir)
+  const metricsPatch: Record<string, unknown> = {
+    consultant_id: consultantId,
+    mes_ref: mes,
+    updated_at: new Date().toISOString(),
+    synced_at: new Date().toISOString(),
+  };
+  if (accountId) metricsPatch.igreen_account_id = accountId;
+  if (extras.campanha_boleto) metricsPatch.campanha_boleto_json = extras.campanha_boleto;
+  if (extras.financeiro) metricsPatch.financeiro_json = extras.financeiro;
+  if (extras.extrato_expansao) metricsPatch.extrato_expansao_json = extras.extrato_expansao;
+  if (extras.extrato_kwh) metricsPatch.extrato_kwh_json = extras.extrato_kwh;
+  if (extras.telecom_pendencias) metricsPatch.telecom_pendencias_json = extras.telecom_pendencias;
+  if (extras.seguros_pendencias) metricsPatch.seguros_pendencias_json = extras.seguros_pendencias;
+  if (extras.rede_overview) metricsPatch.rede_overview_json = extras.rede_overview;
+
+  const { error: mErr } = await supabase.from("igreen_consultant_metrics").upsert(metricsPatch, {
+    onConflict: "consultant_id,igreen_account_id,mes_ref",
+    ignoreDuplicates: false,
+  });
+  if (mErr) {
+    console.error("portal_extras metrics:", mErr.message);
+    out.metrics_error = mErr.message;
+  } else {
+    out.metrics_saved = true;
+  }
+
+  // Elegíveis Gusttavo → tabela dedicada (scoped por conta)
+  const elegiveis = extras.campanha_boleto?.elegiveis;
+  if (Array.isArray(elegiveis)) {
+    const rows = elegiveis.map((e: any) => ({
+      consultant_id: consultantId,
+      igreen_account_id: accountId,
+      idcliente: Number(e.idcliente),
+      nome: safeStr(e.nome),
+      cidade: safeStr(e.cidade),
+      uf: safeStr(e.uf),
+      licenciado: safeStr(e.licenciado),
+      idlicenciado: e.idlicenciado != null ? String(e.idlicenciado) : null,
+      valor: safeNum(e.valor),
+      vencimento: safeStr(e.vencimento)?.slice(0, 10) || null,
+      dias_atraso: e.diasAtraso != null ? Number(e.diasAtraso) : null,
+      url_boleto: safeStr(e.urlboleto),
+      celular: safeStr(e.celular),
+      propria: typeof e.propria === "boolean" ? e.propria : null,
+      abertos: e.abertos != null ? Number(e.abertos) : null,
+      raw_json: e,
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })).filter((r: { idcliente: number }) => Number.isFinite(r.idcliente) && r.idcliente > 0);
+
+    // Remove elegíveis antigos desta conta que saíram da lista
+    if (accountId) {
+      const keepIds = new Set(rows.map((r: { idcliente: number }) => r.idcliente));
+      const { data: existing } = await supabase
+        .from("igreen_campanha_boleto_elegiveis")
+        .select("idcliente")
+        .eq("consultant_id", consultantId)
+        .eq("igreen_account_id", accountId);
+      const toDelete = ((existing || []) as Array<{ idcliente: number }>)
+        .map((e) => e.idcliente)
+        .filter((id) => !keepIds.has(id));
+      if (toDelete.length > 0) {
+        await supabase
+          .from("igreen_campanha_boleto_elegiveis")
+          .delete()
+          .eq("consultant_id", consultantId)
+          .eq("igreen_account_id", accountId)
+          .in("idcliente", toDelete);
+      }
+    }
+
+    let saved = 0;
+    for (let i = 0; i < rows.length; i += 100) {
+      const batch = rows.slice(i, i + 100);
+      const { data, error } = await supabase
+        .from("igreen_campanha_boleto_elegiveis")
+        .upsert(batch, { onConflict: "consultant_id,igreen_account_id,idcliente", ignoreDuplicates: false })
+        .select("id");
+      if (error) console.error("campanha elegiveis:", error.message);
+      else saved += data?.length || 0;
+    }
+    out.campanha_elegiveis_saved = saved;
+    out.campanha_elegiveis_received = elegiveis.length;
+  }
+
+  return out;
+}
 
 // =====================================================
-// syncOneConsultant — chama o worker e processa os dados
-// =====================================================
-// =====================================================
+async function resolvePrincipalAccountId(supabase: any, consultantId: string | null): Promise<string | null> {
+  if (!consultantId) return null;
+  const { data } = await supabase
+    .from("igreen_portal_accounts")
+    .select("id")
+    .eq("consultant_id", consultantId)
+    .eq("position", 1)
+    .maybeSingle();
+  return data?.id ? String(data.id) : null;
+}
+
+/** Garante igreen_account_id — sem isso o unique multiconta não casa e a conta principal some. */
+async function ensureAccountId(
+  supabase: any,
+  consultantId: string | null,
+  igreenAccountId: string | null,
+): Promise<string | null> {
+  if (igreenAccountId) return igreenAccountId;
+  return resolvePrincipalAccountId(supabase, consultantId);
+}
+
 // Persistência de métricas (painel/rotinas) e boletos — Fase 2
 // =====================================================
 // deno-lint-ignore no-explicit-any
-async function persistMetrics(supabase: any, consultantId: string | null, metrics: any): Promise<Record<string, unknown>> {
+async function persistMetrics(supabase: any, consultantId: string | null, metrics: any, igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !metrics) return { metrics_saved: false, metrics_received: metrics ? 1 : 0 };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const mes = safeStr(metrics.mes) || new Date().toISOString().slice(0, 7);
   const kpis = metrics.overview?.kpis || {};
   const det = kpis.clientesDetalhe || {};
   const rede = metrics.overview?.rede || {};
   const resumo = metrics.resumo_clientes || {};
-  const row = {
+  const row: Record<string, unknown> = {
     consultant_id: consultantId,
     mes_ref: mes,
     clientes_total: kpis.clientes ?? null,
@@ -932,16 +1083,21 @@ async function persistMetrics(supabase: any, consultantId: string | null, metric
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
+  if (accountId) row.igreen_account_id = accountId;
   const { error } = await supabase
     .from("igreen_consultant_metrics")
-    .upsert(row, { onConflict: "consultant_id,mes_ref", ignoreDuplicates: false });
+    .upsert(row, {
+      onConflict: "consultant_id,igreen_account_id,mes_ref",
+      ignoreDuplicates: false,
+    });
   if (error) { console.error("metrics upsert:", error.message); return { metrics_saved: false, metrics_received: 1, metrics_error: error.message }; }
-  return { metrics_saved: true, metrics_received: 1, mes_ref: mes };
+  return { metrics_saved: true, metrics_received: 1, mes_ref: mes, igreen_account_id: accountId };
 }
 
 // deno-lint-ignore no-explicit-any
-async function persistBoletos(supabase: any, consultantId: string | null, boletos: any[]): Promise<Record<string, unknown>> {
+async function persistBoletos(supabase: any, consultantId: string | null, boletos: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0, boletos_received: Array.isArray(boletos) ? boletos.length : 0 };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -951,6 +1107,7 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
   };
   const rows = boletos.map((b) => ({
     consultant_id: consultantId,
+    ...(accountId ? { igreen_account_id: accountId } : {}),
     idcliente: Number(b.idcliente),
     nome: safeStr(b.nome),
     cidade: safeStr(b.cidade),
@@ -975,11 +1132,12 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     updated_at: new Date().toISOString(),
   })).filter((r) => Number.isFinite(r.idcliente) && r.idcliente > 0 && r.mes_referencia);
   let saved = 0;
+  const onConflict = "consultant_id,igreen_account_id,idcliente,mes_referencia";
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100);
     const { data, error } = await supabase
       .from("igreen_customer_boletos")
-      .upsert(batch, { onConflict: "consultant_id,idcliente,mes_referencia", ignoreDuplicates: false })
+      .upsert(batch, { onConflict, ignoreDuplicates: false })
       .select("id");
     if (error) console.error("boletos upsert:", error.message);
     else saved += data?.length || 0;
@@ -992,34 +1150,37 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     const idclienteList = rows.map((r) => r.idcliente).filter(Boolean);
     for (let i = 0; i < idclienteList.length; i += 200) {
       const chunk = idclienteList.slice(i, i + 200).map(String);
-      // Busca os customer_id correspondentes
-      const { data: cust } = await supabase
+      let custQ = supabase
         .from("customers")
         .select("id, igreen_code")
         .eq("consultant_id", consultantId)
         .in("igreen_code", chunk);
+      if (accountId) custQ = custQ.eq("igreen_account_id", accountId);
+      const { data: cust } = await custQ;
       if (!cust || cust.length === 0) continue;
-      // Atualiza cada boleto com o customer_id correto
       for (const c of cust as Array<{ id: string; igreen_code: string }>) {
-        await supabase
+        let upd = supabase
           .from("igreen_customer_boletos")
           .update({ customer_id: c.id })
           .eq("consultant_id", consultantId)
           .eq("idcliente", Number(c.igreen_code))
-          .is("customer_id", null); // só atualiza quem ainda não tem
+          .is("customer_id", null);
+        if (accountId) upd = upd.eq("igreen_account_id", accountId);
+        await upd;
       }
     }
   } catch (e) {
     console.warn("[boletos] customer_id match falhou (nao critico):", e instanceof Error ? e.message : e);
   }
 
-  return { boletos_saved: saved, boletos_received: boletos.length };
+  return { boletos_saved: saved, boletos_received: boletos.length, igreen_account_id: accountId };
 }
 
 // Persiste carteira TELECOM (Opção A — tabela dedicada).
 // deno-lint-ignore no-explicit-any
-async function persistTelecom(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+async function persistTelecom(supabase: any, consultantId: string | null, items: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(items) || items.length === 0) return { telecom_saved: 0, telecom_received: Array.isArray(items) ? items.length : 0 };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
     if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
@@ -1036,6 +1197,7 @@ async function persistTelecom(supabase: any, consultantId: string | null, items:
     seen.add(idc);
     rows.push({
       consultant_id: consultantId,
+      ...(accountId ? { igreen_account_id: accountId } : {}),
       idcnxtelecom: idc,
       nome: safeStr(c.cliente ?? c.nome ?? c.nomeCliente ?? c.titular ?? c.assinante),
       cidade: safeStr(c.cidade),
@@ -1054,27 +1216,29 @@ async function persistTelecom(supabase: any, consultantId: string | null, items:
     });
   }
   let saved = 0;
+  const onConflict = "consultant_id,igreen_account_id,idcnxtelecom";
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100);
     const { data, error } = await supabase
       .from("igreen_telecom_customers")
-      .upsert(batch, { onConflict: "consultant_id,idcnxtelecom", ignoreDuplicates: false })
+      .upsert(batch, { onConflict, ignoreDuplicates: false })
       .select("id");
     if (error) console.error("telecom upsert:", error.message);
     else saved += data?.length || 0;
   }
-  return { telecom_saved: saved, telecom_received: items.length, telecom_valid_rows: rows.length };
+  return { telecom_saved: saved, telecom_received: items.length, telecom_valid_rows: rows.length, igreen_account_id: accountId };
 }
 
 // Persiste CASHBACK por origem no snapshot de métricas (raw) + colunas de saldo.
 // deno-lint-ignore no-explicit-any
-async function persistCashback(supabase: any, consultantId: string | null, cashback: any): Promise<Record<string, unknown>> {
+async function persistCashback(supabase: any, consultantId: string | null, cashback: any, igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !cashback || typeof cashback !== "object") return { cashback_saved: false, cashback_received: cashback ? 1 : 0 };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const mes = new Date().toISOString().slice(0, 7);
   const green = cashback.green || {};
   const telecom = cashback.telecom || {};
   const seguros = cashback.seguros || {};
-  const { error } = await supabase
+  let q = supabase
     .from("igreen_consultant_metrics")
     .update({
       cashback_green_saldo: safeNum(green.saldo),
@@ -1085,8 +1249,10 @@ async function persistCashback(supabase: any, consultantId: string | null, cashb
     })
     .eq("consultant_id", consultantId)
     .eq("mes_ref", mes);
+  if (accountId) q = q.eq("igreen_account_id", accountId);
+  const { error } = await q;
   if (error) { console.error("cashback update:", error.message); return { cashback_saved: false, cashback_received: 1, cashback_error: error.message }; }
-  return { cashback_saved: true, cashback_received: 1 };
+  return { cashback_saved: true, cashback_received: 1, igreen_account_id: accountId };
 }
 
 // Gera ALERTAS acionáveis (bot_handoff_alerts) a partir dos dados sincronizados,
@@ -1177,8 +1343,9 @@ async function generateAlerts(supabase: any, consultantId: string | null, toggle
 
 // Persiste carteira SEGUROS (Opção A — tabela dedicada).
 // deno-lint-ignore no-explicit-any
-async function persistSeguros(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+async function persistSeguros(supabase: any, consultantId: string | null, items: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(items) || items.length === 0) return { seguros_saved: 0, seguros_received: Array.isArray(items) ? items.length : 0 };
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const seen = new Set<string>();
   const rows = [];
   for (const c of items) {
@@ -1188,6 +1355,7 @@ async function persistSeguros(supabase: any, consultantId: string | null, items:
     seen.add(sid);
     rows.push({
       consultant_id: consultantId,
+      ...(accountId ? { igreen_account_id: accountId } : {}),
       seguro_id: sid,
       segurado: safeStr(c.segurado ?? c.cliente ?? c.nome ?? c.nomeCliente),
       modelo: safeStr(c.modelo ?? c.veiculo ?? c.descricaoVeiculo),
@@ -1205,28 +1373,32 @@ async function persistSeguros(supabase: any, consultantId: string | null, items:
     });
   }
   let saved = 0;
+  const onConflict = "consultant_id,igreen_account_id,seguro_id";
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100);
     const { data, error } = await supabase
       .from("igreen_seguros_customers")
-      .upsert(batch, { onConflict: "consultant_id,seguro_id", ignoreDuplicates: false })
+      .upsert(batch, { onConflict, ignoreDuplicates: false })
       .select("id");
     if (error) console.error("seguros upsert:", error.message);
     else saved += data?.length || 0;
   }
-  return { seguros_saved: saved, seguros_received: items.length, seguros_valid_rows: rows.length };
+  return { seguros_saved: saved, seguros_received: items.length, seguros_valid_rows: rows.length, igreen_account_id: accountId };
 }
 
 // Persiste DEVOLUTIVAS detalhadas (categoria/impeditiva/campo/data).
 // deno-lint-ignore no-explicit-any
-async function persistDevolutivas(supabase: any, consultantId: string | null, items: any[]): Promise<Record<string, unknown>> {
+async function persistDevolutivas(supabase: any, consultantId: string | null, items: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(items) || items.length === 0) return { devolutivas_saved: 0, devolutivas_received: Array.isArray(items) ? items.length : 0 };
-  // resolve customer_id por igreen_code (codigo) quando possível
+  const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
+  // resolve customer_id por igreen_code (codigo) quando possível — scoped por conta
   const codes = items.map((d) => safeStr(d._codigo ?? d.codigo)).filter(Boolean) as string[];
   const codeToCustomer = new Map<string, string>();
   for (let i = 0; i < codes.length; i += 200) {
     const chunk = codes.slice(i, i + 200);
-    const { data } = await supabase.from("customers").select("id, igreen_code").eq("consultant_id", consultantId).in("igreen_code", chunk);
+    let q = supabase.from("customers").select("id, igreen_code").eq("consultant_id", consultantId).in("igreen_code", chunk);
+    if (accountId) q = q.eq("igreen_account_id", accountId);
+    const { data } = await q;
     for (const c of (data || []) as Array<{ id: string; igreen_code: string }>) codeToCustomer.set(c.igreen_code, c.id);
   }
   const seen = new Set<string>();
@@ -1241,6 +1413,7 @@ async function persistDevolutivas(supabase: any, consultantId: string | null, it
     const code = safeStr(d._codigo ?? d.codigo);
     rows.push({
       consultant_id: consultantId,
+      ...(accountId ? { igreen_account_id: accountId } : {}),
       iddevolutiva: d.iddevolutiva != null ? Number(d.iddevolutiva) : null,
       idcliente,
       customer_id: code ? (codeToCustomer.get(code) || null) : null,
@@ -1260,16 +1433,17 @@ async function persistDevolutivas(supabase: any, consultantId: string | null, it
     });
   }
   let saved = 0;
+  const onConflict = "consultant_id,igreen_account_id,idcliente,campo,categoria";
   for (let i = 0; i < rows.length; i += 100) {
     const batch = rows.slice(i, i + 100);
     const { data, error } = await supabase
       .from("igreen_customer_devolutivas")
-      .upsert(batch, { onConflict: "consultant_id,idcliente,campo,categoria", ignoreDuplicates: false })
+      .upsert(batch, { onConflict, ignoreDuplicates: false })
       .select("id");
     if (error) console.error("devolutivas upsert:", error.message);
     else saved += data?.length || 0;
   }
-  return { devolutivas_saved: saved, devolutivas_received: items.length };
+  return { devolutivas_saved: saved, devolutivas_received: items.length, igreen_account_id: accountId };
 }
 
 // Reordena os códigos para enriquecer PRIMEIRO quem ainda não tem ficha
@@ -1409,7 +1583,15 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
 // Todo customer com customer_origin='igreen_sync' desse consultor que NÃO
 // veio no batch atual do Kanban recebe situacao_igreen='fora_da_carteira'.
 // deno-lint-ignore no-explicit-any
-async function markOutOfPortfolio(supabase: any, consultantId: string | null, customersBatch: any[]): Promise<Record<string, unknown>> {
+// Marca fora_da_carteira SÓ dentro da mesma conta portal.
+// Também RESTAURA quem voltou no batch (limpa fora_da_carteira indevido).
+// deno-lint-ignore no-explicit-any
+async function markOutOfPortfolio(
+  supabase: any,
+  consultantId: string | null,
+  customersBatch: any[],
+  igreenAccountId: string | null = null,
+): Promise<Record<string, unknown>> {
   if (!consultantId || !Array.isArray(customersBatch) || customersBatch.length === 0) {
     return { out_of_portfolio_marked: 0, skipped: true };
   }
@@ -1420,7 +1602,11 @@ async function markOutOfPortfolio(supabase: any, consultantId: string | null, cu
   );
   if (portalCodes.size === 0) return { out_of_portfolio_marked: 0, skipped: true };
 
-  // Busca todos igreen_codes existentes do consultor (paginado — supabase limita 1000).
+  // SEM account_id: NÃO marca — evita o bug histórico de subconta apagar a principal.
+  if (!igreenAccountId) {
+    return { out_of_portfolio_marked: 0, skipped: true, reason: "missing_igreen_account_id" };
+  }
+
   const existing: { id: string; igreen_code: string | null; situacao_igreen: string | null }[] = [];
   const pageSize = 1000;
   let from = 0;
@@ -1430,6 +1616,7 @@ async function markOutOfPortfolio(supabase: any, consultantId: string | null, cu
       .select("id, igreen_code, situacao_igreen")
       .eq("consultant_id", consultantId)
       .eq("customer_origin", "igreen_sync")
+      .eq("igreen_account_id", igreenAccountId)
       .not("igreen_code", "is", null)
       .range(from, from + pageSize - 1);
     if (error) {
@@ -1446,7 +1633,9 @@ async function markOutOfPortfolio(supabase: any, consultantId: string | null, cu
     .filter((r) => r.igreen_code && !portalCodes.has(String(r.igreen_code)) && r.situacao_igreen !== "fora_da_carteira")
     .map((r) => r.id);
 
-  if (toMark.length === 0) return { out_of_portfolio_marked: 0, checked: existing.length };
+  const toRestore = existing
+    .filter((r) => r.igreen_code && portalCodes.has(String(r.igreen_code)) && r.situacao_igreen === "fora_da_carteira")
+    .map((r) => r.id);
 
   let marked = 0;
   for (let i = 0; i < toMark.length; i += 200) {
@@ -1462,7 +1651,29 @@ async function markOutOfPortfolio(supabase: any, consultantId: string | null, cu
     }
     marked += data?.length || 0;
   }
-  return { out_of_portfolio_marked: marked, checked: existing.length, candidates: toMark.length };
+
+  let restored = 0;
+  for (let i = 0; i < toRestore.length; i += 200) {
+    const chunk = toRestore.slice(i, i + 200);
+    const { data, error } = await supabase
+      .from("customers")
+      .update({ situacao_igreen: null })
+      .in("id", chunk)
+      .select("id");
+    if (error) {
+      console.error("markOutOfPortfolio restore:", error.message);
+      break;
+    }
+    restored += data?.length || 0;
+  }
+
+  return {
+    out_of_portfolio_marked: marked,
+    restored,
+    checked: existing.length,
+    candidates: toMark.length,
+    igreen_account_id: igreenAccountId,
+  };
 }
 
 async function syncOneConsultant(
@@ -1541,7 +1752,9 @@ async function syncOneConsultant(
     catch (e) {
       return { success: false, email: emailNorm, error: `Falha ao gravar clientes: ${e instanceof Error ? e.message : String(e)}` };
     }
-    out.portfolio = await markOutOfPortfolio(supabase, consultantId, base.data?.customers || []);
+    // NÃO marca fora_da_carteira na Fase A: o Kanban fast é incompleto e
+    // apagava a carteira das outras contas. O mark fica só na Fase B (lista full).
+    out.portfolio = { deferred_to_background: true };
 
     const syncTimestamp = new Date().toISOString();
     await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
@@ -1704,8 +1917,9 @@ async function syncOneConsultant(
   if (allCustomers.length === 0) {
     return { success: false, email: emailNorm, error: "Nenhum cliente retornado pelo worker." };
   }
-  const cust = await persistCustomers(supabase, consultantId, allCustomers);
-  const portfolio = await markOutOfPortfolio(supabase, consultantId, allCustomers);
+  const cust = await persistCustomers(supabase, consultantId, allCustomers, igreenAccountId);
+  // Só marca fora_da_carteira com lista completa + account_id (nunca no fast).
+  const portfolio = await markOutOfPortfolio(supabase, consultantId, allCustomers, igreenAccountId);
   const syncTimestamp = new Date().toISOString();
   await supabase.from("settings").upsert({ key: "last_igreen_sync", value: syncTimestamp }, { onConflict: "key" });
   return { success: true, email: emailNorm, synced_at: syncTimestamp, customers: cust, portfolio };
@@ -2128,7 +2342,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "Worker de sync iGreen não configurado. Defina IGREEN_SYNC_WORKER_URL (secret) ou settings.igreen_sync_worker_url.",
+          error: `Worker de sync iGreen não configurado. Oficial: ${IGREEN_SYNC_WORKER_OFFICIAL_URL} (settings.igreen_sync_worker_url).`,
         }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
@@ -2136,6 +2350,25 @@ Deno.serve(async (req) => {
 
 
     if (source === "cron" || source === "bulk_manual") {
+      // Evomi/proxy residencial: sync automático gasta crédito. Só UI/manual.
+      const { data: manualRows } = await supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "igreen_sync_manual_only")
+        .maybeSingle();
+      const manualOnly = String(manualRows?.value ?? "true").toLowerCase() !== "false";
+      if (manualOnly && source === "cron") {
+        console.log("[sync-igreen] cron bloqueado (igreen_sync_manual_only=true — Evomi só no clique)");
+        return new Response(
+          JSON.stringify({
+            success: false,
+            reason: "manual_only",
+            error: "Sync iGreen só manual (clique). Cron desligado para não gastar proxy residencial.",
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       const label = source === "bulk_manual" ? "MANUAL BULK" : "CRON";
       console.log(`=== ${label} MODE: Syncing consultants ===`);
       const cronMode = mode && mode !== "sync" ? mode : "sync_all";

@@ -13,24 +13,32 @@ const N = (n: number | null | undefined) => Number(n || 0).toLocaleString("pt-BR
 
 export function ConsultantMetricsCard({
   consultantId,
+  igreenAccountId = null,
   defaultOpen = false,
 }: {
   consultantId: string;
+  igreenAccountId?: string | null;
   defaultOpen?: boolean;
 }) {
   const mes = new Date().toISOString().slice(0, 7);
   const [open, setOpen] = useState(defaultOpen);
   const { data: m } = useQuery({
-    queryKey: ["igreen-consultant-metrics", consultantId, mes],
+    queryKey: ["igreen-consultant-metrics", consultantId, mes, igreenAccountId ?? "principal"],
     enabled: !!consultantId,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("igreen_consultant_metrics" as never)
         .select("*")
         .eq("consultant_id", consultantId)
-        .eq("mes_ref", mes)
-        .maybeSingle();
+        .eq("mes_ref", mes);
+      if (igreenAccountId) {
+        q = q.eq("igreen_account_id" as never, igreenAccountId);
+      } else {
+        // Sem filtro: pega a linha da conta principal se existir, senão a mais recente
+        q = q.order("synced_at" as never, { ascending: false }).limit(1);
+      }
+      const { data, error } = await q.maybeSingle();
       if (error) throw error;
       return data as Record<string, unknown> | null;
     },

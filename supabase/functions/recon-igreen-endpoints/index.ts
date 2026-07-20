@@ -16,6 +16,7 @@
 // Nesse caso retornamos erro com instrução de redeploy.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveIgreenSyncWorker } from "../_shared/igreen-sync-worker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -113,21 +114,10 @@ Deno.serve(async (req) => {
 
 
 
-    // 2) Resolver worker
-    const { data: settingsRows } = await supabase.from("settings").select("key, value");
-    const s: Record<string, string> = {};
-    settingsRows?.forEach((r: any) => { s[r.key] = r.value; });
-    const url = (
-      s.igreen_sync_worker_url ||
-      Deno.env.get("IGREEN_SYNC_WORKER_URL") ||
-      ""
-    ).replace(/\/$/, "");
-    const secret =
-      s.igreen_sync_worker_secret ||
-      Deno.env.get("IGREEN_SYNC_WORKER_SECRET") ||
-      s.worker_secret ||
-      Deno.env.get("WORKER_SECRET") ||
-      "";
+    // 2) Resolver worker (URL oficial do sync — não portal2)
+    const worker = await resolveIgreenSyncWorker(supabase);
+    const url = worker?.url || "";
+    const secret = worker?.secret || "";
     if (!url) {
       return new Response(
         JSON.stringify({ ok: false, error: "worker_url_missing" }),

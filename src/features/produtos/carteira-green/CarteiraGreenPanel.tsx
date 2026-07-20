@@ -14,14 +14,17 @@ import { useBoletosCarteira, useDevolutivasCarteira, computeCarteiraStats } from
 import { ConsultantMetricsCard } from "./ConsultantMetricsCard";
 import { ClientesCarteiraTable } from "./ClientesCarteiraTable";
 import { IGreenSyncStatusBadge } from "@/components/admin/IGreenSyncStatusBadge";
+import { IgreenAccountSwitcher, useIgreenAccounts } from "./IgreenAccountSwitcher";
 
 const SYNC_STEPS = ["Clientes", "Boletos", "Devolutivas", "Métricas", "Licenças"];
 
 const N = (n: number) => n.toLocaleString("pt-BR");
 
 export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
-  const { data: boletos = [], isLoading: loadingB, refetch: refetchB } = useBoletosCarteira(consultantId);
-  const { data: devolutivas = [], isLoading: loadingD, refetch: refetchD } = useDevolutivasCarteira(consultantId);
+  const { accounts, selectedId, select, loading: loadingAccounts } = useIgreenAccounts(consultantId);
+  const accountFilter = selectedId;
+  const { data: boletos = [], isLoading: loadingB, refetch: refetchB } = useBoletosCarteira(consultantId, accountFilter);
+  const { data: devolutivas = [], isLoading: loadingD, refetch: refetchD } = useDevolutivasCarteira(consultantId, accountFilter);
   const [syncing, setSyncing] = useState(false);
   const [syncStartedAt, setSyncStartedAt] = useState<number | null>(null);
   const [, setTick] = useState(0);
@@ -36,16 +39,21 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const c = await supabase
+      let q = supabase
         .from("customers")
         .select("id", { count: "exact", head: true })
         .eq("consultant_id", consultantId)
         .eq("customer_origin", "igreen_sync");
+      if (accountFilter && accountFilter !== "all") {
+        q = q.eq("igreen_account_id", accountFilter);
+      }
+      q = q.or("situacao_igreen.is.null,situacao_igreen.neq.fora_da_carteira");
+      const c = await q;
       if (!alive) return;
       setIgreenCustomerCount(c.count ?? 0);
     })();
     return () => { alive = false; };
-  }, [consultantId, boletos.length]);
+  }, [consultantId, accountFilter, boletos.length]);
 
   const stats = useMemo(() => computeCarteiraStats(boletos), [boletos]);
   const lastSync = boletos[0]?.synced_at;
@@ -79,7 +87,7 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
     return () => { cancelled = true; clearInterval(interval); };
   }, [lastSyncTs, refetchB, refetchD]);
 
-  if (loadingB || loadingD) {
+  if (loadingB || loadingD || loadingAccounts) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground gap-2 font-body-alt">
         <Loader2 className="h-5 w-5 animate-spin" /> Carregando carteira…
@@ -111,6 +119,12 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
               </h2>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              <IgreenAccountSwitcher
+                consultantId={consultantId}
+                accounts={accounts}
+                selectedId={selectedId}
+                onSelect={select}
+              />
               <IGreenSyncStatusBadge userId={consultantId} />
               {lastSync && (
                 <div className="rounded-full border border-border/60 bg-background/60 px-3 py-1.5 flex items-center gap-2 text-[11px]">
@@ -137,6 +151,12 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
                 <>
                   <Dot />
                   <KpiInline value={N(stats.vencidos)} label="vencidos" tone="bad" />
+                </>
+              )}
+              {devolutivas.length > 0 && (
+                <>
+                  <Dot />
+                  <KpiInline value={N(devolutivas.length)} label="devolutivas" tone="warn" />
                 </>
               )}
             </div>
@@ -182,12 +202,17 @@ export function CarteiraGreenPanel({ consultantId }: { consultantId: string }) {
         <>
           {/* ═══ Faixa 2 · Métricas do consultor (colapsável) ═══════════════ */}
           <section className="rounded-2xl border border-border/60 bg-card p-4">
-            <ConsultantMetricsCard consultantId={consultantId} defaultOpen={false} />
+            <ConsultantMetricsCard
+              consultantId={consultantId}
+              igreenAccountId={accountFilter && accountFilter !== "all" ? accountFilter : null}
+              defaultOpen={false}
+            />
           </section>
 
           {/* ═══ Faixa 3 · Tabela unificada de clientes ═════════════════════ */}
           <ClientesCarteiraTable
             consultantId={consultantId}
+            igreenAccountId={accountFilter && accountFilter !== "all" ? accountFilter : null}
             boletos={boletos}
             devolutivas={devolutivas}
           />

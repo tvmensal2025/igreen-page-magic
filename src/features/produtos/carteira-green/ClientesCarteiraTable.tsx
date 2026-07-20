@@ -24,10 +24,12 @@ function normPhone(p?: string | null): string {
 
 export function ClientesCarteiraTable({
   consultantId,
+  igreenAccountId = null,
   boletos,
   devolutivas,
 }: {
   consultantId: string;
+  igreenAccountId?: string | null;
   boletos: BoletoRow[];
   devolutivas: DevolutivaRow[];
 }) {
@@ -35,32 +37,38 @@ export function ClientesCarteiraTable({
   const [search, setSearch] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  // Telecom & Seguros (dados globais do consultor)
+  // Telecom & Seguros (dados da conta selecionada — sem misturar)
   const { data: telecom = [] } = useQuery({
-    queryKey: ["ct-telecom", consultantId],
+    queryKey: ["ct-telecom", consultantId, igreenAccountId ?? "all"],
     enabled: !!consultantId,
     staleTime: 60_000,
-    queryFn: async (): Promise<(TelecomRow & { nome: string | null; numero: string | null })[]> => {
-      const { data } = await supabase
+    queryFn: async (): Promise<TelecomRow[]> => {
+      let q = supabase
         .from("igreen_telecom_customers" as never)
-        .select("id, nome, numero, status_label, fatura_valor, fatura_status, fatura_mes_referencia")
+        .select("*")
         .eq("consultant_id", consultantId)
         .limit(2000);
-      return (data || []) as never;
+      if (igreenAccountId) q = q.eq("igreen_account_id" as never, igreenAccountId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []) as unknown as TelecomRow[];
     },
   });
 
   const { data: seguros = [] } = useQuery({
-    queryKey: ["ct-seguros", consultantId],
+    queryKey: ["ct-seguros", consultantId, igreenAccountId ?? "all"],
     enabled: !!consultantId,
     staleTime: 60_000,
-    queryFn: async (): Promise<(SeguroRow & { segurado: string | null })[]> => {
-      const { data } = await supabase
+    queryFn: async (): Promise<SeguroRow[]> => {
+      let q = supabase
         .from("igreen_seguros_customers" as never)
-        .select("id, segurado, modelo, placa, mensal, status_label")
+        .select("*")
         .eq("consultant_id", consultantId)
         .limit(2000);
-      return (data || []) as never;
+      if (igreenAccountId) q = q.eq("igreen_account_id" as never, igreenAccountId);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data || []) as unknown as SeguroRow[];
     },
   });
 

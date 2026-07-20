@@ -84,6 +84,16 @@ const TOR_COOKIE_PATH = process.env.TOR_COOKIE_PATH || '/tmp/tor-data/control_au
 function parseProxyEnv() {
   const url = String(process.env.PROXY_URL || '').trim();
   if (url) {
+    // Formato Evomi comum (sem @): http://host:porta:usuario:senha
+    const colonForm = url.match(/^(https?|socks5):\/\/([^:/]+):(\d+):([^:]+):(.+)$/i);
+    if (colonForm) {
+      const [, proto, host, port, username, password] = colonForm;
+      return {
+        server: `${proto.toLowerCase()}://${host}:${port}`,
+        username,
+        password,
+      };
+    }
     try {
       const u = new URL(url);
       const server = `${u.protocol}//${u.host}`; // inclui porta
@@ -1355,37 +1365,150 @@ async function enrichMany(session, codigos, concurrency = 6, timeoutMs = 90000) 
   });
 }
 
-// DEVOLUTIVAS detalhadas: combina /rotinas/devolutivas-novas (campos ricos:
-// iddevolutiva, campo, obs, impeditiva, data, propria) com as categorias de
-// /clientes-green/devolutivas (categoria por cliente). Casa por nome/cidade.
+// DEVOLUTIVAS: fonte PRINCIPAL = /clientes-green/devolutivas (lista completa
+// aberta, paginada). Enriquecida com /rotinas/devolutivas-novas (campo,
+// impeditiva, data). Antes só salvávamos "novas" e perdíamos ~99% da lista.
 async function fetchDevolutivas(session, month) {
   const mes = month || new Date().toISOString().slice(0, 7);
-  const out = [];
-  // 1) devolutivas novas do mês (campos ricos)
-  try {
-    const nv = await apiGet(session, `/rotinas/devolutivas-novas?mes=${mes}`);
-    for (const it of (nv?.data?.items || [])) out.push({ ...it, _fonte: 'novas' });
-  } catch (e) { dbg(`[devol] novas: ${e.message}`); }
-  // 2) categorias por cliente (para anexar categoria às devolutivas) — pagina de 100
-  const catByCliente = new Map();
+  const byCodigo = new Map();
+
+  // 1) Lista completa aberta (pagina de 100)
   try {
     for (let p = 1; p <= 50; p++) {
       const cats = await apiGet(session, `/clientes-green/devolutivas?categoria=todos&search=&page=${p}&perPage=100`);
       const items = cats?.data?.items || [];
       for (const it of items) {
-        const key = String(it.nome || '').trim().toLowerCase();
-        if (key) catByCliente.set(key, it);
+        const codigo = it.codigo ?? it.idcliente ?? it.id;
+        const key = String(codigo ?? `${it.nome}|${it.cidade}`).trim();
+        if (!key) continue;
+        byCodigo.set(key, {
+          ...it,
+          _fonte: 'lista',
+          _codigo: codigo,
+          _categoria: it.categoria || 'outros',
+          _licenciado: it.licenciado,
+          cliente: it.nome || it.cliente,
+          motivo: it.motivo,
+          obs: it.motivo,
+        });
       }
       const total = Number(cats?.data?.total || 0);
       if (items.length < 100 || (total && p * 100 >= total)) break;
     }
-  } catch (e) { dbg(`[devol] categorias: ${e.message}`); }
-  for (const d of out) {
-    const cat = catByCliente.get(String(d.cliente || '').trim().toLowerCase());
-    if (cat) { d._categoria = cat.categoria; d._codigo = cat.codigo; d._licenciado = cat.licenciado; }
-  }
-  dbg(`[devol] ${out.length} devolutivas`);
+  } catch (e) { dbg(`[devol] lista: ${e.message}`); }
+
+  // 2) Novas do mês — enriquecem (campo/impeditiva) e entram se faltarem
+  try {
+    const nv = await apiGet(session, `/rotinas/devolutivas-novas?mes=${mes}`);
+    for (const it of (nv?.data?.items || [])) {
+      const codigo = it.codigo ?? it._codigo ?? it.idcliente;
+      const key = String(codigo ?? `${it.cliente || it.nome}|${it.cidade}`).trim();
+      const prev = byCodigo.get(key);
+      if (prev) {
+        byCodigo.set(key, {
+          ...prev,
+          ...it,
+          _fonte: 'lista+novas',
+          _codigo: prev._codigo ?? codigo,
+          _categoria: prev._categoria || it.categoria || 'outros',
+          _licenciado: prev._licenciado || it.licenciado,
+          impeditiva: it.impeditiva ?? prev.impeditiva,
+          campo: it.campo || prev.campo,
+          data: it.data || prev.data,
+          propria: it.propria ?? prev.propria,
+          obs: it.obs || prev.obs || prev.motivo,
+          motivo: prev.motivo || it.obs || it.motivo,
+        });
+      } else {
+        byCodigo.set(key, {
+          ...it,
+          _fonte: 'novas',
+          _codigo: codigo,
+          _categoria: it.categoria || 'outros',
+          _licenciado: it.licenciado,
+          cliente: it.cliente || it.nome,
+        });
+      }
+    }
+  } catch (e) { dbg(`[devol] novas: ${e.message}`); }
+
+  const out = Array.from(byCodigo.values());
+  dbg(`[devol] ${out.length} devolutivas (lista+novas)`);
   return out;
+}
+
+// Campanha Gusttavo + financeiro + expansão + pendências + extrato kWh + rede overview.
+// Dados por CONTA portal — a edge grava com igreen_account_id.
+async function fetchPortalExtras(session) {
+  const safe = async (p) => {
+    try { return await apiGet(session, p); }
+    catch (e) { dbg(`[portal_extras] ${p}: ${e.message}`); return null; }
+  };
+  const id = session.consultorId;
+  const [
+    campanhaResumo, campanhaElegiveis,
+    finResumo, finSaques, finExtrato, finExpansao,
+    telecomPend, segurosPend,
+    extratoKwh, redeOverview,
+  ] = await Promise.all([
+    safe('/campanha-boleto/resumo'),
+    safe('/campanha-boleto/elegiveis?filtro=todos&search=&page=1&perPage=100'),
+    safe('/financeiro-licenciado/resumo'),
+    safe('/financeiro-licenciado/saques?page=1&perPage=100'),
+    safe('/financeiro-licenciado/extrato'),
+    safe('/financeiro-licenciado/extrato-expansao?page=1&perPage=100'),
+    safe('/telecom/pendencias?tipo=todos&page=1&perPage=100'),
+    safe('/seguros/pendencias?tipo=todos&page=1&perPage=100'),
+    id ? safe(`/extrato-kwh/gp/${id}`) : Promise.resolve(null),
+    safe('/rede/overview'),
+  ]);
+
+  // Pagina elegíveis se total > 100
+  let elegiveisItems = campanhaElegiveis?.data?.items || [];
+  const elegTotal = Number(campanhaElegiveis?.data?.total || elegiveisItems.length);
+  if (elegTotal > elegiveisItems.length) {
+    for (let p = 2; p <= 20 && elegiveisItems.length < elegTotal; p++) {
+      const more = await safe(`/campanha-boleto/elegiveis?filtro=todos&search=&page=${p}&perPage=100`);
+      const items = more?.data?.items || [];
+      if (!items.length) break;
+      elegiveisItems = elegiveisItems.concat(items);
+    }
+  }
+
+  // Pagina extrato expansão
+  let expansaoItems = finExpansao?.data?.items || [];
+  const expTotal = Number(finExpansao?.data?.total || expansaoItems.length);
+  if (expTotal > expansaoItems.length) {
+    for (let p = 2; p <= 20 && expansaoItems.length < expTotal; p++) {
+      const more = await safe(`/financeiro-licenciado/extrato-expansao?page=${p}&perPage=100`);
+      const items = more?.data?.items || [];
+      if (!items.length) break;
+      expansaoItems = expansaoItems.concat(items);
+    }
+  }
+
+  return {
+    campanha_boleto: {
+      resumo: campanhaResumo?.data ?? null,
+      elegiveis: elegiveisItems,
+      total: elegTotal,
+    },
+    financeiro: {
+      resumo: finResumo?.data ?? null,
+      saques: finSaques?.data ?? null,
+      extrato: finExtrato?.data ?? null,
+    },
+    extrato_expansao: {
+      items: expansaoItems,
+      total: expTotal,
+      totalValor: finExpansao?.data?.totalValor ?? null,
+      cancelamentos: finExpansao?.data?.cancelamentos ?? null,
+    },
+    telecom_pendencias: telecomPend?.data ?? null,
+    seguros_pendencias: segurosPend?.data ?? null,
+    extrato_kwh: Array.isArray(extratoKwh?.data) ? extratoKwh.data : (extratoKwh?.data ?? null),
+    rede_overview: redeOverview?.data ?? null,
+  };
 }
 
 // CASHBACK por origem. A API atual só aceita GREEN|TELECOM em /cashback/resumo.
@@ -1763,7 +1886,7 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         ok: true, sessions: sessions.size,
         uptime_s: Math.round((Date.now() - bootAt) / 1000),
-        mode: 'tor+playwright+api-vo-v19',
+        mode: 'tor+playwright+api-vo-v20',
         api_base: API_BASE,
         worker_token_configured: Boolean(WORKER_TOKEN),
         twocaptcha_configured: Boolean(TWOCAPTCHA_API_KEY),
@@ -1871,7 +1994,7 @@ const server = http.createServer(async (req, res) => {
       const only = Array.isArray(body.only) && body.only.length ? new Set(body.only) : null;
       const want = (k) => !only || only.has(k);
       const fullHistory = body.full_history !== false; // v18: default TRUE
-      const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback] = await Promise.all([
+      const [customers, members, metrics, boletos, telecomPayload, segurosPayload, devolutivas, cashback, portalExtras] = await Promise.all([
         want('customers') ? fetchCustomers(s).catch((e) => { dbg(`[sync-all] customers: ${e.message}`); return []; }) : Promise.resolve([]),
         want('network') ? fetchNetwork(s, body.month).catch((e) => { dbg(`[sync-all] network: ${e.message}`); return []; }) : Promise.resolve([]),
         want('metrics') ? fetchMetrics(s, body.month).catch((e) => { dbg(`[sync-all] metrics: ${e.message}`); return null; }) : Promise.resolve(null),
@@ -1880,6 +2003,7 @@ const server = http.createServer(async (req, res) => {
         want('seguros') ? fetchSegurosPayload(s).catch((e) => { dbg(`[sync-all] seguros: ${e.message}`); return { items: [], diagnostics: { endpoints: ['/crm/seguros'], error: e.message } }; }) : Promise.resolve({ items: [], diagnostics: { skipped: true } }),
         want('devolutivas') ? fetchDevolutivas(s, body.month).catch((e) => { dbg(`[sync-all] devolutivas: ${e.message}`); return []; }) : Promise.resolve([]),
         want('cashback') ? fetchCashback(s).catch((e) => { dbg(`[sync-all] cashback: ${e.message}`); return {}; }) : Promise.resolve({}),
+        fetchPortalExtras(s).catch((e) => { dbg(`[sync-all] portal_extras: ${e.message}`); return null; }),
       ]);
       const telecom = telecomPayload.items || [];
       const seguros = segurosPayload.items || [];
@@ -1917,13 +2041,16 @@ const server = http.createServer(async (req, res) => {
         seguros,
         devolutivas,
         cashback,
+        portal_extras: portalExtras,
         full_extras: fullExtras,
         diagnostics: {
           telecom: telecomPayload.diagnostics,
           seguros: segurosPayload.diagnostics,
           only: only ? Array.from(only) : null,
           full_history: fullHistory,
-          worker_version: 'v19',
+          worker_version: 'v20',
+          devolutivas_count: Array.isArray(devolutivas) ? devolutivas.length : 0,
+          portal_extras_ok: !!portalExtras,
         },
       });
     }

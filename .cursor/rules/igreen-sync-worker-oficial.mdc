@@ -1,0 +1,33 @@
+---
+description: URL oficial do worker de LEITURA do escritório iGreen (carteira/sync)
+globs: worker-igreen-sync/**,supabase/functions/sync-igreen-customers/**,supabase/functions/_shared/igreen-sync-worker.ts,supabase/functions/*igreen*/**
+alwaysApply: false
+---
+
+# iGreen sync worker — URL oficial
+
+## Fonte da verdade
+
+- Helper: `supabase/functions/_shared/igreen-sync-worker.ts`
+- Setting: `settings.igreen_sync_worker_url`
+- Secret (opcional): `IGREEN_SYNC_WORKER_URL`
+
+**URL oficial (EasyPanel, verificado 2026-07-20):**
+
+`https://igreen-worker-igreen.d9v63q.easypanel.host`
+
+Health: `GET /health` → `mode` começa com `tor+playwright+api-vo-`
+
+## NÃO confundir
+
+| Worker | Setting | Uso |
+|--------|---------|-----|
+| **igreen-sync** (este) | `igreen_sync_worker_url` | Leitura carteira / sync |
+| portal-2 | `portal2_worker_url` | Cadastro de leads |
+| club | `club_worker_url` | Club |
+
+## Proibido
+
+- Buscar em `localhost:3102`, docker interno `igreen-sync-worker`, tipografia `igreen-sync.d9v83a`
+- Usar `portal2_worker_url` para sync de carteira
+- Re-mapear a URL “do zero” sem checar o helper + `/health` ao vivo

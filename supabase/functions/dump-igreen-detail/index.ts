@@ -3,6 +3,7 @@
 // customer + primeiro details[], para inspeção de campos (endereço, licenciado).
 // Body: { consultant_id: string, idcliente?: string }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { resolveIgreenSyncWorker } from "../_shared/igreen-sync-worker.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -31,12 +32,9 @@ Deno.serve(async (req) => {
     if (!consultant.igreen_portal_email || !consultant.igreen_portal_password)
       throw new Error("missing_igreen_credentials");
 
-    const { data: settingsRows } = await supabase.from("settings").select("key, value");
-    const s: Record<string, string> = {};
-    settingsRows?.forEach((r: { key: string; value: string }) => { s[r.key] = r.value; });
-    const url = (s.igreen_sync_worker_url || Deno.env.get("IGREEN_SYNC_WORKER_URL") || "").replace(/\/$/, "");
-    const secret = s.igreen_sync_worker_secret || Deno.env.get("IGREEN_SYNC_WORKER_SECRET") || s.worker_secret || Deno.env.get("WORKER_SECRET") || "";
-    if (!url) throw new Error("worker_url_missing");
+    const worker = await resolveIgreenSyncWorker(supabase);
+    if (!worker?.url) throw new Error("worker_url_missing");
+    const { url, secret } = worker;
 
     const started = Date.now();
     const mode = String(body.mode || "customers"); // 'customers' | 'enrich'

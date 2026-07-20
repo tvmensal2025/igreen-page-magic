@@ -1,23 +1,18 @@
-# igreen-sync-worker (v18 — cobertura total de páginas)
+# igreen-sync-worker (leitura do escritório)
 
-> **v18 (2026-07-06):** o `/sync-all` agora coleta TODAS as páginas do portal
-> (Clientes Green, Telecom completo, Seguros completo, Rede histórica) com
-> paginação sem cap. Cada rota é retornada como bloco separado em
-> `full_extras.blocks` e persistida em `igreen_telecom_linhas`,
-> `igreen_telecom_faturas`, `igreen_telecom_comissoes`,
-> `igreen_seguros_comissoes`, `igreen_seguros_customers` (sinistros/renovação)
-> e `igreen_network_snapshots`. **Precisa redeploy do container** — veja seção
-> "Deploy" abaixo. Boot log mostra `v18` quando estiver certo.
+> **URL oficial (produção):** `https://igreen-worker-igreen.d9v63q.easypanel.host`  
+> Setting: `settings.igreen_sync_worker_url` · Helper: `supabase/functions/_shared/igreen-sync-worker.ts`  
+> **Não** confundir com `portal2_worker_url` (cadastro) nem `club_worker_url`.
 
-> **v16 (2026-07-01):** o portal iGreen migrou de arquitetura. Não há mais
-> "Exportar Excel" nem os endpoints antigos. Agora é uma API REST em
-> `https://api-vo.igreenenergy.com.br/v1`, autenticada por JWT
-> (`POST /auth/session`). O login **não tem mais reCAPTCHA** (confirmado ao vivo).
-> Ver `ESTRATEGIA_CAPTURA_TOTAL_IGREEN.md` na raiz.
+> **v18+:** `/sync-all` coleta páginas do portal (Clientes Green, Telecom, Seguros, Rede)
+> com paginação. Persistência na edge `sync-igreen-customers`. **Precisa Rebuild** no
+> EasyPanel após mudar `server.mjs`. Confirme `GET /health` no host oficial acima.
+
+> **API:** `https://api-vo.igreenenergy.com.br/v1` (JWT via `POST /auth/session`).
 
 ## Deploy (EasyPanel / VPS Docker)
 
-O worker roda fora do Lovable. Após qualquer mudança em `server.mjs`:
+O worker roda na VPS. Após qualquer mudança em `server.mjs`:
 
 ```bash
 # no host onde o container está
@@ -31,13 +26,17 @@ docker run -d --name igreen-sync-worker \
   --env-file .env \
   --restart unless-stopped \
   igreen-sync-worker:latest
-docker logs -f igreen-sync-worker | head -20   # confirme "v18" no boot
+docker logs -f igreen-sync-worker | head -20
 ```
 
-No EasyPanel: use o botão "Rebuild" no serviço `igreen-sync-worker` — ele já
-puxa o commit mais recente do Git. Após subir, confirme em
-`GET /health` que `mode` retorna `tor+playwright+api-vo-v18`.
+No EasyPanel: **Rebuild** no serviço cujo domínio é
+`igreen-worker-igreen.d9v63q.easypanel.host`. Confirme:
 
+```bash
+curl -sS https://igreen-worker-igreen.d9v63q.easypanel.host/health
+```
+
+`mode` deve começar com `tor+playwright+api-vo-`.
 
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes, rede e
@@ -99,12 +98,17 @@ Resposta de erro quando o Cloudflare bloqueia: `error_code: "igreen_waf_blocked"
 | Nome                  | Obrigatória | Descrição                                                          |
 |-----------------------|-------------|--------------------------------------------------------------------|
 | `WORKER_TOKEN`        | sim         | header `X-Worker-Token` esperado                                   |
+| `PROXY_URL`           | recomendado | Evomi residencial: `http://USER:PASS@core-residential.evomi.com:1000` (prioridade sobre Tor) |
+| `IGREEN_USE_TOR`      | não         | `0` com Evomi (Tor desliga sozinho se `PROXY_URL` existir)         |
+| `IGREEN_PROXY_STICKY` | não         | default `1` — sessão fixa no Cloudflare                            |
 | `TWOCAPTCHA_API_KEY`  | não*        | *só usada se o portal voltar a exigir reCAPTCHA (hoje não exige)   |
 | `OPENAI_API_KEY`      | recomendada | debug visual via OpenAI Vision                                     |
 | `OPENAI_VISION_MODEL` | não         | default `gpt-4o-mini`                                              |
-| `TOR_SOCKS_PROXY`     | não         | default `socks5://127.0.0.1:9050`. Use `none`/`direct` para desativar (teste local) |
+| `TOR_SOCKS_PROXY`     | não         | só se Tor; com Evomi ignore                                        |
 | `PORT`                | não         | default `3102`                                                     |
 | `SESSION_TTL_MS`      | não         | default `1800000` (30 min)                                         |
+
+**Sync:** só no clique da UI (`igreen_sync_manual_only=true`). Cron diário desligado — não gasta proxy sozinho.
 
 ## Custos por sync
 

@@ -47,38 +47,46 @@ export interface DevolutivaRow {
   resolvida_em: string | null;
 }
 
-export function useBoletosCarteira(consultantId?: string) {
+export function useBoletosCarteira(consultantId?: string, igreenAccountId?: string | "all" | null) {
   return useQuery({
-    queryKey: ["carteira-green-boletos", consultantId],
+    queryKey: ["carteira-green-boletos", consultantId, igreenAccountId ?? "all"],
     enabled: !!consultantId,
     staleTime: 60_000,
     queryFn: async (): Promise<BoletoRow[]> => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("v_boletos_carteira" as never)
         .select("*")
         .eq("consultant_id", consultantId!)
         .order("vencimento", { ascending: false })
         .limit(2000);
+      if (igreenAccountId && igreenAccountId !== "all") {
+        q = q.eq("igreen_account_id" as never, igreenAccountId);
+      }
+      const { data, error } = await q;
       if (error) throw error;
       return (data || []) as unknown as BoletoRow[];
     },
   });
 }
 
-export function useDevolutivasCarteira(consultantId?: string) {
+export function useDevolutivasCarteira(consultantId?: string, igreenAccountId?: string | "all" | null) {
   return useQuery({
-    queryKey: ["carteira-green-devolutivas", consultantId],
+    queryKey: ["carteira-green-devolutivas", consultantId, igreenAccountId ?? "all"],
     enabled: !!consultantId,
     staleTime: 60_000,
     queryFn: async (): Promise<DevolutivaRow[]> => {
-      const { data, error } = await supabase
+      let q = supabase
         .from("igreen_customer_devolutivas" as never)
         .select(
-          "id, iddevolutiva, nome, cidade, uf, licenciado, categoria, campo, motivo, impeditiva, propria, data_devolutiva, resolvida_em",
+          "id, iddevolutiva, nome, cidade, uf, licenciado, categoria, campo, motivo, impeditiva, propria, data_devolutiva, resolvida_em, igreen_account_id",
         )
         .eq("consultant_id", consultantId!)
         .order("data_devolutiva", { ascending: false })
-        .limit(500);
+        .limit(2000);
+      if (igreenAccountId && igreenAccountId !== "all") {
+        q = q.eq("igreen_account_id" as never, igreenAccountId);
+      }
+      const { data, error } = await q;
       if (error) throw error;
       return (data || []) as unknown as DevolutivaRow[];
     },
