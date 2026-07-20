@@ -40,12 +40,15 @@ import {
   type CadenceContactPreview,
 } from "@/components/whatsapp/CadenceContactHistoryDialog";
 import { billAttentionFromCustomer, type BillAttention } from "@/lib/customerBillAttention";
+import { isCycleLeadEligible } from "@/lib/cycleEligibility";
 
 const ONDA_CURTA = [
   "cadence_cold_1", "cadence_sms_1", "cadence_call_1", "cadence_cold_2",
   "cadence_sms_tema_2", "cadence_sms_2", "cadence_call_2", "cadence_cold_3",
   "cadence_sms_tema_7", "cadence_cold_4", "cadence_call_3",
 ] as const;
+
+const GROUP_A_STAGES = new Set(["NEW", "GREETED", "AI_QUALIFYING"]);
 
 type ClassifyAction = "pause" | "won" | "lost" | "not_lead";
 type ListFilter = "leads" | "outros" | "todos";
@@ -63,7 +66,23 @@ type LeadRow = {
   pausedReason: string | null;
   blocked: boolean;
   billAttention: BillAttention;
+  nextActionAt: string | null;
 };
+
+function previousStageFromPause(reason: string | null): string | null {
+  const match = /^lead_responded:(.+)$/.exec(String(reason || ""));
+  return match?.[1] ?? null;
+}
+
+function operationalGroup(row: Pick<LeadRow, "stage" | "pausedReason">): "A" | "B" | "C" | "fim" | null {
+  if (row.stage === "PAUSED") {
+    const previous = previousStageFromPause(row.pausedReason);
+    if (previous) return operationalGroup({ stage: previous, pausedReason: null });
+    return "A";
+  }
+  if (GROUP_A_STAGES.has(row.stage)) return "A";
+  return cadenceStageGroup(row.stage);
+}
 
 function reasonLabel(reason: string | null): string | null {
   return labelPausedReason(reason)?.label ?? null;
@@ -290,12 +309,16 @@ export function AgendamentosZeroLeadPanel({
       supabase.from("automation_toggles").select("key, enabled").in("key", ["cadence_engine", ...ONDA_CURTA]),
       supabase
         .from("lead_cadence_state")
-        .select("id, stage, paused_until, paused_reason, customer_id, consultant_id")
-        .not("stage", "in", "(WON,PAUSED,RETARGET_META)")
+        .select("id, stage, next_action_at, paused_until, paused_reason, customer_id, consultant_id")
+        .eq("consultant_id", consultantId)
+        .not("stage", "eq", "WON")
+        .not("next_action_at", "is", null)
+        .order("next_action_at", { ascending: true })
         .limit(500),
       supabase
         .from("lead_cadence_state")
         .select("id", { count: "exact", head: true })
+        .eq("consultant_id", consultantId)
         .not("stage", "eq", "WON")
         .or(`paused_until.is.null,paused_until.lte.${nowIso}`),
     ]);
@@ -307,14 +330,17 @@ export function AgendamentosZeroLeadPanel({
     const custIds = [...new Set(list.map((r) => r.customer_id).filter(Boolean))];
     const { data: custs } = custIds.length
       ? await supabase.from("customers").select(
-          "id, name, phone_whatsapp, consultant_id, do_not_contact, electricity_bill_photo_url, electricity_bill_value, bill_data_confirmed_at, last_inbound_media_kind, last_inbound_media_at, conversation_step",
+          "id, name, phone_whatsapp, consultant_id, customer_origin, status, do_not_contact, portal_submitted_at, electricity_bill_photo_url, electricity_bill_value, bill_data_confirmed_at, last_inbound_media_kind, last_inbound_media_at, conversation_step",
         ).in("id", custIds)
       : { data: [] as {
           id: string;
           name: string | null;
           phone_whatsapp: string | null;
           consultant_id: string | null;
+          customer_origin?: string | null;
+          status?: string | null;
           do_not_contact: boolean;
+          portal_submitted_at?: string | null;
           electricity_bill_photo_url?: string | null;
           electricity_bill_value?: number | null;
           bill_data_confirmed_at?: string | null;
@@ -325,11 +351,20 @@ export function AgendamentosZeroLeadPanel({
     const cmap = new Map((custs || []).map((c) => [c.id, c]));
     const now = Date.now();
     setRows(
-      list.map((r) => {
+      list.flatMap((r) => {
         const c = cmap.get(r.customer_id);
+        if (!c) return [];
+        if (!isCycleLeadEligible({
+          customer_origin: c.customer_origin,
+          status: c.status,
+          conversation_step: c.conversation_step,
+          portal_submitted_at: c.portal_submitted_at,
+          do_not_contact: c.do_not_contact,
+          paused_reason: r.paused_reason,
+        })) return [];
         const phone = c?.phone_whatsapp || "";
         const billAttention = billAttentionFromCustomer(c);
-        return {
+        return [{
           id: r.id,
           customerId: r.customer_id ?? null,
           consultantId: r.consultant_id ?? c?.consultant_id ?? null,
@@ -341,11 +376,12 @@ export function AgendamentosZeroLeadPanel({
           pausedReason: r.paused_reason ?? null,
           blocked: !!c?.do_not_contact,
           billAttention,
-        };
+          nextActionAt: r.next_action_at ?? null,
+        }];
       }),
     );
     setLoading(false);
-  }, []);
+  }, [consultantId]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -355,11 +391,22 @@ export function AgendamentosZeroLeadPanel({
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [rows]);
 
+  useEffect(() => {
+    if (!byDdd.length) return;
+    if (byDdd.some(([ddd]) => ddd === leadDdd)) return;
+    setLeadDdd(byDdd[0][0]);
+  }, [byDdd, leadDdd]);
+
   const leads = useMemo(() => rows.filter((r) => r.ddd === leadDdd), [rows, leadDdd]);
   const naoLeads = useMemo(() => rows.filter((r) => r.ddd !== leadDdd), [rows, leadDdd]);
   const naoLeadsAtivos = useMemo(() => naoLeads.filter((r) => !r.paused), [naoLeads]);
   const leadsLivres = useMemo(() => leads.filter((r) => !r.paused), [leads]);
   const leadsPausados = useMemo(() => leads.filter((r) => r.paused), [leads]);
+  const groupA = useMemo(() => rows.filter((r) => operationalGroup(r) === "A"), [rows]);
+  const groupB = useMemo(() => rows.filter((r) => operationalGroup(r) === "B"), [rows]);
+  const groupBWhatsapp = useMemo(() => groupB.filter((r) => r.stage.startsWith("COLD_")), [groupB]);
+  const groupBSms = useMemo(() => groupB.filter((r) => r.stage.startsWith("SMS_")), [groupB]);
+  const groupBCall = useMemo(() => groupB.filter((r) => r.stage.startsWith("CALL_")), [groupB]);
 
   const visibleRows = useMemo(() => {
     let list = rows;
@@ -555,7 +602,9 @@ export function AgendamentosZeroLeadPanel({
           <p className="text-sm font-[Sora] font-bold leading-tight">
             {tudoOk ? "Pronto para enviar" : engineOn ? "Falta separar leads" : "Envio desligado"}
           </p>
-          <p className="text-[11px] text-muted-foreground">DDD lead: <strong className="text-foreground">{leadDdd}</strong></p>
+          <p className="text-[11px] text-muted-foreground">
+            DDD lead: <strong className="text-foreground">{leadDdd}</strong> · Aguardando B: <strong className="text-foreground">{groupA.length}</strong> · B: <strong className="text-foreground">{groupB.length}</strong>
+          </p>
         </div>
         <div className="flex items-center gap-1">
           {steps.map((s, i) => (
@@ -573,6 +622,9 @@ export function AgendamentosZeroLeadPanel({
         </div>
         <Badge variant={tudoOk ? "default" : "secondary"} className="text-[10px]">
           {leads.length} lead(s) · {leadsLivres.length} liberado(s)
+        </Badge>
+        <Badge variant="outline" className="text-[10px]">
+          WA {groupBWhatsapp.length} · SMS {groupBSms.length} · Call {groupBCall.length}
         </Badge>
         <Button variant="ghost" size="sm" className="h-8 text-xs gap-1" disabled={loading || busy} onClick={() => void load()}>
           <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
