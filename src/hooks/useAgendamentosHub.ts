@@ -115,14 +115,15 @@ export function useAgendamentosHub(consultantId: string) {
           .not("pos_venda_pending_stage", "is", null)
           .eq("pos_venda_invalid", false),
         // Motor de cadência A→B→C: TODOS os próximos envios programados (sem limite de horizonte).
+        // Inclui paused_reason para filtrar leads congelados no mesmo critério da pizza.
         supabase
           .from("lead_cadence_state")
-          .select("id, customer_id, stage, next_action_at, paused_until")
+          .select("id, customer_id, stage, next_action_at, paused_until, paused_reason")
           .eq("consultant_id", consultantId)
           .not("next_action_at", "is", null)
           .not("stage", "in", "(WON)")
           .order("next_action_at", { ascending: true })
-          .limit(1000),
+          .limit(2000),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
