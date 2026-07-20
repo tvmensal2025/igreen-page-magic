@@ -149,6 +149,7 @@ export function dispatchAgendamentosNav(detail: AgendamentosNavDetail) {
 export interface CadenceStageInfo {
   message_text: string | null;
   audio_url: string | null;
+  buttons: CadenceButton[] | null;
 }
 
 export function buildAgendamentosTimeline(input: {
