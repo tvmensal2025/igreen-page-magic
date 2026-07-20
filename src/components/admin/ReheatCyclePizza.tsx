@@ -20,8 +20,7 @@ import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/ca
 import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
-import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
-import { isCrmCadastroEmAnalise, isNuncaMaisContatar } from "@/lib/crmVsLeadAnalysis";
+import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
 import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 
 type SliceEditTarget = {
@@ -140,63 +139,9 @@ const CADENCE_TO_NOVO: Record<string, string> = {
 /** Estágios extras puxados do motor (PAUSED classificado via paused_reason). */
 const NOVO_EXTRA_STAGES = ["AI_QUALIFYING", "PAUSED"] as const;
 
-/** Motivos de pausa = lead congelado / fora do ciclo vivo da pizza. */
-const FROZEN_PAUSE_REASONS = new Set([
-  "manual_admin_clear_sla_backlog",
-  "dnc",
-  "opt_out",
-  "handoff_humano",
-]);
 
-/** Chat já encerrado ou só esperando nota — não é “em conversa” ativa. */
-const DEAD_CONVERSATION_STEPS = new Set([
-  "atendimento_finalizado",
-  "aguardando_avaliacao_atendimento",
-]);
 
-/** PAUSED do Grupo A (respondeu no chat). Bloqueados e retorno B/C ficam de fora. */
-function isPausedGroupA(pausedReason: string | null | undefined): boolean {
-  const r = String(pausedReason || "").trim();
-  if (!r || r === "lead_responded") return true;
-  const lower = r.toLowerCase();
-  if (FROZEN_PAUSE_REASONS.has(lower) || lower.startsWith("dnc:")) return false;
-  const m = /^lead_responded(?::(.+))?$/.exec(r);
-  if (!m) return false;
-  const prev = (m[1] || "").trim();
-  if (!prev || prev === "PAUSED") return true;
-  if (prev === "NEW" || prev === "GREETED" || prev === "AI_QUALIFYING") return true;
-  if (/^(COLD_|RECALL_|SMS_|CALL_|RETARGET_)/.test(prev) || prev === "CLOSE_LOST") return false;
-  return true;
-}
 
-/** Status que já passou do funil / não é lead de ciclo. */
-const EXCLUDED_CYCLE_STATUSES = new Set([
-  "approved",
-  "registered_igreen",
-  "cadastro_concluido",
-  "rejected",
-  "contato_incompleto",
-]);
-
-function isCycleLeadEligible(c: {
-  customer_origin?: string | null;
-  status?: string | null;
-  conversation_step?: string | null;
-  portal_submitted_at?: string | null;
-  do_not_contact?: boolean | null;
-  paused_reason?: string | null;
-}): boolean {
-  if (isIgreenWalletOrigin(c.customer_origin)) return false;
-  const st = String(c.status || "").toLowerCase();
-  if (EXCLUDED_CYCLE_STATUSES.has(st)) return false;
-  if (isNuncaMaisContatar(c)) return false;
-  if (isCrmCadastroEmAnalise(c)) return false;
-  const step = String(c.conversation_step || "").trim().toLowerCase();
-  if (DEAD_CONVERSATION_STEPS.has(step)) return false;
-  const reason = String(c.paused_reason || "").trim().toLowerCase();
-  if (FROZEN_PAUSE_REASONS.has(reason)) return false;
-  return true;
-}
 
 /**
  * Pizza B — dias reais do calendário v5 (D+1 → D10).
