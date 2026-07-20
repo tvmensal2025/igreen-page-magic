@@ -260,6 +260,7 @@ export function useAgendamentosHub(consultantId: string) {
     bulk: bulkCampaigns,
     voice: voiceCampaigns,
     cadence,
+    cadenceStageInfo,
   });
 
   const pendingManual = manual.filter((m) => m.status === "pending");
