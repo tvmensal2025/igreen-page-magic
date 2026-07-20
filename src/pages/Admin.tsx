@@ -20,6 +20,7 @@ import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatu
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { ForceDesktopLayout } from "@/components/layout/ForceDesktopLayout";
 import { useAlertasBoletosCount } from "@/components/admin/financeiro/useAlertasBoletosCount";
 import { useUserRole } from "@/hooks/useUserRole";
 
