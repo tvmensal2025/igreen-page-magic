@@ -1,50 +1,71 @@
-# Diagnóstico do lead Francisca (5511971254913) — 18/07 01:48
+## Diagnóstico (dados reais consultados agora)
 
-## O que aconteceu (linha do tempo real)
+Consultei `lead_cadence_state` e a divergência é clara:
 
-1. 01:18 → 01:26 — Bot rodou fluxo A normal: nome → valor (R$ 800) → simulação → "Conhecer mais" → áudio 4a+4b + botões **Cadastrar / Falar com humano**.
-2. **01:36:46** — `bot_paused=true`, motivo `humano_assumiu_whatsapp`, `bot_paused_until=null` (pausa permanente). Nada disso foi disparado pelo cliente — foi o webhook de outbound `fromMe` (o consultor mandou algo pelo celular ou um echo do próprio bot fora da janela de 30s).
-3. **01:48:47** — cliente clicou **Cadastrar**. Mensagem entrou em `conversations` (inbound), mas o motor não rodou porque o gate `bot_paused` bloqueou. **Nenhum engine_log, nenhuma resposta, nenhum avanço para `a6_ask_bill_photo`.**
-4. Estado atual: `assigned_human_id` = próprio consultor, `bot_paused=true`, sem timeout — vai ficar assim para sempre até alguém religar manualmente.
+| Segmento | Qtd | Aparece na Pizza? | Aparece em "Próximos envios"? |
+|---|---|---|---|
+| COLD_1 congelado (`manual_admin_clear_sla_backlog`) | 61 | ❌ excluído | ✅ **aparece** |
+| PAUSED `dnc` | 17 | ❌ excluído | ✅ **aparece** |
+| PAUSED `handoff_humano` | 4 | ❌ excluído | ✅ **aparece** |
+| PAUSED `invalid_phone` | 12 + 5 + 3 = 20 | ❌ perdido (sem `prev`) | ✅ **aparece** |
+| `not_lead_outside_dddXX` | 5 | parcialmente | ✅ **aparece** |
+| AI_QUALIFYING / GREETED / COLD_1 sem pause | ~52 | ✅ pizza A/B | ✅ aparece |
+| PAUSED `lead_responded[:A]` | 30 | ✅ pizza A "flow" | ✅ aparece |
 
-**Causa-raiz:** o takeover automático (evolution-webhook linha 498-511 + `auto-takeover.ts`) grava `bot_paused_until: null`. Não existe expiração, não existe retomada quando o cliente responde um botão do fluxo. Qualquer echo/manual fora da janela de 30s congela o lead.
+**Total agendado bruto:** 185 (hub mostra 143 depois de dedup/cortes) — **Total na pizza:** ~82.
 
-Isso explica os relatos anteriores ("bot parou de responder", "não seguiu até portal/OTP/facial") — não é OCR, não é worker: é a pausa órfã.
+**Causa raiz:** o hook `useAgendamentosHub` (`src/hooks/useAgendamentosHub.ts` L117-124) lê `lead_cadence_state` **sem nenhum filtro de elegibilidade**, enquanto `ReheatCyclePizza` aplica `isCycleLeadEligible` (exclui `manual_admin_clear_sla_backlog`, `dnc`, `handoff_humano`, `opt_out`, `invalid_phone`, DND, origens iGreen wallet, status já aprovado/rejeitado, etc.).
 
----
+Resultado: o painel de agendamentos exibe pessoas que o motor **nunca vai despachar** (o próprio `cadence-tick` também pula esses `paused_reason`), causando a sensação de "cadê essas pessoas na pizza?".
 
-## Correções (para "nunca falhar")
+## O que fazer
 
-### 1. Retomar bot automaticamente quando o cliente clica um botão do fluxo
-No motor (evolution-webhook + whapi-webhook, antes do gate `bot_paused`): se o inbound é `button_click` OU casa `trigger_phrases` do step atual, **religar** o bot (`bot_paused=false`, limpar `bot_paused_reason`) e processar. Cliente interagindo = fluxo tem que continuar.
+Alinhar **1 fonte de verdade** para "quem está no ciclo A/B/C": mesma regra na pizza, no hub de agendamentos e no motor.
 
-### 2. Endurecer o gate de outbound `fromMe`
-- Aumentar janela de "ignorar como bot recente" de 30s para 5 min (o áudio+texto+auto-publish do painel gera outbounds espaçados).
-- Ignorar outbounds cujo `messageId` já está em `outbound_message_log` como enviado pela própria plataforma (não só o `evolution_message_id` — também matching por texto+timestamp curto).
-- Só considerar takeover quando o outbound vier de um device diferente das instâncias gerenciadas do consultor.
+### 1. Extrair filtro compartilhado
+Criar `src/lib/cycleEligibility.ts` exportando:
+- `FROZEN_PAUSE_REASONS` (incluindo os que faltavam: `invalid_phone`, `not_lead_outside_ddd*`, `opt_out`, `dnc:*`)
+- `isCycleLeadEligible(customer, pausedReason)` — mesma lógica de hoje em `ReheatCyclePizza.tsx` L181-199
+- `isPausedGroupA(pausedReason)` — hoje em L158-170
 
-### 3. Timeout de takeover
-Popular `bot_paused_until = now + 24h` sempre que o motivo for `humano_assumiu_whatsapp` (echo/manual). Cron `bot-unpause-expired` já existe — só passa a limpar essas linhas. Motivos explícitos (`humano_assumiu` via clique no painel) continuam sem expiração.
+Refatorar `ReheatCyclePizza.tsx` para importar dessas funções (sem mudar comportamento).
 
-### 4. Consertar o lead da Francisca agora
-Rodar `undoTakeoverByPhone("5511971254913")` para o customer `8428419b…` e disparar `manual-step-send` do step `a6_ask_bill_photo` (`f21b3d40-…`) para o cliente receber o pedido de foto da conta e o fluxo retomar exatamente onde parou.
+### 2. Aplicar o filtro no hub de agendamentos
+Em `src/hooks/useAgendamentosHub.ts`:
+- Após buscar `cadenceRows`, carregar de `customers` os campos usados pelo filtro (já busca `name`/`phone_whatsapp` — adicionar `customer_origin, status, conversation_step, portal_submitted_at, do_not_contact` no mesmo `select`).
+- Cruzar com `paused_reason` de cada linha (ampliar o `select` de `lead_cadence_state` para incluir `paused_reason`).
+- Descartar linhas onde `isCycleLeadEligible` = false OU (`stage='PAUSED'` E não classificável como A/B/C via `paused_reason`).
 
-### 5. Painel de saúde no `/admin/checklist`
-Card "Leads travados por takeover órfão": lista `customers` com `bot_paused=true AND bot_paused_reason='humano_assumiu_whatsapp' AND last_inbound_at > bot_paused_at`. Botão "Religar em massa".
+Isso faz "Próximos envios" mostrar exatamente as mesmas pessoas da pizza.
 
----
+### 3. Aba "Congelados / fora do ciclo"
+Ninguém some sem rastro. Adicionar um contador clicável no cabeçalho do hub ("⏸️ 78 fora do ciclo") que abre uma lista com motivo (`manual_admin_clear_sla_backlog`, `dnc`, `invalid_phone`, `handoff_humano`, …) e ações:
+- **Reativar** (limpa `paused_reason`, reagenda `next_action_at` para próximo slot útil)
+- **Arquivar** (marca `PAUSED` com `dnc` explícito)
 
-## Arquivos afetados
+### 4. Limpar `next_action_at` de quem está congelado
+Migration/insert único: para todas as linhas com `paused_reason` em `FROZEN_PAUSE_REASONS`, zerar `next_action_at` (o motor já ignora, mas isso remove do "radar futuro" de qualquer view/consulta que só olhe `next_action_at is not null`). Reversível pelo botão Reativar da aba nova.
 
-- `supabase/functions/evolution-webhook/index.ts` (linhas 482-514) — janela + retomada por botão.
-- `supabase/functions/whapi-webhook/index.ts` (linha 209 e gate equivalente) — mesma correção.
-- `supabase/functions/_shared/engine/runner.ts` — antes do check de `bot_paused`, chamar `maybeResumeOnFlowInteraction(customer, inbound)`.
-- `src/lib/whatsapp/auto-takeover.ts` — `applyPause` grava `bot_paused_until = now+24h` para reason `humano_assumiu_whatsapp` (só essa).
-- `supabase/functions/bot-unpause-expired/index.ts` — cron já roda; garantir que trata esse motivo.
-- `src/pages/AdminChecklist.tsx` — card de leads travados + botão de religar em massa.
+### 5. Contador da pizza vs. hub — mesma métrica
+Trocar o subtítulo "143 Próximos envios" no cabeçalho do admin (`src/pages/AdminAgendamentos*` ou componente equivalente) para usar o mesmo total exibido em "A/B/C no radar", garantindo que o número bata visualmente.
 
-## Aceite
+## Riscos e validação
 
-- Reproduzir: pausar bot manual → cliente clica botão → bot religa e envia o próximo step do fluxo. **Passar.**
-- Lead Francisca volta a receber `a6_ask_bill_photo` e completa até OTP/link facial.
-- Nenhum lead fica com `bot_paused=true` + `bot_paused_until=null` para o motivo `humano_assumiu_whatsapp` por mais de 24 h.
+- Motor de envio (`cadence-tick`, `daily-reheat-cron`) não muda — ele já pula esses `paused_reason`. Só estamos alinhando a UI.
+- Após aplicar, esperar: Pizza total ≈ Agendamentos "Próximos envios" (±diferenças de manual/pós-venda/campanhas, que continuam separados por design).
+- Validação SQL sugerida:
+  ```sql
+  SELECT count(*) FROM lead_cadence_state l
+  JOIN customers c ON c.id = l.customer_id
+  WHERE l.next_action_at IS NOT NULL
+    AND (l.paused_reason IS NULL OR l.paused_reason IN ('lead_responded','lead_responded:AI_QUALIFYING','lead_responded:NEW','lead_responded:GREETED'))
+    AND c.do_not_contact = false
+    AND c.status NOT IN ('approved','registered_igreen','cadastro_concluido','rejected','contato_incompleto');
+  ```
+  Esse número tem que bater com o total da pizza.
+
+## Não faz parte deste plano
+
+- Mudar o motor de disparo (`cadence-tick`) — já filtra correto.
+- Mexer em pós-venda, bulk, voice — visíveis separadamente por design.
+- Alterar horário/janela — trava de 20h já implementada no turno anterior.
