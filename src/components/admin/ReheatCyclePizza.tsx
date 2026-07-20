@@ -568,6 +568,7 @@ export function ReheatCyclePizza({
           isCycleLeadEligible({
             ...c,
             paused_reason: pauseByCustomer.get(c.id) ?? null,
+            active_cadence: cadList.some((r) => r.customer_id === c.id && !!r.next_action_at),
           })
         ) {
           eligible.add(c.id);
