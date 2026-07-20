@@ -220,6 +220,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Texto ≤160 com **https://wa.me/{{consultor_phone}}** e SAIR. Conferir prévia Multicanal.",
     link: "/admin/agendamentos-central",
     group: "grupoB",
+    autoKey: "sms1_wame",
   },
   {
     key: "b4_call1",
@@ -227,6 +228,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Áudio: valor médio / WhatsApp / sem Pix. Só se ainda silêncio.",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day2_wa",
@@ -248,6 +250,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Atualização diferente; espaçada (anti-spam).",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day6_sms",
@@ -255,6 +258,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Sem ligação no mesmo dia. Link wa.me + SAIR.",
     link: "/admin/agendamentos-central",
     group: "grupoB",
+    autoKey: "sms2_wame",
   },
   {
     key: "b_day7_wa",
@@ -283,6 +287,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Encerramento educado; oferece manter análise ou encerrar.",
     link: "/admin?tab=voz",
     group: "grupoB",
+    autoKey: "call_clips_ready",
   },
   {
     key: "b_day10_wa",
@@ -366,6 +371,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Cascata: `whatsapp_instances.connected_phone` → `consultants.phone`. **Nunca** notification_phone.",
     link: "/admin/agendamentos-central",
     group: "sms",
+    autoKey: "sms1_wame",
   },
   {
     key: "sms2_preview",
@@ -389,6 +395,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Áudios stitchados e testados no painel de voz (dryRun / kit).",
     link: "/admin?tab=voz",
     group: "voz",
+    autoKey: "call_clips_ready",
   },
   {
     key: "v2_velip",
@@ -396,6 +403,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
     desc: "Sem Velip, CALL_* falha com `velip_not_configured`.",
     link: "/admin?tab=voz",
     group: "voz",
+    autoKey: "call_clips_velip",
   },
 
   // ── Meta ──
