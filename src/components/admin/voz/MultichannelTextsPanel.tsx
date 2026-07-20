@@ -27,6 +27,9 @@ import {
   SPEECH_GENDERS,
   WHAPI_MAX_BUTTONS,
   WHAPI_MAX_BUTTON_TITLE,
+  PRESET_DEFAULT_GOTO,
+  buttonGotoSelectValue,
+  parseButtonGotoSelect,
   type AudioSegment,
   type CadenceButton,
   type CadenceGroup,
@@ -509,6 +512,15 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         : resolveBody(selected, lib)
     : "";
   const draftButtons = selected ? resolveButtons(selected, lib) : [];
+  /** Passos do Grupo A para o select “vai para” (igual construtor). */
+  const flowGotoSteps = useMemo(
+    () =>
+      MULTICHANNEL_CADENCE_TEMPLATES.filter(
+        (t) => t.group === "A" && !t.hiddenInPanel && t.key !== selected?.key,
+      ),
+    [selected?.key],
+  );
+  const showButtonGoto = selected?.group === "A";
   const sendOrderSteps = selected
     ? buildSendOrderSteps(selected, {
         hasButtons: draftButtons.length > 0 || selected.channel === "whatsapp_buttons",
@@ -779,12 +791,21 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       const title = preset.emoji
         ? `${preset.emoji} ${preset.title}`.slice(0, WHAPI_MAX_BUTTON_TITLE)
         : preset.title.slice(0, WHAPI_MAX_BUTTON_TITLE);
-      setButtons([...draftButtons, { id: preset.id, title }]);
+      const goto = PRESET_DEFAULT_GOTO[preset.id] ?? {};
+      setButtons([
+        ...draftButtons,
+        {
+          id: preset.id,
+          title,
+          goto_step_key: goto.goto_step_key ?? null,
+          goto_special: goto.goto_special ?? null,
+        },
+      ]);
       return;
     }
     setButtons([
       ...draftButtons,
-      { id: `opt_${draftButtons.length + 1}`, title: "Novo" },
+      { id: `opt_${draftButtons.length + 1}`, title: "Novo", goto_step_key: null, goto_special: null },
     ]);
   };
 
@@ -1882,6 +1903,9 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   <>
                 <p className="text-[11px] text-muted-foreground">
                   Máx. {WHAPI_MAX_BUTTONS} · título ≤ {WHAPI_MAX_BUTTON_TITLE}
+                  {showButtonGoto
+                    ? " · escolha o passo de destino (como no construtor)"
+                    : ""}
                 </p>
 
                 {themeSlot ||
@@ -1973,6 +1997,43 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                                 </span>
                               </div>
                             </div>
+                            {showButtonGoto && (
+                              <div className="space-y-1">
+                                <Label className="text-[10px] text-muted-foreground">
+                                  Quando clicar, vai para:
+                                </Label>
+                                <Select
+                                  value={buttonGotoSelectValue(b)}
+                                  onValueChange={(v) =>
+                                    updateButton(idx, parseButtonGotoSelect(v))
+                                  }
+                                >
+                                  <SelectTrigger className="h-8 text-[12px]">
+                                    <SelectValue placeholder="Escolher destino…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">⚠ Sem destino</SelectItem>
+                                    <SelectItem value="special:ai">
+                                      🤖 Responder com IA (Gemini)
+                                    </SelectItem>
+                                    <SelectItem value="special:humano">
+                                      👤 Falar com humano
+                                    </SelectItem>
+                                    <SelectItem value="special:cadastro">
+                                      📝 Pular para cadastro
+                                    </SelectItem>
+                                    <SelectItem value="special:repeat">
+                                      🔁 Repetir este passo
+                                    </SelectItem>
+                                    {flowGotoSteps.map((s) => (
+                                      <SelectItem key={s.key} value={`stepkey:${s.key}`}>
+                                        {s.title}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

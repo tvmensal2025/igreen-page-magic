@@ -42,9 +42,13 @@ import {
   resolveCampaignByProtocolOnly,
 } from "../_shared/deterministic-campaign-resolver.ts";
 import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
+import {
+  resolveCanonicalFlowVariant,
+} from "../_shared/bot/canonical-flow-variant.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
+// Desde 2026-07-20 a variante canônica é sempre A (Grupo A / Sofia).
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -693,7 +697,10 @@ Deno.serve(async (req) => {
       const { data: assignedVariant } = await supabase.rpc("assign_flow_variant", {
         _consultant_id: superAdminConsultantId,
       });
-      const abVariant = (typeof assignedVariant === "string" && assignedVariant) || "A";
+      // Variante canônica = Grupo A (Sofia). Nunca F/D/M em lead novo.
+      const abVariant = resolveCanonicalFlowVariant(
+        (typeof assignedVariant === "string" && assignedVariant) || "A",
+      );
       const { data: newCustomer, error } = await supabase
         .from("customers")
         .insert({
@@ -1790,12 +1797,13 @@ Deno.serve(async (req) => {
       external_message_id: messageId || null,
     }).select("id").maybeSingle();
 
-    // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
+    // Stop rule: resposta HUMANA pausa/realinha a cadência (sem envio).
+    // Clique CTWA / initial_message da campanha NÃO pausa 72h.
     try {
       const { onLeadInboundResponse, ensureCadenceState } = await import(
         "../_shared/cadence-hooks.ts"
       );
-      await onLeadInboundResponse(supabase, customer.id);
+      await onLeadInboundResponse(supabase, customer.id, { messageText });
       await ensureCadenceState(
         supabase,
         customer.id,
@@ -2712,7 +2720,7 @@ Deno.serve(async (req) => {
           // variant do customer (default "A") evita o erro "multiple rows"
           // que antes deixava activeFlow=null e fazia o engine cair em sys
           // (que disparava a IA do welcome legacy em vez do Fluxo da Camila).
-          const variant = (customer as any)?.flow_variant || "A";
+          const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
           const { data: activeFlows } = await supabase
             .from("bot_flows")
             .select("id")

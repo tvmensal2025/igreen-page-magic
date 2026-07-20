@@ -85,12 +85,61 @@ async function resolveActiveFlowId(
 function buttonsFromCaptures(captures: CaptureRow[] | null | undefined): CadenceButton[] {
   const cap = (captures || []).find((c) => c.field === "_buttons" && c.enabled !== false);
   if (!cap || !Array.isArray(cap.value)) return [];
-  return (cap.value as Array<{ id?: string; title?: string }>)
+  return (cap.value as Array<{
+    id?: string;
+    title?: string;
+    goto_step_key?: string | null;
+    goto_special?: string | null;
+  }>)
     .map((b) => ({
       id: String(b?.id || "").trim(),
       title: String(b?.title || "").trim(),
+      goto_step_key: b?.goto_step_key ? String(b.goto_step_key) : null,
+      goto_special: (b?.goto_special as CadenceButton["goto_special"]) || null,
     }))
     .filter((b) => b.id && b.title);
+}
+
+/** Cruza captures._buttons com transitions do passo → destino legível (step_key). */
+function attachGotoFromTransitions(
+  buttons: CadenceButton[],
+  transitions: TransitionRow[] | null | undefined,
+  keyById: Map<string, string>,
+): CadenceButton[] {
+  if (!buttons.length || !transitions?.length) return buttons;
+  const keywordTx = transitions.filter(
+    (tr) => String(tr.trigger_intent || "") === "palavra_chave",
+  );
+  return buttons.map((b, idx) => {
+    if (b.goto_step_key || b.goto_special) return b;
+    const phrasesMatch = (tr: TransitionRow) => {
+      const phrases = Array.isArray(tr.trigger_phrases)
+        ? tr.trigger_phrases.map(String)
+        : [];
+      const intent = String(tr.trigger_intent || "");
+      return (
+        intent === b.id ||
+        phrases.some(
+          (p) =>
+            p.toLowerCase() === b.id.toLowerCase() ||
+            p.toLowerCase() === b.title.toLowerCase(),
+        )
+      );
+    };
+    let matched =
+      transitions.find(phrasesMatch) ||
+      keywordTx.find(phrasesMatch) ||
+      null;
+    if (!matched && idx < keywordTx.length) matched = keywordTx[idx];
+    if (!matched) return b;
+    return {
+      ...b,
+      goto_special: (matched.goto_special as CadenceButton["goto_special"]) || null,
+      goto_step_key: matched.goto_step_id
+        ? keyById.get(String(matched.goto_step_id)) ?? null
+        : null,
+    };
+  });
 }
 
 /** Carrega textos/botões já gravados no fluxo ativo → biblioteca do painel. */
@@ -108,26 +157,37 @@ export async function loadCadenceLibraryFromBotFlow(
   const parentKeys = Object.values(OCR_RETRY_PARENT).map((p) => p.parentKey);
   const loadKeys = Array.from(new Set([...keys, ...parentKeys]));
 
-  const { data: steps, error } = await supabase
+  const { data: allSteps, error: allErr } = await supabase
     .from("bot_flow_steps")
     .select("id, step_key, message_text, captures, transitions, voice_audio_clip_id, fallback")
-    .eq("flow_id", flowId)
-    .in("step_key", loadKeys);
+    .eq("flow_id", flowId);
 
-  if (error || !steps?.length) return {};
+  if (allErr || !allSteps?.length) return {};
+
+  const keyById = new Map(
+    (allSteps as FlowStepRow[]).map((s) => [String(s.id), String(s.step_key || "")]),
+  );
+  const steps = (allSteps as FlowStepRow[]).filter((s) =>
+    loadKeys.includes(String(s.step_key || "")),
+  );
+  if (!steps.length) return {};
 
   const bodies: Record<string, string> = {};
   const buttons: Record<string, CadenceButton[]> = {};
   const audioClipIds: Record<string, string> = {};
 
-  for (const raw of steps as FlowStepRow[]) {
+  for (const raw of steps) {
     const key = String(raw.step_key || "");
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
     if (tpl) {
       if (tpl.channel !== "whatsapp_audio" && String(raw.message_text || "").trim()) {
         bodies[key] = String(raw.message_text);
       }
-      const btns = buttonsFromCaptures(raw.captures);
+      const btns = attachGotoFromTransitions(
+        buttonsFromCaptures(raw.captures),
+        raw.transitions as TransitionRow[] | null,
+        keyById,
+      );
       if (btns.length) buttons[key] = btns;
       if (raw.voice_audio_clip_id) audioClipIds[key] = String(raw.voice_audio_clip_id);
     }
@@ -570,6 +630,17 @@ export async function syncCadenceLibraryToBotFlow(
     return { updated, skipped, errors };
   }
 
+  const { data: flowStepRows } = await supabase
+    .from("bot_flow_steps")
+    .select("id, step_key")
+    .eq("flow_id", flowId);
+  const idByKey = new Map(
+    ((flowStepRows || []) as Array<{ id: string; step_key: string | null }>).map((s) => [
+      String(s.step_key || ""),
+      String(s.id),
+    ]),
+  );
+
   const syncable = MULTICHANNEL_CADENCE_TEMPLATES.filter(
     (t) =>
       t.group === "A" &&
@@ -626,32 +697,49 @@ export async function syncCadenceLibraryToBotFlow(
         : withoutButtons;
 
     let nextTransitions = step.transitions as TransitionRow[] | null;
-    if (buttons.length > 0 && Array.isArray(step.transitions)) {
-      const keywordTx = (step.transitions as TransitionRow[]).filter(
-        (tr) => String(tr.trigger_intent || "") === "palavra_chave",
+    if (buttons.length > 0) {
+      const existing = Array.isArray(step.transitions)
+        ? (step.transitions as TransitionRow[])
+        : [];
+      const defaults = existing.filter(
+        (tr) => String(tr.trigger_intent || "") === "default",
       );
-      nextTransitions = (step.transitions as TransitionRow[]).map((tr) => {
-        if (String(tr.trigger_intent || "") !== "palavra_chave") return tr;
-        const phrases = Array.isArray(tr.trigger_phrases) ? tr.trigger_phrases : [];
-        let matchedBtn = buttons.find(
-          (b) =>
+      const other = existing.filter((tr) => {
+        const intent = String(tr.trigger_intent || "");
+        if (intent === "default" || intent === "palavra_chave") return false;
+        if (buttons.some((b) => b.id === intent)) return false;
+        const phrases = Array.isArray(tr.trigger_phrases)
+          ? tr.trigger_phrases.map(String)
+          : [];
+        if (
+          buttons.some((b) =>
             phrases.some(
               (p) =>
-                String(p).toLowerCase() === b.id.toLowerCase() ||
-                String(p).toLowerCase() === b.title.toLowerCase(),
+                p.toLowerCase() === b.id.toLowerCase() ||
+                p.toLowerCase() === b.title.toLowerCase(),
             ),
-        );
-        // Fallback por ordem: 1º botão ↔ 1ª transition palavra_chave, etc.
-        if (!matchedBtn) {
-          const idx = keywordTx.indexOf(tr);
-          if (idx >= 0 && idx < buttons.length) matchedBtn = buttons[idx];
+          )
+        ) {
+          return false;
         }
-        if (!matchedBtn) return tr;
-        const nextPhrases = Array.from(
-          new Set([matchedBtn.id, matchedBtn.title, ...phrases.filter(Boolean)]),
-        );
-        return { ...tr, trigger_phrases: nextPhrases };
+        return true;
       });
+      const buttonTx: TransitionRow[] = buttons.map((b, i) => {
+        const phrases = Array.from(
+          new Set(
+            [b.id, b.title, String(i + 1)].filter((x) => String(x || "").trim()),
+          ),
+        );
+        return {
+          trigger_intent: "palavra_chave",
+          trigger_phrases: phrases,
+          goto_step_id: b.goto_step_key
+            ? idByKey.get(b.goto_step_key) ?? null
+            : null,
+          goto_special: b.goto_special || null,
+        };
+      });
+      nextTransitions = [...other, ...buttonTx, ...defaults];
     }
 
     const patch: Record<string, unknown> = {

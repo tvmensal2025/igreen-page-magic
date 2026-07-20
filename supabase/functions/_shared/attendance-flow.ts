@@ -23,6 +23,11 @@ import { registerSend, checkSendQuota } from "./anti-ban.ts";
 import { isSuperAdminConsultant } from "./attendance-channel-env.ts";
 import { normalizePhone } from "./utils.ts";
 import { resolveConsultantMessage } from "./consultant-template.ts";
+import {
+  CANONICAL_FLOW_VARIANT,
+  resolveCanonicalFlowVariant,
+} from "./bot/canonical-flow-variant.ts";
+import { isSofiaMulticanalConversationStep } from "./bot/cadastro-fixes.ts";
 
 export const ATTENDANCE_RATING_STEP = "aguardando_avaliacao_atendimento";
 /** Step terminal após nota registrada — bots/crons devem ignorar. */
@@ -280,13 +285,19 @@ export async function sendWelcomeHeader(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, referral_partner_id",
+      "id, name, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, referral_partner_id, conversation_step, flow_variant",
     )
     .eq("id", customerId)
     .maybeSingle();
 
   if (!customer) return { ok: false, code: "customer_not_found" };
   if (customer.welcome_sent_at) {
+    // Mesmo com welcome já enviado: garante variante A (nunca F).
+    if (String((customer as any).flow_variant || "").toUpperCase() !== CANONICAL_FLOW_VARIANT) {
+      await supabase.from("customers").update({
+        flow_variant: CANONICAL_FLOW_VARIANT,
+      }).eq("id", customerId).then(() => {}, () => {});
+    }
     return { ok: true, skipped: "already_sent", protocol: customer.tracking_protocol || undefined };
   }
   // Sempre 55+DDD+número no JID — phone sem DDI (11 dígitos) gerava destino inválido.
@@ -397,10 +408,17 @@ export async function sendWelcomeHeader(
     const nowIso = new Date().toISOString();
     // Abrir atendimento NÃO pausa o bot: o fluxo/IA segue quando o lead responder.
     // Pausa só ocorre se o consultor enviar mensagem manual (auto-takeover / outboundHuman).
+    // Trava: sempre Grupo A. Se já está no meio do Sofia A, NÃO zera o passo.
+    const prevStep = String((customer as any).conversation_step || "");
+    const keepSofiaStep =
+      isSofiaMulticanalConversationStep(prevStep) ||
+      /^flow:/i.test(prevStep) ||
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prevStep);
     await supabase.from("customers").update({
       welcome_sent_at: nowIso,
       name_ask_sent_at: nowIso,
-      conversation_step: "welcome",
+      conversation_step: keepSofiaStep ? prevStep : "welcome",
+      flow_variant: resolveCanonicalFlowVariant((customer as any).flow_variant),
       capture_mode: "auto",
       bot_paused: false,
       bot_paused_reason: null,
@@ -472,12 +490,19 @@ export async function sendWelcomeHeader(
   const now = new Date().toISOString();
   // Abrir atendimento NÃO pausa o bot: o fluxo/IA segue quando o lead responder.
   // Pausa só ocorre se o consultor enviar mensagem manual (auto-takeover / outboundHuman).
+  // Trava: sempre Grupo A. Se já está no meio do Sofia A, NÃO zera o passo.
+  const prevStepDefault = String((customer as any).conversation_step || "");
+  const keepSofiaStepDefault =
+    isSofiaMulticanalConversationStep(prevStepDefault) ||
+    /^flow:/i.test(prevStepDefault) ||
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prevStepDefault);
   await supabase
     .from("customers")
     .update({
       welcome_sent_at: now,
       name_ask_sent_at: now,
-      conversation_step: "welcome",
+      conversation_step: keepSofiaStepDefault ? prevStepDefault : "welcome",
+      flow_variant: resolveCanonicalFlowVariant((customer as any).flow_variant),
       capture_mode: "auto",
       capture_started_at: now,
       tracking_protocol: protocol,

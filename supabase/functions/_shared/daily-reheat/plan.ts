@@ -126,7 +126,7 @@ export async function loadDailyReheatSettings(supabase: SB): Promise<DailyReheat
     window_start_brt: String((data as any)?.window_start_brt ?? "09:00").slice(0, 8),
     window_end_brt: String((data as any)?.window_end_brt ?? "18:30").slice(0, 8),
     weekdays_only: (data as any)?.weekdays_only !== false,
-    flow_variant: String((data as any)?.flow_variant ?? "F"),
+    flow_variant: String((data as any)?.flow_variant ?? "A"),
     priority_queue: ((data as any)?.priority_queue ?? "A_then_B") as DailyReheatSettings["priority_queue"],
     pilot_consultant_ids: Array.isArray((data as any)?.pilot_consultant_ids)
       ? (data as any).pilot_consultant_ids.map(String)

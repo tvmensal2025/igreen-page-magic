@@ -209,6 +209,63 @@ Deno.test("rewrite — Sofia a6 COM foto → documento", () => {
   assertEquals(rewritten?.step_key, "a7_ask_doc_photo");
 });
 
+Deno.test("rewrite — Fluxo F f_pedir_conta com só valor NÃO pula foto", () => {
+  const fluxoF = [
+    {
+      id: "fc",
+      step_key: "f_pedir_conta",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "fd" }],
+    },
+    {
+      id: "fd",
+      step_key: "f_pedir_documento",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const rewritten = rewriteActivateAwayFromSimPath(
+    fluxoF[0],
+    fluxoF,
+    { electricity_bill_value: 200 },
+    { buttonId: "sim_cadastrar", messageText: "Sim, vamos" },
+  );
+  assertEquals(rewritten, null);
+  assertEquals(
+    pickActivateDestination(fluxoF, { electricity_bill_value: 200 })?.step_key,
+    "f_pedir_conta",
+  );
+});
+
+Deno.test("rewrite — Fluxo F COM foto da conta → documento", () => {
+  const fluxoF = [
+    {
+      id: "fc",
+      step_key: "f_pedir_conta",
+      step_type: "capture_conta",
+      is_active: true,
+      transitions: [{ goto_step_id: "fd" }],
+    },
+    {
+      id: "fd",
+      step_key: "f_pedir_documento",
+      step_type: "capture_documento",
+      is_active: true,
+    },
+  ];
+  const rewritten = rewriteActivateAwayFromSimPath(
+    fluxoF[0],
+    fluxoF,
+    {
+      electricity_bill_value: 200,
+      electricity_bill_photo_url: "https://x/bill.jpg",
+    },
+    { buttonId: "sim_cadastrar" },
+  );
+  assertEquals(rewritten?.step_key, "f_pedir_documento");
+});
+
 Deno.test("rewrite — documento SEM conta → conta cadastro", () => {
   const rewritten = rewriteActivateAwayFromSimPath(steps[3], steps, {}, {
     messageText: "quero me cadastrar",

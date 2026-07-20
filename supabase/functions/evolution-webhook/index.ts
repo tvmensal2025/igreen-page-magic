@@ -32,6 +32,9 @@ import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
 import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assign.ts";
+import {
+  resolveCanonicalFlowVariant,
+} from "../_shared/bot/canonical-flow-variant.ts";
 
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
@@ -781,7 +784,9 @@ Deno.serve(async (req) => {
       const { data: assignedVariant } = await supabase.rpc("assign_flow_variant", {
         _consultant_id: instanceData.consultant_id,
       });
-      const newFlowVariant = (typeof assignedVariant === "string" && assignedVariant) || "A";
+      const newFlowVariant = resolveCanonicalFlowVariant(
+        (typeof assignedVariant === "string" && assignedVariant) || "A",
+      );
       const pushNameClean = (parsed?.pushName || "").toString().trim().slice(0, 80);
       const fallbackName = `Cliente ${phone.slice(-4)}`;
       const { data: newCustomer, error } = await supabase
@@ -1646,12 +1651,13 @@ Deno.serve(async (req) => {
     }
 
 
-    // Stop rule: resposta do lead pausa/realinha a cadência (sem envio).
+    // Stop rule: resposta HUMANA pausa/realinha a cadência (sem envio).
+    // Clique CTWA / initial_message da campanha NÃO pausa 72h.
     try {
       const { onLeadInboundResponse, ensureCadenceState } = await import(
         "../_shared/cadence-hooks.ts"
       );
-      await onLeadInboundResponse(supabase, customer.id);
+      await onLeadInboundResponse(supabase, customer.id, { messageText });
       await ensureCadenceState(
         supabase,
         customer.id,
@@ -2059,7 +2065,7 @@ Deno.serve(async (req) => {
         // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
         // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
         // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
-        const variant = (customer as any)?.flow_variant || "A";
+        const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
         const { data: activeFlows } = await supabase
           .from("bot_flows")
           .select("id")
@@ -2541,7 +2547,7 @@ Deno.serve(async (req) => {
           // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
           // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
           // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
-          const variant = (customer as any)?.flow_variant || "A";
+          const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
           const { data: activeFlows } = await supabase
             .from("bot_flows")
             .select("id")

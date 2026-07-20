@@ -77,7 +77,17 @@ export function hasBillReady(customer: ActivateCustomerLike | null | undefined):
 
 /** Fluxo Sofia a6: foto da conta é obrigatória — valor da simulação não substitui. */
 export function flowRequiresBillPhoto(steps: ActivateStepLike[]): boolean {
-  return activeSteps(steps).some((s) => /^a6_|ask_bill_photo/i.test(String(s.step_key || "")));
+  const list = activeSteps(steps);
+  if (list.some((s) => /^a6_|ask_bill_photo|f_pedir_conta/i.test(String(s.step_key || "")))) {
+    return true;
+  }
+  // Só existem contas de cadastro (→ documento), sem conta de simulação:
+  // valor digitado NÃO substitui a foto (bug Janete/F CEMIG 2026-07-20).
+  const contas = list.filter((s) => String(s.step_type || "") === "capture_conta");
+  if (contas.length > 0 && contas.every((s) => isCadastroContaStep(s, list))) {
+    return true;
+  }
+  return false;
 }
 
 /** Evidência real de fatura (foto confirmada / OCR) — não conta só o valor digitado. */
@@ -228,8 +238,14 @@ export function rewriteActivateAwayFromSimPath(
     return pickActivateDestination(steps, customer);
   }
 
-  // Conta de CADASTRO mas lead JÁ tem conta → pula foto e vai ao documento.
-  if (type === "capture_conta" && isCadastroContaStep(intended, steps) && billReadyForActivate(steps, customer)) {
+  // Conta de CADASTRO: só pula a foto com evidência REAL (foto/OCR).
+  // Valor digitado na simulação NÃO conta — senão f_pedir_conta→documento
+  // (bug 5511971254913 / Janete no fluxo F).
+  if (
+    type === "capture_conta" &&
+    isCadastroContaStep(intended, steps) &&
+    hasRealBillEvidence(customer)
+  ) {
     return pickActivateDestination(steps, customer);
   }
 

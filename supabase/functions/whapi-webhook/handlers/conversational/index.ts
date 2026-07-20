@@ -27,6 +27,11 @@ import { matchButtonIntent, extractStepButtons } from "../../../_shared/ai-butto
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
 import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
 import {
+  resolveCanonicalFlowVariant,
+  needsCanonicalFlowVariantRepair,
+  CANONICAL_FLOW_VARIANT,
+} from "../../../_shared/bot/canonical-flow-variant.ts";
+import {
   ACTIVATE_CTA_NUDGE,
   pickActivateDestination,
   rewriteActivateAwayFromSimPath,
@@ -991,7 +996,20 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // bot_flows / bot_flow_steps / bot_flow_qa use the consultant UUID (customer.consultant_id),
   // NOT the iGreen numeric id (consultorId). Prefer the UUID; fall back to consultorId only as last resort.
   const consultantId = ctx.customer?.consultant_id || (ctx as any).consultorId;
-  const flowVariant = (ctx.customer as any)?.flow_variant || "A";
+  // Trava canônica: sempre Grupo A (Sofia). Se o lead estava em F/D/M, corrige.
+  let flowVariant = resolveCanonicalFlowVariant((ctx.customer as any)?.flow_variant);
+  if (needsCanonicalFlowVariantRepair((ctx.customer as any)?.flow_variant)) {
+    console.warn(
+      `[conversational] forçando flow_variant=${CANONICAL_FLOW_VARIANT} (era ${(ctx.customer as any)?.flow_variant}) customer=${ctx.customer?.id}`,
+    );
+    (ctx.customer as any).flow_variant = flowVariant;
+    try {
+      await ctx.supabase
+        .from("customers")
+        .update({ flow_variant: flowVariant })
+        .eq("id", ctx.customer.id);
+    } catch (_) { /* best-effort */ }
+  }
   const loaded = consultantId ? await loadFlow(ctx.supabase, consultantId, flowVariant) : null;
   console.log(`[conversational] entry stepKey="${stepKey}" consultantId=${consultantId} dbSteps=${loaded?.steps?.length ?? 0}`);
 

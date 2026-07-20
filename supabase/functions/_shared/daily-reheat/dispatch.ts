@@ -24,6 +24,7 @@ import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
 import { finishProactiveTouch, reserveProactiveTouch } from "../journey-effects.ts";
 import { isAutomationEnabled } from "../automation-gate.ts";
 import { isBotGloballyEnabled } from "../bot/global-flag.ts";
+import { resolveCanonicalFlowVariant } from "../bot/canonical-flow-variant.ts";
 import { assertCanContact } from "../contact-suppression.ts";
 import {
   delayMinutesForTransition,
@@ -376,17 +377,18 @@ async function runStartFlow(
   plan: CandidatePlan,
   settings: DailyReheatSettings,
 ): Promise<ActionResult> {
-  const variant = settings.flow_variant || "F";
+  // Trava canônica: Grupo A (Sofia). Nunca gravar F/D/M via reheat.
+  const safeVariant = resolveCanonicalFlowVariant(settings.flow_variant);
   await supabase
     .from("customers")
     .update({
-      flow_variant: variant,
+      flow_variant: safeVariant,
       bot_paused: false,
       capture_mode: "auto",
       assigned_human_id: null,
     })
     .eq("id", plan.customer_id);
-  return { action: "start_flow", ok: true, detail: `variant_${variant}` };
+  return { action: "start_flow", ok: true, detail: `variant_${safeVariant}` };
 }
 
 async function runCloseRating(

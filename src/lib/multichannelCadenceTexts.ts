@@ -48,10 +48,20 @@ export type CadenceChannel =
 
 export type CadenceGroup = "A" | "B" | "C" | "theme" | "availability";
 
+/** Destino especial do clique (espelha Transition.goto_special do fluxo). */
+export type CadenceButtonGotoSpecial = "humano" | "cadastro" | "ai" | "repeat";
+
 /** Botão Whapi — title máx. 25 chars (whapi-api.ts). */
 export type CadenceButton = {
   id: string;
   title: string;
+  /**
+   * Destino no fluxo A (step_key estável). Sync resolve → goto_step_id UUID.
+   * Só Grupo A / bot_flow_steps — Grupos B/C roteiam por id no motor.
+   */
+  goto_step_key?: string | null;
+  /** Destino especial: humano, cadastro, ai, repeat. */
+  goto_special?: CadenceButtonGotoSpecial | null;
 };
 
 export const WHAPI_MAX_BUTTONS = 3;
@@ -519,23 +529,80 @@ export const ANALYZE_OR_CALL_BUTTONS: CadenceButton[] = [
 
 /** Após explicação: saber mais (clube) / ativar / humano. */
 export const AFTER_EXPLAIN_BUTTONS: CadenceButton[] = [
-  { id: "more_benefits", title: "Saber mais benefício" },
-  { id: "activate", title: "Quero ativar" },
-  { id: "human", title: "Falar com humano" },
+  {
+    id: "more_benefits",
+    title: "Saber mais benefício",
+    goto_step_key: "a5b_after_club_buttons",
+  },
+  {
+    id: "activate",
+    title: "Quero ativar",
+    goto_step_key: "a6_ask_bill_photo",
+  },
+  { id: "human", title: "Falar com humano", goto_special: "humano" },
 ];
 
 /** Após áudio do clube: cadastrar / humano (máx. 3). */
 export const AFTER_CLUB_BUTTONS: CadenceButton[] = [
-  { id: "register", title: "Cadastrar" },
-  { id: "human", title: "Falar com humano" },
+  {
+    id: "register",
+    title: "Cadastrar",
+    goto_step_key: "a6_ask_bill_photo",
+  },
+  { id: "human", title: "Falar com humano", goto_special: "humano" },
 ];
 
 /** Botões iniciais de decisão (antes da explicação). */
 export const ACTIVATE_BENEFIT_BUTTONS: CadenceButton[] = [
-  { id: "activate", title: "Quero ativar" },
-  { id: "human", title: "Falar com humano" },
-  { id: "how_it_works", title: "Como funciona" },
+  {
+    id: "activate",
+    title: "Quero ativar",
+    goto_step_key: "a6_ask_bill_photo",
+  },
+  { id: "human", title: "Falar com humano", goto_special: "humano" },
+  { id: "how_it_works", title: "Como funciona", goto_special: "ai" },
 ];
+
+/**
+ * Destino padrão ao adicionar preset no Multicanal (Grupo A).
+ * Alinhado ao template sofia_ativacao_multicanal / construtor original.
+ */
+export const PRESET_DEFAULT_GOTO: Record<
+  string,
+  Pick<CadenceButton, "goto_step_key" | "goto_special">
+> = {
+  more_benefits: { goto_step_key: "a5b_after_club_buttons", goto_special: null },
+  activate: { goto_step_key: "a6_ask_bill_photo", goto_special: null },
+  register: { goto_step_key: "a6_ask_bill_photo", goto_special: null },
+  cadastrar: { goto_step_key: "a6_ask_bill_photo", goto_special: null },
+  simular: { goto_step_key: "a6_ask_bill_photo", goto_special: null },
+  humano: { goto_step_key: null, goto_special: "humano" },
+  human: { goto_step_key: null, goto_special: "humano" },
+  como: { goto_step_key: null, goto_special: "ai" },
+  duvida: { goto_step_key: null, goto_special: "ai" },
+};
+
+/** Valor do Select “Quando clicar, vai para” (igual StepInspector). */
+export function buttonGotoSelectValue(b: CadenceButton): string {
+  if (b.goto_special) return `special:${b.goto_special}`;
+  if (b.goto_step_key) return `stepkey:${b.goto_step_key}`;
+  return "none";
+}
+
+export function parseButtonGotoSelect(
+  value: string,
+): Pick<CadenceButton, "goto_step_key" | "goto_special"> {
+  if (value.startsWith("special:")) {
+    return {
+      goto_special: value.slice(8) as CadenceButtonGotoSpecial,
+      goto_step_key: null,
+    };
+  }
+  if (value.startsWith("stepkey:")) {
+    return { goto_step_key: value.slice(8), goto_special: null };
+  }
+  return { goto_step_key: null, goto_special: null };
+}
 
 export function validateWhapiButtons(buttons: CadenceButton[] | undefined): {
   ok: boolean;
@@ -1198,9 +1265,13 @@ O telefone deste WhatsApp é o melhor para contato?
 
 *Número:* {{telefone}}`,
     buttons: [
-      { id: "phone_ok", title: "Sim, este número" },
-      { id: "phone_other", title: "Quero outro" },
-      { id: "human", title: "Falar com humano" },
+      {
+        id: "phone_ok",
+        title: "Sim, este número",
+        goto_step_key: "a10_portal_otp_facial",
+      },
+      { id: "phone_other", title: "Quero outro", goto_special: "repeat" },
+      { id: "human", title: "Falar com humano", goto_special: "humano" },
     ],
   },
   {
@@ -2595,6 +2666,18 @@ export function allAudioSegmentsApproved(
 
 export function resolveButtons(tpl: CadenceTemplate, lib: SavedCadenceLibrary): CadenceButton[] {
   const override = lib.buttons[tpl.key];
-  if (override) return override.slice(0, WHAPI_MAX_BUTTONS);
-  return (tpl.buttons ?? []).slice(0, WHAPI_MAX_BUTTONS);
+  const base = (override ?? tpl.buttons ?? []).slice(0, WHAPI_MAX_BUTTONS);
+  if (!override?.length || !tpl.buttons?.length) return base;
+  // Override antigo sem destino → preenche pelo template (mesmo id).
+  const byId = new Map(tpl.buttons.map((b) => [b.id, b]));
+  return base.map((b) => {
+    if (b.goto_step_key || b.goto_special) return b;
+    const def = byId.get(b.id);
+    if (!def) return b;
+    return {
+      ...b,
+      goto_step_key: def.goto_step_key ?? null,
+      goto_special: def.goto_special ?? null,
+    };
+  });
 }
