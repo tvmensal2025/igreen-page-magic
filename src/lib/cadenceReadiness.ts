@@ -122,6 +122,8 @@ export async function loadCadenceGaps(): Promise<CadenceGap[]> {
   );
 
   for (const { key, stage } of VOICE_STAGES) {
+    const toggleKey = STAGE_TO_TOGGLE[stage];
+    if (toggleKey && toggles.get(toggleKey) === false) continue;
     const row = byStage.get(stage);
     const name = humanStepName(stage, key);
     const hasClip = !!(row?.voice_audio_clip_id && String(row.voice_audio_clip_id).trim());
