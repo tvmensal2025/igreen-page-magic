@@ -63,14 +63,19 @@ export function useAdMetrics(consultantId: string | undefined | null, periodDays
       const metricRows = (metricsRes as any).data ?? [];
 
       // Agrega métricas por dia (spend/impressões/cliques/leads vêm de facebook_metrics_daily)
-      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number; leads: number }>();
+      const metricsByDay = new Map<string, { spend: number; impressions: number; clicks: number; leads: number; conv: number }>();
       for (const r of metricRows as any[]) {
         const d = String(r.date).slice(0, 10);
-        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0 };
+        const cur = metricsByDay.get(d) ?? { spend: 0, impressions: 0, clicks: 0, leads: 0, conv: 0 };
         cur.spend += Number(r.spend_cents ?? 0);
         cur.impressions += Number(r.impressions ?? 0);
         cur.clicks += Number(r.clicks ?? 0);
-        cur.leads += Number(r.meta_lead_actions ?? 0);
+        const metaLeads = Number(r.meta_lead_actions ?? 0);
+        const convStarted = Number(r.messaging_conversations_started ?? 0);
+        // Fallback: campanhas click-to-WhatsApp reportam conversas iniciadas,
+        // não "lead actions". Usamos o que a Meta entregou (o maior sinal real).
+        cur.leads += metaLeads > 0 ? metaLeads : convStarted;
+        cur.conv += convStarted;
         metricsByDay.set(d, cur);
       }
 
