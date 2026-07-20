@@ -35,6 +35,7 @@ import { encodeMp3, decodeAudioBlob, concatWithCrossfade, downloadBlob } from "@
 import {
   MODEL_V3,
   type TtsModelId,
+  buildOlaTudoBemTtsText,
   prepareTtsSegment,
   voiceSettingsForModel,
 } from "@/lib/ttsEnhanceV3";
@@ -64,8 +65,8 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxczna
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo";
 
 // ─── Cache TTS ───────────────────────────────────────────────────────────────
-// v10: enhance v3 sem pausas gigantes (sem .... / [short pause])
-const CACHE_VERSION = 10;
+// v11: intro livre = “Olá, Nome! Tudo bem?” (igual ligação)
+const CACHE_VERSION = 11;
 const TTS_BUCKET    = "tts-cache";
 
 const cacheMap = new Map<string, Blob>();
@@ -673,10 +674,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   // independentemente — partes fixas (FIXO_*) são geradas uma única vez na vida
   // toda; cidade/horário/rua reaproveitam quando repetidos. Concatenamos os
   // MP3s no final. Economiza 60–80% dos tokens em uso normal.
-  // Texto livre: só o nome na frente é dinâmico; o corpo fica cacheado.
+  // Texto livre: intro “Olá, Nome! Tudo bem?” (igual ligação) + corpo cacheado.
   const livreCorpoP = fix(livreTexto.trim());
   const livreNomeFirst = fix(livreNome.trim()).split(/\s+/)[0] || "";
-  const livreNomeSeg = livreNomeFirst ? `Olá, ${livreNomeFirst}.` : "";
+  const livreNomeSeg = livreNomeFirst ? buildOlaTudoBemTtsText(livreNomeFirst) : "";
 
   let segmentsRaw: string[] = [];
   if (kind === "livre") {
@@ -1349,7 +1350,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                     className="bg-background border-border/60 h-11 text-base"
                   />
                   <p className="text-[11px] text-muted-foreground mt-1.5">
-                    Gera &quot;Olá, {"{Nome}"}.&quot; na frente. O corpo abaixo fica salvo e reutilizável (só o nome consome crédito de novo).
+                    Gera &quot;Olá, {"{Nome}"}! Tudo bem?&quot; na frente (igual à ligação). O corpo abaixo fica salvo e reutilizável (só o nome consome crédito de novo).
                   </p>
                 </Field>
                 <Field icon={FileText} label="Texto do áudio (corpo fixo)">

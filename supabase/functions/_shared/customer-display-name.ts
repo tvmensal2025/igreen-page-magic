@@ -144,10 +144,10 @@ export function scrubEmptyNameGreeting(template: string): string {
   // Prefixo emoji (COLD: "💡 Oi *{{nome}}*!")
   out = out.replace(new RegExp(`^${EMOJI_CLASS}+\\s*`, "gu"), "");
 
-  // Saudação + placeholder no início (com/sem *bold* + pontuação/vírgula + wave)
+  // Saudação + placeholder no início — cobre `Oi {{nome}},`, `*Oi, {{nome}}*!`, `Oi *{{nome}}*!`
   out = out.replace(
     new RegExp(
-      `^${GREET}\\s*,?\\s*\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\\s*${EMOJI_CLASS}?\\s*`,
+      `^\\*?\\s*${GREET}\\s*,?\\s*\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\s*\\*?\\s*${EMOJI_CLASS}?\\s*`,
       "gimsu",
     ),
     "",
@@ -156,7 +156,7 @@ export function scrubEmptyNameGreeting(template: string): string {
   // Mid-SMS: "oi {{nome}}," / "Oi {{nome}}!" (também após "iGreen: ")
   out = out.replace(
     new RegExp(
-      `\\b${GREET}\\s+\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\s*`,
+      `\\b${GREET}\\s*,?\\s*\\*?\\s*\\{\\{\\s*nome\\s*\\}\\}\\s*\\*?\\s*[,.!]?\s*\\*?\\s*`,
       "gi",
     ),
     "",
@@ -171,10 +171,10 @@ export function scrubEmptyNameGreeting(template: string): string {
   out = out.replace(/,\s*\*?\s*\{\{\s*nome\s*\}\}\s*\*?/gi, "");
   out = out.replace(/\s*\*?\s*\{\{\s*nome\s*\}\}\s*\*?/gi, " ");
 
-  // Pós-substituição: saudação órfã
+  // Pós-substituição: saudação órfã (`*Oi!`, `Oi,`, etc.)
   out = out.replace(new RegExp(`^${EMOJI_CLASS}+\\s*`, "gu"), "");
   out = out.replace(
-    new RegExp(`^${GREET}\\s*,?\\s*\\*?\\s*[,.!]?\\s*${EMOJI_CLASS}?\\s*`, "gimu"),
+    new RegExp(`^\\*?\\s*${GREET}\\s*,?\\s*\\*?\\s*[,.!]?\s*\\*?\\s*${EMOJI_CLASS}?\\s*`, "gimu"),
     "",
   );
   // ": !" / ": ," órfãos após tirar Oi Nome

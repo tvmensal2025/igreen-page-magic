@@ -150,6 +150,8 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
       itens: [
         "Após dia 10: vai para público Meta (sem WhatsApp)",
         "Recalls: WhatsApp → SMS → ligação em cada marco",
+        "Zap = mesmo canal de origem do lead (Whapi/Evolution)",
+        "Conta no teto diário de frio (como o Grupo B)",
         "Ligue só depois de validar o Grupo B",
         "Textos: Voz → Multicanal → Grupo C",
       ],

@@ -28,6 +28,7 @@ import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import type { VozCustomer } from "./VozContactPickerDialog";
 import { VoiceCampaignWizardDialog } from "./VoiceCampaignWizardDialog";
 import { firstName, resolveCustomerByPhone, resolveNameByPhone } from "./voiceContactResolve";
+import { formatBrl, VOICE_PRICE_FULL, VOICE_PRICE_HALF } from "@/lib/voiceCallCost";
 import { crmClosingSummary } from "./voiceCrmContext";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 
@@ -347,7 +348,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
       );
     }
     if (sofiaDestMode === "manual" && sofiaPersonalize && !sofiaManualName.trim()) {
-      throw new Error("Informe o nome — ele entra no áudio Sofia (“Olá, Nome.”)");
+      throw new Error("Informe o nome — ele entra no áudio Sofia (“Olá, Nome! Tudo bem?”)");
     }
     const phone = sofiaTarget.phone;
     const leadName = sofiaTarget.name;
@@ -540,7 +541,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               </Button>
             </div>
             <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
-              Custo aproximado: R$ 0,09 (até 30s) a R$ 0,12 (até 42s) por chamada atendida.
+              Custo aproximado por atendida: {formatBrl(VOICE_PRICE_HALF)} (1–30s, metade) a {formatBrl(VOICE_PRICE_FULL)} (30–60s, inteiro).
             </p>
           </div>
         </VozSection>
@@ -577,7 +578,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               <div>
                 <Label htmlFor="sofia-personalize">Personalizar com nome (Sofia)</Label>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Gera &quot;Olá, {"{Nome}"}. + corpo&quot; na mesma voz Sofia (um trecho só).
+                  Gera &quot;Olá, {"{Nome}"}! Tudo bem? + corpo&quot; na mesma voz Sofia (um trecho só).
                 </p>
               </div>
             </div>

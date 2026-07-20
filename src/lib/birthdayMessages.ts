@@ -2,64 +2,79 @@
 export const BIRTHDAY_MESSAGE_TEMPLATES: readonly string[] = [
   `🎂 *Feliz aniversário, {{nome}}!* 🎉
 
-Que este novo ciclo seja cheio de saúde, alegria e conquistas! ✨
+Que este novo ciclo seja cheio de *saúde*, *alegria* e conquistas! ✨
 
-Conte sempre com a gente. Um abraço! 💚`,
+Um abraço da equipe *iGreen*. 💚⚡`,
 
   `🥳 Oi, *{{nome}}*!
 
-Hoje é o seu dia! 🎂🎈
+Hoje é o *seu dia*! 🎂🎈
 
-Desejo muita luz, energia boa e momentos especiais ao seu lado. Parabéns! 🌟💚`,
+Desejo muita felicidade, paz e momentos especiais ao seu lado. 🌟
+
+Parabéns da equipe *iGreen*! 💚⚡`,
 
   `💖 *Parabéns, {{nome}}!* 🎂
 
 Que Deus abençoe cada passo deste novo ano da sua vida. 🙏✨
 
-Você merece tudo de melhor hoje e sempre! 🎁💚`,
+Você merece tudo de melhor.
+Com carinho, equipe *iGreen*. 🎁💚`,
 
-  `⚡ *Feliz aniversário, {{nome}}!* 🎂
+  `🎂 *Feliz aniversário, {{nome}}!* ⚡
 
-Que este novo ciclo traga muita energia boa, saúde e prosperidade! 🌱✨
+Que este novo ciclo traga *saúde*, prosperidade e muita felicidade! 🌱✨
 
-Parabéns pelo seu dia! 🎉💚`,
+Parabéns pelo seu dia!
+Equipe *iGreen*. 🎉💚`,
 
   `🎉 *{{nome}}, parabéns!* 🎂
 
-Saúde, paz e muitas alegrias neste novo ano! 🥳💚`,
+Saúde, paz e muitas alegrias neste novo ano! 🥳
+
+Um abraço da *iGreen*. 💚⚡`,
 
   `🎂 Olá, *{{nome}}*!
 
-Passando aqui para desejar um *feliz aniversário* cheio de amor e boas surpresas! 🎁✨
+Passando pra desejar um *feliz aniversário* cheio de amor e boas surpresas! 🎁✨
 
-Aproveite cada instante do seu dia! 🥳💚`,
+Aproveite cada instante do seu dia.
+Equipe *iGreen*. 🥳💚⚡`,
 
   `🌟 *Feliz aniversário, {{nome}}!* 🎂
 
-Que este novo capítulo seja repleto de realizações, sonhos cumpridos e muita felicidade! 🚀✨
+Que este novo capítulo seja repleto de realizações e muita felicidade! ✨
 
-Parabéns! 🎉💚`,
+Parabéns da equipe *iGreen*! 🎉💚⚡`,
 
   `🎈🎂 *Hoje é dia de festa, {{nome}}!* 🎉
 
 Desejo um aniversário maravilhoso, cercado de quem você ama! ❤️✨
 
-Parabéns e muitas felicidades! 💚`,
+Parabéns e muitas felicidades!
+Equipe *iGreen*. 💚⚡`,
 
   `🎂 *Parabéns pelo seu aniversário, {{nome}}!* 🎉
 
-É uma alegria ter você conosco. Desejamos um dia especial e um ano repleto de conquistas! ✨💚`,
+É uma alegria ter você conosco.
+
+Desejamos um dia especial e um ano repleto de conquistas!
+Equipe *iGreen*. ✨💚⚡`,
 
   `🥳 *Feliz aniversário, {{nome}}!* 🎂
 
-Que a vida te presenteie com saúde, paz, prosperidade e muitos motivos para sorrir! 😊✨
+Que a vida te presenteie com saúde, paz e muitos motivos pra sorrir! 😊✨
 
-Um grande abraço e parabéns! 💚🎁`,
+Um grande abraço da equipe *iGreen*.
+Parabéns! 💚🎁⚡`,
 ] as const;
 
+/** Primeiro nome legível (evita RAFAEL em caixa alta no WhatsApp). */
 export function firstNameFrom(fullName: string | null | undefined): string {
-  const name = String(fullName || "").trim();
-  return name.split(/\s+/)[0] || "cliente";
+  const raw = String(fullName || "").trim().split(/\s+/)[0] || "cliente";
+  if (raw === "cliente") return raw;
+  const lower = raw.toLocaleLowerCase("pt-BR");
+  return lower.charAt(0).toLocaleUpperCase("pt-BR") + lower.slice(1);
 }
 
 export function fillBirthdayMessage(template: string, customerName: string | null | undefined): string {

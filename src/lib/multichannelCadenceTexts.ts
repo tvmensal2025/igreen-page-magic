@@ -1408,6 +1408,61 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
 
   },
 
+  // ─── GRUPO A — escada de silêncio (pizza: Retomada → SMS → Ligação → Fecha A) ─
+  // NÃO entram no grafo do fluxo Sofia: só no motor (cadence_stage_config / cadence-tick).
+  {
+    key: "a_nudge_wa",
+    group: "A",
+    channel: "whatsapp_text",
+    title: "Escada · Retomada no WhatsApp (cutuca)",
+    timing: "Após ~2h de silêncio em GREETED / Ativo · A_NUDGE",
+    canGenerateAudio: false,
+    notes:
+      "Texto que o motor envia na fatia Retomada. Salva em cadence_stage_config (A_NUDGE). Não cria passo no construtor.",
+    body: `Oi {{nome}}, aqui é da *iGreen*.
+
+Vi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`,
+  },
+  {
+    key: "a_nudge_sms",
+    group: "A",
+    channel: "sms",
+    title: "Escada · SMS de reforço",
+    timing: "~2h após retomada sem resposta · A_SMS",
+    canGenerateAudio: false,
+    maxChars: 160,
+    notes: "SMS da escada A. Motor: cadence_stage_config (A_SMS).",
+    body: `Sofia | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
+  },
+  {
+    key: "a_nudge_call",
+    group: "A",
+    channel: "call_script",
+    title: "Escada · Ligação (1ª voz)",
+    timing: "~2h após SMS sem resposta · A_CALL",
+    canGenerateAudio: true,
+    notes: "Roteiro + clip Sofia da 1ª ligação da escada A. Motor: A_CALL.",
+    body: `Olá! Eu sou a Sofia, assistente virtual do {{consultor}}, da iGreen.
+
+Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
+
+Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+  },
+  {
+    key: "a_nudge_call_retry",
+    group: "A",
+    channel: "call_script",
+    title: "Escada · Fecha A (última tentativa)",
+    timing: "~30 min após 1ª ligação · A_CALL_RETRY → Grupo B",
+    canGenerateAudio: true,
+    notes: "Última janela do Grupo A. Sem resposta → COLD_1 (Grupo B). Motor: A_CALL_RETRY.",
+    body: `Olá! Eu sou a Sofia, assistente virtual do {{consultor}}, da iGreen.
+
+Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.
+
+Se preferir, é só responder no WhatsApp que seguimos por lá.`,
+  },
+
   // ─── GRUPO B (lead já está no CRM — já mandou mensagem antes) ───────────
   {
     key: "b0_ask_name",

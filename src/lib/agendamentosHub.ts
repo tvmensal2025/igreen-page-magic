@@ -89,7 +89,12 @@ export function cadenceStageLabel(stage: string): { channel: "WhatsApp" | "Liga�
   if (stage.startsWith("SMS_")) return { channel: "SMS", label: `SMS ${stage.replace("SMS_", "")}` };
   if (stage === "META") return { channel: "Meta", label: "Retargeting Meta" };
   if (stage === "AI_QUALIFYING") return { channel: "Sofia", label: "Sofia qualificando" };
-  if (stage === "GREETED") return { channel: "Sofia", label: "Sofia inicial" };
+  if (stage === "GREETED") return { channel: "Sofia", label: "Aguardando resposta" };
+  if (stage === "NEW") return { channel: "Sofia", label: "Entrada no ciclo" };
+  if (stage === "A_NUDGE") return { channel: "WhatsApp", label: "Grupo A · retomada" };
+  if (stage === "A_SMS") return { channel: "SMS", label: "Grupo A · SMS reforço" };
+  if (stage === "A_CALL") return { channel: "Ligação", label: "Grupo A · ligação" };
+  if (stage === "A_CALL_RETRY") return { channel: "Ligação", label: "Grupo A · fecha A" };
   return { channel: "WhatsApp", label: stage };
 }
 

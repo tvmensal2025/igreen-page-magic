@@ -15,10 +15,14 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { resolvePersonalizedCallAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const RUN_NOW_LIMIT_DEFAULT = 50;
+const RUN_NOW_LIMIT_MAX = 100;
 
 interface TargetIn {
   phone: string;
@@ -27,7 +31,8 @@ interface TargetIn {
 }
 
 interface Body {
-  action?: "create_campaign" | "test_call";
+  action?: "create_campaign" | "test_call" | "run_now";
+  campaign_id?: string;
   campaign_name?: string;
   audio_clip_id?: string | null;
   audio_url?: string | null;
@@ -143,6 +148,241 @@ Deno.serve(async (req) => {
       error: "sofia_required",
       message:
         "Ligações usam só a voz Sofia (áudio do Estúdio / teste Sofia). TTS Velip foi desativado.",
+    });
+  }
+
+  // ─── Disparo imediato (botão "Iniciar agora") ─────────────────────────────
+  if (action === "run_now") {
+    const campaignId = String(body.campaign_id || "").trim();
+    if (!campaignId) return json(400, { error: "missing_campaign_id" });
+
+    const requested = Number((body as { limit?: number }).limit ?? RUN_NOW_LIMIT_DEFAULT);
+    const batchLimit = Math.min(
+      RUN_NOW_LIMIT_MAX,
+      Math.max(1, Number.isFinite(requested) ? Math.floor(requested) : RUN_NOW_LIMIT_DEFAULT),
+    );
+
+    const { data: camp } = await admin
+      .from("voice_campaigns")
+      .select(
+        "id, consultant_id, status, audio_clip_id, config, velip_mode, velip_campaign_id, dispatch_kind, caller_id",
+      )
+      .eq("id", campaignId)
+      .maybeSingle();
+    if (!camp) return json(404, { error: "campaign_not_found" });
+    if (camp.consultant_id !== consultantId) return json(403, { error: "not_owner" });
+
+    if (["finished", "canceled", "cancelled", "completed", "failed"].includes(String(camp.status))) {
+      return json(422, { error: "campaign_finished", message: "Campanha já finalizada." });
+    }
+    if (camp.velip_mode === "batch" && camp.velip_campaign_id) {
+      return json(422, {
+        error: "batch_mode",
+        message: "Campanha em lote é discada pela iGreen Fone — use Pausar/Retomar.",
+      });
+    }
+    if (camp.dispatch_kind === "tts") {
+      return json(422, { error: "sofia_required", message: "Campanha sem áudio Sofia." });
+    }
+    if (!camp.audio_clip_id) {
+      return json(422, { error: "missing_audio", message: "Campanha sem clipe de áudio." });
+    }
+
+    const aud = await ensureVelipAudioForClip(admin, String(camp.audio_clip_id), consultantId);
+    if ("error" in aud) return json(502, { error: aud.error });
+    let audioId = aud.audio_id;
+
+    if (camp.status === "scheduled" || camp.status === "paused") {
+      await admin
+        .from("voice_campaigns")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", campaignId);
+    }
+
+    const nowIso = new Date().toISOString();
+    const { data: targets } = await admin
+      .from("voice_campaign_targets")
+      .select("id, phone, name, customer_id")
+      .eq("campaign_id", campaignId)
+      .eq("status", "queued")
+      .or(`next_attempt_at.is.null,next_attempt_at.lte."${nowIso}"`)
+      .order("created_at", { ascending: true })
+      .limit(batchLimit);
+
+    if (!targets?.length) {
+      return json(200, {
+        ok: true,
+        campaign_id: campaignId,
+        dialed: 0,
+        failed: 0,
+        message: "Nenhum contato na fila para discar agora.",
+      });
+    }
+
+    const cfg = (camp.config ?? {}) as { personalize_name?: boolean };
+    const callerId = (camp.caller_id as string | null) || undefined;
+    let dialedNow = 0;
+    let failedNow = 0;
+
+    for (const t of targets) {
+      const { data: claimed } = await admin
+        .from("voice_campaign_targets")
+        .update({ status: "dialing", dialed_at: new Date().toISOString(), next_attempt_at: null })
+        .eq("id", t.id)
+        .eq("status", "queued")
+        .select("id")
+        .maybeSingle();
+      if (!claimed) continue;
+
+      const suppression = await assertCanContact(admin, {
+        phone: t.phone,
+        consultantId,
+        channel: "voice",
+      });
+      if (!suppression.allowed) {
+        await admin
+          .from("voice_campaign_targets")
+          .update({
+            status: "failed",
+            error: suppression.reason || "do_not_contact",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("id", t.id);
+        await admin.from("voice_call_logs").insert({
+          campaign_id: campaignId,
+          target_id: t.id,
+          consultant_id: consultantId,
+          to_phone: t.phone,
+          status: "failed",
+          error: suppression.reason || "do_not_contact",
+          raw: { skipped: "dnc", source: "run_now" },
+          velip_raw: {},
+        });
+        failedNow++;
+        continue;
+      }
+
+      const dest = toVelipBRDest(t.phone) || t.phone;
+      let dialAudioId = audioId;
+      let stitchMeta: Record<string, unknown> | null = null;
+
+      if (cfg.personalize_name && camp.audio_clip_id) {
+        let nameSource: string | null = null;
+        let rawName = t.name;
+        if (t.customer_id) {
+          const { data: cust } = await admin
+            .from("customers")
+            .select("name, name_source")
+            .eq("id", t.customer_id)
+            .maybeSingle();
+          if (cust) {
+            rawName = (cust as { name?: string | null }).name ?? rawName;
+            nameSource = (cust as { name_source?: string | null }).name_source ?? null;
+          }
+        } else if (rawName) {
+          nameSource = "manual";
+        }
+        const st = await resolvePersonalizedCallAudio(admin, {
+          consultantId,
+          bodyClipId: String(camp.audio_clip_id),
+          rawName,
+          nameSource,
+          fallbackToBody: true,
+        });
+        stitchMeta = {
+          stitch_ok: st.ok,
+          stitch_cached: st.cached ?? false,
+          stitch_fallback_body: st.fallback_body ?? false,
+          stitch_error: st.error ?? null,
+          source: "run_now",
+        };
+        if (st.ok && st.velip_audio_id) dialAudioId = st.velip_audio_id;
+      }
+
+      const call = await playAudioFile({
+        to: dest,
+        audioId: dialAudioId,
+        ctid: toCtid(t.id),
+        timeLimitSec: 40,
+        callerId,
+      });
+
+      if (!call.ok) {
+        failedNow++;
+        await admin
+          .from("voice_campaign_targets")
+          .update({
+            status: "failed",
+            error: call.error ?? "velip_error",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("id", t.id);
+        await admin.from("voice_call_logs").insert({
+          campaign_id: campaignId,
+          target_id: t.id,
+          consultant_id: consultantId,
+          to_phone: dest,
+          status: "failed",
+          error: call.error ?? null,
+          raw: { ...(call.raw as object ?? {}), ...(stitchMeta || {}) },
+          velip_raw: call.raw ?? {},
+        });
+        continue;
+      }
+
+      dialedNow++;
+      await admin
+        .from("voice_campaign_targets")
+        .update({ velip_call_id: call.cd_id ?? null })
+        .eq("id", t.id);
+      await admin.from("voice_call_logs").insert({
+        campaign_id: campaignId,
+        target_id: t.id,
+        consultant_id: consultantId,
+        to_phone: dest,
+        status: "dialing",
+        velip_call_id: call.cd_id ?? null,
+        raw: { ...(call.raw as object ?? {}), ...(stitchMeta || {}) },
+        velip_raw: call.raw ?? {},
+      });
+      await new Promise((r) => setTimeout(r, 150));
+    }
+
+    const { data: allT } = await admin
+      .from("voice_campaign_targets")
+      .select("status")
+      .eq("campaign_id", campaignId);
+    let answered = 0;
+    let failed = 0;
+    let dialed = 0;
+    let queuedLeft = 0;
+    for (const row of allT ?? []) {
+      const s = String(row.status || "");
+      if (s === "queued" || s === "pending") {
+        queuedLeft++;
+        continue;
+      }
+      dialed++;
+      if (s === "completed" || s === "answered") answered++;
+      else if (["failed", "busy", "no_answer", "machine"].includes(s)) failed++;
+    }
+    await admin
+      .from("voice_campaigns")
+      .update({ dialed, answered, failed, status: "running" })
+      .eq("id", campaignId);
+
+    return json(200, {
+      ok: true,
+      campaign_id: campaignId,
+      dialed: dialedNow,
+      failed: failedNow,
+      queued_left: queuedLeft,
+      message:
+        dialedNow > 0
+          ? `Disparei ${dialedNow} ligação(ões) agora. Restam ${queuedLeft} na fila.`
+          : failedNow > 0
+            ? `Nenhuma ligação saiu · ${failedNow} falha(s) nesta leva.`
+            : "Nada discado nesta leva.",
     });
   }
 

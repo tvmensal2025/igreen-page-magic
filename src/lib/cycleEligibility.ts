@@ -90,6 +90,8 @@ export function isPausedGroupA(pausedReason: string | null | undefined): boolean
   const prev = (m[1] || "").trim();
   if (!prev || prev === "PAUSED") return true;
   if (prev === "NEW" || prev === "GREETED" || prev === "AI_QUALIFYING") return true;
+  if (prev === "A_NUDGE" || prev === "A_SMS" || prev === "A_CALL" || prev === "A_CALL_RETRY") return true;
+  if (prev.startsWith("A_")) return true;
   if (/^(COLD_|RECALL_|SMS_|CALL_|RETARGET_)/.test(prev) || prev === "CLOSE_LOST") return false;
   return true;
 }

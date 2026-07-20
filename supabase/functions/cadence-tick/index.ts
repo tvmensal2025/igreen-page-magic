@@ -67,6 +67,10 @@ const corsHeaders = {
 
 /** Maps cadence stage → automation_toggles.key (per-stage kill switches). */
 const STAGE_TOGGLE_KEY: Partial<Record<Stage, string>> = {
+  A_NUDGE: "cadence_a_nudge",
+  A_SMS: "cadence_a_sms",
+  A_CALL: "cadence_a_call",
+  A_CALL_RETRY: "cadence_a_call",
   COLD_1: "cadence_cold_1",
   COLD_2: "cadence_cold_2",
   COLD_3: "cadence_cold_3",

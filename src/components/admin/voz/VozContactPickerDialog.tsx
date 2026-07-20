@@ -2,17 +2,19 @@
  * Seleção de contatos para Voz — Base (Clientes + filtro Leads).
  * Busca leads sob demanda no consultor (não depende só da lista do VozTab).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Users, Check, CalendarDays, Loader2 } from "lucide-react";
+import { Users, Check, CalendarDays, Loader2, PhoneCall } from "lucide-react";
+import { toast } from "sonner";
 import { ContactImporter } from "@/components/whatsapp/ContactImporter";
 import { supabase } from "@/integrations/supabase/client";
 import type { BulkContact } from "@/types/whatsapp";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { customersToDialContacts } from "./voiceApprovedLicensed";
 
 export interface VozCustomer {
   id: string;
@@ -94,6 +96,7 @@ export function VozContactPickerPanel({
   const [fetchedLeads, setFetchedLeads] = useState<VozCustomer[]>([]);
   const [leadsLoading, setLeadsLoading] = useState(false);
   const [leadsError, setLeadsError] = useState<string | null>(null);
+  const [pickingAll, setPickingAll] = useState(false);
 
   // Busca leads direto (whatsapp_lead / manual) + last_inbound_at em customer_flow_state
   // (a coluna NÃO existe em customers — erro que zerava a lista).
@@ -177,8 +180,74 @@ export function VozContactPickerPanel({
     onChange(pickByPeriod(allCustomers, days));
   };
 
+  /** Todos aprovados / licenciados na plataforma (pagina até o fim; inclui telefone frouxo). */
+  const selectAllApprovedOrLicensed = useCallback(async () => {
+    if (!consultantId || pickingAll) return;
+    setPickingAll(true);
+    try {
+      const pageSize = 1000;
+      const rows: VozCustomer[] = [];
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await supabase
+          .from("customers")
+          .select(LEAD_SELECT)
+          .eq("consultant_id", consultantId)
+          .not("phone_whatsapp", "is", null)
+          .order("id", { ascending: true })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = (data as VozCustomer[]) ?? [];
+        rows.push(...batch);
+        if (batch.length < pageSize) break;
+      }
+      const picked = customersToDialContacts(rows);
+      onChange(picked);
+      toast.success(
+        picked.length > 0
+          ? `${picked.length} contato(s) aprovado(s)/licenciado(s) selecionados`
+          : "Nenhum aprovado/licenciado com telefone encontrado",
+      );
+    } catch (e) {
+      console.error("[VozContactPicker] selectAllApprovedOrLicensed", e);
+      toast.error((e as Error)?.message || "Falha ao carregar aprovados/licenciados");
+    } finally {
+      setPickingAll(false);
+    }
+  }, [consultantId, onChange, pickingAll]);
+
   return (
     <div className="space-y-3">
+      <div
+        className="rounded-[var(--pe-radius)] border p-3 space-y-2"
+        style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}
+      >
+        <Label className="flex items-center gap-1.5 text-xs">
+          <PhoneCall className="h-3.5 w-3.5" style={{ color: "var(--pe-emerald)" }} />
+          Ligar para a carteira
+        </Label>
+        <Button
+          type="button"
+          className="w-full h-10 gap-2"
+          onClick={() => void selectAllApprovedOrLicensed()}
+          disabled={pickingAll || !consultantId}
+        >
+          {pickingAll ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Carregando todos…
+            </>
+          ) : (
+            <>
+              <Users className="h-4 w-4" /> Selecionar todos aprovados / licenciados
+            </>
+          )}
+        </Button>
+        <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
+          Inclui todo mundo na plataforma com status aprovado, ativo, cadastrado iGreen ou
+          andamento licenciado — <strong>todos os números com dígitos</strong> (mesmo não
+          validados no WhatsApp). Depois escolha o áudio do corpo no passo Mensagem.
+        </p>
+      </div>
+
       {showPeriodSelect && (
         <div className="rounded-[var(--pe-radius)] border p-3 space-y-2" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface-muted)" }}>
           <Label className="flex items-center gap-1.5 text-xs">

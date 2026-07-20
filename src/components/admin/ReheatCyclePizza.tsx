@@ -1,5 +1,26 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, Play, Settings2, MessageSquare, Loader2, MessageCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import {
+  RefreshCw,
+  Play,
+  Settings2,
+  MessageSquare,
+  Loader2,
+  MessageCircle,
+  UserPlus,
+  MessagesSquare,
+  Clock3,
+  RotateCcw,
+  Phone,
+  Hourglass,
+  CalendarDays,
+  Sparkles,
+  PhoneCall,
+  Smartphone,
+  Hand,
+  Flag,
+  Megaphone,
+  type LucideProps,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -21,12 +42,15 @@ import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
-import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
+import { formatBrazilPhone, normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
+import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
+
+type LucideIcon = ComponentType<LucideProps>;
 
 type SliceEditTarget = {
   label: string;
-  /** Sub-aba Voz: Multicanal ou Kit do ciclo A. */
-  sub: "multichannel" | "kit";
+  /** Sub-aba Voz: `textos` (Multicanal) ou `kit` (Programação do ciclo). */
+  sub: "textos" | "kit";
   cadenceKey?: string;
 };
 
@@ -43,19 +67,28 @@ const C_SLICE_STAGES: Record<string, string[]> = {
 
 function editTargetsForSlice(group: "A" | "B" | "C", stepId: string): SliceEditTarget[] {
   if (group === "A") {
-    if (stepId === "call1" || stepId === "retry") {
-      return [{ label: "Kit · áudio da ligação", sub: "kit" }];
+    if (stepId === "ask_name") {
+      return [{ label: "Multicanal · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" }];
     }
-    if (stepId === "sms") {
-      return [{ label: "Kit · SMS se NA", sub: "kit" }];
-    }
-    if (stepId === "open" || stepId === "flow") {
+    if (stepId === "flow") {
       return [
-        { label: "Multicanal · pedir nome", sub: "multichannel", cadenceKey: "a1_ask_name" },
-        { label: "Multicanal · áudio ativar", sub: "multichannel", cadenceKey: "a2_audio_activate_name" },
+        { label: "Multicanal · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" },
+        { label: "Multicanal · áudio ativar", sub: "textos", cadenceKey: "a2_audio_activate_name" },
       ];
     }
-    return [{ label: "Multicanal · Grupo A", sub: "multichannel", cadenceKey: "a1_ask_name" }];
+    if (stepId === "nudge") {
+      return [{ label: "Multicanal · Retomada (cutuca)", sub: "textos", cadenceKey: "a_nudge_wa" }];
+    }
+    if (stepId === "sms") {
+      return [{ label: "Multicanal · SMS da escada", sub: "textos", cadenceKey: "a_nudge_sms" }];
+    }
+    if (stepId === "call1") {
+      return [{ label: "Multicanal · Ligação da escada", sub: "textos", cadenceKey: "a_nudge_call" }];
+    }
+    if (stepId === "retry") {
+      return [{ label: "Multicanal · Fecha A", sub: "textos", cadenceKey: "a_nudge_call_retry" }];
+    }
+    return [];
   }
 
   if (group === "B") {
@@ -64,7 +97,7 @@ function editTargetsForSlice(group: "A" | "B" | "C", stepId: string): SliceEditT
       .filter((s) => s.templateKey)
       .map((s) => ({
         label: `${CHANNEL_LABEL[s.channel as CadenceChannelUi]} · ${getTemplate(s.templateKey!)?.title ?? s.title}`,
-        sub: "multichannel" as const,
+        sub: "textos" as const,
         cadenceKey: s.templateKey!,
       }));
   }
@@ -75,20 +108,21 @@ function editTargetsForSlice(group: "A" | "B" | "C", stepId: string): SliceEditT
     .filter((s) => stages.includes(s.stage) && s.templateKey)
     .map((s) => ({
       label: `${CHANNEL_LABEL[s.channel as CadenceChannelUi]} · ${getTemplate(s.templateKey!)?.title ?? s.title}`,
-      sub: "multichannel" as const,
+      sub: "textos" as const,
       cadenceKey: s.templateKey!,
     }));
 }
 
 function navigateToSliceEdit(target: SliceEditTarget) {
+  const sub = target.sub === "kit" ? "kit" : "textos";
   try {
-    sessionStorage.setItem("igreen-voz-subtab", target.sub);
+    sessionStorage.setItem("igreen-voz-subtab", sub);
     if (target.cadenceKey) {
       sessionStorage.setItem("igreen-multichannel-focus-key", target.cadenceKey);
     }
   } catch { /* noop */ }
   window.dispatchEvent(new CustomEvent("igreen-admin-nav", { detail: { tab: "voz" } }));
-  window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: target.sub } }));
+  window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub } }));
   if (target.cadenceKey) {
     window.dispatchEvent(
       new CustomEvent("igreen-multichannel-focus", { detail: { key: target.cadenceKey } }),
@@ -96,13 +130,23 @@ function navigateToSliceEdit(target: SliceEditTarget) {
   }
 }
 
-type CycleStep = { id: string; label: string; short: string };
+type CycleStep = {
+  id: string;
+  label: string;
+  short: string;
+  /** Função da fatia (tooltip / legenda / sheet). */
+  hint?: string;
+  Icon?: LucideIcon;
+};
 
 type CycleLead = {
   id: string;
   name: string | null;
   phone: string | null;
   status: string | null;
+  stage: string | null;
+  nextActionAt: string | null;
+  pausedReason: string | null;
 };
 
 type SlicePick = {
@@ -111,47 +155,181 @@ type SlicePick = {
   people: CycleLead[];
 };
 
+/** Countdown exato até `next_action_at` (atualiza com `nowMs`). */
+function formatExactCountdown(iso: string | null | undefined, nowMs: number): {
+  text: string;
+  tone: "overdue" | "soon" | "later" | "none";
+  ms: number | null;
+} {
+  if (!iso) return { text: "Sem agenda", tone: "none", ms: null };
+  const target = new Date(iso).getTime();
+  if (!Number.isFinite(target)) return { text: "Sem agenda", tone: "none", ms: null };
+  const diff = target - nowMs;
+  const abs = Math.abs(diff);
+  const sec = Math.floor(abs / 1000) % 60;
+  const min = Math.floor(abs / 60_000) % 60;
+  const hrs = Math.floor(abs / 3_600_000) % 24;
+  const days = Math.floor(abs / 86_400_000);
+  const parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hrs > 0 || days > 0) parts.push(`${hrs}h`);
+  if (days === 0) {
+    if (min > 0 || hrs > 0) parts.push(`${min}min`);
+    if (hrs === 0) parts.push(`${sec}s`);
+  }
+  const clock = parts.join(" ") || "0s";
+  if (diff <= 0) {
+    return { text: `Atrasado ${clock}`, tone: "overdue", ms: diff };
+  }
+  if (diff < 3_600_000) {
+    return { text: `Em ${clock}`, tone: "soon", ms: diff };
+  }
+  return { text: `Em ${clock}`, tone: "later", ms: diff };
+}
+
+function sortCycleLeads(a: CycleLead, b: CycleLead): number {
+  const ta = a.nextActionAt ? new Date(a.nextActionAt).getTime() : Number.POSITIVE_INFINITY;
+  const tb = b.nextActionAt ? new Date(b.nextActionAt).getTime() : Number.POSITIVE_INFINITY;
+  if (ta !== tb) return ta - tb;
+  return String(a.name || "").localeCompare(String(b.name || ""), "pt-BR");
+}
+
 /**
- * Pizza A — leads novos em conversa / pré-onda (WhatsApp/manual).
- * Fora da pizza: cadastro já enviado (CRM), campanha Meta, sync iGreen,
- * e bloqueados (“nunca mais contatar” / Não Perturbe).
- * Ver: src/lib/crmVsLeadAnalysis.ts
+ * Pizza A — alinhada ao motor (cadence-engine):
+ * Entrada (NEW) → Ativo (AI_QUALIFYING) → Aguardando (GREETED ~2h)
+ * → Retomada (A_NUDGE) → SMS (A_SMS) → Ligação (A_CALL)
+ * → Fecha A (A_CALL_RETRY) → Grupo B (COLD_1).
+ *
+ * Fora da pizza: cadastro CRM, campanha Meta, sync iGreen, bloqueados.
  */
 const CYCLE_NOVO_STEPS: CycleStep[] = [
-  { id: "quente", label: "Pré-onda", short: "Pré" },
-  { id: "open", label: "Abre + áudio", short: "Abre" },
-  { id: "flow", label: "Em conversa", short: "Conversa" },
-  { id: "wait2h", label: "Sem resposta ~2h", short: "Espera" },
-  { id: "call1", label: "1ª ligação", short: "Liga" },
-  { id: "retry", label: "Religa se não atendeu", short: "Religa" },
-  { id: "sms", label: "SMS se não atendeu", short: "SMS" },
-  { id: "close", label: "Fecha + nota", short: "Fecha" },
+  {
+    id: "ask_name",
+    label: "Entrada no ciclo",
+    short: "Entrada",
+    hint: "Lead acabou de entrar. Sistema pede o nome e inicia o atendimento.",
+    Icon: UserPlus,
+  },
+  {
+    id: "flow",
+    label: "Ativo · início do fluxo",
+    short: "Ativo",
+    hint: "Em conversa no WhatsApp — coletando dados / respondendo o bot ou o consultor.",
+    Icon: MessagesSquare,
+  },
+  {
+    id: "wait",
+    label: "Aguardando resposta",
+    short: "Aguardando",
+    hint: "Janela de silêncio (~2h). Sem resposta, sobe a escada de retomada.",
+    Icon: Clock3,
+  },
+  {
+    id: "nudge",
+    label: "Retomada no WhatsApp",
+    short: "Retomada",
+    hint: "Toque automático no Zap para retomar quem sumiu na conversa.",
+    Icon: RotateCcw,
+  },
+  {
+    id: "sms",
+    label: "SMS de reforço",
+    short: "SMS",
+    hint: "SMS se a retomada no Zap não teve resposta (~2h).",
+    Icon: MessageSquare,
+  },
+  {
+    id: "call1",
+    label: "Ligação",
+    short: "Ligação",
+    hint: "1ª ligação (voz). Sem atendimento, aguarda e tenta de novo.",
+    Icon: Phone,
+  },
+  {
+    id: "retry",
+    label: "Aguardando · fecha o A",
+    short: "Fecha A",
+    hint: "Última janela após a ligação. Sem resposta → entra no Grupo B (frio).",
+    Icon: Hourglass,
+  },
 ];
 
 /** Estágio de cadência → fatia da pizza A (lead novo). */
 const CADENCE_TO_NOVO: Record<string, string> = {
-  NEW: "quente",
-  GREETED: "quente",
-  /** Lead falando com o bot / consultor — cliente real a validar. */
+  NEW: "ask_name",
+  /** Já pediu o nome — contando silêncio até a retomada. */
+  GREETED: "wait",
+  /** Lead falando com o bot / consultor. */
   AI_QUALIFYING: "flow",
+  A_NUDGE: "nudge",
+  A_SMS: "sms",
+  A_CALL: "call1",
+  A_CALL_RETRY: "retry",
+};
+
+/** Fila diária (daily_reheat NOVO_CYCLE) → mesmas fatias da pizza A. */
+const QUEUE_A_TO_NOVO: Record<string, string> = {
+  open: "ask_name",
+  flow: "flow",
+  wait2h: "wait",
+  call1: "call1",
+  retry: "retry",
+  sms: "sms",
+  close: "retry",
+  quente: "ask_name",
 };
 
 /** Estágios extras puxados do motor (PAUSED classificado via paused_reason). */
-const NOVO_EXTRA_STAGES = ["AI_QUALIFYING", "PAUSED"] as const;
-
-
-
-
+const NOVO_EXTRA_STAGES = [
+  "AI_QUALIFYING",
+  "PAUSED",
+  "A_NUDGE",
+  "A_SMS",
+  "A_CALL",
+  "A_CALL_RETRY",
+] as const;
 
 /**
  * Pizza B — dias reais do calendário v5 (D+1 → D10).
- * Fonte: CADENCE_CALENDAR group B.
+ * Fonte: CADENCE_CALENDAR group B + legenda igual à pizza A.
  */
-const CYCLE_FRIO_STEPS: CycleStep[] = CADENCE_CALENDAR.filter((d) => d.group === "B").map((d) => ({
-  id: d.id,
-  label: d.label,
-  short: d.id === "d1" ? "D+1" : d.id.replace("d", "D"),
-}));
+const FRIO_SLICE_META: Record<string, { hint: string; Icon: LucideIcon }> = {
+  d1: {
+    hint: "Reabre o lead frio: Zap (faixa da conta) → SMS se silêncio → ligação Sofia.",
+    Icon: CalendarDays,
+  },
+  d2: {
+    hint: "Nova abordagem com tema rotativo no Zap; SMS do mesmo tema se não responder.",
+    Icon: Sparkles,
+  },
+  d4: {
+    hint: "2ª ligação Sofia (espaçada). Só se ainda estiver em silêncio.",
+    Icon: PhoneCall,
+  },
+  d6: {
+    hint: "SMS de novidades com link do Zap. Sem ligação neste dia.",
+    Icon: Smartphone,
+  },
+  d7: {
+    hint: "Zap de resposta fácil (1 toque) + SMS tema se silêncio.",
+    Icon: Hand,
+  },
+  d10: {
+    hint: "Fecha a onda: ligação final + Zap de encerramento. Sem retorno → Grupo C.",
+    Icon: Flag,
+  },
+};
+
+const CYCLE_FRIO_STEPS: CycleStep[] = CADENCE_CALENDAR.filter((d) => d.group === "B").map((d) => {
+  const meta = FRIO_SLICE_META[d.id];
+  return {
+    id: d.id,
+    label: d.label,
+    short: d.id === "d1" ? "D+1" : d.id.replace("d", "D"),
+    hint: meta?.hint ?? d.subtitle,
+    Icon: meta?.Icon,
+  };
+});
 
 /** Estágio lead_cadence_state → dia da pizza B. */
 const CADENCE_TO_FRIO: Record<string, string> = (() => {
@@ -180,13 +358,55 @@ const QUEUE_B_TO_FRIO: Record<string, string> = {
  * Pizza C — Meta + marcos de recall (agrega WA/SMS/CALL do mesmo marco).
  */
 const CYCLE_LONGO_STEPS: CycleStep[] = [
-  { id: "meta", label: "Meta / audiência / ads", short: "Meta" },
-  { id: "r30", label: "1º recall (~30d)", short: "~30d" },
-  { id: "r90", label: "Recall ~90d", short: "90d" },
-  { id: "r5m", label: "Recall ~5 meses", short: "5m" },
-  { id: "r8m", label: "Recall ~8 meses", short: "8m" },
-  { id: "r12m", label: "Recall ~12 meses", short: "12m" },
-  { id: "ryear", label: "Recall anual", short: "Ano" },
+  {
+    id: "meta",
+    label: "Meta / audiência / ads",
+    short: "Meta",
+    hint: "Após Dia 10: entra na audiência Meta e remarketing (~15d). Sem WhatsApp nesta fatia.",
+    Icon: Megaphone,
+  },
+  {
+    id: "r30",
+    label: "1º recall (~30d)",
+    short: "~30d",
+    hint: "Zap do canal de origem → SMS (~2h) → ligação (~4h) se silêncio.",
+    Icon: MessageCircle,
+  },
+  {
+    id: "r90",
+    label: "Recall ~90d",
+    short: "90d",
+    hint: "Mesma escada: Zap → SMS se silêncio → ligação se silêncio.",
+    Icon: RotateCcw,
+  },
+  {
+    id: "r5m",
+    label: "Recall ~5 meses",
+    short: "5m",
+    hint: "Zap → SMS → ligação. Conta no teto diário de frio.",
+    Icon: Clock3,
+  },
+  {
+    id: "r8m",
+    label: "Recall ~8 meses",
+    short: "8m",
+    hint: "Zap → SMS → ligação no mesmo canal de origem do lead.",
+    Icon: Hourglass,
+  },
+  {
+    id: "r12m",
+    label: "Recall ~12 meses",
+    short: "12m",
+    hint: "Zap → SMS → ligação. Depois segue para o loop anual.",
+    Icon: CalendarDays,
+  },
+  {
+    id: "ryear",
+    label: "Recall anual",
+    short: "Ano",
+    hint: "Loop anual: Zap → SMS → ligação e reinicia o ciclo longo.",
+    Icon: Flag,
+  },
 ];
 
 const CADENCE_TO_LONGO: Record<string, string> = {
@@ -269,13 +489,15 @@ function PizzaRing({
   onSliceClick?: (step: CycleStep) => void;
 }) {
   const n = steps.length;
-  const size = compact ? 340 : 420;
+  const size = compact ? 360 : 440;
   const cx = size / 2;
   const cy = size / 2;
   const r = compact ? 96 : 118;
   const hole = compact ? 48 : 58;
-  const labelR = compact ? 138 : 168;
-  const svgMax = compact ? 300 : 400;
+  const labelR = compact ? 148 : 178;
+  const svgMax = compact ? 320 : 420;
+  const iconBox = compact ? 14 : 16;
+  const detailedLegend = steps.some((s) => s.hint);
 
   return (
     <div className="flex flex-col items-center gap-2.5 min-w-0 w-full">
@@ -286,7 +508,7 @@ function PizzaRing({
           {peopleCount === 1 ? "1 pessoa" : `${peopleCount} pessoas`} no ciclo
         </p>
         {onSliceClick && (
-          <p className="text-[10px] text-muted-foreground mt-0.5">Clique na fatia pra ver quem é</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Passe o mouse ou clique na fatia</p>
         )}
       </div>
 
@@ -294,7 +516,7 @@ function PizzaRing({
         width={svgMax}
         height={svgMax}
         viewBox={`0 0 ${size} ${size}`}
-        className="shrink-0 w-full max-w-[min(100%,400px)] h-auto"
+        className="shrink-0 w-full max-w-[min(100%,420px)] h-auto"
         role="img"
         aria-label={title}
       >
@@ -307,6 +529,10 @@ function PizzaRing({
           const has = (perStep[s.id] || 0) > 0;
           const current = activeIndex >= 0 && i === activeIndex;
           const clickable = !!onSliceClick && has;
+          const count = perStep[s.id] || 0;
+          const tip = s.hint
+            ? `${s.label} · ${count} ${count === 1 ? "pessoa" : "pessoas"} — ${s.hint}`
+            : `${s.label}: ${count}`;
           return (
             <path
               key={s.id}
@@ -320,14 +546,16 @@ function PizzaRing({
               onClick={() => clickable && onSliceClick?.(s)}
               role={clickable ? "button" : undefined}
               tabIndex={clickable ? 0 : undefined}
-              aria-label={`${s.label}: ${perStep[s.id] || 0}`}
+              aria-label={tip}
               onKeyDown={(e) => {
                 if (clickable && (e.key === "Enter" || e.key === " ")) {
                   e.preventDefault();
                   onSliceClick?.(s);
                 }
               }}
-            />
+            >
+              <title>{tip}</title>
+            </path>
           );
         })}
 
@@ -339,38 +567,63 @@ function PizzaRing({
           const has = (perStep[s.id] || 0) > 0;
           const current = activeIndex >= 0 && i === activeIndex;
           const count = perStep[s.id] || 0;
+          const Icon = s.Icon;
+          const tip = s.hint
+            ? `${s.label} · ${count} ${count === 1 ? "pessoa" : "pessoas"} — ${s.hint}`
+            : `${s.label}: ${count}`;
+          const fill = current
+            ? "hsl(var(--foreground))"
+            : has
+              ? "hsl(var(--foreground) / 0.85)"
+              : "hsl(var(--muted-foreground))";
           return (
             <g
               key={`l-${s.id}`}
               className={cn(has && onSliceClick && "cursor-pointer")}
               onClick={() => has && onSliceClick?.(s)}
             >
+              <title>{tip}</title>
+              {Icon && (
+                <foreignObject
+                  x={p.x - iconBox / 2}
+                  y={p.y - (compact ? 22 : 26)}
+                  width={iconBox}
+                  height={iconBox}
+                  className="pointer-events-none overflow-visible"
+                >
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Icon
+                      style={{ color: fill, width: iconBox, height: iconBox }}
+                      strokeWidth={current ? 2.25 : 1.75}
+                      aria-hidden
+                    />
+                  </div>
+                </foreignObject>
+              )}
               <text
                 x={p.x}
-                y={p.y - 6}
+                y={p.y + (Icon ? (compact ? 2 : 3) : -7)}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 style={{
-                  fontSize: current ? (compact ? 12 : 14) : compact ? 10 : 12,
-                  fontWeight: current ? 700 : 500,
-                  fill: current
-                    ? "hsl(var(--foreground))"
-                    : has
-                      ? "hsl(var(--foreground) / 0.8)"
-                      : "hsl(var(--muted-foreground))",
+                  fontSize: current ? (compact ? 10.5 : 12) : compact ? 9 : 10.5,
+                  fontWeight: current ? 650 : 550,
+                  letterSpacing: "0.015em",
+                  fill,
                 }}
               >
                 {s.short}
               </text>
               <text
                 x={p.x}
-                y={p.y + 10}
+                y={p.y + (Icon ? (compact ? 15 : 17) : 9)}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 style={{
                   fontSize: compact ? 10 : 11,
                   fontWeight: 700,
-                  fill: has ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.5)",
+                  fontVariantNumeric: "tabular-nums",
+                  fill: has ? "hsl(var(--primary))" : "hsl(var(--muted-foreground) / 0.45)",
                 }}
               >
                 {count}
@@ -408,23 +661,76 @@ function PizzaRing({
         </text>
       </svg>
 
-      <div className="flex flex-wrap justify-center gap-1 px-2 max-w-[380px]">
+      <div
+        className={cn(
+          "w-full max-w-[380px] px-1",
+          detailedLegend ? "flex flex-col gap-1.5" : "flex flex-wrap justify-center gap-x-2 gap-y-1",
+        )}
+      >
         {steps.map((s) => {
           const nStep = perStep[s.id] || 0;
+          const Icon = s.Icon;
+          if (!detailedLegend) {
+            return (
+              <button
+                type="button"
+                key={`b-${s.id}`}
+                disabled={nStep <= 0 || !onSliceClick}
+                onClick={() => onSliceClick?.(s)}
+                title={s.label}
+                className={cn(
+                  "text-[10px] tracking-wide tabular-nums transition-colors",
+                  nStep > 0
+                    ? "text-foreground/90 hover:text-primary cursor-pointer"
+                    : "text-muted-foreground/50 cursor-default",
+                )}
+              >
+                <span className="font-medium">{s.short}</span>
+                <span className={cn("ml-1", nStep > 0 ? "text-primary font-semibold" : "")}>{nStep}</span>
+              </button>
+            );
+          }
           return (
             <button
               type="button"
               key={`b-${s.id}`}
               disabled={nStep <= 0 || !onSliceClick}
               onClick={() => onSliceClick?.(s)}
+              title={s.hint || s.label}
               className={cn(
-                "text-[10px] px-1.5 py-0.5 rounded-md tabular-nums border transition-colors",
+                "flex items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
                 nStep > 0
-                  ? "bg-primary/10 border-primary/30 text-foreground hover:bg-primary/20 cursor-pointer"
-                  : "bg-muted/30 border-transparent text-muted-foreground cursor-default",
+                  ? "hover:bg-primary/10 cursor-pointer"
+                  : "opacity-55 cursor-default",
               )}
             >
-              {s.short} {nStep}
+              {Icon ? (
+                <Icon
+                  className={cn(
+                    "mt-0.5 h-3.5 w-3.5 shrink-0",
+                    nStep > 0 ? "text-primary" : "text-muted-foreground",
+                  )}
+                  aria-hidden
+                />
+              ) : (
+                <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="flex items-baseline justify-between gap-2">
+                  <span className="text-[11px] font-semibold text-foreground">{s.short}</span>
+                  <span
+                    className={cn(
+                      "text-[11px] tabular-nums font-bold",
+                      nStep > 0 ? "text-primary" : "text-muted-foreground/60",
+                    )}
+                  >
+                    {nStep}
+                  </span>
+                </span>
+                {s.hint && (
+                  <span className="block text-[10px] leading-snug text-muted-foreground">{s.hint}</span>
+                )}
+              </span>
             </button>
           );
         })}
@@ -477,6 +783,15 @@ export function ReheatCyclePizza({
   const [peopleB, setPeopleB] = useState<Record<string, CycleLead[]>>({});
   const [peopleC, setPeopleC] = useState<Record<string, CycleLead[]>>({});
   const [slicePick, setSlicePick] = useState<SlicePick | null>(null);
+  /** Relógio vivo no sheet — countdown exato até a próxima fase. */
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!slicePick) return;
+    setNowMs(Date.now());
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [slicePick]);
   const [countNovo, setCountNovo] = useState(0);
   const [countFrio, setCountFrio] = useState(0);
   const [countLongo, setCountLongo] = useState(0);
@@ -534,7 +849,10 @@ export function ReheatCyclePizza({
       .in("stage", ALL_CADENCE_STAGES)
       .limit(5000);
     if (consultantId) qCad = qCad.eq("consultant_id", consultantId);
-    const { data: cadRows } = await qCad;
+    const { data: cadRows, error: cadErr } = await qCad;
+    if (cadErr) {
+      console.warn("[ReheatCyclePizza] lead_cadence_state query failed", cadErr.message);
+    }
     const cadList =
       (cadRows as {
         customer_id: string;
@@ -546,7 +864,18 @@ export function ReheatCyclePizza({
     // Elegibilidade: só lead WhatsApp/manual — exclui sync, bloqueados, congelados, encerrados
     const allIds = [...new Set([...rows.map((r) => r.customer_id), ...cadList.map((c) => c.customer_id)])];
     const pauseByCustomer = new Map<string, string | null>();
-    for (const c of cadList) pauseByCustomer.set(c.customer_id, c.paused_reason);
+    const cadenceByCustomer = new Map<
+      string,
+      { stage: string; nextActionAt: string | null; pausedReason: string | null }
+    >();
+    for (const c of cadList) {
+      pauseByCustomer.set(c.customer_id, c.paused_reason);
+      cadenceByCustomer.set(c.customer_id, {
+        stage: c.stage,
+        nextActionAt: c.next_action_at,
+        pausedReason: c.paused_reason,
+      });
+    }
     const eligible = new Set<string>();
     const custById = new Map<string, CycleLead>();
     if (allIds.length > 0) {
@@ -572,11 +901,15 @@ export function ReheatCyclePizza({
           })
         ) {
           eligible.add(c.id);
+          const cad = cadenceByCustomer.get(c.id);
           custById.set(c.id, {
             id: c.id,
             name: c.name,
             phone: c.phone_whatsapp,
             status: c.status,
+            stage: cad?.stage ?? null,
+            nextActionAt: cad?.nextActionAt ?? null,
+            pausedReason: cad?.pausedReason ?? null,
           });
         }
       }
@@ -585,7 +918,7 @@ export function ReheatCyclePizza({
     for (const r of rows) {
       if (!eligible.has(r.customer_id)) continue;
       if (r.queue === "A") {
-        bump(aggA, idsA, r.step, r.customer_id);
+        bump(aggA, idsA, QUEUE_A_TO_NOVO[r.step] || r.step, r.customer_id);
       } else if (r.queue === "B") {
         bump(aggB, idsB, QUEUE_B_TO_FRIO[r.step] || r.step, r.customer_id);
       }
@@ -632,7 +965,7 @@ export function ReheatCyclePizza({
         out[slice] = ids
           .map((id) => custById.get(id))
           .filter((x): x is CycleLead => !!x)
-          .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "pt-BR"));
+          .sort(sortCycleLeads);
       }
       return out;
     };
@@ -908,7 +1241,7 @@ export function ReheatCyclePizza({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5 items-start justify-items-center">
         <PizzaRing
           title="Grupo A — Lead novo"
-          subtitle="Pré + conversa · sem bloqueados"
+          subtitle="Entrada → ativo → aguardando → retomada → SMS → ligação → fecha A → B"
           steps={CYCLE_NOVO_STEPS}
           activeIndex={idxNovo}
           peopleCount={countNovo}
@@ -920,7 +1253,7 @@ export function ReheatCyclePizza({
         />
         <PizzaRing
           title="Grupo B — Frio"
-          subtitle="D+1→D10 · no cap · estado real"
+          subtitle="D+1→D10 · conta no teto diário · estado real"
           steps={CYCLE_FRIO_STEPS}
           activeIndex={idxFrio}
           peopleCount={countFrio}
@@ -932,7 +1265,7 @@ export function ReheatCyclePizza({
         />
         <PizzaRing
           title="Grupo C — Longo prazo"
-          subtitle="Meta + recalls · no cap · estado real"
+          subtitle="Meta + recalls · Zap do canal de origem · conta no teto"
           steps={CYCLE_LONGO_STEPS}
           activeIndex={idxLongo}
           peopleCount={countLongo}
@@ -951,10 +1284,39 @@ export function ReheatCyclePizza({
               Grupo {slicePick?.group} · {slicePick?.step.label}
             </SheetTitle>
             <SheetDescription>
+              {slicePick?.step.hint ? (
+                <span className="block mb-1.5 text-muted-foreground">{slicePick.step.hint}</span>
+              ) : null}
               {slicePick?.people.length === 1
                 ? "1 pessoa nesta etapa"
                 : `${slicePick?.people.length ?? 0} pessoas nesta etapa`}
-              {" · "}clique em Conversar pra abrir o chat interno
+              {" · "}ordenadas pela próxima ação · clique em Conversar pra abrir o chat
+              {slicePick && (() => {
+                const overdue = slicePick.people.filter(
+                  (p) => p.nextActionAt && new Date(p.nextActionAt).getTime() <= nowMs,
+                ).length;
+                const soon = slicePick.people.filter((p) => {
+                  if (!p.nextActionAt) return false;
+                  const t = new Date(p.nextActionAt).getTime();
+                  return t > nowMs && t - nowMs < 3_600_000;
+                }).length;
+                if (!overdue && !soon) return null;
+                return (
+                  <span className="block mt-1 text-[11px]">
+                    {overdue > 0 ? (
+                      <span className="text-amber-700 dark:text-amber-400 font-medium">
+                        {overdue} atrasado{overdue > 1 ? "s" : ""}
+                      </span>
+                    ) : null}
+                    {overdue > 0 && soon > 0 ? " · " : null}
+                    {soon > 0 ? (
+                      <span className="text-sky-700 dark:text-sky-400 font-medium">
+                        {soon} na próxima 1h
+                      </span>
+                    ) : null}
+                  </span>
+                );
+              })()}
             </SheetDescription>
           </SheetHeader>
 
@@ -1003,18 +1365,62 @@ export function ReheatCyclePizza({
               (slicePick?.people || []).map((p) => {
                 const phoneCheck = p.phone ? validateBrazilPhone(p.phone) : { valid: false };
                 const canChat = !!onOpenChat && phoneCheck.valid;
+                const countdown = formatExactCountdown(p.nextActionAt, nowMs);
+                const nextLabel = labelNextCadenceAction(p.stage);
+                const stageLabel = p.stage ? labelCadenceStage(p.stage, "short") : null;
+                const phoneLabel = p.phone ? formatBrazilPhone(p.phone) || p.phone : "Sem WhatsApp";
+                const whenExact = p.nextActionAt
+                  ? new Date(p.nextActionAt).toLocaleString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : null;
                 return (
                   <div
                     key={p.id}
-                    className="flex items-center gap-2 rounded-lg border border-border/60 bg-card/50 px-3 py-2.5"
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2.5",
+                      countdown.tone === "overdue"
+                        ? "border-amber-500/50 bg-amber-500/5"
+                        : countdown.tone === "soon"
+                          ? "border-sky-500/40 bg-sky-500/5"
+                          : "border-border/60 bg-card/50",
+                    )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate sensitive-name">
-                        {p.name || "Sem nome"}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {p.phone || "Sem WhatsApp"}
-                        {p.status ? ` · ${p.status}` : ""}
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="text-sm font-medium truncate sensitive-name">
+                          {p.name || "Sem nome"}
+                        </p>
+                        {stageLabel ? (
+                          <Badge
+                            variant="secondary"
+                            className="h-5 shrink-0 px-1.5 text-[10px] font-normal"
+                            title={p.stage || undefined}
+                          >
+                            {stageLabel}
+                          </Badge>
+                        ) : null}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground truncate">{phoneLabel}</p>
+                      <p
+                        className={cn(
+                          "text-[11px] font-medium truncate flex items-center gap-1",
+                          countdown.tone === "overdue" && "text-amber-700 dark:text-amber-400",
+                          countdown.tone === "soon" && "text-sky-700 dark:text-sky-400",
+                          countdown.tone === "later" && "text-foreground/80",
+                          countdown.tone === "none" && "text-muted-foreground font-normal",
+                        )}
+                        title={whenExact ? `Agenda: ${whenExact}` : undefined}
+                      >
+                        <Clock3 className="w-3 h-3 shrink-0 opacity-70" />
+                        <span className="truncate">
+                          {countdown.text}
+                          {nextLabel ? ` · próximo: ${nextLabel}` : ""}
+                          {whenExact && countdown.tone !== "none" ? ` · ${whenExact}` : ""}
+                        </span>
                       </p>
                     </div>
                     <Button

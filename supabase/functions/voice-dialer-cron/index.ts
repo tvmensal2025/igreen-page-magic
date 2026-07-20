@@ -15,12 +15,15 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
-import { resolvePersonalizedCallAudio } from "../_shared/voice-dialer/call-stitch.ts";
+import { resolvePersonalizedCallAudio, firstNameFrom, normalizeCallName, ensureBodyClipOnVelip } from "../_shared/voice-dialer/call-stitch.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const MAX_CAMPAIGNS = 5;
-const MAX_CALLS_PER_CAMPAIGN = 10;
-const MAX_EXEC_MS = 45_000;
+/** Por tick do cron (~5 min). Velip campanha aceita até 100/min; no modo 1-a-1
+ *  limitamos pelo tempo da edge (~45s) + custo ElevenLabs do stitch. */
+const MAX_CALLS_PER_CAMPAIGN = 40;
+const MAX_PREWARM_PER_CAMP = 8;
+const MAX_EXEC_MS = 50_000;
 const RECONCILE_STALE_MIN = 10;
 
 const cors = {
@@ -137,6 +140,122 @@ Deno.serve(async (req) => {
     console.warn("reconcile_failed:", (e as Error).message);
   }
 
+  // Pré-aquece ElevenLabs (Olá+nome+corpo) ANTES de discar — inclusive campanhas ainda agendadas.
+  try {
+    const { data: warmCamps } = await admin
+      .from("voice_campaigns")
+      .select("id, consultant_id, audio_clip_id, config, status")
+      .in("status", ["scheduled", "running"])
+      .not("audio_clip_id", "is", null)
+      .order("created_at", { ascending: true })
+      .limit(6);
+
+    for (const camp of warmCamps ?? []) {
+      if (Date.now() - started > MAX_EXEC_MS - 12_000) break;
+      const cfg = (camp.config ?? {}) as { personalize_name?: boolean };
+      if (!cfg.personalize_name || !camp.audio_clip_id) continue;
+
+      const { data: qTargets } = await admin
+        .from("voice_campaign_targets")
+        .select("name, customer_id")
+        .eq("campaign_id", camp.id)
+        .eq("status", "queued")
+        .order("created_at", { ascending: true })
+        .limit(120);
+
+      if (!qTargets?.length) continue;
+
+      const custIds = [
+        ...new Set(
+          qTargets
+            .map((t) => String((t as { customer_id?: string | null }).customer_id || "").trim())
+            .filter(Boolean),
+        ),
+      ];
+      const custMap = new Map<string, { name: string | null; name_source: string | null }>();
+      for (let i = 0; i < custIds.length; i += 200) {
+        const slice = custIds.slice(i, i + 200);
+        const { data: custs } = await admin
+          .from("customers")
+          .select("id, name, name_source")
+          .in("id", slice);
+        for (const c of custs || []) {
+          custMap.set(String((c as { id: string }).id), {
+            name: (c as { name?: string | null }).name ?? null,
+            name_source: (c as { name_source?: string | null }).name_source ?? null,
+          });
+        }
+      }
+
+      const { data: clipMeta } = await admin
+        .from("voice_audio_clips")
+        .select("voice_id, model_id")
+        .eq("id", camp.audio_clip_id)
+        .maybeSingle();
+      const voiceId =
+        String((clipMeta as { voice_id?: string | null } | null)?.voice_id || "").trim() ||
+        "EJV7H2baGt5ab95tOoSG";
+      const baseModel =
+        String((clipMeta as { model_id?: string | null } | null)?.model_id || "eleven_v3")
+          .split(":")[0] || "eleven_v3";
+      const modelId = `${baseModel}:ci_v2_tudobem`;
+
+      const { data: cachedRenders } = await admin
+        .from("voice_call_renders")
+        .select("name_normalized")
+        .eq("body_clip_id", camp.audio_clip_id)
+        .eq("voice_id", voiceId)
+        .eq("model_id", modelId);
+      const cachedNorms = new Set(
+        (cachedRenders || [])
+          .map((r) => String((r as { name_normalized?: string }).name_normalized || ""))
+          .filter(Boolean),
+      );
+
+      const seen = new Set<string>();
+      const pending: { display: string; source: string | null }[] = [];
+      for (const t of qTargets) {
+        const cid = String((t as { customer_id?: string | null }).customer_id || "").trim();
+        const cust = cid ? custMap.get(cid) : null;
+        const raw = cust?.name ?? (t as { name?: string | null }).name;
+        const source = cust ? cust.name_source : raw ? "manual" : null;
+        const display = firstNameFrom(raw, source);
+        const key = normalizeCallName(display);
+        if (!key || seen.has(key) || cachedNorms.has(key)) continue;
+        seen.add(key);
+        pending.push({ display, source: source || "manual" });
+        if (pending.length >= MAX_PREWARM_PER_CAMP) break;
+      }
+
+      if (!pending.length) {
+        report.push({ campaign_id: camp.id, prewarm: "already_ready" });
+        continue;
+      }
+
+      await ensureBodyClipOnVelip(admin, String(camp.audio_clip_id), String(camp.consultant_id));
+      let created = 0;
+      let failed = 0;
+      for (const row of pending) {
+        if (Date.now() - started > MAX_EXEC_MS - 8_000) break;
+        const st = await resolvePersonalizedCallAudio(admin, {
+          consultantId: String(camp.consultant_id),
+          bodyClipId: String(camp.audio_clip_id),
+          rawName: row.display,
+          nameSource: row.source,
+          fallbackToBody: false,
+        });
+        if (st.ok) created++;
+        else failed++;
+      }
+      report.push({
+        campaign_id: camp.id,
+        prewarm: { created, failed, attempted: pending.length, status: camp.status },
+      });
+    }
+  } catch (e) {
+    console.warn("prewarm_failed:", (e as Error).message);
+  }
+
   // Disparo modo `single` — batch válido é orquestrado pela Velip sozinha.
   // Campanha batch sem ID remoto é inválida; degrada para single para não travar.
   for (const camp of camps ?? []) {
@@ -161,6 +280,7 @@ Deno.serve(async (req) => {
       weekdaysOnly?: boolean;
       scheduledExact?: boolean;
       personalize_name?: boolean;
+      timezone?: string;
     };
     if (!cfg.scheduledExact && !inCallWindow(cfg)) {
       report.push({ campaign_id: camp.id, skipped: "outside_window" });
@@ -196,7 +316,7 @@ Deno.serve(async (req) => {
       .select("id, phone, name, customer_id")
       .eq("campaign_id", camp.id)
       .eq("status", "queued")
-      .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
+      .or(`next_attempt_at.is.null,next_attempt_at.lte."${nowIso}"`)
       .order("created_at", { ascending: true })
       .limit(MAX_CALLS_PER_CAMPAIGN);
 
@@ -223,12 +343,14 @@ Deno.serve(async (req) => {
     for (const t of targets) {
       if (Date.now() - started > MAX_EXEC_MS) break;
 
+      // Claim só por id+queued. O filtro next_attempt_at já veio no SELECT;
+      // repetir `.or(lte.ISO)` no UPDATE quebra o PostgREST (dois-pontos do timestamp)
+      // e todas as claims falham → dialed:0 eterno com fila cheia.
       const { data: claimed } = await admin
         .from("voice_campaign_targets")
         .update({ status: "dialing", dialed_at: new Date().toISOString(), next_attempt_at: null })
         .eq("id", t.id)
         .eq("status", "queued")
-        .or(`next_attempt_at.is.null,next_attempt_at.lte.${nowIso}`)
         .select("id")
         .maybeSingle();
       if (!claimed) continue;
@@ -350,7 +472,7 @@ Deno.serve(async (req) => {
         raw: { ...(call.raw as object ?? {}), ...(stitchMeta || {}) },
         velip_raw: call.raw ?? {},
       });
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => setTimeout(r, 150));
     }
 
     const { data: allT } = await admin

@@ -147,9 +147,13 @@ export function ensureSoftEdges(text: string): string {
  * “Maria, não tem segredo.” → “Maria, não tem segredo!”
  * Reticências geravam pausa longa (cliente ouvia como corte entre "Olá" e o
  * nome — feedback 19/07/2026). Espelha supabase/functions/_shared/tts-ptbr-anchor.ts.
+ *
+ * Não use em “Olá, Nome! Tudo bem?” — use `buildOlaTudoBemTtsText`.
  */
 export function formatNameGreetForTts(text: string): string {
   let t = softenOverPauses(normalizeSpaces(text));
+  // Já é a frase canônica da ligação / A2 — não reformatar.
+  if (/^olá,\s+.+\btudo bem\?/i.test(t)) return t;
   const m = t.match(/^(olá|então|oi)\s*[,.]?\s*(.+)$/i);
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
@@ -159,6 +163,16 @@ export function formatNameGreetForTts(text: string): string {
   // Frase completa com nome (ex.: “Nome, não tem segredo.”) — mantém a frase, fecha com !.
   t = t.replace(/[.!?…]+$/u, "").trim();
   return t ? `${t}!` : t;
+}
+
+/**
+ * Cumprimento profissional — Estúdio / WhatsApp A2 / ligação PSTN (mesma frase).
+ * “Olá, Maria! Tudo bem?”
+ */
+export function buildOlaTudoBemTtsText(display: string): string {
+  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!nome) return "";
+  return `Olá, ${nome}! Tudo bem?`;
 }
 
 

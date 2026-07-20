@@ -401,7 +401,14 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       group === "all"
         ? MULTICHANNEL_CADENCE_TEMPLATES
         : MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => t.group === group);
-    return base.filter((t) => !t.hiddenInPanel);
+    const visible = base.filter((t) => !t.hiddenInPanel);
+    // Grupo A: escada (cutuca/SMS/liga) no topo — fácil de achar e editar.
+    if (group === "A") {
+      const escada = visible.filter((t) => t.key.startsWith("a_nudge_"));
+      const rest = visible.filter((t) => !t.key.startsWith("a_nudge_"));
+      return [...escada, ...rest];
+    }
+    return visible;
   }, [group]);
 
   const filteredList = useMemo(() => {
@@ -1472,6 +1479,27 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           ))}
         </TabsList>
         <TabsContent value={group} className="mt-3 space-y-3">
+          {group === "A" && (
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-xs text-muted-foreground space-y-2">
+              <p className="font-medium text-foreground">
+                Grupo A — Lead novo + escada de silêncio
+              </p>
+              <p>
+                Passos Sofia vão para o fluxo do WhatsApp. A{" "}
+                <span className="text-foreground font-medium">escada</span> (Retomada / SMS /
+                Ligação / Fecha A) grava no motor — itens no topo da lista.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-8"
+                onClick={() => openInspector("a_nudge_wa")}
+              >
+                Editar retomada (cutuca)
+              </Button>
+            </div>
+          )}
           {group === "B" && (
             <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">
@@ -1504,8 +1532,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 Toggles de recall/Meta na Central de Automações / Motor.
               </p>
               <p className="text-foreground/90">
-                Ao publicar: textos/botões WA sincronizam no motor (ContentContract). SMS/call
-                texto; ligação também publica o clip Sofia no motor. Executor: cadence-tick — sem misturar com o grafo do Grupo A.
+                O Zap de cada recall sai pelo <span className="font-medium">mesmo canal de origem</span> do
+                lead (Whapi ou Evolution em que ele entrou) — não por outro número. Conta no teto diário
+                de frio. Ao publicar: textos/botões sincronizam no motor (ContentContract). Executor:
+                cadence-tick.
               </p>
             </div>
           )}

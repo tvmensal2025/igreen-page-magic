@@ -151,7 +151,7 @@ export async function loadCadenceLibraryFromBotFlow(
   if (!flowId) return {};
 
   const keys = MULTICHANNEL_CADENCE_TEMPLATES.filter(
-    (t) => t.group === "A" && !t.hiddenInPanel,
+    (t) => t.group === "A" && !t.hiddenInPanel && !(t.key in STAGE_TEXT_SYNC_MAP),
   ).map((t) => t.key);
 
   const parentKeys = Object.values(OCR_RETRY_PARENT).map((p) => p.parentKey);
@@ -245,6 +245,14 @@ export async function persistCadenceLibraryRemote(
   if (insErr) throw new Error(`persist_insert: ${insErr.message}`);
 }
 
+/** Grupo A — escada de silêncio (pizza Retomada → Fecha A). Só motor, não grafo Sofia. */
+const GROUP_A_TO_STAGE: Record<string, string> = {
+  a_nudge_wa: "A_NUDGE",
+  a_nudge_sms: "A_SMS",
+  a_nudge_call: "A_CALL",
+  a_nudge_call_retry: "A_CALL_RETRY",
+};
+
 /**
  * Mapa Grupo B (painel Multicanal) → estágios do motor `cadence_stage_config`.
  * Faz o que o usuário edita virar o texto real que o motor envia.
@@ -286,6 +294,7 @@ const GROUP_C_TO_STAGE: Record<string, string> = {
 };
 
 export const STAGE_TEXT_SYNC_MAP: Record<string, string> = {
+  ...GROUP_A_TO_STAGE,
   ...GROUP_B_TO_STAGE,
   ...GROUP_C_TO_STAGE,
 };
@@ -325,7 +334,7 @@ export function buildStageConfigPatch(
 }
 
 /**
- * Espelha textos do Multicanal (Grupo B + C) em `cadence_stage_config`
+ * Espelha textos do Multicanal (Grupo A escada + B + C) em `cadence_stage_config`
  * **do consultor** (isolado). Não sobrescreve o global nem o de outro parceiro.
  * Botões (ContentContract) vão junto para os stages WhatsApp.
  */
@@ -645,6 +654,7 @@ export async function syncCadenceLibraryToBotFlow(
     (t) =>
       t.group === "A" &&
       !t.hiddenInPanel &&
+      !(t.key in STAGE_TEXT_SYNC_MAP) &&
       (t.channel === "whatsapp_text" ||
         t.channel === "whatsapp_buttons" ||
         t.channel === "whatsapp_audio" ||
@@ -775,7 +785,7 @@ export async function syncCadenceLibraryToBotFlow(
   return { updated, skipped, errors };
 }
 
-/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A) + motor (Grupo B + C). */
+/** Salva local + remoto + espelha no fluxo WhatsApp (Grupo A Sofia) + motor (escada A + B + C). */
 export async function publishCadenceLibrary(
   consultantId: string,
   lib: SavedCadenceLibrary,

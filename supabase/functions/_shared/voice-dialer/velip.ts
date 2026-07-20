@@ -341,6 +341,8 @@ export interface CreateCampaignOpts {
   name: string;
   scheduledAt?: string;
   ctid?: string;
+  /** Ligações por minuto: 1–100 ou "max" (doc Velip ChangeCampaign/CreateCampaign). */
+  vel?: number | "max";
 }
 
 export interface CreateCampaignResp extends RawResp {
@@ -356,6 +358,9 @@ export async function createCampaign(opts: CreateCampaignOpts): Promise<CreateCa
   form.set("content", opts.audioId);
   if (opts.ctid) form.set("cp_ctid", toCtid(opts.ctid));
   form.set("cp_ativo", "1");
+  // Velip: `vel` = ligações/minuto (1–100 ou max). Default da conta costuma ser baixo.
+  const vel = opts.vel ?? "max";
+  form.set("vel", String(vel));
   if (opts.scheduledAt) {
     // "YYYY-MM-DD HH:MM:SS" → date_start + time_start (roda só nesse dia).
     const [d, t] = opts.scheduledAt.split(" ");
@@ -518,17 +523,29 @@ export function outcomeLabelPtBR(outcome: VelipOutcome): string {
   }
 }
 
-/** Janela de discagem BR (fuso -03) — reaproveitado. */
+/** Janela de discagem — sempre America/Sao_Paulo (Brasília), não o fuso do servidor. */
 export function inCallWindow(cfg: {
   windowStart?: string;
   windowEnd?: string;
   weekdaysOnly?: boolean;
+  timezone?: string;
 } | null): boolean {
   if (!cfg) return true;
-  const now = new Date(Date.now() - 3 * 3600_000);
+  const tz = cfg.timezone || "America/Sao_Paulo";
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const bag: Record<string, string> = {};
+  for (const p of fmt.formatToParts(new Date())) {
+    if (p.type !== "literal") bag[p.type] = p.value;
+  }
   if (cfg.weekdaysOnly) {
-    const d = now.getUTCDay();
-    if (d === 0 || d === 6) return false;
+    const wd = (bag.weekday || "").slice(0, 3).toLowerCase();
+    if (wd === "sat" || wd === "sun") return false;
   }
   const start = cfg.windowStart || "09:00";
   const end = cfg.windowEnd || "18:00";
@@ -536,7 +553,8 @@ export function inCallWindow(cfg: {
   const [eH, eM] = String(end).split(":").map(Number);
   const startMin = sH * 60 + (sM || 0);
   const endMin = eH * 60 + (eM || 0);
-  const cur = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const hourRaw = bag.hour === "24" ? "0" : bag.hour;
+  const cur = Number(hourRaw) * 60 + Number(bag.minute || 0);
   if (endMin < startMin) return cur >= startMin || cur <= endMin;
   return cur >= startMin && cur <= endMin;
 }

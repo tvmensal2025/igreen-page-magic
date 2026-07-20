@@ -10,6 +10,8 @@ import { nextBusinessSlot, isBusinessHour } from "./business-window.ts";
 
 export type Stage =
   | "NEW" | "GREETED" | "AI_QUALIFYING"
+  /** Grupo A — silêncio antes do B: retomada → SMS → call → fecha A → COLD_1 */
+  | "A_NUDGE" | "A_SMS" | "A_CALL" | "A_CALL_RETRY"
   | "COLD_1" | "COLD_2" | "CALL_1" | "SMS_1"
   | "COLD_3" | "CALL_2" | "SMS_2" | "SMS_TEMA_2" | "SMS_TEMA_7"
   | "COLD_4" | "CALL_3"
@@ -38,13 +40,22 @@ export type StageDef = {
  * delayHours = espera APÓS entrar no estágio (antes de disparar este estágio).
  * Ao avançar A→B, next_action_at = now + B.delayHours.
  *
+ * Grupo A — silêncio no chat quente (pizza):
+ *   aguardando → retomada WA → SMS → ligação → fecha A → Grupo B (COLD_1).
+ *
  * Grupo C — cada marco longo:
  *   WA (análise) → SMS (~2h se silêncio) → ligação (~4h se silêncio) → próximo marco.
  */
 export const STAGE_MAP: Record<Stage, StageDef | null> = {
   NEW:           { channel: "system",    delayHours: 0,   next: "GREETED",          requiresBusinessHours: false },
-  GREETED:       { channel: "system",    delayHours: 24,  next: "COLD_1",           requiresBusinessHours: false },
-  AI_QUALIFYING: { channel: "system",    delayHours: 24,  next: "COLD_1",           requiresBusinessHours: false },
+  // 2h de silêncio antes da escada A — não pula direto pro B.
+  GREETED:       { channel: "system",    delayHours: 2,   next: "A_NUDGE",          requiresBusinessHours: false },
+  AI_QUALIFYING: { channel: "system",    delayHours: 2,   next: "A_NUDGE",          requiresBusinessHours: false },
+
+  A_NUDGE:       { channel: "whatsapp",  delayHours: 0,   next: "A_SMS",            requiresBusinessHours: true,  skipIfEngaged: true },
+  A_SMS:         { channel: "sms",       delayHours: 2,   next: "A_CALL",           requiresBusinessHours: true,  skipIfEngaged: true },
+  A_CALL:        { channel: "voice",     delayHours: 2,   next: "A_CALL_RETRY",     requiresBusinessHours: true,  skipIfEngaged: true },
+  A_CALL_RETRY:  { channel: "voice",     delayHours: 0.5, next: "COLD_1",           requiresBusinessHours: true,  skipIfEngaged: true },
 
   COLD_1:        { channel: "whatsapp",  delayHours: 0,   next: "SMS_1",            requiresBusinessHours: true,  skipIfEngaged: false },
   SMS_1:         { channel: "sms",       delayHours: 2,   next: "CALL_1",           requiresBusinessHours: true,  skipIfEngaged: true },

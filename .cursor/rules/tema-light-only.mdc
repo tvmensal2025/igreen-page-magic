@@ -1,0 +1,22 @@
+---
+description: Plataforma iGreen é light-only — não reativar dark como padrão
+globs: src/contexts/ThemeContext.tsx,src/components/ui/ThemeToggle.tsx,index.html,src/styles/painel-elite.css
+alwaysApply: false
+---
+
+# Tema — light only
+
+A plataforma do consultor/admin usa **apenas tema claro**.
+
+## Regras
+
+- `ThemeProvider` sempre aplica `html.light` e `color-scheme: light`.
+- Default / localStorage (`igreen-theme`) = `"light"`. Não voltar o default para `"dark"`.
+- Select/Popover/Dialog abrem em Portal no `body` — se `html` estiver `.dark`, ficam pretos. Por isso o tema global tem que ser light.
+- CSS `.dark { ... }` em `index.css` pode permanecer (legado); não deve ser a classe ativa no `<html>`.
+- Não reintroduzir ciclo dark/system no `ThemeToggle` sem pedido explícito do usuário.
+
+## FOUC
+
+`index.html` já força `class="light"` + script de migração antes do React.
+---

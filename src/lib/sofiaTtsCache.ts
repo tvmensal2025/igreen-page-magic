@@ -178,7 +178,7 @@ export async function setCachedTTS(
     .upload(`${hash}.mp3`, blob, { contentType: "audio/mpeg", upsert: true });
 }
 
-/** “Olá, Nome.” / “Então, Nome.” / “Nome, não tem segredo.” — cortes com nome (pausa obrigatória). */
+/** “Olá, Nome! Tudo bem?” / “Então, Nome.” / “Nome, não tem segredo.” — cortes com nome. */
 export function isNameGreetPhrase(text: string): boolean {
   const t = text.trim();
   if (!t || t.length >= 120) return false;

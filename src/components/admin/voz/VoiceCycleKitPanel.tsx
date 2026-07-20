@@ -117,15 +117,14 @@ type TimelineStep = {
 };
 
 const NOVO_STEPS: TimelineStep[] = [
-  { id: "arrive", label: "Lead chegou", hint: "Automático — não precisa arquivo", kind: "info" },
-  { id: "wait5", label: "Aguarda 5 min", hint: "Tempo fixo no motor (regra depois)", kind: "info" },
-  { id: "open", label: "WhatsApp: abre + áudio do dia", hint: "Texto + áudio seg–sáb", kind: "wa" },
-  { id: "flow", label: "Inicia fluxo no chat", hint: "Sem arquivo — usa fluxo F", kind: "flow" },
-  { id: "wait2h", label: "Silêncio ~2h", hint: "Tempo fixo no motor (regra depois)", kind: "info" },
-  { id: "call1", label: "1ª ligação (voz Sofia)", hint: "Áudio gerado com Sofia no Estúdio → Usar em ligações", kind: "call1" },
-  { id: "retry", label: "2ª ligação (retry)", hint: "Outro áudio Sofia ou reusa a 1ª", kind: "call2" },
-  { id: "sms", label: "SMS se não atender", hint: "Texto curto com {{nome}}", kind: "sms" },
-  { id: "close", label: "Fecha + nota", hint: "Automático", kind: "info" },
+  { id: "ask_name", label: "Entrada no ciclo", hint: "WhatsApp — pede o nome (Sofia)", kind: "wa" },
+  { id: "flow", label: "Ativo · início do fluxo", hint: "Conversa em andamento", kind: "flow" },
+  { id: "wait", label: "Aguardando resposta (~2h)", hint: "Tempo fixo no motor", kind: "info" },
+  { id: "nudge", label: "Retomada no WhatsApp", hint: "Clique em Editar cutuca abaixo — Textos Multicanal", kind: "info" },
+  { id: "sms", label: "SMS de reforço", hint: "Textos Multicanal → Escada · SMS", kind: "info" },
+  { id: "call1", label: "Ligação (voz Sofia)", hint: "Textos Multicanal → Escada · Ligação", kind: "info" },
+  { id: "retry", label: "Aguardando · fecha o A", hint: "Textos Multicanal → Escada · Fecha A", kind: "info" },
+  { id: "to_b", label: "Entra no Grupo B", hint: "COLD_1 em diante", kind: "info" },
 ];
 
 const FRIO_STEPS: TimelineStep[] = [
@@ -602,8 +601,26 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
         </TabsList>
         <TabsContent value="novo" className="mt-4 space-y-2">
           <p className="text-xs text-muted-foreground mb-3">
-            Ordem: WhatsApp → fluxo → espera → ligação 1 → ligação 2 → SMS
+            Escada A (cutuca / SMS / ligação): edite em Textos Multicanal — Grupo A (topo da lista).
           </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            className="mb-2"
+            onClick={() => {
+              try {
+                sessionStorage.setItem("igreen-voz-subtab", "textos");
+                sessionStorage.setItem("igreen-multichannel-focus-key", "a_nudge_wa");
+              } catch { /* noop */ }
+              window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: "textos" } }));
+              window.dispatchEvent(
+                new CustomEvent("igreen-multichannel-focus", { detail: { key: "a_nudge_wa" } }),
+              );
+            }}
+          >
+            Editar retomada (cutuca)
+          </Button>
           {renderTimeline(NOVO_STEPS)}
         </TabsContent>
         <TabsContent value="frio" className="mt-4 space-y-2">

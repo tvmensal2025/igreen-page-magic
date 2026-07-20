@@ -12,13 +12,13 @@ type Props = {
 
 function goFix(gap: CadenceGap) {
   try {
-    sessionStorage.setItem("igreen-voz-subtab", "multichannel");
+    sessionStorage.setItem("igreen-voz-subtab", "textos");
     if (gap.cadenceKey) {
       sessionStorage.setItem("igreen-multichannel-focus-key", gap.cadenceKey);
     }
   } catch { /* noop */ }
   window.dispatchEvent(new CustomEvent("igreen-admin-nav", { detail: { tab: "voz" } }));
-  window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: "multichannel" } }));
+  window.dispatchEvent(new CustomEvent("igreen-voz-subtab", { detail: { sub: "textos" } }));
   if (gap.cadenceKey) {
     window.dispatchEvent(
       new CustomEvent("igreen-multichannel-focus", { detail: { key: gap.cadenceKey } }),

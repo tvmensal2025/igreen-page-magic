@@ -10,15 +10,76 @@ type StageMeta = { short: string; long: string; group: CadenceStageGroup };
 
 /** Estágios fora do calendário B/C (Grupo A e estados finais). */
 const BASE_STAGES: Record<string, StageMeta> = {
-  NEW: { short: "Novo", long: "Lead novo — acabou de entrar no sistema", group: "A" },
-  GREETED: { short: "Aguardando onda", long: "Aguardando início da onda de reaquecimento (dia 1)", group: "A" },
+  NEW: { short: "Entrada", long: "Lead novo — acabou de entrar no sistema", group: "A" },
+  GREETED: {
+    short: "Aguardando",
+    long: "Janela de silêncio (~2h) antes da retomada no WhatsApp",
+    group: "A",
+  },
   AI_QUALIFYING: { short: "Em conversa", long: "Conversando com a vendedora automática", group: "A" },
+  A_NUDGE: { short: "Retomada", long: "Cutuca no WhatsApp — retomada da conversa", group: "A" },
+  A_SMS: { short: "SMS", long: "SMS de reforço da escada do Grupo A", group: "A" },
+  A_CALL: { short: "Ligação", long: "1ª ligação da escada do Grupo A", group: "A" },
+  A_CALL_RETRY: {
+    short: "Fecha A",
+    long: "Última janela do Grupo A antes de ir para o frio (B)",
+    group: "A",
+  },
   PAUSED: { short: "Pausado", long: "Cadência pausada manualmente ou pelo sistema", group: "fim" },
   WON: { short: "Ganhou", long: "Lead convertido — cadência encerrada", group: "fim" },
   CLOSE_LOST: { short: "Sem resposta", long: "Onda de 10 dias encerrada sem retorno", group: "B" },
   RETARGET_META: { short: "Meta — público", long: "Enviado para público de remarketing na Meta", group: "C" },
   RETARGET_ADS_15D: { short: "Meta — anúncios", long: "Remarketing de anúncios (~15 dias após a onda)", group: "C" },
 };
+
+/** Próxima ação do motor (rótulo curto pra lista da pizza). */
+const STAGE_NEXT_SHORT: Record<string, string> = {
+  NEW: "Aguardando",
+  GREETED: "Retomada (Zap)",
+  AI_QUALIFYING: "Retomada (Zap)",
+  A_NUDGE: "SMS",
+  A_SMS: "Ligação",
+  A_CALL: "Fecha A",
+  A_CALL_RETRY: "Grupo B · D+1",
+  COLD_1: "SMS D+1",
+  SMS_1: "Ligação D+1",
+  CALL_1: "Zap D+2",
+  COLD_2: "SMS tema D+2",
+  SMS_TEMA_2: "Ligação D+4",
+  CALL_2: "SMS D+6",
+  SMS_2: "Zap D+7",
+  COLD_3: "SMS tema D+7",
+  SMS_TEMA_7: "Ligação D+10",
+  CALL_3: "Zap fecha D+10",
+  COLD_4: "Grupo C · Meta",
+  CLOSE_LOST: "Meta · público",
+  RETARGET_META: "Meta · anúncios",
+  RETARGET_ADS_15D: "1º recall",
+  RECALL_60D: "SMS recall",
+  RECALL_60D_SMS: "Ligação recall",
+  RECALL_60D_CALL: "Recall ~90d",
+  RECALL_90D: "SMS recall",
+  RECALL_90D_SMS: "Ligação recall",
+  RECALL_90D_CALL: "Recall ~5m",
+  RECALL_5M: "SMS recall",
+  RECALL_5M_SMS: "Ligação recall",
+  RECALL_5M_CALL: "Recall ~8m",
+  RECALL_8M: "SMS recall",
+  RECALL_8M_SMS: "Ligação recall",
+  RECALL_8M_CALL: "Recall ~12m",
+  RECALL_12M: "SMS recall",
+  RECALL_12M_SMS: "Ligação recall",
+  RECALL_12M_CALL: "Recall anual",
+  RECALL_YEARLY: "SMS anual",
+  RECALL_YEARLY_SMS: "Ligação anual",
+  RECALL_YEARLY_CALL: "Fim do ciclo",
+};
+
+export function labelNextCadenceAction(stage: string | null | undefined): string | null {
+  const key = (stage || "").trim();
+  if (!key || key === "PAUSED" || key === "WON") return null;
+  return STAGE_NEXT_SHORT[key] || null;
+}
 
 function shortFromCalendarTitle(title: string): string {
   const part = title.split("—")[0]?.trim();

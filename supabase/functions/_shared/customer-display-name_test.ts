@@ -105,6 +105,17 @@ Aqui é *{{consultor}}*, da *iGreen*.`;
   assertEquals(out2.startsWith("Aqui é"), true);
 });
 
+Deno.test("scrubEmptyNameGreeting — cutuca *Oi, {{nome}}*! sem nome = só corpo", () => {
+  const cutuca = `*Oi, {{nome}}*! Aqui é o *{{consultor}}* da *iGreen* ⚡
+
+Todo mês a *conta de luz chega*…`;
+  const out = scrubEmptyNameGreeting(cutuca);
+  assertEquals(out.includes("{{nome}}"), false);
+  assertEquals(/^\*?Oi/i.test(out), false);
+  assertEquals(out.startsWith("Aqui é"), true);
+  assertEquals(out.includes("{{consultor}}"), true);
+});
+
 Deno.test("scrubEmptyNameGreeting — SMS sem nome não cola palavras", () => {
   const sms1 = scrubEmptyNameGreeting(
     "Ola {{nome}}, aqui e Rafael da iGreen Energy. Ainda quer economizar?",

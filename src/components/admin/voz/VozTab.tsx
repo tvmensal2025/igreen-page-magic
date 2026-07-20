@@ -45,8 +45,9 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
   const [subTab, setSubTab] = useState(() => {
     try {
       const fromUrl = new URLSearchParams(window.location.search).get("sub");
-      if (fromUrl) return fromUrl;
-      return sessionStorage.getItem("igreen-voz-subtab") || "nova";
+      if (fromUrl) return fromUrl === "multichannel" ? "textos" : fromUrl;
+      const fromSs = sessionStorage.getItem("igreen-voz-subtab") || "nova";
+      return fromSs === "multichannel" ? "textos" : fromSs;
     } catch {
       return "nova";
     }
@@ -55,15 +56,24 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
   useEffect(() => {
     const onSub = (e: Event) => {
       const detail = (e as CustomEvent).detail as { sub?: string } | undefined;
-      if (detail?.sub) setSubTab(detail.sub);
+      if (!detail?.sub) return;
+      // Legado: pizza/alertas usavam "multichannel" — aba real é "textos".
+      setSubTab(detail.sub === "multichannel" ? "textos" : detail.sub);
     };
     window.addEventListener("igreen-voz-subtab", onSub);
     // Deep-link /admin?tab=voz&sub=textos (Motor → Grupo B)
     try {
       const fromUrl = new URLSearchParams(window.location.search).get("sub");
-      if (fromUrl) setSubTab(fromUrl);
+      if (fromUrl) setSubTab(fromUrl === "multichannel" ? "textos" : fromUrl);
     } catch { /* noop */ }
     return () => window.removeEventListener("igreen-voz-subtab", onSub);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("igreen-voz-subtab");
+      if (raw === "multichannel") sessionStorage.setItem("igreen-voz-subtab", "textos");
+    } catch { /* noop */ }
   }, []);
 
   useEffect(() => {

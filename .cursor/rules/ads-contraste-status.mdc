@@ -1,0 +1,39 @@
+---
+description: Contraste de status na Central de Anúncios — nunca mid-tone sobre tint
+globs: src/components/admin/ads/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# Ads — contraste de status (nunca amarelo no amarelo)
+
+Cor semântica **pode** mudar conforme a informação (ok / aviso / erro). O que **não pode** é texto mid-tone sobre fundo tint da mesma cor.
+
+## Proibido
+
+- `text-warning` + `bg-warning/15` (ou `/20`)
+- `text-destructive` + `bg-destructive/10` no **corpo** do alerta
+- Herdar cor de status no texto e aplicar `opacity-70` / `opacity-80`
+- Usar `--warning` / `--info` genéricos do tema global dentro de `.ads-central-2026` para chips
+
+## Padrão obrigatório
+
+| Papel | Token / classe |
+|---|---|
+| Fundo tint | `hsl(var(--ads-warn\|danger\|emerald) / .08–.12)` |
+| Título / ícone / badge | `--ads-*-fg` escuro (`--ads-warn-fg`, `--ads-danger-fg`, `--ads-emerald-2`) |
+| Corpo / mensagem / métricas | `--ads-text` ou `--ads-muted` (sempre) |
+| Chip pronto | `.ads-chip-ok` / `.ads-chip-warn` / `.ads-chip-danger` / `.ads-chip-info` / `.ads-chip-muted` |
+| Alerta erro | `.ads-alert-danger` + `.ads-alert-title` |
+
+## Exemplo
+
+```tsx
+// ❌
+<div className="bg-warning/15 text-warning"><span className="opacity-80">{msg}</span></div>
+
+// ✅
+<div className="bg-[hsl(var(--ads-warn)/.1)] border border-[hsl(var(--ads-warn)/.28)] text-[hsl(var(--ads-text))]">
+  <div className="font-bold text-[hsl(var(--ads-warn-fg))]">Pausada</div>
+  <div className="text-[hsl(var(--ads-muted))]">{msg}</div>
+</div>
+```
