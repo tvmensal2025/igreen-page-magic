@@ -6363,10 +6363,113 @@ export type Database = {
         }
         Relationships: []
       }
+      igreen_campanha_boleto_elegiveis: {
+        Row: {
+          abertos: number | null
+          celular: string | null
+          cidade: string | null
+          consultant_id: string
+          dias_atraso: number | null
+          id: string
+          idcliente: number
+          idlicenciado: string | null
+          igreen_account_id: string | null
+          licenciado: string | null
+          nome: string | null
+          propria: boolean | null
+          raw_json: Json | null
+          synced_at: string | null
+          uf: string | null
+          updated_at: string | null
+          url_boleto: string | null
+          valor: number | null
+          vencimento: string | null
+        }
+        Insert: {
+          abertos?: number | null
+          celular?: string | null
+          cidade?: string | null
+          consultant_id: string
+          dias_atraso?: number | null
+          id?: string
+          idcliente: number
+          idlicenciado?: string | null
+          igreen_account_id?: string | null
+          licenciado?: string | null
+          nome?: string | null
+          propria?: boolean | null
+          raw_json?: Json | null
+          synced_at?: string | null
+          uf?: string | null
+          updated_at?: string | null
+          url_boleto?: string | null
+          valor?: number | null
+          vencimento?: string | null
+        }
+        Update: {
+          abertos?: number | null
+          celular?: string | null
+          cidade?: string | null
+          consultant_id?: string
+          dias_atraso?: number | null
+          id?: string
+          idcliente?: number
+          idlicenciado?: string | null
+          igreen_account_id?: string | null
+          licenciado?: string | null
+          nome?: string | null
+          propria?: boolean | null
+          raw_json?: Json | null
+          synced_at?: string | null
+          uf?: string | null
+          updated_at?: string | null
+          url_boleto?: string | null
+          valor?: number | null
+          vencimento?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "igreen_campanha_boleto_elegiveis_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_campanha_boleto_elegiveis_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_campanha_boleto_elegiveis_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_campanha_boleto_elegiveis_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_campanha_boleto_elegiveis_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       igreen_consultant_metrics: {
         Row: {
           ag_assinatura_n: number | null
           aguardando_n: number | null
+          campanha_boleto_json: Json | null
           cancelados_n: number | null
           cashback_green_saldo: number | null
           cashback_json: Json | null
@@ -6381,9 +6484,13 @@ export type Database = {
           devolutivas_n: number | null
           diretos: number | null
           diretos_ativos: number | null
+          extrato_expansao_json: Json | null
+          extrato_kwh_json: Json | null
+          financeiro_json: Json | null
           gi_mes: number | null
           gp_mes: number | null
           id: string
+          igreen_account_id: string | null
           kwh_validados: number | null
           licenciados_ativos: number | null
           licenciados_total: number | null
@@ -6393,6 +6500,7 @@ export type Database = {
           painel_onboarding_json: Json | null
           painel_ranking_json: Json | null
           raw_json: Json | null
+          rede_overview_json: Json | null
           rede_ranking_pos: number | null
           rede_tamanho: number | null
           reprovados_n: number | null
@@ -6400,9 +6508,11 @@ export type Database = {
           rotina_mensal: Json | null
           rotina_semanal: Json | null
           seguros_apolices_total: number | null
+          seguros_pendencias_json: Json | null
           seguros_resumo_json: Json | null
           synced_at: string
           telecom_ativos_total: number | null
+          telecom_pendencias_json: Json | null
           telecom_resumo_json: Json | null
           total_cadastros: number | null
           updated_at: string
@@ -6411,6 +6521,7 @@ export type Database = {
         Insert: {
           ag_assinatura_n?: number | null
           aguardando_n?: number | null
+          campanha_boleto_json?: Json | null
           cancelados_n?: number | null
           cashback_green_saldo?: number | null
           cashback_json?: Json | null
@@ -6425,9 +6536,13 @@ export type Database = {
           devolutivas_n?: number | null
           diretos?: number | null
           diretos_ativos?: number | null
+          extrato_expansao_json?: Json | null
+          extrato_kwh_json?: Json | null
+          financeiro_json?: Json | null
           gi_mes?: number | null
           gp_mes?: number | null
           id?: string
+          igreen_account_id?: string | null
           kwh_validados?: number | null
           licenciados_ativos?: number | null
           licenciados_total?: number | null
@@ -6437,6 +6552,7 @@ export type Database = {
           painel_onboarding_json?: Json | null
           painel_ranking_json?: Json | null
           raw_json?: Json | null
+          rede_overview_json?: Json | null
           rede_ranking_pos?: number | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
@@ -6444,9 +6560,11 @@ export type Database = {
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
           seguros_apolices_total?: number | null
+          seguros_pendencias_json?: Json | null
           seguros_resumo_json?: Json | null
           synced_at?: string
           telecom_ativos_total?: number | null
+          telecom_pendencias_json?: Json | null
           telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
@@ -6455,6 +6573,7 @@ export type Database = {
         Update: {
           ag_assinatura_n?: number | null
           aguardando_n?: number | null
+          campanha_boleto_json?: Json | null
           cancelados_n?: number | null
           cashback_green_saldo?: number | null
           cashback_json?: Json | null
@@ -6469,9 +6588,13 @@ export type Database = {
           devolutivas_n?: number | null
           diretos?: number | null
           diretos_ativos?: number | null
+          extrato_expansao_json?: Json | null
+          extrato_kwh_json?: Json | null
+          financeiro_json?: Json | null
           gi_mes?: number | null
           gp_mes?: number | null
           id?: string
+          igreen_account_id?: string | null
           kwh_validados?: number | null
           licenciados_ativos?: number | null
           licenciados_total?: number | null
@@ -6481,6 +6604,7 @@ export type Database = {
           painel_onboarding_json?: Json | null
           painel_ranking_json?: Json | null
           raw_json?: Json | null
+          rede_overview_json?: Json | null
           rede_ranking_pos?: number | null
           rede_tamanho?: number | null
           reprovados_n?: number | null
@@ -6488,9 +6612,11 @@ export type Database = {
           rotina_mensal?: Json | null
           rotina_semanal?: Json | null
           seguros_apolices_total?: number | null
+          seguros_pendencias_json?: Json | null
           seguros_resumo_json?: Json | null
           synced_at?: string
           telecom_ativos_total?: number | null
+          telecom_pendencias_json?: Json | null
           telecom_resumo_json?: Json | null
           total_cadastros?: number | null
           updated_at?: string
@@ -6525,6 +6651,13 @@ export type Database = {
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
           },
+          {
+            foreignKeyName: "igreen_consultant_metrics_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
         ]
       }
       igreen_customer_boletos: {
@@ -6538,6 +6671,7 @@ export type Database = {
           fornecedora: string | null
           id: string
           idcliente: number
+          igreen_account_id: string | null
           injecao: boolean | null
           kwh_compensado: number | null
           mes_referencia: string | null
@@ -6566,6 +6700,7 @@ export type Database = {
           fornecedora?: string | null
           id?: string
           idcliente: number
+          igreen_account_id?: string | null
           injecao?: boolean | null
           kwh_compensado?: number | null
           mes_referencia?: string | null
@@ -6594,6 +6729,7 @@ export type Database = {
           fornecedora?: string | null
           id?: string
           idcliente?: number
+          igreen_account_id?: string | null
           injecao?: boolean | null
           kwh_compensado?: number | null
           mes_referencia?: string | null
@@ -6648,6 +6784,13 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "igreen_customer_boletos_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
         ]
       }
       igreen_customer_devolutivas: {
@@ -6662,6 +6805,7 @@ export type Database = {
           id: string
           idcliente: number
           iddevolutiva: number | null
+          igreen_account_id: string | null
           impeditiva: boolean | null
           licenciado: string | null
           motivo: string | null
@@ -6684,6 +6828,7 @@ export type Database = {
           id?: string
           idcliente: number
           iddevolutiva?: number | null
+          igreen_account_id?: string | null
           impeditiva?: boolean | null
           licenciado?: string | null
           motivo?: string | null
@@ -6706,6 +6851,7 @@ export type Database = {
           id?: string
           idcliente?: number
           iddevolutiva?: number | null
+          igreen_account_id?: string | null
           impeditiva?: boolean | null
           licenciado?: string | null
           motivo?: string | null
@@ -6751,6 +6897,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_devolutivas_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -6814,6 +6967,7 @@ export type Database = {
           consultant_id: string
           created_at: string
           id: string
+          igreen_account_id: string | null
           mes_referencia: string
           payload: Json
         }
@@ -6821,6 +6975,7 @@ export type Database = {
           consultant_id: string
           created_at?: string
           id?: string
+          igreen_account_id?: string | null
           mes_referencia: string
           payload?: Json
         }
@@ -6828,10 +6983,19 @@ export type Database = {
           consultant_id?: string
           created_at?: string
           id?: string
+          igreen_account_id?: string | null
           mes_referencia?: string
           payload?: Json
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_network_snapshots_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       igreen_portal_accounts: {
         Row: {
@@ -7042,6 +7206,7 @@ export type Database = {
           descricao: string | null
           external_id: string | null
           id: string
+          igreen_account_id: string | null
           mes_referencia: string
           origem: string | null
           raw: Json
@@ -7055,6 +7220,7 @@ export type Database = {
           descricao?: string | null
           external_id?: string | null
           id?: string
+          igreen_account_id?: string | null
           mes_referencia: string
           origem?: string | null
           raw?: Json
@@ -7068,6 +7234,7 @@ export type Database = {
           descricao?: string | null
           external_id?: string | null
           id?: string
+          igreen_account_id?: string | null
           mes_referencia?: string
           origem?: string | null
           raw?: Json
@@ -7075,7 +7242,15 @@ export type Database = {
           updated_at?: string
           valor_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_seguros_comissoes_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       igreen_seguros_customers: {
         Row: {
@@ -7086,6 +7261,7 @@ export type Database = {
           created_at: string
           fipe: number | null
           id: string
+          igreen_account_id: string | null
           licenciado: string | null
           mensal: number | null
           modelo: string | null
@@ -7109,6 +7285,7 @@ export type Database = {
           created_at?: string
           fipe?: number | null
           id?: string
+          igreen_account_id?: string | null
           licenciado?: string | null
           mensal?: number | null
           modelo?: string | null
@@ -7132,6 +7309,7 @@ export type Database = {
           created_at?: string
           fipe?: number | null
           id?: string
+          igreen_account_id?: string | null
           licenciado?: string | null
           mensal?: number | null
           modelo?: string | null
@@ -7175,6 +7353,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "igreen_seguros_customers_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -7247,6 +7432,7 @@ export type Database = {
           descricao: string | null
           external_id: string | null
           id: string
+          igreen_account_id: string | null
           mes_referencia: string
           origem: string | null
           raw: Json
@@ -7260,6 +7446,7 @@ export type Database = {
           descricao?: string | null
           external_id?: string | null
           id?: string
+          igreen_account_id?: string | null
           mes_referencia: string
           origem?: string | null
           raw?: Json
@@ -7273,6 +7460,7 @@ export type Database = {
           descricao?: string | null
           external_id?: string | null
           id?: string
+          igreen_account_id?: string | null
           mes_referencia?: string
           origem?: string | null
           raw?: Json
@@ -7280,7 +7468,15 @@ export type Database = {
           updated_at?: string
           valor_cents?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_telecom_comissoes_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       igreen_telecom_customers: {
         Row: {
@@ -7293,6 +7489,7 @@ export type Database = {
           fatura_valor: number | null
           id: string
           idcnxtelecom: number
+          igreen_account_id: string | null
           licenciado: string | null
           nome: string | null
           numero: string | null
@@ -7313,6 +7510,7 @@ export type Database = {
           fatura_valor?: number | null
           id?: string
           idcnxtelecom: number
+          igreen_account_id?: string | null
           licenciado?: string | null
           nome?: string | null
           numero?: string | null
@@ -7333,6 +7531,7 @@ export type Database = {
           fatura_valor?: number | null
           id?: string
           idcnxtelecom?: number
+          igreen_account_id?: string | null
           licenciado?: string | null
           nome?: string | null
           numero?: string | null
@@ -7372,6 +7571,13 @@ export type Database = {
             referencedRelation: "v_flow_engine_health"
             referencedColumns: ["consultant_id"]
           },
+          {
+            foreignKeyName: "igreen_telecom_customers_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
         ]
       }
       igreen_telecom_faturas: {
@@ -7380,6 +7586,7 @@ export type Database = {
           created_at: string
           id: string
           idcnxtelecom: string | null
+          igreen_account_id: string | null
           mes_referencia: string
           msisdn: string | null
           pago_em: string | null
@@ -7394,6 +7601,7 @@ export type Database = {
           created_at?: string
           id?: string
           idcnxtelecom?: string | null
+          igreen_account_id?: string | null
           mes_referencia: string
           msisdn?: string | null
           pago_em?: string | null
@@ -7408,6 +7616,7 @@ export type Database = {
           created_at?: string
           id?: string
           idcnxtelecom?: string | null
+          igreen_account_id?: string | null
           mes_referencia?: string
           msisdn?: string | null
           pago_em?: string | null
@@ -7417,7 +7626,15 @@ export type Database = {
           valor_cents?: number | null
           vencimento?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_telecom_faturas_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       igreen_telecom_linhas: {
         Row: {
@@ -7430,6 +7647,7 @@ export type Database = {
           iccid: string | null
           id: string
           idcnxtelecom: string | null
+          igreen_account_id: string | null
           msisdn: string | null
           plano: string | null
           raw: Json
@@ -7446,6 +7664,7 @@ export type Database = {
           iccid?: string | null
           id?: string
           idcnxtelecom?: string | null
+          igreen_account_id?: string | null
           msisdn?: string | null
           plano?: string | null
           raw?: Json
@@ -7462,13 +7681,22 @@ export type Database = {
           iccid?: string | null
           id?: string
           idcnxtelecom?: string | null
+          igreen_account_id?: string | null
           msisdn?: string | null
           plano?: string | null
           raw?: Json
           status?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "igreen_telecom_linhas_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inbound_media_failures: {
         Row: {
@@ -12280,6 +12508,7 @@ export type Database = {
           fornecedora: string | null
           id: string | null
           idcliente: number | null
+          igreen_account_id: string | null
           injecao: boolean | null
           kwh_compensado: number | null
           mes_referencia: string | null
@@ -12332,6 +12561,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "igreen_customer_boletos_igreen_account_id_fkey"
+            columns: ["igreen_account_id"]
+            isOneToOne: false
+            referencedRelation: "igreen_portal_accounts"
             referencedColumns: ["id"]
           },
         ]
