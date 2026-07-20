@@ -600,8 +600,8 @@ export function DashboardTab({
         const showBar = analyticsMissing || (walletTotal > 0 && shown === 0) || (walletTotal === 0 && (analytics?.allCustomers?.length ?? 0) === 0);
         if (!showBar) return null;
         return (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[12px] min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-amber-200/90 min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-amber-900 min-w-0">
               {analyticsMissing ? (
                 <span>Não consegui ler seus clientes agora.</span>
               ) : walletTotal > 0 ? (
