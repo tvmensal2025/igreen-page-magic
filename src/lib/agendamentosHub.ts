@@ -10,12 +10,18 @@ export type AgendamentoTimelineKind =
 
 export type AgendamentoTimelineStatus = "pending" | "overdue" | "running" | "sent" | "failed";
 
+export interface CadenceButton {
+  id: string;
+  title: string;
+}
+
 export interface AgendamentoTimelineItem {
   id: string;
   kind: AgendamentoTimelineKind;
   title: string;
   preview?: string | null;
   audio_url?: string | null;
+  buttons?: CadenceButton[] | null;
   at: Date;
   status: AgendamentoTimelineStatus;
   badge: string;
@@ -143,6 +149,7 @@ export function dispatchAgendamentosNav(detail: AgendamentosNavDetail) {
 export interface CadenceStageInfo {
   message_text: string | null;
   audio_url: string | null;
+  buttons: CadenceButton[] | null;
 }
 
 export function buildAgendamentosTimeline(input: {
@@ -250,6 +257,7 @@ export function buildAgendamentosTimeline(input: {
       title: c.customer_name || c.customer_phone || "Lead",
       preview: rendered || `${channel} · ${label}`,
       audio_url: info?.audio_url ?? null,
+      buttons: info?.buttons ?? null,
       at,
       status: paused ? "pending" : at.getTime() <= now ? "overdue" : "pending",
       badge: `Motor A→B→C · ${label}`,

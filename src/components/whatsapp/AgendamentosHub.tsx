@@ -1490,7 +1490,7 @@ function TimelineItemDialog({
                 </>
               )}
             </div>
-          ) : item.preview || item.audio_url ? (
+          ) : item.preview || item.audio_url || item.buttons?.length ? (
             <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-2">
               <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Prévia</p>
               {item.preview && (
@@ -1498,6 +1498,21 @@ function TimelineItemDialog({
               )}
               {item.audio_url && (
                 <audio controls src={item.audio_url} className="w-full h-9" preload="none" />
+              )}
+              {item.buttons && item.buttons.length > 0 && (
+                <div className="pt-1">
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Botões do WhatsApp</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.buttons.map((b) => (
+                      <span
+                        key={b.id}
+                        className="inline-flex items-center rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-xs font-medium text-primary"
+                      >
+                        {b.title}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           ) : null}

@@ -186,22 +186,27 @@ export function useAgendamentosHub(consultantId: string) {
       // Preferência: config do consultor; fallback: config global (consultant_id IS NULL).
       const stageCfg = await (supabase as any)
         .from("cadence_stage_config")
-        .select("stage, message_text, voice_audio_clip_id, consultant_id")
+        .select("stage, message_text, voice_audio_clip_id, buttons, consultant_id")
         .or(`consultant_id.eq.${consultantId},consultant_id.is.null`);
       const cfgRows = (stageCfg.data || []) as Array<{
         stage: string;
         message_text: string | null;
         voice_audio_clip_id: string | null;
+        buttons: unknown;
         consultant_id: string | null;
       }>;
       // consultor tem prioridade sobre global
-      const cfgByStage = new Map<string, { message_text: string | null; voice_audio_clip_id: string | null }>();
+      const cfgByStage = new Map<
+        string,
+        { message_text: string | null; voice_audio_clip_id: string | null; buttons: unknown }
+      >();
       for (const row of cfgRows) {
         const existing = cfgByStage.get(row.stage);
         if (!existing || row.consultant_id) {
           cfgByStage.set(row.stage, {
             message_text: row.message_text,
             voice_audio_clip_id: row.voice_audio_clip_id,
+            buttons: row.buttons,
           });
         }
       }
@@ -220,9 +225,14 @@ export function useAgendamentosHub(consultantId: string) {
       }
       const stageInfo: Record<string, CadenceStageInfo> = {};
       for (const [stage, v] of cfgByStage.entries()) {
+        const btnRaw = Array.isArray(v.buttons) ? v.buttons : [];
+        const buttons = btnRaw
+          .map((b: any) => (b && typeof b === "object" && b.title ? { id: String(b.id ?? b.title), title: String(b.title) } : null))
+          .filter(Boolean) as { id: string; title: string }[];
         stageInfo[stage] = {
           message_text: v.message_text,
           audio_url: v.voice_audio_clip_id ? clipMap.get(v.voice_audio_clip_id) ?? null : null,
+          buttons: buttons.length ? buttons : null,
         };
       }
       setCadenceStageInfo(stageInfo);
