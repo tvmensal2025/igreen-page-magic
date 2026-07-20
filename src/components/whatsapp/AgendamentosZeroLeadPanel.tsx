@@ -361,6 +361,7 @@ export function AgendamentosZeroLeadPanel({
           portal_submitted_at: c.portal_submitted_at,
           do_not_contact: c.do_not_contact,
           paused_reason: r.paused_reason,
+          active_cadence: !!r.next_action_at,
         })) return [];
         const phone = c?.phone_whatsapp || "";
         const billAttention = billAttentionFromCustomer(c);

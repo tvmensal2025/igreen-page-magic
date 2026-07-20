@@ -212,7 +212,7 @@ export function useAgendamentosHub(consultantId: string) {
       const eligibleCadence = cadenceRows.filter((r) => {
         const c = custMap.get(r.customer_id);
         if (!c) return false;
-        return isCycleLeadEligible({ ...c, paused_reason: r.paused_reason });
+        return isCycleLeadEligible({ ...c, paused_reason: r.paused_reason, active_cadence: !!r.next_action_at });
       });
       setCadence(
         eligibleCadence.map((r) => ({

@@ -57,6 +57,7 @@ export interface CycleEligibilityInput {
   portal_submitted_at?: string | null;
   do_not_contact?: boolean | null;
   paused_reason?: string | null;
+  active_cadence?: boolean | null;
 }
 
 /**
@@ -71,7 +72,7 @@ export function isCycleLeadEligible(c: CycleEligibilityInput): boolean {
   if (isNuncaMaisContatar(c)) return false;
   if (isCrmCadastroEmAnalise(c)) return false;
   const step = String(c.conversation_step || "").trim().toLowerCase();
-  if (DEAD_CONVERSATION_STEPS.has(step)) return false;
+  if (DEAD_CONVERSATION_STEPS.has(step) && !c.active_cadence) return false;
   if (isFrozenPauseReason(c.paused_reason)) return false;
   return true;
 }
