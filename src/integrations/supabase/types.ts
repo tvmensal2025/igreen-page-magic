@@ -12874,6 +12874,7 @@ export type Database = {
         }
         Returns: Json
       }
+      clamp_to_business_window_brt: { Args: { ts: string }; Returns: string }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
       clear_pending_inbound: {
