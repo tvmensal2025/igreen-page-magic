@@ -28,8 +28,8 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
 
   const cards = [
     { icon: DollarSign, label: "Gasto Ads", value: fmtBRL(data?.spendCents ?? 0), tone: "text-primary" },
-    { icon: Users, label: "Leads reportados pela Meta", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
-    { icon: Target, label: "Custo/lead Meta", value: data?.cplCents != null ? fmtBRL(data.cplCents) : "—", tone: "text-warning" },
+    { icon: Users, label: "Leads / Conversas Meta", value: fmtNum(data?.leads ?? 0), tone: "text-primary" },
+    { icon: Target, label: "Custo por lead", value: data?.cplCents != null ? fmtBRL(data.cplCents) : "—", tone: "text-warning" },
     { icon: Eye, label: "Impressões", value: fmtNum(data?.impressions ?? 0), tone: "text-info" },
     { icon: MousePointerClick, label: "Cliques", value: fmtNum(data?.clicks ?? 0), tone: "text-primary" },
     { icon: TrendingUp, label: "CTR", value: data?.ctr != null ? `${(data.ctr * 100).toFixed(2)}%` : "—", tone: "text-primary" },
