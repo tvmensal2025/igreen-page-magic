@@ -11,8 +11,9 @@ interface AnalyticsChartsProps {
 }
 
 function useChartColors() {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+  useTheme();
+  const isDark = false;
+
   return {
     grid: isDark ? "hsl(120, 8%, 18%)" : "hsl(220, 10%, 88%)",
     text: isDark ? "hsl(120, 5%, 65%)" : "hsl(220, 10%, 45%)",
