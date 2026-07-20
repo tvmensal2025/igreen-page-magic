@@ -117,12 +117,25 @@ export default function AdminChecklist() {
     }
   };
 
+  const systemDone = useMemo(() => {
+    const okKeys = new Set(auto.filter((a) => a.ok === true).map((a) => a.key));
+    return new Set(
+      ZERO_LEAD_CHECKLIST.filter((it) => it.autoKey && okKeys.has(it.autoKey)).map((it) => it.key),
+    );
+  }, [auto]);
+
+  const effectiveDone = useMemo(() => {
+    const merged = new Set(done);
+    for (const key of systemDone) merged.add(key);
+    return merged;
+  }, [done, systemDone]);
+
   const visible = useMemo(
-    () => (showDone ? ZERO_LEAD_CHECKLIST : ZERO_LEAD_CHECKLIST.filter((i) => !done.has(i.key))),
-    [done, showDone],
+    () => (showDone ? ZERO_LEAD_CHECKLIST : ZERO_LEAD_CHECKLIST.filter((i) => !effectiveDone.has(i.key))),
+    [effectiveDone, showDone],
   );
   const total = ZERO_LEAD_CHECKLIST.length;
-  const completed = done.size;
+  const completed = effectiveDone.size;
   const pct = Math.round((completed / Math.max(total, 1)) * 100);
 
   const autoOk = auto.filter((a) => a.ok === true).length;
