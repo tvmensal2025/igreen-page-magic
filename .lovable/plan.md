@@ -1,71 +1,99 @@
-## Diagnóstico (dados reais consultados agora)
+# Validação Geral — Deixar o Sistema 100% Funcional
 
-Consultei `lead_cadence_state` e a divergência é clara:
+Objetivo: rodar uma **auditoria viva** (dados reais + código real) em tudo que mexemos nas últimas sessões, gerar um **relatório de status por área** e corrigir apenas o que estiver comprovadamente quebrado. Nada de mudança especulativa.
 
-| Segmento | Qtd | Aparece na Pizza? | Aparece em "Próximos envios"? |
-|---|---|---|---|
-| COLD_1 congelado (`manual_admin_clear_sla_backlog`) | 61 | ❌ excluído | ✅ **aparece** |
-| PAUSED `dnc` | 17 | ❌ excluído | ✅ **aparece** |
-| PAUSED `handoff_humano` | 4 | ❌ excluído | ✅ **aparece** |
-| PAUSED `invalid_phone` | 12 + 5 + 3 = 20 | ❌ perdido (sem `prev`) | ✅ **aparece** |
-| `not_lead_outside_dddXX` | 5 | parcialmente | ✅ **aparece** |
-| AI_QUALIFYING / GREETED / COLD_1 sem pause | ~52 | ✅ pizza A/B | ✅ aparece |
-| PAUSED `lead_responded[:A]` | 30 | ✅ pizza A "flow" | ✅ aparece |
+---
 
-**Total agendado bruto:** 185 (hub mostra 143 depois de dedup/cortes) — **Total na pizza:** ~82.
+## 1. Áreas a validar
 
-**Causa raiz:** o hook `useAgendamentosHub` (`src/hooks/useAgendamentosHub.ts` L117-124) lê `lead_cadence_state` **sem nenhum filtro de elegibilidade**, enquanto `ReheatCyclePizza` aplica `isCycleLeadEligible` (exclui `manual_admin_clear_sla_backlog`, `dnc`, `handoff_humano`, `opt_out`, `invalid_phone`, DND, origens iGreen wallet, status já aprovado/rejeitado, etc.).
+Cada área tem: **o que checar**, **como checar** e **critério de OK**.
 
-Resultado: o painel de agendamentos exibe pessoas que o motor **nunca vai despachar** (o próprio `cadence-tick` também pula esses `paused_reason`), causando a sensação de "cadê essas pessoas na pizza?".
+### A. Motor de Cadência (A → B → C)
 
-## O que fazer
+- `daily_reheat_settings.enabled` e `live_dispatch_enabled` = true
+- `automation_toggles` dos 9 estágios (CALL_1..RECALL_YEARLY) ligados
+- `cadence_stage_config` sem `enabled=false` onde o toggle está ON
+- `lead_cadence_state`: contagem por `next_stage`, `next_run_at` dentro da janela 08–20 BRT seg–sex
+- `journey_runs`: leads em A avançam para B após simulação, B → C após cadastro
+- **OK se:** dry-run do `cadence-tick` retorna leads elegíveis em cada estágio e nada fora da janela.
 
-Alinhar **1 fonte de verdade** para "quem está no ciclo A/B/C": mesma regra na pizza, no hub de agendamentos e no motor.
+### B. Textos & Áudios (Grupo A e Grupo B)
 
-### 1. Extrair filtro compartilhado
-Criar `src/lib/cycleEligibility.ts` exportando:
-- `FROZEN_PAUSE_REASONS` (incluindo os que faltavam: `invalid_phone`, `not_lead_outside_ddd*`, `opt_out`, `dnc:*`)
-- `isCycleLeadEligible(customer, pausedReason)` — mesma lógica de hoje em `ReheatCyclePizza.tsx` L181-199
-- `isPausedGroupA(pausedReason)` — hoje em L158-170
+- `cadence_stage_config.message_text` reflete o que está salvo no `MultichannelTextsPanel`
+- `voice_audio_clip_id` presente para todos os estágios de voz (CALL_1, CALL_2, CALL_3, recalls)
+- `bot_flow_steps` (Grupo A) espelha o painel via `syncCadenceLibraryToStageConfig`
+- `{{consultor_phone}}` renderiza `wa.me/…` no cadence-tick
+- **OK se:** `loadCadenceGaps()` retorna array vazio E os textos exibidos no `/admin/textos` batem com o banco.
 
-Refatorar `ReheatCyclePizza.tsx` para importar dessas funções (sem mudar comportamento).
+### C. Agendamentos / Pizza
 
-### 2. Aplicar o filtro no hub de agendamentos
-Em `src/hooks/useAgendamentosHub.ts`:
-- Após buscar `cadenceRows`, carregar de `customers` os campos usados pelo filtro (já busca `name`/`phone_whatsapp` — adicionar `customer_origin, status, conversation_step, portal_submitted_at, do_not_contact` no mesmo `select`).
-- Cruzar com `paused_reason` de cada linha (ampliar o `select` de `lead_cadence_state` para incluir `paused_reason`).
-- Descartar linhas onde `isCycleLeadEligible` = false OU (`stage='PAUSED'` E não classificável como A/B/C via `paused_reason`).
+- `AgendamentosHub` mostra os mesmos N leads que a Pizza (`cycleEligibility`)
+- Preview mostra texto + áudio + botões de WhatsApp
+- Nenhum agendamento em horário proibido (`clamp_to_business_window_brt` ativo)
+- **OK se:** soma de canais na Pizza = total do Hub, e amostras de 5 agendamentos abrem preview completo.
 
-Isso faz "Próximos envios" mostrar exatamente as mesmas pessoas da pizza.
+### D. Fluxo Sofia (Portal → OTP → Facial)
 
-### 3. Aba "Congelados / fora do ciclo"
-Ninguém some sem rastro. Adicionar um contador clicável no cabeçalho do hub ("⏸️ 78 fora do ciclo") que abre uma lista com motivo (`manual_admin_clear_sla_backlog`, `dnc`, `invalid_phone`, `handoff_humano`, …) e ações:
-- **Reativar** (limpa `paused_reason`, reagenda `next_action_at` para próximo slot útil)
-- **Arquivar** (marca `PAUSED` com `dnc` explícito)
+- Confirmação de dados é sempre do cliente (nunca do consultor)
+- OCR com 3 retries
+- `tryInterceptOtp` dispara link facial automaticamente após `validating_otp`
+- Watchdog não pula etapas
+- **OK se:** um lead real (ex.: 11971254913) percorre A→B→C sem takeover indevido.
 
-### 4. Limpar `next_action_at` de quem está congelado
-Migration/insert único: para todas as linhas com `paused_reason` em `FROZEN_PAUSE_REASONS`, zerar `next_action_at` (o motor já ignora, mas isso remove do "radar futuro" de qualquer view/consulta que só olhe `next_action_at is not null`). Reversível pelo botão Reativar da aba nova.
+### E. Meta / Ads
 
-### 5. Contador da pizza vs. hub — mesma métrica
-Trocar o subtítulo "143 Próximos envios" no cabeçalho do admin (`src/pages/AdminAgendamentos*` ou componente equivalente) para usar o mesmo total exibido em "A/B/C no radar", garantindo que o número bata visualmente.
+- `platform_facebook_account` conectado, token não expirado
+- `facebook_metrics_daily` populando `messaging_conversations_started`
+- Card "Leads / Conversas Meta" com valor > 0 nos últimos 7 dias
+- **OK se:** CPL calculado bate com gasto/conversas.
 
-## Riscos e validação
+### F. Tema Claro & Contraste
 
-- Motor de envio (`cadence-tick`, `daily-reheat-cron`) não muda — ele já pula esses `paused_reason`. Só estamos alinhando a UI.
-- Após aplicar, esperar: Pizza total ≈ Agendamentos "Próximos envios" (±diferenças de manual/pós-venda/campanhas, que continuam separados por design).
-- Validação SQL sugerida:
-  ```sql
-  SELECT count(*) FROM lead_cadence_state l
-  JOIN customers c ON c.id = l.customer_id
-  WHERE l.next_action_at IS NOT NULL
-    AND (l.paused_reason IS NULL OR l.paused_reason IN ('lead_responded','lead_responded:AI_QUALIFYING','lead_responded:NEW','lead_responded:GREETED'))
-    AND c.do_not_contact = false
-    AND c.status NOT IN ('approved','registered_igreen','cadastro_concluido','rejected','contato_incompleto');
-  ```
-  Esse número tem que bater com o total da pizza.
+- `ThemeContext` travado em `light`
+- Sem uso de `bg-black`, `text-white`, `dark:` hardcoded em componentes tocados
+- Banners de alerta com contraste AA (amber-50/900, emerald-50/900)
+- **OK se:** varredura `rg "dark:|text-white|bg-black"` em src/components/admin retorna apenas ocorrências legítimas.
 
-## Não faz parte deste plano
+### G. Mobile / ForceDesktopLayout
 
-- Mudar o motor de disparo (`cadence-tick`) — já filtra correto.
-- Mexer em pós-venda, bulk, voice — visíveis separadamente por design.
-- Alterar horário/janela — trava de 20h já implementada no turno anterior.
+- Cockpit de Conversão renderiza em 1280px virtual e escala para viewport real
+- KPIs, abas e cards sem sobreposição no preview mobile
+- **OK se:** screenshot Playwright 360×800 mostra layout íntegro (sem colisão).
+
+### H. Checklist do Dashboard
+
+- `runZeroLeadAutoAudit` marca automaticamente itens já resolvidos
+- Percentual > 0% (hoje aparece 0% mesmo com muita coisa pronta)
+- **OK se:** ao abrir `/admin/checklist`, o % reflete o estado real do banco.
+
+---
+
+## 2. Método de execução
+
+1. **Leitura de dados reais** via `supabase--read_query` para cada área acima (queries pequenas e diretas, sem alterar nada).
+2. **Dry-run** do `cadence-tick` (edge function) para ver leads elegíveis.
+3. **Playwright headless** em `/admin/agendamentos`, `/admin/conversao` (mobile e desktop), `/admin/checklist` — screenshots + leitura de DOM.
+4. **Cross-check** entre o que a UI mostra e o que o banco tem.
+5. Consolidar em um **relatório** com: ✅ OK / ⚠️ divergência / ❌ quebrado, com evidência (query result ou screenshot) em cada linha.
+
+## 3. Correções
+
+Só depois do relatório, listo os itens ❌/⚠️ com **fix mínimo** para cada um e aplico em uma única rodada, sem tocar em nada verde.
+
+## 4. Entregável final
+
+- Relatório de status por área (A–H) no chat.
+- Lista de correções aplicadas, com o arquivo/tabela tocado.
+- Confirmação final: "sistema 100% pronto para produção" ou lista curta de pendências que dependem de decisão sua (ex.: subir áudio faltante, aprovar texto).
+
+## 5. Fora do escopo desta rodada
+
+- Novos features.
+- Refactor amplo (ex.: unificar `daily_reheat` vs `cadence_engine`) — só sinalizo se aparecer como bloqueio real.
+- Mudanças de design/tema além de contraste comprovadamente quebrado.
+
+---
+
+Confirma que sigo com essa validação? Se quiser priorizar uma área (ex.: começar por Agendamentos/Pizza), me diz e ajusto a ordem.  
+  
+LISTAR PRIEMIR PARA VALIDAR, ASSIM QUE LISTOU, ENTRA E VERIFICA A INFORAMCAO
