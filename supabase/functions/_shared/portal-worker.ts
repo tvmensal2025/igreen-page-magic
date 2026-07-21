@@ -8,6 +8,7 @@
 
 import { resolvePortalWhatsapp } from "./portal-phone.ts";
 import { looksLikeFileRef, preflightPortalDocuments } from "./storage-download.ts";
+import { resolvePortalContaTitularidade } from "./title-transfer.ts";
 
 export interface DispatchResult {
   ok: boolean;
@@ -239,11 +240,8 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
       concessionaria: c.distribuidora || "",
       // Sinais que disparam fluxos especiais no Portal 2
       possuiPlacas: false,
-      // UX bot = boleto; portal = titularidade. Mesma escolha: unificado ⇔ transferir.
-      contaUnica: c.contaunica_answered === true ? !!c.contaunica : false,
-      transferirTitularidade: c.contaunica_answered === true
-        ? !!c.contaunica
-        : !!c.transferir_titularidade,
+      // Boleto único ≠ troca de título: título só SP (MG sem titularidade).
+      ...resolvePortalContaTitularidade(c),
       sendcontract: true,
     },
   };

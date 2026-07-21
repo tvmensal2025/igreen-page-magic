@@ -22,6 +22,7 @@ import { Portal2Client, fileFromPath, closeBrowser } from './portal2-api-client.
 import { runAuditPipeline, getAuditCount, sanitize, checkAuditHealth } from './ai-audit.mjs';
 import { classifyPortalError, CORRECTION_PROMPTS } from './portal-errors.mjs';
 import { resolvePortalWhatsapp } from './portal-phone.mjs';
+import { resolvePortalContaTitularidade, requiresTitleTransfer } from './title-transfer.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '.env') });
@@ -629,6 +630,17 @@ app.post('/submit-lead', authRequired, async (req, res) => {
 
   if (!dados?.idconsultor) return res.status(400).json({ ok: false, error: 'dados.idconsultor obrigatório (ou customer_id válido)' });
   if (!dados?.cpf) return res.status(400).json({ ok: false, error: 'dados.cpf obrigatório' });
+
+  // Blindagem UF: MG (e não-SP) nunca envia troca de título — só boleto único.
+  // Não muda conversa com o cliente; só o flag no Portal 2.
+  {
+    const uf = dados.uf || dados.address_state || '';
+    if (!requiresTitleTransfer(uf)) {
+      dados.transferirTitularidade = false;
+    } else if (dados.contaUnica === true && dados.transferirTitularidade == null) {
+      dados.transferirTitularidade = true;
+    }
+  }
 
   // Blindagem: chamadas antigas do webhook podem enviar `dados` completo com
   // consumoMedio=0. Antes de enfileirar, corrige a partir do customer/valor para
@@ -1266,11 +1278,8 @@ function _buildDadosObject(c, consultant, partner, igreenId,
     orgaoExpedidor: c?.orgao_expedidor || '',
     fornecedora: c?.fornecedora || undefined,            // undefined → cadastrarCliente resolve via /bonus/rules
     possuiPlacas: c?.possui_placas ?? false,
-    // UX bot = boleto; portal = titularidade. Mesma escolha: unificado ⇔ transferir.
-    contaUnica: c?.contaunica_answered === true ? !!c?.contaunica : false,
-    transferirTitularidade: c?.contaunica_answered === true
-      ? !!c?.contaunica
-      : (c?.transferir_titularidade ?? false),
+    // Boleto único (contaunica) ≠ troca de título: título só SP (MG = boleto sem titularidade).
+    ...resolvePortalContaTitularidade(c),
     loginDistribuidora: c?.logindistribuidora || '',
     // senhadistribuidora hoje vem TEXT pura do banco (a coleta cifrada
     // chega no PR3). Se vier vazio/null, o worker envia '' — comportamento atual.
