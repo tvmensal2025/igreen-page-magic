@@ -2678,6 +2678,68 @@ export type Database = {
           },
         ]
       }
+      cadence_theme_config: {
+        Row: {
+          consultant_id: string | null
+          created_at: string
+          enabled: boolean
+          id: string
+          sms_text: string
+          theme_id: string
+          updated_at: string
+          wa_text: string
+        }
+        Insert: {
+          consultant_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          sms_text?: string
+          theme_id: string
+          updated_at?: string
+          wa_text?: string
+        }
+        Update: {
+          consultant_id?: string | null
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          sms_text?: string
+          theme_id?: string
+          updated_at?: string
+          wa_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cadence_theme_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "cadence_theme_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_theme_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_theme_config_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
       campaign_match_log: {
         Row: {
           campaign_id: string | null
