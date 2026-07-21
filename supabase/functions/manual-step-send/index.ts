@@ -690,7 +690,12 @@ Deno.serve(async (req) => {
     try {
       const { data: _consultant } = await supabase
         .from("consultants").select("name, display_name").eq("id", body.consultantId).maybeSingle();
-      const _full = String((_consultant as any)?.display_name || (_consultant as any)?.name || "").trim();
+      const { resolvePublicConsultantLabel } = await import("../_shared/consultant-public-label.ts");
+      const _full = resolvePublicConsultantLabel(
+        (_consultant as any)?.name,
+        (_consultant as any)?.display_name,
+        "",
+      );
       _repName = _full.split(/\s+/)[0] || _full;
       // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone.
       _repPhone = await resolveConsultantConnectedWaPhone(supabase, body.consultantId);

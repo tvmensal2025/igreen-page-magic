@@ -40,7 +40,7 @@ import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
-import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
+import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
 import {
   loadCadenceThemes,
   loadLastThemeId,
@@ -518,12 +518,10 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .from("consultants")
       .select("name, display_name, assistant_name")
       .eq("id", consultantId).maybeSingle();
-    const label = resolvePublicConsultantLabel(
+    consultantName = resolvePublicConsultantFirstName(
       (c as { name?: string | null })?.name,
       (c as { display_name?: string | null })?.display_name,
-      "",
     );
-    consultantName = label ? (label.split(/\s+/)[0] || label) : "";
     assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
     // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
     consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);

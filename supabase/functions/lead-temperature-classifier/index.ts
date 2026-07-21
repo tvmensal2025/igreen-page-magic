@@ -121,12 +121,13 @@ function hoursSince(iso: string | null | undefined): number | null {
 }
 
 async function getConsultantName(sb: any, consultantId: string): Promise<string> {
+  const { resolvePublicConsultantLabel } = await import("../_shared/consultant-public-label.ts");
   const { data } = await sb
     .from("consultants")
     .select("name, display_name")
     .eq("id", consultantId)
     .maybeSingle();
-  return data?.display_name || data?.name || "";
+  return resolvePublicConsultantLabel(data?.name, data?.display_name, "") || "";
 }
 
 /**

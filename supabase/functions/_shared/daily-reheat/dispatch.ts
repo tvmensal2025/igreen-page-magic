@@ -15,6 +15,7 @@ import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
 import { assignProtocolToCustomer } from "../protocol.ts";
 import { resolveChannelForCustomer } from "../channel-sender.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
+import { resolvePublicConsultantLabel } from "../consultant-public-label.ts";
 import {
   playAudioFile,
   makeSMS,
@@ -182,7 +183,12 @@ async function loadNames(supabase: SB, customerId: string, consultantId: string 
       .select("name, display_name")
       .eq("id", consultantId)
       .maybeSingle();
-    consultor = (c as any)?.display_name || (c as any)?.name || consultor;
+    // Nunca vazar slug/login (ex.: silviaclaudiaalmeida) no WhatsApp.
+    consultor = resolvePublicConsultantLabel(
+      (c as any)?.name,
+      (c as any)?.display_name,
+      consultor,
+    );
   }
   const nome = safeFirstNameForAddress((cust as any)?.name, (cust as any)?.name_source);
   return {

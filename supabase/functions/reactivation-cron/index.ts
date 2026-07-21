@@ -23,6 +23,7 @@ import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog } from "../_shared/audit.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
+import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
 import {
   checkSendQuota,
   registerSend,
@@ -259,7 +260,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     .from("reactivation_templates")
     .select(`
       id, consultant_id, conversation_step, message_text,
-      consultants:consultant_id (id, name, timezone)
+      consultants:consultant_id (id, name, display_name, timezone)
     `)
     .eq("is_active", true)
     .eq("auto_reactivate", true)
@@ -363,7 +364,9 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     }
 
     const sender = createEvolutionSender(apiUrl, apiKey, instanceName);
-    const consultantName = String(consultant.name || "iGreen").trim().split(/\s+/)[0];
+    // Nunca vazar slug/login no WhatsApp.
+    const consultantName =
+      resolvePublicConsultantFirstName(consultant.name, consultant.display_name) || "iGreen";
 
     // Leads candidatos para este template.
     const candidates = await fetchCandidates(supabase, tpl, settings);

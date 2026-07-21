@@ -1960,14 +1960,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     let sentSomething = false;
 
     // F: texto entra como item ordenável junto com mídias
+    // Nome do lead só com fonte confiável — nunca pushName do Zap.
     let baseText = qa.text_response
-      ? String(qa.text_response).replaceAll("{nome}", customer.name || "").replaceAll("{representante}", nomeRepresentante || "")
+      ? renderTemplateVars(String(qa.text_response), {
+          name: customer.name || "",
+          name_source: (customer as any).name_source,
+          representante: nomeRepresentante || "",
+        })
       : "";
     const nudgeStep = qa.is_closing ? "aguardando_conta" : (step || "qualificacao");
     if (baseText) {
       const { formatFaqReply } = await import("../../_shared/format-reply.ts");
       baseText = formatFaqReply(withQaStepClose(baseText, nudgeStep, {
-        leadName: customer.name || null,
+        leadName: safeFirstNameForAddress((customer as any).name, (customer as any).name_source) || null,
         skip: qa.is_closing,
       }));
     }
@@ -2073,7 +2078,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     // Sem áudio e sem texto do QA: nudge curto só como fallback
     if (sentSomething && !hasPlayableAudio && !responseText && !qa.is_closing) {
-      const nudgeOnly = buildStepNudge(step || "qualificacao", customer.name || null).trim();
+      const nudgeOnly = buildStepNudge(
+        step || "qualificacao",
+        safeFirstNameForAddress((customer as any).name, (customer as any).name_source) || null,
+      ).trim();
       if (nudgeOnly) {
         await sendText(remoteJid, nudgeOnly);
         await supabase.from("conversations").insert({
@@ -2306,9 +2314,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const openingText = (openingQa as any).text_response;
             if (openingText) {
               try {
-                await sendText(remoteJid, String(openingText)
-                  .replaceAll("{nome}", customer.name || "")
-                  .replaceAll("{representante}", nomeRepresentante || ""));
+                await sendText(remoteJid, renderTemplateVars(String(openingText), {
+                  name: customer.name || "",
+                  name_source: (customer as any).name_source,
+                  representante: nomeRepresentante || "",
+                }));
                 await supabase.from("conversations").insert({
                   customer_id: customer.id,
                   message_direction: "outbound",
@@ -2419,8 +2429,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   ) {
     const recoveredName = normalizeLeadName(messageText);
     if (recoveredName) {
+      const first = safeFirstNameForAddress(recoveredName, "self_introduced");
       return {
-        reply: `${recoveredName.split(/\s+/)[0]}, qual a média da sua conta de luz?`,
+        reply: first
+          ? `${first}, qual a média da sua conta de luz?`
+          : "Qual a média da sua conta de luz?",
         updates: { name: recoveredName, name_source: "self_introduced", conversation_step: "qualificacao" },
       };
     }
@@ -2467,7 +2480,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     !isButton
   ) {
     const txt = messageText.trim();
-    const currentNameTrusted = !!(customer as any).name && !isBogusCapturedName((customer as any).name);
+    const currentNameTrusted = !!safeFirstNameForAddress(
+      (customer as any).name,
+      (customer as any).name_source,
+    );
     const typedName = normalizeLeadName(txt);
     const typedBillValue = extractMoneyFromText(txt) ?? 0;
 
@@ -2479,8 +2495,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     if (typedName) {
+      const first = safeFirstNameForAddress(typedName, "self_introduced");
       return {
-        reply: `${typedName.split(/\s+/)[0]}, qual a média da sua conta de luz?`,
+        reply: first
+          ? `${first}, qual a média da sua conta de luz?`
+          : "Qual a média da sua conta de luz?",
         updates: { name: typedName, name_source: "self_introduced", conversation_step: "qualificacao" },
       };
     }
@@ -3587,7 +3606,10 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         updates.name_source = "self_introduced";
         (customer as any).name = capturedName;
         (customer as any).name_source = "self_introduced";
-        reply = `${capturedName.split(/\s+/)[0]}, qual a média da sua conta de luz?`;
+        const first = safeFirstNameForAddress(capturedName, "self_introduced");
+        reply = first
+          ? `${first}, qual a média da sua conta de luz?`
+          : "Qual a média da sua conta de luz?";
         updates.conversation_step = "qualificacao";
         break;
       }
@@ -3619,9 +3641,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       }
 
-      reply = (customer as any).name && !isBogusCapturedName((customer as any).name)
-        ? `Certo, ${(customer as any).name.split(/\s+/)[0]}. Qual a média da sua conta de luz?`
-        : "Qual é o seu nome?";
+      {
+        const first = safeFirstNameForAddress(
+          (customer as any).name,
+          (customer as any).name_source,
+        );
+        reply = first
+          ? `Certo, ${first}. Qual a média da sua conta de luz?`
+          : "Qual é o seu nome?";
+      }
       updates.conversation_step = "qualificacao";
       break;
     }
@@ -6397,9 +6425,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             .limit(1).maybeSingle();
           const txt = (passo?.message_text || "").trim();
           if (txt) {
-            parabens = txt
-              .replaceAll("{{nome}}", (customer.name || "").split(/\s+/)[0] || "")
-              .replaceAll("{{representante}}", nomeRepresentante || "");
+            parabens = renderTemplateVars(txt, {
+              name: customer.name || "",
+              name_source: (customer as any).name_source,
+              representante: nomeRepresentante || "",
+            });
           }
         }
       } catch (e) {

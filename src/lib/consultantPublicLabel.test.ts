@@ -19,4 +19,21 @@ describe("resolvePublicConsultantLabel", () => {
     expect(firstNameFromPublicConsultant("Rafael Ferreira", "Abel Olympio")).toBe("Rafael");
     expect(firstNameFromPublicConsultant("rafael123", "Rafael Ferreira")).toBe("Rafael");
   });
+
+  it("nunca vaza slug/login no WhatsApp (silviaclaudiaalmeida)", () => {
+    expect(resolvePublicConsultantLabel("silviaclaudiaalmeida", null)).toBe("seu consultor");
+    expect(resolvePublicConsultantLabel("silviaclaudiaalmeida", "")).toBe("seu consultor");
+    expect(resolvePublicConsultantLabel("silviaclaudiaalmeida", "silviaclaudiaalmeida")).toBe(
+      "seu consultor",
+    );
+    expect(resolvePublicConsultantLabel("tvmensal12", null)).toBe("seu consultor");
+    expect(resolvePublicConsultantLabel("elizavip4545", null)).toBe("seu consultor");
+    expect(firstNameFromPublicConsultant("silviaclaudiaalmeida", null)).toBe("");
+  });
+
+  it("slug + display humano → display", () => {
+    expect(resolvePublicConsultantLabel("silviaclaudiaalmeida", "Silvia Claudia")).toBe(
+      "Silvia Claudia",
+    );
+  });
 });

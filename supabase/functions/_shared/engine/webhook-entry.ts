@@ -302,16 +302,22 @@ export async function runUnifiedEngineWebhookEntry(
         .neq("capture_mode", "auto");
     } catch (_) {/* swallow */}
 
-    // Pre-engine: fetch consultor's display name for `{{representante}}`
-    // template var. Single round-trip; cached in the request scope.
+    // Pre-engine: nome público do consultor p/ {{representante}}.
+    // Nunca slug/login (silviaclaudiaalmeida) nem display de outra pessoa.
     let consultantName: string | null = null;
     try {
+      const { resolvePublicConsultantLabel } = await import("../consultant-public-label.ts");
       const { data: cRow } = await args.supabase
         .from("consultants")
-        .select("name")
+        .select("name, display_name")
         .eq("id", args.consultantId)
         .maybeSingle();
-      consultantName = (cRow as any)?.name ?? null;
+      const label = resolvePublicConsultantLabel(
+        (cRow as { name?: string | null } | null)?.name,
+        (cRow as { display_name?: string | null } | null)?.display_name,
+        "",
+      );
+      consultantName = label || null;
     } catch (_) {/* swallow */}
 
     const ctx = await loadContext({

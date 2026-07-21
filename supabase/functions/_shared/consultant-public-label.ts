@@ -1,15 +1,18 @@
 /**
  * Nome público do consultor nas mensagens ao lead (welcome, chamado, templates).
  *
- * Regra de ouro: NUNCA apresentar o lead como sendo atendido por OUTRA pessoa.
- * Bug real 2026-07-20: Rafael tinha display_name="Abel Olympio" → welcome falava Abel.
+ * Regra de ouro:
+ *  1) NUNCA apresentar o lead como sendo atendido por OUTRA pessoa
+ *     (bug 2026-07-20: Rafael com display_name="Abel Olympio").
+ *  2) NUNCA vazar username/slug de login no WhatsApp
+ *     (bug 2026-07-21: silviaclaudiaalmeida / tvmensal12 / elizavip4545…).
  *
  * Prioridade segura:
- * 1) Se `name` e `display_name` parecem a MESMA pessoa (overlap de tokens) → display (apelido curto)
- * 2) Se `name` é humano (tem espaço) e display NÃO overlap → usa `name` (ignora display contaminado)
- * 3) display humano sozinho → display
- * 4) name → name
- * 5) fallback "seu consultor"
+ * 1) name + display da MESMA pessoa → display (apelido curto)
+ * 2) name humano e display de outra pessoa → name (ignora display contaminado)
+ * 3) só name humano → name
+ * 4) só display humano → display
+ * 5) slug/lixo/vazio → fallback ("seu consultor")
  */
 
 function stripDiacritics(s: string): string {
@@ -32,17 +35,28 @@ function shortLabel(raw: string): string {
     .join(" ");
 }
 
-function looksHumanName(raw: string): boolean {
+/** Login/slug: sem espaço, minúsculo, tipo username. Nunca vai pro lead. */
+export function isSlugLikeConsultantLabel(raw: string | null | undefined): boolean {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  if (/\s/.test(s)) return false;
+  // tudo minúsculo alfanumérico/._-  OU tem 3+ dígitos (tvmensal12, elizavip4545)
+  return /^[a-z0-9._-]+$/.test(s) || /\d{3,}/.test(s);
+}
+
+export function looksHumanConsultantName(raw: string | null | undefined): boolean {
   const s = String(raw || "").trim();
   if (!s || s.length < 3) return false;
   if (!/[A-Za-zÀ-ÿ]/.test(s)) return false;
-  // slug/login: sem espaço, tudo minúsculo, ou com dígitos demais
-  if (!/\s/.test(s) && (/^[a-z0-9._-]+$/.test(s) || /\d{3,}/.test(s))) return false;
+  if (isSlugLikeConsultantLabel(s)) return false;
   return true;
 }
 
 /** True se display e name compartilham ao menos 1 token significativo. */
-export function displayNameMatchesOwner(name: string | null | undefined, displayName: string | null | undefined): boolean {
+export function displayNameMatchesOwner(
+  name: string | null | undefined,
+  displayName: string | null | undefined,
+): boolean {
   const nTok = new Set(tokens(String(name || "")));
   const dTok = tokens(String(displayName || ""));
   if (nTok.size === 0 || dTok.length === 0) return false;
@@ -50,7 +64,8 @@ export function displayNameMatchesOwner(name: string | null | undefined, display
 }
 
 /**
- * Label seguro pra "Você será atendido por *X*" / "Consultor(a): *X*".
+ * Label seguro pra "Você será atendido por *X*" / "Aqui é *{{consultor}}*".
+ * Nunca devolve username/slug de login (ex.: silviaclaudiaalmeida).
  */
 export function resolvePublicConsultantLabel(
   name: string | null | undefined,
@@ -59,8 +74,8 @@ export function resolvePublicConsultantLabel(
 ): string {
   const n = String(name || "").trim();
   const d = String(displayName || "").trim();
-  const nOk = looksHumanName(n);
-  const dOk = looksHumanName(d) || (d.length >= 3 && /[A-Za-zÀ-ÿ]/.test(d));
+  const nOk = looksHumanConsultantName(n);
+  const dOk = looksHumanConsultantName(d);
 
   if (nOk && dOk) {
     if (displayNameMatchesOwner(n, d)) return shortLabel(d) || shortLabel(n) || fallback;
@@ -69,7 +84,16 @@ export function resolvePublicConsultantLabel(
   }
   if (nOk) return shortLabel(n) || fallback;
   if (dOk) return shortLabel(d) || fallback;
-  if (n) return shortLabel(n) || fallback;
-  if (d) return shortLabel(d) || fallback;
+  // slug/lixo → fallback. Nunca vazar login no WhatsApp.
   return fallback;
+}
+
+/** Prenome seguro pra templates/SMS/WA. Slug → "". */
+export function resolvePublicConsultantFirstName(
+  name: string | null | undefined,
+  displayName: string | null | undefined,
+): string {
+  const label = resolvePublicConsultantLabel(name, displayName, "");
+  if (!label) return "";
+  return label.split(/\s+/)[0] || "";
 }

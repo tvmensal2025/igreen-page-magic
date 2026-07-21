@@ -14,6 +14,7 @@
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -114,7 +115,7 @@ Deno.serve(async (req) => {
 
   const assistente = String(cons?.assistant_name || "Sofia").trim() || "Sofia";
   const consultor = firstName(
-    String(cons?.display_name || cons?.name || "consultor").trim() || "consultor",
+    String(resolvePublicConsultantLabel(cons?.name, cons?.display_name, "consultor")).trim() || "consultor",
   );
   const gender: "consultor" | "consultora" =
     cons?.gender === "consultora" ? "consultora" : "consultor";

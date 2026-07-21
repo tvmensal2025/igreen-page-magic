@@ -15,6 +15,10 @@ alwaysApply: false
 ## Regra de ouro
 
 **Na dúvida → só o corpo da mensagem/ligação**, sem "Olá Nome".
+**Com confiança → personaliza** (`Oi Maria`, `Certo, João`).
+
+Fontes com confiança: `self_introduced`, `user_confirmed`, `ocr_*`, `manual`, `igreen_portal`.
+Sem confiança (`whatsapp_profile`, `unknown`, `cadence` herdado, vazio): **não chama**.
 
 ## Guard canônico
 

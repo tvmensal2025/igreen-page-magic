@@ -1,0 +1,55 @@
+---
+description: Nome do consultor no WhatsApp — nunca slug/login nem outra pessoa
+globs: supabase/functions/**/*.ts,src/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Nome público do consultor — nunca slug, nunca outra pessoa
+
+## Bugs reais
+
+1. **2026-07-20** — Rafael com `display_name="Abel Olympio"` → welcome falava Abel.
+2. **2026-07-21** — consultor com `name="silviaclaudiaalmeida"` (login) e `display_name` vazio → mensagem `Aqui é *silviaclaudiaalmeida*`.
+
+Há outros no banco no mesmo padrão: `tvmensal12`, `elizavip4545`, `henzofelipef`, `olimpiajanete15`…
+
+## Por que acontece
+
+No cadastro, `consultants.name` às vezes fica com o **username/slug** (minúsculo, sem espaço), não com nome de pessoa. Templates usam `{{consultor}}` / `{{representante}}` com negrito (`*{{consultor}}*`). Se o código faz `display_name || name`, o slug vaza pro lead.
+
+## Regra de ouro
+
+**Mensagem ao lead = só nome humano.** Na dúvida → `"seu consultor"` / `"iGreen"` — nunca o login.
+
+## Helper canônico (obrigatório)
+
+`supabase/functions/_shared/consultant-public-label.ts`  
+Espelho UI: `src/lib/consultantPublicLabel.ts`
+
+| Função | Uso |
+|---|---|
+| `resolvePublicConsultantLabel(name, display, fallback)` | texto completo seguro |
+| `resolvePublicConsultantFirstName(name, display)` | prenome; slug → `""` |
+| `isSlugLikeConsultantLabel(raw)` | detecta login |
+
+### Proibido em caminho que manda msg ao lead
+
+```ts
+// ERRADO
+const nome = cons.display_name || cons.name;
+const prenome = String(cons.name).split(" ")[0];
+
+// CERTO
+import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
+const nome = resolvePublicConsultantLabel(cons.name, cons.display_name, "iGreen");
+```
+
+## Fontes
+
+- `name` / `display_name` humanos (com espaço ou capitalização de pessoa) → ok
+- slug (`silviaclaudiaalmeida`, `tvmensal12`) → **fallback**
+- `display_name` de outra pessoa (sem overlap de tokens com `name`) → **ignora display**, usa `name`
+
+## Dados
+
+Se o consultor só tem slug em `name`, cadastre `display_name` humano na aba Dados. Sem isso o sistema usa genérico — melhor que vazar login.

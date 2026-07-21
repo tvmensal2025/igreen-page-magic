@@ -3,6 +3,7 @@
  * supabase/functions/_shared/consultant-public-label.ts).
  *
  * NUNCA apresentar outra pessoa (bug Abel no cadastro do Rafael).
+ * NUNCA vazar username/slug (bug silviaclaudiaalmeida).
  */
 
 function stripDiacritics(s: string): string {
@@ -25,11 +26,19 @@ function shortLabel(raw: string): string {
     .join(" ");
 }
 
-function looksHumanName(raw: string): boolean {
+/** Login/slug: sem espaço, minúsculo, tipo username. Nunca vai pro lead. */
+export function isSlugLikeConsultantLabel(raw: string | null | undefined): boolean {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+  if (/\s/.test(s)) return false;
+  return /^[a-z0-9._-]+$/.test(s) || /\d{3,}/.test(s);
+}
+
+export function looksHumanConsultantName(raw: string | null | undefined): boolean {
   const s = String(raw || "").trim();
   if (!s || s.length < 3) return false;
   if (!/[A-Za-zÀ-ÿ]/.test(s)) return false;
-  if (!/\s/.test(s) && (/^[a-z0-9._-]+$/.test(s) || /\d{3,}/.test(s))) return false;
+  if (isSlugLikeConsultantLabel(s)) return false;
   return true;
 }
 
@@ -43,7 +52,7 @@ export function displayNameMatchesOwner(
   return dTok.some((t) => nTok.has(t));
 }
 
-/** Label seguro: "Você será atendido por *X*". */
+/** Label seguro: "Você será atendido por *X*". Nunca username/slug. */
 export function resolvePublicConsultantLabel(
   name: string | null | undefined,
   displayName: string | null | undefined,
@@ -51,8 +60,8 @@ export function resolvePublicConsultantLabel(
 ): string {
   const n = String(name || "").trim();
   const d = String(displayName || "").trim();
-  const nOk = looksHumanName(n);
-  const dOk = looksHumanName(d) || (d.length >= 3 && /[A-Za-zÀ-ÿ]/.test(d));
+  const nOk = looksHumanConsultantName(n);
+  const dOk = looksHumanConsultantName(d);
 
   if (nOk && dOk) {
     if (displayNameMatchesOwner(n, d)) return shortLabel(d) || shortLabel(n) || fallback;
@@ -60,8 +69,6 @@ export function resolvePublicConsultantLabel(
   }
   if (nOk) return shortLabel(n) || fallback;
   if (dOk) return shortLabel(d) || fallback;
-  if (n) return shortLabel(n) || fallback;
-  if (d) return shortLabel(d) || fallback;
   return fallback;
 }
 

@@ -164,6 +164,9 @@ Deno.serve(async (req) => {
       const outChatId: string = (parsed as any).chatId || "";
       const outSource: string = (parsed as any).source || "";
       const outMessageId: string = (parsed as any).messageId || "";
+      const outText: string = String((parsed as any).messageText || "").trim();
+      const outType: string = String((parsed as any).messageType || "text").toLowerCase() || "text";
+      const outTs = Number((parsed as any).messageTimestamp || 0);
       const outPhone = normalizePhone(outChatId.replace("@s.whatsapp.net", "")).replace(/\D/g, "");
       console.log(`👤 Outbound humano detectado (source=${outSource}) → verificando antes de pausar bot para ${outPhone}`);
       try {
@@ -215,6 +218,37 @@ Deno.serve(async (req) => {
           else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
         } else if (!cust) {
           console.warn(`⚠️ Nenhum customer encontrado para ${outPhone} — bot não foi pausado`);
+        }
+
+        // Grava a mensagem do consultor no feed (Captação / histórico).
+        // Antes só pausava o bot e descartava o texto — por isso só aparecia "CLIENTE".
+        if (cust?.id && (outText || outType !== "text")) {
+          const emid = outMessageId ? `whapi_human:${outMessageId}` : null;
+          let already = false;
+          if (emid) {
+            const { data: dup } = await supabase
+              .from("conversations")
+              .select("id")
+              .eq("external_message_id", emid)
+              .limit(1)
+              .maybeSingle();
+            already = !!dup?.id;
+          }
+          if (!already) {
+            const createdAt = outTs > 0 ? new Date(outTs * 1000).toISOString() : new Date().toISOString();
+            const { error: insErr } = await supabase.from("conversations").insert({
+              customer_id: cust.id,
+              message_direction: "outbound",
+              message_text: (outText || `[${outType}]`).slice(0, 2000),
+              message_type: outType,
+              conversation_step: "human_app",
+              origin: "human_app",
+              external_message_id: emid,
+              created_at: createdAt,
+            });
+            if (insErr) console.error("⚠️ insert conversations (outboundHuman):", insErr);
+            else console.log(`💬 Outbound humano gravado customer=${cust.id} type=${outType}`);
+          }
         }
       } catch (e) {
         console.error("⚠️ Falha ao pausar bot via outbound humano:", e);
@@ -459,9 +493,14 @@ Deno.serve(async (req) => {
       .eq("id", superAdminConsultantId)
       .single();
 
-    // Prefere display_name (nome humano cadastrado) sobre name (pode ser slug do login).
+    // Nome humano só — slug/login (silviaclaudiaalmeida) NUNCA vai pro lead.
     // Usa só o PRIMEIRO NOME — soa mais natural no WhatsApp ("Rafael" em vez de "Rafael Ferreira").
-    const _fullName = (consultantData?.display_name || consultantData?.name || "iGreen Energy").trim();
+    const { resolvePublicConsultantLabel } = await import("../_shared/consultant-public-label.ts");
+    const _fullName = resolvePublicConsultantLabel(
+      consultantData?.name,
+      consultantData?.display_name,
+      "iGreen Energy",
+    );
     const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
     const nomeAssistente = String(consultantData?.assistant_name || "").trim() || "Sofia";
     const consultorId = consultantData?.igreen_id || "124170";

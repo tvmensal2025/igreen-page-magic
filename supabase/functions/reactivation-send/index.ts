@@ -15,6 +15,7 @@ import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-g
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
+import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
 
 
 const corsHeaders = {
@@ -152,7 +153,7 @@ Deno.serve(async (req: Request) => {
     // ─── Consultant info ─────────────────────────────────────────────
     const { data: cons } = await supabase
       .from("consultants")
-      .select("id, name, timezone")
+      .select("id, name, display_name, timezone")
       .eq("id", consultantId)
       .maybeSingle();
     if (!cons) {
@@ -161,7 +162,10 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const consultantName = String(cons.name || "iGreen").split(/\s+/)[0];
+    // Nunca vazar slug/login (silviaclaudiaalmeida) no WhatsApp.
+    const consultantName =
+      resolvePublicConsultantFirstName(cons.name, (cons as { display_name?: string | null }).display_name) ||
+      "iGreen";
 
     const instanceName = await fetchInstanceName(supabase, consultantId);
     if (!instanceName) {

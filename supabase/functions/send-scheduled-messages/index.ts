@@ -126,6 +126,7 @@ Deno.serve(async (req) => {
         let customerNameSource: string | null = null;
         let billValue: number | null = null;
         let representante: string | null = null;
+        let representanteDisplay: string | null = null;
         let representantePhone: string | null = null;
         let customerId: string | undefined;
         let custConsultantId: string | undefined;
@@ -174,9 +175,10 @@ Deno.serve(async (req) => {
               .select("name, display_name")
               .eq("id", custConsultantId)
               .maybeSingle();
-            representante = (consultant as { display_name?: string; name?: string } | null)?.display_name
-              || (consultant as { name?: string } | null)?.name
-              || null;
+            // name + display separados — renderTemplateVars bloqueia slug / outra pessoa.
+            representante = (consultant as { name?: string } | null)?.name || null;
+            representanteDisplay =
+              (consultant as { display_name?: string } | null)?.display_name || null;
             representantePhone = await resolveConsultantConnectedWaPhone(supabase, custConsultantId);
           }
         }
@@ -186,6 +188,7 @@ Deno.serve(async (req) => {
           name_source: customerNameSource,
           phone,
           representante,
+          representante_display: representanteDisplay,
           representante_phone: representantePhone,
           valor_conta: billValue,
         });

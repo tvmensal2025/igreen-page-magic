@@ -38,3 +38,28 @@ Deno.test("slug name + display humano → display", () => {
 Deno.test("vazio → fallback", () => {
   assertEquals(resolvePublicConsultantLabel("", ""), "seu consultor");
 });
+
+Deno.test("slug/login silviaclaudiaalmeida NUNCA vaza", () => {
+  assertEquals(resolvePublicConsultantLabel("silviaclaudiaalmeida", null), "seu consultor");
+  assertEquals(resolvePublicConsultantLabel("silviaclaudiaalmeida", ""), "seu consultor");
+  assertEquals(
+    resolvePublicConsultantLabel("silviaclaudiaalmeida", "silviaclaudiaalmeida"),
+    "seu consultor",
+  );
+  assertEquals(
+    resolvePublicConsultantLabel("silviaclaudiaalmeida", "Silvia Claudia"),
+    "Silvia Claudia",
+  );
+});
+
+Deno.test("outros slugs reais do banco também bloqueados", () => {
+  for (const slug of [
+    "tvmensal12",
+    "tvmensal11",
+    "elizavip4545",
+    "henzofelipef",
+    "olimpiajanete15",
+  ]) {
+    assertEquals(resolvePublicConsultantLabel(slug, null), "seu consultor", slug);
+  }
+});
