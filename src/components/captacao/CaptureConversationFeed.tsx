@@ -68,10 +68,10 @@ function DeliveryIcon({ status, error }: { status: string | null; error: string 
       </span>
     );
   }
-  if (s === "read" || s === "played") return <CheckCheck className="h-3 w-3 text-sky-400" />;
-  if (s === "delivered" || s === "delivery_ack") return <CheckCheck className="h-3 w-3 text-white/50" />;
-  if (s === "sent" || s === "server_ack") return <Check className="h-3 w-3 text-white/50" />;
-  if (s === "pending") return <Clock className="h-3 w-3 text-white/40" />;
+  if (s === "read" || s === "played") return <CheckCheck className="h-3 w-3 text-primary" />;
+  if (s === "delivered" || s === "delivery_ack") return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+  if (s === "sent" || s === "server_ack") return <Check className="h-3 w-3 text-muted-foreground" />;
+  if (s === "pending") return <Clock className="h-3 w-3 text-muted-foreground/70" />;
   return null;
 }
 
@@ -277,7 +277,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         <span className={`tabular-nums ${gameOn ? "text-[10px] font-bold text-warning/80" : "text-[9px] text-muted-foreground"}`}>{rows.length}</span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 min-h-[140px] overflow-y-auto p-2.5 space-y-2 bg-[#0b141a]/40">
+      <div ref={scrollRef} className="flex-1 min-h-[140px] overflow-y-auto p-2.5 space-y-2 bg-muted/40">
 
         {!loading && rows.length > 0 && hasMore && (
           <div className="flex items-center justify-center py-1">
@@ -285,7 +285,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
               type="button"
               onClick={() => void loadMore()}
               disabled={loadingMore}
-              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 rounded-full px-2.5 py-1 transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground bg-secondary/60 hover:bg-secondary rounded-full px-2.5 py-1 transition disabled:opacity-50"
             >
               {loadingMore ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
               {loadingMore ? "Carregando…" : "Carregar mensagens anteriores"}
@@ -294,7 +294,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
         )}
         {!loading && rows.length > 0 && !hasMore && (
           <div className="flex items-center justify-center py-1">
-            <span className="text-[9px] uppercase tracking-wider text-white/40">início da conversa</span>
+            <span className="text-[9px] uppercase tracking-wider text-muted-foreground/70">início da conversa</span>
           </div>
         )}
         {loading && (
@@ -307,8 +307,8 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
               <MessageCircle className="w-6 h-6 text-primary/60" />
             </div>
-            <p className="text-sm font-medium text-white/80">Nenhuma mensagem ainda</p>
-            <p className="text-xs text-white/50 max-w-[220px]">
+            <p className="text-sm font-medium text-foreground">Nenhuma mensagem ainda</p>
+            <p className="text-xs text-muted-foreground max-w-[220px]">
               Envie um passo do roteiro ou escreva uma mensagem abaixo para começar a conversa.
             </p>
           </div>
@@ -327,29 +327,29 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
             <div key={r.id}>
               {showDay && (
                 <div className="flex items-center justify-center my-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-black/30 text-white/70 text-[10px] font-medium">
+                  <span className="px-2.5 py-0.5 rounded-full bg-secondary text-muted-foreground text-[10px] font-medium border border-border/50">
                     {dayLabel(r.created_at)}
                   </span>
                 </div>
               )}
               {isNewSince && (
                 <div className="flex items-center gap-2 my-2" aria-label="Novas mensagens">
-                  <span className="flex-1 h-px bg-emerald-500/40" />
-                  <span className="text-[9px] uppercase tracking-widest font-bold text-emerald-400">
+                  <span className="flex-1 h-px bg-primary/30" />
+                  <span className="text-[9px] uppercase tracking-widest font-bold text-primary">
                     Novas mensagens
                   </span>
-                  <span className="flex-1 h-px bg-emerald-500/40" />
+                  <span className="flex-1 h-px bg-primary/30" />
                 </div>
               )}
               <div className={`flex ${out ? "justify-end" : "justify-start"}`}>
                 <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 shadow-sm ${
+                  className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-sm break-words ${
                     out
-                      ? "bg-[#005c4b] text-white rounded-tr-sm"
-                      : "bg-[#202c33] text-white rounded-tl-sm"
+                      ? "bg-gradient-to-br from-primary/15 to-primary/10 text-foreground rounded-br-md border border-primary/15"
+                      : "bg-card text-foreground rounded-bl-md border border-border/60"
                   }`}
                 >
-                  <div className="flex items-center gap-1 text-[10px] opacity-70 mb-1">
+                  <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1">
                     {iconFor(r.message_type)}
                     <span className="uppercase font-semibold">{out ? "Você" : "Cliente"}</span>
                     <span>·</span>
@@ -367,7 +367,7 @@ export function CaptureConversationFeed({ customerId, limit = 50, gameOn = false
                     lastInbound={lastInbound}
                     showBoleto
                     attachMediaToCapture={attachMediaToCapture}
-                    tone="dark"
+                    tone="light"
                   />
                 </div>
               </div>

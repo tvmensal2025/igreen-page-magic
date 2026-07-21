@@ -545,11 +545,38 @@ export function parseWhapiMessage(body: any) {
       console.log(`[parseWhapiMessage] null reason=from_me_unknown_source source=${source}`);
       return null;
     }
+    // Texto/tipo para gravar em `conversations` (o feed da Captação só lê essa tabela).
+    let humanText = "";
+    let humanType = "text";
+    const t = String(msg.type || "").toLowerCase();
+    if (t === "text" || t === "conversation") {
+      humanText = msg.text?.body || msg.body || msg.conversation || "";
+    } else if (t === "image") {
+      humanType = "image";
+      humanText = msg.image?.caption || msg.image?.caption_text || "[imagem]";
+    } else if (t === "document") {
+      humanType = "document";
+      humanText = msg.document?.file_name || msg.document?.filename || "[documento]";
+    } else if (t === "voice" || t === "audio") {
+      humanType = "audio";
+      humanText = "[áudio]";
+    } else if (t === "video") {
+      humanType = "video";
+      humanText = msg.video?.caption || msg.video?.caption_text || "[vídeo]";
+    } else if (t === "sticker") {
+      humanType = "sticker";
+      humanText = "[sticker]";
+    } else {
+      humanText = msg.text?.body || msg.body || (t ? `[${t}]` : "");
+    }
     return {
       outboundHuman: true,
       chatId,
       source,
       messageId: msg.id || "",
+      messageText: String(humanText || "").trim(),
+      messageType: humanType,
+      messageTimestamp: msg.timestamp,
     } as any;
   }
 

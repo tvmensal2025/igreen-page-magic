@@ -45,7 +45,9 @@ export function TourProvider() {
     let cancelled = false;
 
     const measure = (element: HTMLElement) => {
-      element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      // Áreas grandes (ex.: Dashboard) alinham no topo para o destaque não “sumir” atrás do card do tour
+      const preferTop = (current.selector || "").includes("dashboard");
+      element.scrollIntoView({ behavior: "smooth", block: preferTop ? "start" : "center", inline: "center" });
       window.setTimeout(() => {
         if (cancelled) return;
         const rect = element.getBoundingClientRect();
@@ -54,11 +56,14 @@ export function TourProvider() {
           else setTargetRect(null);
           return;
         }
+        // Limita a altura do spotlight para o conteúdo longo não cobrir o card inferior
+        const maxHighlight = Math.max(160, window.innerHeight * 0.48);
+        const rawHeight = rect.height + TARGET_PADDING * 2;
         setTargetRect({
-          top: rect.top - TARGET_PADDING,
-          left: rect.left - TARGET_PADDING,
-          width: rect.width + TARGET_PADDING * 2,
-          height: rect.height + TARGET_PADDING * 2,
+          top: Math.max(8, rect.top - TARGET_PADDING),
+          left: Math.max(8, rect.left - TARGET_PADDING),
+          width: Math.min(rect.width + TARGET_PADDING * 2, window.innerWidth - 16),
+          height: Math.min(rawHeight, maxHighlight),
         });
       }, 280);
     };

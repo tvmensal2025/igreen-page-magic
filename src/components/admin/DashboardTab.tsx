@@ -543,7 +543,7 @@ export function DashboardTab({
   };
 
   return (
-    <div ref={dashboardRef} className="space-y-6">
+    <div ref={dashboardRef} className="space-y-6" data-tour="dashboard">
 
       {/* TOOLBAR */}
       <div className="flex items-center justify-between gap-1.5 flex-wrap p-1.5 rounded-xl bg-card/40 border border-border/40 backdrop-blur">

@@ -627,11 +627,36 @@ export function parseEvolutionMessage(body: any, instanceConnectedPhone?: string
     const source = String((data as any)?.source || (body as any)?.source || "").toLowerCase();
     const HUMAN_SOURCES = new Set(["app", "iphone", "android", "web", "desktop", "mobile"]);
     if (HUMAN_SOURCES.has(source)) {
+      let humanText = "";
+      let humanType = "text";
+      if (message.conversation) {
+        humanText = String(message.conversation);
+      } else if (message.extendedTextMessage?.text) {
+        humanText = String(message.extendedTextMessage.text);
+      } else if (message.imageMessage) {
+        humanType = "image";
+        humanText = String(message.imageMessage.caption || "[imagem]");
+      } else if (message.audioMessage || message.pttMessage) {
+        humanType = "audio";
+        humanText = "[áudio]";
+      } else if (message.videoMessage) {
+        humanType = "video";
+        humanText = String(message.videoMessage.caption || "[vídeo]");
+      } else if (message.documentMessage) {
+        humanType = "document";
+        humanText = String(message.documentMessage.fileName || "[documento]");
+      } else if (message.stickerMessage) {
+        humanType = "sticker";
+        humanText = "[sticker]";
+      }
       return {
         outboundHuman: true,
         chatId: remoteJid,
         source,
         messageId: key.id || "",
+        messageText: humanText.trim(),
+        messageType: humanType,
+        messageTimestamp,
       } as any;
     }
     return null;
