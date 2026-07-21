@@ -70,9 +70,14 @@ export function buildEntaoNomeTtsText(display: string): string {
   return formatNameGreetForTts(`Então, ${nome}.`);
 }
 
-/** Ligação = mesma intro do WhatsApp A2. */
+/**
+ * Ligação GRAVADA — só cumprimento + nome (sem “Tudo bem?”).
+ * Não é conversa ao vivo; o corpo já manda ir ao WhatsApp.
+ */
 export function buildCallNameGreetTtsText(display: string): string {
-  return buildOlaTudoBemTtsText(display);
+  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!nome) return "";
+  return `Olá, ${nome}!`;
 }
 
 

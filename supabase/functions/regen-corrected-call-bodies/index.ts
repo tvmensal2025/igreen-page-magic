@@ -24,8 +24,15 @@ const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
 const MODEL_V3 = "eleven_v3";
 const DEFAULT_CONSULTANT = "0c2711ad-4836-41e6-afba-edd94f698ae3";
 
+/** Todos os estágios de ligação gravada da cadência (A + B + C, incl. anual). */
 const DEFAULT_STAGES = [
+  "A_CALL",
+  "A_CALL_RETRY",
+  "CALL_1",
+  "CALL_2",
+  "CALL_3",
   "RECALL_60D_CALL",
+  "RECALL_90D_CALL",
   "RECALL_5M_CALL",
   "RECALL_8M_CALL",
   "RECALL_12M_CALL",
@@ -54,10 +61,26 @@ function extractCallBody(messageText: string): string {
   return t.trim();
 }
 
-function renderIdentity(text: string, assistente: string, consultor: string): string {
+function firstName(label: string): string {
+  const t = String(label || "").trim();
+  if (!t) return "consultor";
+  return t.split(/\s+/)[0] || t;
+}
+
+function renderIdentity(
+  text: string,
+  assistente: string,
+  consultor: string,
+  gender: "consultor" | "consultora",
+): string {
+  const doDa = gender === "consultora" ? "da" : "do";
+  const gestorA = gender === "consultora" ? "gestora" : "gestor";
   return text
     .replace(/\{\{\s*assistente\s*\}\}/gi, assistente)
     .replace(/\{\{\s*consultor\s*\}\}/gi, consultor)
+    .replace(/\{\{\s*representante\s*\}\}/gi, consultor)
+    .replace(/\{\{\s*do_da_consultor\s*\}\}/gi, doDa)
+    .replace(/\{\{\s*gestor_a\s*\}\}/gi, gestorA)
     .replace(/\{\{\s*nome\s*\}\}/gi, "")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
@@ -85,13 +108,16 @@ Deno.serve(async (req) => {
 
   const { data: cons } = await admin
     .from("consultants")
-    .select("name, display_name, assistant_name")
+    .select("name, display_name, assistant_name, gender")
     .eq("id", consultantId)
     .maybeSingle();
 
   const assistente = String(cons?.assistant_name || "Sofia").trim() || "Sofia";
-  const consultor =
-    String(cons?.display_name || cons?.name || "consultor").trim() || "consultor";
+  const consultor = firstName(
+    String(cons?.display_name || cons?.name || "consultor").trim() || "consultor",
+  );
+  const gender: "consultor" | "consultora" =
+    cons?.gender === "consultora" ? "consultora" : "consultor";
 
   const { data: buckets } = await admin.storage.listBuckets();
   if (!buckets?.some((b) => b.id === "tts-cache")) {
@@ -126,9 +152,23 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const bodyText = renderIdentity(extractCallBody(row.message_text), assistente, consultor);
+      const bodyText = renderIdentity(
+        extractCallBody(row.message_text),
+        assistente,
+        consultor,
+        gender,
+      );
       if (bodyText.length < 20) {
         report.push({ stage, ok: false, error: "body_too_short", preview: bodyText });
+        continue;
+      }
+      if (/você prefere|explicar agora|30 segundos|se estiver ocupado/i.test(bodyText)) {
+        report.push({
+          stage,
+          ok: false,
+          error: "interactive_script_blocked",
+          preview: bodyText.slice(0, 160),
+        });
         continue;
       }
 
@@ -229,6 +269,7 @@ Deno.serve(async (req) => {
     consultant_id: consultantId,
     assistente,
     consultor,
+    gender,
     generated: okCount,
     total: stages.length,
     report,

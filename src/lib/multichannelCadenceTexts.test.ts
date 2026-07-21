@@ -266,16 +266,21 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a5?.audioSegments?.[1]?.kind).toBe("fixed");
   });
 
-  it("ligações usam Olá+nome+tudo bem (nunca só o nome)", () => {
+  it("ligações gravadas: Olá+nome sem pergunta; corpo só CTA WhatsApp", () => {
     const calls = MULTICHANNEL_CADENCE_TEMPLATES.filter(
       (t) => t.channel === "call_script" && t.audioSegments?.some((s) => s.kind === "name"),
     );
     expect(calls.length).toBeGreaterThan(5);
+    const forbidden =
+      /você prefere|explicar agora|30 segundos|se estiver ocupado|se demonstrar desconfiança|tudo bem\?/i;
     for (const t of calls) {
       const nameSeg = t.audioSegments!.find((s) => s.kind === "name")!;
-      expect(nameSeg.text, t.key).toMatch(/Olá,\s*\{\{nome\}\}!\s*Tudo bem\?/);
-      expect(nameSeg.text, t.key).not.toBe("{{nome}}");
-      expect(nameSeg.text, t.key).not.toBe("{{nome}}.");
+      expect(nameSeg.text, t.key).toBe("Olá, {{nome}}!");
+      expect(t.body, t.key).toMatch(/responda no WhatsApp/i);
+      expect(t.body, t.key).not.toMatch(forbidden);
+      for (const seg of t.audioSegments || []) {
+        expect(seg.text, `${t.key}:${seg.id}`).not.toMatch(forbidden);
+      }
     }
   });
 

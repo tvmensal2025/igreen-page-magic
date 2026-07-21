@@ -23,7 +23,7 @@ interface VoiceRenderRow {
 const DEFAULT_VOICE = "EJV7H2baGt5ab95tOoSG";
 const DEFAULT_MODEL = "eleven_v3";
 /** Bump invalida cache voice_call_renders (intro muda). */
-const CALL_INTRO_CACHE_TAG = "ci_v2_tudobem";
+const CALL_INTRO_CACHE_TAG = "ci_v3_ola_only";
 
 export function normalizeCallName(input: string): string {
   return (input || "")

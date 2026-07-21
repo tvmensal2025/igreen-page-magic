@@ -12,10 +12,10 @@ Deno.test("buildOlaGreetTtsText = Olá+nome+tudo bem (igual ligação)", () => {
   assertEquals(buildOlaGreetTtsText("Fernandinho"), "Olá, Fernandinho! Tudo bem?");
 });
 
-Deno.test("buildCallNameGreetTtsText — mesma frase do WhatsApp A2", () => {
-  assertEquals(buildCallNameGreetTtsText("Maria"), "Olá, Maria! Tudo bem?");
+Deno.test("buildCallNameGreetTtsText — ligação gravada sem pergunta", () => {
+  assertEquals(buildCallNameGreetTtsText("Maria"), "Olá, Maria!");
   assertEquals(buildCallNameGreetTtsText(""), "");
-  assertEquals(buildCallNameGreetTtsText("Maria"), buildOlaGreetTtsText("Maria"));
+  assertEquals(buildOlaGreetTtsText("Maria"), "Olá, Maria! Tudo bem?");
 });
 
 Deno.test("buildNameOnlyTtsText mantém só o nome no áudio (callout com vírgula)", () => {

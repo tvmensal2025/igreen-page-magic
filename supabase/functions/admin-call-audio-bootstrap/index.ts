@@ -1,6 +1,6 @@
 /**
  * admin-call-audio-bootstrap
- * Gera e valida áudios de ligação Sofia (corpo → Velip + intro “Olá, Nome! Tudo bem?”).
+ * Gera e valida áudios de ligação Sofia (corpo → Velip + intro “Olá, Nome!”).
  *
  * Auth: Authorization Bearer = SUPABASE_SERVICE_ROLE_KEY (somente interno).
  * Body: { consultant_id?: string, names?: string[], limit_per_clip?: number }
@@ -165,7 +165,7 @@ Deno.serve(async (req) => {
     .from("voice_call_renders")
     .select("id", { count: "exact", head: true })
     .eq("consultant_id", consultantId)
-    .like("model_id", "%ci_v2_tudobem%");
+    .like("model_id", "%ci_v3_ola_only%");
 
   return json(200, {
     ok: stitchesFail === 0 && bodiesOk === callStages.length,
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
     bodies_on_velip: bodiesOk,
     stitches_ok: stitchesOk,
     stitches_fail: stitchesFail,
-    renders_ci_v2: renderCount ?? 0,
+    renders_ci_v3: renderCount ?? 0,
     intro_template: buildCallNameGreetTtsText("Nome"),
     report,
   });

@@ -42,7 +42,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/cadenceCalendarMap";
-import { getTemplate } from "@/lib/multichannelCadenceTexts";
+import { getTemplate, renderCadenceBody } from "@/lib/multichannelCadenceTexts";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
@@ -382,7 +382,53 @@ type StepPreviewTemplate = {
   mediaType: string | null;
   consultor: string;
   consultorPhone: string;
+  assistente: string;
+  consultorGender: "consultor" | "consultora";
 };
+
+/** Stage do motor → key do catálogo Multicanal (para fallback de prévia). */
+const STAGE_TO_CADENCE_KEY: Record<string, string> = {
+  A_NUDGE: "a_nudge_wa",
+  A_SMS: "a_nudge_sms",
+  A_CALL: "a_nudge_call",
+  A_CALL_RETRY: "a_nudge_call_retry",
+  COLD_1: "b1_wa_reopen",
+  SMS_1: "b3_sms_1",
+  CALL_1: "b4_call_1",
+  COLD_2: "b_day2_wa",
+  SMS_TEMA_2: "b_day2_sms_tema",
+  CALL_2: "b_day4_call_2",
+  SMS_2: "b_day6_sms_2",
+  COLD_3: "b_day7_wa_easy",
+  SMS_TEMA_7: "b_day7_sms_tema",
+  CALL_3: "b_day10_call",
+  COLD_4: "b_day10_wa_final",
+  RECALL_60D: "c_recall_60d_wa",
+  RECALL_60D_SMS: "c_recall_60d_sms",
+  RECALL_60D_CALL: "c_recall_60d_call",
+  RECALL_90D: "c_recall_90d_wa",
+  RECALL_90D_SMS: "c_recall_90d_sms",
+  RECALL_90D_CALL: "c_recall_90d_call",
+  RECALL_5M: "c_recall_5m_wa",
+  RECALL_5M_SMS: "c_recall_5m_sms",
+  RECALL_5M_CALL: "c_recall_5m_call",
+  RECALL_8M: "c_recall_8m_wa",
+  RECALL_8M_SMS: "c_recall_8m_sms",
+  RECALL_8M_CALL: "c_recall_8m_call",
+  RECALL_12M: "c_recall_12m_wa",
+  RECALL_12M_SMS: "c_recall_12m_sms",
+  RECALL_12M_CALL: "c_recall_12m_call",
+  RECALL_YEARLY: "c_recall_yearly_wa",
+  RECALL_YEARLY_SMS: "c_recall_yearly_sms",
+  RECALL_YEARLY_CALL: "c_recall_yearly_call",
+};
+
+/** Roteiro de ligação gravada antigo (interativo) — não pode ir pra prévia/TTS. */
+function isLegacyInteractiveCallScript(text: string): boolean {
+  return /você prefere|explicar agora|30 segundos|se estiver ocupado|se demonstrar desconfiança/i.test(
+    text,
+  );
+}
 
 function buildPersonPreview(
   tpl: StepPreviewTemplate | undefined,
@@ -402,6 +448,8 @@ function buildPersonPreview(
         nome: first,
         consultor: tpl.consultor,
         consultor_phone: tpl.consultorPhone,
+        assistente: tpl.assistente,
+        consultorGender: tpl.consultorGender,
       })
     : null;
   return {
@@ -440,13 +488,17 @@ async function loadStepPreviewTemplates(
 
   let consultor = "";
   let consultorPhone = "";
+  let assistente = "Sofia";
+  let consultorGender: "consultor" | "consultora" = "consultor";
   if (consultantId) {
     const { data: cons } = await (supabase as any)
       .from("consultants")
-      .select("name, display_name")
+      .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId)
       .maybeSingle();
     consultor = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
+    assistente = String(cons?.assistant_name || "").trim() || "Sofia";
+    consultorGender = cons?.gender === "consultora" ? "consultora" : "consultor";
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")
@@ -483,17 +535,28 @@ async function loadStepPreviewTemplates(
   for (const stage of stages) {
     const cfg = cfgByStage.get(stage);
     const ch = STAGE_CHANNEL[stage] || "system";
+    const catalogKey = STAGE_TO_CADENCE_KEY[stage];
+    const catalogBody = catalogKey ? getTemplate(catalogKey)?.body?.trim() || null : null;
+    let template = cfg?.message_text?.trim() || null;
+    // Ligação gravada: nunca mostrar roteiro interativo legado na prévia.
+    if (ch === "voice" && (!template || isLegacyInteractiveCallScript(template))) {
+      template = catalogBody;
+    } else if (!template) {
+      template = catalogBody;
+    }
     const mediaUrl =
       cfg?.media_url ||
       (cfg?.voice_audio_clip_id ? clipUrlById.get(cfg.voice_audio_clip_id) || null : null);
     out[stage] = {
       stage,
       channel: ch,
-      template: cfg?.message_text ?? null,
+      template,
       mediaUrl,
       mediaType: cfg?.media_type || (mediaUrl ? "audio" : null),
       consultor,
       consultorPhone,
+      assistente,
+      consultorGender,
     };
   }
   return out;
@@ -522,16 +585,22 @@ function scrubEmptyNameUi(template: string): string {
 
 function renderHistoryTemplate(
   tpl: string,
-  vars: { nome: string; consultor: string; consultor_phone: string },
+  vars: {
+    nome: string;
+    consultor: string;
+    consultor_phone: string;
+    assistente?: string;
+    consultorGender?: "consultor" | "consultora";
+  },
 ): string {
   let out = tpl;
   if (!vars.nome.trim()) out = scrubEmptyNameUi(out);
-  out = out.replace(/\{\{\s*(\w+)\s*\}\}/g, (_, k: string) => {
-    if (k === "nome") return vars.nome;
-    if (k === "consultor" || k === "representante") return vars.consultor;
-    if (k === "consultor_phone") return vars.consultor_phone;
-    if (k === "link_wa") return vars.consultor_phone ? `https://wa.me/${vars.consultor_phone}` : "";
-    return "";
+  out = renderCadenceBody(out, {
+    nome: vars.nome,
+    consultor: vars.consultor,
+    consultorPhone: vars.consultor_phone,
+    assistente: vars.assistente || "Sofia",
+    consultorGender: vars.consultorGender || "consultor",
   });
   if (!vars.nome.trim()) out = scrubEmptyNameUi(out);
   return out
@@ -634,13 +703,17 @@ async function loadSliceHistoryInner(
 
   let consultorFirst = "";
   let consultorPhone = "";
+  let assistente = "Sofia";
+  let consultorGender: "consultor" | "consultora" = "consultor";
   if (consultantId) {
     const { data: cons } = await (supabase as any)
       .from("consultants")
-      .select("name, display_name")
+      .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId)
       .maybeSingle();
     consultorFirst = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
+    assistente = String(cons?.assistant_name || "").trim() || "Sofia";
+    consultorGender = cons?.gender === "consultora" ? "consultora" : "consultor";
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")
@@ -917,11 +990,18 @@ async function loadSliceHistoryInner(
     }
 
     // Fallback: reconstrói o texto que o motor enviaria com as regras de nome.
-    if (!messageBody && cfg?.message_text && (r.channel === "whatsapp" || r.channel === "sms")) {
-      messageBody = renderHistoryTemplate(cfg.message_text, {
+    if (!messageBody && cfg?.message_text && (r.channel === "whatsapp" || r.channel === "sms" || r.channel === "voice")) {
+      let tplText = cfg.message_text;
+      if (r.channel === "voice" && isLegacyInteractiveCallScript(tplText)) {
+        const catalogKey = STAGE_TO_CADENCE_KEY[r.stage];
+        tplText = catalogKey ? getTemplate(catalogKey)?.body || tplText : tplText;
+      }
+      messageBody = renderHistoryTemplate(tplText, {
         nome: firstName,
         consultor: consultorFirst,
         consultor_phone: consultorPhone,
+        assistente,
+        consultorGender,
       });
       bodySource = "reconstructed";
       if (withName == null) withName = !!firstName;

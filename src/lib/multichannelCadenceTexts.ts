@@ -30,6 +30,18 @@ function tplReplace(text: string, needle: string, value: string): string {
 export const SOFIA_OPENING =
   "Eu sou a {{assistente}}, assistente virtual {{do_da_consultor}} {{consultor}}, {{gestor_a}} da iGreen.";
 
+/**
+ * Ligação GRAVADA (MakeTTSCall / clip) — NÃO é conversa ao vivo.
+ * Objetivo único: mandar a pessoa responder no WhatsApp.
+ * Proibido: "você prefere", "explicar agora", "30 segundos", ramificações.
+ */
+export const RECORDED_CALL_WA_CTA =
+  "Por favor, responda no WhatsApp do {{consultor}} que eu continuo o atendimento por lá.";
+
+export function recordedCallBody(reason: string, opening = SOFIA_OPENING): string {
+  return `${opening}\n\n${String(reason || "").trim()}\n\n${RECORDED_CALL_WA_CTA}`;
+}
+
 const A2_ASK_BILL =
   "Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.";
 
@@ -177,7 +189,7 @@ export const SEG_ENTAO_NOME: AudioSegment = {
 };
 
 /**
- * Padrão profissional — WhatsApp A2 e ligação: “Olá, Nome! Tudo bem?”
+ * Padrão profissional — WhatsApp A2: “Olá, Nome! Tudo bem?”
  * Cache `intro:ola:ptbr4:{norm}`. Passo 3 e 4a usam SEG_ENTAO_NOME.
  */
 export const SEG_NAME_GREET: AudioSegment = {
@@ -189,12 +201,15 @@ export const SEG_NAME_GREET: AudioSegment = {
 };
 
 /**
- * Ligação PSTN — mesma frase do WhatsApp A2 (SEG_NAME_GREET).
+ * Ligação GRAVADA (PSTN) — sem “tudo bem?” (não há resposta ao vivo).
+ * Só cumprimento + nome; o corpo manda ir ao WhatsApp.
  */
 export const SEG_CALL_NAME_GREET: AudioSegment = {
-  ...SEG_NAME_GREET,
   id: "call_name_greet",
-  label: "Olá + nome + tudo bem? (ligação · profissional)",
+  kind: "name",
+  label: "Olá + nome (ligação gravada · sem pergunta)",
+  text: "Olá, {{nome}}!",
+  reusable: true,
 };
 
 /** @deprecated Ligações / cadências B. WhatsApp A2 usa SEG_NAME_GREET. */
@@ -895,7 +910,7 @@ export function renderCadenceBody(
     : "https://wa.me/{{consultor_phone}}";
   // Dados do consultor — sem inventar "Rafael". Slug/vazio mantém {{…}} p/ o painel bloquear TTS.
   const consultor = firstNameFromConsultantLabel(opts.consultor);
-  const assistente = String(opts.assistente || "").trim();
+  const assistente = String(opts.assistente || "").trim() || "Sofia";
   const isConsultora = opts.consultorGender === "consultora";
   const doDaConsultor = isConsultora ? "da" : "do";
   const gestorA = isConsultora ? "gestora" : "gestor";
@@ -917,7 +932,7 @@ export function renderCadenceBody(
     ["{{link_wa}}", linkWa],
     ["{{consultor}}", consultor || "{{consultor}}"],
     ["{{representante}}", consultor || "{{representante}}"],
-    ["{{assistente}}", assistente || "{{assistente}}"],
+    ["{{assistente}}", assistente],
     ["{{do_da_consultor}}", doDaConsultor],
     ["{{gestor_a}}", gestorA],
     ["{{bem_vindo}}", g.bem_vindo],
@@ -1583,26 +1598,21 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     title: "Opcional — Ligação Sofia (encaixe no construtor)",
     timing: "Consultor escolhe o momento no fluxo",
     canGenerateAudio: true,
-    notes: "Passo make_call — opcional. Abertura fixa SEM nome (nome pode não estar disponível ainda na ligação).",
+    notes:
+      "Ligação GRAVADA (MakeTTSCall). Só CTA WhatsApp — sem perguntas. Passo make_call opcional.",
     audioSegments: [
       {
         id: "call_body",
         kind: "fixed",
-        label: "1 · Corpo do áudio (fixo · cache)",
-        text: `Olá! Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen.
-
-Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
-
-Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+        label: "1 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Estou ligando sobre a ativação do seu benefício de economia na conta de energia.",
+        ),
       },
     ],
-    body: `Olá! Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen.
-
-Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
-
-Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
-
-
+    body: recordedCallBody(
+      "Estou ligando sobre a ativação do seu benefício de economia na conta de energia.",
+    ),
   },
 
   // ─── GRUPO A — escada de silêncio (pizza: Retomada → SMS → Ligação → Fecha A) ─
@@ -1638,28 +1648,25 @@ Vi que sua simulação da conta de luz ficou pendente. Posso retomar de onde par
     title: "Escada · Ligação (1ª voz)",
     timing: "~2h após SMS sem resposta · A_CALL",
     canGenerateAudio: true,
-    notes: "Roteiro + clip Sofia da 1ª ligação da escada A. Motor: A_CALL. Runtime costura Olá+nome + corpo. Identidade: {{assistente}}/{{consultor}}.",
+    notes:
+      "Ligação GRAVADA · A_CALL. Só pede WhatsApp. Runtime pode costurar Olá+nome; corpo sem perguntas.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "a_nudge_call_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache · sem nome)",
-        text: `${SOFIA_OPENING}
-
-Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
-
-Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Estou ligando sobre a ativação do seu benefício de economia na conta de energia.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
+      { text: "Olá, {{nome}}!" },
       {
-        text: `${SOFIA_OPENING}
-
-Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
-
-Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+        text: recordedCallBody(
+          "Estou ligando sobre a ativação do seu benefício de economia na conta de energia.",
+        ),
       },
     ]),
   },
@@ -1670,28 +1677,25 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     title: "Escada · Fecha A (última tentativa)",
     timing: "~30 min após 1ª ligação · A_CALL_RETRY → Grupo B",
     canGenerateAudio: true,
-    notes: "Última janela do Grupo A. Sem resposta → COLD_1 (Grupo B). Motor: A_CALL_RETRY. Identidade: {{assistente}}/{{consultor}}.",
+    notes:
+      "Ligação GRAVADA · A_CALL_RETRY. Só CTA WhatsApp. Sem resposta → COLD_1.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "a_nudge_call_retry_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache · sem nome)",
-        text: `${SOFIA_OPENING}
-
-Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.
-
-Se preferir, é só responder no WhatsApp que seguimos por lá.`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
+      { text: "Olá, {{nome}}!" },
       {
-        text: `${SOFIA_OPENING}
-
-Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.
-
-Se preferir, é só responder no WhatsApp que seguimos por lá.`,
+        text: recordedCallBody(
+          "Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.",
+        ),
       },
     ]),
   },
@@ -1831,32 +1835,26 @@ Importante: não existe Pix, depósito ou pagamento ao consultor. Basta me respo
     title: "5 — Primeira ligação (Sofia)",
     timing: "D+1 · entre 15h e 17h · só se ainda silêncio",
     canGenerateAudio: true,
+    notes: "Ligação GRAVADA · CALL_1. Só CTA WhatsApp — sem perguntas nem ramificações.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "b4_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
-
-Se demonstrar desconfiança: Entendo perfeitamente. Reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar.
-
-Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas ou amanhã pela manhã?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Você já demonstrou interesse em reduzir sua conta de luz. Agora conseguimos iniciar a análise apenas com o valor médio da conta.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Você já demonstrou interesse em reduzir sua conta de luz e agora conseguimos iniciar a análise apenas com o valor médio da conta. Você prefere me passar o valor agora ou receber a explicação pelo WhatsApp?
-
-Se demonstrar desconfiança: Entendo perfeitamente. Reforço que não pedimos Pix, depósito ou pagamento ao consultor para iniciar.
-
-Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas ou amanhã pela manhã?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Você já demonstrou interesse em reduzir sua conta de luz. Agora conseguimos iniciar a análise apenas com o valor médio da conta.",
+        ),
+      },
     ]),
-
   },
   {
     key: "b_day2_wa",
@@ -1889,28 +1887,26 @@ Se estiver ocupado: Sem problema. Fica melhor retornarmos hoje até as 18 horas 
     title: "Dia 4 — Segunda ligação (Sofia)",
     timing: "Dia 4 · entre 14h30 e 17h · espaçada (anti-spam)",
     canGenerateAudio: true,
+    notes: "Ligação GRAVADA · CALL_2. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "d4_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para {{consultor}}?
-
-Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Estou retornando com uma atualização sobre a economia na conta de luz.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Estou retornando com uma atualização diferente da que você já recebeu. Você prefere que eu explique rapidamente agora ou que eu deixe tudo organizado no WhatsApp para {{consultor}}?
-
-Se estiver ocupado: Sem problema. Qual o melhor dia e horário para retornarmos?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Estou retornando com uma atualização sobre a economia na conta de luz.",
+        ),
+      },
     ]),
-
   },
   {
     key: "b_day6_sms_2",
@@ -1969,24 +1965,26 @@ Ou prefere outra opção? 👇`,
     title: "Dia 10 — Ligação final (Sofia)",
     timing: "Dia 10 · envia às 15h · encerramento educado da onda",
     canGenerateAudio: true,
+    notes: "Ligação GRAVADA · CALL_3. Só CTA WhatsApp — sem perguntar se quer encerrar.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "d10_body",
         kind: "fixed",
-        label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com {{consultor}} ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Estou concluindo esta sequência para não ficar insistindo. Sua análise continua disponível — basta o valor médio ou uma foto da conta.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Estou concluindo esta sequência para não ficar insistindo. Você prefere manter sua análise disponível com {{consultor}} ou encerrar o atendimento? Para iniciar, precisamos apenas do valor médio ou de uma foto da conta.` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Estou concluindo esta sequência para não ficar insistindo. Sua análise continua disponível — basta o valor médio ou uma foto da conta.",
+        ),
+      },
     ]),
-
   },
   {
     key: "b_day10_wa_final",
@@ -2091,27 +2089,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "60d — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_60D_CALL. Clip Sofia no Motor.",
+    notes: "Ligação GRAVADA · RECALL_60D_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "c60_call_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
-
-Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.
-
-Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Faz cerca de um mês que falamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.",
+        ),
+      },
     ]),
   },
   {
@@ -2155,27 +2151,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "90d — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_90D_CALL.",
+    notes: "Ligação GRAVADA · RECALL_90D_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "c90_call_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Faz cerca de três meses que conversamos sobre economia na conta. Posso retomar sua análise só com o valor médio — sem burocracia.",
+        ),
+      },
     ]),
   },
   {
@@ -2219,31 +2213,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "5 meses — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_5M_CALL. Clip Sofia no Motor.",
+    notes: "Ligação GRAVADA · RECALL_5M_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "c5m_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
-
-Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
-
-Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para {{consultor}} retornar quando for melhor para você.`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Se ainda fizer sentido, conseguimos retomar sua análise apenas com o valor médio da conta — sem foto e sem burocracia.
-
-Você prefere continuar pelo WhatsApp ou que eu explique rapidamente agora?
-
-Se estiver ocupado: Sem problema. Posso deixar tudo organizado no WhatsApp para {{consultor}} retornar quando for melhor para você.` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Faz cerca de cinco meses que conversamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio da conta, sem foto.",
+        ),
+      },
     ]),
   },
   {
@@ -2287,27 +2275,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "8 meses — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_8M_CALL.",
+    notes: "Ligação GRAVADA · RECALL_8M_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "c8m_call_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Faz cerca de oito meses que falamos sobre economia na conta. Sua análise continua disponível com o valor médio.",
+        ),
+      },
     ]),
   },
   {
@@ -2351,27 +2337,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "12 meses — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_12M_CALL.",
+    notes: "Ligação GRAVADA · RECALL_12M_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "c12m_call_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Faz cerca de um ano que conversamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Faz cerca de um ano que conversamos sobre economia na conta de luz. Se ainda fizer sentido, retomamos sua análise só com o valor médio.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Faz cerca de um ano que conversamos sobre economia na conta de luz. Sua análise continua disponível — só com o valor médio.",
+        ),
+      },
     ]),
   },
   {
@@ -2415,27 +2399,25 @@ _Para não receber mais contatos, responda SAIR._`,
     title: "Anual — Ligação Sofia (se silêncio)",
     timing: "~4h após SMS · só se silêncio",
     canGenerateAudio: true,
-    notes: "RECALL_YEARLY_CALL.",
+    notes: "Ligação GRAVADA · RECALL_YEARLY_CALL. Só CTA WhatsApp.",
     audioSegments: [
-      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome (costura runtime)" },
       {
         id: "cyear_call_body",
         kind: "fixed",
-        label: "2 · Corpo",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?`,
+        label: "2 · Corpo gravado (CTA WhatsApp)",
+        text: recordedCallBody(
+          "Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.",
+        ),
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "Olá, {{nome}}! Tudo bem?" },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
-
-Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.
-
-Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
+      { text: "Olá, {{nome}}!" },
+      {
+        text: recordedCallBody(
+          "Este é o lembrete anual sobre economia na conta de luz. Sua análise continua disponível com o valor médio da conta.",
+        ),
+      },
     ]),
   },
 
