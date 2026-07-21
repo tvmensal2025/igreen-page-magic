@@ -114,7 +114,7 @@ export function LeadOriginEditorDialog({
           .from("facebook_campaigns")
           .select("id, name, status")
           .eq("consultant_id", consultantId)
-          .in("status", ["ACTIVE", "PAUSED"])
+          .in("status", ["active", "paused", "pending_review"])
           .order("name", { ascending: true })
           .limit(200),
         supabase

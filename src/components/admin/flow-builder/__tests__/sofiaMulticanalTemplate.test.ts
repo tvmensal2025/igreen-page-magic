@@ -4,13 +4,14 @@ import { FLOW_TEMPLATES } from "@/components/admin/flow-builder/flowTemplates";
 describe("sofia_ativacao_multicanal template", () => {
   const tpl = FLOW_TEMPLATES.find((t) => t.id === "sofia_ativacao_multicanal")!;
 
-  it("existe com 10 passos Grupo A", () => {
+  it("existe com 11 passos Grupo A (inclui 3b Tenho dúvida)", () => {
     expect(tpl).toBeTruthy();
-    expect(tpl.steps).toHaveLength(10);
+    expect(tpl.steps).toHaveLength(11);
     expect(tpl.steps.map((s) => s.step_key)).toEqual([
       "a1_ask_name",
       "a2_text_ask_bill_value",
       "a3_explain_with_buttons",
+      "a3b_pedir_pergunta",
       "a5b_after_club_buttons",
       "a6_ask_bill_photo",
       "a7_ask_document",
@@ -29,17 +30,34 @@ describe("sofia_ativacao_multicanal template", () => {
       "1",
     );
     expect(txs.find((t) => t.goto_step_key === "a6_ask_bill_photo")?.trigger_phrases).toEqual(
-      expect.arrayContaining(["activate", "2"]),
+      expect.arrayContaining(["activate", "Ativar benefício", "2"]),
     );
-    expect(txs.find((t) => t.goto_special === "humano")?.trigger_phrases).toContain("3");
+    expect(txs.find((t) => t.goto_step_key === "a3b_pedir_pergunta")?.trigger_phrases).toEqual(
+      expect.arrayContaining(["duvida", "Tenho dúvida", "3"]),
+    );
+    expect(txs.some((t) => t.goto_special === "humano")).toBe(false);
   });
 
-  it("passo 4: register → conta OCR", () => {
+  it("passo 3b: só áudio + await (chain-stop)", () => {
+    const a3b = tpl.steps.find((s) => s.step_key === "a3b_pedir_pergunta")!;
+    expect(a3b.media_order).toEqual(["audio"]);
+    expect(a3b.captures?.some((c: any) => c?.field === "_await_question" && c?.enabled)).toBe(
+      true,
+    );
+  });
+
+  it("passo 4: register → conta OCR; duvida → a3b", () => {
     const a5 = tpl.steps.find((s) => s.step_key === "a5b_after_club_buttons")!;
     expect(a5.media_order).toEqual(["audio", "text"]);
     expect(
       a5.transitions?.find((t) => t.goto_step_key === "a6_ask_bill_photo")?.trigger_phrases,
-    ).toEqual(expect.arrayContaining(["register", "1"]));
+    ).toEqual(expect.arrayContaining(["register", "Ativar benefício", "1"]));
+    expect(
+      a5.transitions?.find((t) => t.goto_step_key === "a3b_pedir_pergunta")?.trigger_phrases,
+    ).toEqual(expect.arrayContaining(["duvida", "Tenho dúvida", "2"]));
+    expect(
+      a5.transitions?.find((t) => t.goto_special === "humano")?.trigger_phrases,
+    ).toEqual(expect.arrayContaining(["human", "3"]));
   });
 
   it("passo 8: phone_ok → a10 portal OTP", () => {

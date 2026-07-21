@@ -34,12 +34,12 @@ export function CookieBanner() {
   if (!show || modalOpen) return null;
   return (
     <div className="fixed bottom-0 inset-x-0 z-[100] p-2 sm:p-4 pointer-events-none pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-      <div className="pointer-events-auto max-w-3xl mx-auto rounded-xl sm:rounded-2xl border border-primary/30 bg-background/90 backdrop-blur-xl shadow-2xl shadow-primary/10 px-3 py-2 sm:p-5 flex flex-row items-center gap-2 sm:gap-3">
+      <div className="pointer-events-auto max-w-3xl mx-auto rounded-xl sm:rounded-2xl border border-primary/30 bg-background/90 backdrop-blur-xl shadow-2xl shadow-primary/10 px-3 py-2 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
         <p className="text-[10px] leading-snug sm:text-sm text-foreground/90 flex-1 min-w-0 line-clamp-2 sm:line-clamp-none">
           Cookies para melhorar sua experiência.{" "}
           <Link to="/politica-privacidade" className="text-primary underline underline-offset-2">Privacidade</Link>.
         </p>
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <div className="flex items-center justify-end gap-1.5 sm:gap-2 shrink-0">
           <Button size="sm" variant="ghost" onClick={() => decide("rejected")} className="text-xs sm:text-xs min-h-11 sm:h-9 px-3 sm:px-3">Rejeitar</Button>
           <Button size="sm" onClick={() => decide("accepted")} className="text-xs sm:text-xs min-h-11 sm:h-9 px-3 sm:px-3">Aceitar</Button>
           <button onClick={() => decide("rejected")} aria-label="Fechar" className="text-muted-foreground hover:text-foreground p-1 min-h-11 min-w-11 flex items-center justify-center">

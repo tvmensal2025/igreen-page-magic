@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { CATALOG, QUIZZES, type AcademyTrack, type AcademyModule } from "@/data/academyCatalog";
 import type { LessonProgress, ExamResult } from "@/hooks/useAcademyProgress";
-import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
+import { useAC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 function thumb(yt: string) {
   return `https://i.ytimg.com/vi/${yt}/mqdefault.jpg`;
@@ -87,6 +87,7 @@ function TrackOverview({
   getLessonProg: (yt: string) => LessonProgress;
   onScrollTo: (id: string) => void;
 }) {
+  const AC = useAC();
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
       {CATALOG.map(cat => {
@@ -174,6 +175,7 @@ function ContinueWatchingRow({
   getLessonProg: (yt: string) => LessonProgress;
   onOpenLesson: (gi: number) => void;
 }) {
+  const AC = useAC();
   const scrollRef = useRef<HTMLDivElement>(null);
   const items = useMemo(
     () => flatList
@@ -203,7 +205,7 @@ function ContinueWatchingRow({
           aria-label="Anterior"
           className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
                      flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-          style={{ background: "rgba(17,17,17,0.9)", border: `1px solid ${AC.border}`, color: AC.text }}
+          style={{ background: AC.surface, border: `1px solid ${AC.border}`, color: AC.text }}
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -247,7 +249,7 @@ function ContinueWatchingRow({
           aria-label="Próximo"
           className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full
                      flex items-center justify-center opacity-0 group-hover/row:opacity-100 transition-opacity"
-          style={{ background: "rgba(17,17,17,0.9)", border: `1px solid ${AC.border}`, color: AC.text }}
+          style={{ background: AC.surface, border: `1px solid ${AC.border}`, color: AC.text }}
         >
           <ChevronRight className="w-5 h-5" />
         </button>
@@ -266,6 +268,7 @@ function LessonCard({
   onOpen: () => void;
   accent?: string;
 }) {
+  const AC = useAC();
   return (
     <button
       onClick={onOpen}
@@ -340,6 +343,7 @@ function ModuleRow({
   onOpenLesson:  (gi: number) => void;
   onOpenQuiz:    (key: string) => void;
 }) {
+  const AC = useAC();
   const scrollRef = useRef<HTMLDivElement>(null);
   const quizKey  = `${cat.id}-${modIndex}`;
   const hasQuiz  = !!QUIZZES[quizKey];
@@ -477,6 +481,7 @@ function ModuleRow({
 
 /* ---- componente principal ---- */
 export function AcademyCatalog({ flatList, getLessonProg, getExam, onOpenLesson, onOpenQuiz }: Props) {
+  const AC = useAC();
   const [search, setSearch] = useState("");
 
   const searchTerm = search.toLowerCase().trim();

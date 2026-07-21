@@ -8,7 +8,17 @@ const corsHeaders = {
 
 function isWorkerTransient(status: number, body: string): boolean {
   const text = String(body || "").trim().toLowerCase();
-  return status === 502 || status === 503 || status === 504 || text.startsWith("<!doctype") || text.startsWith("<html");
+  if (
+    /c[oó]digo inv[aá]lido ou expirado/.test(text) ||
+    /otp_invalid_or_expired/.test(text) ||
+    /otp.*expir/.test(text) ||
+    /code.*expired/.test(text)
+  ) {
+    return false;
+  }
+  if (text.startsWith("<!doctype") || text.startsWith("<html")) return true;
+  if (!text && (status === 502 || status === 503 || status === 504)) return true;
+  return status === 503 || status === 504;
 }
 
 /**
@@ -142,10 +152,17 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } else {
-        await supabase.from("customers").update({
-          last_otp_dispatch_at: new Date().toISOString(),
-          last_otp_dispatch_error: `HTTP ${res.status}: ${data.slice(0, 200)}`,
-        }).eq("id", customer_id);
+        const isBadOtp = errorKind === "otp_invalid_or_expired"
+          || /c[oó]digo inv[aá]lido ou expirado/i.test(data);
+        if (isBadOtp) {
+          const { markOtpNeedsConfirm } = await import("../_shared/otp-confirm-flow.ts");
+          await markOtpNeedsConfirm(supabase, customer_id, String(otp_code), data.slice(0, 200));
+        } else {
+          await supabase.from("customers").update({
+            last_otp_dispatch_at: new Date().toISOString(),
+            last_otp_dispatch_error: `HTTP ${res.status}: ${data.slice(0, 200)}`,
+          }).eq("id", customer_id);
+        }
       }
 
       return new Response(data, {

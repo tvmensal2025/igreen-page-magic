@@ -1,22 +1,24 @@
 ---
-description: Plataforma iGreen é light-only — não reativar dark como padrão
-globs: src/contexts/ThemeContext.tsx,src/components/ui/ThemeToggle.tsx,index.html,src/styles/painel-elite.css
+description: Tema light/dark dual — toggle no topo, tokens alinhados, sem misturar
+globs: src/contexts/ThemeContext.tsx,src/components/ui/ThemeToggle.tsx,index.html,src/styles/painel-elite.css,src/components/admin/academy/theme.ts
 alwaysApply: false
 ---
 
-# Tema — light only
+# Tema — light + dark (dual)
 
-A plataforma do consultor/admin usa **apenas tema claro**.
+A plataforma do consultor/admin suporta **tema claro e escuro** via botão no topo (`ThemeToggle` no `AppTopbar`).
 
 ## Regras
 
-- `ThemeProvider` sempre aplica `html.light` e `color-scheme: light`.
-- Default / localStorage (`igreen-theme`) = `"light"`. Não voltar o default para `"dark"`.
-- Select/Popover/Dialog abrem em Portal no `body` — se `html` estiver `.dark`, ficam pretos. Por isso o tema global tem que ser light.
-- CSS `.dark { ... }` em `index.css` pode permanecer (legado); não deve ser a classe ativa no `<html>`.
-- Não reintroduzir ciclo dark/system no `ThemeToggle` sem pedido explícito do usuário.
+- `ThemeProvider` aplica `html.light` ou `html.dark` + `color-scheme` + `localStorage` (`igreen-theme`).
+- Preferência só `light` | `dark` (sem `system`) — evita misturar com OS.
+- Default / FOUC = `"light"` se não houver preferência válida.
+- `.painel-elite`, `.ads-central-2026` e `.ads-wizard-scope` **seguem** `html.dark` (não forçar light-only).
+- Academy usa `useAC()` (paleta light/dark) — não cravar `#111` no light.
+- Portais (Select/Dialog/Sonner) herdam tokens do `html` — Sonner usa `ThemeContext`, não `next-themes`.
+- Previews de WhatsApp / mock de celular podem continuar pretos (intencional, produto).
 
 ## FOUC
 
-`index.html` já força `class="light"` + script de migração antes do React.
+`index.html` roda script síncrono antes do React lendo `igreen-theme`.
 ---

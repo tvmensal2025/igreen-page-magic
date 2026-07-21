@@ -29,7 +29,8 @@ export function CpcPanel({ data = [], totalCtaClicks = 0 }: Props) {
       {rows.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">Nenhum clique no período</div>
       ) : (
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto min-w-0 overscroll-x-contain">
+        <table className="w-full text-sm min-w-[420px]">
           <thead>
             <tr className="text-[11px] tracking-wide text-muted-foreground uppercase">
               <th className="text-left px-4 py-2.5 font-medium">#</th>
@@ -70,6 +71,7 @@ export function CpcPanel({ data = [], totalCtaClicks = 0 }: Props) {
             })}
           </tbody>
         </table>
+        </div>
       )}
       <footer className="px-4 py-2.5 border-t border-border text-xs text-muted-foreground">
         Custo por clique = investimento em anúncios ÷ cliques nos botões de ação. Sem investimento no período, mostramos "—".

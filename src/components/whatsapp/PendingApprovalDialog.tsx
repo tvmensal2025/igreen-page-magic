@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, CalendarClock } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, ChevronRight, CalendarClock } from "lucide-react";
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
@@ -355,82 +355,90 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
             </DialogDescription>
 
 
-            {/* Filtro por licenciado */}
-            <div className="flex flex-col gap-2 mt-3 sm:flex-row sm:flex-wrap sm:items-center">
+            {/* Filtro por licenciado — linha própria, sem competir com devolutivas */}
+            <div className="flex flex-col gap-3 mt-4">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setOwnerFilter("mine")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    ownerFilter === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Meus clientes
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOwnerFilter("all")}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    ownerFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  Toda a rede
-                </button>
-              </div>
-              {registrants.length > 1 && ownerFilter !== "mine" && (
-                <select
-                  value={ownerFilter === "all" ? "all" : ownerFilter}
-                  onChange={(e) => setOwnerFilter(e.target.value)}
-                  className="h-8 px-2 text-xs rounded-md border border-border bg-background text-foreground"
-                >
-                  <option value="all">Todos os licenciados</option>
-                  {registrants.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} {r.id === myIgreenId ? "(eu)" : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {hasConfig === false && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2 shrink-0"
-                  onClick={() => setWizardOpen(true)}
-                >
-                  <Settings2 className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">Configurar mensagens primeiro</span>
-                </Button>
-              )}
-              </div>
-
-              {/* Alterna entre a fila normal e as devolutivas estacionadas */}
-              <div className="flex shrink-0 sm:ml-auto">
-              {view === "fila" ? (
-                devolutivasAbertas.length > 0 && (
+                <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
+                  <button
+                    type="button"
+                    onClick={() => setOwnerFilter("mine")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      ownerFilter === "mine" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Meus clientes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOwnerFilter("all")}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      ownerFilter === "all" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Toda a rede
+                  </button>
+                </div>
+                {registrants.length > 1 && ownerFilter !== "mine" && (
+                  <select
+                    value={ownerFilter === "all" ? "all" : ownerFilter}
+                    onChange={(e) => setOwnerFilter(e.target.value)}
+                    className="h-8 min-w-0 max-w-full px-2 text-xs rounded-md border border-border bg-background text-foreground"
+                  >
+                    <option value="all">Todos os licenciados</option>
+                    {registrants.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} {r.id === myIgreenId ? "(eu)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {hasConfig === false && (
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-2 border-warning/50 text-warning hover:bg-warning/10 w-full sm:w-auto"
-                    onClick={() => setView("devolutivas")}
+                    className="gap-2 shrink-0"
+                    onClick={() => setWizardOpen(true)}
                   >
-                    <Inbox className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">Devolutivas em aberto ({devolutivasAbertas.length})</span>
+                    <Settings2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Configurar mensagens primeiro</span>
                   </Button>
+                )}
+              </div>
+
+              {/* Alterna entre a fila normal e as devolutivas estacionadas — faixa própria */}
+              {view === "fila" ? (
+                devolutivasAbertas.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setView("devolutivas")}
+                    className="flex w-full items-center gap-3 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5 text-left transition-colors hover:bg-warning/10"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-warning/15 text-warning">
+                      <Inbox className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-warning leading-tight">
+                        Devolutivas em aberto
+                      </span>
+                      <span className="block text-xs text-muted-foreground mt-0.5">
+                        {devolutivasAbertas.length}{" "}
+                        {devolutivasAbertas.length === 1 ? "cliente estacionado" : "clientes estacionados"}
+                      </span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-warning/70" />
+                  </button>
                 )
               ) : (
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-2 w-full sm:w-auto"
+                  className="gap-2 w-full justify-start"
                   onClick={() => setView("fila")}
                 >
                   <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                   Voltar para a fila
                 </Button>
               )}
-              </div>
             </div>
           </DialogHeader>
 

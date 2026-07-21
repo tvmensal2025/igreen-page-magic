@@ -681,8 +681,8 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               />
             </div>
             {hasDayActivity && (
-              <div className="rounded-lg border border-border/60 bg-muted/20 overflow-hidden text-[11px]">
-                <div className="grid grid-cols-[4.5rem_repeat(5,minmax(0,1fr))] gap-px bg-border/40">
+              <div className="rounded-lg border border-border/60 bg-muted/20 overflow-x-auto max-w-full text-[11px]">
+                <div className="grid grid-cols-[4.5rem_repeat(5,minmax(3.5rem,1fr))] gap-px bg-border/40 min-w-[28rem]">
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground" />
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Gasto</div>
                   <div className="bg-card px-2 py-1.5 font-medium text-muted-foreground text-right">Impr.</div>

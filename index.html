@@ -2,6 +2,20 @@
 <html lang="pt-BR" class="light" style="color-scheme: light;">
   <head>
     <meta charset="UTF-8" />
+    <!-- FOUC: aplica light|dark antes do React (chave igreen-theme). -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("igreen-theme");
+          if (t !== "dark" && t !== "light") t = "light";
+          var r = document.documentElement;
+          r.classList.remove("light", "dark", "system");
+          r.classList.add(t);
+          r.style.colorScheme = t;
+          r.dataset.theme = t;
+        } catch (e) { /* keep class=light do html */ }
+      })();
+    </script>
     <!-- Anti-cache client-side: Lovable Hosting não processa public/_headers,
          então forçamos revalidação aqui. Qualquer deploy novo é detectado
          pelo navegador na próxima navegação. -->
@@ -14,7 +28,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#22c55e" />
+    <meta name="theme-color" content="#00A859" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

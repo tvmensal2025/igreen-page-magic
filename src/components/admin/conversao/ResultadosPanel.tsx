@@ -213,14 +213,15 @@ export function ResultadosPanel({ consultantId }: Props) {
 
       {/* Por etapa */}
       {steps.length > 0 && (
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden min-w-0">
           <div className="border-b border-border/40 bg-muted/30 px-4 py-2.5">
             <h3 className="text-sm font-semibold text-foreground">Resultado por etapa</h3>
             <p className="text-[11px] text-muted-foreground">
               Onde o reaquecimento converte melhor.
             </p>
           </div>
-          <table className="w-full text-xs">
+          <div className="overflow-x-auto min-w-0 overscroll-x-contain">
+          <table className="w-full text-xs min-w-[480px]">
             <thead className="border-b border-border/40 text-left text-[10px] uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-2">Etapa</th>
@@ -249,6 +250,7 @@ export function ResultadosPanel({ consultantId }: Props) {
               })}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
     </div>

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import type { AcademyLesson } from "@/data/academyCatalog";
 import type { LessonProgress } from "@/hooks/useAcademyProgress";
-import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
+import { useAC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 /* ---- tipos globais da IFrame API (não instalar lib) ---- */
 declare global {
@@ -76,6 +76,7 @@ export function AcademyPlayer({
   hasPrev, hasNext, onPrev, onNext, onClose,
   onProgress, onMarkDone,
 }: Props) {
+  const AC = useAC();
   const mountRef    = useRef<HTMLDivElement>(null);
   const playerRef   = useRef<YTPlayerInstance | null>(null);
   const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -170,7 +171,7 @@ export function AcademyPlayer({
         background: `
           radial-gradient(60% 50% at 50% 0%, ${AC.primarySoft} 0%, transparent 60%),
           radial-gradient(80% 60% at 50% 100%, rgba(0,168,89,0.08) 0%, transparent 70%),
-          linear-gradient(180deg, #0A0A0A 0%, ${AC.bg} 100%)
+          linear-gradient(180deg, ${AC.surface2} 0%, ${AC.bg} 100%)
         `,
         color: AC.text,
         fontFamily: AC_FONT_BODY,
@@ -439,6 +440,7 @@ export function AcademyPlayer({
 
 /* ---- subcomponentes ---- */
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  const AC = useAC();
   return (
     <div
       className="px-4 py-3 rounded-xl"
@@ -468,6 +470,7 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 }
 
 function Kbd({ children }: { children: React.ReactNode }) {
+  const AC = useAC();
   return (
     <kbd
       className="inline-flex items-center justify-center min-w-[24px] h-6 px-1.5 rounded-md text-[10px] font-mono font-semibold"

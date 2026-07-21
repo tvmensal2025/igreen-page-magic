@@ -18,7 +18,7 @@ import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
-import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
+import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import {
@@ -141,17 +141,19 @@ Deno.serve(async (req) => {
         continue;
       }
 
+      // Sempre {{nome}} no fallback — nunca interpolar antes do loader.
+      // (Fallback personalizado + cache contaminava o próximo lead do batch.)
       const firstName = safeFirstNameForAddress(c.name, c.name_source);
-      const fallback = firstName
-        ? `Oi ${firstName}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`
-        : `Oi, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`;
-      const msg = await loadAutomationTemplate(
+      const fallback =
+        `Oi {{nome}}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`;
+      let msg = await loadAutomationTemplate(
         supabase,
         "bot_followup_sumiu",
         fallback,
         { nome: firstName },
         c.consultant_id,
       );
+      if (!firstName) msg = scrubEmptyNameGreeting(msg);
       try {
         await markEffectSending(supabase, eff.effectId);
         await sender.sendText(`${c.phone_whatsapp}@s.whatsapp.net`, msg);

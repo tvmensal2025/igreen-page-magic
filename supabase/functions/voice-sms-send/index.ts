@@ -5,7 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
-import { makeSMS, toCtid, toVelipBRDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
+import { makeSMS, toCtid, toVelipSmsDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { resolveConsultantConnectedWaPhone, buildConsultantSmsWaLink, normalizeWaPhoneDigits } from "../_shared/consultant-wa-phone.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
@@ -113,8 +113,8 @@ Deno.serve(async (req) => {
   const seen = new Set<string>();
 
   const push = (phoneRaw: string, name?: string | null) => {
-    const dest = toVelipBRDest(phoneRaw);
-    if (!dest || seen.has(dest)) return;
+    const dest = toVelipSmsDest(phoneRaw);
+    if (!dest || dest.length !== 13 || seen.has(dest)) return;
     seen.add(dest);
     recipients.push({ phone: dest, name: name ?? null });
   };

@@ -143,18 +143,20 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
 
       <VelipHealthBanner />
 
-      <Tabs value={subTab} onValueChange={setSubTab}>
-        <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="nova" className="gap-2"><Phone className="h-4 w-4" /> Nova ligação</TabsTrigger>
-          <TabsTrigger value="sms" className="gap-2"><MessageSquare className="h-4 w-4" /> SMS</TabsTrigger>
-          <TabsTrigger value="bases" className="gap-2"><Users className="h-4 w-4" /> Bases</TabsTrigger>
-          <TabsTrigger value="dnc" className="gap-2"><ShieldBan className="h-4 w-4" /> Não Perturbe</TabsTrigger>
-          <TabsTrigger value="kit" className="gap-2"><RefreshCw className="h-4 w-4" /> Programação do ciclo</TabsTrigger>
-          <TabsTrigger value="textos" className="gap-2"><BookOpen className="h-4 w-4" /> Textos Multicanal</TabsTrigger>
-          <TabsTrigger value="historico" className="gap-2"><History className="h-4 w-4" /> Histórico</TabsTrigger>
-          <TabsTrigger value="painel" className="gap-2"><BarChart3 className="h-4 w-4" /> Painel</TabsTrigger>
-          <TabsTrigger value="ajuda" className="gap-2"><HelpCircle className="h-4 w-4" /> Ajuda</TabsTrigger>
-        </TabsList>
+      <Tabs value={subTab} onValueChange={setSubTab} className="min-w-0 max-w-full">
+        <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
+          <TabsList className="inline-flex h-auto w-max max-w-none flex-nowrap gap-0.5">
+            <TabsTrigger value="nova" className="gap-1.5 shrink-0 text-xs sm:text-sm"><Phone className="h-4 w-4" /> <span className="sm:hidden">Ligação</span><span className="hidden sm:inline">Nova ligação</span></TabsTrigger>
+            <TabsTrigger value="sms" className="gap-1.5 shrink-0 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> SMS</TabsTrigger>
+            <TabsTrigger value="bases" className="gap-1.5 shrink-0 text-xs sm:text-sm"><Users className="h-4 w-4" /> Bases</TabsTrigger>
+            <TabsTrigger value="dnc" className="gap-1.5 shrink-0 text-xs sm:text-sm"><ShieldBan className="h-4 w-4" /> <span className="sm:hidden">DNC</span><span className="hidden sm:inline">Não Perturbe</span></TabsTrigger>
+            <TabsTrigger value="kit" className="gap-1.5 shrink-0 text-xs sm:text-sm"><RefreshCw className="h-4 w-4" /> <span className="sm:hidden">Ciclo</span><span className="hidden sm:inline">Programação do ciclo</span></TabsTrigger>
+            <TabsTrigger value="textos" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BookOpen className="h-4 w-4" /> <span className="sm:hidden">Textos</span><span className="hidden sm:inline">Textos Multicanal</span></TabsTrigger>
+            <TabsTrigger value="historico" className="gap-1.5 shrink-0 text-xs sm:text-sm"><History className="h-4 w-4" /> Histórico</TabsTrigger>
+            <TabsTrigger value="painel" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Painel</TabsTrigger>
+            <TabsTrigger value="ajuda" className="gap-1.5 shrink-0 text-xs sm:text-sm"><HelpCircle className="h-4 w-4" /> Ajuda</TabsTrigger>
+          </TabsList>
+        </div>
         <TabsContent value="nova" className="mt-4">
           <VoiceDialerPanel consultantId={consultantId} customers={customers} />
         </TabsContent>

@@ -1,5 +1,6 @@
 import { PanelLeftClose, PanelLeftOpen, Eye, EyeOff, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 interface AppTopbarProps {
   title: string;
@@ -64,6 +65,8 @@ export function AppTopbar({
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <ThemeToggle />
+
           {onTogglePrivacy && (
             <button
               type="button"

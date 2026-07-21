@@ -26,6 +26,7 @@ import { careerBonusPercent, graduacaoDisplay, graduacaoRank } from "@/features/
 import { TeamRankingTab } from "./TeamRankingTab";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 import { CustomerCharts } from "./CustomerCharts";
+import { useTheme } from "@/contexts/ThemeContext";
 
 const TeamDashboard = lazy(() =>
   import("./team-dashboard/TeamDashboard").then((m) => {
@@ -63,6 +64,7 @@ export function DashboardTab({
   instanceName,
   isWhapi,
 }: DashboardTabProps) {
+  const { resolvedTheme } = useTheme();
   const [scope, setScope] = useState<"me" | "team">("me");
   const { data: teamIds = [] } = useTeamConsultantIds(userId);
   const isLeader = teamIds.length > 1;
@@ -496,7 +498,11 @@ export function DashboardTab({
     try {
       const html2canvas = (await import("html2canvas")).default;
       const { jsPDF } = await import("jspdf");
-      const canvas = await html2canvas(dashboardRef.current, { scale: 1.5, useCORS: true, backgroundColor: "#0a0a0a" });
+      const canvas = await html2canvas(dashboardRef.current, {
+        scale: 1.5,
+        useCORS: true,
+        backgroundColor: resolvedTheme === "dark" ? "#111111" : "#f6f8f7",
+      });
       const imgData = canvas.toDataURL("image/jpeg", 0.85);
       const pdf = new jsPDF("p", "mm", "a4");
       const pdfWidth = pdf.internal.pageSize.getWidth();

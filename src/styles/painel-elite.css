@@ -43,7 +43,7 @@
   --pe-shadow-card: 0 1px 2px rgba(11, 31, 26, 0.04), 0 1px 0 rgba(11, 31, 26, 0.02);
   --pe-shadow-hover: 0 4px 12px rgba(11, 31, 26, 0.06);
 
-  /* ───── Override shadcn tokens DENTRO do painel (independe de .dark global) ───── */
+  /* ───── Override shadcn tokens DENTRO do painel (segue html.light | html.dark) ───── */
   --background: 150 16% 97%;
   --foreground: 215 28% 17%;
   --card: 0 0% 100%;
@@ -63,13 +63,14 @@
   --border: 150 10% 86%;
   --input: 150 10% 86%;
   --ring: 152 100% 33%;
-  --sidebar-background: 0 0% 7%;
-  --sidebar-foreground: 0 0% 90%;
+  /* Sidebar do pe-sidebar é verde sólido; tokens sidebar alinhados ao escuro da marca */
+  --sidebar-background: 150 100% 18%;
+  --sidebar-foreground: 0 0% 100%;
   --sidebar-primary: 152 100% 36%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 13%;
+  --sidebar-accent: 150 80% 22%;
   --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-border: 0 0% 16%;
+  --sidebar-border: 150 40% 28%;
   --sidebar-ring: 152 100% 36%;
 
   font-family: 'Figtree', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
@@ -78,8 +79,60 @@
   font-size: 14px;
 }
 
-/* Garante que TODO descendente herde o esquema claro do painel,
-   mesmo se o <html> global estiver em .dark */
+/* Dark: painel segue html.dark — mesmos tokens oficiais iGreen (#111 / #1A1A) */
+html.dark .painel-elite {
+  --pe-bg: #111111;
+  --pe-surface: #1a1a1a;
+  --pe-surface-muted: #222222;
+  --pe-surface-sunken: #0d0d0d;
+
+  --pe-border: #2a2a2a;
+  --pe-border-strong: #3a3a3a;
+  --pe-border-focus: #00A859;
+
+  --pe-text: #ffffff;
+  --pe-text-muted: #d1d5db;
+  --pe-text-dim: #9ca3af;
+  --pe-text-label: #d1d5db;
+
+  --pe-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(0, 0, 0, 0.2);
+  --pe-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.45);
+
+  --pe-emerald-50: rgba(0, 168, 89, 0.08);
+  --pe-emerald-10: rgba(0, 168, 89, 0.14);
+  --pe-emerald-20: rgba(0, 168, 89, 0.28);
+  --pe-accent-glow: rgba(0, 168, 89, 0.18);
+
+  --background: 0 0% 7%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 152 100% 33%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 16%;
+  --muted-foreground: 220 13% 84%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+  --ring: 152 100% 33%;
+  --sidebar-background: 0 0% 7%;
+  --sidebar-foreground: 0 0% 90%;
+  --sidebar-primary: 152 100% 33%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 0 0% 13%;
+  --sidebar-accent-foreground: 0 0% 90%;
+  --sidebar-border: 0 0% 16%;
+  --sidebar-ring: 152 100% 33%;
+}
+
+/* Descendentes herdam tokens do .painel-elite (light ou dark via html) */
 .painel-elite,
 .painel-elite * {
   border-color: hsl(var(--border));
@@ -165,7 +218,7 @@
 
 /* ─── Topbar ─── */
 .painel-elite .pe-topbar {
-  background: rgba(255, 255, 255, 0.92);
+  background: color-mix(in srgb, var(--pe-surface) 92%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--pe-border);
@@ -274,8 +327,12 @@
   color: var(--pe-text-label);
   padding-right: 4px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  word-break: break-word;
 }
 .painel-elite .pe-kpi-value {
   font-family: 'Outfit', sans-serif;

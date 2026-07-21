@@ -50,16 +50,71 @@ export function digitsOnly(raw: string | null | undefined): string {
   return String(raw ?? "").replace(/\D/g, "");
 }
 
-/** Normaliza BR para formato aceito pela Velip: `55DDNNNNNNNN` (sem "+"). */
+/**
+ * SMS/voz: celular BR antigo (sem 9º dígito) = 55+DDD+8.
+ * Se o local começa com 6–9, insere o 9 após o DDD (mesma regra de `src/lib/phone.ts`).
+ * Fixo (local 2–5) permanece 12 dígitos — Velip SMS rejeita (`Mobile is not valid#240`);
+ * voz pode discar fixo, mas celular sem 9 fica órfão em "dialing".
+ */
+export function ensureBrazilMobileNine(digits: string): string {
+  const d = digitsOnly(digits);
+  if (!d.startsWith("55") || d.length !== 12) return d;
+  const ddd = d.slice(2, 4);
+  const local = d.slice(4);
+  if (local.length === 8 && /^[6-9]/.test(local)) {
+    return `55${ddd}9${local}`;
+  }
+  return d;
+}
+
+/**
+ * Normaliza BR para destino Velip (SMS e ligação): `55DDD9XXXXXXXX` quando celular.
+ * Sempre completa o 9º dígito em móvel antigo — evita loop `#240` e discagens mortas.
+ * NÃO usar em lookup WhatsApp (`phone_whatsapp` é chave da conversa; pode ficar 12 dígitos).
+ */
 export function toVelipBRDest(raw: string | null | undefined): string | null {
   let d = digitsOnly(raw);
   if (!d) return null;
-  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) return d;
-  if (d.length === 10 || d.length === 11) return `55${d}`;
+  if (d.startsWith("55") && (d.length === 12 || d.length === 13)) {
+    return ensureBrazilMobileNine(d);
+  }
+  if (d.length === 10 || d.length === 11) {
+    return ensureBrazilMobileNine(`55${d}`);
+  }
   if (d.length > 13) d = d.slice(-13);
-  if (d.startsWith("55") && d.length >= 12) return d;
-  if (d.length >= 10 && d.length <= 11) return `55${d}`;
+  if (d.startsWith("55") && d.length >= 12) return ensureBrazilMobileNine(d);
+  if (d.length >= 10 && d.length <= 11) return ensureBrazilMobileNine(`55${d}`);
   return null;
+}
+
+/** Destino SMS Velip (= toVelipBRDest; alias semântico). */
+export function toVelipSmsDest(raw: string | null | undefined): string | null {
+  return toVelipBRDest(raw);
+}
+
+/** Falha Velip (SMS/voz) que não adianta re-tentar — avança escada / failed_final. */
+export function isPermanentSmsFailure(detail: string | null | undefined): boolean {
+  const s = String(detail || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("mobile is not valid") ||
+    s.includes("number invalid") ||
+    s.includes("invalid_phone") ||
+    s.includes("sms_skip_landline") ||
+    s.includes("not a mobile") ||
+    s.includes("velip_reproved") ||
+    s.includes("número inexistente") ||
+    s.includes("blocked text") ||
+    /#270\b/.test(s) ||
+    /#240\b/.test(s) ||
+    /#203\b/.test(s)
+  );
+}
+
+/** Códigos Velip em que re-discagem é inútil (número morto / bloqueio). */
+export function isReprovedVelipCode(raw: string | null | undefined): boolean {
+  const s = String(raw || "").toUpperCase().trim();
+  return s === "EK" || s === "CK" || s === "BK" || s === "IK";
 }
 
 /** Trunca ctid p/ 15 chars (limite Velip). */
@@ -438,7 +493,9 @@ export async function makeSMS(opts: MakeSMSOpts): Promise<MakeSMSResult> {
   };
 }
 
-export async function getCallStatus(cd_id: string): Promise<RawResp & { called_status?: string }> {
+export async function getCallStatus(
+  cd_id: string,
+): Promise<RawResp & { called_status?: string; time_sec?: number }> {
   const form = new URLSearchParams();
   // cd_id no formato "<cdcs_db>_<id>" exatamente como veio do MakeTTSCall.
   form.set("cd_id", cd_id);
@@ -450,7 +507,17 @@ export async function getCallStatus(cd_id: string): Promise<RawResp & { called_s
   const called_status = String(
     first.cd_status ?? first.cd_called_status ?? raw.cd_called_status ?? "",
   ) || undefined;
-  return { ...r, called_status };
+  const durRaw = first.dur ?? first.cdr_sec ?? first.cd_time_sec ?? first.time_sec;
+  const durNum = Number(durRaw);
+  const time_sec = Number.isFinite(durNum) && durNum >= 0 ? Math.round(durNum) : undefined;
+  return { ...r, called_status, time_sec };
+}
+
+/** Remove o 9º dígito de destino Velip 13→12 (lookup de logs legados). */
+export function stripVelipNinthDigit(dest: string | null | undefined): string | null {
+  const d = digitsOnly(dest);
+  if (!d.startsWith("55") || d.length !== 13 || d[4] !== "9") return d || null;
+  return `55${d.slice(2, 4)}${d.slice(5)}`;
 }
 
 // ─── Interpretação de status ───────────────────────────────────────────────

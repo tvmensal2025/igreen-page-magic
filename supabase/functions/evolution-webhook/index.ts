@@ -1272,7 +1272,20 @@ Deno.serve(async (req) => {
             outcome: "already_assigned",
             messageSample: messageText,
           });
-        } else if (assign.outcome === "pool_empty" || assign.outcome === "customer_missing") {
+        } else if (assign.outcome === "pool_empty") {
+          // Campanha sem pool / sem parceiros → lead fica 100% com o consultor dono.
+          // Não entra na fila de revisão nem exige parceiro.
+          console.log(
+            `[rodizio] customer=${customer.id} campaign=${rodizioCampaignId} pool vazia — lead do consultor dono`,
+          );
+          await logRodizioOutcome(supabase, {
+            customerId: customer.id,
+            campaignId: rodizioCampaignId,
+            method: "rodizio_assign_lead",
+            outcome: "pool_empty",
+            messageSample: messageText,
+          });
+        } else if (assign.outcome === "customer_missing") {
           await markManualReview(supabase, customer.id, "rodizio_pool_empty");
           await logRodizioOutcome(supabase, {
             customerId: customer.id,

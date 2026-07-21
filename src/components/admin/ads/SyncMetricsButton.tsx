@@ -103,7 +103,8 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
           title="Puxar dados atualizados da Meta agora"
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          {loading ? "Sincronizando..." : "Sincronizar agora"}
+          <span className="sm:hidden">{loading ? "…" : "Sync"}</span>
+          <span className="hidden sm:inline">{loading ? "Sincronizando..." : "Sincronizar agora"}</span>
         </Button>
         {result && !loading && (
           <Button size={size} variant="ghost" onClick={() => setReportOpen(true)} className="gap-1.5 text-xs">

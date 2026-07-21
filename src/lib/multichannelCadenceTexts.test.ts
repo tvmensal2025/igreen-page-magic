@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AFTER_CLUB_BUTTONS,
   AFTER_EXPLAIN_BUTTONS,
+  PRESET_DEFAULT_GOTO,
   AVAILABILITY_BODY_KEYS,
   DEFAULT_AVAILABILITY_PHRASES,
   MULTICHANNEL_CADENCE_TEMPLATES,
@@ -13,6 +14,8 @@ import {
   buildAvailabilityPhrase,
   cadenceAudioUrlKey,
   cadenceBodyAudioUrlKey,
+  cadenceTemplateSupportsFileMedia,
+  defaultMediaOrderForCadenceTemplate,
   emptyLibrary,
   ensureSmsConsultorWaLink,
   filterSegmentsForGender,
@@ -64,7 +67,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const text = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_text_ask_bill_value");
     expect(audio?.body).toContain("{{nome}}");
     expect(audio?.body).toMatch(/Olá,\s*\{\{nome\}\}/);
-    expect(audio?.body).toMatch(/gestor da iGreen/i);
+    expect(audio?.body).toMatch(/\{\{gestor_a\}\} da iGreen/);
     expect(audio?.body).toMatch(/economizar|conta de luz/i);
     expect(audio?.audioSegments?.[0]?.text).toMatch(/Olá/i);
     expect(audio?.audioSegments?.some((s) => s.id === "a2_activate")).toBe(false);
@@ -82,6 +85,16 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a3?.buttons?.map((b) => b.id)).toEqual(
       AFTER_EXPLAIN_BUTTONS.map((b) => b.id),
     );
+    expect(a3?.buttons).toHaveLength(3);
+    expect(a3?.buttons?.some((b) => b.id === "human")).toBe(false);
+    expect(a3?.buttons?.find((b) => b.id === "duvida")).toMatchObject({
+      title: "Tenho dúvida",
+      goto_step_key: "a3b_pedir_pergunta",
+    });
+    expect(PRESET_DEFAULT_GOTO.duvida).toEqual({
+      goto_step_key: "a3b_pedir_pergunta",
+      goto_special: null,
+    });
     expect(a3?.body).toContain("{{valor_conta}}");
     expect(a3?.body).toContain("{{economia_range}}");
     expect(a3?.body).toContain("{{nome}}");
@@ -90,13 +103,27 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a3?.body).not.toMatch(/fazendas solares/i);
     expect(a3?.body).not.toMatch(/Nenhum consultor pede depósito/i);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
-    expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}.");
+    expect(a3?.audioSegments?.[0]?.text).toBe("Então, {{nome}}.");
     expect(a3?.audioSegments?.some((s) => s.kind === "name" && s.text.includes("{{nome}}"))).toBe(
       true,
     );
     expect(a3?.audioSegments?.some((s) => /É simples/i.test(s.text))).toBe(true);
     expect(a3?.audioSegments?.some((s) => /fazendas solares/i.test(s.text))).toBe(true);
     expect(audioLegacy?.hiddenInPanel).toBe(true);
+  });
+
+  it("3b — Tenho dúvida: Então+nome + corpo FAQ, sem botões", () => {
+    const a3b = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3b_pedir_pergunta");
+    expect(a3b).toBeTruthy();
+    expect(a3b?.channel).toBe("whatsapp_audio");
+    expect(a3b?.buttons ?? []).toHaveLength(0);
+    expect(a3b?.canGenerateAudio).toBe(true);
+    expect(a3b?.body).toContain("{{nome}}");
+    expect(a3b?.audioSegments?.[0]?.kind).toBe("name");
+    expect(a3b?.audioSegments?.[0]?.text).toMatch(/Então,\s*\{\{nome\}\}/);
+    expect(a3b?.audioSegments?.[1]?.kind).toBe("fixed");
+    expect(a3b?.audioSegments?.[1]?.text).toMatch(/fidelidade|taxa escondida|placa|apartamento/i);
+    expect(a3b?.audioSegments?.[1]?.text).toMatch(/consultor/i);
   });
 
   it("todos os áudios do Grupo A com cumprimento citam {{nome}}", () => {
@@ -112,9 +139,16 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     }
   });
 
-  it("após clube: Cadastrar / Humano", () => {
+  it("após clube: Ativar benefício / Tenho dúvida / Humano", () => {
     const a5b = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5b_after_club_buttons");
     expect(a5b?.buttons?.map((b) => b.id)).toEqual(AFTER_CLUB_BUTTONS.map((b) => b.id));
+    expect(a5b?.buttons).toHaveLength(3);
+    expect(a5b?.buttons?.find((b) => b.id === "register")?.title).toBe("Ativar benefício");
+    expect(a5b?.buttons?.find((b) => b.id === "duvida")).toMatchObject({
+      title: "Tenho dúvida",
+      goto_step_key: "a3b_pedir_pergunta",
+    });
+    expect(a5b?.body).toMatch(/Ativar benefício/);
   });
 
   it("há slots opcionais de SMS e ligação para o construtor", () => {
@@ -126,11 +160,16 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const sms = MULTICHANNEL_CADENCE_TEMPLATES.filter((t) => t.channel === "sms");
     expect(sms.length).toBeGreaterThan(0);
     for (const t of sms) {
-      // Slots de tema (`{{tema_sms}}`) recebem o link via ensureSmsConsultorWaLink.
-      if (!/\{\{\s*tema_sms\s*\}\}/i.test(t.body)) {
+      const isTemaSlot = /^\{\{\s*tema_sms\s*\}\}$/i.test(t.body.trim());
+      // Slots de tema: o motor injeta o SMS do tema (já com wa.me). Não appendar no publish.
+      if (!isTemaSlot) {
         expect(t.body, t.key).toMatch(/https:\/\/wa\.me\/\{\{\s*consultor_phone\s*\}\}/i);
       }
       const resolved = resolveBody(t, emptyLibrary());
+      if (isTemaSlot) {
+        expect(resolved, t.key).toBe("{{tema_sms}}");
+        continue;
+      }
       expect(resolved, t.key).toContain(SMS_CONSULTOR_WA_LINK);
       expect(
         renderCadenceBody(resolved, { nome: "Maria", consultorPhone: "5511989000650" }),
@@ -148,6 +187,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(ensureSmsConsultorWaLink("Oi wa.me/{{consultor_phone}}")).toBe(
       `Oi ${SMS_CONSULTOR_WA_LINK}`,
     );
+    expect(ensureSmsConsultorWaLink("{{tema_sms}}")).toBe("{{tema_sms}}");
   });
 
   it("normaliza celular BR sem 9º dígito no link do SMS", () => {
@@ -207,7 +247,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     }
   });
 
-  it("passo 2 Olá+nome; passo 3 Nome+não tem segredo; 4a Então+nome", () => {
+  it("passo 2 Olá+nome; passo 3 Então+nome; 4a Então+nome", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
@@ -218,7 +258,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a2?.audioSegments?.filter((s) => s.genderVariant).length).toBe(2);
     expect(a3?.audioSegments?.length).toBe(2);
     expect(a3?.audioSegments?.[0]?.kind).toBe("name");
-    expect(a3?.audioSegments?.[0]?.text).toBe("{{nome}}, não tem segredo.");
+    expect(a3?.audioSegments?.[0]?.text).toBe("Então, {{nome}}.");
     expect(a3?.audioSegments?.[1]?.kind).toBe("fixed");
     expect(a5?.audioSegments?.length).toBe(2);
     expect(a5?.audioSegments?.[0]?.kind).toBe("name");
@@ -247,7 +287,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(out).toBe("Então, Maria.");
   });
 
-  it("spokenSegmentText Nome, não tem segredo (passo 3)", () => {
+  it("spokenSegmentText Nome, não tem segredo (legado)", () => {
     const out = spokenSegmentText(
       { id: "x", kind: "name", label: "", text: "{{nome}}, não tem segredo." },
       { nome: "Maria Silva" },
@@ -257,7 +297,7 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
 
   it("spokenSegmentText sem nome → string vazia (pula intro; evita TTS Cliente)", () => {
     const a3 = spokenSegmentText(
-      { id: "x", kind: "name", label: "", text: "{{nome}}, não tem segredo." },
+      { id: "x", kind: "name", label: "", text: "Então, {{nome}}." },
       { nome: "" },
     );
     const a5 = spokenSegmentText(
@@ -310,12 +350,12 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a5b?.pairedAudioKey).toBe("a5_audio_club_benefits");
   });
 
-  it("passo 2 usa Olá+nome+tudo bem; passo 3 Nome+não tem segredo; 4a Então+nome", () => {
+  it("passo 2 usa Olá+nome+tudo bem; passo 3 Então+nome; 4a Então+nome", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
     const a5 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a5_audio_club_benefits");
     expect(a2?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Olá, {{nome}}! Tudo bem?");
-    expect(a3?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("{{nome}}, não tem segredo.");
+    expect(a3?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Então, {{nome}}.");
     expect(a5?.audioSegments?.find((s) => s.kind === "name")?.text).toBe("Então, {{nome}}.");
   });
 
@@ -335,18 +375,31 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(out).toBe("Olá, Maria! Tudo bem?");
   });
 
-  it("2a tem corpos fixos Sofia/Rafael gestor (2 áudios M/F)", () => {
+  it("2a tem corpos fixos M/F com bem-vinda/bem-vindo literais", () => {
     const a2 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_audio_activate_name");
     const f = a2?.audioSegments?.find((s) => s.genderVariant === "feminino")?.text ?? "";
     const m = a2?.audioSegments?.find((s) => s.genderVariant === "masculino")?.text ?? "";
-    expect(f).toMatch(/gestor da iGreen/i);
-    expect(m).toMatch(/gestor da iGreen/i);
-    expect(f).toMatch(/Rafael, gestor/i);
+    expect(f).toMatch(/Seja muito bem-vinda/);
+    expect(m).toMatch(/Seja muito bem-vindo/);
+    expect(f).toMatch(/\{\{gestor_a\}\} da iGreen/);
+    expect(m).toMatch(/\{\{gestor_a\}\} da iGreen/);
     expect(f).not.toContain("{{bem_vindo}}");
     expect(m).not.toContain("{{bem_vindo}}");
+    expect(f).not.toMatch(/bem-vindo\./);
+    expect(m).not.toMatch(/bem-vinda/);
     expect(cadenceAudioUrlKey("a2_audio_activate_name", "feminino")).toBe(
       "a2_audio_activate_name__feminino",
     );
+  });
+
+  it("render resolve do/da e gestor/gestora pelo gender do consultor", () => {
+    const tpl = "assistente virtual {{do_da_consultor}} {{consultor}}, {{gestor_a}} da iGreen.";
+    expect(
+      renderCadenceBody(tpl, { consultor: "Rafael", consultorGender: "consultor" }),
+    ).toBe("assistente virtual do Rafael, gestor da iGreen.");
+    expect(
+      renderCadenceBody(tpl, { consultor: "Ana", consultorGender: "consultora" }),
+    ).toBe("assistente virtual da Ana, gestora da iGreen.");
   });
 
   it("boas-vindas respeitam gênero M/F", () => {
@@ -397,7 +450,8 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const bodies = a2?.audioSegments?.filter((s) => s.kind === "fixed") ?? [];
     expect(bodies.length).toBe(2);
     for (const body of bodies) {
-      expect(body.text).toMatch(/Eu sou a Sofia, assistente virtual/i);
+      expect(body.text).toMatch(/Eu sou a \{\{assistente\}\}, assistente virtual/i);
+      expect(body.text).toMatch(/\{\{do_da_consultor\}\} \{\{consultor\}\}/);
     }
   });
 
@@ -490,5 +544,56 @@ describe("Disponibilidade — {{frase_disponibilidade}}", () => {
     const { slot, phrase } = buildAvailabilityPhrase(sat);
     expect(slot).toBe("closed");
     expect(phrase).toBe(DEFAULT_AVAILABILITY_PHRASES.after_1800);
+  });
+});
+
+describe("Arquivos do passo — ordem + slots Multicanal", () => {
+  it("Grupo A WhatsApp aceita file media; B/C, SMS e escada A_NUDGE não", () => {
+    const a3 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
+    const b1 = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "b1_wa_reopen");
+    const nudge = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a_nudge_wa");
+    const aSms = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.group === "A" && t.channel === "sms");
+    expect(a3 && cadenceTemplateSupportsFileMedia(a3)).toBe(true);
+    expect(b1 && cadenceTemplateSupportsFileMedia(b1)).toBe(false);
+    expect(nudge && cadenceTemplateSupportsFileMedia(nudge)).toBe(false);
+    if (aSms) expect(cadenceTemplateSupportsFileMedia(aSms)).toBe(false);
+  });
+
+  it("defaultMediaOrder respeita audioPlacement before/after", () => {
+    const before = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a3_explain_with_buttons");
+    const after = MULTICHANNEL_CADENCE_TEMPLATES.find(
+      (t) => t.group === "A" && t.audioPlacement === "after_text",
+    );
+    expect(before && defaultMediaOrderForCadenceTemplate(before)[0]).toBe("audio");
+    expect(before && defaultMediaOrderForCadenceTemplate(before)).toContain("text");
+    expect(after && defaultMediaOrderForCadenceTemplate(after)[0]).toBe("text");
+    expect(after && defaultMediaOrderForCadenceTemplate(after)[1]).toBe("audio");
+  });
+
+  it("a2 paired text usa lookup keys do áudio (stitch __body_* intacto)", () => {
+    const keys = stepMediaLookupKeys("a2_text_ask_bill_value");
+    expect(keys).toContain("a2_audio_activate_name");
+    expect(keys).toContain("a2_audio_activate_name__body_feminino");
+    expect(keys).toContain("a2_audio_activate_name__body_masculino");
+    expect(isSofiaStitchMediaSlot("a2_text_ask_bill_value")).toBe(true);
+    expect(isSofiaStitchMediaSlot("a2_audio_activate_name")).toBe(true);
+  });
+
+  it("a3 lookup inclui corpos stitch", () => {
+    const keys = stepMediaLookupKeys("a3_explain_with_buttons");
+    expect(keys).toContain("a3_explain_with_buttons");
+    expect(keys.some((k) => k.includes("__body"))).toBe(true);
+    expect(isSofiaStitchMediaSlot("a3_explain_with_buttons")).toBe(true);
+  });
+
+  it("ordem default de a2_text (pareado) começa em áudio", () => {
+    const a2text = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_text_ask_bill_value");
+    expect(a2text?.pairedAudioKey).toBe("a2_audio_activate_name");
+    expect(a2text && defaultMediaOrderForCadenceTemplate(a2text)).toEqual([
+      "audio",
+      "text",
+      "image",
+      "video",
+    ]);
   });
 });

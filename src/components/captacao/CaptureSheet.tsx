@@ -18,7 +18,7 @@ import { CaptureProgressBar } from "./CaptureProgressBar";
 import { SendSequenceDialog, type SequenceStep } from "./SendSequenceDialog";
 import { PortalStatusTracker } from "./PortalStatusTracker";
 import { ValidationWarnings } from "./ValidationWarnings";
-import { useCaptureSession, CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
+import { useCaptureSession, CAPTURE_FIELDS, isRegisteredPortalClient } from "@/hooks/useCaptureSession";
 import { useCaptureScoreboard } from "@/hooks/useCaptureScoreboard";
 import { useCaptureCombo } from "@/hooks/useCaptureCombo";
 import { fireRandomCelebration, MOTIVATIONAL_PHRASES } from "@/lib/captureGame";
@@ -153,11 +153,7 @@ function CaptureSheetInner({
   // só um aviso visual, porque o consultor já pode ter conferido fora do card.
   const canSubmit = !!validation?.ok;
   const hasUnconfirmedOcr = !billConfirmed || !docConfirmed;
-  const isRegistered =
-    (customer as any)?.status === "registered_igreen" ||
-    customer?.conversation_step === "cadastro_concluido" ||
-    customer?.conversation_step === "registered_igreen" ||
-    !!(customer as any)?.finalized_at;
+  const isRegistered = isRegisteredPortalClient(customer);
   const phrase = filledCount === totalFields
     ? "Ficha completa! 🏆"
     : (MOTIVATIONAL_PHRASES[filledCount] || `Faltam ${totalFields - filledCount} dados 💪`);
@@ -467,10 +463,13 @@ function CaptureSheetInner({
           )}
           {isRegistered ? (
             <div className="rounded-lg border border-primary/40 bg-primary/10 px-2 py-1.5 text-center">
-              <p className="text-[11px] font-black text-primary tracking-wide">✅ CADASTRADO NA iGREEN</p>
-              {(customer as any)?.igreen_code && (
-                <p className="text-[10px] text-primary/80 mt-0.5">Cód. <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
-              )}
+              <p className="text-[11px] font-black text-primary tracking-wide">✅ CLIENTE</p>
+              <p className="text-[10px] text-primary/80 mt-0.5">
+                {customer?.conversation_step === "cadastro_em_analise" ||
+                (customer as any)?.portal_submitted_at
+                  ? "Cadastro na iGreen — em análise"
+                  : "Cadastrado na iGreen"}
+              </p>
             </div>
           ) : (
             <div className="flex items-center gap-1">
@@ -743,10 +742,12 @@ function CaptureSheetInner({
           )}
           {isRegistered ? (
             <div className={`rounded-md border border-primary/50 bg-gradient-to-r from-primary/20 to-primary/15 text-center shadow-[0_0_28px_hsl(142_70%_45%/0.35)] ${expanded ? "px-3 py-2" : "px-2 py-1"}`}>
-              <p className={`font-black text-primary tracking-wide ${expanded ? "text-sm" : "text-[10px]"}`}>✅ CLIENTE CADASTRADO NA iGREEN</p>
-              {(customer as any)?.igreen_code && (
-                <p className={`text-primary ${expanded ? "text-xs mt-0.5" : "text-[9px]"}`}>Código <code className="font-mono font-bold">{(customer as any).igreen_code}</code></p>
-              )}
+              <p className={`font-black text-primary tracking-wide ${expanded ? "text-sm" : "text-[10px]"}`}>✅ CLIENTE</p>
+              <p className={`text-primary/80 ${expanded ? "text-xs mt-0.5" : "text-[9px]"}`}>
+                {customer?.conversation_step === "cadastro_em_analise" || customer?.portal_submitted_at
+                  ? "Cadastro na iGreen — em análise"
+                  : "Cadastrado na iGreen"}
+              </p>
             </div>
           ) : (
             <div className="flex items-center gap-1">

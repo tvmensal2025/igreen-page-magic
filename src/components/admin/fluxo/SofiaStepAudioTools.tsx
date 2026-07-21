@@ -155,7 +155,7 @@ function buildProfile(
       ],
       bodyLabel: "Sofia corpo · explicação",
       buttons: AFTER_EXPLAIN_BUTTONS,
-      stitchCandidates: (_g, n) => [`stitch:a3_explain_with_buttons:n3:x:${n}`],
+      stitchCandidates: (_g, n) => [`stitch:a3_explain_with_buttons:en1:x:${n}`],
     };
   }
 

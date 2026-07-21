@@ -12,6 +12,7 @@ import {
   makeSMS,
   outcomeToTargetStatus,
   toCtid,
+  toVelipSmsDest,
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
@@ -245,9 +246,15 @@ Deno.serve(async (req) => {
       smsRow = (data as { id: string } | null) ?? null;
     }
     if (!smsRow && dest) {
+      const phoneCanon = toVelipSmsDest(dest) || dest.replace(/\D/g, "");
+      const phoneAlt =
+        phoneCanon.length === 13 && phoneCanon.startsWith("55") && phoneCanon[4] === "9"
+          ? `55${phoneCanon.slice(2, 4)}${phoneCanon.slice(5)}`
+          : null;
+      const phones = [...new Set([phoneCanon, dest.replace(/\D/g, ""), phoneAlt].filter(Boolean))];
       const { data } = await admin
         .from("voice_sms_log").select("id")
-        .eq("phone", dest.replace(/\D/g, ""))
+        .in("phone", phones)
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       smsRow = (data as { id: string } | null) ?? null;
     }
@@ -303,7 +310,33 @@ Deno.serve(async (req) => {
     return json(200, { ok: true, duplicate: true, matched: !!target });
   }
   if (!target) {
-    // Não achamos target — grava log solto para auditoria e retorna 200 pra Velip não retentar
+    // Cadência / reheat: log já existe com velip_call_id (dialing). Atualiza em vez de órfão.
+    if (cd_id) {
+      const outcome = interpretStatus(called_status);
+      const newStatus = outcomeToTargetStatus(outcome) ?? (called_status || "unknown");
+      const patch: Record<string, unknown> = {
+        status: newStatus,
+        velip_status: called_status || null,
+        velip_time_sec: Number.isFinite(time_sec) ? time_sec : null,
+        velip_cost: Number.isFinite(cost) ? cost : null,
+        velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
+        velip_dtmf: Object.keys(dtmf).length ? dtmf : null,
+        velip_raw: params,
+        raw: params,
+        error: null,
+      };
+      if (dest) patch.to_phone = dest;
+      const { data: updated } = await admin
+        .from("voice_call_logs")
+        .update(patch)
+        .eq("velip_call_id", cd_id)
+        .is("velip_status", null)
+        .select("id");
+      if (updated && updated.length > 0) {
+        return json(200, { ok: true, matched: true, cadence_log: true, updated: updated.length });
+      }
+    }
+    // Sem log prévio — grava solto para auditoria (Velip não deve retentar).
     await admin.from("voice_call_logs").insert({
       to_phone: dest || "",
       status: called_status || "unknown",
@@ -438,7 +471,8 @@ Deno.serve(async (req) => {
       .eq("id", target.campaign_id)
       .maybeSingle();
     const smsText = (campFull as { sms_on_no_answer_text?: string | null } | null)?.sms_on_no_answer_text?.trim();
-    if (smsText && dest) {
+    const smsDest = toVelipSmsDest(dest);
+    if (smsText && smsDest && smsDest.length === 13) {
       const eff = await reserveOutboundEffect(admin, {
         idempotencyKey: voiceFallbackSmsKey(target.id, attempts),
         engineKey: "voice_dialer_webhook",
@@ -454,14 +488,14 @@ Deno.serve(async (req) => {
       try {
         await markEffectSending(admin, eff.effectId);
         const smsRes = await makeSMS({
-          to: dest.replace(/\D/g, ""),
+          to: smsDest,
           message: smsText,
           ctid: toCtid(target.id),
         });
         await admin.from("voice_sms_log").insert({
           consultant_id: consultantId,
           campaign_id: target.campaign_id,
-          phone: dest.replace(/\D/g, ""),
+          phone: smsDest,
           message: `[fallback NA] ${smsText}`,
           status: smsRes.ok ? "sent" : "failed",
           velip_sms_id: smsRes.cdls_id ?? null,

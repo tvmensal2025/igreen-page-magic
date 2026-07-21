@@ -237,7 +237,7 @@ export function ResultsDashboard({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 min-w-0 max-w-full">
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-3">
         {!hidePeriodSelector && (

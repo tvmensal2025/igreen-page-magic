@@ -459,13 +459,15 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
   }, [selectedIds, rows, exitSelectMode, fetchRows]);
 
   return (
-    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4 pb-24">
-      <TabsList className="h-10 w-auto justify-start gap-1">
-        <TabsTrigger value="fila" className="px-4">Fila</TabsTrigger>
-        <TabsTrigger value="frases" className="px-4">Frases</TabsTrigger>
-        <TabsTrigger value="resultados" className="px-4">Resultados</TabsTrigger>
-        <TabsTrigger value="config" className="px-4">Ajustes</TabsTrigger>
-      </TabsList>
+    <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4 pb-24 min-w-0 max-w-full">
+      <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
+        <TabsList className="h-10 w-full min-w-0 justify-start gap-1 sm:w-auto">
+          <TabsTrigger value="fila" className="px-3 sm:px-4 shrink-0">Fila</TabsTrigger>
+          <TabsTrigger value="frases" className="px-3 sm:px-4 shrink-0">Frases</TabsTrigger>
+          <TabsTrigger value="resultados" className="px-3 sm:px-4 shrink-0">Resultados</TabsTrigger>
+          <TabsTrigger value="config" className="px-3 sm:px-4 shrink-0">Ajustes</TabsTrigger>
+        </TabsList>
+      </div>
 
       <TabsContent value="fila" className="space-y-3">
         <FilaToolbar
@@ -506,7 +508,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
         ) : filtered.length === 0 ? (
           <EmptyState unclassified={metrics.unclassified} onClassifyAll={classifyAll} />
         ) : (
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 min-w-0">
             {filtered.length > 50 ? (
               filtered.map((r) => (
                 <LeadCard
@@ -626,10 +628,10 @@ function FilaToolbar({
   ];
 
   return (
-    <div className="space-y-2.5 rounded-xl border border-border/50 bg-card p-3">
-      {/* KPIs + ações — linha única em desktop virtual */}
-      <div className="flex flex-nowrap items-end gap-3">
-        <div className="grid min-w-0 flex-1 grid-cols-4 gap-2">
+    <div className="space-y-2.5 rounded-xl border border-border/50 bg-card p-3 min-w-0 max-w-full">
+      {/* KPIs + ações — empilha no mobile; linha no desktop */}
+      <div className="flex flex-col gap-2.5 lg:flex-row lg:items-end lg:gap-3 min-w-0">
+        <div className="grid min-w-0 flex-1 grid-cols-2 sm:grid-cols-4 gap-2">
           <Kpi label="Na fila" value={String(metrics.total)} icon={<MessageSquare className="h-3 w-3" />} />
           <Kpi
             label="Quentes parados"
@@ -640,7 +642,7 @@ function FilaToolbar({
           <Kpi label="Receita em jogo" value={brl(metrics.revenueAtStake)} icon={<Flame className="h-3 w-3" />} tone="warn" />
           <Kpi label="Chance média" value={`${metrics.avgChance}%`} icon={<TrendingUp className="h-3 w-3" />} />
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <Button variant="outline" size="sm" className="h-8 whitespace-nowrap" onClick={onReload} disabled={loading || !!bulk}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Recarregar
           </Button>
@@ -653,7 +655,8 @@ function FilaToolbar({
           {metrics.unclassified === 0 && metrics.classified > 0 && (
             <Button size="sm" variant="outline" className="h-8 gap-1.5 whitespace-nowrap" onClick={onClassifyStale} disabled={!!bulk || staleLoading}>
               {staleLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              Reclassificar 24h
+              <span className="sm:hidden">Reclassificar</span>
+              <span className="hidden sm:inline">Reclassificar 24h</span>
             </Button>
           )}
         </div>
@@ -670,44 +673,46 @@ function FilaToolbar({
       )}
 
 
-      {/* Filtros + seleção — sem wrap: cabe no 1280 virtual */}
-      <div className="flex flex-nowrap items-center gap-2 border-t border-border/40 pt-2.5">
-        <div className="w-40 shrink-0">
-          <Combobox
-            options={tempOptions}
-            value={tempFilter}
-            onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
-            placeholder="Temperatura"
-            searchPlaceholder="Buscar temperatura…"
-            className="h-8"
-          />
-        </div>
-        <div className="w-36 shrink-0">
-          <Combobox
-            options={(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => ({
-              value: o,
-              label: ORIGIN_LABEL[o],
-            }))}
-            value={originFilter}
-            onChange={(v) => setOriginFilter((v as OriginFilter) ?? "all")}
-            placeholder="Origem"
-            searchPlaceholder="Buscar origem…"
-            className="h-8"
-          />
-        </div>
-        {hasPartners && (
-          <div className="w-44 shrink-0">
+      {/* Filtros + seleção — wrap no mobile */}
+      <div className="flex flex-col gap-2 border-t border-border/40 pt-2.5 sm:flex-row sm:flex-wrap sm:items-center min-w-0">
+        <div className="grid grid-cols-2 gap-2 sm:contents min-w-0">
+          <div className="w-full min-w-0 sm:w-40 sm:shrink-0">
             <Combobox
-              options={partnerOptions}
-              value={partnerFilter}
-              onChange={(v: string | null) => setPartnerFilter(v ?? "all")}
-              placeholder="Parceiro"
-              searchPlaceholder="Buscar parceiro…"
+              options={tempOptions}
+              value={tempFilter}
+              onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
+              placeholder="Temperatura"
+              searchPlaceholder="Buscar temperatura…"
               className="h-8"
             />
           </div>
-        )}
-        <div className="relative min-w-0 flex-1">
+          <div className="w-full min-w-0 sm:w-36 sm:shrink-0">
+            <Combobox
+              options={(Object.keys(ORIGIN_LABEL) as OriginFilter[]).map((o) => ({
+                value: o,
+                label: ORIGIN_LABEL[o],
+              }))}
+              value={originFilter}
+              onChange={(v) => setOriginFilter((v as OriginFilter) ?? "all")}
+              placeholder="Origem"
+              searchPlaceholder="Buscar origem…"
+              className="h-8"
+            />
+          </div>
+          {hasPartners && (
+            <div className="w-full min-w-0 col-span-2 sm:col-span-1 sm:w-44 sm:shrink-0">
+              <Combobox
+                options={partnerOptions}
+                value={partnerFilter}
+                onChange={(v: string | null) => setPartnerFilter(v ?? "all")}
+                placeholder="Parceiro"
+                searchPlaceholder="Buscar parceiro…"
+                className="h-8"
+              />
+            </div>
+          )}
+        </div>
+        <div className="relative min-w-0 flex-1 w-full">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar nome / resumo"
@@ -718,7 +723,7 @@ function FilaToolbar({
         </div>
 
 
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
           {!selectMode ? (
             <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onToggleSelectMode}>
               <CheckSquare className="h-3.5 w-3.5" /> Selecionar

@@ -90,7 +90,12 @@ export function PhoneResetButton({ userId }: PhoneResetButtonProps) {
     >
       {resetting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
       <span className="text-[11px] font-medium">
-        {resetting ? "Resetando..." : `Resetar ${RESET_PHONE}`}
+        {resetting ? "Resetando..." : (
+          <>
+            <span className="sm:hidden">Resetar</span>
+            <span className="hidden sm:inline">Resetar {RESET_PHONE}</span>
+          </>
+        )}
       </span>
     </Button>
   );

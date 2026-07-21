@@ -32,7 +32,8 @@ interface Partner {
 const REASON_LABEL: Record<string, string> = {
   no_campaign_ctwa_phrase:
     "Veio do anúncio, mas sem campanha identificada (faltou o protocolo FB-xxxxx na mensagem)",
-  rodizio_pool_empty: "A fila de rodízio dessa campanha está vazia ou pausada",
+  rodizio_pool_empty:
+    "Campanha sem parceiros na pool — lead é 100% seu (consultor dono). Use “Ficar comigo”.",
   rodizio_rpc_error: "Falha técnica ao escolher o próximo parceiro da fila",
   no_campaign_generic: "Sinal de anúncio detectado, sem campanha vinculada",
   meta_lead_no_campaign_or_pool:
@@ -257,7 +258,7 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
       if (error) throw error;
       toast({
         title: "Lead saiu da fila",
-        description: "Ele continua com você — sem enviar para parceiro.",
+        description: "Ele continua 100% com você — dono da campanha na plataforma.",
       });
       qc.invalidateQueries({ queryKey: ["manual-review-leads", consultantId] });
     } catch (e: any) {
@@ -303,8 +304,10 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
             poolIds && poolIds.length > 0
               ? partners.filter((p) => poolIds.includes(p.id))
               : partners;
-          // Campanha conhecida e pool carregada sem membros → não dá para atribuir (trigger 409).
-          const poolEmptyLocked = !!(
+          // Campanha conhecida sem membros na pool → lead é do consultor dono
+          // (não exige parceiro). Atribuir a parceiro só faz sentido após
+          // cadastrar membros em Anúncios.
+          const poolEmptyOwnerLead = !!(
             lead.source_campaign_id &&
             Array.isArray(poolIds) &&
             poolIds.length === 0
@@ -314,7 +317,7 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
               key={lead.id}
               className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-card p-3"
             >
-              <div className="flex-1 min-w-[200px]">
+              <div className="flex-1 min-w-0 w-full sm:min-w-[200px]">
                 <p className="text-sm font-medium">{lead.name || "(sem nome)"}</p>
                 <p className="text-xs text-muted-foreground">
                   {lead.phone_whatsapp || "sem telefone"}
@@ -322,9 +325,10 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
                 <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 mt-0.5">
                   {reasonLabel}
                 </p>
-                {poolEmptyLocked && (
-                  <p className="text-[11px] text-destructive mt-0.5">
-                    Pool desta campanha está vazia. Adicione o parceiro na pool da campanha (Anúncios) e tente de novo.
+                {poolEmptyOwnerLead && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Sem parceiros nesta campanha: o lead fica 100% com você (dono da plataforma).
+                    Clique em “Ficar comigo”. Se quiser distribuir depois, adicione o parceiro na pool em Anúncios.
                   </p>
                 )}
                 {poolIds && poolIds.length > 0 && (
@@ -334,44 +338,49 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
                 )}
               </div>
 
-              <Select
-                value={selectedPartner[lead.id] || ""}
-                onValueChange={(v) => setSelectedPartner((s) => ({ ...s, [lead.id]: v }))}
-                disabled={poolEmptyLocked || partnersForLead.length === 0}
-              >
-                <SelectTrigger className="h-8 w-[220px] text-xs">
-                  <SelectValue placeholder={poolEmptyLocked ? "Pool vazia…" : "Escolher parceiro..."} />
-                </SelectTrigger>
-                <SelectContent>
-                  {partnersForLead.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.nome}
-                      {p.short_code ? ` · ${p.short_code}` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {!poolEmptyOwnerLead && (
+                <Select
+                  value={selectedPartner[lead.id] || ""}
+                  onValueChange={(v) => setSelectedPartner((s) => ({ ...s, [lead.id]: v }))}
+                  disabled={partnersForLead.length === 0}
+                >
+                  <SelectTrigger className="h-8 w-full sm:w-[220px] text-xs">
+                    <SelectValue placeholder="Escolher parceiro..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {partnersForLead.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.nome}
+                        {p.short_code ? ` · ${p.short_code}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
 
+              {!poolEmptyOwnerLead && (
+                <Button
+                  size="sm"
+                  onClick={() => handleAssign(lead)}
+                  disabled={
+                    assigningId === lead.id ||
+                    !selectedPartner[lead.id]
+                  }
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-1" />
+                  {assigningId === lead.id ? "Atribuindo…" : "Atribuir"}
+                </Button>
+              )}
               <Button
                 size="sm"
-                onClick={() => handleAssign(lead)}
-                disabled={
-                  assigningId === lead.id ||
-                  !selectedPartner[lead.id] ||
-                  poolEmptyLocked
-                }
-              >
-                <CheckCircle2 className="w-4 h-4 mr-1" />
-                {assigningId === lead.id ? "Atribuindo…" : "Atribuir"}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
+                variant={poolEmptyOwnerLead ? "default" : "ghost"}
                 onClick={() => handleDismiss(lead)}
                 disabled={assigningId === lead.id}
                 title="Mantém o lead comigo, sem distribuir"
               >
-                Ficar comigo
+                {assigningId === lead.id && poolEmptyOwnerLead
+                  ? "Confirmando…"
+                  : "Ficar comigo"}
               </Button>
             </div>
           );

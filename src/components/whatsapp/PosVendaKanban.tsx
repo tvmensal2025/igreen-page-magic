@@ -435,7 +435,7 @@ export default function PosVendaKanban({
       {loading ? (
         <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
       ) : (
-        <div className="grid min-w-0 max-w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 overflow-hidden">
+        <div className="flex gap-3 overflow-x-auto overscroll-x-contain min-w-0 max-w-full pb-2 snap-x snap-mandatory">
           {STAGES.map((stage) => (
             <div
               key={stage.key}
@@ -448,7 +448,7 @@ export default function PosVendaKanban({
                 else moveTo(c, stage.key);
                 setDragId(null);
               }}
-              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] min-w-0 overflow-hidden shadow-sm"
+              className="bg-card/40 rounded-xl border border-border/50 flex flex-col min-h-[300px] w-[min(85vw,220px)] sm:w-[200px] lg:w-[calc((100%-1.5rem*6)/7)] lg:min-w-[140px] shrink-0 snap-start overflow-hidden shadow-sm"
             >
               <div className={`h-1 w-full ${stage.bar}`} />
               <div className="px-3 py-2.5 border-b border-border/40 flex min-w-0 items-center justify-between gap-2 overflow-hidden">

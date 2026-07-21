@@ -1,6 +1,9 @@
 /**
  * Temas da onda fria (Grupo B) — picker runtime para {{tema_whatsapp}} / {{tema_sms}}.
- * Espelha o catálogo Multicanal (theme_*), sem cruise (exige aprovação).
+ *
+ * Fonte de verdade editorial: Multicanal (theme_*_wa / theme_*_sms).
+ * Publish grava em `cadence_theme_config` (por consultor + global).
+ * Fallback: CADENCE_THEMES hardcoded (sem cruise — ainda sem destino).
  */
 
 export type CadenceThemeId =
@@ -13,7 +16,7 @@ export type CadenceThemeId =
   | "digital_app";
 
 export type PickedTheme = {
-  id: CadenceThemeId;
+  id: CadenceThemeId | string;
   wa: string;
   sms: string;
 };
@@ -21,7 +24,7 @@ export type PickedTheme = {
 /** Placeholder resolvido no tick via cadence-availability (aba Disponibilidade). */
 const DISP = "{{frase_disponibilidade}}";
 
-/** Temas seguros (sem requiresApproval). */
+/** Fallback se a tabela estiver vazia / offline. Alinhado ao Multicanal (sem cruise). */
 export const CADENCE_THEMES: ReadonlyArray<PickedTheme> = [
   {
     id: "simplified_analysis",
@@ -32,7 +35,7 @@ Boa notícia: agora dá para começar sua análise só com o valor médio da con
 ${DISP}
 
 Qual faixa está sua conta hoje?`,
-    sms: `{{consultor}} | iGreen: {{nome}}, agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    sms: `{{consultor}} | iGreen: Oi {{nome}}! Agora da pra analisar so com o valor da conta. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "tariff_flags",
@@ -63,7 +66,8 @@ Reforço: não pedimos Pix, depósito ou pagamento ao consultor para iniciar a a
 ${DISP}
 
 Como prefere seguir?`,
-    sms: `{{consultor}} | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    // Sem "Pix/pagamento" no SMS: Velip bloqueia (#270). WA pode falar Pix.
+    sms: `{{consultor}} | iGreen: analise sem custo antecipado. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     id: "benefits_club",
@@ -102,16 +106,69 @@ function hashPick(seed: string, mod: number): number {
   return mod > 0 ? h % mod : 0;
 }
 
-/** Escolhe tema ≠ lastThemeId (quando possível). */
+function isSmsThemeStage(stage: string): boolean {
+  return stage === "SMS_TEMA_2" || stage === "SMS_TEMA_7";
+}
+
+/**
+ * Escolhe tema.
+ * - WA (COLD_2…): rotaciona ≠ lastThemeId.
+ * - SMS_TEMA_*: **reusa** o mesmo theme_id do WA anterior (lastThemeId).
+ */
 export function pickCadenceTheme(opts: {
   customerId: string;
   stage: string;
   lastThemeId?: string | null;
+  themes?: ReadonlyArray<PickedTheme> | null;
 }): PickedTheme {
-  const pool = CADENCE_THEMES.filter((t) => t.id !== opts.lastThemeId);
-  const list = pool.length > 0 ? pool : [...CADENCE_THEMES];
+  const all = (opts.themes && opts.themes.length > 0) ? opts.themes : CADENCE_THEMES;
+
+  if (isSmsThemeStage(opts.stage) && opts.lastThemeId) {
+    const same = all.find((t) => t.id === opts.lastThemeId);
+    if (same) return same;
+  }
+
+  const pool = all.filter((t) => t.id !== opts.lastThemeId);
+  const list = pool.length > 0 ? pool : [...all];
   const idx = hashPick(`${opts.customerId}:${opts.stage}`, list.length);
   return list[idx]!;
+}
+
+/** Carrega temas do consultor; se vazio, global; se vazio, hardcoded. */
+export async function loadCadenceThemes(
+  supabase: any,
+  consultantId: string | null | undefined,
+): Promise<PickedTheme[]> {
+  const mapRows = (rows: Array<{ theme_id: string; wa_text: string; sms_text: string }> | null) =>
+    (rows || [])
+      .filter((r) => r?.theme_id && (r.wa_text || r.sms_text))
+      .map((r) => ({
+        id: String(r.theme_id),
+        wa: String(r.wa_text || ""),
+        sms: String(r.sms_text || ""),
+      }));
+
+  try {
+    if (consultantId) {
+      const { data: own } = await supabase
+        .from("cadence_theme_config")
+        .select("theme_id, wa_text, sms_text")
+        .eq("consultant_id", consultantId)
+        .eq("enabled", true);
+      const mapped = mapRows(own);
+      if (mapped.length > 0) return mapped;
+    }
+    const { data: global } = await supabase
+      .from("cadence_theme_config")
+      .select("theme_id, wa_text, sms_text")
+      .is("consultant_id", null)
+      .eq("enabled", true);
+    const mapped = mapRows(global);
+    if (mapped.length > 0) return mapped;
+  } catch {
+    /* tabela ausente / RLS — cai no hardcoded */
+  }
+  return [...CADENCE_THEMES];
 }
 
 /** Último theme_id gravado no cadence_action_log.detail deste lead. */

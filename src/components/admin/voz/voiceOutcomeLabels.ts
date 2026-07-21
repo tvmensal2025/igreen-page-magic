@@ -23,7 +23,7 @@ export function normalizeVelipCode(raw: string | null | undefined): string {
 
 export function velipOutcomeLabel(raw: string | null | undefined): string {
   const code = normalizeVelipCode(raw);
-  if (!code) return "Aguardando retorno";
+  if (!code) return "";
   return VELIP_LABEL[code] || code;
 }
 

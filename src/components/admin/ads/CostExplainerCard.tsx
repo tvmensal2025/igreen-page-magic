@@ -41,7 +41,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
     explanation: string;
     accent: string;
   }) => (
-    <div className="flex-1 min-w-[200px]">
+    <div className="flex-1 min-w-0">
       <div
         className={`relative rounded-2xl border p-4 sm:p-5 h-full transition-all hover:scale-[1.02] ${accent}`}
       >

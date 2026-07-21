@@ -272,7 +272,7 @@ export function BoletosAdminTable({
             <select
               value={mesRef}
               onChange={(e) => setMesRef(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[140px]"
+              className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm min-w-0 sm:min-w-[140px]"
               aria-label="Filtrar por mês"
             >
               <option value="all">Todos os meses</option>
@@ -285,7 +285,7 @@ export function BoletosAdminTable({
             <select
               value={consultantId}
               onChange={(e) => setConsultantId(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm min-w-[200px]"
+              className="h-9 w-full sm:w-auto rounded-md border border-input bg-background px-3 text-sm min-w-0 sm:min-w-[200px]"
               aria-label="Filtrar por consultor"
             >
               <option value="all">Todos os consultores ({consultants.length})</option>

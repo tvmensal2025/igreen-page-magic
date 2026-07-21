@@ -537,7 +537,7 @@ export function VoiceCallHistoryPanel({ consultantId, customers = [], onOpenChat
                   <Detail label="Nome" value={displayName(selectedTarget, customers)} />
                   <Detail label="Telefone" value={formatPhone(selectedTarget.phone)} />
                   <Detail label="Resultado ligação" value={statusLabel(selectedTarget.status)} />
-                  <Detail label="Resultado" value={velipOutcomeLabel(selectedTarget.velip_status)} />
+                  <Detail label="Resultado" value={velipOutcomeLabel(selectedTarget.velip_status) || "Aguardando retorno"} />
                   <Detail
                     label="Duração"
                     value={formatDurationSec(durationByTarget[selectedTarget.id])}
@@ -820,7 +820,7 @@ function LogDialog({ log, onClose }: { log: CallLogRow | null; onClose: () => vo
           <dl className="grid grid-cols-2 gap-2">
             <Detail label="Quando" value={formatWhen(log.created_at)} />
             <Detail label="Situação" value={statusLabel(log.status)} />
-            <Detail label="Resultado" value={velipOutcomeLabel(log.velip_status)} />
+            <Detail label="Resultado" value={velipOutcomeLabel(log.velip_status) || "Aguardando retorno"} />
             <Detail label="Duração" value={formatDurationSec(log.velip_time_sec ?? log.duration_sec)} />
             <Detail label="Telefone" value={formatPhone(log.to_phone)} />
             <Detail label="Número que aparece" value={formatPhone(log.from_phone)} />

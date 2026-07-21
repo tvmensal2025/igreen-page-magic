@@ -21,6 +21,7 @@ import {
   buildSendOrderSteps,
 } from "@/components/admin/voz/CadenceSendOrderGuide";
 import { CadenceAudioCutsPanel } from "@/components/admin/voz/CadenceAudioCutsPanel";
+import StepMediaPanel from "@/components/admin/fluxo/StepMediaPanel";
 import { BUTTON_PRESETS } from "@/components/admin/flow-builder/flowTypes";
 import {
   MULTICHANNEL_CADENCE_TEMPLATES,
@@ -40,6 +41,8 @@ import {
   availabilityOverridesFromLibrary,
   buildAvailabilityPhrase,
   cadenceAudioUrlKey,
+  cadenceTemplateSupportsFileMedia,
+  defaultMediaOrderForCadenceTemplate,
   emptyLibrary,
   filterSegmentsForGender,
   hasGeneratedCadenceAudio,
@@ -65,6 +68,7 @@ import {
   themeBodyForPreview,
   ROTATING_CADENCE_THEMES,
   getTemplate,
+  stepMediaLookupKeys,
   validateWhapiButtons,
 } from "@/lib/multichannelCadenceTexts";
 import { estimateSavingsRange, parseAverageBillValue } from "@/lib/billValueParse";
@@ -113,6 +117,7 @@ import {
   X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
 import { cn } from "@/lib/utils";
 import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
 import { whapiSendMedia } from "@/services/whapiApi";
@@ -198,9 +203,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   /** WhatsApp CONECTADO (chip) — mesma cascata do QR/ads; nunca notification_phone. */
   const { phone: connectedWaPhone } = useConsultantPhone(consultantId);
   const consultantPhone = normalizeConsultantPhoneDigits(connectedWaPhone || "");
-  /** Nome + IA dos Dados — usados na prévia e no TTS ({{consultor}} / {{assistente}}). */
+  /** Nome + IA + gênero dos Dados — prévia/TTS ({{consultor}} / {{assistente}} / do|da). */
   const [consultantDisplayName, setConsultantDisplayName] = useState("");
   const [consultantAssistantName, setConsultantAssistantName] = useState("");
+  const [consultantGender, setConsultantGender] = useState<"" | "consultor" | "consultora">("");
   /** null = ainda carregando; true = bot + motor + live ligados. */
   const [autoDispatchLive, setAutoDispatchLive] = useState<boolean | null>(null);
   const consultantFirstName = firstNameFromConsultantLabel(consultantDisplayName);
@@ -218,7 +224,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     (async () => {
       const { data } = await supabase
         .from("consultants")
-        .select("notification_phone, phone, display_name, name, assistant_name")
+        .select("notification_phone, phone, display_name, name, assistant_name, gender")
         .eq("id", consultantId)
         .maybeSingle();
       if (cancelled) return;
@@ -230,15 +236,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         setMyWaPhone(mine);
         setTestPhone((prev) => prev || formatBrazilPhone(mine));
       }
-      const display = String(
-        (data as { display_name?: string | null })?.display_name ||
-          (data as { name?: string | null })?.name ||
-          "",
-      ).trim();
+      const display = firstNameFromPublicConsultant(
+        (data as { name?: string | null })?.name,
+        (data as { display_name?: string | null })?.display_name,
+      );
       setConsultantDisplayName(display);
       setConsultantAssistantName(
-        String((data as { assistant_name?: string | null })?.assistant_name || "").trim(),
+        String((data as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia",
       );
+      const g = String((data as { gender?: string | null })?.gender || "").trim();
+      setConsultantGender(g === "consultora" || g === "consultor" ? g : "");
     })();
     return () => {
       cancelled = true;
@@ -331,6 +338,26 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         updatedAt: new Date().toISOString(),
       };
       if (!cancelled) {
+        // Clip no motor sem URL na lib → busca audio_url em voice_audio_clips (ouvível na UI).
+        const missingUrlIds = Object.entries(merged.audioClipIds)
+          .filter(([key, id]) => id && !merged.audioUrls[key])
+          .map(([, id]) => id);
+        if (missingUrlIds.length) {
+          const { data: clips } = await supabase
+            .from("voice_audio_clips")
+            .select("id, audio_url")
+            .in("id", [...new Set(missingUrlIds)]);
+          const byId = new Map(
+            ((clips as { id: string; audio_url: string | null }[]) || [])
+              .filter((c) => c.audio_url)
+              .map((c) => [c.id, c.audio_url as string]),
+          );
+          const nextUrls = { ...merged.audioUrls };
+          for (const [key, id] of Object.entries(merged.audioClipIds)) {
+            if (!nextUrls[key] && byId.has(id)) nextUrls[key] = byId.get(id)!;
+          }
+          merged.audioUrls = nextUrls;
+        }
         setLib(merged);
         saveLibrary(consultantId, merged);
         setHydrated(true);
@@ -600,6 +627,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     consultorPhone: consultantPhone || undefined,
     consultor: consultantFirstName || undefined,
     assistente: consultantAssistantName || undefined,
+    consultorGender: consultantGender || undefined,
     availabilityOverrides: availabilityOverridesFromLibrary(lib),
   };
   const themeSlot = themePlaceholderKind(draft);
@@ -1470,14 +1498,16 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
         </Button>
       </div>
 
-      <Tabs value={group} onValueChange={(v) => setGroup(v as CadenceGroup | "all")}>
-        <TabsList className="flex-wrap h-auto">
-          {GROUP_TABS.map((t) => (
-            <TabsTrigger key={t.id} value={t.id}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      <Tabs value={group} onValueChange={(v) => setGroup(v as CadenceGroup | "all")} className="min-w-0 max-w-full">
+        <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
+          <TabsList className="inline-flex h-auto w-max max-w-none flex-nowrap gap-0.5">
+            {GROUP_TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id} className="shrink-0 text-xs sm:text-sm">
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
         <TabsContent value={group} className="mt-3 space-y-3">
           {group === "A" && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-xs text-muted-foreground space-y-2">
@@ -2081,11 +2111,23 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 mediaTab={(
                   <>
                 <p className="text-[11px] leading-snug text-muted-foreground">
-                  Cortes TTS · gerar MP3 · teste WA
+                  {selected.channel === "call_script"
+                    ? "Cortes TTS · gerar MP3 · player abaixo · esse áudio é o da ligação Velip (não WhatsApp)"
+                    : "Cortes TTS · gerar MP3 · teste WA"}
                   {(selected.audioPlacement === "before_text" || selected.pairedAudioKey) &&
-                    " · ordem: áudio → texto → botões"}
-                  {selected.audioPlacement === "after_text" && " · ordem: texto → áudio → botões"}
+                    " · ordem sugerida: áudio → texto → botões"}
+                  {selected.audioPlacement === "after_text" && " · ordem sugerida: texto → áudio → botões"}
+                  {cadenceTemplateSupportsFileMedia(selected) &&
+                    " · abaixo: arquivos (áudio/imagem/vídeo) + ordem com texto"}
                 </p>
+
+                {(selected.group === "B" || selected.group === "C") && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+                    Grupo {selected.group}: o motor de cadência envia texto, botões ou ligação
+                    (sem sequência multimodal de arquivos nesta versão). Use a aba Conteúdo /
+                    Cortes quando houver áudio Sofia.
+                  </div>
+                )}
 
                 {pairedTpl && !hasSegments && (
                   <div className="space-y-2 rounded-lg border border-primary/25 bg-primary/[0.04] p-2.5">
@@ -2159,7 +2201,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                       ) : selected.key === "a5_audio_club_benefits" ? (
                         <>Passo 4a: Então + nome → corpo fixo do clube.</>
                       ) : selected.key === "a3_explain_with_buttons" ? (
-                        <>Passo 3: Nome + “não tem segredo” → corpo fixo.</>
+                        <>Passo 3: Então + nome → corpo fixo.</>
                       ) : selected.key === "a2_audio_activate_name" ? (
                         <>Passo 2a: Olá + nome + tudo bem? → corpo fixo M/F (igual ligação).</>
                       ) : (
@@ -2177,7 +2219,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   !hasSegments &&
                   !pairedTpl &&
                   !lib.audioUrls[selected.key] &&
-                  !audioUrl && (
+                  !audioUrl &&
+                  !cadenceTemplateSupportsFileMedia(selected) && (
                   <div className="rounded-lg border border-dashed bg-muted/20 p-6 text-center">
                     <p className="text-sm text-muted-foreground">
                       Este toque não tem áudio. Use a aba Conteúdo para o texto.
@@ -2344,14 +2387,57 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                           : ""}
                       </p>
                     )}
-                    {(audioUrl || lib.audioUrls[selected.key]) && (
+                    {(audioUrl ||
+                      resolveCadenceAudioUrl(lib, selected.key, null) ||
+                      lib.audioUrls[selected.key] ||
+                      lib.audioUrls[cadenceBodyAudioUrlKey(selected.key)]) && (
                       <audio
                         controls
                         className="w-full"
-                        src={audioUrl || lib.audioUrls[selected.key]}
+                        src={
+                          audioUrl ||
+                          resolveCadenceAudioUrl(lib, selected.key, null) ||
+                          lib.audioUrls[selected.key] ||
+                          lib.audioUrls[cadenceBodyAudioUrlKey(selected.key)]
+                        }
                       />
                     )}
+                    {selected.channel === "call_script" &&
+                      !hasSegments &&
+                      !lib.audioUrls[selected.key] &&
+                      !lib.audioClipIds[selected.key] && (
+                        <p className="text-[11px] text-muted-foreground">
+                          Aprove os cortes acima e use “Aprovar e gerar Sofia” para ouvir e gravar o clip da ligação.
+                        </p>
+                      )}
                   </>
+                )}
+
+                {cadenceTemplateSupportsFileMedia(selected) && (
+                  <div className="space-y-2 border-t border-border/60 pt-3 mt-1">
+                    <div className="space-y-1">
+                      <p className="text-xs font-semibold text-foreground">Arquivos do passo</p>
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Adicione áudio, imagem ou vídeo e escolha a ordem (inclui o texto da aba
+                        Conteúdo). Arquivos salvam ao enviar; a ordem grava nas setas — mesmo
+                        caminho do FluxoBuilder (`ai_media_library` + ordem do consultor). Vale
+                        para o fluxo WhatsApp (Grupo A). B/C continuam texto/botões/ligação.
+                      </p>
+                    </div>
+                    <StepMediaPanel
+                      key={`media-${selected.key}`}
+                      consultantId={consultantId}
+                      stepKey={selected.key}
+                      slotKeys={stepMediaLookupKeys(
+                        selected.pairedAudioKey || selected.key,
+                      )}
+                      messageText={draft}
+                      onMessageTextChange={setDraft}
+                      variant="A"
+                      hideSofiaTools
+                      initialOrder={defaultMediaOrderForCadenceTemplate(selected)}
+                    />
+                  </div>
                 )}
 
                   </>

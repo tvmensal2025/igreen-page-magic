@@ -146,17 +146,21 @@ serve(async (req: Request) => {
         await releaseTouch(); continue;
       }
 
+      // Sempre {{nome}} no fallback — nunca interpolar antes do loader
+      // (evita cache contaminar o próximo lead do mesmo cron).
       const firstName = String(lead.name || "").trim().split(/\s+/)[0] || "";
-      const fallback = firstName
-        ? `${firstName}, qualquer outra dúvida, é só perguntar. Estou por aqui.`
-        : `Qualquer outra dúvida, é só perguntar. Estou por aqui.`;
-      const nudgeText = await loadAutomationTemplate(
+      const fallback = `{{nome}}, qualquer outra dúvida, é só perguntar. Estou por aqui.`;
+      let nudgeText = await loadAutomationTemplate(
         supabase,
         "faq_reengagement_nudge",
         fallback,
         { nome: firstName },
         lead.consultant_id,
       );
+      if (!firstName) {
+        nudgeText = nudgeText.replace(/^,\s*/, "").trim() ||
+          "Qualquer outra dúvida, é só perguntar. Estou por aqui.";
+      }
 
       const digits = normalizePhone(lead.phone_whatsapp).replace(/\D/g, "");
       if (!digits) {

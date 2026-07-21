@@ -244,21 +244,23 @@ export default function StepInspector({
           </div>
         </SheetHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="conteudo">
-              <span className="flex items-center gap-1">Conteúdo {tabHelp("O texto que o bot envia. Use {{nome}} pra personalizar.")}</span>
-            </TabsTrigger>
-            <TabsTrigger value="regras">
-              <span className="flex items-center gap-1">Regras {tabHelp("Botões e palavras-chave que decidem o próximo passo do cliente.")}</span>
-            </TabsTrigger>
-            <TabsTrigger value="midias">
-              <span className="flex items-center gap-1">Mídia {tabHelp("Áudio, imagem ou vídeo que acompanha o texto. Escolha do seu acervo.")}</span>
-            </TabsTrigger>
-            <TabsTrigger value="avancado">
-              <span className="flex items-center gap-1">Avançado {tabHelp("Ajustes técnicos: chave do passo, fallback de IA, OCR. Só mexa se souber.")}</span>
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4 min-w-0">
+          <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
+            <TabsList className="inline-flex h-auto w-max max-w-none gap-0.5 sm:grid sm:w-full sm:grid-cols-4 sm:min-w-0">
+              <TabsTrigger value="conteudo" className="shrink-0 text-xs sm:text-sm">
+                <span className="flex items-center gap-1">Conteúdo {tabHelp("O texto que o bot envia. Use {{nome}} pra personalizar.")}</span>
+              </TabsTrigger>
+              <TabsTrigger value="regras" className="shrink-0 text-xs sm:text-sm">
+                <span className="flex items-center gap-1">Regras {tabHelp("Botões e palavras-chave que decidem o próximo passo do cliente.")}</span>
+              </TabsTrigger>
+              <TabsTrigger value="midias" className="shrink-0 text-xs sm:text-sm">
+                <span className="flex items-center gap-1">Mídia {tabHelp("Áudio, imagem ou vídeo que acompanha o texto. Escolha do seu acervo.")}</span>
+              </TabsTrigger>
+              <TabsTrigger value="avancado" className="shrink-0 text-xs sm:text-sm">
+                <span className="flex items-center gap-1">Avançado {tabHelp("Ajustes técnicos: chave do passo, fallback de IA, OCR. Só mexa se souber.")}</span>
+              </TabsTrigger>
+            </TabsList>
+          </div>
 
 
           {/* CONTEÚDO */}

@@ -11,15 +11,15 @@ interface AnalyticsChartsProps {
 }
 
 function useChartColors() {
-  useTheme();
-  const isDark = false;
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   return {
-    grid: isDark ? "hsl(120, 8%, 18%)" : "hsl(220, 10%, 88%)",
-    text: isDark ? "hsl(120, 5%, 65%)" : "hsl(220, 10%, 45%)",
-    tooltipBg: isDark ? "hsl(120, 8%, 8%)" : "hsl(0, 0%, 100%)",
-    tooltipBorder: isDark ? "hsl(120, 8%, 18%)" : "hsl(220, 15%, 90%)",
-    tooltipText: isDark ? "hsl(0, 0%, 95%)" : "hsl(220, 15%, 15%)",
+    grid: isDark ? "hsl(0, 0%, 16%)" : "hsl(220, 10%, 88%)",
+    text: isDark ? "hsl(220, 13%, 84%)" : "hsl(220, 10%, 45%)",
+    tooltipBg: isDark ? "hsl(0, 0%, 10%)" : "hsl(0, 0%, 100%)",
+    tooltipBorder: isDark ? "hsl(0, 0%, 16%)" : "hsl(220, 15%, 90%)",
+    tooltipText: isDark ? "hsl(0, 0%, 100%)" : "hsl(220, 15%, 15%)",
   };
 }
 

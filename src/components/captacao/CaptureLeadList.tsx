@@ -36,6 +36,7 @@ import {
   phoneToRemoteJid,
   type CustomerTag,
 } from "@/hooks/useCustomerTags";
+import { isValidBrNationalPhone, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 
 export type CapturePeriodKey = "48h" | "7d" | "30d" | "60d" | "90d" | "all";
 
@@ -697,34 +698,35 @@ export function CaptureLeadList({
         </div>
 
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 min-w-0 max-w-full overflow-x-auto overscroll-x-contain scrollbar-none">
           {unreadTotal > 0 && (
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0"
+              className="h-7 px-2 text-[11px] gap-1 shrink-0"
               onClick={markAllRead}
               title="Marcar todas como lidas"
             >
               <CheckCheck className="w-3 h-3 shrink-0" />
-              <span className="truncate">Ler tudo</span>
+              <span className="hidden sm:inline">Ler tudo</span>
             </Button>
           )}
           <Button
             size="sm"
             variant={selectMode ? "secondary" : "outline"}
-            className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0"
+            className="h-7 px-2 text-[11px] gap-1 shrink-0"
             onClick={toggleSelectMode}
+            title={selectMode ? "Cancelar seleção" : "Selecionar"}
           >
             {selectMode ? (
               <>
                 <X className="w-3 h-3 shrink-0" />
-                <span className="truncate">Cancelar</span>
+                <span className="hidden sm:inline">Cancelar</span>
               </>
             ) : (
               <>
                 <CheckSquare className="w-3 h-3 shrink-0" />
-                <span className="truncate">Selecionar</span>
+                <span className="hidden sm:inline">Selecionar</span>
               </>
             )}
           </Button>
@@ -732,7 +734,7 @@ export function CaptureLeadList({
             <Button
               size="sm"
               variant="outline"
-              className="h-7 px-2 text-[11px] gap-1 flex-1 min-w-0 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
+              className="h-7 px-2 text-[11px] gap-1 shrink-0 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400"
               onClick={() => void closeAllAttendances()}
               disabled={closeBatchOpen}
               title="Finaliza todos com mensagem de encerramento + pesquisa (1 a 1, com intervalo)"
@@ -742,10 +744,10 @@ export function CaptureLeadList({
               ) : (
                 <LogOut className="w-3 h-3 shrink-0" />
               )}
-              <span className="truncate">
+              <span className="truncate max-w-[7.5rem] sm:max-w-none">
                 {closeBatchOpen
                   ? "Finalizando…"
-                  : `Fechar todos (${allInAttendance.length})`}
+                  : `Fechar (${allInAttendance.length})`}
               </span>
             </Button>
           )}
@@ -1005,16 +1007,16 @@ export function CaptureLeadList({
                 confirmText: "Entrar",
               });
               if (!phone) return;
-              const digits = phone.replace(/\D/g, "");
-              if (digits.length < 10) {
-                toast.error("Telefone inválido");
+              const digits = toWhatsappCanonical(phone);
+              if (!isValidBrNationalPhone(digits) || digits.length < 12 || digits.length > 13) {
+                toast.error("Telefone inválido — use DDD + celular");
                 return;
               }
               const { data: existing } = await supabase
                 .from("customers")
                 .select("id")
                 .eq("consultant_id", consultantId)
-                .ilike("phone_whatsapp", `%${digits}%`)
+                .eq("phone_whatsapp", digits)
                 .maybeSingle();
               if (existing?.id) {
                 await supabase

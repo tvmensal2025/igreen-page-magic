@@ -14,8 +14,9 @@
  *  - Property 5 (Tarefa 6.5): prioridade do rodízio sobre keyword —
  *    quando aplicado, `skipKeywordMatch` é verdadeiro (ignora keyword).
  *  - Property 6 (Tarefa 6.6): fallback seguro — pool vazia/inativa/inexistente
- *    ou retorno inválido => não seta `referral_partner_id`; lead segue ao dono,
- *    `source_campaign_id` preservado.
+ *    ou retorno inválido => não seta `referral_partner_id`; lead segue ao dono
+ *    (consultor com ID na plataforma), `source_campaign_id` preservado.
+ *    Webhooks NÃO devem mandar esses casos para fila de revisão manual.
  *
  * NÃO duplica a regra de `idconsultor`/`indcli` (Requisito 12.4): isso é
  * resolvido pelo pipeline existente (`buildPortal2Payload`) a partir do

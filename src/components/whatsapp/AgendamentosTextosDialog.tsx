@@ -751,8 +751,8 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
           </TabsList>
 
           <TabsContent value="catalogo" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
-            <div className="flex h-full min-h-0">
-              <aside className="w-[280px] shrink-0 border-r flex flex-col min-h-0">
+            <div className="flex h-full min-h-0 flex-col md:flex-row">
+              <aside className="w-full md:w-[280px] shrink-0 border-b md:border-b-0 md:border-r flex flex-col min-h-0 max-h-[40vh] md:max-h-none">
                 <div className="p-2 flex flex-wrap gap-1 border-b">
                   <Button
                     type="button"

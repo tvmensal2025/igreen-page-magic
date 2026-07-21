@@ -46,12 +46,12 @@ interface Props {
 
 function ChartCard({ title, subtitle, children, className = "" }: { title: string; subtitle?: string; children: React.ReactNode; className?: string }) {
   return (
-    <Card className={`p-4 bg-card/60 border-border/40 backdrop-blur ${className}`}>
-      <div className="mb-3">
-        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-        {subtitle && <p className="text-[11px] text-muted-foreground">{subtitle}</p>}
+    <Card className={`p-4 bg-card/60 border-border/40 backdrop-blur min-w-0 overflow-hidden ${className}`}>
+      <div className="mb-3 min-w-0">
+        <h4 className="text-sm font-semibold text-foreground truncate">{title}</h4>
+        {subtitle && <p className="text-[11px] text-muted-foreground break-words">{subtitle}</p>}
       </div>
-      <div className="h-64">{children}</div>
+      <div className="h-64 min-w-0 w-full">{children}</div>
     </Card>
   );
 }
@@ -81,15 +81,15 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
       (data?.daily ?? []).map((d) => ({
         date: d.date.slice(5).replace("-", "/"),
         gasto: Number((d.spend_cents / 100).toFixed(2)),
-        leads: d.leads,
-        cpl: d.cpl_cents != null ? Number((d.cpl_cents / 100).toFixed(2)) : 0,
+        conversas: d.conversations,
+        cpl: d.cpl_conversation_cents != null ? Number((d.cpl_conversation_cents / 100).toFixed(2)) : 0,
       })),
     [data?.daily],
   );
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 max-w-full">
         {Array.from({ length: 4 }).map((_, i) => (
           <Skeleton key={i} className="h-72 rounded-xl" />
         ))}
@@ -100,8 +100,8 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
   const showByConsultant = consultantIds.length > 1 && (byConsultant?.length ?? 0) > 0;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ChartCard title="Gasto x Clientes interessados por dia" subtitle="Investimento em ads vs clientes interessados WhatsApp gerados">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 max-w-full">
+      <ChartCard title="Gasto x Conversas Meta por dia" subtitle="Investimento Ads vs conversas CTWA reportadas pela Meta">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
@@ -113,17 +113,17 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
               formatter={(value: number, name: string) =>
                 name === "gasto"
                   ? [value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), "Gasto"]
-                  : [value, "Clientes interessados"]
+                  : [value, "Conversas Meta"]
               }
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Line yAxisId="left" type="monotone" dataKey="gasto" stroke="hsl(142 71% 45%)" strokeWidth={2} dot={false} name="Gasto (R$)" />
-            <Line yAxisId="right" type="monotone" dataKey="leads" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Clientes interessados" />
+            <Line yAxisId="right" type="monotone" dataKey="conversas" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Conversas Meta" />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Custo por lead Meta diário" subtitle="Gasto dividido pelos eventos de lead reportados pela Meta">
+      <ChartCard title="Custo por conversa Meta (diário)" subtitle="Gasto ÷ conversas CTWA do dia (não é lead CRM)">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <defs>
@@ -139,10 +139,10 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
               contentStyle={tooltipStyle}
               formatter={(value: number) => [
                 value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }),
-                "Custo/lead Meta",
+                "Custo/conversa Meta",
               ]}
             />
-            <Area type="monotone" dataKey="cpl" stroke="hsl(48 96% 53%)" fill="url(#cplGrad)" strokeWidth={2} name="Custo/lead Meta" />
+            <Area type="monotone" dataKey="cpl" stroke="hsl(48 96% 53%)" fill="url(#cplGrad)" strokeWidth={2} name="Custo/conversa Meta" />
           </AreaChart>
         </ResponsiveContainer>
       </ChartCard>

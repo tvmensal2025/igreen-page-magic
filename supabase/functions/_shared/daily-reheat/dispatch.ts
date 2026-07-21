@@ -19,8 +19,11 @@ import {
   playAudioFile,
   makeSMS,
   toVelipBRDest,
+  toVelipSmsDest,
   toCtid,
   velipConfigured,
+  isReprovedVelipCode,
+  stripVelipNinthDigit,
 } from "../voice-dialer/velip.ts";
 import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
 import { finishProactiveTouch, reserveProactiveTouch } from "../journey-effects.ts";
@@ -304,6 +307,26 @@ async function runCall(
   if (!cust?.phone_whatsapp) return { action: "call", ok: false, detail: "no_phone" };
   const dest = toVelipBRDest(cust.phone_whatsapp);
   if (!dest) return { action: "call", ok: false, detail: "invalid_phone" };
+  // Celular antigo (12 dig) já sai com 9 via toVelipBRDest — evita discagem morta.
+
+  const destAlt = stripVelipNinthDigit(dest);
+  const phoneCandidates = [...new Set([dest, destAlt].filter(Boolean))] as string[];
+  const { data: priorFails } = await supabase
+    .from("voice_call_logs")
+    .select("velip_status")
+    .eq("consultant_id", plan.consultant_id)
+    .in("to_phone", phoneCandidates)
+    .in("velip_status", ["IK", "EK", "CK", "BK", "ik", "ek", "ck", "bk"])
+    .order("created_at", { ascending: false })
+    .limit(1);
+  const prior = (priorFails as { velip_status: string | null }[] | null)?.[0];
+  if (prior && isReprovedVelipCode(prior.velip_status)) {
+    return {
+      action: "call",
+      ok: false,
+      detail: `velip_reproved:${String(prior.velip_status).toUpperCase()}`,
+    };
+  }
 
   const ctid = toCtid(`dreheat_${plan.customer_id.slice(0, 8)}_${plan.step}`);
 
@@ -353,6 +376,23 @@ async function runCall(
       return { action: "call", ok: false, detail: "sofia_required_no_clip" };
     }
     if (!r.ok) return { action: "call", ok: false, detail: `velip:${r.error || "fail"}` };
+    if (r.cd_id) {
+      const { error: callLogErr } = await supabase.from("voice_call_logs").insert({
+        consultant_id: plan.consultant_id,
+        to_phone: dest,
+        status: "dialing",
+        velip_call_id: r.cd_id,
+        raw: {
+          source: "daily_reheat",
+          step: plan.step,
+          customer_id: plan.customer_id,
+          ctid,
+        },
+      });
+      if (callLogErr) {
+        console.warn("[daily-reheat] voice_call_logs insert failed", callLogErr.message);
+      }
+    }
     return { action: "call", ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
   } catch (e) {
     return { action: "call", ok: false, detail: (e as Error).message };
@@ -372,8 +412,9 @@ async function runSms(
     plan.consultant_id,
   );
   if (!cust?.phone_whatsapp) return { action: "sms", ok: false, detail: "no_phone" };
-  const dest = toVelipBRDest(cust.phone_whatsapp);
+  const dest = toVelipSmsDest(cust.phone_whatsapp);
   if (!dest) return { action: "sms", ok: false, detail: "invalid_phone" };
+  if (dest.length === 12) return { action: "sms", ok: false, detail: "sms_skip_landline" };
 
   const raw =
     (which === "retry" ? kit?.sms_retry_text : kit?.sms_na_text)?.trim() ||
@@ -384,16 +425,17 @@ async function runSms(
 
   try {
     const r = await makeSMS({ to: dest, message });
-    await supabase.from("voice_sms_log").insert({
+    const { error: smsLogErr } = await supabase.from("voice_sms_log").insert({
       consultant_id: plan.consultant_id,
       phone: dest,
       message,
-      velip_sms_id: r.cdls_id ?? null,
+      velip_sms_id: r.cdls_id != null ? String(r.cdls_id) : null,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
-      raw: r.raw ?? {},
-      sent_at: r.ok ? new Date().toISOString() : null,
     });
+    if (smsLogErr) {
+      console.warn("[daily-reheat] voice_sms_log insert failed", smsLogErr.message);
+    }
     if (!r.ok) return { action: "sms", ok: false, detail: `velip:${r.error}` };
     return { action: "sms", ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
   } catch (e) {

@@ -314,8 +314,8 @@ function ExperimentResult({ result }: { result: MetaAdsExperimentResult }) {
         <p className="mt-2 text-xs text-muted-foreground">Limite unilateral de 95% por bootstrap pareado determinístico de {result.bootstrapIterations.toLocaleString("pt-BR")} reamostragens. Confirmação exige limite &lt; 1 e redução pontual mínima de {percent(result.minimumPointReduction)}.</p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[720px] text-sm">
+      <div className="overflow-x-auto max-w-full min-w-0 rounded-lg border overscroll-x-contain">
+        <table className="w-full min-w-[640px] text-sm">
           <thead className="bg-muted/50 text-left text-muted-foreground"><tr><th className="p-3">Braço</th><th className="p-3 text-right">Gasto</th><th className="p-3 text-right">Custo/conversa</th><th className="p-3 text-right">Custo/lead Meta</th><th className="p-3 text-right">Custo/contato CRM</th><th className="p-3 text-right">Custo/aprovado</th></tr></thead>
           <tbody>
             <ArmRow label="Controle" summary={result.control} />

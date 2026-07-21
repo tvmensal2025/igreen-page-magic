@@ -348,18 +348,18 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
         </TabsList>
 
         <TabsContent value="novos" className="flex-1 min-h-0 flex flex-col gap-3 mt-3 data-[state=inactive]:hidden">
-          <div className="shrink-0 flex flex-wrap items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="shrink-0 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 p-2 rounded-lg border border-border/60 bg-card/40 min-w-0">
+            <div className="relative flex-1 min-w-0 w-full sm:min-w-[200px]">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Buscar nome, telefone, empresa, cidade..."
-                className="pl-8 h-9 bg-background"
+                className="pl-8 h-9 bg-background w-full"
               />
             </div>
             <Select value={channel} onValueChange={(v) => setChannel(v as LeadChannel | "all")}>
-              <SelectTrigger className="w-[200px] h-9 bg-background"><SelectValue placeholder="Origem" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[200px] h-9 bg-background"><SelectValue placeholder="Origem" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas as origens</SelectItem>
                 <SelectItem value="meta_leadads">Anúncio Facebook/Instagram</SelectItem>
@@ -370,8 +370,9 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
                 <SelectItem value="manual">Cadastro manual</SelectItem>
               </SelectContent>
             </Select>
+            <div className="grid grid-cols-2 gap-2 sm:contents">
             <Select value={personType} onValueChange={(v) => setPersonType(v as PersonType | "all")}>
-              <SelectTrigger className="w-[140px] h-9 bg-background"><SelectValue placeholder="Tipo" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px] h-9 bg-background"><SelectValue placeholder="Tipo" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Pessoa e Empresa</SelectItem>
                 <SelectItem value="pf">Pessoa física</SelectItem>
@@ -379,7 +380,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
               </SelectContent>
             </Select>
             <Select value={status} onValueChange={(v) => setStatus(v as LeadStatus | "all")}>
-              <SelectTrigger className="w-[140px] h-9 bg-background"><SelectValue placeholder="Situação" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[140px] h-9 bg-background"><SelectValue placeholder="Situação" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas situações</SelectItem>
                 <SelectItem value="new">Novos</SelectItem>
@@ -388,6 +389,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
                 <SelectItem value="discarded">Descartados</SelectItem>
               </SelectContent>
             </Select>
+            </div>
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-border bg-card/30">

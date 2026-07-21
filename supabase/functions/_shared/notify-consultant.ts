@@ -830,7 +830,8 @@ export async function notifyOwnerManualReview(
     const reasonText: Record<string, string> = {
       no_campaign_ctwa_phrase:
         "Lead chegou do anúncio (frase genérica do Meta) sem AD ID, sem ctwa_clid e sem protocolo FB-xxxxx na mensagem. Com 2+ campanhas ativas o sistema não chuta — atribua manualmente ou garanta o protocolo na mensagem do anúncio.",
-      rodizio_pool_empty: "A pool de rodízio dessa campanha está vazia ou inativa.",
+      rodizio_pool_empty:
+        "Campanha sem parceiros na pool — o lead fica com você (consultor dono). Confirme em “Ficar comigo” na fila, se ainda aparecer.",
       rodizio_rpc_error:
         "Erro técnico ao consultar o próximo parceiro da fila (o lead não foi distribuído).",
       no_campaign_generic: "Sinal genérico de anúncio detectado, mas sem campanha vinculada.",

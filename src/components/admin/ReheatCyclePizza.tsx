@@ -46,7 +46,8 @@ import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
-import { formatBrazilPhone, normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
+import { formatBrazilPhone, normalizeBrazilPhone, phonesMatch, validateBrazilPhone } from "@/lib/phone";
+import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
 import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
 
 import { isAddressableNameSource, isUsableCustomerName, formatPersonName } from "@/lib/customerDisplayName";
@@ -223,9 +224,17 @@ function labelDelivery(channel: string, delivery: string | null, status: string)
   const s = String(status || "").toLowerCase();
   if (channel === "sms") {
     if (d === "DELIVRD" || s === "delivered") return "SMS entregue";
-    if (d === "UNDELIV" || d === "EXPIRED" || s === "failed") return "SMS não entregue";
+    if (d === "UNDELIV" || d === "EXPIRED" || s === "failed") {
+      const err = String(delivery || "").toLowerCase();
+      if (err.includes("blocked text") || err.includes("#270")) return "SMS bloqueado (#270)";
+      if (err.includes("mobile is not valid") || err.includes("#240")) return "Número inválido (#240)";
+      return "SMS não entregue";
+    }
     if (s === "sent") return "SMS enviado";
     if (s === "queued") return "Na fila / passou";
+    const raw = String(delivery || "");
+    if (/blocked text|#270/i.test(raw)) return "SMS bloqueado (#270)";
+    if (/mobile is not valid|#240/i.test(raw)) return "Número inválido (#240)";
     return delivery || status || "—";
   }
   if (channel === "whatsapp") {
@@ -240,8 +249,17 @@ function labelDelivery(channel: string, delivery: string | null, status: string)
     return delivery || status || "—";
   }
   if (channel === "voice") {
-    if (s === "sent") return "Ligação disparada";
+    const code = String(delivery || "").toUpperCase();
+    if (code === "OK") return "Atendida";
+    if (code === "NA") return "Não atendeu";
+    if (code === "EK") return "Número inválido";
+    if (code === "CK") return "Bloqueio operadora";
+    if (code === "BK") return "Não perturbe";
+    if (code === "IK") return "Número inexistente";
+    if (s === "completed" || s === "answered") return "Atendida";
+    if (s === "no_answer") return "Não atendeu";
     if (s === "failed") return "Ligação falhou";
+    if (s === "dialing" || s === "sent") return "Ligação disparada";
     if (s === "queued") return "Na fila / passou";
   }
   if (s === "sent") return "Disparado";
@@ -262,6 +280,19 @@ function inferWithName(body: string | null): boolean | null {
 
 function phoneDigits(raw: string | null | undefined): string {
   return String(raw || "").replace(/\D/g, "");
+}
+
+function parseDispatchVelipId(
+  detail: Record<string, unknown> | null | undefined,
+  kind: "call" | "sms",
+): string | null {
+  const d = String(detail?.dispatch || "");
+  if (kind === "call") {
+    const m = d.match(/^call_placed:([^:]+)/);
+    return m?.[1] || null;
+  }
+  const m = d.match(/^sms_sent:([^:]+)/);
+  return m?.[1] || null;
 }
 
 /** Canal do estágio no motor (espelho enxuto do STAGE_MAP). */
@@ -415,13 +446,7 @@ async function loadStepPreviewTemplates(
       .select("name, display_name")
       .eq("id", consultantId)
       .maybeSingle();
-    const display = String(cons?.display_name || cons?.name || "").trim();
-    const isSlug =
-      display.length > 0 &&
-      !/\s/.test(display) &&
-      display === display.toLowerCase() &&
-      (/\d/.test(display) || display.length >= 9);
-    consultor = isSlug ? "" : (display.split(/\s+/)[0] || display);
+    consultor = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")
@@ -532,6 +557,19 @@ async function loadSliceHistory(
   group: "A" | "B" | "C",
   stepId: string,
 ): Promise<SliceHistoryItem[]> {
+  try {
+    return await loadSliceHistoryInner(consultantId, group, stepId);
+  } catch (e) {
+    console.warn("[ReheatCyclePizza] loadSliceHistory", (e as Error)?.message || e);
+    return [];
+  }
+}
+
+async function loadSliceHistoryInner(
+  consultantId: string | undefined,
+  group: "A" | "B" | "C",
+  stepId: string,
+): Promise<SliceHistoryItem[]> {
   const stages = stagesForSlice(group, stepId);
   if (!stages.length) return [];
 
@@ -602,13 +640,7 @@ async function loadSliceHistory(
       .select("name, display_name")
       .eq("id", consultantId)
       .maybeSingle();
-    const display = String(cons?.display_name || cons?.name || "").trim();
-    const isSlug =
-      display.length > 0 &&
-      !/\s/.test(display) &&
-      display === display.toLowerCase() &&
-      (/\d/.test(display) || display.length >= 9);
-    consultorFirst = isSlug ? "" : (display.split(/\s+/)[0] || display);
+    consultorFirst = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")
@@ -715,33 +747,40 @@ async function loadSliceHistory(
     status: string;
     delivery_status: string | null;
     created_at: string;
+    velip_sms_id: string | null;
+    error: string | null;
   }[] = [];
   if (smsPhones.length && consultantId) {
     const { data: smsRows } = await (supabase as any)
       .from("voice_sms_log")
-      .select("phone, message, status, delivery_status, created_at")
+      .select("phone, message, status, delivery_status, created_at, velip_sms_id, error")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false })
       .limit(80);
     for (const s of (smsRows as typeof smsLogs) || []) {
-      const dig = phoneDigits(s.phone);
-      if (smsPhones.some((p) => dig.endsWith(p.slice(-11)) || p.endsWith(dig.slice(-11)))) {
+      if (smsPhones.some((p) => phonesMatch(p, s.phone))) {
         smsLogs.push(s);
       }
     }
   }
 
-  const findSmsNear = (phone: string | null, atIso: string) => {
-    const dig = phoneDigits(phone);
-    if (!dig) return null;
+  const findSmsNear = (
+    phone: string | null,
+    atIso: string,
+    velipSmsId: string | null,
+  ) => {
+    if (velipSmsId) {
+      const byId = smsLogs.find((s) => s.velip_sms_id && s.velip_sms_id === velipSmsId);
+      if (byId) return byId;
+    }
+    if (!phone) return null;
     const t = new Date(atIso).getTime();
     let best: (typeof smsLogs)[0] | null = null;
     let bestDiff = Infinity;
     for (const s of smsLogs) {
-      const sd = phoneDigits(s.phone);
-      if (!(sd.endsWith(dig.slice(-11)) || dig.endsWith(sd.slice(-11)))) continue;
+      if (!phonesMatch(phone, s.phone)) continue;
       const diff = Math.abs(new Date(s.created_at).getTime() - t);
-      if (diff < bestDiff && diff < 10 * 60_000) {
+      if (diff < bestDiff && diff < 15 * 60_000) {
         bestDiff = diff;
         best = s;
       }
@@ -749,7 +788,7 @@ async function loadSliceHistory(
     return best;
   };
 
-  // Ligação: voice_call_logs por telefone + janela.
+  // Ligação: voice_call_logs por telefone + janela (e por velip_call_id do dispatch).
   const callPhones = [
     ...new Set(
       rows
@@ -765,31 +804,44 @@ async function loadSliceHistory(
     duration_sec: number | null;
     status: string | null;
     created_at: string;
+    velip_call_id: string | null;
   }[] = [];
-  if (callPhones.length && consultantId) {
+  if ((callPhones.length || rows.some((r) => r.channel === "voice")) && consultantId) {
     const { data: callRows } = await (supabase as any)
       .from("voice_call_logs")
-      .select("to_phone, velip_status, velip_time_sec, duration_sec, status, created_at")
+      .select("to_phone, velip_status, velip_time_sec, duration_sec, status, created_at, velip_call_id")
       .eq("consultant_id", consultantId)
       .order("created_at", { ascending: false })
       .limit(100);
     for (const c of (callRows as typeof callLogs) || []) {
-      const dig = phoneDigits(c.to_phone);
-      if (callPhones.some((p) => dig.endsWith(p.slice(-11)) || p.endsWith(dig.slice(-11)))) {
+      if (
+        callPhones.some((p) => phonesMatch(p, c.to_phone)) ||
+        rows.some(
+          (r) =>
+            r.channel === "voice" &&
+            parseDispatchVelipId(r.detail, "call") === c.velip_call_id,
+        )
+      ) {
         callLogs.push(c);
       }
     }
   }
 
-  const findCallNear = (phone: string | null, atIso: string) => {
-    const dig = phoneDigits(phone);
-    if (!dig) return null;
+  const findCallNear = (
+    phone: string | null,
+    atIso: string,
+    velipCallId: string | null,
+  ) => {
+    if (velipCallId) {
+      const byId = callLogs.find((c) => c.velip_call_id && c.velip_call_id === velipCallId);
+      if (byId) return byId;
+    }
+    if (!phone) return null;
     const t = new Date(atIso).getTime();
     let best: (typeof callLogs)[0] | null = null;
     let bestDiff = Infinity;
     for (const c of callLogs) {
-      const sd = phoneDigits(c.to_phone);
-      if (!(sd.endsWith(dig.slice(-11)) || dig.endsWith(sd.slice(-11)))) continue;
+      if (!phonesMatch(phone, c.to_phone)) continue;
       const diff = Math.abs(new Date(c.created_at).getTime() - t);
       if (diff < bestDiff && diff < 30 * 60_000) {
         bestDiff = diff;
@@ -834,19 +886,28 @@ async function loadSliceHistory(
         if (near.mediaType === "audio") mediaType = "audio";
       }
     } else if (r.channel === "sms") {
-      const sms = findSmsNear(cust?.phone ?? null, r.created_at);
+      const velipSmsId = parseDispatchVelipId(detail, "sms");
+      const sms = findSmsNear(cust?.phone ?? null, r.created_at, velipSmsId);
       if (sms) {
         if (!messageBody) {
           messageBody = sms.message;
           bodySource = "sms_log";
         }
-        delivery = sms.delivery_status || sms.status;
+        delivery = sms.delivery_status || sms.error || sms.status;
+      } else if (r.status === "failed" && typeof detail.dispatch === "string") {
+        // Falha Velip já veio no dispatch (ex.: Mobile is not valid#240).
+        delivery = detail.dispatch.replace(/^velip:/i, "") || delivery;
       }
     } else if (r.channel === "voice") {
-      const call = findCallNear(cust?.phone ?? null, r.created_at);
+      const velipCallId = parseDispatchVelipId(detail, "call");
+      const call = findCallNear(cust?.phone ?? null, r.created_at, velipCallId);
       if (call) {
         listenSec = call.velip_time_sec ?? call.duration_sec ?? null;
-        callOutcome = velipOutcomeLabel(call.velip_status) || call.status;
+        callOutcome =
+          velipOutcomeLabel(call.velip_status) ||
+          (call.status && !["dialing", "sent", "unknown"].includes(String(call.status).toLowerCase())
+            ? labelDelivery("voice", call.velip_status, call.status)
+            : null);
         delivery = call.velip_status || call.status;
       }
       if (!mediaUrl && cfg?.voice_audio_clip_id) {
@@ -1549,6 +1610,8 @@ export function ReheatCyclePizza({
     if (!slicePick) {
       setSliceHistory([]);
       setStepPreviews({});
+      setHistoryLoading(false);
+      setPreviewLoading(false);
       setSheetTab("now");
       return;
     }
@@ -1558,28 +1621,49 @@ export function ReheatCyclePizza({
     const preferHistory = (slicePick.people?.length || 0) === 0;
     setSheetTab(preferHistory ? "history" : "now");
 
+    const group = slicePick.group;
+    const stepId = slicePick.step.id;
+    const people = slicePick.people;
+
     const previewStages = new Set<string>();
-    for (const s of stagesForSlice(slicePick.group, slicePick.step.id)) previewStages.add(s);
-    for (const p of slicePick.people) {
-      const ps = previewStageForLead(p.stage, slicePick.step.id, slicePick.group);
+    for (const s of stagesForSlice(group, stepId)) previewStages.add(s);
+    for (const p of people) {
+      const ps = previewStageForLead(p.stage, stepId, group);
       if (ps) previewStages.add(ps);
       if (p.stage && STAGE_NEXT[p.stage]) previewStages.add(STAGE_NEXT[p.stage]);
     }
 
-    void loadSliceHistory(consultantId, slicePick.group, slicePick.step.id).then((items) => {
-      if (cancelled) return;
-      setSliceHistory(items);
-      setHistoryLoading(false);
-    });
-    void loadStepPreviewTemplates(consultantId, [...previewStages]).then((map) => {
-      if (cancelled) return;
-      setStepPreviews(map);
-      setPreviewLoading(false);
-    });
+    void loadSliceHistory(consultantId, group, stepId)
+      .then((items) => {
+        if (cancelled) return;
+        setSliceHistory(items);
+      })
+      .catch((e) => {
+        console.warn("[ReheatCyclePizza] histórico", (e as Error)?.message || e);
+        if (!cancelled) setSliceHistory([]);
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
+      });
+
+    void loadStepPreviewTemplates(consultantId, [...previewStages])
+      .then((map) => {
+        if (cancelled) return;
+        setStepPreviews(map);
+      })
+      .catch((e) => {
+        console.warn("[ReheatCyclePizza] preview", (e as Error)?.message || e);
+        if (!cancelled) setStepPreviews({});
+      })
+      .finally(() => {
+        if (!cancelled) setPreviewLoading(false);
+      });
+
     return () => {
       cancelled = true;
     };
-  }, [slicePick, consultantId]);
+    // Só re-carrega ao trocar fatia/consultor — não a cada refresh da fila.
+  }, [consultantId, slicePick?.group, slicePick?.step.id]);
   const [countNovo, setCountNovo] = useState(0);
   const [countFrio, setCountFrio] = useState(0);
   const [countLongo, setCountLongo] = useState(0);
@@ -2394,14 +2478,16 @@ export function ReheatCyclePizza({
                       {h.mediaUrl && (h.mediaType === "audio" || h.channel === "voice") ? (
                         <div className="rounded-md bg-muted/40 border border-border/40 px-2.5 py-2 space-y-1.5">
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                            Áudio enviado
+                            {h.channel === "voice" ? "Ligação" : "Áudio enviado"}
                             {h.callOutcome
                               ? ` · ${h.callOutcome}`
                               : String(h.delivery || "").toLowerCase() === "played"
                                 ? " · escutou"
                                 : String(h.delivery || "").toLowerCase() === "read"
                                   ? " · visualizou"
-                                  : ""}
+                                  : h.channel === "voice" && h.status === "sent"
+                                    ? " · disparada"
+                                    : ""}
                             {h.listenSec != null && h.listenSec > 0
                               ? ` · ${formatDurationSec(h.listenSec)}`
                               : ""}

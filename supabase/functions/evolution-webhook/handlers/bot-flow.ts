@@ -1580,6 +1580,54 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           .filter((m) => String(m.kind).toLowerCase() !== "audio");
         if (medias.length > 0) console.log(`[dispatch:${stepKey}] fallback público sem áudio (${medias.length} mídia(s))`);
       }
+
+      // A2/A3/A3b/A5: NUNCA enviar MP3 da prévia (Maria/Rodrigo).
+      try {
+        const { isPersonalizedWaAudioSlot, pickSafePersonalizedWaAudio } = await import(
+          "../../_shared/wa-audio-stitch.ts"
+        );
+        if (isPersonalizedWaAudioSlot(String(slotKey))) {
+          const nonAudio = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
+          medias = nonAudio;
+          const safe = await pickSafePersonalizedWaAudio(supabase, {
+            consultantId: mediaOwnerId,
+            slotKey: String(slotKey),
+            customerName: (customer as any)?.name,
+            nameSource: (customer as any)?.name_source,
+            timeoutMs: 90_000,
+          });
+          if (safe.ok && safe.url && (safe.mode === "stitch" || safe.mode === "body_only")) {
+            medias = [
+              ...nonAudio,
+              {
+                id: null,
+                kind: "audio",
+                url: String(safe.url),
+                slot_key: slotKey,
+                send_order: 0,
+                duration_sec: null,
+                delay_before_ms: 0,
+              },
+            ];
+            console.log(
+              `[dispatch:${stepKey}] wa-audio SAFE name=${safe.displayName} mode=${safe.mode} cached=${safe.cached}`,
+            );
+          } else {
+            console.warn(
+              `[dispatch:${stepKey}] wa-audio SKIP preview err=${safe.error} — segue sem áudio (nunca Maria)`,
+            );
+          }
+        }
+      } catch (stitchErr) {
+        console.warn(`[dispatch:${stepKey}] wa-stitch erro:`, (stitchErr as Error)?.message || stitchErr);
+        try {
+          const { isPersonalizedWaAudioSlot } = await import("../../_shared/wa-audio-stitch.ts");
+          if (isPersonalizedWaAudioSlot(String(slotKey))) {
+            medias = medias.filter((m) => String(m.kind).toLowerCase() !== "audio");
+          }
+        } catch (_) { /* noop */ }
+      }
+
       const _flowVariant = (customer as any)?.flow_variant || 'A';
       if (_flowVariant === 'B') {
         const _before = medias.length;
@@ -1926,30 +1974,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     const nudge = "";
     const responseText = (baseText + nudge).trim();
 
-    type QaItem = { kind: string; mediaRef?: any; text?: string };
-    const items: QaItem[] = ((mediaRows as any[]) || []).map((m) => ({
+    type QaItem = {
+      kind: string;
+      mediaRef?: any;
+      text?: string;
+      url?: string | null;
+      resolvedMediaId?: string | null;
+      durationSec?: number | null;
+    };
+    // Resolve mídias primeiro: se houver áudio tocável, NÃO envia o texto escrito.
+    const mediaOnly: QaItem[] = ((mediaRows as any[]) || []).map((m) => ({
       kind: String(m.media_kind || "document").toLowerCase(),
       mediaRef: m,
     }));
-    if (responseText) items.push({ kind: "text", text: responseText });
-
-    const _qaOrder = (await getStepMediaOrder(supabase, mediaOwnerId, [step])) || ["text", "audio", "image", "video", "document"];
-    items.sort(makeKindComparator((it: QaItem) => it.kind, _qaOrder));
-
-    for (let mi = 0; mi < items.length; mi++) {
-      const it = items[mi];
-      const isLast = mi === items.length - 1;
-
-      if (it.kind === "text" && it.text) {
-        await sendText(remoteJid, it.text);
-        await supabase.from("conversations").insert({
-          customer_id: customer.id, message_direction: "outbound",
-          message_text: it.text, message_type: "text", conversation_step: step,
-        });
-        sentSomething = true;
-        continue;
-      }
-
+    const resolved: QaItem[] = [];
+    for (const it of mediaOnly) {
       const m = it.mediaRef;
       if (!m) continue;
       let url: string | null = null;
@@ -1988,6 +2027,35 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
       }
       if (!url) continue;
+      resolved.push({ kind, mediaRef: m, url, resolvedMediaId, durationSec });
+    }
+    const hasPlayableAudio = resolved.some((r) => r.kind === "audio");
+    const items: QaItem[] = [...resolved];
+    if (responseText && !hasPlayableAudio) items.push({ kind: "text", text: responseText });
+
+    const _qaOrder = (await getStepMediaOrder(supabase, mediaOwnerId, [step])) || ["text", "audio", "image", "video", "document"];
+    items.sort(makeKindComparator((it: QaItem) => it.kind, _qaOrder));
+
+    for (let mi = 0; mi < items.length; mi++) {
+      const it = items[mi];
+      const isLast = mi === items.length - 1;
+
+      if (it.kind === "text" && it.text) {
+        await sendText(remoteJid, it.text);
+        await supabase.from("conversations").insert({
+          customer_id: customer.id, message_direction: "outbound",
+          message_text: it.text, message_type: "text", conversation_step: step,
+        });
+        sentSomething = true;
+        continue;
+      }
+
+      const m = it.mediaRef;
+      const url = it.url || null;
+      const resolvedMediaId = it.resolvedMediaId || null;
+      const kind = it.kind;
+      const durationSec = it.durationSec ?? null;
+      if (!m || !url) continue;
       // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente
       const canSend = await canSendMediaOnce(supabase, {
         consultantId: customer.consultant_id, customerId: customer.id,
@@ -2003,8 +2071,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (!isLast) await sleepForMedia(kind, durationSec);
     }
 
-    // Se mídia foi enviada sem texto, manda um nudge curto (mantém comportamento)
-    if (sentSomething && !responseText && !qa.is_closing) {
+    // Sem áudio e sem texto do QA: nudge curto só como fallback
+    if (sentSomething && !hasPlayableAudio && !responseText && !qa.is_closing) {
       const nudgeOnly = buildStepNudge(step || "qualificacao", customer.name || null).trim();
       if (nudgeOnly) {
         await sendText(remoteJid, nudgeOnly);
@@ -2014,6 +2082,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         });
       }
     }
+
 
     if (!sentSomething) return null;
 
@@ -2973,6 +3042,31 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (stepRow) {
           const stype = String(stepRow.step_type || "message");
           console.log(`[custom-step-resolver] step="${step}" → type=${stype} pos=${stepRow.position}`);
+
+          // 3b — “Tenho dúvida”: áudio já foi enviado ao entrar no passo.
+          // Texto livre do lead → IA responde → volta ao a3 com botões.
+          if (
+            String(stepRow.step_key || "") === "a3b_pedir_pergunta" &&
+            messageText &&
+            String(messageText).trim().length > 0 &&
+            !isButton &&
+            !isFile
+          ) {
+            console.log(`[custom-step-resolver] a3b_pedir_pergunta → IA + volta a3_explain_with_buttons`);
+            (customer as any).conversation_step = "a3_explain_with_buttons";
+            const result = await respondAndReentry({
+              reason: "custom_step_no_match",
+              questionText: String(messageText),
+            });
+            return {
+              reply: "",
+              updates: {
+                ...(result as any)?.updates,
+                conversation_step: "a3_explain_with_buttons",
+                __inline_sent: true,
+              } as any,
+            };
+          }
 
           if (stype === "capture_conta") {
             if ((stepRow as any)?.id) {

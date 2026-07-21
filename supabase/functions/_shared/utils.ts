@@ -1,11 +1,18 @@
-// ─── Normalização canônica de telefone (sempre 55 + DDD + número) ────────
+// ─── Normalização canônica de telefone (chave WA: 55+DDD+número, SEM forçar o 9) ─
+// Completar o 9º dígito é só no envio Velip (`toVelipBRDest`).
 export function normalizePhone(raw: string): string {
-  const digits = raw.replace(/\D/g, "");
-  // Já tem 55 + DDD + número (13 dígitos) ou 55 + DDD + fixo (12 dígitos)
-  if (digits.length >= 12 && digits.startsWith("55")) return digits;
-  // Apenas DDD + número (10-11 dígitos)
-  if (digits.length >= 10 && digits.length <= 11) return "55" + digits;
-  // Fallback: retorna como está (ex: números curtos ou inválidos)
+  let digits = raw.replace(/\D/g, "").replace(/^0+/, "");
+  if (!digits) return "";
+  // DDD + número (10–11) → prepende 55
+  if (digits.length >= 10 && digits.length <= 11) return `55${digits}`;
+  // Já canônico 12 (fixo/legado) ou 13 (celular)
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) return digits;
+  // Lixo 14+ com 55: corta no celular/fixo plausível (não grava concatenação)
+  if (digits.startsWith("55") && digits.length > 13) {
+    const asMobile = digits.slice(0, 13);
+    if (asMobile[4] === "9") return asMobile;
+    return digits.slice(0, 12);
+  }
   return digits;
 }
 

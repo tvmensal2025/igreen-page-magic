@@ -443,7 +443,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-4 mb-2">
+            <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2 sm:gap-3 mt-4 mb-2 min-w-0">
               {kpis.map(({ label, slice }) => (
                 <button
                   type="button"

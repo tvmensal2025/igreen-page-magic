@@ -19,7 +19,7 @@ import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
 import {
   playAudioFile, makeSMS,
-  toVelipBRDest, toCtid, velipConfigured,
+  toVelipBRDest, toVelipSmsDest, isPermanentSmsFailure, isReprovedVelipCode, stripVelipNinthDigit, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
 import { resolveCallDialAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -40,7 +40,9 @@ import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
+import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
 import {
+  loadCadenceThemes,
   loadLastThemeId,
   needsSmsTheme,
   needsWhatsAppTheme,
@@ -369,6 +371,8 @@ function ensureSmsWaLink(text: string, consultorPhone: string): string {
 type DispatchResult = {
   ok: boolean;
   detail: string;
+  /** true = não re-tentar (ex.: número inválido p/ SMS); avança estágio. */
+  permanent?: boolean;
   theme_id?: string;
   /** Texto exatamente enviado (já com {{nome}} resolvido ou vazio). */
   message_body?: string;
@@ -421,7 +425,13 @@ async function dispatchWhatsApp(
   let themeId: string | undefined;
   if (needsWhatsAppTheme(rawTpl, stage)) {
     const last = await loadLastThemeId(supabase, row.customer_id);
-    const theme = pickCadenceTheme({ customerId: row.customer_id, stage, lastThemeId: last });
+    const themes = await loadCadenceThemes(supabase, row.consultant_id);
+    const theme = pickCadenceTheme({
+      customerId: row.customer_id,
+      stage,
+      lastThemeId: last,
+      themes,
+    });
     themeId = theme.id;
     rawTpl = rawTpl.includes("{{tema_whatsapp}}")
       ? rawTpl.replaceAll("{{tema_whatsapp}}", theme.wa)
@@ -508,17 +518,13 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .from("consultants")
       .select("name, display_name, assistant_name")
       .eq("id", consultantId).maybeSingle();
-    const display = String(c?.display_name || c?.name || "").trim();
-    // Preferência: display_name humano; evita slug (tvmensal12) virar "nome".
-    const isSlugLike =
-      display.length > 0 &&
-      !/\s/.test(display) &&
-      display === display.toLowerCase() &&
-      (/\d/.test(display) || display.length >= 9);
-    consultantName = isSlugLike
-      ? ""
-      : (display.split(" ")[0] || display);
-    assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim();
+    const label = resolvePublicConsultantLabel(
+      (c as { name?: string | null })?.name,
+      (c as { display_name?: string | null })?.display_name,
+      "",
+    );
+    consultantName = label ? (label.split(/\s+/)[0] || label) : "";
+    assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
     // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
     consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
   }
@@ -527,7 +533,7 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
 
 async function dispatchVoiceCall(
   supabase: any, row: any, stage: Stage, cfg: StageConfig,
-): Promise<{ ok: boolean; detail: string }> {
+): Promise<DispatchResult> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
   const { cust } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
@@ -539,8 +545,31 @@ async function dispatchVoiceCall(
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
+  // toVelipBRDest já completa o 9º dígito em celular antigo (sem mexer no phone_whatsapp).
   const dest = toVelipBRDest(cust.phone_whatsapp);
-  if (!dest) return { ok: false, detail: "invalid_phone" };
+  if (!dest) return { ok: false, detail: "invalid_phone", permanent: true };
+
+  // Se a operadora já reprovou este destino (IK/EK/CK/BK), não disca de novo
+  // (ex.: A_CALL → IK e A_CALL_RETRY tentaria o mesmo número morto).
+  // Match 13 e 12 dígitos (logs antigos sem o 9).
+  const destAlt = stripVelipNinthDigit(dest);
+  const phoneCandidates = [...new Set([dest, destAlt].filter(Boolean))] as string[];
+  const { data: priorFails } = await supabase
+    .from("voice_call_logs")
+    .select("velip_status, to_phone, created_at")
+    .eq("consultant_id", row.consultant_id)
+    .in("to_phone", phoneCandidates)
+    .in("velip_status", ["IK", "EK", "CK", "BK", "ik", "ek", "ck", "bk"])
+    .order("created_at", { ascending: false })
+    .limit(3);
+  const priorFail = (priorFails as { velip_status: string | null }[] | null)?.[0] ?? null;
+  if (priorFail && isReprovedVelipCode(priorFail.velip_status)) {
+    return {
+      ok: false,
+      detail: `velip_reproved:${String(priorFail.velip_status).toUpperCase()}`,
+      permanent: true,
+    };
+  }
 
   // Ctid estável por (estágio, sequência da jornada) — sem timestamp; ciclos
   // anuais do Grupo C ganham sequência nova, então não colidem.
@@ -562,7 +591,29 @@ async function dispatchVoiceCall(
 
   try {
     const r = await playAudioFile({ to: dest, audioId: resolved.velip_audio_id, ctid });
-    if (!r.ok) return { ok: false, detail: `velip:${r.error || "call_failed"}` };
+    if (!r.ok) {
+      const detail = `velip:${r.error || "call_failed"}`;
+      return { ok: false, detail, permanent: isPermanentSmsFailure(detail) };
+    }
+    // Grava log na hora do disparo — o webhook/cron atualiza velip_status (OK/NA/IK…).
+    // Sem isso a pizza fica em "aguardando operadora" sem nunca casar o retorno.
+    if (r.cd_id) {
+      const { error: callLogErr } = await supabase.from("voice_call_logs").insert({
+        consultant_id: row.consultant_id,
+        to_phone: dest,
+        status: "dialing",
+        velip_call_id: r.cd_id,
+        raw: {
+          source: "cadence",
+          stage,
+          customer_id: row.customer_id,
+          ctid,
+        },
+      });
+      if (callLogErr) {
+        console.warn("[cadence-tick] voice_call_logs insert failed", callLogErr.message);
+      }
+    }
     const stitchTag = cfg.personalize_name
       ? (resolved.fallback_body
         ? ":body_only"
@@ -588,15 +639,25 @@ async function dispatchSMS(
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
-  const dest = toVelipBRDest(cust.phone_whatsapp);
-  if (!dest) return { ok: false, detail: "invalid_phone" };
+  const dest = toVelipSmsDest(cust.phone_whatsapp);
+  if (!dest) return { ok: false, detail: "invalid_phone", permanent: true };
+  // Fixo (12 dígitos, local 2–5): SMS Velip rejeita — não tentar / não loop.
+  if (dest.length === 12) {
+    return { ok: false, detail: "sms_skip_landline", permanent: true };
+  }
 
   const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
   let rawTpl = cfg.message_text || "";
   let themeId: string | undefined;
   if (needsSmsTheme(rawTpl, stage)) {
     const last = await loadLastThemeId(supabase, row.customer_id);
-    const theme = pickCadenceTheme({ customerId: row.customer_id, stage, lastThemeId: last });
+    const themes = await loadCadenceThemes(supabase, row.consultant_id);
+    const theme = pickCadenceTheme({
+      customerId: row.customer_id,
+      stage,
+      lastThemeId: last,
+      themes,
+    });
     themeId = theme.id;
     rawTpl = rawTpl.includes("{{tema_sms}}")
       ? rawTpl.replaceAll("{{tema_sms}}", theme.sms)
@@ -621,17 +682,25 @@ async function dispatchSMS(
   try {
     // MakeSMSOpts espera `message` — com `text` o SMS sairia "undefined".
     const r = await makeSMS({ to: dest, message: text });
-    await supabase.from("voice_sms_log").insert({
-      consultant_id: row.consultant_id, phone: dest, message: text,
-      velip_sms_id: r.cdls_id ?? null, velip_ctid: (r.raw as { ctid?: string } | undefined)?.ctid ?? null,
+    // Schema real: sem colunas `raw` / `sent_at` — insert antigo falhava em silêncio.
+    const { error: smsLogErr } = await supabase.from("voice_sms_log").insert({
+      consultant_id: row.consultant_id,
+      phone: dest,
+      message: text,
+      velip_sms_id: r.cdls_id != null ? String(r.cdls_id) : null,
+      velip_ctid: (r.raw as { ctid?: string } | undefined)?.ctid ?? null,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
-      raw: r.raw ?? {}, sent_at: r.ok ? new Date().toISOString() : null,
     });
+    if (smsLogErr) {
+      console.warn("[cadence-tick] voice_sms_log insert failed", smsLogErr.message);
+    }
     if (!r.ok) {
+      const detail = `velip:${r.error || "sms_failed"}`;
       return {
         ok: false,
-        detail: `velip:${r.error || "sms_failed"}`,
+        detail,
+        permanent: isPermanentSmsFailure(detail),
         message_body: text,
         with_name: !!firstName,
       };
@@ -1044,9 +1113,21 @@ Deno.serve(async (req) => {
               // NÃO reenvia — apenas deixa avançar o estágio abaixo.
               detail = { ...detail, dispatch: "effect_already_sent", effect_id: eff.effectId };
               status = "queued";
+            } else if (
+              (eff.status === "failed_final" || eff.status === "suppressed") &&
+              (def.channel === "sms" || def.channel === "voice")
+            ) {
+              // Destino Velip definitivo inválido: não fica em loop — avança escada.
+              detail = {
+                ...detail,
+                dispatch: `effect_${eff.status}_advance`,
+                effect_id: eff.effectId,
+                advance_skip: true,
+              };
+              status = "failed";
             } else {
               // reserved/sending → outro worker; unknown → ambíguo (reconciliar);
-              // suppressed/failed_final/erro → não reenviar automaticamente.
+              // suppressed/failed_final (outros canais) → não reenviar automaticamente.
               const deferMin = (eff.status === "suppressed" || eff.status === "failed_final") ? 360 : 30;
               await finishRow(row.id, claimToken, {
                 next_action_at: new Date(now.getTime() + deferMin * 60_000).toISOString(),
@@ -1059,8 +1140,7 @@ Deno.serve(async (req) => {
             let res: DispatchResult;
             if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
             else if (def.channel === "voice") {
-              const voice = await dispatchVoiceCall(supabase, row, stage, cfg);
-              res = { ok: voice.ok, detail: voice.detail };
+              res = await dispatchVoiceCall(supabase, row, stage, cfg);
             } else res = await dispatchSMS(supabase, row, stage, cfg, loadAvail);
             status = res.ok ? "sent" : "failed";
             detail = {
@@ -1083,11 +1163,23 @@ Deno.serve(async (req) => {
               await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
             } else {
               failed++;
-              // Falha antes/no provider → retryable com a MESMA chave (attempt++).
-              await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", {
-                errorCode: String(res.detail || "send_failed").slice(0, 120),
-              });
+              const permanent =
+                !!res.permanent ||
+                ((def.channel === "sms" || def.channel === "voice") &&
+                  isPermanentSmsFailure(res.detail));
+              // Permanente (ex.: Mobile is not valid#240 / number invalid#203) → failed_final e avança.
+              // Retryable → mesma chave (attempt++) e re-tenta em 30 min.
+              await finishOutboundEffect(
+                supabase,
+                eff.effectId,
+                permanent ? "failed_final" : "failed_retryable",
+                { errorCode: String(res.detail || "send_failed").slice(0, 120) },
+              );
               await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+              if (permanent) {
+                detail = { ...detail, permanent_fail: true, advance_skip: true };
+                // status fica "failed" no log, mas caímos no avanço abaixo.
+              }
             }
           }
         }
@@ -1103,7 +1195,7 @@ Deno.serve(async (req) => {
       console.error("cadence log insert failed", insertRes.error);
     }
 
-    if (status === "failed") {
+    if (status === "failed" && !detail.advance_skip) {
       await finishRow(row.id, claimToken, {
         next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
       });

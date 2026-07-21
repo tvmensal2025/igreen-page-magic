@@ -16,12 +16,17 @@ const corsHeaders = {
 const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
 const MODEL_V3 = "eleven_v3";
 
-// Texto A2 (corpo) — PT-BR natural. "iGreen" e "Rafael" sem ajustes fonéticos.
+// Texto A2 (corpo) — fallback sem identidade fixa (Sofia/Rafael).
+// Identidade real vem da biblioteca do consultor ({{assistente}}/{{consultor}}).
 const BODY_TEXT_BY_GENDER: Record<"masculino" | "feminino", string> = {
-  feminino: `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
+  feminino: `Seja muito bem-vinda.
+
+Eu sou a assistente virtual da iGreen.
 
 Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`,
-  masculino: `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
+  masculino: `Seja muito bem-vindo.
+
+Eu sou a assistente virtual da iGreen.
 
 Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`,
 };

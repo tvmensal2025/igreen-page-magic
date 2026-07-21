@@ -252,8 +252,8 @@ export const BUTTON_PRESETS: { id: string; title: string; emoji: string }[] = [
   { id: "cadastrar", title: "Cadastrar agora", emoji: "📝" },
   { id: "humano", title: "Falar com humano", emoji: "👤" },
   { id: "more_benefits", title: "Saber mais benefício", emoji: "🎁" },
-  { id: "activate", title: "Quero ativar", emoji: "✅" },
-  { id: "register", title: "Cadastrar", emoji: "📝" },
+  { id: "activate", title: "Ativar benefício", emoji: "✅" },
+  { id: "register", title: "Ativar benefício", emoji: "📝" },
 ];
 
 export function parseTransitions(raw: unknown): Transition[] {

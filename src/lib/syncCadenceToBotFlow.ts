@@ -7,8 +7,13 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   MULTICHANNEL_CADENCE_TEMPLATES,
   OCR_RETRY_PARENT,
+  CODIGO_CONFIRM_KEYS,
+  CODIGO_CONFIRM_PARENT_KEY,
+  CODIGO_CONFIRM_BUTTONS,
+  ROTATING_CADENCE_THEMES,
   cadenceAudioUrlKey,
   emptyLibrary,
+  getTemplate,
   resolveBody,
   resolveButtons,
   validateWhapiButtons,
@@ -62,6 +67,12 @@ type FlowStepRow = {
     retry_text?: string;
     then?: string;
     retry_audio_clip_id?: string | null;
+    codigo_confirm_ask?: string;
+    codigo_confirm_sim?: string;
+    codigo_confirm_nao?: string;
+    codigo_confirm_btn_sim?: string;
+    codigo_confirm_btn_nao?: string;
+    [k: string]: unknown;
   } | null;
 };
 
@@ -155,7 +166,9 @@ export async function loadCadenceLibraryFromBotFlow(
   ).map((t) => t.key);
 
   const parentKeys = Object.values(OCR_RETRY_PARENT).map((p) => p.parentKey);
-  const loadKeys = Array.from(new Set([...keys, ...parentKeys]));
+  const loadKeys = Array.from(
+    new Set([...keys, ...parentKeys, CODIGO_CONFIRM_PARENT_KEY]),
+  );
 
   const { data: allSteps, error: allErr } = await supabase
     .from("bot_flow_steps")
@@ -203,6 +216,30 @@ export async function loadCadenceLibraryFromBotFlow(
       }
       if (fb?.retry_audio_clip_id) {
         audioClipIds[retryKey] = String(fb.retry_audio_clip_id);
+      }
+    }
+
+    // Código rejeitado: fallback do a10 → toques 9b/9c/9d (não criam nó no funil)
+    if (key === CODIGO_CONFIRM_PARENT_KEY && raw.fallback && typeof raw.fallback === "object") {
+      const fb = raw.fallback as Record<string, unknown>;
+      const ask = String(fb.codigo_confirm_ask || "").trim();
+      const sim = String(fb.codigo_confirm_sim || "").trim();
+      const nao = String(fb.codigo_confirm_nao || "").trim();
+      if (ask) bodies.a10_codigo_confirm_ask = ask;
+      if (sim) bodies.a10_codigo_confirm_sim = sim;
+      if (nao) bodies.a10_codigo_confirm_nao = nao;
+      const btnSim = String(fb.codigo_confirm_btn_sim || "").trim();
+      const btnNao = String(fb.codigo_confirm_btn_nao || "").trim();
+      if (btnSim || btnNao) {
+        buttons.a10_codigo_confirm_ask = CODIGO_CONFIRM_BUTTONS.map((b) => ({
+          ...b,
+          title:
+            b.id === "otp_confirm_sim"
+              ? btnSim || b.title
+              : b.id === "otp_confirm_nao"
+                ? btnNao || b.title
+                : b.title,
+        }));
       }
     }
   }
@@ -396,6 +433,74 @@ export async function syncCadenceLibraryToStageConfig(
       if (error) { errors.push(`${stage}: ${error.message}`); continue; }
     }
     updated.push(stage);
+  }
+  return { updated, errors };
+}
+
+/**
+ * Espelha textos da aba Temas (ROTATING_CADENCE_THEMES, sem cruise) em
+ * `cadence_theme_config` do consultor — o cadence-tick lê daqui.
+ */
+export async function syncCadenceThemesToConfig(
+  lib: SavedCadenceLibrary,
+  consultantId: string,
+): Promise<{ updated: string[]; errors: string[] }> {
+  const updated: string[] = [];
+  const errors: string[] = [];
+  if (!consultantId) {
+    errors.push("themes: consultant_id ausente");
+    return { updated, errors };
+  }
+
+  for (const info of ROTATING_CADENCE_THEMES) {
+    const waTpl = getTemplate(info.waKey);
+    const smsTpl = getTemplate(info.smsKey);
+    if (!waTpl || !smsTpl) {
+      errors.push(`themes:${info.id}: template ausente`);
+      continue;
+    }
+    const wa = resolveBody(waTpl, lib).trim();
+    const sms = resolveBody(smsTpl, lib).trim();
+    if (!wa || !sms) {
+      errors.push(`themes:${info.id}: texto vazio`);
+      continue;
+    }
+
+    const { data: existing } = await supabase
+      .from("cadence_theme_config")
+      .select("id")
+      .eq("consultant_id", consultantId)
+      .eq("theme_id", info.id)
+      .maybeSingle();
+
+    const row = {
+      theme_id: info.id,
+      wa_text: wa,
+      sms_text: sms,
+      enabled: true,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (existing?.id) {
+      const { error } = await supabase
+        .from("cadence_theme_config")
+        .update(row as never)
+        .eq("id", existing.id);
+      if (error) {
+        errors.push(`themes:${info.id}: ${error.message}`);
+        continue;
+      }
+    } else {
+      const { error } = await supabase.from("cadence_theme_config").insert({
+        consultant_id: consultantId,
+        ...row,
+      } as never);
+      if (error) {
+        errors.push(`themes:${info.id}: ${error.message}`);
+        continue;
+      }
+    }
+    updated.push(info.id);
   }
   return { updated, errors };
 }
@@ -621,6 +726,183 @@ async function syncOcrRetryFallbacks(
 }
 
 /**
+ * Publica 9b/9c/9d no fallback do a10 (sem criar nó no funil).
+ * Não altera message_text nem mode OCR — só campos codigo_confirm_*.
+ */
+async function syncCodigoConfirmFallbacks(
+  flowId: string,
+  lib: SavedCadenceLibrary,
+): Promise<{ updated: string[]; errors: string[] }> {
+  const updated: string[] = [];
+  const errors: string[] = [];
+
+  const { data: step, error: stepErr } = await supabase
+    .from("bot_flow_steps")
+    .select("id, fallback")
+    .eq("flow_id", flowId)
+    .eq("step_key", CODIGO_CONFIRM_PARENT_KEY)
+    .maybeSingle();
+
+  if (stepErr) {
+    errors.push(`codigo_confirm: ${stepErr.message}`);
+    return { updated, errors };
+  }
+  if (!step?.id) {
+    return { updated, errors };
+  }
+
+  const prevFb =
+    (step as FlowStepRow).fallback && typeof (step as FlowStepRow).fallback === "object"
+      ? { ...(step as FlowStepRow).fallback! }
+      : {};
+
+  const askTpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a10_codigo_confirm_ask");
+  const simTpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a10_codigo_confirm_sim");
+  const naoTpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a10_codigo_confirm_nao");
+  if (!askTpl || !simTpl || !naoTpl) {
+    return { updated, errors };
+  }
+
+  const askBody = resolveBody(askTpl, lib).trim() || askTpl.body;
+  const simBody = resolveBody(simTpl, lib).trim() || simTpl.body;
+  const naoBody = resolveBody(naoTpl, lib).trim() || naoTpl.body;
+  const btns = resolveButtons(askTpl, lib);
+  const btnSim =
+    btns.find((b) => b.id === "otp_confirm_sim")?.title ||
+    CODIGO_CONFIRM_BUTTONS[0]?.title ||
+    "✅ Sim, é esse";
+  const btnNao =
+    btns.find((b) => b.id === "otp_confirm_nao")?.title ||
+    CODIGO_CONFIRM_BUTTONS[1]?.title ||
+    "❌ Não, vou digitar";
+
+  const fallback = {
+    ...prevFb,
+    codigo_confirm_ask: askBody,
+    codigo_confirm_sim: simBody,
+    codigo_confirm_nao: naoBody,
+    codigo_confirm_btn_sim: btnSim,
+    codigo_confirm_btn_nao: btnNao,
+  };
+
+  const { error: upErr } = await supabase
+    .from("bot_flow_steps")
+    .update({
+      fallback,
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq("id", step.id);
+
+  if (upErr) {
+    errors.push(`codigo_confirm: ${upErr.message}`);
+    return { updated, errors };
+  }
+
+  updated.push(...CODIGO_CONFIRM_KEYS);
+  return { updated, errors };
+}
+
+/** Passos do funil que o Multicanal precisa criar se o fluxo A ainda não tem. */
+const ENSURE_FUNNEL_STEPS: Array<{
+  key: string;
+  title: string;
+  summary: string;
+  media_order: string[];
+  afterKey: string;
+  captures: CaptureRow[];
+}> = [
+  {
+    key: "a3b_pedir_pergunta",
+    title: "3b — Áudio: pode perguntar",
+    summary: "Áudio convida a perguntar; texto do lead → IA → volta ao passo 3.",
+    media_order: ["audio"],
+    afterKey: "a3_explain_with_buttons",
+    // enabled → chain-stop no webhook (não avança por posição)
+    captures: [{ field: "_await_question", enabled: true }],
+  },
+];
+
+/**
+ * Garante passos novos do Multicanal (ex.: a3b) no fluxo ativo.
+ * Insere após o passo âncora e empurra positions seguintes (+1).
+ */
+async function ensureFunnelStepsExist(
+  flowId: string,
+  idByKey: Map<string, string>,
+): Promise<{ created: string[]; errors: string[] }> {
+  const created: string[] = [];
+  const errors: string[] = [];
+
+  for (const spec of ENSURE_FUNNEL_STEPS) {
+    if (idByKey.has(spec.key)) continue;
+
+    const { data: anchor } = await supabase
+      .from("bot_flow_steps")
+      .select("id, position")
+      .eq("flow_id", flowId)
+      .eq("step_key", spec.afterKey)
+      .maybeSingle();
+
+    if (!anchor?.id) {
+      errors.push(`${spec.key}: âncora ${spec.afterKey} ausente — reaplicar Sofia Multicanal`);
+      continue;
+    }
+
+    const insertPos = Number(anchor.position) + 1;
+
+    // Empurra passos seguintes para abrir espaço (evita colisão de position).
+    const { data: afterRows } = await supabase
+      .from("bot_flow_steps")
+      .select("id, position")
+      .eq("flow_id", flowId)
+      .gte("position", insertPos)
+      .order("position", { ascending: false });
+
+    for (const row of (afterRows as Array<{ id: string; position: number }> | null) || []) {
+      const { error: shiftErr } = await supabase
+        .from("bot_flow_steps")
+        .update({ position: Number(row.position) + 1 } as never)
+        .eq("id", row.id);
+      if (shiftErr) {
+        errors.push(`${spec.key}: shift ${row.id}: ${shiftErr.message}`);
+        break;
+      }
+    }
+    if (errors.some((e) => e.startsWith(`${spec.key}: shift`))) continue;
+
+    const { data: inserted, error: insErr } = await supabase
+      .from("bot_flow_steps")
+      .insert({
+        flow_id: flowId,
+        position: insertPos,
+        step_type: "message",
+        step_key: spec.key,
+        title: spec.title,
+        summary: spec.summary,
+        icon: "sparkle",
+        message_text: "",
+        slot_key: spec.key,
+        media_order: spec.media_order,
+        transitions: [],
+        captures: spec.captures,
+        fallback: { mode: "repeat" },
+        is_active: true,
+      } as never)
+      .select("id, step_key")
+      .single();
+
+    if (insErr || !inserted?.id) {
+      errors.push(`${spec.key}: insert ${insErr?.message || "falhou"}`);
+      continue;
+    }
+    idByKey.set(spec.key, String(inserted.id));
+    created.push(spec.key);
+  }
+
+  return { created, errors };
+}
+
+/**
  * Espelha textos/botões do painel no fluxo ativo.
  * Preferência: o que está na lib do painel (salvo/editado) vence o template.
  */
@@ -650,6 +932,10 @@ export async function syncCadenceLibraryToBotFlow(
     ]),
   );
 
+  const ensured = await ensureFunnelStepsExist(flowId, idByKey);
+  updated.push(...ensured.created);
+  errors.push(...ensured.errors);
+
   const syncable = MULTICHANNEL_CADENCE_TEMPLATES.filter(
     (t) =>
       t.group === "A" &&
@@ -661,15 +947,25 @@ export async function syncCadenceLibraryToBotFlow(
         !!t.buttons?.length),
   );
 
+  const codigoConfirmSkip = new Set<string>(CODIGO_CONFIRM_KEYS);
+
   for (const tpl of syncable) {
     // Toques OCR retry: sync dedicado (fallback do passo pai), não step_key próprio.
     if (OCR_RETRY_PARENT[tpl.key]) {
       continue;
     }
-
-    if (tpl.channel === "whatsapp_audio" && !tpl.buttons?.length) {
-      skipped.push(tpl.key);
+    // Código rejeitado (9b/9c/9d): sync em fallback do a10 — não cria nó no funil.
+    if (codigoConfirmSkip.has(tpl.key)) {
       continue;
+    }
+
+    // Áudio sem botões: só sincroniza clip/captures em passos “ensure” (a3b).
+    // Demais áudios (a2, a5…) ficam no passo pareado com texto/botões.
+    if (tpl.channel === "whatsapp_audio" && !tpl.buttons?.length) {
+      if (!ENSURE_FUNNEL_STEPS.some((s) => s.key === tpl.key)) {
+        skipped.push(tpl.key);
+        continue;
+      }
     }
 
     const { data: step, error: stepErr } = await supabase
@@ -705,6 +1001,16 @@ export async function syncCadenceLibraryToBotFlow(
             },
           ]
         : withoutButtons;
+
+    // a3b: garante chain-stop mesmo se o passo já existia sem capture.
+    if (tpl.key === "a3b_pedir_pergunta") {
+      const hasAwait = nextCaptures.some(
+        (c) => c.field === "_await_question" && c.enabled !== false,
+      );
+      if (!hasAwait) {
+        nextCaptures.push({ field: "_await_question", enabled: true });
+      }
+    }
 
     let nextTransitions = step.transitions as TransitionRow[] | null;
     if (buttons.length > 0) {
@@ -758,13 +1064,22 @@ export async function syncCadenceLibraryToBotFlow(
     if (body && tpl.channel !== "whatsapp_audio") {
       patch.message_text = body;
     }
-    if (buttons.length > 0 || captures.some((c) => c.field === "_buttons")) {
+    if (
+      buttons.length > 0 ||
+      captures.some((c) => c.field === "_buttons") ||
+      tpl.key === "a3b_pedir_pergunta"
+    ) {
       patch.captures = nextCaptures;
     }
     if (nextTransitions) patch.transitions = nextTransitions;
 
     const clipId = resolveLibAudioClipId(lib, tpl.key);
     if (clipId) patch.voice_audio_clip_id = clipId;
+
+    if (tpl.key === "a3b_pedir_pergunta") {
+      patch.media_order = ["audio"];
+      patch.slot_key = "a3b_pedir_pergunta";
+    }
 
     const { error: upErr } = await supabase
       .from("bot_flow_steps")
@@ -781,6 +1096,10 @@ export async function syncCadenceLibraryToBotFlow(
   const ocrSync = await syncOcrRetryFallbacks(flowId, lib);
   updated.push(...ocrSync.updated);
   errors.push(...ocrSync.errors);
+
+  const codigoSync = await syncCodigoConfirmFallbacks(flowId, lib);
+  updated.push(...codigoSync.updated);
+  errors.push(...codigoSync.errors);
 
   return { updated, skipped, errors };
 }
@@ -799,8 +1118,13 @@ export async function publishCadenceLibrary(
   }
   const sync = await syncCadenceLibraryToBotFlow(consultantId, lib, variant);
   const motor = await syncCadenceLibraryToStageConfig(lib, consultantId);
+  const themes = await syncCadenceThemesToConfig(lib, consultantId);
   return {
-    updated: [...sync.updated, ...motor.updated.map((s) => `motor:${s}`)],
-    errors: [...errors, ...sync.errors, ...motor.errors],
+    updated: [
+      ...sync.updated,
+      ...motor.updated.map((s) => `motor:${s}`),
+      ...themes.updated.map((t) => `theme:${t}`),
+    ],
+    errors: [...errors, ...sync.errors, ...motor.errors, ...themes.errors],
   };
 }

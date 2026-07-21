@@ -78,7 +78,9 @@ Deno.serve(async (req) => {
     .from("cadence_stage_config")
     .select("stage, personalize_name, voice_audio_clip_id, enabled")
     .eq("consultant_id", consultantId)
-    .or("stage.eq.CALL_1,stage.eq.CALL_2,stage.eq.CALL_3,stage.like.%_CALL");
+    .or(
+      "stage.eq.CALL_1,stage.eq.CALL_2,stage.eq.CALL_3,stage.eq.A_CALL,stage.eq.A_CALL_RETRY,stage.like.%_CALL",
+    );
 
   if (stErr) return json(500, { error: stErr.message });
 

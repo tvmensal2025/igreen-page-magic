@@ -33,6 +33,9 @@ interface Row {
   igreen_code: string | null;
   error_message: string | null;
   finalized_at: string | null;
+  portal_submitted_at?: string | null;
+  data_validado?: string | null;
+  data_ativo?: string | null;
   // Portal 2 OCR feedback loop (Req 5, 10)
   portal2_status: string | null;
   portal2_extraction_mode: string | null;
@@ -130,7 +133,27 @@ function isPortalDone(row: Row | null): boolean {
   ) {
     return true;
   }
+  if (row.igreen_code || row.finalized_at || row.portal_submitted_at) return true;
   return false;
+}
+
+/** Aprovado de verdade na iGreen (não só enviado / em análise). */
+function isIgreenApproved(row: Row | null): boolean {
+  if (!row) return false;
+  if (row.data_validado || row.data_ativo) return true;
+  const status = String(row.status || "").toLowerCase();
+  return status === "approved" || status === "active" || status === "registered_igreen";
+}
+
+/** Ainda aguardando análise/facial/assinatura na iGreen. */
+function isCadastroEmAnalise(row: Row | null): boolean {
+  if (!row) return false;
+  if (isIgreenApproved(row)) return false;
+  const step = String(row.conversation_step || "").toLowerCase();
+  if (step === "cadastro_em_analise") return true;
+  if (row.portal_submitted_at && !row.data_validado && !row.data_ativo) return true;
+  const status = String(row.status || "").toLowerCase();
+  return status === "cadastro_concluido";
 }
 
 export function PortalStatusTracker({ customerId, consultantId, onRetry, defaultCollapsed = false }: Props) {
@@ -155,7 +178,7 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
       const [{ data: cust }, { data: traces }] = await Promise.all([
         supabase
           .from("customers")
-          .select("status, conversation_step, otp_code, link_assinatura, link_facial, portal2_contract_link, igreen_link, igreen_code, error_message, finalized_at, portal2_status, portal2_extraction_mode, portal2_error_kind, ocr_done, ocr_confianca, portal2_ocr_doc_result, portal2_ocr_bill_result")
+          .select("status, conversation_step, otp_code, link_assinatura, link_facial, portal2_contract_link, igreen_link, igreen_code, error_message, finalized_at, portal_submitted_at, data_validado, data_ativo, portal2_status, portal2_extraction_mode, portal2_error_kind, ocr_done, ocr_confianca, portal2_ocr_doc_result, portal2_ocr_bill_result")
           .eq("id", customerId).maybeSingle(),
         supabase
           .from("portal2_audit_traces")
@@ -380,20 +403,35 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
          "motivo não disponível")
       : null;
 
-  // ── Estado de sucesso: card grande e celebrativo ──
+  // ── Estado de sucesso: cliente enviado / em análise / aprovado ──
   if (isDone) {
+    const inAnalise = isCadastroEmAnalise(row);
+    const approved = isIgreenApproved(row);
+    const title = isAlreadyRegistered
+      ? "✅ Cliente já cadastrado no iGreen"
+      : approved
+        ? "✅ Cliente aprovado"
+        : inAnalise
+          ? "📋 Cadastro em análise na iGreen"
+          : "✅ Cliente cadastrado";
+    const subtitle = isAlreadyRegistered
+      ? "O portal reconheceu que este CPF/cliente já existe. Não é preciso reenviar."
+      : approved
+        ? "Aprovado na iGreen — aparece em Clientes ativos após sincronizar a carteira."
+        : inAnalise
+          ? "Enviado ao portal. Aguarda análise (24–48h), facial ou assinatura."
+          : "Cadastro concluído no portal.";
+
     return (
-      <div className="mx-3 mt-2 rounded-lg border-2 border-primary/60 bg-gradient-to-br from-primary/25 via-primary/15 to-primary/20 px-4 py-3 shadow-[0_0_36px_hsl(142_70%_45%/0.45)]">
+      <div className="mx-3 mt-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2">
         <div className="flex items-center gap-2">
-          <CheckCircle2 className="w-6 h-6 text-primary animate-pulse" />
-          <div className="flex-1">
-            <p className="text-sm font-black text-primary tracking-wide leading-tight">
-              {isAlreadyRegistered ? "✅ Cliente já cadastrado no iGreen" : "🎉 Cadastro aprovado pela iGreen!"}
+          <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-primary tracking-wide leading-tight">
+              {title}
             </p>
-            <p className="text-[11px] text-primary/90 leading-tight">
-              {isAlreadyRegistered
-                ? "O portal reconheceu que este CPF/cliente já existe. Não é preciso reenviar."
-                : "Cadastro concluído no portal. Após a sincronização da carteira, ele aparece em Clientes ativos."}
+            <p className="text-[10px] text-primary/80 leading-tight mt-0.5">
+              {subtitle}
             </p>
           </div>
           <Button
@@ -405,16 +443,17 @@ export function PortalStatusTracker({ customerId, consultantId, onRetry, default
             Fechar
           </Button>
         </div>
-        {row?.igreen_code && (
-          <div className="mt-2 flex items-center gap-2 rounded bg-primary/40 px-2 py-1.5">
-            <span className="text-[10px] text-primary/80 uppercase tracking-wider font-semibold">Código iGreen</span>
-            <code className="font-mono text-sm font-black text-primary flex-1">{row.igreen_code}</code>
-            <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] border-primary/40 text-primary hover:bg-primary/20" onClick={() => copy(row.igreen_code!, "Código")}>
-              <Copy className="w-3 h-3 mr-1" /> Copiar
-            </Button>
-          </div>
+        {/* Código iGreen não fica fixo no topo após aprovado — só atalho discreto de copiar se ainda em análise. */}
+        {row?.igreen_code && inAnalise && !approved && (
+          <button
+            type="button"
+            className="mt-1.5 text-[10px] text-primary/70 hover:text-primary underline-offset-2 hover:underline"
+            onClick={() => copy(row.igreen_code!, "Código")}
+          >
+            Copiar código iGreen
+          </button>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {extractionBadge && (
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${extractionBadge.cls}`}>{extractionBadge.label}</span>
           )}

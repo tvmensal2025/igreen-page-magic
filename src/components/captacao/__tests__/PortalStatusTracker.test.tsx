@@ -276,8 +276,24 @@ describe("cliente já cadastrado (already_registered)", () => {
         finalized_at: "2026-07-15T12:00:00Z",
       }),
     );
-    expect(await screen.findByText(/Cadastro aprovado pela iGreen/)).toBeInTheDocument();
+    expect(await screen.findByText(/Cliente aprovado/)).toBeInTheDocument();
     expect(screen.queryByText(/Abrindo portal no navegador da VPS/)).not.toBeInTheDocument();
+  });
+
+  it("cadastro_em_analise sem aprovação → em análise (não diz aprovado)", async () => {
+    renderTracker(
+      baseRow({
+        status: "cadastro_concluido",
+        conversation_step: "cadastro_em_analise",
+        portal2_status: null,
+        finalized_at: "2026-07-15T12:00:00Z",
+        igreen_code: "1654151",
+        portal_submitted_at: "2026-07-15T12:00:00Z",
+      }),
+    );
+    expect(await screen.findByText(/Cadastro em análise na iGreen/)).toBeInTheDocument();
+    expect(screen.queryByText(/Cliente aprovado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Código iGreen/)).not.toBeInTheDocument();
   });
 
   it("portal_submitting travado → botões Já cadastrado e Dispensar", async () => {

@@ -41,13 +41,22 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 
 /** Corpo A2 aprovado no painel (ai_media_library __body_*). Nome vai em corte separado. */
-const A2_BODY_CANONICAL = `Eu sou a Sofia, assistente virtual do Rafael, gestor da iGreen.
-
-Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`;
+const A2_ASK_BILL =
+  "Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.";
+const A2_OPENING_GENERIC =
+  "Eu sou a assistente virtual da iGreen.";
 
 export const A2_BODY_TEXT: Record<SpeechGender, string> = {
-  feminino: A2_BODY_CANONICAL,
-  masculino: A2_BODY_CANONICAL,
+  feminino: `Seja muito bem-vinda.
+
+${A2_OPENING_GENERIC}
+
+${A2_ASK_BILL}`,
+  masculino: `Seja muito bem-vindo.
+
+${A2_OPENING_GENERIC}
+
+${A2_ASK_BILL}`,
 };
 
 export const A3_BODY_TEXT = `Deixa eu te explicar de um jeito simples como funciona o benefício.
@@ -70,13 +79,20 @@ Um dos benefícios mais utilizados é o desconto em farmácias, que pode chegar 
 
 Ou seja: você economiza na energia e ainda pode economizar em várias despesas do dia a dia.`;
 
+/** Corpo A3b — convite “Tenho dúvida” (painel Multicanal → __body). */
+export const A3B_BODY_TEXT = `Pode mandar sua dúvida por escrito que eu te respondo agora.
+
+Pode perguntar se tem fidelidade, se tem taxa escondida, se precisa instalar placa, se funciona em apartamento, quanto você economiza, se atende na sua cidade… ou por que a gente pede documento.
+
+Qualquer uma dessas — ou outra. E se eu não souber te explicar direito, eu chamo o consultor pra te ajudar.`;
+
 type PersonalizeSpec = {
   /** Prefixo de cache / slot base */
   baseSlot: string;
   /**
    * ola_greet = “Olá, Nome! Tudo bem?” (passo 2 / ligação)
    * nome_nao_segredo = “Nome, não tem segredo.” (passo 3)
-   * entao_nome = “Então, Nome.” (passo 4a)
+   * entao_nome = “Então, Nome.” (passo 4a / 3b)
    * nome_only = legado só o nome
    */
   introMode: "ola_greet" | "nome_nao_segredo" | "entao_nome" | "nome_only";
@@ -95,16 +111,23 @@ const SPECS: Record<string, PersonalizeSpec> = {
   },
   a3_explain_with_buttons: {
     baseSlot: "a3_explain_with_buttons",
-    // Passo 3: “Nome, não tem segredo.” + explicação
-    introMode: "nome_nao_segredo",
+    // Passo 3: “Então, Nome.” + explicação (mesmo padrão 3b/4a)
+    introMode: "entao_nome",
     genderedBody: false,
     bodyText: () => A3_BODY_TEXT,
   },
   a3_audio_explain: {
     baseSlot: "a3_explain_with_buttons",
-    introMode: "nome_nao_segredo",
+    introMode: "entao_nome",
     genderedBody: false,
     bodyText: () => A3_BODY_TEXT,
+  },
+  a3b_pedir_pergunta: {
+    baseSlot: "a3b_pedir_pergunta",
+    // Passo 3b: “Então, Nome.” + convite FAQ (nunca MP3 da prévia Maria)
+    introMode: "entao_nome",
+    genderedBody: false,
+    bodyText: () => A3B_BODY_TEXT,
   },
   a5_audio_club_benefits: {
     baseSlot: "a5_audio_club_benefits",
@@ -711,7 +734,7 @@ async function downloadUrlBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await res.arrayBuffer());
 }
 
-/** Intro com frase + nome — passo 3 (“Nome, não tem segredo”) / 4a (“Então, Nome”) / legado só-nome. */
+/** Intro com frase + nome — passo 3/3b/4a (“Então, Nome”) / legado “não tem segredo” / só-nome. */
 async function ensurePhraseIntroBytes(
   admin: any,
   consultantId: string,
@@ -1116,7 +1139,7 @@ export async function warmPersonalizedWaAudio(
 /**
  * Resolve URL final personalizada.
  * A2: “Olá, Nome.” (PT-BR) + corpo FIXO M/F (2 cortes)
- * A2: Olá+nome (PT-BR) + corpo FIXO · A3: “Nome, não tem segredo” + corpo · A5: “Então, Nome” + corpo
+ * A2: Olá+nome (PT-BR) + corpo FIXO · A3/A5: “Então, Nome” + corpo
  * Em runtime SÓ gera a intro com nome — nunca regenera o corpo fixo.
  */
 export async function resolvePersonalizedWaAudio(
@@ -1217,7 +1240,11 @@ export async function resolvePersonalizedWaAudio(
     const label = spec.introMode === "nome_nao_segredo"
       ? `Sofia stitch · ${display}, não tem segredo · explicação`
       : spec.introMode === "entao_nome"
-      ? `Sofia stitch · Então ${display} · clube`
+      ? (spec.baseSlot === "a3b_pedir_pergunta"
+        ? `Sofia stitch · Então ${display} · tenho dúvida`
+        : spec.baseSlot === "a3_explain_with_buttons"
+        ? `Sofia stitch · Então ${display} · explicação`
+        : `Sofia stitch · Então ${display} · clube`)
       : spec.introMode === "nome_only"
       ? (spec.baseSlot.startsWith("a3")
         ? `Sofia stitch · ${display} · explicação`

@@ -853,7 +853,7 @@ html {
   --ads-gradient-gold: var(--ads-gradient-primary);
   --ads-gradient-emerald: var(--ads-gradient-primary);
 
-  /* Força tema claro shadcn dentro do escopo ads */
+  /* Tokens shadcn no escopo ads — light por padrão; dark via html.dark abaixo */
   --background: 152 16% 97%;
   --foreground: 215 28% 17%;
   --card: 0 0% 100%;
@@ -877,6 +877,43 @@ html {
   background: radial-gradient(1200px 600px at 20% -10%, hsl(var(--ads-emerald) / .08), transparent 60%),
               hsl(var(--ads-bg));
   min-height: 100%;
+  /* Shell: nunca estourar a viewport — filhos largos ficam contidos ou rolam por dentro */
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+html.dark .ads-central-2026 {
+  --ads-bg:        0 0% 7%;
+  --ads-surface:   0 0% 10%;
+  --ads-surface-2: 0 0% 13%;
+  --ads-border:    0 0% 16%;
+  --ads-border-strong: 0 0% 22%;
+  --ads-text:      0 0% 100%;
+  --ads-muted:     220 13% 84%;
+  --ads-cream:     152 40% 14%;
+
+  --background: 0 0% 7%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 100%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 16%;
+  --muted-foreground: 220 13% 84%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
+}
+
+.ads-central-2026 *,
+.ads-central-2026 *::before,
+.ads-central-2026 *::after {
+  box-sizing: border-box;
 }
 
 /* Escopo dos tokens --ads-* para o wizard "Criar Campanha".
@@ -884,25 +921,21 @@ html {
    então as variáveis precisam ser redeclaradas aqui — senão o fundo fica
    transparente (hsl(var(--ads-surface)) não resolve no portal). */
 .ads-wizard-scope {
-  /* Paleta oficial iGreen: verde #00A859 (152 100% 33%) + verde escuro #007A3D (150 100% 24%). */
-  --ads-bg:        152 16% 97%;     /* cinza-fundo iGreen #F7F9F8 */
-  --ads-surface:   0  0% 100%;      /* branco */
-  --ads-surface-2: 152 30% 98%;     /* branco esverdeado */
-  --ads-border:    220 13% 91%;     /* cinza de borda #E5E7EB */
+  /* Paleta oficial iGreen — herda light; dark via html.dark (Portal no body). */
+  --ads-bg:        152 16% 97%;
+  --ads-surface:   0  0% 100%;
+  --ads-surface-2: 152 30% 98%;
+  --ads-border:    220 13% 91%;
   --ads-border-strong: 152 25% 78%;
-  --ads-emerald:   152 100% 33%;    /* verde iGreen #00A859 (CTAs/destaques) */
-  --ads-emerald-2: 150 100% 24%;    /* verde escuro #007A3D (texto verde) */
-  --ads-gold:      152 100% 33%;    /* sem dourado: usa o verde iGreen */
+  --ads-emerald:   152 100% 33%;
+  --ads-emerald-2: 150 100% 24%;
+  --ads-gold:      152 100% 33%;
   --ads-gold-soft: 150 100% 28%;
   --ads-cream:     152 40% 94%;
-  --ads-text:      215 28% 17%;     /* texto principal #1F2937 */
-  --ads-muted:     215 14% 45%;     /* texto secundário */
+  --ads-text:      215 28% 17%;
+  --ads-muted:     215 14% 45%;
   --ads-danger:    0   72% 51%;
 
-  /* O modal abre num Portal e o app pode estar em tema escuro. Forçamos os
-     tokens globais do shadcn para a versão CLARA aqui dentro, senão
-     componentes (Input/Card/Popover) ficam com texto branco em fundo branco
-     ou blocos pretos. O wizard é sempre claro (identidade iGreen). */
   --background: 0 0% 100%;
   --foreground: 215 28% 17%;
   --card: 0 0% 100%;
@@ -923,6 +956,32 @@ html {
 
   font-family: 'Figtree', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   color: hsl(var(--ads-text));
+}
+
+html.dark .ads-wizard-scope {
+  --ads-bg:        0 0% 7%;
+  --ads-surface:   0 0% 10%;
+  --ads-surface-2: 0 0% 13%;
+  --ads-border:    0 0% 16%;
+  --ads-border-strong: 0 0% 22%;
+  --ads-text:      0 0% 100%;
+  --ads-muted:     220 13% 84%;
+  --ads-cream:     152 40% 14%;
+
+  --background: 0 0% 10%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 10%;
+  --card-foreground: 0 0% 100%;
+  --popover: 0 0% 10%;
+  --popover-foreground: 0 0% 100%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 0 0% 16%;
+  --muted-foreground: 220 13% 84%;
+  --accent: 0 0% 16%;
+  --accent-foreground: 0 0% 100%;
+  --border: 0 0% 16%;
+  --input: 0 0% 16%;
 }
 
 .ads-central-2026 h1,
@@ -995,6 +1054,15 @@ html {
   align-items: center;
   gap: .75rem;
   flex-wrap: wrap;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+@media (max-width: 560px) {
+  .ads-central-2026 .ads-header {
+    padding: .75rem .75rem;
+    gap: .5rem;
+  }
 }
 .ads-central-2026 .ads-wordmark {
   font-family: 'Outfit', system-ui, sans-serif;
@@ -1035,14 +1103,24 @@ html {
 }
 
 .ads-central-2026 .ads-nav-pill {
-  display: inline-flex;
+  /* flex (não inline-flex): precisa de max-width do pai pra overflow-x funcionar */
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   gap: .125rem;
   padding: .25rem;
   border-radius: .875rem;
   border: 1px solid hsl(var(--ads-border));
   background: hsl(var(--ads-surface));
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   box-shadow: var(--ads-shadow-tile);
+}
+.ads-central-2026 .ads-nav-pill > * {
+  flex-shrink: 0;
 }
 .ads-central-2026 .ads-nav-btn,
 .ads-central-2026 .ads-nav-pill button {
@@ -1095,12 +1173,26 @@ html {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: .875rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+/* Evita span 12 em grid de 6/1 colunas (cria tracks implícitas e estoura a página) */
+.ads-central-2026 .ads-bento > * {
+  min-width: 0;
+  max-width: 100%;
 }
 @media (max-width: 900px) {
   .ads-central-2026 .ads-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .ads-central-2026 .ads-bento > [style*="span 12"] {
+    grid-column: 1 / -1 !important;
+  }
 }
 @media (max-width: 560px) {
-  .ads-central-2026 .ads-bento { grid-template-columns: 1fr; }
+  .ads-central-2026 .ads-bento { grid-template-columns: minmax(0, 1fr); }
+  .ads-central-2026 .ads-bento > * {
+    grid-column: 1 / -1 !important;
+  }
 }
 
 /* Force readable colors on light theme — overrides app's dark shadcn tokens

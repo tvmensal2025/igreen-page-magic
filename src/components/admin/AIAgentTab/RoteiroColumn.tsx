@@ -98,7 +98,7 @@ export function RoteiroColumn({ userId }: { userId: string }) {
               onChange={(e) => setValue(e.target.value)}
               readOnly={!isSuperAdmin}
               spellCheck={false}
-              className="w-full h-full resize-none rounded-xl border border-border/60 bg-zinc-950 text-zinc-100 font-mono text-[13px] leading-relaxed p-4 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              className="w-full h-full resize-none rounded-xl border border-border/60 bg-muted/40 text-foreground font-mono text-[13px] leading-relaxed p-4 focus:outline-none focus:ring-2 focus:ring-primary/40"
               placeholder={
                 tab === "roteiro"
                   ? "# CONTEXTO E PERSONA\nVocê é Camila, consultora da iGreen Energy...\n\n# REGRAS\n1. ...\n\n# FLUXO DE ATENDIMENTO\n..."

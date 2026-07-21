@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import type { Customer } from "./customerUtils";
+import { isValidBrNationalPhone, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 
 function SectionLabel({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
@@ -97,7 +98,15 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
       if (editForm.cpf) updateData.cpf = editForm.cpf.replace(/\D/g, "");
       if (editForm.data_nascimento) updateData.data_nascimento = editForm.data_nascimento;
       if (editForm.email) updateData.email = editForm.email;
-      if (editForm.phone_whatsapp) updateData.phone_whatsapp = editForm.phone_whatsapp.replace(/\D/g, "");
+      if (editForm.phone_whatsapp) {
+        const canon = toWhatsappCanonical(editForm.phone_whatsapp);
+        if (!isValidBrNationalPhone(canon) || canon.length < 12 || canon.length > 13) {
+          toast({ title: "Telefone inválido", description: "Use DDD + celular.", variant: "destructive" });
+          setSaving(false);
+          return;
+        }
+        updateData.phone_whatsapp = canon;
+      }
       if (editForm.cep) updateData.cep = editForm.cep.replace(/\D/g, "");
       updateData.address_street = editForm.address_street || null;
       updateData.address_number = editForm.address_number || null;

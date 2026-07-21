@@ -15,11 +15,8 @@ import { toast } from "sonner";
 import { CATEGORY_EMOJI, parseIntentName } from "@/lib/objectionShortcuts";
 import {
   FAQ_AUDIO_PADROES,
-  PRIORITY_FAQ_INTENTS,
   QA_AUDIO_APPROVED_TAG,
   faqPadraoKeyForIntent,
-  isPriorityFaqIntent,
-  priorityFaqRank,
 } from "@/lib/qaFaqAudioPriority";
 import { AudioWhatsAppPopover } from "@/components/admin/AudioWhatsAppPopover";
 
@@ -57,6 +54,14 @@ function statusOf(lib: LibAudio | null): ReviewStatus {
   return "pending";
 }
 
+function cleanSpoken(raw: string): string {
+  return String(raw || "")
+    .replace(/\{\{\s*nome\s*\}\}/gi, "")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function FaqAudioReviewDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -67,7 +72,7 @@ export function FaqAudioReviewDialog(props: {
 }) {
   const { open, onOpenChange, flowId, qas, availableAudios, onChanged } = props;
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [tab, setTab] = useState("padroes");
+  const [tab, setTab] = useState("todos");
 
   const audioById = useMemo(() => {
     const m = new Map<string, LibAudio>();
@@ -80,60 +85,35 @@ export function FaqAudioReviewDialog(props: {
     [qas, flowId],
   );
 
-  const byIntent = useMemo(() => {
-    const m = new Map<string, QA>();
-    owned.forEach((q) => m.set(q.intent_name, q));
-    return m;
-  }, [owned]);
-
-  /** 5 padrões — 1 card cada, com todas as palavras-chave do cluster. */
-  const padraoRows = useMemo(() => {
-    return FAQ_AUDIO_PADROES.map((p, idx) => {
-      const clusterQas = p.intents.map((name) => byIntent.get(name)).filter(Boolean) as QA[];
-      const canonical = byIntent.get(p.canonicalIntent) || clusterQas[0] || null;
-      const audioMedia = canonical?.medias.find((m) => m.media_kind === "audio" && m.media_id);
-      const lib = audioMedia?.media_id ? audioById.get(audioMedia.media_id) || null : null;
-      const triggers = clusterQas.flatMap((q) => q.triggers);
-      return {
-        id: `padrao:${p.key}`,
-        key: p.key,
-        label: p.label,
-        rank: idx,
-        canonicalIntent: p.canonicalIntent,
-        intents: p.intents,
-        qa: canonical,
-        lib,
-        audioMedia,
-        status: statusOf(lib),
-        triggers,
-        spoken: lib?.text_content || canonical?.text_response || "",
-      };
-    });
-  }, [byIntent, audioById]);
-
-  const others = useMemo(() => {
+  /** Um card por atalho: áudio + todas as palavras-chave. */
+  const allRows = useMemo(() => {
     return owned
-      .filter((q) => !isPriorityFaqIntent(q.intent_name))
       .map((qa) => {
         const audioMedia = qa.medias.find((m) => m.media_kind === "audio" && m.media_id);
         const lib = audioMedia?.media_id ? audioById.get(audioMedia.media_id) || null : null;
+        const padrao = faqPadraoKeyForIntent(qa.intent_name);
+        const padraoMeta = padrao
+          ? FAQ_AUDIO_PADROES.find((p) => p.key === padrao)
+          : null;
         return {
           qa,
           lib,
           audioMedia,
           status: statusOf(lib),
-          rank: priorityFaqRank(qa.intent_name),
+          padrao,
+          padraoLabel: padraoMeta?.label || null,
+          spoken: cleanSpoken(lib?.text_content || qa.text_response || ""),
         };
       })
-      .sort((a, b) => a.qa.intent_name.localeCompare(b.qa.intent_name));
+      .sort((a, b) => a.qa.intent_name.localeCompare(b.qa.intent_name, "pt-BR"));
   }, [owned, audioById]);
 
   const counts = useMemo(() => {
-    const pending = padraoRows.filter((r) => r.status === "pending").length;
-    const approved = padraoRows.filter((r) => r.status === "approved").length;
-    const noAudio = padraoRows.filter((r) => r.status === "no_audio").length;
-    return { pending, approved, noAudio, padroes: padraoRows.length, others: others.length };
-  }, [padraoRows, others]);
+    const pending = allRows.filter((r) => r.status === "pending").length;
+    const approved = allRows.filter((r) => r.status === "approved").length;
+    const noAudio = allRows.filter((r) => r.status === "no_audio").length;
+    return { pending, approved, noAudio, total: allRows.length };
+  }, [allRows]);
 
   const approve = async (id: string, lib: LibAudio, label: string) => {
     setBusyId(id);
@@ -153,23 +133,16 @@ export function FaqAudioReviewDialog(props: {
     }
   };
 
-  const reject = async (
-    id: string,
-    lib: LibAudio,
-    label: string,
-    clusterQas: QA[],
-  ) => {
+  const reject = async (id: string, lib: LibAudio, label: string, qa: QA) => {
     setBusyId(id);
     try {
-      for (const qa of clusterQas) {
-        for (const m of qa.medias.filter((x) => x.media_kind === "audio" && x.media_id === lib.id)) {
-          if (m.id) {
-            const { error } = await supabase
-              .from("bot_flow_qa_media")
-              .update({ media_id: null })
-              .eq("id", m.id);
-            if (error) throw error;
-          }
+      for (const m of qa.medias.filter((x) => x.media_kind === "audio" && x.media_id === lib.id)) {
+        if (m.id) {
+          const { error } = await supabase
+            .from("bot_flow_qa_media")
+            .update({ media_id: null })
+            .eq("id", m.id);
+          if (error) throw error;
         }
       }
       if (lib.slot_key?.startsWith("qa_body:")) {
@@ -185,7 +158,7 @@ export function FaqAudioReviewDialog(props: {
           .eq("id", lib.id);
         if (error) throw error;
       }
-      toast.message("Reprovado — áudio desvinculado do padrão", { description: label });
+      toast.message("Reprovado — áudio desvinculado", { description: label });
       await onChanged();
     } catch (e: any) {
       toast.error(e?.message || "Falha ao reprovar");
@@ -194,17 +167,32 @@ export function FaqAudioReviewDialog(props: {
     }
   };
 
+  const renderRows = (rows: typeof allRows) =>
+    rows.length === 0 ? (
+      <p className="text-sm text-muted-foreground text-center py-8">Nenhum atalho nesta lista.</p>
+    ) : (
+      rows.map((r) => (
+        <QaAudioCard
+          key={r.qa.id}
+          row={r}
+          busy={busyId === r.qa.id}
+          onApprove={() => r.lib && approve(r.qa.id, r.lib, r.qa.intent_name)}
+          onReject={() => r.lib && reject(r.qa.id, r.lib, r.qa.intent_name, r.qa)}
+        />
+      ))
+    );
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90dvh] flex flex-col gap-3 overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Headphones className="w-5 h-5 text-primary" />
-            Revisar áudios FAQ (Sofia)
+            Revisar áudios FAQ
           </DialogTitle>
           <DialogDescription>
-            {PRIORITY_FAQ_INTENTS.length} padrões completos (não 10 quase iguais). Gatilhos separados,
-            mesmo áudio. Aceite / reprove / envie no WhatsApp de alerta.
+            Todos os atalhos deste fluxo: áudio + palavras-chave. Se o lead receber áudio, o bot
+            <strong> não</strong> manda o mesmo texto escrito.
           </DialogDescription>
         </DialogHeader>
 
@@ -212,78 +200,26 @@ export function FaqAudioReviewDialog(props: {
           <Badge variant="default">Pendentes {counts.pending}</Badge>
           <Badge variant="secondary">Aprovados {counts.approved}</Badge>
           <Badge variant="outline">Sem áudio {counts.noAudio}</Badge>
-          <Badge variant="outline">{counts.padroes} padrões</Badge>
+          <Badge variant="outline">{counts.total} atalhos</Badge>
         </div>
 
         <Tabs value={tab} onValueChange={setTab} className="flex-1 min-h-0 flex flex-col">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="padroes">Padrões ({counts.padroes})</TabsTrigger>
-            <TabsTrigger value="others">Demais ({counts.others})</TabsTrigger>
-            <TabsTrigger value="pending">Só pendentes ({counts.pending})</TabsTrigger>
+            <TabsTrigger value="todos">Todos ({counts.total})</TabsTrigger>
+            <TabsTrigger value="pending">Pendentes ({counts.pending})</TabsTrigger>
+            <TabsTrigger value="no_audio">Sem áudio ({counts.noAudio})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="padroes" className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3 pr-1">
-            {padraoRows.map((r) => (
-              <PadraoCard
-                key={r.id}
-                row={r}
-                busy={busyId === r.id}
-                onApprove={() => r.lib && approve(r.id, r.lib, r.label)}
-                onReject={() => {
-                  if (!r.lib) return;
-                  const clusterQas = r.intents
-                    .map((name) => byIntent.get(name))
-                    .filter(Boolean) as QA[];
-                  void reject(r.id, r.lib, r.label, clusterQas);
-                }}
-              />
-            ))}
-          </TabsContent>
-
-          <TabsContent value="others" className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3 pr-1">
-            {others.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Os atalhos principais já estão nos 5 padrões.
-              </p>
-            ) : (
-              others.map((r) => (
-                <OtherCard
-                  key={r.qa.id}
-                  qa={r.qa}
-                  lib={r.lib}
-                  status={r.status}
-                  busy={busyId === r.qa.id}
-                  onApprove={() => r.lib && approve(r.qa.id, r.lib, r.qa.intent_name)}
-                  onReject={() => r.lib && reject(r.qa.id, r.lib, r.qa.intent_name, [r.qa])}
-                />
-              ))
-            )}
+          <TabsContent value="todos" className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3 pr-1">
+            {renderRows(allRows)}
           </TabsContent>
 
           <TabsContent value="pending" className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3 pr-1">
-            {padraoRows.filter((r) => r.status === "pending").length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-8">
-                Nenhum padrão pendente de aprovação.
-              </p>
-            ) : (
-              padraoRows
-                .filter((r) => r.status === "pending")
-                .map((r) => (
-                  <PadraoCard
-                    key={r.id}
-                    row={r}
-                    busy={busyId === r.id}
-                    onApprove={() => r.lib && approve(r.id, r.lib, r.label)}
-                    onReject={() => {
-                      if (!r.lib) return;
-                      const clusterQas = r.intents
-                        .map((name) => byIntent.get(name))
-                        .filter(Boolean) as QA[];
-                      void reject(r.id, r.lib, r.label, clusterQas);
-                    }}
-                  />
-                ))
-            )}
+            {renderRows(allRows.filter((r) => r.status === "pending"))}
+          </TabsContent>
+
+          <TabsContent value="no_audio" className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-3 pr-1">
+            {renderRows(allRows.filter((r) => r.status === "no_audio"))}
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -291,29 +227,21 @@ export function FaqAudioReviewDialog(props: {
   );
 }
 
-function PadraoCard(props: {
+function QaAudioCard(props: {
   row: {
-    id: string;
-    label: string;
-    rank: number;
-    canonicalIntent: string;
-    intents: readonly string[];
-    status: ReviewStatus;
-    triggers: Trigger[];
-    spoken: string;
+    qa: QA;
     lib: LibAudio | null;
+    status: ReviewStatus;
+    padrao: string | null;
+    padraoLabel: string | null;
+    spoken: string;
   };
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
 }) {
   const { row, busy, onApprove, onReject } = props;
-  const { category } = parseIntentName(row.canonicalIntent);
-  const spoken = String(row.spoken || "")
-    .replace(/\{\{\s*nome\s*\}\}/gi, "")
-    .replace(/\*([^*]+)\*/g, "$1")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const { category } = parseIntentName(row.qa.intent_name);
 
   return (
     <div
@@ -326,13 +254,17 @@ function PadraoCard(props: {
       }`}
     >
       <div className="flex items-start gap-2 flex-wrap">
-        <Badge className="shrink-0">#{row.rank + 1} Padrão</Badge>
         {category && (
           <Badge variant="secondary" className="shrink-0">
             {CATEGORY_EMOJI[category]} {category}
           </Badge>
         )}
-        <p className="font-semibold text-sm flex-1 min-w-0">{row.label}</p>
+        <p className="font-semibold text-sm flex-1 min-w-0">{row.qa.intent_name}</p>
+        {row.padraoLabel && (
+          <Badge variant="outline" className="text-[10px]">
+            áudio compartilhado
+          </Badge>
+        )}
         {row.status === "approved" && (
           <Badge variant="default" className="gap-1">
             <CheckCircle2 className="w-3 h-3" /> Aprovado
@@ -350,19 +282,15 @@ function PadraoCard(props: {
         )}
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
-        Cobre {row.intents.length} atalhos · áudio único compartilhado
-      </p>
-
       <div>
         <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">
-          Quando o cliente disser… ({row.triggers.length} palavras-chave)
+          Palavras-chave ({row.qa.triggers.length})
         </p>
-        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-          {row.triggers.length === 0 ? (
+        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+          {row.qa.triggers.length === 0 ? (
             <span className="text-xs text-muted-foreground italic">Sem palavras-chave</span>
           ) : (
-            row.triggers.map((t) => (
+            row.qa.triggers.map((t) => (
               <Badge key={t.id || t.phrase} variant="outline" className="text-[11px] font-normal">
                 {t.phrase}
               </Badge>
@@ -371,22 +299,24 @@ function PadraoCard(props: {
         </div>
       </div>
 
-      {spoken && (
+      {row.spoken && (
         <p className="text-xs text-muted-foreground leading-relaxed line-clamp-4 border-l-2 border-primary/30 pl-2">
-          {spoken}
+          {row.spoken}
         </p>
       )}
 
       {row.lib?.url ? (
         <audio controls src={row.lib.url} className="w-full h-9" preload="none" />
       ) : (
-        <p className="text-xs text-muted-foreground italic">Áudio do padrão ainda não gerado.</p>
+        <p className="text-xs text-muted-foreground italic">
+          Áudio ainda não vinculado. Gere TTS ou grave e associe no card do atalho.
+        </p>
       )}
 
       {row.lib?.url && (
         <AudioWhatsAppPopover
           audioUrl={row.lib.url}
-          label={`FAQ Sofia · ${row.label}`}
+          label={`FAQ · ${row.qa.intent_name}`}
           trigger={
             <Button type="button" size="sm" variant="secondary" className="w-full gap-1.5">
               <MessageCircle className="w-3.5 h-3.5" />
@@ -415,51 +345,6 @@ function PadraoCard(props: {
             onClick={onReject}
           >
             {busy ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <XCircle className="w-3.5 h-3.5 mr-1" />}
-            Reprovar
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OtherCard(props: {
-  qa: QA;
-  lib: LibAudio | null;
-  status: ReviewStatus;
-  busy: boolean;
-  onApprove: () => void;
-  onReject: () => void;
-}) {
-  const { qa, lib, status, busy, onApprove, onReject } = props;
-  const { category } = parseIntentName(qa.intent_name);
-  const padrao = faqPadraoKeyForIntent(qa.intent_name);
-
-  return (
-    <div className="rounded-lg border p-3 space-y-2 border-dashed bg-muted/10">
-      <div className="flex items-start gap-2 flex-wrap">
-        {category && (
-          <Badge variant="secondary">
-            {CATEGORY_EMOJI[category]} {category}
-          </Badge>
-        )}
-        <p className="font-semibold text-sm flex-1">{qa.intent_name}</p>
-        {padrao && <Badge variant="outline">no padrão {padrao}</Badge>}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {qa.triggers.map((t) => (
-          <Badge key={t.id || t.phrase} variant="outline" className="text-[11px] font-normal">
-            {t.phrase}
-          </Badge>
-        ))}
-      </div>
-      {lib?.url && <audio controls src={lib.url} className="w-full h-9" preload="none" />}
-      {status !== "no_audio" && lib && (
-        <div className="flex gap-2">
-          <Button size="sm" className="flex-1" disabled={busy || status === "approved"} onClick={onApprove}>
-            Aceitar
-          </Button>
-          <Button size="sm" variant="outline" className="flex-1" disabled={busy} onClick={onReject}>
             Reprovar
           </Button>
         </div>

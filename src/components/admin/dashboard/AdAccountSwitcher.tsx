@@ -16,7 +16,7 @@ export function AdAccountSwitcher({ userId, value, onChange }: Props) {
     <div className="flex items-center gap-1.5">
       <Users className="w-3.5 h-3.5 text-muted-foreground" />
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-8 w-[220px] text-xs">
+        <SelectTrigger className="h-8 w-full max-w-[220px] min-w-0 text-xs">
           <SelectValue placeholder="Conta de anúncio" />
         </SelectTrigger>
         <SelectContent>

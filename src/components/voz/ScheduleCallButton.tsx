@@ -126,7 +126,7 @@ export function ScheduleCallButton({
         disabled={!phone}
         title="Agendar ligação Sofia"
       >
-        <Phone className="h-3.5 w-3.5" />
+        <Phone className={iconOnly ? "h-4 w-4" : "h-3.5 w-3.5"} />
         {!iconOnly && <span className="ml-1.5 text-[11px] font-semibold">{triggerLabel}</span>}
       </Button>
 

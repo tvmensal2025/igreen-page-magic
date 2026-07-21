@@ -140,6 +140,44 @@ Deno.serve(async (req) => {
     console.warn("reconcile_failed:", (e as Error).message);
   }
 
+  // Cadência / logs soltos: discagem gravada sem callback → GetCallStatus.
+  try {
+    const logCutoff = new Date(Date.now() - 2 * 60_000).toISOString();
+    const { data: pendingLogs } = await admin
+      .from("voice_call_logs")
+      .select("id, velip_call_id")
+      .in("status", ["dialing", "sent", "unknown"])
+      .is("velip_status", null)
+      .not("velip_call_id", "is", null)
+      .lt("created_at", logCutoff)
+      .order("created_at", { ascending: true })
+      .limit(25);
+    for (const log of pendingLogs ?? []) {
+      if (Date.now() - started > MAX_EXEC_MS) break;
+      const cdId = String(log.velip_call_id || "");
+      if (!cdId) continue;
+      const s = await getCallStatus(cdId);
+      if (!s.ok || !s.called_status) continue;
+      const outcome = interpretStatus(s.called_status);
+      const newStatus = outcomeToTargetStatus(outcome) ?? "unknown";
+      const patch: Record<string, unknown> = {
+        status: newStatus,
+        velip_status: s.called_status,
+      };
+      if (typeof s.time_sec === "number") {
+        patch.velip_time_sec = s.time_sec;
+        patch.duration_sec = s.time_sec;
+      }
+      await admin
+        .from("voice_call_logs")
+        .update(patch)
+        .eq("id", log.id)
+        .is("velip_status", null);
+    }
+  } catch (e) {
+    console.warn("reconcile_call_logs_failed:", (e as Error).message);
+  }
+
   // Pré-aquece ElevenLabs (Olá+nome+corpo) ANTES de discar — inclusive campanhas ainda agendadas.
   try {
     const { data: warmCamps } = await admin

@@ -104,6 +104,20 @@ const CADASTRO_STEPS = CADASTRO_STEPS_SHARED;
 
 interface LoadedFlow { flowId: string; steps: DbStep[]; strictMode: boolean; }
 
+/**
+ * a3b = “pode perguntar” (só áudio, sem botões). Depois da FAQ/IA o lead
+ * DEVE voltar ao a3 (com CTA), senão fica o vazio mapeado no 11971254913.
+ * Espelha custom-step-resolver do bot-flow.
+ */
+function resolveFaqReturnStep(current: DbStep, steps: DbStep[]): DbStep {
+  const key = String(current?.step_key || "");
+  if (key === "a3b_pedir_pergunta") {
+    const a3 = steps.find((s) => s.step_key === "a3_explain_with_buttons" && s.is_active !== false);
+    if (a3) return a3;
+  }
+  return current;
+}
+
 function stepHasInteractiveWait(st: DbStep | null | undefined): boolean {
   const captures = Array.isArray(st?.captures) ? st!.captures as any[] : [];
   const hasButtons = captures.some((c: any) =>
@@ -1706,10 +1720,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     if (order && order.length > 0) {
       const remaining = [...qaHit.mediaUrls];
       let textInjected = false;
+      const hasAudio = qaHit.mediaUrls.some((m) => String(m.kind).toLowerCase() === "audio");
       for (const slot of order) {
         const s = String(slot).toLowerCase();
         if (s === "text") {
-          if (qaText && !textInjected) { sequence.push({ kind: "text", text: qaText }); textInjected = true; }
+          // Áudio FAQ: não manda o mesmo conteúdo escrito
+          if (qaText && !textInjected && !hasAudio) { sequence.push({ kind: "text", text: qaText }); textInjected = true; }
           continue;
         }
         const taken = remaining.filter((m) => String(m.kind).toLowerCase() === s);
@@ -1725,17 +1741,19 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         const k = ["audio", "video", "image"].includes(String(m.kind)) ? String(m.kind) as any : "document";
         sequence.push({ kind: k, m: m as any });
       }
-      if (qaText && !textInjected) sequence.push({ kind: "text", text: qaText });
+      if (qaText && !textInjected && !hasAudio) sequence.push({ kind: "text", text: qaText });
     } else {
-      // Legado: mídia primeiro, texto depois.
+      // Legado: mídia primeiro; texto só se NÃO houver áudio.
+      const hasAudio = qaHit.mediaUrls.some((m) => String(m.kind).toLowerCase() === "audio");
       for (const m of qaHit.mediaUrls) {
         const k = ["audio", "video", "image"].includes(String(m.kind)) ? String(m.kind) as any : "document";
         sequence.push({ kind: k, m: m as any });
       }
-      if (qaText) sequence.push({ kind: "text", text: qaText });
+      if (qaText && !hasAudio) sequence.push({ kind: "text", text: qaText });
     }
 
     let anyEmitted = false;
+    let audioEmitted = false;
     for (const item of sequence) {
       if (item.kind === "text") {
         try {
@@ -1772,7 +1790,48 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       try {
         await ctx.sender.sendMedia(ctx.remoteJid, m.url, "", item.kind, Number((m as any).duration_sec || 0) || undefined);
         anyEmitted = true;
-      } catch (_) {}
+        if (item.kind === "audio") audioEmitted = true;
+        if (ctx.customer?.id) {
+          await ctx.supabase.from("conversations").insert({
+            customer_id: ctx.customer.id,
+            message_direction: "outbound",
+            message_text: `[flow-qa:${item.kind}]`,
+            message_type: item.kind,
+            conversation_step: stepKey,
+          });
+        }
+      } catch (e) {
+        console.warn(`[qa] sendMedia ${item.kind} falhou:`, (e as Error)?.message || e);
+      }
+    }
+
+    // Áudio saiu: NÃO manda texto da mesma resposta (regra FAQ).
+    // Se áudio falhou/pulou → fallback texto já coberto abaixo.
+    if (!anyEmitted && qaText) {
+      try {
+        await ctx.sender.sendText(ctx.remoteJid, qaText);
+        anyEmitted = true;
+        if (ctx.customer?.id) {
+          await ctx.supabase.from("conversations").insert({
+            customer_id: ctx.customer.id,
+            message_direction: "outbound",
+            message_text: qaText,
+            message_type: "text",
+            conversation_step: stepKey,
+          });
+        }
+        console.log(`[conversational] QA fallback texto (áudio não emitido) step="${stepKey}"`);
+      } catch (e) {
+        console.error(`[qa] fallback sendText falhou:`, (e as Error)?.message || e);
+      }
+    }
+
+    // a3b sem botões → volta ao a3 e reemite CTAs (fix vazio 11971254913).
+    const returnStep = resolveFaqReturnStep(currentStep, dbSteps);
+    if (returnStep.id !== currentStep.id) {
+      console.log(`[conversational] FAQ return ${currentStep.step_key} → ${returnStep.step_key}`);
+      currentStep = returnStep;
+      stepKey = returnStep.id;
     }
 
     // Reapresenta opções do passo (Whapi=botão; Evolution=número) — sem isso
@@ -1799,7 +1858,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     return _finalize(stepKey, {
       reply: "",
-      updates: { conversation_step: stepKey, __inline_sent: anyEmitted || undefined, ...restoreDetourUpdates },
+      updates: {
+        conversation_step: stepKey,
+        __inline_sent: anyEmitted || undefined,
+        __qa_audio: audioEmitted || undefined,
+        ...restoreDetourUpdates,
+      },
     });
   }
 
@@ -2147,6 +2211,14 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           }
         } catch (e) {
           console.warn("[conversational-orch] sendText falhou:", (e as Error)?.message || e);
+        }
+
+        // a3b sem botões → volta ao a3 (mesmo mapa do bot-flow / 11971254913).
+        const returnStep = resolveFaqReturnStep(currentStep, dbSteps);
+        if (returnStep.id !== currentStep.id) {
+          console.log(`[conversational-orch] return ${currentStep.step_key} → ${returnStep.step_key}`);
+          currentStep = returnStep;
+          stepKey = returnStep.id;
         }
 
         if (!orch.shouldHandoff) {

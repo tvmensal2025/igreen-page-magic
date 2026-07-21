@@ -53,7 +53,7 @@ export const QA_STEP_CLOSERS: ReadonlyArray<{ stepKey: string; slotKey: string; 
   {
     stepKey: "a10_portal_otp_facial",
     slotKey: "qa_close:a10_portal_otp_facial",
-    spoken: "Digite o código OTP quando receber, ou me diz pode seguir pra retomar.",
+    spoken: "Digite o código quando receber, ou me diz pode seguir pra retomar.",
   },
   {
     stepKey: "a11_facial_link",
@@ -72,7 +72,7 @@ export const QA_STEP_CLOSERS: ReadonlyArray<{ stepKey: string; slotKey: string; 
   },
 ];
 
-/** 5 padrões únicos (texto completo) — vários atalhos reutilizam o mesmo áudio. */
+/** 5 padrões únicos — 1 card por padrão (aliases legados só p/ áudio antigo). */
 export const FAQ_AUDIO_PADROES: ReadonlyArray<{
   key: string;
   canonicalIntent: string;

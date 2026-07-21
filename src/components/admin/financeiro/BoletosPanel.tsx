@@ -30,7 +30,7 @@ export function BoletosPanel({ userId, scope, onOpenChat }: Props) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 min-w-0">
         <KpiCard
           icon={<CalendarClock className="w-5 h-5" />}
           label="Vence hoje"

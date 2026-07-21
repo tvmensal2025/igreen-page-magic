@@ -1341,16 +1341,26 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
     }
   }
   if (lastErr) {
+    const msg = String(lastErr.message || '');
+    const isInvalidOrExpired = /c[oó]digo inv[aá]lido ou expirado|otp.*expir|code.*expired|invalid.?code/i.test(msg);
     if (supabase && customer_id) {
       await supabase.from('customers').update({
         last_otp_dispatch_at: new Date().toISOString(),
-        last_otp_dispatch_error: String(lastErr.message || '').slice(0, 500),
+        last_otp_dispatch_error: msg.slice(0, 500),
+        // OTP errado/expirado: NÃO fica em validating_otp — libera o cliente pra digitar de novo.
+        ...(isInvalidOrExpired ? {
+          status: 'awaiting_otp',
+          conversation_step: 'otp_falhou',
+          otp_pending_replay: false,
+        } : {}),
       }).eq('id', customer_id).then(() => {}, () => {});
     }
-    return res.status(502).json({
+    // 400 = permanente (código errado/expirado). 502 = só falha transitória de rede/iGreen.
+    // (Antes tudo ia 502 e o watchdog tratava como "rede" → retentava o mesmo código sem pedir outro.)
+    return res.status(isInvalidOrExpired ? 400 : 502).json({
       ok: false,
-      error: lastErr.message,
-      error_kind: 'igreen_validate_failed',
+      error: msg,
+      error_kind: isInvalidOrExpired ? 'otp_invalid_or_expired' : 'igreen_validate_failed',
     });
   }
 
@@ -1423,6 +1433,46 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
 });
 
 
+/** Reenvia OTP da iGreen (WhatsApp do cliente) — usado após código inválido/expirado. */
+app.post('/resend-otp', authRequired, async (req, res) => {
+  const body = req.body || {};
+  let { idconsultor, idcliente, customer_id } = body;
+  if ((!idconsultor || !idcliente) && customer_id && supabase) {
+    try {
+      const { data: cust } = await supabase
+        .from('customers')
+        .select('portal2_idcliente, consultants:consultant_id(igreen_id)')
+        .eq('id', customer_id)
+        .maybeSingle();
+      if (!idcliente && cust?.portal2_idcliente) idcliente = Number(cust.portal2_idcliente);
+      if (!idconsultor && cust?.consultants?.igreen_id) idconsultor = Number(cust.consultants.igreen_id);
+    } catch (e) {
+      console.warn(`  ⚠ /resend-otp lookup falhou: ${e.message}`);
+    }
+  }
+  if (!idconsultor || !idcliente) {
+    return res.status(400).json({ ok: false, error: 'idconsultor/idcliente obrigatórios', error_kind: 'missing_ids' });
+  }
+  try {
+    const c = new Portal2Client({ idconsultor });
+    await c.generateVerificationCode(idcliente);
+    if (supabase && customer_id) {
+      await supabase.from('customers').update({
+        portal2_otp_sent_at: new Date().toISOString(),
+        status: 'awaiting_otp',
+        conversation_step: 'aguardando_otp',
+        last_otp_dispatch_error: null,
+      }).eq('id', customer_id).then(() => {}, () => {});
+    }
+    console.log(`✓ /resend-otp idcliente=${idcliente} customer=${customer_id || '-'}`);
+    return res.json({ ok: true, resent: true, idcliente });
+  } catch (e) {
+    console.warn(`  ⚠ /resend-otp falhou: ${e.message}`);
+    return res.status(502).json({ ok: false, error: e.message, error_kind: 'resend_failed' });
+  }
+});
+
+
 app.get('/lead/:idcliente/status', authRequired, async (req, res) => {
   const { idcliente } = req.params;
   const idconsultor = Number(req.query.idconsultor);
@@ -1479,6 +1529,7 @@ async function main() {
     console.log(`🚀 worker-portal-2 ouvindo na porta ${PORT}`);
     console.log(`   POST /submit-lead`);
     console.log(`   POST /confirm-otp`);
+    console.log(`   POST /resend-otp`);
     console.log(`   GET  /lead/:id/status`);
     console.log(`   GET  /queue/status`);
     console.log(`   GET  /health`);

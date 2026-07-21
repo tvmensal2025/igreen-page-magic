@@ -92,12 +92,11 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
     : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
   const idcliente = c.portal2_idcliente ? Number(c.portal2_idcliente) : null;
 
-  await sender.sendText(remoteJid, `✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...`);
-
   // Se ainda não temos idcliente, o cadastro nunca chegou ao portal — dispara
   // agora e deixa o watchdog reenviar o OTP em <1 min com idcliente já em mãos.
   if (!idcliente) {
     console.warn(`⚠️ OTP recebido mas portal2_idcliente ausente — disparando cadastro antes (customer=${otpCustomer.id})`);
+    await sender.sendText(remoteJid, `✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...`);
     await supabase.from("customers").update({
       last_otp_dispatch_error: "missing_portal2_idcliente_will_retry",
       last_otp_dispatch_at: new Date().toISOString(),
@@ -117,6 +116,7 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
 
   if (!idconsultor) {
     console.error(`❌ OTP customer=${otpCustomer.id} sem igreen_id do consultor — watchdog tentará novamente`);
+    await sender.sendText(remoteJid, `✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...`);
     await supabase.from("customers").update({
       last_otp_dispatch_error: "missing_idconsultor",
       last_otp_dispatch_at: new Date().toISOString(),
@@ -127,6 +127,8 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
   const resolvedOtpWorker = await resolveWorker(supabase, otpCustomer.id).catch(() => null);
   const workerUrl = resolvedOtpWorker?.url || Deno.env.get("PORTAL2_WORKER_URL");
   const workerSecret = resolvedOtpWorker?.secret || Deno.env.get("PORTAL2_WORKER_SECRET") || Deno.env.get("WORKER_SECRET");
+  let workerOk = false;
+  let badOtp = false;
   if (workerUrl) {
     try {
       const r = await fetchWithTimeout(`${workerUrl}/confirm-otp`, {
@@ -145,6 +147,7 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
       });
       const respBody = await r.text().catch(() => "");
       if (r.ok) {
+        workerOk = true;
         console.log(`✅ OTP enviado ao Worker Portal 2 (status=${r.status})`);
         await supabase.from("customers").update({
           status: "validating_otp",
@@ -155,10 +158,18 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
         }).eq("id", otpCustomer.id);
       } else {
         console.warn(`⚠️ Worker /confirm-otp HTTP ${r.status}: ${respBody.slice(0, 200)}`);
-        await supabase.from("customers").update({
-          last_otp_dispatch_at: new Date().toISOString(),
-          last_otp_dispatch_error: `HTTP ${r.status}: ${respBody.slice(0, 200)}`,
-        }).eq("id", otpCustomer.id);
+        badOtp = r.status === 400
+          || /otp_invalid_or_expired/i.test(respBody)
+          || /c[oó]digo inv[aá]lido ou expirado/i.test(respBody);
+        if (badOtp) {
+          const { markOtpNeedsConfirm } = await import("../../_shared/otp-confirm-flow.ts");
+          await markOtpNeedsConfirm(supabase, otpCustomer.id, extractedOtp, respBody.slice(0, 200));
+        } else {
+          await supabase.from("customers").update({
+            last_otp_dispatch_at: new Date().toISOString(),
+            last_otp_dispatch_error: `HTTP ${r.status}: ${respBody.slice(0, 200)}`,
+          }).eq("id", otpCustomer.id);
+        }
       }
     } catch (e: any) {
       console.warn(`⚠️ Falha ao notificar Worker: ${e?.message || e}`);
@@ -169,12 +180,39 @@ export async function tryInterceptOtp(args: OtpInterceptArgs): Promise<OtpInterc
     }
   }
 
+  if (!workerOk) {
+    if (badOtp) {
+      const { resolveCodigoConfirmCopy } = await import("../../_shared/otp-confirm-flow.ts");
+      const copy = await resolveCodigoConfirmCopy(
+        supabase,
+        otpCustomer.consultant_id,
+        extractedOtp,
+      );
+      const ask = copy.ask;
+      const btns = copy.buttons;
+      try {
+        if (typeof (sender as any).sendButtons === "function") {
+          await (sender as any).sendButtons(remoteJid, ask, btns);
+        } else {
+          await sender.sendText(remoteJid, `${ask}\n\nResponda *SIM* ou *NÃO*.`);
+        }
+      } catch (_) {
+        await sender.sendText(remoteJid, `${ask}\n\nResponda *SIM* ou *NÃO*.`);
+      }
+    } else {
+      await sender.sendText(
+        remoteJid,
+        "✅ Código recebido! Estou finalizando seu cadastro, aguarde alguns segundos...",
+      );
+    }
+  }
+
   await supabase.from("conversations").insert({
     customer_id: otpCustomer.id,
     message_direction: "inbound",
     message_text: messageText,
     message_type: "text",
-    conversation_step: "otp_received",
+    conversation_step: badOtp ? "otp_confirmar" : "otp_received",
   });
 
   return { intercepted: true, customerId: otpCustomer.id, otp: extractedOtp };

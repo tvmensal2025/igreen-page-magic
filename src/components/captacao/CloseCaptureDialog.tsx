@@ -49,6 +49,15 @@ const LOST_REASONS = [
   { v: "outro", l: "Outro" },
 ];
 
+/** Status locais de facebook_campaigns (não Meta EFFECTIVE_STATUS). */
+const CAMPAIGN_SELECTABLE_STATUSES = ["active", "paused", "pending_review"] as const;
+
+function ensureOption(list: Option[], id: string | null | undefined, label: string | null | undefined): Option[] {
+  if (!id) return list;
+  if (list.some((x) => x.id === id)) return list;
+  return [{ id, label: label || `${id.slice(0, 8)}…` }, ...list];
+}
+
 export function CloseCaptureDialog({
   open,
   onOpenChange,
@@ -59,11 +68,12 @@ export function CloseCaptureDialog({
   const [outcome, setOutcome] = useState<Outcome>("won");
   const [busy, setBusy] = useState(false);
 
-  // won state
+  // won state — campanha e parceiro independentes (lead Meta+rodízio tem os dois)
   const [sourceKind, setSourceKind] = useState<SourceKind>("organic");
   const [campaigns, setCampaigns] = useState<Option[]>([]);
   const [partners, setPartners] = useState<Option[]>([]);
-  const [sourceId, setSourceId] = useState<string>("");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string>("");
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>("");
   const [productId, setProductId] = useState<string>("");
   const [products, setProducts] = useState<Option[]>([]);
   const [pointsKwh, setPointsKwh] = useState<string>("");
@@ -98,11 +108,17 @@ export function CloseCaptureDialog({
     if (!open) return;
     let cancelled = false;
     void (async () => {
+      // Reset seleção a cada abertura para não herdar lead anterior
+      setSelectedCampaignId("");
+      setSelectedPartnerId("");
+      setSourceKind("organic");
+
       const [c, p, prod, cust] = await Promise.all([
         supabase
           .from("facebook_campaigns")
           .select("id, name, status")
-          .in("status", ["ACTIVE", "PAUSED"])
+          .eq("consultant_id", consultantId)
+          .in("status", [...CAMPAIGN_SELECTABLE_STATUSES])
           .order("name", { ascending: true })
           .limit(200),
         supabase
@@ -125,22 +141,13 @@ export function CloseCaptureDialog({
           .maybeSingle(),
       ]);
       if (cancelled) return;
-      const campaignList = ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) }));
-      const partnerList = ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) }));
-      setCampaigns(campaignList);
-      setPartners(partnerList);
+      let campaignList = ((c.data as any[]) || []).map((r) => ({ id: r.id, label: r.name || r.id.slice(0, 8) }));
+      let partnerList = ((p.data as any[]) || []).map((r) => ({ id: r.id, label: r.nome || r.id.slice(0, 8) }));
       const prods = ((prod.data as any[]) || []).map((r) => ({ id: r.id, label: r.name }));
       setProducts(prods);
       if (prods[0]) setProductId(prods[0].id);
 
       const cu = cust.data as any;
-      if (cu?.source_campaign_id) {
-        setSourceKind("campaign");
-        setSourceId(cu.source_campaign_id);
-      } else if (cu?.referral_partner_id) {
-        setSourceKind("partner");
-        setSourceId(cu.referral_partner_id);
-      }
       if (cu?.media_consumo) setPointsKwh(String(cu.media_consumo));
       if (cu?.electricity_bill_value) setBillValue(String(cu.electricity_bill_value));
 
@@ -166,18 +173,33 @@ export function CloseCaptureDialog({
         }
       }
       if (cancelled) return;
+
+      // Garante opção atual na lista mesmo se status fora do filtro / parceiro inativo
+      campaignList = ensureOption(campaignList, cu?.source_campaign_id, campaignName);
+      partnerList = ensureOption(partnerList, cu?.referral_partner_id, partnerName);
+      setCampaigns(campaignList);
+      setPartners(partnerList);
+
+      const campaignId = (cu?.source_campaign_id as string | null) ?? null;
+      const partnerId = (cu?.referral_partner_id as string | null) ?? null;
+      setSelectedCampaignId(campaignId || "");
+      setSelectedPartnerId(partnerId || "");
+      if (campaignId) setSourceKind("campaign");
+      else if (partnerId) setSourceKind("partner");
+      else setSourceKind("organic");
+
       setLeadInfo({
         name: cu?.name ?? null,
         phone: cu?.phone_whatsapp ?? null,
         protocol: cu?.tracking_protocol ?? null,
-        partnerId: cu?.referral_partner_id ?? null,
+        partnerId,
         partnerName,
-        campaignId: cu?.source_campaign_id ?? null,
+        campaignId,
         campaignName,
         city: cu?.address_city ?? null,
         uf: cu?.address_state ?? null,
       });
-      setNotifyPartner(!!cu?.referral_partner_id);
+      setNotifyPartner(!!partnerId);
     })();
     return () => {
       cancelled = true;
@@ -242,12 +264,24 @@ export function CloseCaptureDialog({
         payload.productId = productId || undefined;
         payload.pointsKwh = estimatedKwh || undefined;
         payload.notes = notes || undefined;
-        payload.attribution =
+        // Prioridade do kind na sale: campanha > parceiro > orgânico.
+        // Sempre envia os dois IDs para preservar Meta + rodízio no customer.
+        const campaignId = selectedCampaignId || null;
+        const partnerId = selectedPartnerId || null;
+        const kind: SourceKind =
           sourceKind === "organic"
-            ? { kind: "organic" }
-            : sourceId
-              ? { kind: sourceKind, id: sourceId }
-              : { kind: "organic" };
+            ? "organic"
+            : campaignId
+              ? "campaign"
+              : partnerId
+                ? "partner"
+                : "organic";
+        payload.attribution =
+          kind === "organic"
+            ? { kind: "organic", campaignId: null, partnerId: null }
+            : kind === "campaign"
+              ? { kind: "campaign", id: campaignId!, campaignId, partnerId }
+              : { kind: "partner", id: partnerId!, campaignId, partnerId };
       } else {
         payload.lostReason = lostReason;
         payload.notes = lostNotes || undefined;
@@ -391,8 +425,16 @@ export function CloseCaptureDialog({
               <RadioGroup
                 value={sourceKind}
                 onValueChange={(v) => {
-                  setSourceKind(v as SourceKind);
-                  setSourceId("");
+                  const next = v as SourceKind;
+                  setSourceKind(next);
+                  // Ao trocar o tipo, restaura o que já vinha do lead (não zera).
+                  if (next === "campaign") {
+                    setSelectedCampaignId((cur) => cur || leadInfo.campaignId || "");
+                    setSelectedPartnerId((cur) => cur || leadInfo.partnerId || "");
+                  } else if (next === "partner") {
+                    setSelectedPartnerId((cur) => cur || leadInfo.partnerId || "");
+                    setSelectedCampaignId((cur) => cur || leadInfo.campaignId || "");
+                  }
                 }}
                 className="grid grid-cols-3 gap-2"
               >
@@ -422,43 +464,61 @@ export function CloseCaptureDialog({
                 </label>
               </RadioGroup>
 
-              {sourceKind === "campaign" && (
-                <Select value={sourceId} onValueChange={setSourceId}>
-                  <SelectTrigger className="h-9 mt-1">
-                    <SelectValue placeholder="Selecione a campanha" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {campaigns.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.label}
-                      </SelectItem>
-                    ))}
-                    {campaigns.length === 0 && (
-                      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                        Nenhuma campanha ativa
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
-              )}
-              {sourceKind === "partner" && (
-                <Select value={sourceId} onValueChange={setSourceId}>
-                  <SelectTrigger className="h-9 mt-1">
-                    <SelectValue placeholder="Selecione o parceiro" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-72">
-                    {partners.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                    {partners.length === 0 && (
-                      <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
-                        Nenhum parceiro ativo
-                      </div>
-                    )}
-                  </SelectContent>
-                </Select>
+              {sourceKind !== "organic" && (
+                <div className="space-y-2 mt-1">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Campanha Meta</Label>
+                    <Select
+                      value={selectedCampaignId || undefined}
+                      onValueChange={(v) => {
+                        setSelectedCampaignId(v);
+                        if (sourceKind === "organic") setSourceKind("campaign");
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Selecione a campanha" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {campaigns.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.label}
+                          </SelectItem>
+                        ))}
+                        {campaigns.length === 0 && (
+                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                            Nenhuma campanha ativa/pausada
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">Parceiro</Label>
+                    <Select
+                      value={selectedPartnerId || undefined}
+                      onValueChange={(v) => {
+                        setSelectedPartnerId(v);
+                        if (sourceKind === "organic") setSourceKind("partner");
+                      }}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="Selecione o parceiro" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-72">
+                        {partners.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                        {partners.length === 0 && (
+                          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                            Nenhum parceiro ativo
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -474,10 +534,7 @@ export function CloseCaptureDialog({
 
             <div className="rounded-md border border-dashed border-emerald-500/30 bg-emerald-500/5 p-2.5 text-[11px] text-emerald-800 dark:text-emerald-300">
               💰 Comissão será apurada no Financeiro conforme a graduação do consultor
-              {sourceKind === "partner" && sourceId
-                ? " e o split do parceiro selecionado"
-                : ""}
-              .
+              {selectedPartnerId ? " e o split do parceiro selecionado" : ""}.
             </div>
           </div>
         ) : (

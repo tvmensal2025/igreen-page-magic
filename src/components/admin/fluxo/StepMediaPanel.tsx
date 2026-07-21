@@ -19,6 +19,7 @@ import {
 } from "@/lib/multichannelCadenceTexts";
 import { APPROVED_A2_AUDIOS } from "@/lib/multichannelApprovedAudios";
 import SofiaStepAudioTools from "@/components/admin/fluxo/SofiaStepAudioTools";
+import { dedupeMediaLibraryPreferLightest } from "@/lib/dedupeMediaLibrary";
 
 type Kind = "audio" | "image" | "video";
 type Media = {
@@ -83,11 +84,26 @@ interface Props {
   initialOrder?: ("audio" | "image" | "video" | "text")[];
   onOrderChange?: (order: ("audio" | "image" | "video" | "text")[]) => void;
   variant?: string;
+  /**
+   * Quando true, não monta SofiaStepAudioTools (ex.: Multicanal já tem CadenceAudioCutsPanel acima).
+   * Upload/ordem de arquivos continuam iguais.
+   */
+  hideSofiaTools?: boolean;
 }
 
 const DEFAULT_ORDER: ("audio" | "image" | "video" | "text")[] = ["audio", "image", "video", "text"];
 
-export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messageText, onMessageTextChange, initialOrder, onOrderChange, variant = "A" }: Props) {
+export default function StepMediaPanel({
+  consultantId,
+  stepKey,
+  slotKeys,
+  messageText,
+  onMessageTextChange,
+  initialOrder,
+  onOrderChange,
+  variant = "A",
+  hideSofiaTools = false,
+}: Props) {
   const confirm = useConfirm();
   const [items, setItems] = useState<Media[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,7 +157,9 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
       .order("created_at", { ascending: false })
       .limit(200);
     const existingUrls = new Set(items.filter(i => i.kind === kind).map(i => i.url));
-    setLibraryItems(((data as any[]) ?? []).filter(m => !existingUrls.has(m.url)) as Media[]);
+    const raw = (((data as any[]) ?? []).filter(m => !existingUrls.has(m.url)) as Media[]);
+    // Títulos repetidos (reupload) → só a cópia mais leve
+    setLibraryItems(dedupeMediaLibraryPreferLightest(raw));
     setLoadingLibrary(false);
   }
 
@@ -762,7 +780,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
         ) : (
           <div className="text-xs text-muted-foreground italic px-1 space-y-1">
             <div>Nenhum {kind} cadastrado.</div>
-            {kind === "audio" && isSofiaEditable && (
+            {kind === "audio" && isSofiaEditable && !hideSofiaTools && (
               <div className="not-italic text-amber-700 dark:text-amber-400 space-y-1">
                 <p>
                   Isto <strong>não</strong> significa que o WhatsApp fica sem áudio. Use o card{" "}
@@ -773,6 +791,12 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
                   Use <strong>Sincronizar corpos</strong> (quando aparecer) ou upload abaixo. Nomes
                   do lote <strong>não</strong> regeneram TTS ao salvar o roteiro.
                 </p>
+              </div>
+            )}
+            {kind === "audio" && isSofiaEditable && hideSofiaTools && (
+              <div className="not-italic text-muted-foreground text-[11px]">
+                Cortes Sofia ficam no painel acima. Aqui você anexa arquivos extras (áudio/imagem/vídeo)
+                e define a ordem de envio com o texto.
               </div>
             )}
           </div>
@@ -849,7 +873,7 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
         </div>
       </div>
 
-      {isSofiaEditable && (
+      {isSofiaEditable && !hideSofiaTools && (
         <SofiaStepAudioTools
           consultantId={mediaOwnerId || consultantId}
           slotKey={primarySlot}
@@ -941,7 +965,8 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
           <DialogHeader>
             <DialogTitle>Sua biblioteca de {pickerKind && KIND_LABEL[pickerKind].toLowerCase()}</DialogTitle>
             <DialogDescription>
-              Toque em uma mídia para vincular a este passo. Não duplica arquivos — usa o mesmo que você já enviou.
+              Toque para vincular a este passo. Títulos repetidos mostram só a cópia mais leve
+              (não duplica arquivo no storage).
             </DialogDescription>
           </DialogHeader>
           {loadingLibrary ? (
@@ -963,7 +988,14 @@ export default function StepMediaPanel({ consultantId, stepKey, slotKeys, messag
                 >
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="text-xs font-medium truncate">{m.label}</div>
-                    {linking === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-muted-foreground" />}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(m.final_size_bytes || m.original_size_bytes) ? (
+                        <span className="text-[10px] text-muted-foreground tabular-nums">
+                          {formatBytes(m.final_size_bytes || m.original_size_bytes)}
+                        </span>
+                      ) : null}
+                      {linking === m.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3 text-muted-foreground" />}
+                    </div>
                   </div>
                   {m.url && m.kind === "audio" && (
                     <div onClick={(e) => e.stopPropagation()}>

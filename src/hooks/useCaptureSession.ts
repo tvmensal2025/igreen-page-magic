@@ -83,7 +83,14 @@ export interface CaptureCustomer {
   last_inbound_media_at?: string | null;
   capture_mode: string | null;
   capture_started_at: string | null;
+  capture_closed_at?: string | null;
   conversation_step: string | null;
+  status?: string | null;
+  finalized_at?: string | null;
+  igreen_code?: string | null;
+  portal_submitted_at?: string | null;
+  data_validado?: string | null;
+  data_ativo?: string | null;
   name_source?: string | null;
   flow_variant?: string | null;
   nome_mae?: string | null;
@@ -168,6 +175,47 @@ export function resolveEffectiveIdconsultor(customer: CaptureCustomer | null | u
   return { id: null, source: "none", partnerName: null };
 }
 
+/**
+ * Já virou cliente no fluxo (portal enviado / código iGreen / captação encerrada).
+ * Usado para esconder CADASTRAR e tratar a ficha como cliente — não como lead.
+ */
+export function isRegisteredPortalClient(
+  customer: Pick<
+    CaptureCustomer,
+    | "igreen_code"
+    | "finalized_at"
+    | "capture_closed_at"
+    | "portal_submitted_at"
+    | "status"
+    | "conversation_step"
+    | "data_validado"
+    | "data_ativo"
+  > | null | undefined,
+): boolean {
+  if (!customer) return false;
+  if (customer.igreen_code) return true;
+  if (customer.finalized_at) return true;
+  if (customer.capture_closed_at) return true;
+  if (customer.portal_submitted_at) return true;
+  if (customer.data_validado || customer.data_ativo) return true;
+  const status = String(customer.status || "").toLowerCase();
+  if (
+    status === "registered_igreen" ||
+    status === "cadastro_concluido" ||
+    status === "complete" ||
+    status === "approved" ||
+    status === "active"
+  ) {
+    return true;
+  }
+  const step = String(customer.conversation_step || "").toLowerCase();
+  return (
+    step === "registered_igreen" ||
+    step === "cadastro_concluido" ||
+    step === "cadastro_em_analise"
+  );
+}
+
 export function useCaptureSession(customerId: string | null) {
   const [customer, setCustomer] = useState<CaptureCustomer | null>(null);
   const [loading, setLoading] = useState(false);
@@ -177,7 +225,7 @@ export function useCaptureSession(customerId: string | null) {
     setLoading(true);
     const { data } = await supabase
       .from("customers")
-      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, referral_partner_id, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, electricity_boleto_photo_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_message_id, last_inbound_media_at, capture_mode, capture_started_at, conversation_step, flow_variant, name_source, bot_paused, do_not_contact, ocr_review_pending, ocr_review_started_at, created_at, referral_partners:referral_partner_id(nome, cli, partner_igreen_id), consultants:consultant_id(igreen_id, name)")
+      .select("id, consultant_id, name, cpf, rg, data_nascimento, nome_mae, phone_whatsapp, phone_landline, portal2_celular_alt, phone_contact_confirmed, email, cep, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, distribuidora, numero_instalacao, media_consumo, contaunica, contaunica_answered, transferir_titularidade, transferir_titularidade_answered, portal_idconsultor_override, referral_partner_id, bill_holder_name, doc_holder_name, bill_data_confirmed_at, bill_data_confirmation_by, doc_data_confirmed_at, doc_data_confirmation_by, name_mismatch_flag, name_mismatch_reason, name_mismatch_acknowledged_at, bill_owner_relationship, electricity_bill_value, document_front_url, document_back_url, electricity_bill_photo_url, electricity_boleto_photo_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_message_id, last_inbound_media_at, capture_mode, capture_started_at, capture_closed_at, conversation_step, status, finalized_at, igreen_code, portal_submitted_at, data_validado, data_ativo, flow_variant, name_source, bot_paused, do_not_contact, ocr_review_pending, ocr_review_started_at, created_at, referral_partners:referral_partner_id(nome, cli, partner_igreen_id), consultants:consultant_id(igreen_id, name)")
       .eq("id", customerId)
       .maybeSingle();
     setCustomer((data as CaptureCustomer) || null);

@@ -50,7 +50,7 @@ export function buildQaStepClose(stepKey: string, opts: QaStepCloseOpts = {}): s
     a7_ask_document: `${v}pra seguir o cadastro, é só me dizer *pode seguir* — te guio no próximo passo. 😊🌱`,
     a8_ask_email: `${v}me passa seu *e-mail* que seguimos com a ativação. 📧⚡`,
     a9_confirm_phone: `${v}confirma o *telefone* nas opções acima ou responde por aqui. 😊⚡`,
-    a10_portal_otp_facial: `${v}digite o *código OTP* quando receber, ou me diz *pode seguir* pra retomar. ⚡`,
+    a10_portal_otp_facial: `${v}digite o *código* quando receber, ou me diz *pode seguir* pra retomar. ⚡`,
     a11_facial_link: `${v}conclua a *validação* do passo anterior e me avise por aqui. 😊🌱`,
 
     // Legado / outros funis
@@ -70,9 +70,10 @@ export function buildQaStepClose(stepKey: string, opts: QaStepCloseOpts = {}): s
     ask_number: `${v}me passa o *número* do endereço que seguimos. 😊`,
     ask_complement: `${v}me passa o *complemento* (ou diga *sem complemento*) que seguimos. 😊`,
     portal_submitting: `${v}aguarde um instante — já estou finalizando seu cadastro. ⚡`,
-    aguardando_otp: `${v}digite o *código OTP* aqui quando receber. ⚡`,
+    aguardando_otp: `${v}digite o *código* aqui quando receber. ⚡`,
     validando_otp: `${v}estou validando o código — já te retorno. ⚡`,
-    otp_falhou: `${v}tente digitar o *código OTP* de novo ou me diz *pode seguir*. 😊`,
+    otp_falhou: `${v}tente digitar o *código* de novo ou me diz *pode seguir*. 😊`,
+    otp_confirmar: `${v}confirma se o *código* digitado é o mesmo que chegou — toca nas opções acima. 😊`,
     finalizando: `${v}estamos quase lá — continue por aqui que eu te guio. 😊🌱`,
     cadastro_em_analise: `${v}seu cadastro está em análise — qualquer dúvida, é só perguntar. 😊`,
   };

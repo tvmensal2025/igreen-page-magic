@@ -22,13 +22,37 @@ function tplReplace(text: string, needle: string, value: string): string {
   return text.split(needle).join(value);
 }
 
-/** Abertura oficial — áudio WA (corpo fixo A2, igual ao salvo no painel/biblioteca). */
+/**
+ * Abertura oficial — áudio WA (corpo fixo A2).
+ * Concordância do consultor: {{do_da_consultor}} / {{gestor_a}} (Dados → gender).
+ * Gênero do lead (bem-vindo/bem-vinda) fica só nos corpos A2 M/F abaixo.
+ */
 export const SOFIA_OPENING =
-  "Eu sou {{assistente}}, assistente virtual de {{consultor}}, gestor da iGreen.";
+  "Eu sou a {{assistente}}, assistente virtual {{do_da_consultor}} {{consultor}}, {{gestor_a}} da iGreen.";
 
-export const A2_BODY_EXPLAIN = `${SOFIA_OPENING}
+const A2_ASK_BILL =
+  "Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.";
 
-Para eu te mostrar o quanto você pode economizar, me diga quanto você está gastando por mês na conta de luz.`;
+/** Corpo A2 — lead feminino (bem-vinda). */
+export const A2_BODY_EXPLAIN_FEMININO = `Seja muito bem-vinda.
+
+${SOFIA_OPENING}
+
+${A2_ASK_BILL}`;
+
+/** Corpo A2 — lead masculino (bem-vindo). */
+export const A2_BODY_EXPLAIN_MASCULINO = `Seja muito bem-vindo.
+
+${SOFIA_OPENING}
+
+${A2_ASK_BILL}`;
+
+/** Alias (prévia genérica / ferramentas) — usa {{bem_vindo}} do lead. */
+export const A2_BODY_EXPLAIN = `Seja muito {{bem_vindo}}.
+
+${SOFIA_OPENING}
+
+${A2_ASK_BILL}`;
 
 /** Cumprimento curto + abertura (para colar no início do roteiro). */
 export function sofiaAudioLead(opts: { withName?: boolean } = {}): string {
@@ -134,7 +158,7 @@ export const SEG_NAME_ONLY: AudioSegment = {
   reusable: true,
 };
 
-/** Passo 3: “Nome, não tem segredo.” — se não houver nome, o motor pula este corte. */
+/** Legado: “Nome, não tem segredo.” — passo 3 usa SEG_ENTAO_NOME. */
 export const SEG_NAME_NAO_SEGREDO: AudioSegment = {
   id: "name_nao_segredo",
   kind: "name",
@@ -143,7 +167,7 @@ export const SEG_NAME_NAO_SEGREDO: AudioSegment = {
   reusable: true,
 };
 
-/** Passo 4a clube: “Então, Nome.” — se não houver nome, o motor pula este corte. */
+/** Passo 3 / 3b / 4a: “Então, Nome.” — se não houver nome, o motor pula este corte. */
 export const SEG_ENTAO_NOME: AudioSegment = {
   id: "entao_nome",
   kind: "name",
@@ -154,7 +178,7 @@ export const SEG_ENTAO_NOME: AudioSegment = {
 
 /**
  * Padrão profissional — WhatsApp A2 e ligação: “Olá, Nome! Tudo bem?”
- * Cache `intro:ola:ptbr4:{norm}`. Passo 3 usa SEG_NAME_NAO_SEGREDO; 4a usa SEG_ENTAO_NOME.
+ * Cache `intro:ola:ptbr4:{norm}`. Passo 3 e 4a usam SEG_ENTAO_NOME.
  */
 export const SEG_NAME_GREET: AudioSegment = {
   id: "name_greet_ola",
@@ -255,6 +279,8 @@ export function flowMediaSlotKeysForCadence(tplKey: string): string[] {
       return [];
     case "a3_explain_with_buttons":
     case "a3_audio_explain":
+    case "a3b_pedir_pergunta":
+      // Nome + corpo: nunca espelhar MP3 completo da prévia (Maria/Rodrigo).
       return [];
     case "a5_audio_club_benefits":
     case "a5b_after_club_buttons":
@@ -266,6 +292,52 @@ export function flowMediaSlotKeysForCadence(tplKey: string): string[] {
     default:
       return tplKey ? [tplKey] : [];
   }
+}
+
+/** Kinds na ordem de envio WhatsApp (igual StepMediaPanel / Whapi). */
+export type CadenceMediaOrderKind = "audio" | "image" | "video" | "text";
+
+/**
+ * Templates do Grupo A em canal WhatsApp (funil Sofia / bot_flow_steps) suportam
+ * upload + ordem de arquivos. Escada A (`a_nudge_*`) e B/C usam cadence-tick
+ * (texto/botões/1 mídia) — sem sequência multimodal.
+ */
+export function cadenceTemplateSupportsFileMedia(
+  tpl: Pick<CadenceTemplate, "group" | "channel" | "key">,
+): boolean {
+  const key = String(tpl.key || "");
+  // Escada de silêncio → só motor (cadence_stage_config), não Whapi multimodal
+  if (key.startsWith("a_nudge_")) return false;
+  return (
+    tpl.group === "A" &&
+    (tpl.channel === "whatsapp_text" ||
+      tpl.channel === "whatsapp_buttons" ||
+      tpl.channel === "whatsapp_audio")
+  );
+}
+
+/**
+ * Ordem inicial sugerida a partir do catálogo (`audioPlacement` / áudio pareado).
+ * O consultor pode mudar nas setas; persiste em `consultants.flow_step_media_order`.
+ */
+export function defaultMediaOrderForCadenceTemplate(
+  tpl: Pick<
+    CadenceTemplate,
+    "audioPlacement" | "pairedAudioKey" | "canGenerateAudio" | "channel"
+  >,
+): CadenceMediaOrderKind[] {
+  if (tpl.audioPlacement === "after_text") {
+    return ["text", "audio", "image", "video"];
+  }
+  if (
+    tpl.audioPlacement === "before_text" ||
+    !!tpl.pairedAudioKey ||
+    !!tpl.canGenerateAudio ||
+    tpl.channel === "whatsapp_audio"
+  ) {
+    return ["audio", "text", "image", "video"];
+  }
+  return ["text", "audio", "image", "video"];
 }
 
 /**
@@ -310,7 +382,8 @@ export function isSofiaStitchMediaSlot(slotOrStepKey: string): boolean {
     k === "a2_audio_activate_name" ||
     k === "a2_text_ask_bill_value" ||
     k === "a3_explain_with_buttons" ||
-    k === "a3_audio_explain"
+    k === "a3_audio_explain" ||
+    k === "a3b_pedir_pergunta"
   );
 }
 
@@ -502,6 +575,24 @@ export const OCR_RETRY_PARENT: Record<
   a7_ocr_retry: { parentKey: "a7_ask_document", stepType: "capture_documento" },
 };
 
+/**
+ * Mensagens auxiliares do código (após portal rejeitar dígitos).
+ * Não criam nó no funil — sync grava em fallback do a10.
+ * Ao cliente: sempre "código" (nunca "OTP").
+ */
+export const CODIGO_CONFIRM_KEYS = [
+  "a10_codigo_confirm_ask",
+  "a10_codigo_confirm_sim",
+  "a10_codigo_confirm_nao",
+] as const;
+
+export const CODIGO_CONFIRM_PARENT_KEY = "a10_portal_otp_facial";
+
+export const CODIGO_CONFIRM_BUTTONS: CadenceButton[] = [
+  { id: "otp_confirm_sim", title: "✅ Sim, é esse" },
+  { id: "otp_confirm_nao", title: "❌ Não, vou digitar" },
+];
+
 /** Botões padrão de faixa (sempre 3). */
 export const BILL_RANGE_BUTTONS: CadenceButton[] = [
   { id: "bill_low", title: "Até R$300" },
@@ -527,7 +618,7 @@ export const ANALYZE_OR_CALL_BUTTONS: CadenceButton[] = [
   { id: "send_photo", title: "Enviar conta" },
 ];
 
-/** Após explicação: saber mais (clube) / ativar / humano. */
+/** Após explicação: clube / ativar / tirar dúvida (máx. 3 Whapi). */
 export const AFTER_EXPLAIN_BUTTONS: CadenceButton[] = [
   {
     id: "more_benefits",
@@ -536,18 +627,27 @@ export const AFTER_EXPLAIN_BUTTONS: CadenceButton[] = [
   },
   {
     id: "activate",
-    title: "Quero ativar",
+    title: "Ativar benefício",
     goto_step_key: "a6_ask_bill_photo",
   },
-  { id: "human", title: "Falar com humano", goto_special: "humano" },
+  {
+    id: "duvida",
+    title: "Tenho dúvida",
+    goto_step_key: "a3b_pedir_pergunta",
+  },
 ];
 
-/** Após áudio do clube: cadastrar / humano (máx. 3). */
+/** Após áudio do clube: ativar / dúvida / humano (máx. 3). */
 export const AFTER_CLUB_BUTTONS: CadenceButton[] = [
   {
     id: "register",
-    title: "Cadastrar",
+    title: "Ativar benefício",
     goto_step_key: "a6_ask_bill_photo",
+  },
+  {
+    id: "duvida",
+    title: "Tenho dúvida",
+    goto_step_key: "a3b_pedir_pergunta",
   },
   { id: "human", title: "Falar com humano", goto_special: "humano" },
 ];
@@ -556,7 +656,7 @@ export const AFTER_CLUB_BUTTONS: CadenceButton[] = [
 export const ACTIVATE_BENEFIT_BUTTONS: CadenceButton[] = [
   {
     id: "activate",
-    title: "Quero ativar",
+    title: "Ativar benefício",
     goto_step_key: "a6_ask_bill_photo",
   },
   { id: "human", title: "Falar com humano", goto_special: "humano" },
@@ -579,7 +679,7 @@ export const PRESET_DEFAULT_GOTO: Record<
   humano: { goto_step_key: null, goto_special: "humano" },
   human: { goto_step_key: null, goto_special: "humano" },
   como: { goto_step_key: null, goto_special: "ai" },
-  duvida: { goto_step_key: null, goto_special: "ai" },
+  duvida: { goto_step_key: "a3b_pedir_pergunta", goto_special: null },
 };
 
 /** Valor do Select “Quando clicar, vai para” (igual StepInspector). */
@@ -746,6 +846,11 @@ export type CadenceBodyRenderOpts = {
   consultor?: string;
   /** Nome da IA (Dados → assistant_name). {{assistente}}. */
   assistente?: string;
+  /**
+   * Gênero do representante (Dados → gender).
+   * Resolve {{do_da_consultor}} / {{gestor_a}}. Default: consultor (do / gestor).
+   */
+  consultorGender?: "consultor" | "consultora";
   /** Frases da aba Disponibilidade (lib.bodies). */
   availabilityOverrides?: AvailabilityOverrides;
 };
@@ -791,6 +896,9 @@ export function renderCadenceBody(
   // Dados do consultor — sem inventar "Rafael". Slug/vazio mantém {{…}} p/ o painel bloquear TTS.
   const consultor = firstNameFromConsultantLabel(opts.consultor);
   const assistente = String(opts.assistente || "").trim();
+  const isConsultora = opts.consultorGender === "consultora";
+  const doDaConsultor = isConsultora ? "da" : "do";
+  const gestorA = isConsultora ? "gestora" : "gestor";
   // abertura_sofia primeiro (injeta {{assistente}}/{{consultor}}); depois resolve identidade.
   return [
     ["{{nome}}", nome],
@@ -810,6 +918,8 @@ export function renderCadenceBody(
     ["{{consultor}}", consultor || "{{consultor}}"],
     ["{{representante}}", consultor || "{{representante}}"],
     ["{{assistente}}", assistente || "{{assistente}}"],
+    ["{{do_da_consultor}}", doDaConsultor],
+    ["{{gestor_a}}", gestorA],
     ["{{bem_vindo}}", g.bem_vindo],
     ["{{o_a}}", g.o_a],
     ["{{do_da}}", g.do_da],
@@ -821,8 +931,8 @@ export function renderCadenceBody(
 /**
  * Texto falado de um corte para TTS/cache.
  * - `name` com template “Olá, {{nome}}.” → “Olá, Nome.”
- * - `name` com “{{nome}}, não tem segredo.” → “Nome, não tem segredo.” (passo 3)
- * - `name` com “Então, {{nome}}.” → “Então, Nome.” (passo 4a)
+ * - `name` com “Então, {{nome}}.” → “Então, Nome.” (passo 3 / 3b / 4a)
+ * - `name` com “{{nome}}, não tem segredo.” → legado (não usado no passo 3)
  * - `name` com só “{{nome}}.” → “Nome.” (legado)
  */
 export function spokenSegmentText(
@@ -868,6 +978,9 @@ export function ensureHttpsWaMeLinks(body: string): string {
 export function ensureSmsConsultorWaLink(body: string): string {
   let t = ensureHttpsWaMeLinks(String(body || "").trim());
   if (!t) return t;
+  // Slot de tema: o motor troca {{tema_sms}} por um SMS que JÁ traz wa.me.
+  // Se appendarmos aqui, o publish grava link duplo → Velip Blocked text#270.
+  if (/^\{\{\s*tema_sms\s*\}\}$/i.test(t)) return t;
   // Remove wa.me/ vazio/quebrado (sem dígitos nem placeholder).
   t = t.replace(/(?:https?:\/\/)?wa\.me\/(?![\d+]|\{\{)/gi, "").replace(/\s{2,}/g, " ").trim();
   if (
@@ -985,14 +1098,14 @@ Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.`,
         kind: "fixed",
         genderVariant: "feminino",
         label: "2 · Corpo feminino (fixo · cache · sem nome)",
-        text: A2_BODY_EXPLAIN,
+        text: A2_BODY_EXPLAIN_FEMININO,
       },
       {
         id: "a2_body_masculino",
         kind: "fixed",
         genderVariant: "masculino",
         label: "3 · Corpo masculino (fixo · cache · sem nome)",
-        text: A2_BODY_EXPLAIN,
+        text: A2_BODY_EXPLAIN_MASCULINO,
       },
     ],
     body: joinAudioSegmentTexts([
@@ -1027,7 +1140,7 @@ Pode ser só o número — por exemplo: 350 ou 850,00.`,
     canGenerateAudio: true,
     audioPlacement: "before_text",
     notes:
-      "Ordem: 1) áudio “Nome, não tem segredo” + explicação (corpo FIXO) 2) 4s 3) texto economia + botões. Sem Olá de novo. Sem nome → só o corpo.",
+      "Ordem: 1) áudio “Então + nome” + explicação (corpo FIXO) 2) 4s 3) texto economia + botões. Sem Olá de novo. Sem nome → só o corpo.",
     body: `Perfeito, *{{nome}}*!
 
 Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8% a 20%* todos os meses — cerca de *{{economia_range}}*.
@@ -1036,9 +1149,9 @@ Com base no valor de *R$ {{valor_conta}}*, hoje você consegue economizar de *8%
     buttons: [...AFTER_EXPLAIN_BUTTONS],
     audioSegments: [
       {
-        ...SEG_NAME_NAO_SEGREDO,
+        ...SEG_ENTAO_NOME,
         id: "a3_name",
-        label: "1 · Nome + não tem segredo (variável · PT-BR · cache por nome)",
+        label: "1 · Então + nome (variável · PT-BR · cache por nome)",
       },
       {
         id: "a3_body",
@@ -1059,6 +1172,43 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
     ],
   },
   {
+    key: "a3b_pedir_pergunta",
+    group: "A",
+    channel: "whatsapp_audio",
+    title: "3b — Tenho dúvida (áudio convite)",
+    timing: "Após “Tenho dúvida” no passo 3 ou 4 · só áudio · aguarda texto",
+    canGenerateAudio: true,
+    notes:
+      "Padrão Sofia: Então + nome (variável) + corpo FIXO com temas FAQ. Sem nome → só o corpo. Lead pergunta → IA → volta ao passo 3.",
+    body: joinAudioSegmentTexts([
+      { text: "Então, {{nome}}." },
+      {
+        text: `Pode mandar sua dúvida por escrito que eu te respondo agora.
+
+Pode perguntar se tem fidelidade, se tem taxa escondida, se precisa instalar placa, se funciona em apartamento, quanto você economiza, se atende na sua cidade… ou por que a gente pede documento.
+
+Qualquer uma dessas — ou outra. E se eu não souber te explicar direito, eu chamo o consultor pra te ajudar.`,
+      },
+    ]),
+    audioSegments: [
+      {
+        ...SEG_ENTAO_NOME,
+        id: "a3b_name",
+        label: "1 · Então + nome (variável · PT-BR · cache por nome)",
+      },
+      {
+        id: "a3b_body",
+        kind: "fixed",
+        label: "2 · Convite + temas FAQ (fixo · cache · sem nome)",
+        text: `Pode mandar sua dúvida por escrito que eu te respondo agora.
+
+Pode perguntar se tem fidelidade, se tem taxa escondida, se precisa instalar placa, se funciona em apartamento, quanto você economiza, se atende na sua cidade… ou por que a gente pede documento.
+
+Qualquer uma dessas — ou outra. E se eu não souber te explicar direito, eu chamo o consultor pra te ajudar.`,
+      },
+    ],
+  },
+  {
     key: "a3_audio_explain",
     group: "A",
     channel: "whatsapp_audio",
@@ -1070,9 +1220,9 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
       "Chave legada: o áudio é editado/gerado no passo 3 (texto + áudio + botões). Mantida para URLs antigas.",
     audioSegments: [
       {
-        ...SEG_NAME_NAO_SEGREDO,
+        ...SEG_ENTAO_NOME,
         id: "a3_name",
-        label: "1 · Nome + não tem segredo (variável · cache por nome)",
+        label: "1 · Então + nome (variável · cache por nome)",
       },
       {
         id: "a3_body",
@@ -1092,7 +1242,7 @@ Não tem nenhum custo para você. Nenhum consultor pede depósito, Pix ou pagame
       },
     ],
     body: joinAudioSegmentTexts([
-      { text: "{{nome}}, não tem segredo." },
+      { text: "Então, {{nome}}." },
       {
         text: `Deixa eu te explicar de um jeito simples como funciona o benefício.
 
@@ -1153,17 +1303,17 @@ Ou seja: você economiza na energia e ainda pode economizar em várias despesas 
     key: "a5b_after_club_buttons",
     group: "A",
     channel: "whatsapp_buttons",
-    title: "4b — Texto + Cadastrar / Falar com humano",
+    title: "4b — Texto + Ativar / Dúvida / Humano",
     timing: "4s após áudio 4a · AGUARDA clique",
     canGenerateAudio: false,
     pairedAudioKey: "a5_audio_club_benefits",
     notes:
-      "Nunca pular. Ordem: áudio 4a → 4s → este texto + botões. Cadastrar → passo 5 (foto conta). Humano → handoff.",
+      "Nunca pular. Ordem: áudio 4a → 4s → este texto + botões. Ativar → passo 5 (foto conta). Dúvida → a3b. Humano → handoff.",
     body: `Olá, *{{nome}}*!
 
 📋 Vamos ativar seu benefício?
 
-Toque em *Cadastrar* para continuar 👇`,
+Toque em *Ativar benefício* para continuar 👇`,
     buttons: [...AFTER_CLUB_BUTTONS],
   },
   {
@@ -1171,7 +1321,7 @@ Toque em *Cadastrar* para continuar 👇`,
     group: "A",
     channel: "whatsapp_text",
     title: "5 — Pedir foto da conta (OCR)",
-    timing: "Após Cadastrar ou Quero ativar",
+    timing: "Após Ativar benefício",
     canGenerateAudio: false,
     body: `✅ *Perfeito, {{nome}}!*
 
@@ -1260,10 +1410,10 @@ _(cashback, faturas e indicações)_`,
     group: "A",
     channel: "whatsapp_buttons",
     title: "8 — Confirmar telefone",
-    timing: "Após e-mail · depois → 9 OTP → 10 facial",
+    timing: "Após e-mail · depois → 9 código → 10 facial",
     canGenerateAudio: false,
     notes:
-      "Após telefone: passo 9 (portal + digitar OTP). Só DEPOIS do OTP validado → passo 10 (link da facial). Sem 9a/9b.",
+      "Após telefone: passo 9 (portal + digitar código). Só DEPOIS do código validado → passo 10 (link da facial). Mensagens 9b/9c/9d = código rejeitado (confirm).",
     body: `Olá, *{{nome}}*!
 
 📱 Só confirmar:
@@ -1285,11 +1435,11 @@ O telefone deste WhatsApp é o melhor para contato?
     key: "a10_portal_otp_facial",
     group: "A",
     channel: "whatsapp_text",
-    title: "9 — Portal + digitar OTP",
-    timing: "Após telefone confirmado · AGUARDA o código OTP",
+    title: "9 — Portal + digitar código",
+    timing: "Após telefone confirmado · AGUARDA o código",
     canGenerateAudio: false,
     notes:
-      "Ordem obrigatória: 1) envia cadastro ao portal 2) cliente digita o OTP aqui 3) só então passo 10 com link da facial. NÃO enviar facial neste passo.",
+      "Ordem obrigatória: 1) envia cadastro ao portal 2) cliente digita o código aqui 3) só então passo 10 com link da facial. NÃO enviar facial neste passo. Ao cliente diga sempre *código* (nunca OTP).",
     body: `Olá, *{{nome}}*!
 
 🎉 *Pronto!*
@@ -1298,22 +1448,62 @@ Já temos todos os dados ✅
 
 Vou enviar seu cadastro ao portal agora.
 
-📲 Em seguida você recebe um *código OTP* — digite aqui no WhatsApp 👇
+📲 Em seguida você recebe um *código* — digite aqui no WhatsApp 👇
 
-_(O link da validação facial só vem *depois* do OTP correto.)_`,
+_(O link da validação facial só vem *depois* do código correto.)_`,
+  },
+  {
+    key: "a10_codigo_confirm_ask",
+    group: "A",
+    channel: "whatsapp_buttons",
+    title: "9b — Código rejeitado: confirmar",
+    timing: "Quando o portal não aceitar o código digitado",
+    canGenerateAudio: false,
+    linkedToStepKey: "a10_portal_otp_facial",
+    notes:
+      "Ligado ao passo 9. Não avança o funil. Pergunta se o código digitado é o mesmo que chegou. Use {{codigo}}. Sync grava em fallback do a10.",
+    body: `Recebi o código *{{codigo}}*, mas o portal *não aceitou* 😕
+
+Confirma que *é esse mesmo* o código que chegou no seu WhatsApp?`,
+    buttons: [...CODIGO_CONFIRM_BUTTONS],
+  },
+  {
+    key: "a10_codigo_confirm_sim",
+    group: "A",
+    channel: "whatsapp_text",
+    title: "9c — Confirmou código → chamar consultor",
+    timing: "Cliente diz que o código está certo",
+    canGenerateAudio: false,
+    linkedToStepKey: "a10_portal_otp_facial",
+    notes:
+      "Resposta ao cliente após ele confirmar. O sistema pausa o bot e avisa o consultor automaticamente.",
+    body: `Perfeito, anotei ✅
+
+Vou chamar o *consultor* agora para ele liberar seu cadastro com esse código. Em breve ele te responde por aqui.`,
+  },
+  {
+    key: "a10_codigo_confirm_nao",
+    group: "A",
+    channel: "whatsapp_text",
+    title: "9d — Código errado: digitar de novo",
+    timing: "Cliente diz que digitou errado",
+    canGenerateAudio: false,
+    linkedToStepKey: "a10_portal_otp_facial",
+    notes: "Pede o código correto. Use só a palavra *código*.",
+    body: `Sem problema! Digite aqui o *código correto* que chegou no WhatsApp (só os números).`,
   },
   {
     key: "a11_facial_link",
     group: "A",
     channel: "whatsapp_text",
-    title: "10 — Link da facial (após OTP)",
-    timing: "Só depois do OTP validado",
+    title: "10 — Link da facial (após código)",
+    timing: "Só depois do código validado",
     canGenerateAudio: false,
     notes:
-      "Nunca antes do OTP. Sistema envia o link da selfie/facial após otp_validated. Placeholder {{link_facial}} quando disponível.",
+      "Nunca antes do código. Sistema envia o link da selfie/facial após validação. Placeholder {{link_facial}} quando disponível.",
     body: `Olá, *{{nome}}*!
 
-✅ *OTP confirmado!*
+✅ *Código confirmado!*
 
 Último passo — abra o *link* 👇
 
@@ -1326,11 +1516,11 @@ Toque em *Assinar documentos* e faça a *validação facial* para comprovar que 
     group: "A",
     channel: "whatsapp_buttons",
     title: "9a — Transferência de título SP (legado · fora do fluxo)",
-    timing: "NÃO usar — após telefone → OTP → facial",
+    timing: "NÃO usar — após telefone → código → facial",
     canGenerateAudio: false,
     hiddenInPanel: true,
     notes:
-      "Legado. Fluxo atual: telefone → OTP (9) → facial (10). Mantido só por compatibilidade.",
+      "Legado. Fluxo atual: telefone → código (9) → facial (10). Mantido só por compatibilidade.",
     body: `Olá, *{{nome}}*!
 
 Em São Paulo, para concluir a ativação, pode ser necessária a transferência de titularidade da conta, conforme as regras da distribuidora.
@@ -1349,11 +1539,11 @@ Vamos seguir com essa etapa?`,
     group: "A",
     channel: "whatsapp_text",
     title: "9b — MG cadastro (legado · fora do fluxo)",
-    timing: "NÃO usar — após telefone → OTP → facial",
+    timing: "NÃO usar — após telefone → código → facial",
     canGenerateAudio: false,
     hiddenInPanel: true,
     notes:
-      "Legado. Fluxo atual: telefone → OTP (9) → facial (10). Mantido só por compatibilidade.",
+      "Legado. Fluxo atual: telefone → código (9) → facial (10). Mantido só por compatibilidade.",
     body: `Olá, *{{nome}}*!
 
 Vamos seguir com o seu cadastro para ativar o benefício.
@@ -1384,7 +1574,7 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     canGenerateAudio: false,
     maxChars: 160,
     notes: "Passo send_sms no construtor — não é obrigatório na sequência 1→2→3.",
-    body: `Sofia | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
+    body: `{{assistente}} | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
   },
   {
     key: "a_optional_call_slot",
@@ -1439,7 +1629,7 @@ Vi que sua simulação da conta de luz ficou pendente. Posso retomar de onde par
     canGenerateAudio: false,
     maxChars: 160,
     notes: "SMS da escada A. Motor: cadence_stage_config (A_SMS).",
-    body: `Sofia | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
+    body: `{{assistente}} | iGreen: Oi {{nome}}! Ative seu beneficio no WhatsApp: https://wa.me/{{consultor_phone}}`,
   },
   {
     key: "a_nudge_call",
@@ -1448,12 +1638,30 @@ Vi que sua simulação da conta de luz ficou pendente. Posso retomar de onde par
     title: "Escada · Ligação (1ª voz)",
     timing: "~2h após SMS sem resposta · A_CALL",
     canGenerateAudio: true,
-    notes: "Roteiro + clip Sofia da 1ª ligação da escada A. Motor: A_CALL.",
-    body: `Olá! Eu sou a Sofia, assistente virtual do {{consultor}}, da iGreen.
+    notes: "Roteiro + clip Sofia da 1ª ligação da escada A. Motor: A_CALL. Runtime costura Olá+nome + corpo. Identidade: {{assistente}}/{{consultor}}.",
+    audioSegments: [
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      {
+        id: "a_nudge_call_body",
+        kind: "fixed",
+        label: "2 · Corpo do áudio (fixo · cache · sem nome)",
+        text: `${SOFIA_OPENING}
 
 Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
 
 Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}! Tudo bem?" },
+      {
+        text: `${SOFIA_OPENING}
+
+Estou ligando sobre a ativação do seu benefício de economia na conta de energia.
+
+Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 segundos?`,
+      },
+    ]),
   },
   {
     key: "a_nudge_call_retry",
@@ -1462,12 +1670,30 @@ Você prefere continuar pelo WhatsApp ou prefere que eu explique agora em 30 seg
     title: "Escada · Fecha A (última tentativa)",
     timing: "~30 min após 1ª ligação · A_CALL_RETRY → Grupo B",
     canGenerateAudio: true,
-    notes: "Última janela do Grupo A. Sem resposta → COLD_1 (Grupo B). Motor: A_CALL_RETRY.",
-    body: `Olá! Eu sou a Sofia, assistente virtual do {{consultor}}, da iGreen.
+    notes: "Última janela do Grupo A. Sem resposta → COLD_1 (Grupo B). Motor: A_CALL_RETRY. Identidade: {{assistente}}/{{consultor}}.",
+    audioSegments: [
+      { ...SEG_CALL_NAME_GREET, label: "1 · Olá + nome + tudo bem? (ligação)" },
+      {
+        id: "a_nudge_call_retry_body",
+        kind: "fixed",
+        label: "2 · Corpo do áudio (fixo · cache · sem nome)",
+        text: `${SOFIA_OPENING}
 
 Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.
 
 Se preferir, é só responder no WhatsApp que seguimos por lá.`,
+      },
+    ],
+    body: joinAudioSegmentTexts([
+      { text: "Olá, {{nome}}! Tudo bem?" },
+      {
+        text: `${SOFIA_OPENING}
+
+Estou ligando novamente sobre a ativação do seu benefício de economia na conta de energia.
+
+Se preferir, é só responder no WhatsApp que seguimos por lá.`,
+      },
+    ]),
   },
 
   // ─── GRUPO B (lead já está no CRM — já mandou mensagem antes) ───────────
@@ -2223,7 +2449,7 @@ Você prefere continuar pelo WhatsApp ou que eu explique agora?` },
     theme: "simplified_analysis",
     canGenerateAudio: false,
     notes:
-      "Um dos temas rotativos do Grupo B. Não é o 1º contato: o D+1 usa o texto fixo de reabrir. Edite aqui; o Dia 2 só referencia {{tema_whatsapp}}.",
+      "Um dos temas rotativos do Grupo B. Publish grava em cadence_theme_config (motor). Não é o 1º contato: o D+1 usa o texto fixo de reabrir. Dia 2 referencia {{tema_whatsapp}}.",
     body: `Olá, {{nome}}.
 
 Boa notícia: agora dá para começar sua análise só com o valor médio da conta — sem foto e sem burocracia.
@@ -2253,7 +2479,7 @@ Qual faixa está sua conta hoje?`,
     theme: "cruise",
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: false,
-    notes: "3 botões: economia / regras / ligar. Não afirmar “você ganhou”.",
+    notes: "3 botões: economia / regras / ligar. Não afirmar “você ganhou”. Ainda SEM destino no motor (não entra no rotativo Dia 2/7).",
     body: `Olá, {{nome}}! Você sabia dessa novidade?
 
 Além da economia na conta de energia, clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento vigente.
@@ -2293,14 +2519,14 @@ O que você quer conhecer primeiro?`,
         id: "cruise_body",
         kind: "fixed",
         label: "2 · Corpo do áudio (fixo · cache)",
-        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}} Ferreira Dias, da iGreen Energia.
+        text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com {{consultor}}.`,
       },
     ],
     body: joinAudioSegmentTexts([
       { text: "Olá, {{nome}}." },
-      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}} Ferreira Dias, da iGreen Energia.
+      { text: `Eu sou {{assistente}}, assistente virtual de {{consultor}}, da iGreen Energia.
 
 Além da possibilidade de economia na conta de energia, existe uma novidade especial: clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento. Responda por aqui que eu explico as regras e também verifico sua análise de economia com {{consultor}}.` },
     ]),
@@ -2403,7 +2629,7 @@ Como prefere seguir?`,
     theme: "security",
     canGenerateAudio: false,
     maxChars: 160,
-    body: `{{consultor}} | iGreen: nao pedimos Pix/pagamento. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
+    body: `{{consultor}} | iGreen: analise sem custo antecipado. Abra: https://wa.me/{{consultor_phone}} SAIR encerra.`,
   },
   {
     key: "theme_benefits_club_wa",
@@ -2711,6 +2937,10 @@ export function hasGeneratedCadenceAudio(
   if (lib.audioUrls[cadenceBodyAudioUrlKey(tplKey, "masculino")]) return true;
   // Alias legado do passo 3
   if (tplKey === "a3_explain_with_buttons" && lib.audioUrls.a3_audio_explain) return true;
+  // Clip no motor (cadence_stage_config) sem URL espelhada na lib
+  if (lib.audioClipIds[tplKey]) return true;
+  if (lib.audioClipIds[cadenceAudioUrlKey(tplKey, "feminino")]) return true;
+  if (lib.audioClipIds[cadenceAudioUrlKey(tplKey, "masculino")]) return true;
   return false;
 }
 
@@ -2728,10 +2958,32 @@ export function allAudioSegmentsApproved(
 
 export function resolveButtons(tpl: CadenceTemplate, lib: SavedCadenceLibrary): CadenceButton[] {
   const override = lib.buttons[tpl.key];
-  const base = (override ?? tpl.buttons ?? []).slice(0, WHAPI_MAX_BUTTONS);
-  if (!override?.length || !tpl.buttons?.length) return base;
+  const catalog = (tpl.buttons ?? []).slice(0, WHAPI_MAX_BUTTONS);
+  if (!override?.length) return catalog;
+
+  // Passos oficiais do funil A: se a lib salva está desatualizada (faltam botões
+  // novos como “Tenho dúvida”, ou ainda tem só Cadastrar/Humano), usa o catálogo.
+  // Senão o preview fica eternamente com o override antigo do localStorage/remoto.
+  if (
+    (tpl.key === "a3_explain_with_buttons" || tpl.key === "a5b_after_club_buttons") &&
+    catalog.length > 0
+  ) {
+    const ovIds = new Set(override.map((b) => b.id));
+    const catalogMissingInOverride = catalog.some((b) => !ovIds.has(b.id));
+    const staleTitles = override.some(
+      (b) =>
+        (b.id === "register" && /cadastrar/i.test(b.title)) ||
+        (b.id === "activate" && /quero\s*ativar/i.test(b.title)),
+    );
+    if (catalogMissingInOverride || staleTitles) {
+      return catalog;
+    }
+  }
+
+  const base = override.slice(0, WHAPI_MAX_BUTTONS);
+  if (!catalog.length) return base;
   // Override antigo sem destino → preenche pelo template (mesmo id).
-  const byId = new Map(tpl.buttons.map((b) => [b.id, b]));
+  const byId = new Map(catalog.map((b) => [b.id, b]));
   return base.map((b) => {
     if (b.goto_step_key || b.goto_special) return b;
     const def = byId.get(b.id);

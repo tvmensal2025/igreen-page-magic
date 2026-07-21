@@ -30,6 +30,7 @@ import {
   Pause,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { dedupeMediaLibraryPreferLightest } from "@/lib/dedupeMediaLibrary";
 
 export type MediaKind = "audio" | "image" | "video";
 
@@ -42,6 +43,8 @@ interface MediaItem {
   duration_sec?: number | null;
   is_public?: boolean;
   consultant_id?: string | null;
+  original_size_bytes?: number | null;
+  final_size_bytes?: number | null;
 }
 
 interface MediaLibraryPickerProps {
@@ -188,7 +191,7 @@ export function MediaLibraryPicker({
         queries.push(
           supabase
             .from("ai_media_library")
-            .select("id, kind, label, url, duration_sec, is_public, consultant_id, active")
+            .select("id, kind, label, url, duration_sec, is_public, consultant_id, active, original_size_bytes, final_size_bytes")
             .eq("kind", kind)
             .eq("active", true)
             .not("url", "is", null)
@@ -205,6 +208,8 @@ export function MediaLibraryPicker({
                 duration_sec: d.duration_sec,
                 is_public: !!d.is_public,
                 consultant_id: d.consultant_id,
+                original_size_bytes: d.original_size_bytes ?? null,
+                final_size_bytes: d.final_size_bytes ?? null,
               })),
             ),
         );
@@ -234,12 +239,20 @@ export function MediaLibraryPicker({
         const [lib, tpl] = await Promise.all(queries);
         if (cancelled) return;
 
-        // Dedupe por URL — pode existir mesmo arquivo em ambos os lugares.
+        // 1) Mesma URL → uma entrada
+        // 2) Mesmo título (reuploads) → só a cópia mais leve
         const byUrl = new Map<string, MediaItem>();
         for (const it of [...lib, ...tpl]) {
-          if (!byUrl.has(it.url)) byUrl.set(it.url, it);
+          const prev = byUrl.get(it.url);
+          if (!prev) {
+            byUrl.set(it.url, it);
+            continue;
+          }
+          const prevSize = prev.final_size_bytes ?? prev.original_size_bytes ?? Number.MAX_SAFE_INTEGER;
+          const nextSize = it.final_size_bytes ?? it.original_size_bytes ?? Number.MAX_SAFE_INTEGER;
+          if (nextSize < prevSize) byUrl.set(it.url, it);
         }
-        setItems(Array.from(byUrl.values()));
+        setItems(dedupeMediaLibraryPreferLightest(Array.from(byUrl.values())));
       } finally {
         if (!cancelled) setLoading(false);
       }

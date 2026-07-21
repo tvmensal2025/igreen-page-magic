@@ -19,11 +19,12 @@ import {
 import {
   useAcademyNotes, type SaveStatus, type AcademyNote,
 } from "@/hooks/useAcademyNotes";
-import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
+import { useAC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 const SAVE_DEBOUNCE_MS = 800;
 
 function StatusPill({ status, loading }: { status: SaveStatus; loading: boolean }) {
+  const AC = useAC();
   if (loading) {
     return (
       <span className="inline-flex items-center gap-1.5 text-[11px]" style={{ color: AC.textMute }}>
@@ -68,6 +69,7 @@ function NoteEditor({
   updateMaterial: ReturnType<typeof useAcademyNotes>["updateMaterial"];
   removeMaterial: ReturnType<typeof useAcademyNotes>["removeMaterial"];
 }) {
+  const AC = useAC();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstRender = useRef(true);
 
@@ -125,7 +127,7 @@ function NoteEditor({
             value={note.noteDate}
             onChange={(e) => patchNoteLocal(note.id, { noteDate: e.target.value })}
             className="w-full rounded-lg pl-9 pr-3 py-2.5 text-sm outline-none focus:ring-2"
-            style={{ background: AC.bg, color: AC.text, border: `1px solid ${AC.border}`, colorScheme: "dark" }}
+            style={{ background: AC.bg, color: AC.text, border: `1px solid ${AC.border}` }}
           />
         </div>
       </div>
@@ -223,6 +225,7 @@ function NotesList({
   onOpen: (id: string) => void;
   onNew: () => void;
 }) {
+  const AC = useAC();
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -307,6 +310,7 @@ function NotesList({
 
 /* ============================ FAB ============================ */
 export function AcademyNotesFab() {
+  const AC = useAC();
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
   const {

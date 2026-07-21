@@ -11,11 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { ChatItem } from "@/hooks/useChats";
-import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, Handshake, ClipboardCheck, ShieldBan } from "lucide-react";
+import { Loader2, MessageSquareText, UserPlus, UserCheck, KanbanSquare, RotateCcw, ClipboardList, Bot, BotOff, MoreVertical, Handshake, ClipboardCheck, ShieldBan, PlayCircle, Star } from "lucide-react";
 import { resetLeadConversation } from "@/services/resetConversation";
 import { CaptureSheet } from "@/components/captacao/CaptureSheet";
 import { PortalStatusTracker } from "@/components/captacao/PortalStatusTracker";
-import { useCaptureSession } from "@/hooks/useCaptureSession";
+import { useCaptureSession, isRegisteredPortalClient } from "@/hooks/useCaptureSession";
 import { useIsLgDown } from "@/hooks/use-mobile";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AttendanceStatusBar } from "./AttendanceStatusBar";
@@ -136,18 +136,25 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     } catch {}
   }, []);
   const { customer: captureCustomer, filledCount, totalFields } = useCaptureSession(customerId);
+  const isPortalClient = isRegisteredPortalClient(captureCustomer);
 
   const attendance = useCustomerAttendance(customerId, consultantId);
   const { attachMediaToCapture } = useCaptureAttach();
   // Captação é SEMPRE manual (default global) — incompleto = pendente.
-  const captureIncomplete = !!captureCustomer && !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
+  // Cliente já no portal / ganho: não reabre ficha como “lead incompleto”.
+  const captureIncomplete =
+    !!captureCustomer &&
+    !isPortalClient &&
+    !(captureCustomer.name && captureCustomer.cpf && captureCustomer.email && Number(captureCustomer.electricity_bill_value || 0) > 0);
   const captureActive = captureOpen || captureIncomplete;
 
   // Sync capture_closed_at do cliente atual pra esconder o botão quando já encerrado.
   useEffect(() => {
-    const closed = (captureCustomer as any)?.capture_closed_at ?? null;
+    const closed =
+      (captureCustomer as { capture_closed_at?: string | null } | null)?.capture_closed_at ??
+      (isPortalClient ? "portal" : null);
     setCaptureClosedAt(closed);
-  }, [captureCustomer]);
+  }, [captureCustomer, isPortalClient]);
 
   const handleCaptureClosed = useCallback(() => {
     setCaptureClosedAt(new Date().toISOString());
@@ -427,7 +434,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       candidates.add(`55${rawPhone}`);
     }
     const candidatesArr = Array.from(candidates);
-    const insertPhone = rawPhone.startsWith("55") ? rawPhone : `55${rawPhone}`;
+    const insertPhone = (() => {
+      const with55 = rawPhone.startsWith("55") ? rawPhone : `55${rawPhone}`;
+      // Só dígitos; não completa o 9 (chave WA pode ser 12). Truncar lixo 14+.
+      const d = with55.replace(/\D/g, "");
+      if (d.startsWith("55") && d.length > 13) return d[4] === "9" ? d.slice(0, 13) : d.slice(0, 12);
+      return d;
+    })();
     let cancelled = false;
     (async () => {
       // Sempre pega o registro MAIS RECENTE — havia bug onde, com 2 customers
@@ -710,8 +723,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       <div className="flex flex-col min-h-0 min-w-0 flex-1">
 
 
-      {/* Chat header — mobile: nome + captação + menu ⋯; desktop: barra completa */}
-      <div className="flex items-center gap-2 px-3 lg:px-3.5 min-h-12 lg:min-h-14 py-1.5 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
+      {/* Chat header — mobile estreito: nome + IA + captação + ⋯ (ações largas no menu). Desktop: barra completa. */}
+      <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 lg:px-3.5 min-h-12 lg:min-h-14 py-1.5 border-b border-border/60 bg-gradient-to-r from-card via-card to-primary/[0.03] shrink-0">
         <Avatar className="h-9 w-9 shrink-0 ring-1 ring-primary/20">
           <AvatarImage
             src={chat.profilePicUrl}
@@ -775,21 +788,22 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </p>
         </div>
 
-        {isCustomer && customerId && (
+        {/* Em telas &lt; lg estas ações largas estouravam a barra e escondiam IA / menu */}
+        {!isCompactLayout && isCustomer && customerId && (
           <AttendanceStatusBar
             state={attendance.uiState}
-            protocol={attendance.protocol}
+            protocol={isPortalClient ? null : attendance.protocol}
             rating={attendance.rating}
             starting={attendance.starting}
             ending={attendance.ending}
             onStart={() => void attendance.startAttendance()}
             onRequestEnd={() => setEndAttendanceDialogOpen(true)}
             onRestart={() => void attendance.restartAttendance()}
-            compact={isCompactLayout}
+            compact={false}
           />
         )}
 
-        {isCustomer && customerId && !captureClosedAt && (
+        {!isCompactLayout && isCustomer && customerId && !captureClosedAt && (
           <Button
             size="sm"
             variant="outline"
@@ -804,23 +818,46 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           </Button>
         )}
 
-        <ScheduleCallButton
-          phone={phoneNumber}
-          consultantId={consultantId}
-          contactName={chat.name}
-          customerId={customerId ?? null}
-          className="h-8 gap-1 px-3 rounded-full border-primary/30 text-primary hover:bg-primary/10 shrink-0"
-        />
-
-
+        {!isCompactLayout && (
+          <ScheduleCallButton
+            phone={phoneNumber}
+            consultantId={consultantId}
+            contactName={chat.name}
+            customerId={customerId ?? null}
+            className="h-8 gap-1 px-3 rounded-full border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+          />
+        )}
 
         {isCompactLayout ? (
           <>
+            {customerId && (
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={toggleBot}
+                disabled={togglingBot || (!botActive && doNotContact)}
+                title={botActive ? "Desligar bot só para este lead" : "Ligar bot para este lead"}
+                aria-label={botActive ? "Desligar bot neste lead" : "Ligar bot neste lead"}
+                className={`h-9 w-9 shrink-0 rounded-full ${
+                  botActive
+                    ? "border-primary/40 bg-primary/8 text-primary"
+                    : "border-muted-foreground/30 text-muted-foreground"
+                }`}
+              >
+                {togglingBot ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : botActive ? (
+                  <Bot className="h-4 w-4" />
+                ) : (
+                  <BotOff className="h-4 w-4" />
+                )}
+              </Button>
+            )}
             {isCustomer && customerId && (
               <Button
                 size="icon"
                 variant={captureActive ? "default" : "outline"}
-                className={`h-10 w-10 shrink-0 rounded-full ${
+                className={`h-9 w-9 shrink-0 rounded-full ${
                   captureActive
                     ? "bg-gradient-to-r from-primary to-primary/85 text-primary-foreground shadow-md shadow-primary/30"
                     : "border-primary/30 text-primary"
@@ -832,9 +869,18 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                 <ClipboardList className="h-4 w-4" />
               </Button>
             )}
+            <ScheduleCallButton
+              phone={phoneNumber}
+              consultantId={consultantId}
+              contactName={chat.name}
+              customerId={customerId ?? null}
+              iconOnly
+              size="icon"
+              className="h-9 w-9 rounded-full border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+            />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="icon" variant="outline" className="h-10 w-10 shrink-0 rounded-full" aria-label="Mais ações do chat">
+                <Button size="icon" variant="outline" className="h-9 w-9 shrink-0 rounded-full" aria-label="Mais ações do chat">
                   <MoreVertical className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -868,6 +914,45 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                   <DropdownMenuItem className="text-xs" onClick={() => setOriginOpen(true)}>
                     Definir origem
                   </DropdownMenuItem>
+                )}
+                {isCustomer && customerId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    {attendance.uiState === "not_started" ? (
+                      <DropdownMenuItem
+                        disabled={attendance.starting}
+                        onClick={() => void attendance.startAttendance()}
+                      >
+                        <PlayCircle className="h-4 w-4 mr-2 text-emerald-600" />
+                        Iniciar atendimento
+                      </DropdownMenuItem>
+                    ) : attendance.uiState === "in_progress" ? (
+                      <DropdownMenuItem
+                        disabled={attendance.ending}
+                        onClick={() => setEndAttendanceDialogOpen(true)}
+                      >
+                        <Star className="h-4 w-4 mr-2 text-amber-600" />
+                        Finalizar atendimento
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        disabled={attendance.starting}
+                        onClick={() => void attendance.restartAttendance()}
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2 text-emerald-600" />
+                        Reiniciar atendimento
+                      </DropdownMenuItem>
+                    )}
+                    {!captureClosedAt && (
+                      <DropdownMenuItem
+                        disabled={closingCapture}
+                        onClick={() => setCloseCaptureOpen(true)}
+                      >
+                        <ClipboardCheck className="h-4 w-4 mr-2 text-emerald-700" />
+                        Encerrar captação
+                      </DropdownMenuItem>
+                    )}
+                  </>
                 )}
                 {kanbanStages.length > 0 && (
                   <>
@@ -1012,8 +1097,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           }`}
           title={
             partnerName
-              ? `${partnerName} — clicar para editar origem`
-              : `${campaignName} — clicar para editar origem`
+              ? `${partnerName}${isPortalClient ? "" : " — clicar para editar origem"}`
+              : `${campaignName}${isPortalClient ? "" : " — clicar para editar origem"}`
           }
           onClick={() => setOriginOpen(true)}
         >
@@ -1023,9 +1108,11 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           <span className="text-[12px] font-semibold truncate">
             {partnerName ? `Indicação de ${partnerName}` : `Campanha: ${campaignName}`}
           </span>
-          <span className="text-[11px] font-medium opacity-80 hidden sm:inline shrink-0">
-            · editar origem
-          </span>
+          {!isPortalClient && (
+            <span className="text-[11px] font-medium opacity-80 hidden sm:inline shrink-0">
+              · editar origem
+            </span>
+          )}
         </button>
       )}
 

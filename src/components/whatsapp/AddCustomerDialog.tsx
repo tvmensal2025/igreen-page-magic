@@ -12,6 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TablesInsert } from "@/integrations/supabase/types";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Search, Check, MapPin, CreditCard, Zap, User } from "lucide-react";
+import { isValidBrNationalPhone, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 
 interface AddCustomerDialogProps {
   open: boolean;
@@ -131,7 +132,12 @@ export function AddCustomerDialog({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const rawPhone = form.phone_whatsapp.replace(/\D/g, "");
+      const rawPhone = toWhatsappCanonical(form.phone_whatsapp);
+      if (!isValidBrNationalPhone(rawPhone) || rawPhone.length < 12 || rawPhone.length > 13) {
+        toast({ title: "Telefone inválido", description: "Use DDD + celular (10 ou 11 dígitos).", variant: "destructive" });
+        setSaving(false);
+        return;
+      }
       const insertData: TablesInsert<"customers"> = {
         phone_whatsapp: rawPhone,
         consultant_id: consultantId,

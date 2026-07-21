@@ -125,8 +125,8 @@ export function AICostCard({ userId, className }: { userId: string; className?: 
           </button>
 
           {open && (
-            <div className="border border-border rounded-xl overflow-hidden">
-              <table className="w-full text-xs">
+            <div className="border border-border rounded-xl overflow-x-auto min-w-0 overscroll-x-contain">
+              <table className="w-full text-xs min-w-[420px]">
                 <thead className="bg-secondary text-muted-foreground">
                   <tr>
                     <th className="text-left p-2">Dia</th>

@@ -165,7 +165,7 @@ export default function FlowTemplatesDialog({
             Templates de fluxo
           </DialogTitle>
           <DialogDescription>
-            Sofia Multicanal = Grupo A oficial (10 passos). Use &quot;Substituir passos&quot; na
+            Sofia Multicanal = Grupo A oficial (11 passos). Use &quot;Substituir passos&quot; na
             variante A para gravar o fluxo limpo com botões e OCR.
           </DialogDescription>
         </DialogHeader>

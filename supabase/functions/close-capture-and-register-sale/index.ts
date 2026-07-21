@@ -11,9 +11,9 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
 
 type Attribution =
-  | { kind: "campaign"; id: string }
-  | { kind: "partner"; id: string }
-  | { kind: "organic" };
+  | { kind: "campaign"; id: string; campaignId?: string | null; partnerId?: string | null }
+  | { kind: "partner"; id: string; campaignId?: string | null; partnerId?: string | null }
+  | { kind: "organic"; campaignId?: string | null; partnerId?: string | null };
 
 interface Body {
   customerId: string;
@@ -82,18 +82,33 @@ Deno.serve(async (req) => {
     const sourceKind = attribution?.kind ?? "organic";
     const sourceId =
       attribution && "id" in attribution ? attribution.id : null;
+    const attrCampaignId =
+      attribution && "campaignId" in attribution && attribution.campaignId
+        ? String(attribution.campaignId)
+        : sourceKind === "campaign" && sourceId
+          ? sourceId
+          : null;
+    const attrPartnerId =
+      attribution && "partnerId" in attribution && attribution.partnerId
+        ? String(attribution.partnerId)
+        : sourceKind === "partner" && sourceId
+          ? sourceId
+          : null;
 
-    // Se usuário mudou a origem, reflete em customers
+    // Se usuário mudou a origem, reflete em customers (campanha e parceiro podem coexistir)
+    // NÃO zerar capture_mode — coluna é NOT NULL (default 'auto').
     const customerPatch: Record<string, unknown> = {
-      capture_mode: null,
       capture_closed_at: nowIso,
       capture_closed_by: consultantId,
     };
-    if (outcome === "won" && sourceKind === "campaign" && sourceId) {
-      customerPatch.source_campaign_id = sourceId;
-    }
-    if (outcome === "won" && sourceKind === "partner" && sourceId) {
-      customerPatch.referral_partner_id = sourceId;
+    if (outcome === "won" && attribution) {
+      if (sourceKind === "organic") {
+        // Orgânico explícito: não apaga vínculos já existentes no lead
+        // (só registra a sale como orgânica).
+      } else {
+        if (attrCampaignId) customerPatch.source_campaign_id = attrCampaignId;
+        if (attrPartnerId) customerPatch.referral_partner_id = attrPartnerId;
+      }
     }
 
     // ----- WON -----

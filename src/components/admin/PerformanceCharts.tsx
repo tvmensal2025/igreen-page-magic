@@ -96,7 +96,8 @@ export function PerformanceCharts({ analytics }: Props) {
             </div>
           </header>
 
-          <div className="p-4 sm:p-6 overflow-x-auto">
+          <div className="p-4 sm:p-6 overflow-x-auto overscroll-x-contain min-w-0">
+            <p className="mb-2 text-[10px] text-muted-foreground md:hidden">Deslize para ver as 24 horas →</p>
             <div className="min-w-[640px]">
               {/* Hour header */}
               <div className="grid gap-[3px] mb-[3px]" style={{ gridTemplateColumns: "40px repeat(24, minmax(0, 1fr))" }}>

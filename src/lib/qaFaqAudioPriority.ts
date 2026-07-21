@@ -1,6 +1,5 @@
 /**
- * Áudio FAQ Sofia: poucos padrões completos (não 10 quase iguais).
- * Gatilhos continuam separados; texto/áudio compartilham o mesmo slot.
+ * Áudio FAQ Sofia: 5 padrões únicos — 1 card por padrão (gatilhos unidos).
  */
 
 export type FaqPadraoKey = "confianca" | "preco" | "cancelamento" | "tecnico" | "cadastro";
@@ -8,9 +7,9 @@ export type FaqPadraoKey = "confianca" | "preco" | "cancelamento" | "tecnico" | 
 export const FAQ_AUDIO_PADROES: ReadonlyArray<{
   key: FaqPadraoKey;
   label: string;
-  /** Intent “canônico” usado pra gerar o MP3 uma vez */
+  /** Intent canônico (único card do padrão) */
   canonicalIntent: string;
-  /** Intents que reutilizam o mesmo áudio/texto */
+  /** Aliases legados (pré-merge) — ainda mapeiam áudio/slot se restarem no DB */
   intents: readonly string[];
 }> = [
   {

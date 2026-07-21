@@ -463,21 +463,23 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
                 onValueChange={(v) => setActiveStage(v as PosVendaStage)}
                 className="flex-1 flex flex-col min-h-0"
               >
-                <div className="px-6 pt-4">
-                  <TabsList className="grid grid-cols-6 w-full h-9">
-                    {POS_VENDA_STAGES.map((s) => {
-                      const done = stageIsReady(s.key, configs[s.key]);
-                      return (
-                        <TabsTrigger key={s.key} value={s.key} className="relative text-xs">
-                          {s.label}
-                          {done && <Check className="w-3 h-3 absolute top-0.5 right-0.5 text-primary" />}
-                        </TabsTrigger>
-                      );
-                    })}
-                  </TabsList>
+                <div className="px-3 sm:px-6 pt-4 min-w-0">
+                  <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
+                    <TabsList className="inline-flex h-auto min-h-9 w-max max-w-none gap-0.5 p-1 sm:grid sm:w-full sm:grid-cols-3 lg:grid-cols-6 sm:min-w-0">
+                      {POS_VENDA_STAGES.map((s) => {
+                        const done = stageIsReady(s.key, configs[s.key]);
+                        return (
+                          <TabsTrigger key={s.key} value={s.key} className="relative text-[10px] sm:text-xs shrink-0 px-2.5 sm:px-3 whitespace-nowrap">
+                            {s.label}
+                            {done && <Check className="w-3 h-3 absolute top-0.5 right-0.5 text-primary" />}
+                          </TabsTrigger>
+                        );
+                      })}
+                    </TabsList>
+                  </div>
                 </div>
 
-                <TabsContent value={activeStage} className="flex-1 overflow-y-auto px-6 py-4 space-y-4 mt-0">
+                <TabsContent value={activeStage} className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-4 mt-0">
                   <Card className="p-3 bg-muted/30 border-border/50">
                     <h3 className="font-semibold text-sm">{stageMeta.label}</h3>
                     <p className="text-xs text-muted-foreground mt-0.5">{stageMeta.description}</p>
@@ -644,13 +646,13 @@ export default function PosVendaSetupWizard({ consultantId, open, onOpenChange, 
           </div>
         )}
 
-        <div className="flex items-center justify-between px-6 py-3 border-t bg-background">
-          <Badge variant="outline" className="text-xs">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between px-3 sm:px-6 py-3 border-t bg-background min-w-0">
+          <Badge variant="outline" className="text-xs w-fit max-w-full whitespace-normal text-left">
             {usingInstitutionalDefaults
               ? "Padrão iGreen ativo — personalizar é opcional"
               : "Pode editar depois nas configurações"}
           </Badge>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               {usingInstitutionalDefaults ? "Fechar" : "Pular"}
             </Button>

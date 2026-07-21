@@ -93,24 +93,40 @@ export function validateBrazilPhone(raw: string | null | undefined): PhoneValida
   return { valid: false, normalized, reason: "invalid_format", message: "WhatsApp precisa ser celular (com 9 após o DDD)" };
 }
 
-/** Compara dois números pelos últimos 11 dígitos (DDD + celular). */
+/**
+ * Compara dois números BR com tolerância ao 9º dígito.
+ * Normaliza (completa o 9 em celular antigo) antes de comparar — senão
+ * `553497081920` (cadastro) ≠ `5534997081920` (destino Velip) e o histórico
+ * SMS/ligação fica “aguardando” sem casar o log.
+ */
 export function phonesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
-  const da = onlyDigits(a);
-  const db = onlyDigits(b);
-  if (!da || !db) return false;
-  return da.slice(-11) === db.slice(-11);
+  const na = normalizeBrazilPhone(a);
+  const nb = normalizeBrazilPhone(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  return na.slice(-11) === nb.slice(-11);
 }
 
-/** Formata para exibição: +55 (11) 99000-0650 */
+/** Formata para exibição: +55 (11) 99000-0650.
+ * Sempre normaliza (completa o 9º dígito) antes — senão `553497081920`
+ * vira `+55 (53) 49708-1920` (DDD errado).
+ */
 export function formatBrazilPhone(raw: string | null | undefined): string {
-  const d = onlyDigits(raw);
+  const normalized = normalizeBrazilPhone(raw);
+  const d = normalized || onlyDigits(raw);
   if (!d) return "";
-  const tail = d.length > 11 ? d.slice(-11) : d;
-  if (tail.length === 11) {
-    return `+55 (${tail.slice(0, 2)}) ${tail.slice(2, 7)}-${tail.slice(7)}`;
+  // Preferir celular 13 dígitos; senão últimos 11/10.
+  const local =
+    d.startsWith("55") && d.length >= 12
+      ? d.slice(2)
+      : d.length > 11
+        ? d.slice(-11)
+        : d;
+  if (local.length === 11) {
+    return `+55 (${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
   }
-  if (tail.length === 10) {
-    return `+55 (${tail.slice(0, 2)}) ${tail.slice(2, 6)}-${tail.slice(6)}`;
+  if (local.length === 10) {
+    return `+55 (${local.slice(0, 2)}) ${local.slice(2, 6)}-${local.slice(6)}`;
   }
   return raw || "";
 }

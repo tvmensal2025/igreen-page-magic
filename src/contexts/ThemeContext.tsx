@@ -1,39 +1,85 @@
-import React, { createContext, useContext, useEffect } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
-// Plataforma iGreen é light-only. Mantemos a API do contexto para não quebrar
-// componentes que ainda importam `useTheme`, mas `setTheme` é no-op e o tema
-// resolvido é sempre "light".
-
-type Theme = "light";
+export type ThemePreference = "light" | "dark";
+export type ResolvedTheme = "light" | "dark";
 
 interface ThemeContextType {
-  theme: Theme;
-  resolvedTheme: "light";
-  setTheme: (theme: Theme | "dark" | "system") => void;
+  /** Preferência gravada (só light | dark — sem system, pra não misturar). */
+  theme: ThemePreference;
+  resolvedTheme: ResolvedTheme;
+  setTheme: (theme: ThemePreference) => void;
+  toggleTheme: () => void;
 }
+
+const STORAGE_KEY = "igreen-theme";
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: "light",
   resolvedTheme: "light",
   setTheme: () => {},
+  toggleTheme: () => {},
 });
 
 export const useTheme = () => useContext(ThemeContext);
 
+function readStoredTheme(): ThemePreference {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw === "dark" || raw === "light") return raw;
+    // legado: "system" ou lixo → light (padrão seguro)
+  } catch {
+    /* ignore */
+  }
+  return "light";
+}
+
+function applyDomTheme(resolved: ResolvedTheme) {
+  const root = document.documentElement;
+  root.classList.remove("light", "dark", "system");
+  root.classList.add(resolved);
+  root.style.colorScheme = resolved;
+  root.dataset.theme = resolved;
+  try {
+    // meta theme-color: verde marca no light; quase-preto iGreen no dark
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", resolved === "dark" ? "#111111" : "#00A859");
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setThemeState] = useState<ThemePreference>(() =>
+    typeof window === "undefined" ? "light" : readStoredTheme(),
+  );
+
+  // Sync DOM na montagem + sempre que mudar (FOUC já tratado no index.html)
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.remove("dark", "system");
-    root.classList.add("light");
-    root.style.colorScheme = "light";
+    applyDomTheme(theme);
     try {
-      localStorage.setItem("igreen-theme", "light");
-    } catch {}
+      localStorage.setItem(STORAGE_KEY, theme);
+    } catch {
+      /* ignore */
+    }
+  }, [theme]);
+
+  const setTheme = useCallback((next: ThemePreference) => {
+    setThemeState(next === "dark" ? "dark" : "light");
   }, []);
 
-  return (
-    <ThemeContext.Provider value={{ theme: "light", resolvedTheme: "light", setTheme: () => {} }}>
-      {children}
-    </ThemeContext.Provider>
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => (prev === "dark" ? "light" : "dark"));
+  }, []);
+
+  const value = useMemo<ThemeContextType>(
+    () => ({
+      theme,
+      resolvedTheme: theme,
+      setTheme,
+      toggleTheme,
+    }),
+    [theme, setTheme, toggleTheme],
   );
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

@@ -46,7 +46,20 @@ function backoffOk(retryCount: number, lastAt: string | null): boolean {
 
 function isWorkerTransient(status: number, body: string): boolean {
   const text = String(body || "").trim().toLowerCase();
-  return status === 502 || status === 503 || status === 504 || text.startsWith("<!doctype") || text.startsWith("<html");
+  // OTP inválido/expirado NÃO é transitório — mesmo se o worker devolver 502 legado.
+  if (
+    /c[oó]digo inv[aá]lido ou expirado/.test(text) ||
+    /otp_invalid_or_expired/.test(text) ||
+    /otp.*expir/.test(text) ||
+    /code.*expired/.test(text)
+  ) {
+    return false;
+  }
+  // 502/503/504 só contam como rede se a resposta for HTML de proxy/gateway
+  // ou body vazio — JSON de negócio do worker NÃO é transient.
+  if (text.startsWith("<!doctype") || text.startsWith("<html")) return true;
+  if (!text && (status === 502 || status === 503 || status === 504)) return true;
+  return status === 503 || status === 504;
 }
 
 async function resolveIds(supabase: any, customerId: string): Promise<{
@@ -189,12 +202,14 @@ async function bucketB(supabase: any) {
   const cutoff = new Date(Date.now() - 30_000).toISOString();
   const { data: rows } = await supabase
     .from("customers")
-    .select("id, name, otp_code, portal_retry_count, last_otp_dispatch_at, consultant_id, do_not_contact, phone_whatsapp")
+    .select("id, name, otp_code, portal_retry_count, last_otp_dispatch_at, consultant_id, do_not_contact, phone_whatsapp, status, portal2_status, conversation_step")
     .not("otp_code", "is", null)
     .not("portal2_idcliente", "is", null)
     .is("portal2_otp_validated_at", null)
     .eq("do_not_contact", false)
     .lt("otp_received_at", cutoff)
+    .not("status", "in", '("cadastro_concluido","complete","registered_igreen","abandoned","automation_failed")')
+    .neq("conversation_step", "otp_confirmar")
     .order("otp_received_at", { ascending: true })
     .limit(BATCH_LIMIT);
 
@@ -253,17 +268,35 @@ async function bucketB(supabase: any) {
       }
 
       // Detecta OTP expirado/inválido → para de retentar e pede novo código
-      const isExpired = OTP_EXPIRED_PATTERNS.some((re) => re.test(txt));
+      const isExpired = OTP_EXPIRED_PATTERNS.some((re) => re.test(txt))
+        || /otp_invalid_or_expired/i.test(txt)
+        || res.status === 400;
       if (isExpired) {
         await supabase.from("customers").update({
           otp_code: null,
           otp_received_at: null,
           status: "awaiting_otp",
+          conversation_step: "otp_falhou",
           last_otp_dispatch_at: new Date().toISOString(),
           last_otp_dispatch_error: "otp_expired_cleared",
           portal_retry_count: 0,
         }).eq("id", r.id);
         expired++;
+
+        // Tenta gerar um NOVO código na iGreen (cliente recebe no Zap da iGreen)
+        try {
+          await fetch(`${resolved.url}/resend-otp`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${resolved.secret}`,
+            },
+            body: JSON.stringify({ customer_id: r.id, idconsultor, idcliente }),
+            signal: AbortSignal.timeout(30_000),
+          });
+        } catch (e: any) {
+          console.warn(`[watchdog B] resend-otp falhou customer=${r.id}: ${e?.message || e}`);
+        }
 
         // Mensagem ao cliente pelo canal de origem
         const channel = await resolveChannelForCustomer(supabase, r.id, env);
@@ -282,8 +315,8 @@ async function bucketB(supabase: any) {
           }
           const firstName = String(r.name || "").trim().split(/\s+/)[0] || "";
           const msg =
-            `${firstName ? firstName + ", " : ""}seu código de verificação expirou ⏰\n\n` +
-            `Por favor, peça um *novo código* no Portal e me envie aqui pra eu validar.`;
+            `${firstName ? firstName + ", " : ""}o código anterior *não confirmou* (inválido ou expirado) ⏰\n\n` +
+            `Acabei de pedir um *novo código* — quando chegar no WhatsApp, *digite aqui* pra eu validar.`;
           const { data: c } = await supabase
             .from("customers").select("phone_whatsapp").eq("id", r.id).maybeSingle();
           const digits = String(c?.phone_whatsapp || "").replace(/\D/g, "");
@@ -414,9 +447,9 @@ async function bucketC(supabase: any) {
         if (!digits) continue;
         const jid = `${digits}@s.whatsapp.net`;
         const firstName = String(r.name || "").trim().split(/\s+/)[0] || "Cliente";
-        // Alinhado ao passo 10 Grupo A (a11_facial_link) — só após OTP.
+        // Alinhado ao passo 10 Grupo A (a11_facial_link) — só após código.
         const text =
-          `OTP confirmado, ${firstName}! ✅\n\n` +
+          `Código confirmado, ${firstName}! ✅\n\n` +
           `Último passo: abra o *link* 👇\n\n` +
           `${link}\n\n` +
           `Clique em *Assinar documentos* — o sistema vai pedir a *validação facial* para comprovar que é você.`;

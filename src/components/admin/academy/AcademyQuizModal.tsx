@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { X, RefreshCw, CheckCircle, Award } from "lucide-react";
 import { CATALOG, QUIZZES, PASS_SCORE, type QuizQuestion } from "@/data/academyCatalog";
 import type { ExamResult } from "@/hooks/useAcademyProgress";
-import { AC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
+import { useAC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
 
 /* ---------- helpers ---------- */
 function shuffle<T>(arr: T[]): T[] {
@@ -63,6 +63,7 @@ interface InnerProps {
 }
 
 function AcademyQuizModalInner({ quiz, quizKey, onClose, onPass, lastResult }: InnerProps) {
+  const AC = useAC();
   const { cat, mod } = moduleTitleByKey(quizKey);
   const [screen,    setScreen   ] = useState<Screen>("intro");
   const [questions, setQuestions] = useState<QuizQuestion[]>(() => shuffleQuiz(quiz.questions));

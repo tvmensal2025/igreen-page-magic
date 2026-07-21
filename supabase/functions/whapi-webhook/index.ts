@@ -471,6 +471,76 @@ Deno.serve(async (req) => {
 
 
 
+    // ─── 🔑 OTP CONFIRMAR (código rejeitado → "é esse mesmo?") ─────────
+    {
+      const { data: confirmLead } = await supabase
+        .from("customers")
+        .select("id, name, phone_whatsapp, consultant_id, otp_code, conversation_step, status")
+        .eq("phone_whatsapp", phone)
+        .eq("consultant_id", superAdminConsultantId)
+        .eq("conversation_step", "otp_confirmar")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (confirmLead) {
+        const { parseOtpConfirmReply, handleOtpConfirmedByClient, handleOtpDeniedByClient } =
+          await import("../_shared/otp-confirm-flow.ts");
+        const decision = parseOtpConfirmReply(messageText || "", buttonId || null);
+        if (decision === "sim") {
+          const { clientReply } = await handleOtpConfirmedByClient(supabase, confirmLead as any);
+          try {
+            await realSender.sendText(remoteJid, clientReply);
+          } catch (_) {}
+          return new Response(JSON.stringify({ ok: true, msg: "otp_confirm_sim_consultant_notified" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        if (decision === "nao") {
+          const { clientReply } = await handleOtpDeniedByClient(
+            supabase,
+            confirmLead.id,
+            (confirmLead as any).consultant_id,
+          );
+          try {
+            await realSender.sendText(remoteJid, clientReply);
+          } catch (_) {}
+          // Best-effort: pede novo código na iGreen
+          try {
+            const resolved = await resolveWorker(supabase, confirmLead.id).catch(() => null);
+            if (resolved?.url && resolved?.secret) {
+              await fetch(`${resolved.url.replace(/\/$/, "")}/resend-otp`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${resolved.secret}`,
+                },
+                body: JSON.stringify({ customer_id: confirmLead.id }),
+                signal: AbortSignal.timeout(30_000),
+              });
+            }
+          } catch (_) {}
+          return new Response(JSON.stringify({ ok: true, msg: "otp_confirm_nao_ask_again" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        // Resposta ambígua: reforça a pergunta
+        try {
+          const code = String((confirmLead as any).otp_code || "").replace(/\D/g, "") || "???";
+          const { resolveCodigoConfirmCopy } = await import("../_shared/otp-confirm-flow.ts");
+          const copy = await resolveCodigoConfirmCopy(
+            supabase,
+            (confirmLead as any).consultant_id,
+            code,
+          );
+          await realSender.sendButtons(remoteJid, copy.ask, copy.buttons);
+        } catch (_) {}
+        return new Response(JSON.stringify({ ok: true, msg: "otp_confirm_reprompt" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     // ─── 🔑 OTP INTERCEPT (antes do bot-flow) ─────────────────────────
     // Se o cliente está em awaiting_otp/portal_submitting e mandou um código
     // numérico, capturamos e notificamos o worker. Bypassa o fluxo conversacional.
@@ -497,12 +567,34 @@ Deno.serve(async (req) => {
           `)
           .eq("phone_whatsapp", phone)
           .eq("consultant_id", superAdminConsultantId)
-          .in("status", ["awaiting_otp", "portal_submitting"])
+          .in("status", ["awaiting_otp", "portal_submitting", "validating_otp"])
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (otpCustomer) {
+        // Também pega lead em otp_falhou (status awaiting_otp + step otp_falhou)
+        // ou conversation_step otp_falhou via query extra se status acima falhar.
+        let otpLead = otpCustomer;
+        if (!otpLead) {
+          const { data: failedLead } = await supabase
+            .from("customers")
+            .select(`
+              id, name, status, consultant_id, portal2_idcliente, portal_idconsultor_override,
+              conversation_step,
+              consultants:consultant_id(igreen_id),
+              referral_partners:referral_partner_id(cli, partner_igreen_id)
+            `)
+            .eq("phone_whatsapp", phone)
+            .eq("consultant_id", superAdminConsultantId)
+            .eq("conversation_step", "otp_falhou")
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          otpLead = failedLead;
+        }
+
+        if (otpLead) {
+          const otpCustomer = otpLead;
           console.log(`🔑 [whapi-otp] OTP ${extractedOtp} capturado para ${otpCustomer.name} (${otpCustomer.id}) idcliente=${otpCustomer.portal2_idcliente ?? 'null'}`);
 
           // Sempre persiste o código recebido. Se o cadastro no Portal 2 ainda
@@ -581,6 +673,16 @@ Deno.serve(async (req) => {
                 const txt = await wr.text().catch(() => "");
                 workerErrorKind = `worker_status_${wr.status}`;
                 console.warn(`⚠️ [whapi-otp] worker respondeu ${wr.status}: ${txt.slice(0, 200)}`);
+                const isBadOtp = wr.status === 400
+                  || /otp_invalid_or_expired/i.test(txt)
+                  || /c[oó]digo inv[aá]lido ou expirado/i.test(txt);
+                if (isBadOtp) {
+                  workerErrorKind = "otp_invalid_or_expired";
+                  const { markOtpNeedsConfirm } =
+                    await import("../_shared/otp-confirm-flow.ts");
+                  await markOtpNeedsConfirm(supabase, otpCustomer.id, extractedOtp, txt.slice(0, 200));
+                  // NÃO regenera código ainda — primeiro confirma se o cliente digitou certo.
+                }
               }
             } catch (e: any) {
               workerErrorKind = e?.name === "AbortError" ? "worker_timeout" : "worker_fetch_failed";
@@ -594,19 +696,39 @@ Deno.serve(async (req) => {
             conversation_step: "otp_received",
           });
 
-          // Se o worker já confirmou, ele mesmo manda a mensagem chave de ouro
-          // com o link. Aqui só falamos algo se a confirmação NÃO foi imediata
-          // (worker offline, cadastro ainda em andamento, etc.). Como o código
-          // sempre é válido, nunca dizemos "código inválido".
+          // Se o worker já confirmou, ele mesmo manda a mensagem chave de ouro.
+          // Se o código foi inválido/expirado: pergunta se é esse mesmo (antes de regenerar).
           if (!workerOk) {
             try {
-              const reply = "✅ Código recebido! Estou finalizando seu cadastro, em alguns segundos eu te confirmo aqui. 💚";
-              await realSender.sendText(remoteJid, reply);
-              await supabase.from("conversations").insert({
-                customer_id: otpCustomer.id, message_direction: "outbound",
-                message_text: reply, message_type: "text",
-                conversation_step: "otp_received",
-              });
+              if (workerErrorKind === "otp_invalid_or_expired") {
+                const { resolveCodigoConfirmCopy } =
+                  await import("../_shared/otp-confirm-flow.ts");
+                const copy = await resolveCodigoConfirmCopy(
+                  supabase,
+                  otpCustomer.consultant_id,
+                  extractedOtp,
+                );
+                const ask = copy.ask;
+                const btns = copy.buttons;
+                if (typeof realSender.sendButtons === "function") {
+                  await realSender.sendButtons(remoteJid, ask, btns);
+                } else {
+                  await realSender.sendText(remoteJid, `${ask}\n\nResponda *SIM* ou *NÃO*.`);
+                }
+                await supabase.from("conversations").insert({
+                  customer_id: otpCustomer.id, message_direction: "outbound",
+                  message_text: ask, message_type: "text",
+                  conversation_step: "otp_confirmar",
+                });
+              } else {
+                const reply = "✅ Código recebido! Estou finalizando seu cadastro, em alguns segundos eu te confirmo aqui. 💚";
+                await realSender.sendText(remoteJid, reply);
+                await supabase.from("conversations").insert({
+                  customer_id: otpCustomer.id, message_direction: "outbound",
+                  message_text: reply, message_type: "text",
+                  conversation_step: "otp_received",
+                });
+              }
             } catch (_) {}
           }
 
@@ -1167,7 +1289,19 @@ Deno.serve(async (req) => {
                   outcome: "already_assigned",
                   messageSample: messageText,
                 });
-              } else if (assign.outcome === "pool_empty" || assign.outcome === "customer_missing") {
+              } else if (assign.outcome === "pool_empty") {
+                // Campanha sem pool / sem parceiros → lead fica 100% com o consultor dono.
+                console.log(
+                  `[rodizio] customer=${customer.id} campaign=${resolvedCampaignId} pool vazia — lead do consultor dono`,
+                );
+                await logRodizioOutcome(supabase, {
+                  customerId: customer.id,
+                  campaignId: resolvedCampaignId,
+                  method: "rodizio_assign_lead",
+                  outcome: "pool_empty",
+                  messageSample: messageText,
+                });
+              } else if (assign.outcome === "customer_missing") {
                 await markManualReview(supabase, customer.id, "rodizio_pool_empty");
                 await logRodizioOutcome(supabase, {
                   customerId: customer.id,

@@ -82,32 +82,34 @@ export function AdsCentralTab({ consultantId }: Props) {
   ];
 
   return (
-    <div className="ads-central-2026 rounded-2xl overflow-hidden border border-[hsl(var(--ads-border))]">
+    <div className="ads-central-2026 w-full max-w-full min-w-0 rounded-2xl overflow-x-clip border border-[hsl(var(--ads-border))]">
       {/* Sticky glass header */}
       <header className="ads-header">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Megaphone className="w-4 h-4 text-primary shrink-0" />
-          <span className="ads-wordmark">
+          <span className="ads-wordmark truncate">
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
-          <span className="hidden md:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
+          <span className="hidden lg:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
             Centro de comando 2026 — modelos, campanhas, performance e inteligência.
           </span>
         </div>
-        <div className="flex items-center gap-2 flex-wrap shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 w-full sm:w-auto">
           <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
           <AdsButton variant="cta" size="sm" onClick={() => setWizardOpen(true)}>
-            <Plus className="w-3.5 h-3.5" /> Criar campanha
+            <Plus className="w-3.5 h-3.5" />
+            <span className="sm:hidden">Criar</span>
+            <span className="hidden sm:inline">Criar campanha</span>
           </AdsButton>
         </div>
       </header>
 
-      <div className="p-4 md:p-5 space-y-4">
+      <div className="p-3 sm:p-4 md:p-5 space-y-4 min-w-0 max-w-full">
         <CtwaConnectGuide consultantId={consultantId} />
 
-        {/* Nav pill */}
-        <div className="ads-nav-pill">
+        {/* Nav pill — scroll horizontal interno; nunca estoura a página */}
+        <div className="ads-nav-pill" role="tablist" aria-label="Seções da Central de Anúncios">
           {navItems.map((n) => {
             const Icon = n.icon;
             return (
@@ -126,12 +128,12 @@ export function AdsCentralTab({ consultantId }: Props) {
         </div>
 
         {view === "dashboard" && (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0 max-w-full">
             {/* Toolbar */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
               <AdAccountSwitcher userId={consultantId} value={adAccountId} onChange={setAdAccountId} />
               <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
-                <SelectTrigger className="h-8 w-[150px] text-xs bg-[hsl(var(--ads-surface))] border-[hsl(var(--ads-border))] text-[hsl(var(--ads-emerald-2))]">
+                <SelectTrigger className="h-8 w-full max-w-[150px] text-xs bg-[hsl(var(--ads-surface))] border-[hsl(var(--ads-border))] text-[hsl(var(--ads-emerald-2))]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -146,10 +148,10 @@ export function AdsCentralTab({ consultantId }: Props) {
               </div>
             </div>
 
-            {/* Bento — KPIs hero */}
+            {/* Bento — KPIs hero (sem colSpan fixo: evita overflow em grid 6/1 cols) */}
             <div className="ads-bento">
-              <AdsTile colSpan={12} delay={0} className="!p-0 overflow-hidden">
-                <div className="p-4">
+              <AdsTile delay={0} className="!p-0 overflow-hidden">
+                <div className="p-3 sm:p-4 min-w-0">
                   <AdMetricsCards consultantId={adAccountId} periodDays={periodDays} />
                 </div>
               </AdsTile>
@@ -170,12 +172,12 @@ export function AdsCentralTab({ consultantId }: Props) {
 
             <div
               data-resize-scope
-              className="flex flex-col lg:flex-row gap-3 items-stretch"
-              style={{ "--ads-left-w": "50%" } as React.CSSProperties}
+              className="flex flex-col lg:flex-row gap-3 items-stretch min-w-0 max-w-full"
+              style={{ "--ads-left-w": "min(520px, 50%)" } as React.CSSProperties}
             >
               <AdsTile
                 delay={220}
-                className="lg:w-[var(--ads-left-w)] min-w-0"
+                className="w-full lg:w-[var(--ads-left-w)] lg:max-w-[min(55%,var(--ads-left-w))] min-w-0"
                 label="CPC por destino"
               >
                 <CpcPanel
@@ -183,8 +185,15 @@ export function AdsCentralTab({ consultantId }: Props) {
                   totalCtaClicks={(analytics as any)?.totalCtaClicks}
                 />
               </AdsTile>
-              <DragResizer storageKey="ads-cpc" cssVar="ads-left-w" defaultPx={520} minPx={300} maxPx={900} />
-              <AdsTile delay={260} className="flex-1 min-w-0" label="Cliques recentes">
+              <DragResizer
+                storageKey="ads-cpc"
+                cssVar="ads-left-w"
+                defaultPx={520}
+                minPx={280}
+                maxPx={720}
+                className="!hidden lg:!flex"
+              />
+              <AdsTile delay={260} className="flex-1 min-w-0 w-full" label="Cliques recentes">
                 <RecentClicks clicks={(analytics as any)?.recentClicks} />
               </AdsTile>
             </div>
@@ -200,7 +209,7 @@ export function AdsCentralTab({ consultantId }: Props) {
         )}
 
         {view === "gallery" && (
-          <AdsTile delay={0}>
+          <AdsTile delay={0} className="min-w-0">
             <AdTemplatesGallery
               consultantId={consultantId}
               onPublished={() => {
@@ -211,7 +220,7 @@ export function AdsCentralTab({ consultantId }: Props) {
           </AdsTile>
         )}
         {view === "campaigns" && (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0 max-w-full">
             <AdsTile delay={0}>
               <MetaAudiencePanel consultantId={consultantId} />
             </AdsTile>
@@ -221,14 +230,24 @@ export function AdsCentralTab({ consultantId }: Props) {
           </div>
         )}
         {view === "performance" && (
-          <ResultsDashboard
-            key={refreshKey}
-            consultantId={consultantId}
-            onCreateClick={() => setView("gallery")}
-          />
+          <div className="min-w-0 max-w-full">
+            <ResultsDashboard
+              key={refreshKey}
+              consultantId={consultantId}
+              onCreateClick={() => setView("gallery")}
+            />
+          </div>
         )}
-        {view === "intel" && <IntelligenceTab consultantId={consultantId} />}
-        {view === "commissions" && <CommissionPanel consultantId={consultantId} />}
+        {view === "intel" && (
+          <div className="min-w-0 max-w-full">
+            <IntelligenceTab consultantId={consultantId} />
+          </div>
+        )}
+        {view === "commissions" && (
+          <div className="min-w-0 max-w-full">
+            <CommissionPanel consultantId={consultantId} />
+          </div>
+        )}
 
         {view !== "dashboard" && view !== "performance" && view !== "commissions" && (
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">

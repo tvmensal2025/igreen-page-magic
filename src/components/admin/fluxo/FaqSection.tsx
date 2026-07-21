@@ -21,7 +21,6 @@ import {
   formatIntentName, parseIntentName, RESERVED_FLOW_KEYWORDS,
   type ObjectionCategory,
 } from "@/lib/objectionShortcuts";
-import { PRIORITY_FAQ_INTENTS } from "@/lib/qaFaqAudioPriority";
 
 function mediaFilled(m: Media): boolean {
   return !!(m.media_id || m.slot_key);
@@ -337,7 +336,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         <div className="flex-1">
           <h2 className="text-base font-semibold">Atalhos / FAQ do fluxo</h2>
           <p className="text-xs text-muted-foreground">
-            Quando a frase do lead casa com um gatilho, o bot responde o texto (e mídia, se preenchida) e <strong>volta ao passo atual</strong>.
+            Quando a frase do lead casa com um gatilho, o bot responde com áudio (se houver) <strong>ou</strong> texto — nunca os dois juntos — e <strong>volta ao passo atual</strong>.
             Use <strong>frases completas</strong> (ex.: “tem fidelidade”) — palavra sola genérica é bloqueada.
             Sem match? Cai na Base da IA.
           </p>
@@ -345,7 +344,7 @@ export default function FaqSection({ flowId }: { flowId: string }) {
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           <Button variant="secondary" size="sm" onClick={() => setReviewOpen(true)}>
             <Headphones className="w-3 h-3 mr-1" />
-            Revisar áudios ({PRIORITY_FAQ_INTENTS.length} padrões)
+            Revisar áudios ({qas.filter((q) => q.flow_id === flowId).length})
           </Button>
           <Button variant="default" size="sm" onClick={seedDefaults} disabled={seeding || seedingPack}>
             {seeding || seedingPack ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <Sparkles className="w-3 h-3 mr-1" />}

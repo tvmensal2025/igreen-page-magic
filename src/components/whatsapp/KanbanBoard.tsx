@@ -184,13 +184,13 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             details="Quando ativo, eventos como 'OCR da conta lido', 'documento aprovado' ou 'cadastro finalizado' movem o lead para o próximo estágio sem intervenção. Desative apenas se quiser controle 100% manual."
           />
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:flex-wrap sm:items-center sm:w-auto">
+          <div className="relative w-full min-w-0 sm:w-auto">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input placeholder="Buscar cliente interessado..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 w-[180px]" />
+            <Input placeholder="Buscar cliente interessado..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 w-full sm:w-[180px]" />
           </div>
           <Select value={stepFilter} onValueChange={setStepFilter}>
-            <SelectTrigger className="h-7 text-xs w-[200px]"><SelectValue placeholder="Parou no passo" /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs w-full sm:w-[200px]"><SelectValue placeholder="Parou no passo" /></SelectTrigger>
             <SelectContent className="max-h-[320px]">
               <SelectItem value="all" className="text-xs">Todos os passos</SelectItem>
               <SelectItem value="none" className="text-xs">Sem interação</SelectItem>
@@ -199,14 +199,19 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               ))}
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none" title="Mostrar clientes interessados marcados como teste/sandbox (cards cinza)">
+          <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none shrink-0" title="Mostrar clientes interessados marcados como teste/sandbox (cards cinza)">
             <Switch checked={showTests} onCheckedChange={setShowTests} className="h-4 w-7 data-[state=checked]:bg-primary" />
-            Mostrar testes
+            <span className="whitespace-nowrap">Mostrar testes</span>
           </label>
+          <div className="flex flex-wrap items-center gap-2">
           <AddLeadDialog consultantId={consultantId} stages={stages.map((s) => ({ stage_key: s.stage_key, label: s.label, color: s.color }))} onLeadAdded={fetchDeals} />
           <Dialog open={showSettings} onOpenChange={setShowSettings}>
             <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5"><Settings2 className="h-3.5 w-3.5" />Configurar Colunas</Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5">
+                <Settings2 className="h-3.5 w-3.5" />
+                <span className="sm:hidden">Colunas</span>
+                <span className="hidden sm:inline">Configurar Colunas</span>
+              </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle className="text-sm">Configurar colunas do funil</DialogTitle></DialogHeader>
@@ -261,6 +266,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
       </div>
 
