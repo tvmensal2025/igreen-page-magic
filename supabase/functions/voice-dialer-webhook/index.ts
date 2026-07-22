@@ -271,9 +271,48 @@ Deno.serve(async (req) => {
         status: delivered ? "delivered" : undelivered ? "failed" : (delivstatus ? "sent" : "sent"),
         error: undelivered ? (delivstatus || "undelivered") : null,
       }).eq("id", smsRow.id);
+
+      // Auto-DNC de SMS: 2+ UNDELIV/REJECTD/EXPIRED nas últimas 72h para o mesmo
+      // consultor+telefone = número morto para SMS (e provavelmente para voz).
+      // Bloqueia futuros envios de SMS e ligações sem depender do guard em memória.
+      if (undelivered) {
+        const { data: full } = await admin
+          .from("voice_sms_log")
+          .select("consultant_id, phone")
+          .eq("id", smsRow.id).maybeSingle();
+        const consultantId = (full as { consultant_id?: string | null } | null)?.consultant_id ?? null;
+        const phoneDigits = String((full as { phone?: string | null } | null)?.phone || dest || "").replace(/\D/g, "");
+        if (consultantId && phoneDigits) {
+          const cutoff = new Date(Date.now() - 72 * 3600_000).toISOString();
+          const { data: recentFails } = await admin
+            .from("voice_sms_log")
+            .select("id, delivery_status, status, error")
+            .eq("consultant_id", consultantId)
+            .eq("phone", phoneDigits)
+            .gte("created_at", cutoff)
+            .limit(20);
+          const undelivCount = ((recentFails as { delivery_status: string | null; status: string | null; error: string | null }[] | null) || [])
+            .filter((r) => {
+              const s = String(r.delivery_status || "").toUpperCase();
+              return /^(UNDELIV|REJECTD|EXPIRED|DELETED|UNKNOWN)$/.test(s) ||
+                String(r.error || "").toUpperCase() === "UNDELIV";
+            }).length;
+          if (undelivCount >= 2) {
+            try {
+              await admin.from("voice_dnc_list").upsert({
+                consultant_id: consultantId,
+                phone: phoneDigits,
+                reason: "auto_sms_undeliv",
+                source: "velip_callback_sms",
+              }, { onConflict: "consultant_id,phone" });
+            } catch (_e) { /* ignore */ }
+          }
+        }
+      }
     }
     return json(200, { ok: true, sms: true, matched: !!smsRow });
   }
+
 
   const cd_id = String(params.cd_id ?? params.call_id ?? "");
   const ctid = String(params.ctid ?? "");
