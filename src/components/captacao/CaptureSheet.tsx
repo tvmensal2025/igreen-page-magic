@@ -224,7 +224,7 @@ function CaptureSheetInner({
   const handleSubmit = () => {
     if (!customer || !canSubmit || submitting) return;
     // Bot pausado → sempre perguntar (mesmo com capture_mode=auto).
-    if (!!customer.bot_paused) {
+    if (customer.bot_paused) {
       setAskNotice(true);
       return;
     }

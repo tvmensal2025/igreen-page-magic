@@ -1717,7 +1717,7 @@ Deno.serve(async (req) => {
       const { onLeadInboundResponse, ensureCadenceState } = await import(
         "../_shared/cadence-hooks.ts"
       );
-      await onLeadInboundResponse(supabase, customer.id, { messageText });
+      await onLeadInboundResponse(supabase, customer.id);
       await ensureCadenceState(
         supabase,
         customer.id,

@@ -45,9 +45,29 @@ function makeFakeSupabase() {
 Deno.test("whapi adapter sendText: segunda chamada com mesma idempotencyKey não chama fetch", async () => {
   let fetchCount = 0;
   const origFetch = globalThis.fetch;
-  globalThis.fetch = (async () => {
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const body = String(init?.body ?? "");
     fetchCount++;
-    return new Response("ok", { status: 200 });
+    if (url.includes("/contacts")) {
+      let phones: string[] = [];
+      try {
+        const parsed = JSON.parse(body);
+        phones = Array.isArray(parsed?.contacts) ? parsed.contacts.map(String) : [];
+      } catch { /* ignore */ }
+      const rows = (phones.length ? phones : ["5511999999999"]).map((p) => {
+        const digits = String(p).replace(/\D/g, "");
+        return { input: digits, status: "valid", wa_id: `${digits}@s.whatsapp.net` };
+      });
+      return new Response(JSON.stringify({ contacts: rows }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ message: { id: `wamid.${fetchCount}` } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }) as typeof fetch;
 
   const fakeSupabase = makeFakeSupabase();
@@ -65,7 +85,8 @@ Deno.test("whapi adapter sendText: segunda chamada com mesma idempotencyKey não
     const r2 = await adapter.sendText("5511999999999@s.whatsapp.net", "Oi", ctx);
     assertEquals(r1.ok, true);
     assertEquals(r2.ok, true);
-    assertEquals(fetchCount, 1);
+    // 1º envio: /contacts + /messages/text; 2º: só replay (sem fetch)
+    assertEquals(fetchCount, 2);
   } finally {
     globalThis.fetch = origFetch;
   }

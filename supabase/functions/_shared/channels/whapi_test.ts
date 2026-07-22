@@ -143,8 +143,34 @@ Deno.test("whapi sendChoice: >3 opções usa texto numerado (não interactive)",
   const calls: Array<{ url: string; body: string }> = [];
   const origFetch = globalThis.fetch;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-    calls.push({ url: String(input), body: String(init?.body ?? "") });
-    return new Response("ok", { status: 200 });
+    const url = String(input);
+    const body = String(init?.body ?? "");
+    calls.push({ url, body });
+    // resolve-whatsapp-chat-id: POST /contacts
+    if (url.includes("/contacts")) {
+      let phones: string[] = [];
+      try {
+        phones = JSON.parse(body)?.blocking ?? JSON.parse(body)?.force_check ?? JSON.parse(body)?.contacts ?? [];
+      } catch { /* ignore */ }
+      // Aceita payload Whapi `{ contacts: string[] }`
+      try {
+        const parsed = JSON.parse(body);
+        phones = Array.isArray(parsed?.contacts) ? parsed.contacts : phones;
+      } catch { /* ignore */ }
+      const rows = (phones.length ? phones : ["5511999999999"]).map((p: string) => ({
+        input: String(p).replace(/\D/g, ""),
+        status: "valid",
+        wa_id: `${String(p).replace(/\D/g, "")}@s.whatsapp.net`,
+      }));
+      return new Response(JSON.stringify({ contacts: rows }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response(JSON.stringify({ message: { id: "wamid.test" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }) as typeof fetch;
 
   try {

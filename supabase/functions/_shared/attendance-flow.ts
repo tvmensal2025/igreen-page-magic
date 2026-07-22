@@ -48,7 +48,7 @@ const NAME_ASK_TEXT =
 
 export interface SendWelcomeResult {
   ok: boolean;
-  skipped?: "already_sent" | "no_phone";
+  skipped?: "already_sent" | "no_phone" | "already_in_funnel";
   code?: string;
   detail?: string;
   protocol?: string;
