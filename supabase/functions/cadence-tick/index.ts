@@ -574,6 +574,68 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
   return { cust, consultantName, consultantPhone, assistantName, consultantGender };
 }
 
+/**
+ * Cross-channel suppression: se o telefone já foi reprovado pela operadora
+ * (IK/EK/CK/BK) em voz ou entregou UNDELIV ≥2x em SMS nas últimas 72h,
+ * considera "canal morto" e sugere pular. Retorna { block, reason, dnc_reason }.
+ *
+ * Isso complementa o guard de voz existente para também proteger o SMS
+ * (e vice-versa: SMS morto também bloqueia voz). O objetivo é não queimar
+ * saldo em números WhatsApp-only.
+ */
+async function checkPhoneDeadForChannel(
+  supabase: any,
+  opts: { consultantId: string; phoneCandidates: string[]; channel: "voice" | "sms" },
+): Promise<{ block: boolean; reason?: string; dnc_reason?: string }> {
+  const { consultantId, phoneCandidates, channel } = opts;
+  if (!consultantId || phoneCandidates.length === 0) return { block: false };
+
+  // 1) Lista Não Perturbe (fonte auto do webhook Velip / guard prévio / SMS UNDELIV).
+  const { data: dnc } = await supabase
+    .from("voice_dnc_list")
+    .select("reason, source")
+    .eq("consultant_id", consultantId)
+    .in("phone", phoneCandidates)
+    .limit(3);
+  const dncRow = (dnc as { reason: string | null; source: string | null }[] | null)?.[0] ?? null;
+  if (dncRow) {
+    return { block: true, reason: `dnc:${dncRow.source || "unknown"}`, dnc_reason: dncRow.reason || undefined };
+  }
+
+  // 2) Voz reprovada — bloqueia próximas ligações E SMS.
+  const { data: calls } = await supabase
+    .from("voice_call_logs")
+    .select("velip_status")
+    .eq("consultant_id", consultantId)
+    .in("to_phone", phoneCandidates)
+    .in("velip_status", ["IK", "EK", "CK", "BK", "ik", "ek", "ck", "bk"])
+    .limit(1);
+  if ((calls as unknown[] | null)?.length) {
+    return { block: true, reason: "voice_reproved", dnc_reason: "auto_voice_reproved" };
+  }
+
+  // 3) SMS: ≥2 UNDELIV nas últimas 72h — número morto para SMS e provavelmente para voz.
+  const cutoff = new Date(Date.now() - 72 * 3600_000).toISOString();
+  const { data: sms } = await supabase
+    .from("voice_sms_log")
+    .select("id, delivery_status, status, error, created_at")
+    .eq("consultant_id", consultantId)
+    .in("phone", phoneCandidates)
+    .gte("created_at", cutoff)
+    .limit(10);
+  const undelivCount = ((sms as { delivery_status: string | null; status: string | null; error: string | null }[] | null) || [])
+    .filter((r) => {
+      const s = String(r.delivery_status || "").toUpperCase();
+      return /^(UNDELIV|REJECTD|EXPIRED|DELETED|UNKNOWN)$/.test(s) || String(r.error || "").toUpperCase() === "UNDELIV";
+    }).length;
+  if (undelivCount >= 2) {
+    return { block: true, reason: `sms_undeliv:${undelivCount}`, dnc_reason: "auto_sms_undeliv" };
+  }
+
+  return { block: false };
+}
+
+
 async function dispatchVoiceCall(
   supabase: any, row: any, stage: Stage, cfg: StageConfig,
 ): Promise<DispatchResult> {
