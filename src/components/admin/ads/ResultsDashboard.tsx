@@ -280,11 +280,11 @@ export function ResultsDashboard({
 
       <CampaignExperimentCard consultantId={consultantId} />
 
-      {/* Explicação clara: Click vs Lead vs Cliente */}
+      {/* Explicação clara: Click → conversa Meta → cliente aprovado */}
       <CostExplainerCard
         spendCents={totals.spend}
         clicks={totals.clicks}
-        leads={filteredContactCount}
+        leads={totals.conversations}
         approved={filteredApprovedCount}
       />
 
@@ -299,7 +299,7 @@ export function ResultsDashboard({
       {/* Saúde geral + insights da IA */}
       <HealthSummaryCard
         spend_cents={totals.spend}
-        leads={filteredContactCount}
+        leads={totals.conversations}
         impressions={totals.impressions}
         registrations={filteredApprovedCount}
       />
@@ -430,7 +430,18 @@ export function ResultsDashboard({
                   <td className="text-right font-mono">{c.approved}</td>
                   <td className="text-right font-mono">{c.cost_per_conversation_cents > 0 ? `R$ ${(c.cost_per_conversation_cents / 100).toFixed(2)}` : "—"}</td>
                   <td className="text-right font-mono">{c.cost_per_contact_cents > 0 ? `R$ ${(c.cost_per_contact_cents / 100).toFixed(2)}` : "—"}</td>
-                  <td><Badge variant="outline" className="text-[10px]">{c.status}</Badge></td>
+                  <td>
+                    <Badge variant="outline" className="text-[10px]">
+                      {{
+                        active: "Ativa",
+                        paused: "Pausada",
+                        pending_review: "Em revisão",
+                        rejected: "Rejeitada",
+                        completed: "Concluída",
+                        draft: "Rascunho",
+                      }[c.status] || c.status}
+                    </Badge>
+                  </td>
                 </tr>
               ))}
             </tbody>

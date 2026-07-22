@@ -38,9 +38,9 @@ fi
 
 # Preferir OAuth hosted no Cursor (URL) — menos vermelho que stdio+npx.
 # PAT fica disponível no .env para CLI/supabase scripts.
-python3 - "${OUT}" "${ROOT}" "${PROJECT_REF}" "${MCP_PATH}" "${HOME_DIR}" "${VELIP_URL}" "${VELIP_MCP_TOKEN:-}" "${DATABASE_URI:-}" "${FIRECRAWL_API_KEY:-}" <<'PY'
+python3 - "${OUT}" "${ROOT}" "${PROJECT_REF}" "${MCP_PATH}" "${HOME_DIR}" "${VELIP_URL}" "${VELIP_MCP_TOKEN:-}" "${DATABASE_URI:-}" "${FIRECRAWL_API_KEY:-}" "${TESTSPRITE_API_KEY:-}" <<'PY'
 import json, sys
-out, root, project_ref, mcp_path, home, velip_url, velip_token, database_uri, firecrawl = sys.argv[1:10]
+out, root, project_ref, mcp_path, home, velip_url, velip_token, database_uri, firecrawl, testsprite = sys.argv[1:11]
 
 env_base = {
     "PATH": mcp_path,
@@ -112,7 +112,15 @@ if velip_token and "SEU_TOKEN" not in velip_token:
         "headers": {"Authorization": f"Bearer {velip_token}"},
     }
 
-# 10) Fallback Supabase PAT (stdio) — só se quiser forçar; mantemos também como supabase-pat
+# 10) TestSprite (análise/testes automatizados) — Node 22 via wrapper
+if testsprite and "<" not in testsprite and "your-api-key" not in testsprite:
+    servers["TestSprite"] = {
+        "command": "/usr/bin/bash",
+        "args": [f"{root}/scripts/mcp-testsprite.sh"],
+        "env": env_base,
+    }
+
+# 11) Fallback Supabase PAT (stdio) — só se quiser forçar; mantemos também como supabase-pat
 # Não adicionamos por padrão para evitar conflito com OAuth.
 
 payload = {"mcpServers": servers}

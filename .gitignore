@@ -61,3 +61,9 @@ test-results/
 
 # Supabase CLI temp/cache
 supabase/.temp/
+
+# TestSprite local artifacts
+testsprite_tests/
+
+
+testsprite_tests/tmp/config.json

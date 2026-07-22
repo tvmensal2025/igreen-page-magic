@@ -4,6 +4,9 @@
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+import { resolveCampaignEffectiveStatus } from "../_shared/campaign-effective-status.ts";
+import { isConsultantLocked } from "../_shared/campaign-pause.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 
 const corsHeaders = {
@@ -51,10 +54,10 @@ Deno.serve(async (req) => {
     // padrão de facebook-sync-ad-creatives), OU consultor autenticado pedindo
     // sync das próprias campanhas. Sem isso o cron 6h enfileira HTTP mas a
     // função responde 401 e a carteira/métricas ficam congeladas.
+    // Cron: JWT service_role (role no payload OU chave exata) OU só `apikey`.
     const authHeader = req.headers.get("Authorization") || "";
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     const isCron =
-      authHeader === `Bearer ${serviceRole}` ||
+      isServiceRoleAuth(req) ||
       (!authHeader && !!req.headers.get("apikey"));
     if (!isCron) {
       const auth = await authConsultant(req);
@@ -78,7 +81,7 @@ Deno.serve(async (req) => {
     const lowAlertCents = Number(pSettings?.low_balance_alert_cents ?? 2000);
     let campaignsQuery = admin
       .from("facebook_campaigns")
-      .select("id, consultant_id, fb_campaign_id, fb_adset_ids, daily_budget_cents, status, started_at, end_time_utc")
+      .select("id, consultant_id, fb_campaign_id, fb_adset_ids, fb_ad_ids, daily_budget_cents, status, started_at, end_time_utc, rejection_reason")
       .in("status", ["active", "paused", "pending_review"]);
     if (consultantFilter) campaignsQuery = campaignsQuery.eq("consultant_id", consultantFilter);
     const { data: campaigns } = await campaignsQuery;
@@ -210,8 +213,9 @@ Deno.serve(async (req) => {
           const spend = Math.round(parseFloat(row.spend || "0") * 100);
           // `leads` permanece híbrido apenas para compatibilidade legada.
           const hybridLeads = leadsDirect > 0 ? leadsDirect : conv;
-          // Consumidores analíticos usam exclusivamente lead direto no CPL.
-          const cpl = leadsDirect > 0 ? Math.round(spend / leadsDirect) : 0;
+          // CPL operacional: lead form se existir; senão conversa CTWA (padrão WhatsApp).
+          const cplDenom = leadsDirect > 0 ? leadsDirect : conv;
+          const cpl = cplDenom > 0 ? Math.round(spend / cplDenom) : 0;
           // Totais preservam os sinais crus, sem misturar conversa com lead.
           totalSpend += spend; totalLeads += Number(leadsDirect); totalConv += Number(conv);
           maxFreq = Math.max(maxFreq, parseFloat(row.frequency || "0"));
@@ -401,6 +405,44 @@ Deno.serve(async (req) => {
           }
         } catch (be) { console.error("[fb-sync] budget sync failed", c.id, (be as Error).message); }
 
+        // Reconcilia status local ← Meta (só leitura). Não sobrescreve pausa/stop manual.
+        // Permite pending_review → active quando há ≥1 ad ACTIVE (ads pausados de propósito ok).
+        try {
+          if (
+            c.status === "pending_review" &&
+            !isConsultantLocked((c as any).rejection_reason) &&
+            c.fb_campaign_id
+          ) {
+            const adsetIds = Array.isArray((c as any).fb_adset_ids) ? ((c as any).fb_adset_ids as string[]) : [];
+            const adIds = Array.isArray((c as any).fb_ad_ids) ? ((c as any).fb_ad_ids as string[]) : [];
+            const [campaignState, ...children] = await Promise.all([
+              fbFetch(`${FB_GRAPH}/${c.fb_campaign_id}?fields=effective_status,configured_status,issues_info&access_token=${token}`),
+              ...adsetIds.map((id) =>
+                fbFetch(`${FB_GRAPH}/${id}?fields=effective_status,configured_status,issues_info&access_token=${token}`).catch(() => null)
+              ),
+              ...adIds.map((id) =>
+                fbFetch(`${FB_GRAPH}/${id}?fields=effective_status,configured_status,issues_info&access_token=${token}`).catch(() => null)
+              ),
+            ]);
+            const resolved = resolveCampaignEffectiveStatus(
+              campaignState,
+              children.slice(0, adsetIds.length).map((item) => item || { effective_status: "UNKNOWN" }),
+              children.slice(adsetIds.length).map((item) => item || { effective_status: "UNKNOWN" }),
+            );
+            if (resolved.localStatus === "active" || resolved.localStatus === "rejected") {
+              await admin.from("facebook_campaigns").update({
+                status: resolved.localStatus,
+                rejection_reason: resolved.localStatus === "rejected"
+                  ? (resolved.issues.join(" • ") || "Meta sinalizou problema na campanha")
+                  : null,
+                updated_at: new Date().toISOString(),
+              }).eq("id", c.id);
+              console.info(`[fb-sync] status reconciled ${c.fb_campaign_id}: pending_review → ${resolved.localStatus}`);
+            }
+          }
+        } catch (se) {
+          console.warn("[fb-sync] status reconcile failed", c.id, (se as Error).message);
+        }
 
         // Sinais analíticos mantêm leads diretos e conversas separados.
         // Nenhum deles causa pausa por desempenho.

@@ -186,8 +186,31 @@ Estes seis servidores já estão no `.cursor/mcp.json` ativo:
 | `context7` | ✅ Ativo | Docs atualizadas (sem auth) |
 | `postgres` | ⚠️ Falta `DATABASE_URI` | Diagnóstico de performance — read-only; preencha `.env.mcp.local` |
 | `analyzer` | ✅ Ativo | Ruff + Vulture (Python) via `uvx` |
+| `TestSprite` | ⚠️ Falta `TESTSPRITE_API_KEY` | Análise + testes automatizados na cloud |
 
-> Reload Window depois de editar o `.env.mcp.local` pra o `postgres` subir.
+> Reload Window depois de editar o `.env.mcp.local` pra o `postgres` / `TestSprite` subir.
+
+### TestSprite MCP
+
+Análise de código + geração/execução de testes na cloud do TestSprite.
+
+1. Crie conta e gere a API key: https://www.testsprite.com/dashboard/settings/apikey
+2. Em `.env.mcp.local` (gitignored):
+
+```env
+TESTSPRITE_API_KEY=sua-key-aqui
+```
+
+3. Regenere e recarregue:
+
+```bash
+bash scripts/write-mcp-json.sh
+# Ctrl+Shift+P → Developer: Reload Window
+```
+
+4. No chat: *"Help me test this project with TestSprite"* ou *"analise este projeto com TestSprite"*
+
+**Nota:** o wrapper `scripts/mcp-testsprite.sh` usa Node 22 via nvm (o pacote exige `>=22`).
 
 **Figma:** o MCP `figma` vem do plugin Figma instalado no Cursor (não fica no
 `mcp.json` do projeto) — já está disponível, é só usar.

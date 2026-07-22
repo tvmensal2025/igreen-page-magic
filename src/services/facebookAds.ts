@@ -509,14 +509,18 @@ export async function getWalletFeed(consultantId: string, limit = 80): Promise<W
     if (dates.length) {
       const { data: daily } = await supabase
         .from("facebook_metrics_daily")
-        .select("campaign_id,date,impressions,clicks,leads")
+        .select("campaign_id,date,impressions,clicks,messaging_conversations_started,meta_lead_actions,leads")
         .in("campaign_id", campaignIds)
         .in("date", dates);
       for (const d of daily || []) {
+        const conv = Number((d as any).messaging_conversations_started || 0);
+        const metaLeads = Number((d as any).meta_lead_actions || 0);
+        const legacy = Number(d.leads || 0);
         dailyMap[pairKey(d.campaign_id as string, d.date as string)] = {
           impressions: Number(d.impressions || 0),
           clicks: Number(d.clicks || 0),
-          leads: Number(d.leads || 0),
+          // Preferir conversas CTWA; fallback lead form; último recurso coluna legado.
+          leads: conv > 0 ? conv : (metaLeads > 0 ? metaLeads : legacy),
         };
       }
     }

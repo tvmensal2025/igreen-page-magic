@@ -113,8 +113,8 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           label="2. Entrou no WhatsApp"
           count={leads}
           cost={cpl}
-          costLabel="Custo por LEAD (CPL)"
-          explanation="Pessoa que iniciou a conversa no seu WhatsApp. Vira um card 'Novo Cliente interessado' no seu CRM."
+          costLabel="Custo por conversa"
+          explanation="Conversas iniciadas reportadas pela Meta (CTWA). É o denominador certo do CPL operacional em anúncio de WhatsApp."
           accent="bg-primary/15 border-primary/40 text-primary"
         />
 
@@ -134,11 +134,12 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
       </div>
 
       <div className="mt-5 pt-4 border-t border-border/40 text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
-        <strong className="text-foreground">Como ler:</strong> os 7 contatos que você
-        mencionou entram como <strong className="text-primary">CLIENTE INTERESSADO</strong> (etapa 2).
-        Só viram <strong className="text-primary">cliente</strong> quando chegam em{" "}
-        <em>Aprovado</em> no funil. O <strong>CPL</strong> mostra o custo de cada
-        conversa; o <strong>CPA</strong>, o custo real de cada cliente fechado.
+        <strong className="text-foreground">Como ler:</strong> a etapa 2 usa{" "}
+        <strong className="text-primary">conversas Meta (CTWA)</strong>. Contatos no CRM
+        com prova de anúncio aparecem nos cards abaixo. Só viram{" "}
+        <strong className="text-primary">cliente</strong> quando chegam em{" "}
+        <em>Aprovado</em>. O <strong>custo/conversa</strong> é o CPL operacional; o{" "}
+        <strong>CPA</strong>, o custo de cada aprovado.
       </div>
     </Card>
   );

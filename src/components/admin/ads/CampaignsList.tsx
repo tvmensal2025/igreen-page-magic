@@ -202,7 +202,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           if (m.date === yesterdayKey) yestMap[m.campaign_id] = slice;
         });
         Object.values(agg).forEach(m => {
-          m.cost_per_lead_cents = m.meta_lead_actions > 0 ? Math.round(m.spend_cents / m.meta_lead_actions) : 0;
+          // CTWA: custo operacional = gasto ÷ conversas. Lead form fica separado.
+          const denom = m.messaging_conversations_started > 0
+            ? m.messaging_conversations_started
+            : m.meta_lead_actions;
+          m.cost_per_lead_cents = denom > 0 ? Math.round(m.spend_cents / denom) : 0;
         });
         setMetrics(agg);
         setTodayByCamp(todayMap);
@@ -323,7 +327,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
     } finally { setReactivating(null); }
   }
 
-  async function handleToggle(c: Campaign) {
+  async function handleToggle(c: Campaign, forcedAction?: "pause" | "activate") {
     if (c.status === "completed") {
       toast({
         title: "Campanha encerrada",
@@ -332,7 +336,9 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       });
       return;
     }
-    const action = c.status === "active" ? "pause" : "activate";
+    // Pause também em Em revisão (pending_review). Play só em paused.
+    const action: "pause" | "activate" = forcedAction
+      ?? (c.status === "active" || c.status === "pending_review" ? "pause" : "activate");
     setToggling(c.id);
     try {
       const { data, error } = await supabase.functions.invoke("facebook-toggle-campaign", {
@@ -351,7 +357,15 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         return;
       }
       const newStatus = (data as any)?.status || (action === "pause" ? "paused" : "active");
-      setItems((prev) => prev.map((x) => x.id === c.id ? { ...x, status: newStatus, rejection_reason: action === "activate" ? null : x.rejection_reason } : x));
+      setItems((prev) => prev.map((x) => x.id === c.id ? {
+        ...x,
+        status: newStatus,
+        rejection_reason: action === "activate"
+          ? null
+          : (action === "pause"
+            ? "MANUAL_PAUSE: Pausada pelo consultor — só reativa com clique"
+            : x.rejection_reason),
+      } : x));
       toast({
         title: action === "pause"
           ? "Campanha pausada"
@@ -361,7 +375,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               ? "Meta sinalizou uma pendência"
               : "Ativação enviada à Meta",
         description: action === "pause"
-          ? "Pausa sincronizada com a Meta."
+          ? "Pausa sincronizada com a Meta. Use Play para voltar."
           : newStatus === "active"
             ? "A Meta confirmou a campanha como ativa."
             : "A campanha está em análise ou processamento. Atualize o status em alguns minutos.",
@@ -384,7 +398,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const metaWarn = (data as any)?.meta_error;
       if (metaWarn || (data as any)?.ok === false) {
         toast({
-          title: "Não encerrou na Meta",
+          title: "Não cancelou na Meta",
           description: metaWarn || (data as any)?.error || "Status local preservado.",
           variant: "destructive",
         });
@@ -398,11 +412,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         ended_at: x.ended_at && new Date(x.ended_at).getTime() <= Date.now() ? x.ended_at : endedAt,
       } : x));
       toast({
-        title: "Campanha encerrada",
+        title: "Anúncio cancelado",
         description: "Parceiros avisados. Leads seguem sendo trabalhados. Para voltar, use Estender.",
       });
     } catch (e: any) {
-      toast({ title: "Falha ao encerrar", description: e?.message || "Erro", variant: "destructive" });
+      toast({ title: "Falha ao cancelar anúncio", description: e?.message || "Erro", variant: "destructive" });
     } finally {
       setToggling(null);
       setConfirmStop(null);
@@ -569,33 +583,49 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                {(c.status === "active" || c.status === "paused") && c.fb_campaign_id && (
-                  <>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={() => handleToggle(c)}
-                      disabled={toggling === c.id}
-                      aria-label={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
-                      title={c.status === "active" ? "Pausar campanha" : "Ativar campanha"}
-                    >
-                      {toggling === c.id
-                        ? <Loader2 className="w-4 h-4 animate-spin" />
-                        : c.status === "active" ? <Pause className="w-4 h-4 text-warning" /> : <Play className="w-4 h-4 text-primary" />}
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-8 w-8"
-                      onClick={() => setConfirmStop(c)}
-                      disabled={toggling === c.id}
-                      aria-label="Encerrar campanha"
-                      title="Encerrar campanha (Stop)"
-                    >
-                      <Square className="w-3.5 h-3.5 fill-current text-destructive" />
-                    </Button>
-                  </>
+                {/* Pause: Ativa ou Em revisão. Play: só Pausada. Encerrar: Ativa/Pausada/Em revisão/Rejeitada. */}
+                {c.fb_campaign_id && (c.status === "active" || c.status === "pending_review") && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => void handleToggle(c, "pause")}
+                    disabled={toggling === c.id}
+                    aria-label="Pausar anúncio"
+                    title="Pausar anúncio (pode voltar com Play)"
+                  >
+                    {toggling === c.id
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Pause className="w-4 h-4 text-warning" />}
+                  </Button>
+                )}
+                {c.fb_campaign_id && c.status === "paused" && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => void handleToggle(c, "activate")}
+                    disabled={toggling === c.id}
+                    aria-label="Ativar anúncio"
+                    title="Ativar anúncio (Play)"
+                  >
+                    {toggling === c.id
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Play className="w-4 h-4 text-primary" />}
+                  </Button>
+                )}
+                {c.fb_campaign_id && (c.status === "active" || c.status === "paused" || c.status === "pending_review" || c.status === "rejected") && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setConfirmStop(c)}
+                    disabled={toggling === c.id}
+                    aria-label="Cancelar anúncio"
+                    title="Cancelar anúncio (encerra de vez — não apaga o histórico)"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current text-destructive" />
+                  </Button>
                 )}
                 {c.fb_campaign_id && (
                   <Button
@@ -675,9 +705,13 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
-                label="Custo/lead Meta"
-                value={m.meta_lead_actions > 0 ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}` : "—"}
-                tooltip="Gasto dividido apenas pelos eventos de lead reportados pela Meta."
+                label="Custo/conversa"
+                value={
+                  (m.messaging_conversations_started > 0 || m.meta_lead_actions > 0)
+                    ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}`
+                    : "—"
+                }
+                tooltip="Gasto ÷ conversas iniciadas na Meta (CTWA). Se não houver conversa, usa leads de formulário Meta."
               />
             </div>
             {hasDayActivity && (
@@ -747,20 +781,26 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       <AlertDialog open={!!confirmStop} onOpenChange={(o) => !o && setConfirmStop(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Encerrar campanha?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmStop?.name}
-              <br />
-              Encerra de vez (status Concluída). Os anúncios param na Meta e os parceiros do rodízio recebem a mensagem “Missão cumprida”. Os leads que já chegaram continuam sendo trabalhados. Para voltar a anunciar, use Estender — o Play não reativa.
+            <AlertDialogTitle>Cancelar anúncio?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">{confirmStop?.name}</p>
+                <p>
+                  Encerra de vez (status Concluída): para de gastar na Meta, avisa os parceiros do rodízio (“Missão cumprida”) e mantém o histórico e os leads.
+                </p>
+                <p>
+                  Isto <strong className="font-medium text-foreground">não é Excluir</strong> — não apaga a campanha do sistema. Para voltar a anunciar depois, use Estender (o Play não reativa).
+                </p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirmStop && void handleStop(confirmStop)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Encerrar agora
+              Cancelar anúncio agora
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

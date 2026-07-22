@@ -73,9 +73,10 @@ Deno.serve(async (req) => {
     if (campaignId) {
       const { data: leads } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, conversation_step, status, created_at, source_campaign_id")
+        .select("id, name, phone_whatsapp, conversation_step, status, created_at, source_campaign_id, source_ad_id, ctwa_clid, source_ctwa_clid")
         .eq("consultant_id", consultantId)
         .eq("source_campaign_id", campaignId)
+        .or("source_ad_id.not.is.null,ctwa_clid.not.is.null,source_ctwa_clid.not.is.null")
         .gte("created_at", from.toISOString())
         .lt("created_at", to.toISOString())
         .order("created_at", { ascending: false })
@@ -88,6 +89,7 @@ Deno.serve(async (req) => {
         .select("id", { count: "exact", head: true })
         .eq("consultant_id", consultantId)
         .eq("source_campaign_id", campaignId)
+        .or("source_ad_id.not.is.null,ctwa_clid.not.is.null,source_ctwa_clid.not.is.null")
         .gte("created_at", from.toISOString())
         .lt("created_at", to.toISOString());
 
@@ -132,17 +134,20 @@ Deno.serve(async (req) => {
 
     const campaignIds = (campaigns as any[]).map((c) => c.id);
 
-    // Leads recebidos por campanha (1 query)
+    // Leads recebidos por campanha — só com prova Meta (AD id / CTWA)
     const { data: leadsAgg } = await supabase
       .from("customers")
-      .select("source_campaign_id, status")
+      .select("source_campaign_id, status, source_ad_id, ctwa_clid, source_ctwa_clid")
       .eq("consultant_id", consultantId)
       .in("source_campaign_id", campaignIds)
+      .or("source_ad_id.not.is.null,ctwa_clid.not.is.null,source_ctwa_clid.not.is.null")
       .gte("created_at", from.toISOString())
       .lt("created_at", to.toISOString());
 
     const leadCount = new Map<string, { received: number; converted: number }>();
     for (const l of (leadsAgg as any[]) || []) {
+      const proven = !!(l.source_ad_id || l.ctwa_clid || l.source_ctwa_clid);
+      if (!proven) continue;
       const cid = l.source_campaign_id;
       if (!leadCount.has(cid)) leadCount.set(cid, { received: 0, converted: 0 });
       const entry = leadCount.get(cid)!;

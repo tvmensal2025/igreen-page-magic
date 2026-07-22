@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Loader2, Filter as FilterIcon } from "lucide-react";
+import { META_CAMPAIGN_PROOF_OR } from "@/lib/metaCampaignProof";
 
 interface Props {
   consultantId: string;
@@ -37,8 +38,8 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 /**
- * Funil visual: mostra quantos leads estão em cada estágio do CRM
- * e o custo por lead em cada etapa (gasto ÷ leads naquela etapa).
+ * Funil visual: deals CRM com prova Meta (AD id / CTWA) + custo por etapa
+ * (gasto Ads ÷ quantidade naquela etapa). Não mistura lead orgânico/indicação.
  */
 export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props) {
   const [loading, setLoading] = useState(true);
@@ -50,7 +51,6 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
       setLoading(true);
       const since = new Date(Date.now() - periodDays * 86_400_000).toISOString();
 
-      // 1) buscar estágios do consultor (com fallback para defaults)
       const { data: stagesData } = await supabase
         .from("kanban_stages")
         .select("stage_key, label, position")
@@ -68,17 +68,27 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
             }));
       setStages(stagesList);
 
-      // 2) contar deals/leads em cada estágio (de WhatsApp + período)
-      const { data: dealsData } = await supabase
-        .from("crm_deals")
-        .select("stage")
+      // Só deals cujo customer tem prova Meta (AD id / ctwa).
+      const { data: provenCustomers } = await supabase
+        .from("customers")
+        .select("id")
         .eq("consultant_id", consultantId)
+        .or(META_CAMPAIGN_PROOF_OR)
         .gte("created_at", since);
 
+      const provenIds = (provenCustomers || []).map((c: any) => c.id as string);
       const counts: Record<string, number> = {};
-      (dealsData || []).forEach((d: any) => {
-        if (d.stage) counts[d.stage] = (counts[d.stage] || 0) + 1;
-      });
+      if (provenIds.length) {
+        const { data: dealsData } = await supabase
+          .from("crm_deals")
+          .select("stage, customer_id")
+          .eq("consultant_id", consultantId)
+          .in("customer_id", provenIds)
+          .gte("created_at", since);
+        (dealsData || []).forEach((d: any) => {
+          if (d.stage) counts[d.stage] = (counts[d.stage] || 0) + 1;
+        });
+      }
       setCountsByStage(counts);
       setLoading(false);
     })();
@@ -105,15 +115,15 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
         <div>
           <h3 className="ads-heading font-bold text-base text-foreground flex items-center gap-2">
             <FilterIcon className="w-4 h-4 text-primary" />
-            Funil de conversão com custos
+            Funil Meta com custos
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Onde estão seus {totalLeads} leads e quanto custou cada etapa nos últimos{" "}
+            Só contatos com prova de anúncio (AD/CTWA). {totalLeads} no funil · últimos{" "}
             {periodDays} dias
           </p>
         </div>
         <div className="text-right">
-          <div className="text-[10px] uppercase text-muted-foreground">Gasto no período</div>
+          <div className="text-[10px] uppercase text-muted-foreground">Gasto Ads no período</div>
           <div className="text-sm font-bold font-mono text-foreground">
             R$ {spend.toFixed(2)}
           </div>
@@ -122,8 +132,8 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
 
       {totalLeads === 0 ? (
         <div className="text-center py-10 text-sm text-muted-foreground">
-          Nenhum cliente interessado no período. Quando os contatos começarem a entrar pelo WhatsApp,
-          o funil aparece aqui automaticamente.
+          Nenhum contato com prova Meta no período. Quando o AD ID / CTWA chegar junto com a
+          conversa, o funil aparece aqui.
         </div>
       ) : (
         <div className="space-y-2">
@@ -156,7 +166,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
 
                   <div className="w-24 sm:w-28 shrink-0 text-right">
                     <div className="text-[10px] text-muted-foreground">
-                      {s.stage_key === "aprovado" ? "CPA" : "custo/lead"}
+                      {s.stage_key === "aprovado" ? "CPA" : "custo/contato"}
                     </div>
                     <div className="text-xs font-mono font-bold text-foreground">
                       {costPerLead > 0 ? `R$ ${costPerLead.toFixed(2)}` : "—"}
@@ -170,10 +180,9 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
       )}
 
       <div className="mt-4 pt-4 border-t border-border/40 text-[11px] text-muted-foreground">
-        <strong className="text-foreground">CPL</strong> = custo de cada cliente interessado que entrou
-        no WhatsApp · <strong className="text-foreground">CPA</strong> = custo real de
-        cada cliente aprovado. Quanto mais cedo no funil, mais barato; quanto mais perto
-        de "Aprovado", mais caro (porque menos pessoas chegam lá).
+        <strong className="text-foreground">Custo/contato</strong> = gasto Ads ÷ contatos Meta
+        na etapa · <strong className="text-foreground">CPA</strong> = custo por aprovado.
+        Indicação e orgânico ficam de fora deste funil.
       </div>
     </Card>
   );
