@@ -758,6 +758,28 @@ async function dispatchSMS(
     return { ok: false, detail: "sms_skip_landline", permanent: true };
   }
 
+  // Cross-channel: se voz reprovou (IK/EK/CK/BK) ou este SMS já falhou 2×+
+  // com UNDELIV/REJECTD, é número morto → não gasta saldo.
+  const destAlt = stripVelipNinthDigit(dest);
+  const smsPhoneCandidates = [...new Set([dest, destAlt, cust.phone_whatsapp].filter(Boolean))] as string[];
+  const crossSms = await checkPhoneDeadForChannel(supabase, {
+    consultantId: row.consultant_id,
+    phoneCandidates: smsPhoneCandidates,
+    channel: "sms",
+  });
+  if (crossSms.block) {
+    try {
+      await supabase.from("voice_dnc_list").upsert({
+        consultant_id: row.consultant_id,
+        phone: dest,
+        reason: crossSms.dnc_reason || "auto_cross_channel",
+        source: "cadence_guard",
+      }, { onConflict: "consultant_id,phone" });
+    } catch (_e) { /* ignore */ }
+    return { ok: false, detail: `phone_dead:${crossSms.reason}`, permanent: true };
+  }
+
+
   const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
   let rawTpl = cfg.message_text || "";
   let themeId: string | undefined;
