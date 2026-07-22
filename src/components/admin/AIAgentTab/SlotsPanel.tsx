@@ -5,6 +5,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { SlotCard, type SlotRow, type SlotMedia } from "./SlotCard";
 import { AudioRecorderInline } from "./AudioRecorderInline";
 
@@ -293,7 +296,7 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-border">
           <h2 className="font-heading font-bold text-lg text-foreground flex items-center gap-2">
@@ -363,19 +366,22 @@ function SuperAdminSlotsModal({ onClose }: { onClose: () => void }) {
                     </>
                   )}
                   <div className="flex flex-wrap gap-2 items-center">
-                    <select
-                      className="text-xs px-2 py-1 rounded border border-border bg-background min-w-[220px]"
-                      value=""
-                      onChange={(e) => {
-                        if (!e.target.value) return;
-                        selectExistingVideo(s.slot_key, e.target.value);
+                    <Select
+                      key={`video-pick-${s.slot_key}-${s.video_url || "none"}`}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        selectExistingVideo(s.slot_key, v);
                       }}
                     >
-                      <option value="">🎬 Selecionar vídeo já enviado…</option>
-                      {availableVideos.map((video) => (
-                        <option key={video.id} value={video.id}>{video.label}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger className="text-xs h-8 min-w-[220px]">
+                        <SelectValue placeholder="🎬 Selecionar vídeo já enviado…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableVideos.map((video) => (
+                          <SelectItem key={video.id} value={video.id}>{video.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <label className="inline-flex items-center gap-2 text-xs px-2 py-1 rounded border border-border bg-background hover:bg-muted cursor-pointer">
                       📤 Enviar vídeo novo
                       <input type="file" accept="video/*" className="hidden"

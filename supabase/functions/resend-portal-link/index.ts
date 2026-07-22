@@ -41,7 +41,7 @@ Deno.serve(async (req) => {
 
     const { data: customer, error: ce } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, link_facial, link_assinatura, portal2_contract_link, igreen_link, consultant_id")
+      .select("id, name, phone_whatsapp, whatsapp_chat_id, link_facial, link_assinatura, portal2_contract_link, igreen_link, consultant_id")
       .eq("id", customerId)
       .maybeSingle();
     if (ce || !customer) return json({ ok: false, error: "customer_not_found" }, 404);
@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
       (customer as any).igreen_link;
     if (!link) return json({ ok: false, error: "no_link_yet", message: "O link do portal ainda não foi gerado para este cliente." }, 409);
 
-    const digits = String(customer.phone_whatsapp || "").replace(/\D/g, "");
+    const digits = String((customer as any).whatsapp_chat_id || customer.phone_whatsapp || "").replace(/\D/g, "");
     if (!digits) return json({ ok: false, error: "no_phone" }, 400);
 
     const suppression = await assertCanContact(supabase, {

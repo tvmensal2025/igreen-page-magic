@@ -397,7 +397,7 @@ function DetailModal({ member, onClose, allMembers, onSaved }: { member: Network
   const initials = member.name.split(" ").filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md" onClick={onClose}>
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/60 backdrop-blur-md" onClick={onClose}>
       <div
         className="relative bg-card/95 backdrop-blur-xl border border-white/10 rounded-3xl shadow-2xl shadow-black/50
           w-[400px] max-w-[92vw] max-h-[88vh] overflow-y-auto

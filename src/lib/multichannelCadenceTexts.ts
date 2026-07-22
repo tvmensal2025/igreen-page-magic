@@ -24,11 +24,13 @@ function tplReplace(text: string, needle: string, value: string): string {
 
 /**
  * Abertura oficial — áudio WA (corpo fixo A2).
- * Concordância do consultor: {{do_da_consultor}} / {{gestor_a}} (Dados → gender).
+ * Concordância do consultor: {{do_da_consultor}} (Dados → gender).
+ * Sem cargo "gestor" — o consultor pode ser qualquer nível (não só admin).
+ * {{gestor_a}} ainda resolve (legado) → string vazia.
  * Gênero do lead (bem-vindo/bem-vinda) fica só nos corpos A2 M/F abaixo.
  */
 export const SOFIA_OPENING =
-  "Eu sou a {{assistente}}, assistente virtual {{do_da_consultor}} {{consultor}}, {{gestor_a}} da iGreen.";
+  "Eu sou a {{assistente}}, assistente virtual {{do_da_consultor}} {{consultor}} da iGreen.";
 
 /**
  * Ligação GRAVADA (MakeTTSCall / clip) — NÃO é conversa ao vivo.
@@ -863,7 +865,8 @@ export type CadenceBodyRenderOpts = {
   assistente?: string;
   /**
    * Gênero do representante (Dados → gender).
-   * Resolve {{do_da_consultor}} / {{gestor_a}}. Default: consultor (do / gestor).
+   * Resolve {{do_da_consultor}}. Default: consultor (do).
+   * {{gestor_a}} legado → vazio (não rotular como gestor).
    */
   consultorGender?: "consultor" | "consultora";
   /** Frases da aba Disponibilidade (lib.bodies). */
@@ -913,7 +916,6 @@ export function renderCadenceBody(
   const assistente = String(opts.assistente || "").trim() || "Sofia";
   const isConsultora = opts.consultorGender === "consultora";
   const doDaConsultor = isConsultora ? "da" : "do";
-  const gestorA = isConsultora ? "gestora" : "gestor";
   // abertura_sofia primeiro (injeta {{assistente}}/{{consultor}}); depois resolve identidade.
   return [
     ["{{nome}}", nome],
@@ -934,13 +936,19 @@ export function renderCadenceBody(
     ["{{representante}}", consultor || "{{representante}}"],
     ["{{assistente}}", assistente],
     ["{{do_da_consultor}}", doDaConsultor],
-    ["{{gestor_a}}", gestorA],
+    // Legado: templates antigos com {{gestor_a}} — não chamar de gestor.
+    ["{{gestor_a}}", ""],
     ["{{bem_vindo}}", g.bem_vindo],
     ["{{o_a}}", g.o_a],
     ["{{do_da}}", g.do_da],
     ["{{ao_a}}", g.ao_a],
     ["{{querido_a}}", g.querido_a],
-  ].reduce((acc, [k, v]) => tplReplace(acc, k, v), body);
+  ].reduce((acc, [k, v]) => tplReplace(acc, k, v), body)
+    // Legado sem {{gestor_a}}: "…,  da iGreen" → "… da iGreen"
+    .replace(/,\s+da iGreen/gi, " da iGreen")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /**
@@ -1626,9 +1634,15 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     canGenerateAudio: false,
     notes:
       "Texto que o motor envia na fatia Retomada. Salva em cadence_stage_config (A_NUDGE). Não cria passo no construtor.",
-    body: `Oi {{nome}}, aqui é da *iGreen*.
+    // Neutro (sem "o/a"): serve consultor e consultora. Nome/IA vêm do consultor do lead.
+    body: `*Oi, {{nome}}*! Aqui é *{{consultor}}* da *iGreen* ⚡
 
-Vi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`,
+Todo mês a *conta de luz chega*… e muitas pessoas só descobrem depois que estavam *pagando mais* do que precisavam.
+
+Você chegou a *iniciar sua simulação*, mas não finalizamos.
+*Vamos continuar* de onde paramos?
+
+*Me confirma* seu primeiro nome para eu *seguir com o atendimento?* 😊`,
   },
   {
     key: "a_nudge_sms",

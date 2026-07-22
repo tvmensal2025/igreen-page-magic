@@ -33,12 +33,14 @@ interface MessageComposerProps {
   customerId?: string;
   customerJid?: string;
   customerName?: string;
+  /** Esconde a barra de passos rápidos quando o painel Captação já mostra CaptureStepsGrid. */
+  hideFlowQuickBar?: boolean;
 }
 
 const TOOL_BTN = "h-9 w-9 lg:h-8 lg:w-8 shrink-0 text-muted-foreground hover:text-primary";
 const SEND_BTN = "h-11 w-11 lg:h-8 lg:w-8 shrink-0 bg-primary hover:bg-primary/90 disabled:opacity-50";
 
-export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMedia, templates, disabled, initialMessage, consultantId, customerId, customerJid, customerName }: MessageComposerProps) {
+export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMedia, templates, disabled, initialMessage, consultantId, customerId, customerJid, customerName, hideFlowQuickBar = false }: MessageComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [showQuickReply, setShowQuickReply] = useState(false);
@@ -148,7 +150,9 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
       >
         <MessageSquareText className="h-4 w-4" />
       </Button>
-      <FlowQuickBar consultantId={consultantId} customerId={customerId} customerName={customerName} disabled={disabled} />
+      {!hideFlowQuickBar && (
+        <FlowQuickBar consultantId={consultantId} customerId={customerId} customerName={customerName} disabled={disabled} />
+      )}
       {consultantId && onSendAudioUrl && (
         <VoiceTemplatePicker
           consultantId={consultantId}

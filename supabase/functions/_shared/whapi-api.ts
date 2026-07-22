@@ -16,6 +16,7 @@ import {
   recordOutboundResult,
   type AcquireOutboundSlotInput,
 } from "./idempotency.ts";
+import { resolveWhatsAppChatId } from "./resolve-whatsapp-chat-id.ts";
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export interface WhapiIdempotencyOptions {
@@ -38,6 +39,32 @@ export interface WhapiButton {
  */
 export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whapi.cloud") {
   const url = baseUrl.replace(/\/$/, "");
+
+  /**
+   * Antes de qualquer POST /messages/*: resolve wa_id real (BR 9º dígito).
+   * invalid_whatsapp → não envia (evita pending eterno + falso "sent").
+   */
+  async function resolveDestination(
+    remoteJid: string,
+    idempotency?: WhapiIdempotencyOptions,
+  ): Promise<string | null> {
+    const resolved = await resolveWhatsAppChatId({
+      phoneOrJid: remoteJid,
+      apiToken,
+      baseUrl: url,
+      supabase: idempotency?.supabase,
+      customerId: idempotency?.customerId,
+    });
+    if (!resolved.ok) {
+      logStructured("error", "whapi_dest_unresolved", {
+        reason: resolved.reason,
+        detail: resolved.detail,
+        customer_id: idempotency?.customerId,
+      });
+      return null;
+    }
+    return resolved.chatId;
+  }
 
   async function withIdempotency(
     label: string,
@@ -94,13 +121,29 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     return ok;
   }
 
-  async function sendWithRetry(label: string, doSend: () => Promise<Response>, maxAttempts = 3): Promise<boolean> {
+  async function sendWithRetry(
+    label: string,
+    doSend: () => Promise<Response>,
+    maxAttempts = 3,
+  ): Promise<{ ok: boolean; messageId: string | null }> {
     let lastStatus = 0;
     let lastBody = "";
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const res = await doSend();
-        if (res.ok) return true;
+        if (res.ok) {
+          let messageId: string | null = null;
+          try {
+            const data = await res.clone().json();
+            messageId =
+              data?.message?.id ??
+              data?.id ??
+              data?.messages?.[0]?.id ??
+              null;
+            if (messageId != null) messageId = String(messageId);
+          } catch (_) { /* body não-json */ }
+          return { ok: true, messageId };
+        }
         lastStatus = res.status;
         lastBody = (await res.text()).substring(0, 200);
         if (res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429) break;
@@ -114,7 +157,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     captureError(new Error(`Whapi ${label} failed: ${lastBody}`), {
       tags: { function: "whapi-api", kind: label },
     });
-    return false;
+    return { ok: false, messageId: null };
   }
 
   const headers = {
@@ -142,7 +185,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
   ): Promise<boolean> {
     const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
     const whapiPresence = presence === "composing" ? "typing" : presence;
-    return sendWithRetry("send_presence", () =>
+    const r = await sendWithRetry("send_presence", () =>
       fetchWithTimeout(`${url}/presences/${encodeURIComponent(to)}`, {
         method: "PUT",
         headers,
@@ -150,6 +193,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         timeout: TIMEOUT_WHAPI,
       })
     );
+    return r.ok;
   }
 
   async function sendText(
@@ -157,16 +201,24 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     text: string,
     opts?: { typingSec?: number; idempotency?: WhapiIdempotencyOptions },
   ): Promise<boolean> {
-    return withIdempotency("send_text", opts?.idempotency, async () => {
-      // Whapi usa chatId no formato "5511999990001@s.whatsapp.net"
-      const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
-      // Anti-ban: aguarda o slot da fila espaçadora ANTES do envio real
-      // (fica após o pre-check de idempotência — replays não esperam fila).
+    const r = await sendTextDetailed(remoteJid, text, opts);
+    return r.ok;
+  }
+
+  async function sendTextDetailed(
+    remoteJid: string,
+    text: string,
+    opts?: { typingSec?: number; idempotency?: WhapiIdempotencyOptions },
+  ): Promise<{ ok: boolean; messageId: string | null }> {
+    let messageId: string | null = null;
+    const ok = await withIdempotency("send_text", opts?.idempotency, async () => {
+      const to = await resolveDestination(remoteJid, opts?.idempotency);
+      if (!to) return false;
       await awaitWhapiSendSlot(to, { kind: "send_text", supabase: opts?.idempotency?.supabase });
       const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
       const typing = opts?.typingSec ?? typingTimeFor(text);
       console.log(`📤 [whapi:sendText] -> ${to} (typing ${typing}s) | "${preview}${text.length > 60 ? "..." : ""}"`);
-      const ok = await sendWithRetry("send_text", () =>
+      const r = await sendWithRetry("send_text", () =>
         fetchWithTimeout(`${url}/messages/text`, {
           method: "POST",
           headers,
@@ -174,9 +226,11 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
           timeout: TIMEOUT_WHAPI + typing * 1000,
         })
       );
-      console.log(`${ok ? "✅" : "❌"} [whapi:sendText] resultado=${ok}`);
-      return ok;
+      messageId = r.messageId;
+      console.log(`${r.ok ? "✅" : "❌"} [whapi:sendText] resultado=${r.ok} id=${r.messageId ?? "-"}`);
+      return r.ok;
     });
+    return { ok, messageId };
   }
 
   async function sendButtons(
@@ -186,8 +240,8 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     idempotency?: WhapiIdempotencyOptions,
   ): Promise<boolean> {
     return withIdempotency("send_buttons", idempotency, async () => {
-      const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
-      // Anti-ban: fila espaçadora (mesma regra do sendText).
+      const to = await resolveDestination(remoteJid, idempotency);
+      if (!to) return false;
       await awaitWhapiSendSlot(to, { kind: "send_buttons", supabase: idempotency?.supabase });
       const safeButtons = buttons.slice(0, 3).map((b) => ({
         type: "quick_reply" as const,
@@ -196,7 +250,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       }));
 
       console.log(`📤 [whapi:sendButtons] -> ${to} (${safeButtons.length} botões: ${safeButtons.map(b => b.id).join(",")})`);
-      const ok = await sendWithRetry("send_buttons", () =>
+      const r = await sendWithRetry("send_buttons", () =>
         fetchWithTimeout(`${url}/messages/interactive`, {
           method: "POST",
           headers,
@@ -211,15 +265,14 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         })
       );
 
-      if (ok) {
-        console.log(`✅ [whapi:sendButtons] botões entregues`);
+      if (r.ok) {
+        console.log(`✅ [whapi:sendButtons] botões entregues id=${r.messageId ?? "-"}`);
         return true;
       }
 
-      // Fallback: texto numerado (sem re-acquire de idempotência)
       console.warn(`⚠️ [whapi:sendButtons] FALHOU -> caindo para texto numerado`);
       const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
-      return sendText(remoteJid, textWithOptions);
+      return sendText(to, textWithOptions);
     });
   }
 
@@ -229,8 +282,10 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     caption: string,
     mediatype: "video" | "image" | "document" | "audio" | "voice" = "video",
     durationSec?: number,
+    idempotency?: WhapiIdempotencyOptions,
   ): Promise<boolean> {
-    const to = remoteJid.includes("@") ? remoteJid : `${remoteJid}@s.whatsapp.net`;
+    const to = await resolveDestination(remoteJid, idempotency);
+    if (!to) return false;
     const isAudio = mediatype === "audio" || mediatype === "voice";
     const urlPreview = String(mediaUrl || "").slice(-60);
 
@@ -320,7 +375,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       label: string,
       path: string,
       jsonBody: Record<string, unknown>,
-    ): Promise<boolean | "timeout_optimistic"> => {
+    ): Promise<boolean> => {
       let last = "";
       let timedOut = false;
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -340,14 +395,14 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         }
         if (attempt < maxAttempts) await new Promise((r) => setTimeout(r, 300 * Math.pow(3, attempt - 1)));
       }
-      // Para vídeo/imagem grandes: se foi timeout, assumimos que o Whapi entregou
-      // e evitamos o fallback que duplicaria a mensagem no WhatsApp do lead.
+      // Timeout em mídia pesada: NÃO assumir entregue (falso sent).
+      // Caller pode retry; risco de duplicata é menor que marcar sent mentiroso.
       if (isHeavy && timedOut) {
-        logStructured("warn", "whapi_send_media_timeout_optimistic", {
+        logStructured("warn", "whapi_send_media_timeout_failed", {
           path, label, mediatype, last_error: last,
         });
-        console.warn(`⏳ [whapi:sendMedia] ${label} timeout em ${mediatype} — assumindo entregue (sem retry para não duplicar)`);
-        return "timeout_optimistic";
+        console.warn(`⏳ [whapi:sendMedia] ${label} timeout em ${mediatype} — tratando como falha`);
+        return false;
       }
       logStructured("warn", "whapi_send_media_attempt_failed", {
         path, label, mediatype, last_error: last,
@@ -370,16 +425,13 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         ? { to, media: dataUri }
         : { to, media: dataUri, caption };
       const r = await tryJsonSend(label, path, body);
-      return r === true || r === "timeout_optimistic";
+      return r === true;
     };
 
     const sendMultipart = async (path: string): Promise<boolean> => {
       const dl = await downloadMediaBytes();
       if (!dl) return false;
       try {
-        // Cast para Uint8Array com ArrayBuffer concreto. Tipos novos do TS
-        // distinguem `ArrayBufferLike` (que pode ser `SharedArrayBuffer`) de
-        // `ArrayBuffer`, e `Blob` exige o segundo.
         const bytes = dl.bytes as unknown as Uint8Array<ArrayBuffer>;
         const blob = new Blob([bytes], { type: dl.mime });
         const form = new FormData();
@@ -387,7 +439,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
         form.append("media", blob, fileName);
         if (caption && !isAudio) form.append("caption", caption);
         console.log(`📤 [whapi:sendMedia] multipart -> ${to} (${mediatype} via ${path}, ${blob.size} bytes, ${blob.type})`);
-        return await sendWithRetry("send_media_multipart", () =>
+        const r = await sendWithRetry("send_media_multipart", () =>
           fetchWithTimeout(`${url}/${path}`, {
             method: "POST",
             headers: { "Authorization": `Bearer ${apiToken}` },
@@ -395,6 +447,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
             timeout: 90_000,
           }),
         );
+        return r.ok;
       } catch (e: any) {
         console.warn(`⚠️ [whapi:sendMedia] multipart falhou: ${e?.message || e}`);
         return false;
@@ -424,7 +477,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     // MP3 Sofia: json_url em messages/voice costuma retornar 200 sem o áudio
     // tocar no celular. Preferir upload (base64/multipart) com mime real para
     // o conversor do Whapi processar o arquivo de verdade.
-    const tryJsonUrl = async (path: string): Promise<boolean | "timeout_optimistic"> => {
+    const tryJsonUrl = async (path: string): Promise<boolean> => {
       if (isAudio) {
         return await tryJsonSend("json_url", path, { to, media: mediaUrl, mime_type: contentType });
       }
@@ -435,10 +488,6 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       const firstAttempt = await tryJsonUrl(endpoint);
       if (firstAttempt === true) {
         console.log(`✅ [whapi:sendMedia] ok via json_url (${mediatype} ${endpoint})`);
-        return true;
-      }
-      if (firstAttempt === "timeout_optimistic") {
-        console.log(`✅ [whapi:sendMedia] assumido entregue após timeout (${mediatype} ${endpoint})`);
         return true;
       }
     } else {
@@ -467,7 +516,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       }
       // Último recurso: json_url (pode falhar no celular, mas tenta)
       const lateUrl = await tryJsonUrl(endpoint);
-      if (lateUrl === true || lateUrl === "timeout_optimistic") {
+      if (lateUrl === true) {
         console.log(`✅ [whapi:sendMedia] ok via json_url tardio (mp3)`);
         return true;
       }
@@ -507,7 +556,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     return null;
   }
 
-  return { sendText, sendButtons, downloadMedia, sendMedia, sendPresence };
+  return { sendText, sendTextDetailed, sendButtons, downloadMedia, sendMedia, sendPresence };
 }
 
 /**

@@ -166,7 +166,7 @@ export function AcademyPlayer({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex flex-col overflow-hidden animate-in fade-in duration-300"
+      className="fixed inset-0 z-[120] flex flex-col overflow-hidden animate-in fade-in duration-300"
       style={{
         background: `
           radial-gradient(60% 50% at 50% 0%, ${AC.primarySoft} 0%, transparent 60%),

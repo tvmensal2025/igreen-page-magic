@@ -71,7 +71,7 @@ serve(async (req: Request) => {
   // leads convertidos, em opt-out ou de teste.
   const { data: candidates, error } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, consultant_id, conversation_step")
+    .select("id, name, phone_whatsapp, whatsapp_chat_id, consultant_id, conversation_step")
     .eq("bot_paused", false)
     // Lead em pausa temporária ("me chama amanhã") ou em mão humana não
     // recebe nudge — mesmos filtros dos demais crons proativos.
@@ -162,7 +162,7 @@ serve(async (req: Request) => {
           "Qualquer outra dúvida, é só perguntar. Estou por aqui.";
       }
 
-      const digits = normalizePhone(lead.phone_whatsapp).replace(/\D/g, "");
+      const digits = normalizePhone((lead as any).whatsapp_chat_id || lead.phone_whatsapp).replace(/\D/g, "");
       if (!digits) {
         console.warn(`[faq-nudge] phone inválido para ${lead.id}`);
         await releaseTouch(); continue;

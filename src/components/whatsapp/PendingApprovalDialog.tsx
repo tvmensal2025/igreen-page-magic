@@ -18,6 +18,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, ChevronRight, CalendarClock } from "lucide-react";
 
 import { toast } from "sonner";
@@ -341,7 +344,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                   side="bottom"
                   sideOffset={6}
                   collisionPadding={16}
-                  className="w-[min(280px,calc(100vw-3rem))] p-3 z-[130] text-xs leading-relaxed"
+                  className="w-[min(280px,calc(100vw-3rem))] p-3 text-xs leading-relaxed"
                 >
                   <p>
                     Revise os clientes sincronizados do iGreen. Use <strong>Falta assinatura</strong> quando o cliente ainda não assinou.
@@ -379,18 +382,22 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                   </button>
                 </div>
                 {registrants.length > 1 && ownerFilter !== "mine" && (
-                  <select
+                  <Select
                     value={ownerFilter === "all" ? "all" : ownerFilter}
-                    onChange={(e) => setOwnerFilter(e.target.value)}
-                    className="h-8 min-w-0 max-w-full px-2 text-xs rounded-md border border-border bg-background text-foreground"
+                    onValueChange={setOwnerFilter}
                   >
-                    <option value="all">Todos os licenciados</option>
-                    {registrants.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name} {r.id === myIgreenId ? "(eu)" : ""}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="h-8 min-w-0 max-w-full text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os licenciados</SelectItem>
+                      {registrants.map((r) => (
+                        <SelectItem key={r.id} value={r.id}>
+                          {r.name} {r.id === myIgreenId ? "(eu)" : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
                 {hasConfig === false && (
                   <Button
@@ -607,7 +614,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                               <ChevronDown className="w-3.5 h-3.5" />
                                             </Button>
                                           </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end" sideOffset={4} className="w-56 z-[130]">
+                                          <DropdownMenuContent align="end" sideOffset={4} className="w-56">
                                             <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
                                               <CalendarClock className="w-3 h-3 inline mr-1" />
                                               Validar e jogar direto em…

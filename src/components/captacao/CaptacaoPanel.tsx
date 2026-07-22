@@ -8,7 +8,10 @@ import { CaptureConversationFeed } from "@/components/captacao/CaptureConversati
 import { CaptureLeadCard, type FichaMode } from "@/components/captacao/CaptureLeadCard";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from "@/components/ui/sheet";
-import { ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp, ChevronsLeft, ChevronsRight, ClipboardCheck, X } from "lucide-react";
+import {
+  ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp,
+  ChevronsLeft, ChevronsRight, ClipboardCheck, X, Bot, Ban, RotateCcw,
+} from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 import { MessageComposer } from "@/components/whatsapp/MessageComposer";
 import { AttendanceStatusBar } from "@/components/whatsapp/AttendanceStatusBar";
@@ -30,6 +33,11 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  NeverContactConfirmDialog,
+  RevokeNeverContactDialog,
+} from "@/components/leads/NeverContactDialogs";
+import { takeoverByPhoneDetailed, undoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
 
 interface Props { consultantId: string; onOpenChat?: (phone: string) => void; instanceName?: string | null; isWhapi?: boolean; }
 
@@ -83,20 +91,59 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
   const [stepsOpen, setStepsOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("cap_steps_open") === "1"; } catch { return false; }
   });
+  const [stepsUserToggled, setStepsUserToggled] = useState(false);
   const [totalSteps, setTotalSteps] = useState<number | null>(null);
   const [endAttendanceDialogOpen, setEndAttendanceDialogOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [batchLeads, setBatchLeads] = useState<CaptureBatchLead[]>([]);
   const [batchPeriodLabel, setBatchPeriodLabel] = useState("últimos 60d");
-  const toggleSteps = () => setStepsOpen((v) => { const n = !v; try { localStorage.setItem("cap_steps_open", n ? "1" : "0"); } catch {} return n; });
+  const [botPaused, setBotPaused] = useState(false);
+  const [botForceEnabled, setBotForceEnabled] = useState(false);
+  const [globalAiEnabled, setGlobalAiEnabled] = useState(true);
+  const [togglingBot, setTogglingBot] = useState(false);
+  const [doNotContact, setDoNotContact] = useState(false);
+  const [neverContactOpen, setNeverContactOpen] = useState(false);
+  const [revokeContactOpen, setRevokeContactOpen] = useState(false);
+  const toggleSteps = () => setStepsOpen((v) => {
+    const n = !v;
+    setStepsUserToggled(true);
+    try { localStorage.setItem("cap_steps_open", n ? "1" : "0"); } catch {}
+    return n;
+  });
   const { templates } = useTemplates(consultantId);
   const session = useCaptureSession(selectedId);
   const attendance = useCustomerAttendance(selectedId, consultantId);
   const onTotalSteps = useCallback((n: number) => setTotalSteps(n), []);
 
   const connected = !!instanceName;
+  const botActive = !botPaused && (globalAiEnabled || botForceEnabled);
+  const nextMissingLabel =
+    fichaMode === "club"
+      ? (session.clubMissing?.[0] || null)
+      : (session.missing?.[0] || null);
 
-  useEffect(() => { setSentSteps(new Set()); setPhone(null); setCustomerName(null); setShowAside(false); setVariant("A"); setMismatch({ flag: false, bill: "", doc: "", acked: false }); setTotalSteps(null); }, [selectedId]);
+  useEffect(() => {
+    setSentSteps(new Set());
+    setPhone(null);
+    setCustomerName(null);
+    setShowAside(false);
+    setVariant("A");
+    setMismatch({ flag: false, bill: "", doc: "", acked: false });
+    setTotalSteps(null);
+    setStepsUserToggled(false);
+    setBotPaused(false);
+    setBotForceEnabled(false);
+    setDoNotContact(false);
+  }, [selectedId]);
+
+  // Abre passos automaticamente quando ainda faltam enviar (salvo se o usuário colapsou).
+  useEffect(() => {
+    if (!selectedId || stepsUserToggled || totalSteps === null) return;
+    if (totalSteps > 0 && sentSteps.size < totalSteps) {
+      setStepsOpen(true);
+      try { localStorage.setItem("cap_steps_open", "1"); } catch {}
+    }
+  }, [selectedId, totalSteps, sentSteps.size, stepsUserToggled]);
 
   // Carrega os fluxos ativos do consultor (variante + nome) para o atalho.
   // Reassina a tabela bot_flows para refletir criacao/renomeacao em tempo real
@@ -169,7 +216,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
     void (async () => {
       const { data } = await supabase
         .from("customers")
-        .select("phone_whatsapp, name, flow_variant, name_mismatch_flag, name_mismatch_acknowledged_at, bill_holder_name, doc_holder_name")
+        .select("phone_whatsapp, name, flow_variant, name_mismatch_flag, name_mismatch_acknowledged_at, bill_holder_name, doc_holder_name, bot_paused, bot_force_enabled, do_not_contact")
         .eq("id", selectedId).maybeSingle();
       const row = data as any;
       setPhone(row?.phone_whatsapp || null);
@@ -182,7 +229,42 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
         doc: row?.doc_holder_name || "",
         acked: !!row?.name_mismatch_acknowledged_at,
       });
+      setBotPaused(!!row?.bot_paused);
+      setBotForceEnabled(!!row?.bot_force_enabled);
+      setDoNotContact(!!row?.do_not_contact);
     })();
+  }, [selectedId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data: cfg } = await supabase
+        .from("ai_agent_config")
+        .select("enabled")
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      if (!cancelled) setGlobalAiEnabled((cfg as any)?.enabled !== false);
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId]);
+
+  // Sync bot_paused / DNC em tempo real enquanto o lead está aberto.
+  useEffect(() => {
+    if (!selectedId) return;
+    const ch = supabase
+      .channel(`capt-bot-${selectedId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "customers", filter: `id=eq.${selectedId}` },
+        (payload) => {
+          const row = payload.new as any;
+          if (typeof row?.bot_paused === "boolean") setBotPaused(row.bot_paused);
+          if (typeof row?.bot_force_enabled === "boolean") setBotForceEnabled(row.bot_force_enabled);
+          if (typeof row?.do_not_contact === "boolean") setDoNotContact(row.do_not_contact);
+        },
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
   }, [selectedId]);
 
   const changeVariant = async (next: "A" | "B" | "C" | "D" | "E" | "M") => {
@@ -203,27 +285,100 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
     sonnerToast.success(relationship === "titular" ? "Titularidade confirmada — pode finalizar." : "Anotado: conta em nome de outro titular.");
   };
 
+  const toggleBot = useCallback(async () => {
+    if (!selectedId || togglingBot) return;
+    if (!botActive && doNotContact) {
+      sonnerToast.error("Lead bloqueado — não dá para religar a IA. Revogue o bloqueio primeiro.");
+      return;
+    }
+    setTogglingBot(true);
+    try {
+      if (botActive) {
+        const { error } = await supabase.from("customers")
+          .update({
+            bot_paused: true,
+            bot_paused_reason: "humano_assumiu",
+            bot_paused_at: new Date().toISOString(),
+            bot_paused_until: null,
+          } as never)
+          .eq("id", selectedId);
+        if (error) throw error;
+        setBotPaused(true);
+        sonnerToast.success("IA desligada neste lead");
+      } else {
+        const patch: Record<string, unknown> = {
+          bot_paused: false,
+          bot_paused_reason: null,
+          bot_paused_at: null,
+          bot_paused_until: null,
+          assigned_human_id: null,
+        };
+        if (!globalAiEnabled) patch.bot_force_enabled = true;
+        const { error } = await supabase.from("customers")
+          .update(patch as never)
+          .eq("id", selectedId);
+        if (error) throw error;
+        setBotPaused(false);
+        if (!globalAiEnabled) setBotForceEnabled(true);
+        sonnerToast.success(
+          globalAiEnabled
+            ? "IA ligada neste lead"
+            : "IA ligada só neste número (global continua off)",
+        );
+      }
+    } catch (e) {
+      sonnerToast.error((e as Error)?.message || "Falha ao alternar IA");
+    } finally {
+      setTogglingBot(false);
+    }
+  }, [selectedId, togglingBot, botActive, globalAiEnabled, doNotContact]);
+
+  const takeoverWithUndo = useCallback(async (
+    rawPhone: string,
+    reason: "humano_assumiu_audio" | "humano_assumiu_midia" | "humano_assumiu",
+  ) => {
+    const r = await takeoverByPhoneDetailed(rawPhone, reason);
+    if (r === "new") {
+      setBotPaused(true);
+      sonnerToast("IA pausada — você assumiu", {
+        description: "A IA não responde neste lead enquanto você estiver na conversa.",
+        action: {
+          label: "Desfazer",
+          onClick: async () => {
+            const ok = await undoTakeoverByPhone(rawPhone);
+            if (ok) setBotPaused(false);
+            sonnerToast[ok ? "success" : "error"](ok ? "IA reativada" : "Não consegui reativar");
+          },
+        },
+      });
+    }
+  }, []);
+
   const customerJid = phone ? `${phone.replace(/\D/g, "")}@s.whatsapp.net` : undefined;
 
   const sendText = async (text: string) => {
     if (!phone) { sonnerToast.error("Cliente interessado sem telefone"); return; }
-    if (!instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para enviar"); return; }
+    if (!instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    void takeoverWithUndo(phone, "humano_assumiu");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar"); return; }
     if (r.status === "pending" || r.status === "timeout") { sonnerToast.warning(r.error || "Mensagem na fila — aguardando confirmação."); return; }
   };
   const sendAudioB64 = async (b64: string) => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para enviar"); return; }
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    void takeoverWithUndo(phone, "humano_assumiu_audio");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "audio", mediaUrl: `data:audio/ogg;base64,${b64}`, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar áudio"); return; }
   };
   const sendAudioUrl = async (url: string) => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para enviar"); return; }
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    void takeoverWithUndo(phone, "humano_assumiu_audio");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "audio", mediaUrl: url, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar áudio"); return; }
   };
-  const sendMedia = async (url: string, caption: string, mediaType: "image" | "video" | "document") => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp desconectado — reconecte para enviar"); return; }
+  const sendMedia = async (url: string, caption: string, mediaType: "image" | "video" | "document" | "sticker") => {
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    void takeoverWithUndo(phone, "humano_assumiu_midia");
     const fileName = mediaType === "document" ? (url.split("/").pop()?.split("?")[0] || "documento") : undefined;
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: mediaType, mediaUrl: url, text: caption, fileName, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar mídia"); return; }
@@ -262,7 +417,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             isComplete={!!session.isComplete}
             allStepsSent={allStepsSent}
             pendingStepsCount={pendingStepsCount}
-            botPaused={!!session.customer?.bot_paused}
+            botPaused={botPaused}
             captureMode={session.customer?.capture_mode}
           />
         </>
@@ -357,9 +512,9 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           {!selectedId ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <ClipboardList className="w-12 h-12 text-primary/30" strokeWidth={1} />
-              <h3 className="text-base font-semibold">Selecione um cliente interessado para começar</h3>
+              <h3 className="text-base font-semibold">Selecione um lead na lista</h3>
               <p className="text-sm text-muted-foreground max-w-md">
-                Para adicionar um cliente interessado à captação, vá para o chat do WhatsApp, abra o cliente e marque "Capturar manualmente".
+                Escolha uma conversa à esquerda para cadastrar. Use <span className="font-semibold text-foreground">Selecionar</span> para iniciar atendimento em lote sem sair da Captação.
               </p>
             </div>
           ) : (
@@ -387,6 +542,39 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                         : `${session.filledCount} de ${session.totalFields} campos`)}
                   </span>
                 </div>
+                <Button
+                  size="sm"
+                  variant={botActive ? "default" : "outline"}
+                  className={`gap-1 h-9 px-2.5 text-[11px] shrink-0 ${botActive ? "" : "text-muted-foreground"}`}
+                  onClick={() => void toggleBot()}
+                  disabled={togglingBot || (!botActive && doNotContact)}
+                  title={botActive ? "Desligar IA neste lead" : "Ligar IA neste lead"}
+                >
+                  <Bot className="w-3.5 h-3.5" />
+                  {botActive ? "IA ON" : "IA OFF"}
+                </Button>
+                {doNotContact ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 h-9 px-2.5 text-[11px] shrink-0 border-destructive/40 text-destructive"
+                    onClick={() => setRevokeContactOpen(true)}
+                    title="Revogar bloqueio"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span className="hidden sm:inline">Revogar</span>
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1 h-9 px-2 text-[11px] shrink-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => setNeverContactOpen(true)}
+                    title="Nunca mais contatar"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                  </Button>
+                )}
                 <Button size="sm" variant="default" className="gap-1.5 h-9 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
                   <ClipboardCheck className="w-3.5 h-3.5" />
                   <span className="hidden md:inline">Ficha</span>
@@ -430,11 +618,32 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                 </div>
               </div>
 
+              {/* Mobile sticky: próximo campo + progresso sem abrir Sheet full */}
+              {nextMissingLabel && (
+                <button
+                  type="button"
+                  onClick={() => setFichaOpen(true)}
+                  className="lg:hidden mx-2 mt-1.5 mb-0.5 flex items-center gap-2 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1.5 text-left shrink-0"
+                >
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-primary shrink-0">
+                    {fichaMode === "club" ? "Club" : "Ficha"}
+                  </span>
+                  <span className="text-[11px] text-foreground truncate flex-1">
+                    Próximo: <span className="font-semibold">{nextMissingLabel}</span>
+                  </span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground shrink-0">
+                    {fichaMode === "club"
+                      ? `${session.clubFilledCount}/${session.clubTotalFields}`
+                      : `${session.filledCount}/${session.totalFields}`}
+                  </span>
+                </button>
+              )}
+
               {/* Aviso de nome divergente */}
               {mismatch.flag && !mismatch.acked && (
                 <div className="mx-3 mt-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] space-y-1.5 shrink-0">
                   <p className="font-semibold text-warning">
-                    ⚠️ Nome divergente: conta "<span className="font-bold">{mismatch.bill || "—"}</span>" vs documento "<span className="font-bold">{mismatch.doc || "—"}</span>". Confirme antes de finalizar.
+                    Nome divergente: conta "<span className="font-bold">{mismatch.bill || "—"}</span>" vs documento "<span className="font-bold">{mismatch.doc || "—"}</span>". Confirme antes de finalizar.
                   </p>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" className="h-7 text-[11px]" onClick={() => ackMismatch("titular")}>É o titular</Button>
@@ -468,7 +677,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
 
                 {/* Conversa — ocupa o espaço restante */}
                 <div className="flex-1 min-h-0 overflow-hidden flex flex-col p-2 gap-2">
-                  <CaptureConversationFeed customerId={selectedId} />
+                  <CaptureConversationFeed customerId={selectedId} consultantId={consultantId} />
                 </div>
               </div>
 
@@ -480,15 +689,16 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
                   onSendAudioUrl={sendAudioUrl}
                   onSendMedia={sendMedia}
                   templates={templates}
-                  disabled={!instanceName || !phone || !!(session.customer as { do_not_contact?: boolean } | null)?.do_not_contact}
+                  disabled={!instanceName || !phone || doNotContact}
                   consultantId={consultantId}
                   customerId={selectedId || undefined}
                   customerJid={customerJid}
                   customerName={customerName || undefined}
+                  hideFlowQuickBar={stepsOpen}
                 />
-                {!!(session.customer as { do_not_contact?: boolean } | null)?.do_not_contact && (
+                {doNotContact && (
                   <p className="px-3 pb-2 text-[11px] text-destructive">
-                    Lead em lista de não contato — envio bloqueado.
+                    Lead bloqueado (nunca mais contatar) — envio bloqueado.
                   </p>
                 )}
               </div>
@@ -605,6 +815,27 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {selectedId && (
+        <NeverContactConfirmDialog
+          open={neverContactOpen}
+          onOpenChange={setNeverContactOpen}
+          consultantId={consultantId}
+          customerId={selectedId}
+          phone={phone}
+          leadLabel={customerName || phone}
+          onDone={() => setDoNotContact(true)}
+        />
+      )}
+      {selectedId && (
+        <RevokeNeverContactDialog
+          open={revokeContactOpen}
+          onOpenChange={setRevokeContactOpen}
+          consultantId={consultantId}
+          customerId={selectedId}
+          onDone={() => setDoNotContact(false)}
+        />
+      )}
 
       <OpenAttendanceBatchDialog
         open={batchOpen}

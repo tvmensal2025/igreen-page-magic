@@ -81,7 +81,7 @@ Deno.serve(async (req) => {
       const now = new Date().toISOString();
       const { data: selected, error } = await supabase
         .from("customers")
-        .select("id, name, phone_whatsapp, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
+        .select("id, name, phone_whatsapp, whatsapp_chat_id, conversation_step, consultant_id, next_followup_at, followup_hook, bot_paused, bot_paused_until, variant_id, followup_count, assigned_human_id, flow_variant, customer_origin")
         .lte("next_followup_at", now)
         .eq("bot_paused", false)
         .eq("do_not_contact", false)
@@ -267,7 +267,7 @@ Deno.serve(async (req) => {
         }
 
         // Envia pelo canal escolhido
-        const remoteJid = `${c.phone_whatsapp}@s.whatsapp.net`;
+        const remoteJid = `${(c as any).whatsapp_chat_id || c.phone_whatsapp}@s.whatsapp.net`;
         await markEffectSending(supabase, eff.effectId);
         let sent = false;
         let sendThrew = false;

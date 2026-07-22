@@ -18,7 +18,13 @@ const FOLLOWUP_MESSAGE =
   "📱 Por favor, verifique suas mensagens no WhatsApp e nos envie o código aqui.\n\n" +
   "Se você não recebeu o código ou precisa de ajuda, é só responder esta mensagem!";
 
-async function sendWhatsAppText(supabase: any, instanceName: string, remoteJid: string, text: string) {
+async function sendWhatsAppText(
+  supabase: any,
+  instanceName: string,
+  remoteJid: string,
+  text: string,
+  customerId?: string,
+) {
   if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) return false;
   // Anti-ban: bloqueia se instância em fatal_lock / recovery / quota estourada
   const { checkSendQuota, registerSend } = await import("../_shared/anti-ban.ts");
@@ -27,7 +33,32 @@ async function sendWhatsAppText(supabase: any, instanceName: string, remoteJid: 
     console.warn(`🚫 [recover-stuck-otp] envio bloqueado instance=${instanceName} reason=${quota.reason}`);
     return false;
   }
-  const url = `${EVOLUTION_API_URL.replace(/\/$/, "")}/message/sendText/${instanceName}`;
+  const { resolveWhatsAppChatId } = await import("../_shared/resolve-whatsapp-chat-id.ts");
+  const base = EVOLUTION_API_URL.replace(/\/$/, "");
+  const resolved = await resolveWhatsAppChatId({
+    phoneOrJid: remoteJid,
+    provider: {
+      kind: "evolution",
+      apiUrl: base,
+      apiKey: EVOLUTION_API_KEY,
+      instanceName,
+    },
+    fallbackProviders: Deno.env.get("WHAPI_TOKEN")
+      ? [{
+        kind: "whapi",
+        apiToken: Deno.env.get("WHAPI_TOKEN")!,
+        baseUrl: Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud",
+      }]
+      : [],
+    supabase,
+    customerId,
+  });
+  if (!resolved.ok) {
+    console.warn(`[recover-stuck-otp] dest unresolved ${resolved.reason} ${resolved.detail || ""}`);
+    return false;
+  }
+  const number = resolved.chatId.split("@")[0].replace(/\D/g, "");
+  const url = `${base}/message/sendText/${instanceName}`;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -35,7 +66,7 @@ async function sendWhatsAppText(supabase: any, instanceName: string, remoteJid: 
         "Content-Type": "application/json",
         apikey: EVOLUTION_API_KEY,
       },
-      body: JSON.stringify({ number: remoteJid, text }),
+      body: JSON.stringify({ number, text }),
     });
     if (res.ok) await registerSend(supabase, instanceName);
     return res.ok;
@@ -104,7 +135,7 @@ Deno.serve(async (req) => {
     }
 
     const remoteJid = `${lead.phone_whatsapp}@s.whatsapp.net`;
-    const sent = await sendWhatsAppText(supabase, instance.instance_name, remoteJid, FOLLOWUP_MESSAGE);
+    const sent = await sendWhatsAppText(supabase, instance.instance_name, remoteJid, FOLLOWUP_MESSAGE, lead.id);
 
     if (sent) {
       // Marcar como reativado para não mandar de novo amanhã

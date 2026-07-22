@@ -59,8 +59,8 @@ export function createWhapiAdapter(input: CreateWhapiAdapterInput): ChannelAdapt
   const sender = createWhapiSender(input.apiToken, input.baseUrl);
   const instanceName = input.instanceName || "whapi-superadmin";
 
-  function toResult(ok: boolean): SendResult {
-    if (ok) return { ok: true, messageId: null };
+  function toResult(ok: boolean, messageId: string | null = null): SendResult {
+    if (ok) return { ok: true, messageId };
     return { ok: false, reason: "unknown", detail: "whapi_send_returned_false" };
   }
 
@@ -70,8 +70,8 @@ export function createWhapiAdapter(input: CreateWhapiAdapterInput): ChannelAdapt
     async sendText(jid, text, ctx) {
       const idem = idempotencyFromCtx(ctx, text.slice(0, 200));
       try {
-        const ok = await sender.sendText(jid, text, { idempotency: idem });
-        return toResult(ok);
+        const r = await sender.sendTextDetailed(jid, text, { idempotency: idem });
+        return toResult(r.ok, r.messageId);
       } catch (e: any) {
         return { ok: false, reason: "network", detail: e?.message ?? String(e) };
       }
@@ -108,10 +108,11 @@ export function createWhapiAdapter(input: CreateWhapiAdapterInput): ChannelAdapt
       }
     },
 
-    async sendMedia(jid, media, _ctx) {
+    async sendMedia(jid, media, ctx) {
       try {
         const caption = (media as any).caption ?? "";
-        const ok = await sender.sendMedia(jid, media.url, caption, media.kind);
+        const idem = idempotencyFromCtx(ctx, `${media.kind}|${media.url}|${caption}`.slice(0, 200));
+        const ok = await sender.sendMedia(jid, media.url, caption, media.kind, (media as any).durationSec, idem);
         return toResult(ok);
       } catch (e: any) {
         return { ok: false, reason: "network", detail: e?.message ?? String(e) };

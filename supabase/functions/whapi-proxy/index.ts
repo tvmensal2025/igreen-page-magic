@@ -6,6 +6,7 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { awaitWhapiSendSlot } from "../_shared/whapi-throttle.ts";
+import { resolveWhatsAppChatId } from "../_shared/resolve-whatsapp-chat-id.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -605,11 +606,22 @@ Deno.serve(async (req) => {
       }
 
       case "list_messages": {
-        const chatId = normalizeChatId(String(payload.chatId || ""));
+        let chatId = normalizeChatId(String(payload.chatId || ""));
         // Whapi aceita count 1–500; offset para histórico antigo ao rolar pra cima.
         const count = Math.min(Math.max(Number(payload.count) || 50, 1), 500);
         const offset = Math.max(Number(payload.offset) || 0, 0);
         if (!chatId) return json(400, { error: "chatId obrigatório" });
+        // BR 9º dígito: lista no wa_id real (senão o chat "com 9" fica vazio/pending).
+        try {
+          const resolved = await resolveWhatsAppChatId({
+            phoneOrJid: chatId,
+            apiToken: whapiToken,
+            baseUrl: WHAPI_BASE,
+            supabase: admin,
+            customerId: payload.customerId ? String(payload.customerId) : null,
+          });
+          if (resolved.ok) chatId = resolved.chatId;
+        } catch (_) { /* fail-open: lista no chatId original */ }
         const qs = new URLSearchParams({
           count: String(count),
           offset: String(offset),
@@ -635,9 +647,24 @@ Deno.serve(async (req) => {
       }
 
       case "send_text": {
-        const to = normalizeChatId(String(payload.to || ""));
+        let to = normalizeChatId(String(payload.to || ""));
         const text = String(payload.text || "");
         if (!to || !text) return json(400, { error: "to e text obrigatórios" });
+        const resolved = await resolveWhatsAppChatId({
+          phoneOrJid: to,
+          apiToken: whapiToken,
+          baseUrl: WHAPI_BASE,
+          supabase: admin,
+          customerId: payload.customerId ? String(payload.customerId) : null,
+        });
+        if (!resolved.ok) {
+          return json(422, {
+            error: "Destino sem WhatsApp válido (wa_id)",
+            reasonCode: "invalid_whatsapp",
+            detail: resolved.reason,
+          });
+        }
+        to = resolved.chatId;
         // Anti-ban: fila espaçadora (nunca recusa). Default bulk (~18s entre
         // contatos). Chat 1:1 pode mandar payload.intent="reply" (intervalo curto).
         const textIntent = payload.intent === "reply" ? "reply" as const : "bulk" as const;
@@ -658,16 +685,36 @@ Deno.serve(async (req) => {
           }
           return json(r.status, { error: r.data });
         }
-        return json(200, { key: { id: r.data?.message?.id || r.data?.id || "" } });
+        return json(200, {
+          key: { id: r.data?.message?.id || r.data?.id || "" },
+          resolvedChatId: to,
+          waDigits: resolved.digits,
+        });
       }
 
       case "send_media": {
-        const to = normalizeChatId(String(payload.to || ""));
+        let to = normalizeChatId(String(payload.to || ""));
         const mediaUrl = String(payload.mediaUrl || "");
         const caption = payload.caption ? String(payload.caption) : undefined;
         const fileName = payload.fileName ? String(payload.fileName) : undefined;
         const mediatype = String(payload.mediatype || "image");
         if (!to || !mediaUrl) return json(400, { error: "to e mediaUrl obrigatórios" });
+
+        const resolvedMedia = await resolveWhatsAppChatId({
+          phoneOrJid: to,
+          apiToken: whapiToken,
+          baseUrl: WHAPI_BASE,
+          supabase: admin,
+          customerId: payload.customerId ? String(payload.customerId) : null,
+        });
+        if (!resolvedMedia.ok) {
+          return json(422, {
+            error: "Destino sem WhatsApp válido (wa_id)",
+            reasonCode: "invalid_whatsapp",
+            detail: resolvedMedia.reason,
+          });
+        }
+        to = resolvedMedia.chatId;
 
         const path =
           mediatype === "video" ? "/messages/video"

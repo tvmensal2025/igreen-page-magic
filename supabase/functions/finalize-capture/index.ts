@@ -35,10 +35,8 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
     const settings: Record<string, string> = {};
     settingsRows?.forEach((s: any) => { settings[s.key] = s.value; });
 
-    const phone = String(customer.phone_whatsapp || "").replace(/\D/g, "");
+    const phone = String(customer.whatsapp_chat_id || customer.phone_whatsapp || "").replace(/\D/g, "");
     if (!phone) return;
-    const normalized = phone.startsWith("55") ? phone : `55${phone}`;
-    const toJid = `${normalized}@s.whatsapp.net`;
     const text =
       "✅ *Todos os dados coletados!* 🎉\n\n" +
       "⏳ Estamos enviando seu cadastro para o portal da iGreen…\n\n" +
@@ -57,31 +55,54 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
 
     const evoUrl = (settings.evolution_api_url || Deno.env.get("EVOLUTION_API_URL") || "").replace(/\/$/, "");
     const evoKey = settings.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY") || "";
+    const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
+    const whapiUrl = (settings.whapi_api_url || Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud").replace(/\/$/, "");
+    const { resolveWhatsAppChatId } = await import("../_shared/resolve-whatsapp-chat-id.ts");
+
     if (evoUrl && evoKey && instanceName) {
       try {
-        // Anti-ban: bloqueia se instância em fatal_lock / recovery / quota
         const { checkSendQuota, registerSend } = await import("../_shared/anti-ban.ts");
         const quota = await checkSendQuota(supabase, instanceName);
         if (!quota.allowed) {
           console.warn(`🚫 [finalize-capture] evolution bloqueado instance=${instanceName} reason=${quota.reason} — fallback Whapi`);
         } else {
-          const r = await fetch(`${evoUrl}/message/sendText/${instanceName}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", apikey: evoKey },
-            body: JSON.stringify({ number: normalized, text }),
+          const resolved = await resolveWhatsAppChatId({
+            phoneOrJid: phone,
+            provider: { kind: "evolution", apiUrl: evoUrl, apiKey: evoKey, instanceName },
+            fallbackProviders: whapiToken
+              ? [{ kind: "whapi", apiToken: whapiToken, baseUrl: whapiUrl }]
+              : [],
+            supabase,
+            customerId: customer.id,
           });
-          if (r.ok) { await registerSend(supabase, instanceName); return; }
+          if (resolved.ok) {
+            const number = resolved.chatId.split("@")[0].replace(/\D/g, "");
+            const r = await fetch(`${evoUrl}/message/sendText/${instanceName}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", apikey: evoKey },
+              body: JSON.stringify({ number, text }),
+            });
+            if (r.ok) { await registerSend(supabase, instanceName); return; }
+          }
         }
       } catch (e) { console.warn("[finalize-capture] evolution send failed", (e as any)?.message); }
     }
 
-    const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
-    const whapiUrl = (settings.whapi_api_url || Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud").replace(/\/$/, "");
     if (whapiToken) {
+      const resolved = await resolveWhatsAppChatId({
+        phoneOrJid: phone,
+        provider: { kind: "whapi", apiToken: whapiToken, baseUrl: whapiUrl },
+        supabase,
+        customerId: customer.id,
+      });
+      if (!resolved.ok) {
+        console.warn("[finalize-capture] whapi dest unresolved", resolved.reason);
+        return;
+      }
       await fetch(`${whapiUrl}/messages/text`, {
         method: "POST",
         headers: { Authorization: `Bearer ${whapiToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ to: toJid, body: text, typing_time: 0 }),
+        body: JSON.stringify({ to: resolved.chatId, body: text, typing_time: 0 }),
       });
     }
   } catch (e: any) {

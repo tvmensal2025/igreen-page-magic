@@ -1900,7 +1900,7 @@ function FlowDiagramCanvas({
         // Tela cheia: cobre toda a viewport, sobrepondo header/sidebar.
         // `bg-background` evita transparência sobre o app por trás.
         fullscreen &&
-          "fixed inset-0 z-50 h-screen w-screen bg-background",
+          "fixed inset-0 z-[110] h-screen w-screen bg-background",
       )}
       data-fullscreen={fullscreen ? "true" : "false"}
       // R14.4 — wrapper focalizável para receber eventos de teclado quando

@@ -290,7 +290,7 @@ export async function sendWelcomeHeader(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, referral_partner_id, conversation_step, flow_variant",
+      "id, name, phone_whatsapp, whatsapp_chat_id, consultant_id, welcome_sent_at, tracking_protocol, referral_partner_id, conversation_step, flow_variant",
     )
     .eq("id", customerId)
     .maybeSingle();
@@ -346,7 +346,7 @@ export async function sendWelcomeHeader(
   }
   // Sempre 55+DDD+número no JID — phone sem DDI (11 dígitos) gerava destino inválido.
   // Não força UPDATE no banco aqui (pode colidir com unique phone+consultant).
-  const digits = normalizePhone(String(customer.phone_whatsapp || ""));
+  const digits = normalizePhone(String((customer as any).whatsapp_chat_id || customer.phone_whatsapp || ""));
   if (!digits || digits.length < 12) return { ok: false, code: "no_phone", skipped: "no_phone" };
 
   // DONO DO LEAD manda no nome/protocolo — nunca o caller de outra pessoa.
@@ -593,7 +593,7 @@ export async function sendAttendanceRatingRequest(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, consultant_id, welcome_sent_at, tracking_protocol, attendance_rating, attendance_rating_requested_at, do_not_contact",
+      "id, phone_whatsapp, whatsapp_chat_id, consultant_id, welcome_sent_at, tracking_protocol, attendance_rating, attendance_rating_requested_at, do_not_contact",
     )
     .eq("id", customerId)
     .maybeSingle();
@@ -616,7 +616,7 @@ export async function sendAttendanceRatingRequest(
   if (customer.attendance_rating != null) return { ok: true, skipped: "already_rated" };
   if (customer.attendance_rating_requested_at) return { ok: true, skipped: "rating_pending" };
 
-  const digits = normalizePhone(String(customer.phone_whatsapp || ""));
+  const digits = normalizePhone(String((customer as any).whatsapp_chat_id || customer.phone_whatsapp || ""));
   if (!digits || digits.length < 12) return { ok: false, code: "no_phone", skipped: "no_phone" };
 
   const consultantId = args.consultantId || customer.consultant_id || null;

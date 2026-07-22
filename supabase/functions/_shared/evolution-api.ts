@@ -11,6 +11,7 @@ import {
   type AcquireOutboundSlotInput,
   recordOutboundResult,
 } from "./idempotency.ts";
+import { resolveWhatsAppChatId } from "./resolve-whatsapp-chat-id.ts";
 
 export interface EvolutionButton {
   id: string;
@@ -90,6 +91,45 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
   const toEvolutionNumber = (jid: string) =>
     String(jid || "").split("@")[0].replace(/\D/g, "");
 
+  /**
+   * Antes de qualquer /message/*: resolve wa_id real via
+   * POST /chat/whatsappNumbers/{instance} (BR 9º dígito).
+   * invalid → não envia (evita HTTP 200 sem entrega).
+   */
+  async function resolveDestination(
+    remoteJid: string,
+    idempotency?: IdempotencyOptions,
+  ): Promise<string | null> {
+    const resolved = await resolveWhatsAppChatId({
+      phoneOrJid: remoteJid,
+      provider: {
+        kind: "evolution",
+        apiUrl: baseUrl,
+        apiKey,
+        instanceName,
+      },
+      // Se a Evolution estiver instável, tenta Whapi global (mesmo wa_id).
+      fallbackProviders: Deno.env.get("WHAPI_TOKEN")
+        ? [{
+          kind: "whapi",
+          apiToken: Deno.env.get("WHAPI_TOKEN")!,
+          baseUrl: Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud",
+        }]
+        : [],
+      supabase: idempotency?.supabase,
+      customerId: idempotency?.customerId,
+    });
+    if (!resolved.ok) {
+      logStructured("error", "evolution_dest_unresolved", {
+        reason: resolved.reason,
+        detail: resolved.detail,
+        instance: instanceName,
+        customer_id: idempotency?.customerId,
+      });
+      return null;
+    }
+    return resolved.chatId;
+  }
 
   // Retry helper para envios — exponential backoff (300ms, 900ms, 2.7s).
   //
@@ -291,7 +331,17 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     text: string,
     idempotency?: IdempotencyOptions,
   ): Promise<SendResult> {
-    const number = toEvolutionNumber(remoteJid);
+    const resolvedJid = await resolveDestination(remoteJid, idempotency);
+    if (!resolvedJid) {
+      return {
+        ok: false,
+        pending: false,
+        messageId: null,
+        status: 0,
+        error: "invalid_whatsapp_jid",
+      };
+    }
+    const number = toEvolutionNumber(resolvedJid);
     const preview = (text || "").substring(0, 60).replace(/\n/g, " ");
     console.log(`📤 [sendText] -> ${number} | "${preview}${text.length > 60 ? "..." : ""}"`);
     const result = await sendWithRetry("send_text", () =>
@@ -472,14 +522,16 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
       return sendAudio(remoteJid, mediaUrl, idempotency);
     }
     return withIdempotency("send_media", idempotency, async () => {
+      const resolvedJid = await resolveDestination(remoteJid, idempotency);
+      if (!resolvedJid) return false;
       // Evolution API espera apenas o número, sem sufixo JID
-      const number = toEvolutionNumber(remoteJid);
+      const number = toEvolutionNumber(resolvedJid);
       const mimetype = mediatype === "video" ? "video/mp4" : mediatype === "image" ? "image/jpeg" : "application/pdf";
       const fileName = mediatype === "video" ? "video.mp4" : mediatype === "image" ? "image.jpg" : "document.pdf";
 
       // Presença "digitando…" antes de imagem/vídeo/doc (paridade com Whapi —
       // dá aparência humana). Cosmético: não falha o envio se der erro.
-      try { await sendPresence(remoteJid, "composing", 1500); } catch (_) { /* noop */ }
+      try { await sendPresence(resolvedJid, "composing", 1500); } catch (_) { /* noop */ }
 
       // Tentativa de envio (aceita `media` como URL ou base64).
       const attempt = async (media: string): Promise<{ ok: boolean; status: number; body: string }> => {
@@ -531,10 +583,12 @@ export function createEvolutionSender(apiUrl: string, apiKey: string, instanceNa
     idempotency?: IdempotencyOptions,
   ): Promise<boolean> {
     return withIdempotency("send_audio", idempotency, async () => {
-      const number = toEvolutionNumber(remoteJid);
+      const resolvedJid = await resolveDestination(remoteJid, idempotency);
+      if (!resolvedJid) return false;
+      const number = toEvolutionNumber(resolvedJid);
 
       // Presença "gravando…" antes do áudio (paridade com Whapi). Cosmético.
-      try { await sendPresence(remoteJid, "recording", 2000); } catch (_) { /* noop */ }
+      try { await sendPresence(resolvedJid, "recording", 2000); } catch (_) { /* noop */ }
 
       const attempt = async (audio: string): Promise<{ ok: boolean; status: number; body: string }> => {
         try {

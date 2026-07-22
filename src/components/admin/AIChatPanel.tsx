@@ -175,7 +175,7 @@ export function AIChatPanel({ open, onClose }: AIChatPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:justify-end p-0 sm:p-4">
+    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center sm:justify-end p-0 sm:p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full sm:w-[400px] h-full sm:h-[600px] sm:max-h-[80vh] bg-card border border-border rounded-none sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden sm:mr-4">

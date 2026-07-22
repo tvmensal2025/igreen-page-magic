@@ -265,7 +265,7 @@ export function NodeContextMenu({
       // o menu vive fora do fluxo do canvas e ignora seu zoom/pan.
       style={{ position: "fixed", ...positionStyle, minWidth: MENU_MIN_WIDTH }}
       className={cn(
-        "z-50 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
+        "z-[200] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md",
         "animate-in fade-in-0 zoom-in-95",
       )}
     >

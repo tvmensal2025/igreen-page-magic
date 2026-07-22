@@ -79,7 +79,12 @@ export interface SendContext {
 
 /** Resultado canônico de qualquer envio. Adapter nunca lança. */
 export type SendResult =
-  | { ok: true; messageId: string | null }
+  | {
+      ok: true;
+      messageId: string | null;
+      /** Evolution/Baileys: HTTP ok mas ainda PENDING — cadência NÃO deve avançar. */
+      pending?: boolean;
+    }
   | {
       ok: false;
       reason:

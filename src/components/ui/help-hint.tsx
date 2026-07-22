@@ -61,7 +61,7 @@ export function HelpHint({
     <PopoverContent
       align={align}
       side={side}
-      className="w-72 p-3 text-xs z-[100]"
+      className="w-72 p-3 text-xs"
       onClick={(e) => e.stopPropagation()}
     >
       <p className="font-semibold text-sm text-foreground mb-1.5 leading-tight">{title}</p>

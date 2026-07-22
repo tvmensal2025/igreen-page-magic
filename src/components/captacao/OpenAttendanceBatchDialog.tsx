@@ -438,7 +438,7 @@ export function OpenAttendanceBatchDialog({
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue placeholder="Escolher template ou escrever nova…" />
                   </SelectTrigger>
-                  <SelectContent className="z-[130]">
+                  <SelectContent>
                     <SelectItem value="__none__">Nenhuma mensagem</SelectItem>
                     <SelectItem value="__blank__">Escrever nova mensagem…</SelectItem>
                     {textTemplates.map((t) => (
@@ -487,7 +487,7 @@ export function OpenAttendanceBatchDialog({
                       <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
                         <SelectValue placeholder="Nenhum áudio" />
                       </SelectTrigger>
-                      <SelectContent className="z-[130]">
+                      <SelectContent>
                         <SelectItem value="__none__">Nenhum áudio</SelectItem>
                         {audioTemplates.map((t) => (
                           <SelectItem key={t.id} value={t.id}>
@@ -540,7 +540,7 @@ export function OpenAttendanceBatchDialog({
                       <SelectTrigger className="h-8 text-xs border-0 shadow-none px-0 focus:ring-0">
                         <SelectValue placeholder="Nenhuma imagem" />
                       </SelectTrigger>
-                      <SelectContent className="z-[130]">
+                      <SelectContent>
                         <SelectItem value="__none__">Nenhuma imagem</SelectItem>
                         {imageTemplates.map((t) => (
                           <SelectItem key={t.id} value={t.id}>

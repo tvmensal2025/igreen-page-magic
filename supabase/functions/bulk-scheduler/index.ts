@@ -96,9 +96,32 @@ async function sendViaEvolution(opts: {
   mediaType?: string | null; fileName?: string | null;
   mediaOrder: string;
 }): Promise<{ ok: boolean; error?: string }> {
-  const { baseUrl, apiKey, instance, phone, text, mediaUrl, mediaType, fileName, mediaOrder } = opts;
+  const { baseUrl, apiKey, instance, text, mediaUrl, mediaType, fileName, mediaOrder } = opts;
   const headers = { "Content-Type": "application/json", apikey: apiKey };
   const base = baseUrl.replace(/\/+$/, "");
+
+  // Resolve JID real (BR com/sem 9º) — evita HTTP 200 sem entrega.
+  const { resolveWhatsAppChatId, digitsOnlyPhone } = await import("../_shared/resolve-whatsapp-chat-id.ts");
+  const resolved = await resolveWhatsAppChatId({
+    phoneOrJid: opts.phone,
+    provider: {
+      kind: "evolution",
+      apiUrl: base,
+      apiKey,
+      instanceName: instance,
+    },
+    fallbackProviders: Deno.env.get("WHAPI_TOKEN")
+      ? [{
+        kind: "whapi",
+        apiToken: Deno.env.get("WHAPI_TOKEN")!,
+        baseUrl: Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud",
+      }]
+      : [],
+  });
+  if (!resolved.ok) {
+    return { ok: false, error: `invalid_whatsapp_jid:${resolved.reason}:${resolved.detail || ""}` };
+  }
+  const phone = digitsOnlyPhone(resolved.chatId) || digitsOnlyPhone(opts.phone);
 
   async function post(path: string, body: any) {
     const r = await fetch(`${base}/${path}/${instance}`, {

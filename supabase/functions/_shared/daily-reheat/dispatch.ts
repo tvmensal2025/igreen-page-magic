@@ -13,7 +13,7 @@
 import { sendWelcomeHeader, sendAttendanceRatingRequest } from "../attendance-flow.ts";
 import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
 import { assignProtocolToCustomer } from "../protocol.ts";
-import { resolveChannelForCustomer } from "../channel-sender.ts";
+import { resolveChannelForCustomerWithFailover } from "../channel-sender.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
 import { resolvePublicConsultantLabel } from "../consultant-public-label.ts";
 import {
@@ -272,17 +272,21 @@ async function runSendAudio(
   const url = kit ? weekdayWaAudioUrl(kit) : null;
   if (!url) return { action: "send_audio", ok: true, detail: "no_audio_configured_skip" };
 
-  const ch = await resolveChannelForCustomer(supabase, plan.customer_id, env as any);
+  const ch = await resolveChannelForCustomerWithFailover(supabase, plan.customer_id, env as any);
   if ((ch as any).unavailable) {
     return { action: "send_audio", ok: false, detail: (ch as any).reason || "no_channel" };
   }
 
   const { data: cust } = await supabase
     .from("customers")
-    .select("phone_whatsapp")
+    .select("phone_whatsapp, whatsapp_chat_id")
     .eq("id", plan.customer_id)
     .maybeSingle();
-  const digits = String(cust?.phone_whatsapp || "").replace(/\D/g, "");
+  const digits = String(
+    (cust as { whatsapp_chat_id?: string | null } | null)?.whatsapp_chat_id ||
+      cust?.phone_whatsapp ||
+      "",
+  ).replace(/\D/g, "");
   if (digits.length < 12) return { action: "send_audio", ok: false, detail: "no_phone" };
   const jid = `${digits}@s.whatsapp.net`;
 

@@ -241,7 +241,7 @@ export default function ProposalPublicPage() {
 
       {/* ═══ FRENTE: modal de vidro (glassmorphism) com a proposta ═══ */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6">
           {/* Backdrop leve — deixa a landing aparecer atrás do vidro flutuante.
               Clicar fora fecha (o cliente "cai" na landing). */}
           <div

@@ -129,7 +129,7 @@ async function processCustomer(
   if (!consultantHasContent && !useDefault) return { moved: true, sent: false };
 
   // Validações de envio
-  const phoneRaw = customer.phone_whatsapp || "";
+  const phoneRaw = (customer as any).whatsapp_chat_id || customer.phone_whatsapp || "";
   if (!isValidJid(`${phoneRaw}@s.whatsapp.net`)) return { moved: true, sent: false };
   const phone = phoneRaw.replace(/\D/g, "");
 

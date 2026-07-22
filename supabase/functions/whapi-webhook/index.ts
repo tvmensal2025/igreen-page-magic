@@ -120,8 +120,65 @@ Deno.serve(async (req) => {
     // `summarizeWebhookBody` retorna apenas metadados estruturais.
     console.log("Whapi webhook received:", JSON.stringify(summarizeWebhookBody(body)));
 
-    // ─── Ignorar eventos que não são mensagens ─────────────────────────
+    // ─── Statuses (ACK de entrega) — atualiza log, NÃO reverte cadência ─
     const eventType = body.event?.type;
+    const statusRows: any[] = Array.isArray(body.statuses)
+      ? body.statuses
+      : Array.isArray(body.messages_statuses)
+      ? body.messages_statuses
+      : [];
+    if ((eventType === "statuses" || statusRows.length > 0) && eventType !== "messages") {
+      const mapStatus = (raw: unknown): string => {
+        const s = String(raw || "").toLowerCase();
+        if (s === "failed" || s === "error") return "failed";
+        if (s === "pending" || s === "queued") return "queued";
+        if (s === "delivered") return "delivered";
+        if (s === "read" || s === "played") return "read";
+        if (s === "sent" || s === "accepted") return "sent";
+        return s || "sent";
+      };
+      let updated = 0;
+      for (const st of statusRows) {
+        const mid = String(st?.id || st?.message_id || st?.messageId || "").trim();
+        if (!mid) continue;
+        const delivery = mapStatus(st?.status ?? st?.state);
+        try {
+          const { data: convs } = await supabase
+            .from("conversations")
+            .select("id, delivery_status")
+            .eq("external_message_id", mid)
+            .limit(5);
+          for (const c of convs || []) {
+            await supabase
+              .from("conversations")
+              .update({ delivery_status: delivery })
+              .eq("id", (c as any).id);
+            updated++;
+          }
+          const logStatus =
+            delivery === "failed" ? "failed" : delivery === "queued" ? "queued" : "sent";
+          if (delivery === "delivered" || delivery === "read") {
+            await supabase
+              .from("outbound_message_log")
+              .update({ result_status: "sent" })
+              .eq("external_message_id", mid);
+          } else {
+            await supabase
+              .from("outbound_message_log")
+              .update({ result_status: logStatus })
+              .eq("external_message_id", mid);
+          }
+        } catch (e) {
+          console.warn("[whapi-webhook] status update failed", (e as Error).message);
+        }
+      }
+      return new Response(
+        JSON.stringify({ ok: true, msg: "statuses_processed", updated }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // ─── Ignorar outros eventos que não são mensagens ─────────────────
     if (eventType && eventType !== "messages") {
       return new Response(JSON.stringify({ ok: true, msg: "non-message event" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

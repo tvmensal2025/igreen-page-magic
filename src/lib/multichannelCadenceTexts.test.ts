@@ -67,7 +67,8 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const text = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === "a2_text_ask_bill_value");
     expect(audio?.body).toContain("{{nome}}");
     expect(audio?.body).toMatch(/Olá,\s*\{\{nome\}\}/);
-    expect(audio?.body).toMatch(/\{\{gestor_a\}\} da iGreen/);
+    expect(audio?.body).toMatch(/\{\{do_da_consultor\}\} \{\{consultor\}\} da iGreen/);
+    expect(audio?.body).not.toMatch(/gestor/);
     expect(audio?.body).toMatch(/economizar|conta de luz/i);
     expect(audio?.audioSegments?.[0]?.text).toMatch(/Olá/i);
     expect(audio?.audioSegments?.some((s) => s.id === "a2_activate")).toBe(false);
@@ -386,8 +387,10 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     const m = a2?.audioSegments?.find((s) => s.genderVariant === "masculino")?.text ?? "";
     expect(f).toMatch(/Seja muito bem-vinda/);
     expect(m).toMatch(/Seja muito bem-vindo/);
-    expect(f).toMatch(/\{\{gestor_a\}\} da iGreen/);
-    expect(m).toMatch(/\{\{gestor_a\}\} da iGreen/);
+    expect(f).toMatch(/\{\{do_da_consultor\}\} \{\{consultor\}\} da iGreen/);
+    expect(m).toMatch(/\{\{do_da_consultor\}\} \{\{consultor\}\} da iGreen/);
+    expect(f).not.toMatch(/gestor/);
+    expect(m).not.toMatch(/gestor/);
     expect(f).not.toContain("{{bem_vindo}}");
     expect(m).not.toContain("{{bem_vindo}}");
     expect(f).not.toMatch(/bem-vindo\./);
@@ -397,14 +400,19 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     );
   });
 
-  it("render resolve do/da e gestor/gestora pelo gender do consultor", () => {
-    const tpl = "assistente virtual {{do_da_consultor}} {{consultor}}, {{gestor_a}} da iGreen.";
+  it("abertura sem cargo gestor — só do/da + nome do consultor", () => {
+    expect(SOFIA_OPENING).toMatch(/\{\{do_da_consultor\}\} \{\{consultor\}\} da iGreen/);
+    expect(SOFIA_OPENING).not.toMatch(/gestor/);
+  });
+
+  it("render resolve do/da pelo gender do consultor (sem rotular gestor)", () => {
+    const tpl = "assistente virtual {{do_da_consultor}} {{consultor}}{{gestor_a}} da iGreen.";
     expect(
       renderCadenceBody(tpl, { consultor: "Rafael", consultorGender: "consultor" }),
-    ).toBe("assistente virtual do Rafael, gestor da iGreen.");
+    ).toBe("assistente virtual do Rafael da iGreen.");
     expect(
       renderCadenceBody(tpl, { consultor: "Ana", consultorGender: "consultora" }),
-    ).toBe("assistente virtual da Ana, gestora da iGreen.");
+    ).toBe("assistente virtual da Ana da iGreen.");
   });
 
   it("boas-vindas respeitam gênero M/F", () => {

@@ -231,9 +231,16 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
                     {editingStage?.id === stage.id ? (
                       <>
                         <Input value={editingStage.label} onChange={(e) => setEditingStage({ ...editingStage, label: e.target.value })} className="h-7 text-xs flex-1" />
-                        <select value={editingStage.color} onChange={(e) => setEditingStage({ ...editingStage, color: e.target.value })} className="h-7 text-xs bg-background border border-border rounded px-1">
-                          {COLOR_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                        </select>
+                        <Select value={editingStage.color} onValueChange={(v) => setEditingStage({ ...editingStage, color: v })}>
+                          <SelectTrigger className="h-7 text-xs w-[7.5rem] px-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {COLOR_OPTIONS.map((c) => (
+                              <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <Button size="icon" variant="ghost" className="h-6 w-6 text-primary" onClick={() => { updateStage(editingStage); setEditingStage(null); }}><Check className="h-3.5 w-3.5" /></Button>
                         <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => setEditingStage(null)}><X className="h-3.5 w-3.5" /></Button>
                       </>
@@ -252,9 +259,16 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
                 {addingNew ? (
                   <div className="flex items-center gap-2 p-2 rounded-lg bg-secondary/50 border border-dashed border-primary/30">
                     <Input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Nome da coluna" className="h-7 text-xs flex-1" autoFocus onKeyDown={(e) => e.key === "Enter" && handleAddStage()} />
-                    <select value={newColor} onChange={(e) => setNewColor(e.target.value)} className="h-7 text-xs bg-background border border-border rounded px-1">
-                      {COLOR_OPTIONS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-                    </select>
+                    <Select value={newColor} onValueChange={setNewColor}>
+                      <SelectTrigger className="h-7 text-xs w-[7.5rem] px-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COLOR_OPTIONS.map((c) => (
+                          <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-primary" onClick={handleAddStage}><Check className="h-3.5 w-3.5" /></Button>
                     <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => { setAddingNew(false); setNewLabel(""); }}><X className="h-3.5 w-3.5" /></Button>
                   </div>

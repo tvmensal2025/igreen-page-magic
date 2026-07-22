@@ -24,6 +24,7 @@ import {
   startUfPhoneSweep, getUfPhoneSweepStatus, cancelUfPhoneSweep,
   type ResearchItem, type CityHit, type SweepJob, type SweepCityLog,
 } from "@/services/capturedLeads";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 const CATEGORIES = [
   { id: "", label: "Tudo" },
@@ -340,20 +341,27 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
               <div className="flex gap-2">
                 <div className="flex-1 relative">
                   <Label htmlFor="b-city" className="text-xs">Cidade</Label>
-                  <Input id="b-city" value={city}
-                    disabled={busy}
-                    onChange={(e) => { setCity(e.target.value); setCityPicked(false); }}
-                    onFocus={() => { if (cityHits.length) setShowHits(true); }}
-                    placeholder="Digite e escolha na lista…" className="h-9" autoComplete="off"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        if (showHits && cityHits[0]) pickCity(cityHits[0]);
-                        else void doHarvestCity();
-                      }
-                      if (e.key === "Escape") setShowHits(false);
-                    }} />
-                  {showHits && cityHits.length > 0 && (
-                    <div className="absolute z-30 left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-md border bg-popover shadow-lg">
+                  <Popover open={showHits && cityHits.length > 0} onOpenChange={(o) => { if (!o) setShowHits(false); }}>
+                    <PopoverAnchor asChild>
+                      <Input id="b-city" value={city}
+                        disabled={busy}
+                        onChange={(e) => { setCity(e.target.value); setCityPicked(false); }}
+                        onFocus={() => { if (cityHits.length) setShowHits(true); }}
+                        placeholder="Digite e escolha na lista…" className="h-9" autoComplete="off"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            if (showHits && cityHits[0]) pickCity(cityHits[0]);
+                            else void doHarvestCity();
+                          }
+                          if (e.key === "Escape") setShowHits(false);
+                        }} />
+                    </PopoverAnchor>
+                    <PopoverContent
+                      align="start"
+                      sideOffset={4}
+                      className="w-[var(--radix-popover-trigger-width)] p-0 max-h-56 overflow-y-auto"
+                      onOpenAutoFocus={(e) => e.preventDefault()}
+                    >
                       {cityHits.map((h) => (
                         <button key={`${h.name}-${h.uf}`} type="button"
                           onClick={() => pickCity(h)}
@@ -363,8 +371,8 @@ export function BusinessResearchDialog({ open, onOpenChange, onImported }: Props
                           <Badge variant="outline" className="text-[10px]">{h.uf}</Badge>
                         </button>
                       ))}
-                    </div>
-                  )}
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 <div className="w-16">
                   <Label htmlFor="b-uf" className="text-xs">UF</Label>

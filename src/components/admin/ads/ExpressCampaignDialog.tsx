@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { searchCities, type CityHit, createCampaign, preflightCampaign, uploadAdPhotos } from "@/services/facebookAds";
 import { fetchExpressSuggestions, type ExpressSuggestions, type ExpressImage, type ExpressCopy } from "@/services/expressCampaign";
 import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 
 interface Props {
   open: boolean;
@@ -226,20 +227,31 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
                 <TabsTrigger value="radius" className="text-xs h-7">Rua + raio</TabsTrigger>
               </TabsList>
               <TabsContent value="cities" className="mt-2 space-y-2">
-                <div className="relative">
-                  <Input placeholder="Digite o nome da cidade..." value={cityQuery} onChange={(e) => setCityQuery(e.target.value)} className="h-9" />
-                  {citySearching && <Loader2 className="absolute right-2 top-2 w-4 h-4 animate-spin text-muted-foreground" />}
-                  {cityHits.length > 0 && (
-                    <div className="absolute z-10 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border bg-popover shadow-lg">
-                      {cityHits.map((c) => (
-                        <button key={c.key} onClick={() => addCity(c)}
-                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent">
-                          {c.name} {c.region && <span className="text-muted-foreground">— {c.region}</span>}
-                        </button>
-                      ))}
+                <Popover open={cityHits.length > 0}>
+                  <PopoverAnchor asChild>
+                    <div className="relative">
+                      <Input placeholder="Digite o nome da cidade..." value={cityQuery} onChange={(e) => setCityQuery(e.target.value)} className="h-9" />
+                      {citySearching && <Loader2 className="absolute right-2 top-2 w-4 h-4 animate-spin text-muted-foreground" />}
                     </div>
-                  )}
-                </div>
+                  </PopoverAnchor>
+                  <PopoverContent
+                    align="start"
+                    sideOffset={4}
+                    className="w-[var(--radix-popover-trigger-width)] p-0 max-h-48 overflow-y-auto"
+                    onOpenAutoFocus={(e) => e.preventDefault()}
+                  >
+                    {cityHits.map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={() => addCity(c)}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                      >
+                        {c.name} {c.region && <span className="text-muted-foreground">— {c.region}</span>}
+                      </button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
                 {cities.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {cities.map((c) => (

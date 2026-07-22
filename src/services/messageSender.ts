@@ -235,7 +235,10 @@ export async function sendWhatsAppMessage(payload: SendPayload): Promise<SendRes
     let result: unknown;
 
     if (isWhapi) {
-      const whapiOpts = intent ? { intent } : undefined;
+      const whapiOpts = {
+        ...(intent ? { intent } : {}),
+        ...(customerId ? { customerId } : {}),
+      };
       switch (mediaCategory) {
         case "text":
           if (!text?.trim()) return { status: "failed", error: "Texto vazio" };

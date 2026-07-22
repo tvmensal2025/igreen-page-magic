@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { resolveWhatsAppChatId, digitsOnlyPhone } from "../_shared/resolve-whatsapp-chat-id.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -371,6 +372,56 @@ Deno.serve(async (req) => {
     const safePath = path.replace(/^\/+/, "");
     const targetUrl = `${evolutionUrl}/${safePath}`;
 
+    let outboundBody = body;
+    // BR 9º dígito: reescreve `number` no envio manual (front → Evolution)
+    // com o JID real de POST /chat/whatsappNumbers/{instance}.
+    if (
+      safePath.startsWith("message/") &&
+      (method === "POST" || method === "PUT") &&
+      outboundBody &&
+      typeof outboundBody === "object" &&
+      !Array.isArray(outboundBody) &&
+      (outboundBody as { number?: unknown }).number
+    ) {
+      const instanceName = safePath.split("/")[2] || "";
+      const rawNumber = String((outboundBody as { number?: unknown }).number || "");
+      if (instanceName && digitsOnlyPhone(rawNumber)) {
+        const resolved = await resolveWhatsAppChatId({
+          phoneOrJid: rawNumber,
+          provider: {
+            kind: "evolution",
+            apiUrl: evolutionUrl,
+            apiKey: evolutionKey!,
+            instanceName,
+          },
+          fallbackProviders: Deno.env.get("WHAPI_TOKEN")
+            ? [{
+              kind: "whapi",
+              apiToken: Deno.env.get("WHAPI_TOKEN")!,
+              baseUrl: Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud",
+            }]
+            : [],
+          supabase,
+        });
+        if (!resolved.ok) {
+          return new Response(
+            JSON.stringify({
+              error: "Destino sem WhatsApp válido (wa_id)",
+              reasonCode: "invalid_whatsapp",
+              detail: resolved.reason,
+            }),
+            { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        if (resolved.changed) {
+          console.log(
+            `[evolution-proxy] wa_chat_id rewritten ${rawNumber.slice(-8)} → ${resolved.digits.slice(-8)}`,
+          );
+        }
+        outboundBody = { ...(outboundBody as Record<string, unknown>), number: resolved.digits };
+      }
+    }
+
     const fetchOptions: RequestInit = {
       method: method || "GET",
       headers: {
@@ -379,8 +430,8 @@ Deno.serve(async (req) => {
       },
     };
 
-    if (body && (method === "POST" || method === "PUT")) {
-      fetchOptions.body = JSON.stringify(body);
+    if (outboundBody && (method === "POST" || method === "PUT")) {
+      fetchOptions.body = JSON.stringify(outboundBody);
     }
 
     let evolutionResponse: Response;

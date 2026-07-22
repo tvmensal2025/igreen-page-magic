@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createEvolutionSender } from "../_shared/evolution-api.ts";
+import { createWhapiSender } from "../_shared/whapi-api.ts";
+import { toWhatsAppChatId } from "../_shared/resolve-whatsapp-chat-id.ts";
 import { captureError } from "../_shared/sentry.ts";
 
 const corsHeaders = {
@@ -58,7 +60,7 @@ Deno.serve(async (req) => {
     // Buscar cliente + consultor
     const { data: customer, error: fetchErr } = await supabase
       .from("customers")
-      .select("id, phone_whatsapp, name, status, conversation_step, consultant_id")
+      .select("id, phone_whatsapp, whatsapp_chat_id, name, status, conversation_step, consultant_id")
       .eq("id", customer_id)
       .single();
 
@@ -84,9 +86,11 @@ Deno.serve(async (req) => {
       instanceName = inst?.instance_name || null;
     }
 
-    let phone = String(customer.phone_whatsapp || "").replace(/\D/g, "");
-    if (!phone.startsWith("55")) phone = "55" + phone;
-    const remoteJid = `${phone}@s.whatsapp.net`;
+    let phone = String(
+      (customer as any).whatsapp_chat_id || customer.phone_whatsapp || "",
+    ).replace(/\D/g, "");
+    if (phone && !phone.startsWith("55")) phone = "55" + phone;
+    const remoteJid = toWhatsAppChatId(phone);
 
     async function sendWhatsApp(message: string) {
       // Tentar Evolution API primeiro
@@ -94,19 +98,28 @@ Deno.serve(async (req) => {
         const _raw = createEvolutionSender(evolutionUrl, evolutionKey, instanceName);
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
         const { sendText } = wrapSenderWithGuard(_raw, { supabase, instanceName });
-        const ok = await sendText(remoteJid, message);
+        const ok = await sendText(remoteJid, message, {
+          supabase,
+          customerId: customer_id,
+        } as any);
         if (ok) return;
       }
-      // Fallback: Whapi
+      // Fallback: Whapi via sender (resolve JID — nunca fetch cru)
       const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
-      const whapiUrl = (settings.whapi_api_url || Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud").replace(/\/$/, "") + "/";
       if (!whapiToken) { console.error("❌ Nenhum canal de envio configurado"); return; }
       try {
-        await fetch(`${whapiUrl}messages/text`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${whapiToken}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ to: remoteJid, body: message, typing_time: 0 }),
+        const sender = createWhapiSender(
+          whapiToken,
+          settings.whapi_api_url || Deno.env.get("WHAPI_API_URL"),
+        );
+        const ok = await sender.sendText(remoteJid, message, {
+          idempotency: {
+            supabase,
+            customerId: customer_id,
+            consultantId: customer.consultant_id || undefined,
+          } as any,
         });
+        if (!ok) console.error("❌ Whapi sendText retornou false");
       } catch (e: any) {
         console.error("❌ Erro enviar WhatsApp:", e.message);
       }

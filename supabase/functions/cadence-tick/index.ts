@@ -37,6 +37,10 @@ import {
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import {
+  isAckOk,
+  isPendingStale,
+} from "../_shared/outbound-delivery-reconcile.ts";
+import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
@@ -337,6 +341,8 @@ function renderTemplate(tpl: string, vars: Record<string, string>): string {
   if (!nome) {
     out = scrubEmptyNameGreeting(out);
   }
+  // Legado sem cargo gestor: "…,  da iGreen" → "… da iGreen"
+  out = out.replace(/,\s+da iGreen/gi, " da iGreen");
   return out.replace(/[ \t]{2,}/g, " ").replace(/\s+([,.!?;:])/g, "$1").replace(/\n{3,}/g, "\n\n").trim();
 }
 
@@ -380,7 +386,33 @@ type DispatchResult = {
   with_name?: boolean;
   media_url?: string;
   media_type?: string;
+  messageId?: string | null;
+  /** WA: aceite HTTP — espera ACK (webhook/reconciler) antes de avançar escada. */
+  awaiting_ack?: boolean;
 };
+
+/** Último outbound de cadência deste stage — para hold/ACK. */
+async function loadCadenceWaAck(
+  supabase: any,
+  customerId: string,
+  stage: string,
+): Promise<{ delivery_status: string | null; created_at: string | null; external_message_id: string | null }> {
+  const { data } = await supabase
+    .from("conversations")
+    .select("delivery_status, created_at, external_message_id")
+    .eq("customer_id", customerId)
+    .eq("message_direction", "outbound")
+    .eq("origin", "cadence")
+    .eq("conversation_step", `cadence:${stage}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return {
+    delivery_status: (data as any)?.delivery_status ?? null,
+    created_at: (data as any)?.created_at ?? null,
+    external_message_id: (data as any)?.external_message_id ?? null,
+  };
+}
 
 async function dispatchWhatsApp(
   supabase: any,
@@ -392,7 +424,7 @@ async function dispatchWhatsApp(
 ): Promise<DispatchResult> {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, name_source, phone_whatsapp, consultant_id")
+    .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id")
     .eq("id", row.customer_id)
     .maybeSingle();
 
@@ -417,7 +449,7 @@ async function dispatchWhatsApp(
 
   // Carrega consultor p/ substituir {{consultor}} e {{consultor_phone}} — sem
   // isso, o link `wa.me/{{consultor_phone}}` saía literal ou como `wa.me/`.
-  const { consultantName, consultantPhone, assistantName } = await loadLeadContext(
+  const { consultantName, consultantPhone, assistantName, consultantGender } = await loadLeadContext(
     supabase, row.customer_id, row.consultant_id,
   );
   const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
@@ -447,8 +479,14 @@ async function dispatchWhatsApp(
     assistente: assistantName,
     consultor_phone: consultantPhone,
     frase_disponibilidade: fraseDisponibilidade,
+    do_da_consultor: consultantGender === "consultora" ? "da" : "do",
+    // Legado: nunca rotular consultor como gestor
+    gestor_a: "",
   });
-  const jid = `${String(cust.phone_whatsapp).replace(/\D/g, "")}@s.whatsapp.net`;
+  const jidDigits = String(
+    (cust as { whatsapp_chat_id?: string | null }).whatsapp_chat_id || cust.phone_whatsapp,
+  ).replace(/\D/g, "");
+  const jid = `${jidDigits}@s.whatsapp.net`;
   const sendCtx = ctx(row.consultant_id || "system", row.customer_id, `cadence:${stage}`, String(row.id || ""));
 
   try {
@@ -473,6 +511,8 @@ async function dispatchWhatsApp(
       }
     }
     if (!(r as any)?.ok) return { ok: false, detail: `send_failed:${(r as any)?.detail ?? "?"}` };
+    // Whapi/Evolution: PENDING no body do send = aceite normal (não é ACK final).
+    // delivery_status fica queued; reconciler/webhook promovem sent/delivered/failed.
     await registerSend(supabase, ch.instanceName);
     const externalId = String((r as any)?.messageId || "").trim() || null;
     const bodyForLog =
@@ -486,7 +526,7 @@ async function dispatchWhatsApp(
       message_type: mtype === "audio" ? "audio" : mtype === "image" || mtype === "video" ? mtype : "text",
       conversation_step: `cadence:${stage}`,
       external_message_id: externalId,
-      delivery_status: "sent",
+      delivery_status: "queued",
       origin: "cadence",
     }).then(() => {}, () => {});
     const themeTag = themeId ? `:theme_${themeId}` : "";
@@ -498,13 +538,15 @@ async function dispatchWhatsApp(
       with_name: !!firstName,
       media_url: cfg.media_url || undefined,
       media_type: mtype,
+      messageId: externalId,
+      awaiting_ack: true,
     };
   } catch (e) {
     return { ok: false, detail: `exception:${(e as Error).message}` };
   }
 }
 
-/** Busca telefone + nome + IA do consultor para merge nas variáveis do template. */
+/** Busca telefone + nome + IA + gênero do consultor do lead (nunca inventar gestor/Rafael). */
 async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
   const { data: cust } = await supabase
     .from("customers")
@@ -513,20 +555,23 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
   let consultantName = "";
   let consultantPhone = "";
   let assistantName = "";
+  let consultantGender: "consultor" | "consultora" = "consultor";
   if (consultantId) {
     const { data: c } = await supabase
       .from("consultants")
-      .select("name, display_name, assistant_name")
+      .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId).maybeSingle();
     consultantName = resolvePublicConsultantFirstName(
       (c as { name?: string | null })?.name,
       (c as { display_name?: string | null })?.display_name,
     );
     assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
+    const g = String((c as { gender?: string | null })?.gender || "").trim();
+    consultantGender = g === "consultora" ? "consultora" : "consultor";
     // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
     consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
   }
-  return { cust, consultantName, consultantPhone, assistantName };
+  return { cust, consultantName, consultantPhone, assistantName, consultantGender };
 }
 
 async function dispatchVoiceCall(
@@ -627,7 +672,7 @@ async function dispatchSMS(
   supabase: any, row: any, stage: Stage, cfg: StageConfig, loadAvail: AvailLoader,
 ): Promise<DispatchResult> {
   if (!velipConfigured()) return { ok: false, detail: "velip_not_configured" };
-  const { cust, consultantName, consultantPhone, assistantName } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
+  const { cust, consultantName, consultantPhone, assistantName, consultantGender } = await loadLeadContext(supabase, row.customer_id, row.consultant_id);
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
 
   const gate = await assertBotOutboundAllowed(supabase, {
@@ -672,6 +717,8 @@ async function dispatchSMS(
     consultor_phone: consultantPhone,
     link_wa: consultantPhone ? `https://wa.me/${consultantPhone}` : "",
     frase_disponibilidade: fraseDisponibilidade,
+    do_da_consultor: consultantGender === "consultora" ? "da" : "do",
+    gestor_a: "",
   });
   text = ensureSmsWaLink(text, consultantPhone);
   if (!text.trim()) return { ok: false, detail: "empty_message" };
@@ -1107,10 +1154,56 @@ Deno.serve(async (req) => {
           if (!eff.canSend) {
             await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
             if (eff.status === "sent" || eff.status === "delivered") {
-              // Envio já ocorreu (ex.: worker morreu entre enviar e avançar):
-              // NÃO reenvia — apenas deixa avançar o estágio abaixo.
-              detail = { ...detail, dispatch: "effect_already_sent", effect_id: eff.effectId };
-              status = "queued";
+              // Envio já ocorreu. WhatsApp: só avança se ACK ok; senão espera ou reabre retry.
+              if (def.channel === "whatsapp") {
+                const ack = await loadCadenceWaAck(supabase, row.customer_id, stage);
+                if (isAckOk(ack.delivery_status) || eff.status === "delivered") {
+                  detail = { ...detail, dispatch: "effect_already_sent_acked", effect_id: eff.effectId };
+                  status = "sent";
+                } else if (
+                  ack.delivery_status === "failed" ||
+                  (ack.created_at && isPendingStale(ack.created_at))
+                ) {
+                  // Reabre efeito para reenvio (JID pode ter sido corrigido).
+                  try {
+                    await supabase
+                      .from("outbound_effects")
+                      .update({
+                        status: "failed_retryable",
+                        error_code: ack.delivery_status === "failed" ? "ack_failed" : "ack_pending_stale",
+                      })
+                      .eq("id", eff.effectId)
+                      .eq("status", "sent");
+                  } catch { /* best-effort */ }
+                  await finishRow(row.id, claimToken, {
+                    next_action_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
+                  });
+                  detail = {
+                    ...detail,
+                    dispatch: "ack_failed_reopen",
+                    effect_id: eff.effectId,
+                    delivery_status: ack.delivery_status,
+                  };
+                  deferred++;
+                  continue;
+                } else {
+                  // Ainda queued/pending recente — espera reconciler/webhook.
+                  await finishRow(row.id, claimToken, {
+                    next_action_at: new Date(now.getTime() + 3 * 60_000).toISOString(),
+                  });
+                  detail = {
+                    ...detail,
+                    dispatch: "awaiting_ack",
+                    effect_id: eff.effectId,
+                    delivery_status: ack.delivery_status,
+                  };
+                  deferred++;
+                  continue;
+                }
+              } else {
+                detail = { ...detail, dispatch: "effect_already_sent", effect_id: eff.effectId };
+                status = "queued";
+              }
             } else if (
               (eff.status === "failed_final" || eff.status === "suppressed") &&
               (def.channel === "sms" || def.channel === "voice")
@@ -1157,8 +1250,24 @@ Deno.serve(async (req) => {
               if (isColdOutreachStage(stage)) coldTouchesToday++;
               await finishOutboundEffect(supabase, eff.effectId, "sent", {
                 providerStatus: String(res.detail || "").slice(0, 200),
+                providerMessageId: res.messageId || null,
               });
               await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
+              // WhatsApp: hold escada até ACK (webhook/reconciler) ou stale.
+              if (def.channel === "whatsapp" && res.awaiting_ack) {
+                status = "queued";
+                detail = { ...detail, awaiting_ack: true, message_id: res.messageId || null };
+                await finishRow(row.id, claimToken, {
+                  next_action_at: new Date(now.getTime() + 3 * 60_000).toISOString(),
+                });
+                await supabase.from("cadence_action_log").insert({
+                  customer_id: row.customer_id,
+                  consultant_id: row.consultant_id,
+                  stage, channel: def.channel, status, detail,
+                }).then(() => {}, () => {});
+                deferred++;
+                continue;
+              }
             } else {
               failed++;
               const permanent =

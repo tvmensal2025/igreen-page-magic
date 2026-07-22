@@ -111,7 +111,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
         {children}
       </div>
 
-      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
         <form
           onSubmit={handleSubmit}
           className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl my-8"

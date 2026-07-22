@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, ArrowRight, Zap } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Zap, RefreshCw } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
+import { hardReset } from "@/lib/hardReset";
 
 function slugify(s: string) {
   return s
@@ -50,9 +51,25 @@ const Auth = () => {
   // aparece quando o usuário volta pelo link do e-mail (evento PASSWORD_RECOVERY).
   const [forgotMode, setForgotMode] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [resettingApp, setResettingApp] = useState(false);
   const recoveryRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const handleHardResetApp = async () => {
+    if (resettingApp) return;
+    setResettingApp(true);
+    try {
+      await hardReset("auth-page-update-button");
+    } catch (error: unknown) {
+      setResettingApp(false);
+      toast({
+        title: "Não foi possível atualizar",
+        description: error instanceof Error ? error.message : "Tente novamente ou abra /reset.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const checkAdminAndNavigate = async (_userId: string) => {
     navigate("/admin");
@@ -349,12 +366,33 @@ const Auth = () => {
           </p>
         ) : null}
 
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-2 px-1">
-          <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground/60">
-            <Zap className="w-3 h-3 shrink-0" /><span>PLATAFORMA PARA O CONSULTOR</span>
+        <div className="pt-1 space-y-3">
+          <button
+            type="button"
+            onClick={handleHardResetApp}
+            disabled={resettingApp}
+            className="group w-full flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-secondary/30 backdrop-blur-sm px-4 py-3.5 text-left transition-all duration-300 hover:border-primary/35 hover:bg-secondary/55 hover:shadow-md disabled:opacity-60"
+          >
+            <div className="min-w-0 space-y-0.5">
+              <p className="text-sm font-semibold text-foreground tracking-tight">
+                {resettingApp ? "Atualizando o app…" : "Atualizar app"}
+              </p>
+              <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug">
+                Limpa o cache e carrega a versão mais recente. Use se a tela travar ou ficar desatualizada.
+              </p>
+            </div>
+            <span className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
+              <RefreshCw className={`h-4 w-4 ${resettingApp ? "animate-spin" : ""}`} />
+            </span>
+          </button>
+
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground/60">
+              <Zap className="w-3 h-3 shrink-0" /><span>PLATAFORMA PARA O CONSULTOR</span>
+            </div>
+            <div className="w-1 h-1 rounded-full bg-muted-foreground/20 hidden sm:block" />
+            <div className="text-[10px] sm:text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
           </div>
-          <div className="w-1 h-1 rounded-full bg-muted-foreground/20 hidden sm:block" />
-          <div className="text-[10px] sm:text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
         </div>
       </div>
     </div>

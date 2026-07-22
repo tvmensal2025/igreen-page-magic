@@ -75,14 +75,15 @@ function renderIdentity(
   gender: "consultor" | "consultora",
 ): string {
   const doDa = gender === "consultora" ? "da" : "do";
-  const gestorA = gender === "consultora" ? "gestora" : "gestor";
+  // Sem cargo "gestor" — consultor pode ser qualquer nível.
   return text
     .replace(/\{\{\s*assistente\s*\}\}/gi, assistente)
     .replace(/\{\{\s*consultor\s*\}\}/gi, consultor)
     .replace(/\{\{\s*representante\s*\}\}/gi, consultor)
     .replace(/\{\{\s*do_da_consultor\s*\}\}/gi, doDa)
-    .replace(/\{\{\s*gestor_a\s*\}\}/gi, gestorA)
+    .replace(/\{\{\s*gestor_a\s*\}\}/gi, "")
     .replace(/\{\{\s*nome\s*\}\}/gi, "")
+    .replace(/,\s+da iGreen/gi, " da iGreen")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

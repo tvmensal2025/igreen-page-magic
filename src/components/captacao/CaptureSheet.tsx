@@ -574,7 +574,7 @@ function CaptureSheetInner({
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        className="fixed bottom-0 left-0 right-0 z-50 flex items-center gap-2 px-3 h-11 bg-card/95 backdrop-blur border-t border-primary/40 shadow-[0_-6px_20px_-6px_hsl(var(--primary)/0.35)] animate-in slide-in-from-bottom-2 active:bg-card"
+        className="fixed bottom-0 left-0 right-0 z-[110] flex items-center gap-2 px-3 h-11 bg-card/95 backdrop-blur border-t border-primary/40 shadow-[0_-6px_20px_-6px_hsl(var(--primary)/0.35)] animate-in slide-in-from-bottom-2 active:bg-card"
         style={{ paddingBottom: "max(0px, env(safe-area-inset-bottom, 0px))" }}
       >
         <div className="w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">

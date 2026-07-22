@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { TablesUpdate } from "@/integrations/supabase/types";
@@ -179,18 +182,28 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
           </div>
           <div>
             <Label className="text-[11px] text-muted-foreground">Status</Label>
-            <select value={editForm.status || "pending"} onChange={(e) => updateEdit("status", e.target.value)} className="h-9 text-xs mt-1 w-full bg-secondary/30 border border-border/50 rounded-md px-2">
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s.value} value={s.value}>{s.label}</option>
-              ))}
-            </select>
+            <Select value={editForm.status || "pending"} onValueChange={(v) => updateEdit("status", v)}>
+              <SelectTrigger className="h-9 text-xs mt-1 bg-secondary/30 border-border/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUS_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label className="text-[11px] text-muted-foreground">Tipo Produto</Label>
-            <select value={editForm.tipo_produto || "energia"} onChange={(e) => updateEdit("tipo_produto", e.target.value)} className="h-9 text-xs mt-1 w-full bg-secondary/30 border border-border/50 rounded-md px-2">
-              <option value="energia">⚡ Energia</option>
-              <option value="telefonia">📱 Telefonia</option>
-            </select>
+            <Select value={editForm.tipo_produto || "energia"} onValueChange={(v) => updateEdit("tipo_produto", v)}>
+              <SelectTrigger className="h-9 text-xs mt-1 bg-secondary/30 border-border/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="energia">⚡ Energia</SelectItem>
+                <SelectItem value="telefonia">📱 Telefonia</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <SectionLabel icon={MapPin} title="Endereço" />

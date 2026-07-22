@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, Loader2, MoreVertical, Bookmark, Copy, Paperclip, Sparkles, IdCard, Zap, XCircle, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -213,13 +214,22 @@ function ImageViewer({ message, onLoadMedia, onLoaded }: { message: ChatMessage;
             setFailed(true);
           }}
         />
-        {expanded && (
+        {expanded && createPortal(
           <div
-            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer"
+            className="fixed inset-0 z-[140] bg-black/80 flex items-center justify-center cursor-pointer"
             onClick={() => setExpanded(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Imagem ampliada"
           >
-            <img src={imgSrc} alt="" className="max-w-[90vw] max-h-[90vh] rounded-lg" />
-          </div>
+            <img
+              src={imgSrc}
+              alt=""
+              className="max-w-[90vw] max-h-[90vh] rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>,
+          document.body,
         )}
       </>
     );

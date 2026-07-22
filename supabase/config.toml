@@ -104,6 +104,10 @@ verify_jwt = false
 [functions.outbound-media-flush-cron]
 verify_jwt = false
 
+# Reconcilia ACK Whapi de outbound (pending → delivered/failed). pg_cron a cada 2 min.
+[functions.outbound-delivery-reconcile-cron]
+verify_jwt = false
+
 [functions.ctwa-status]
 verify_jwt = false
 

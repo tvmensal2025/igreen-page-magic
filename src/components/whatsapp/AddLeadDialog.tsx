@@ -14,6 +14,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Plus, Search, UserPlus, Users, Check, Loader2 } from "lucide-react";
 
 interface AddLeadDialogProps {
@@ -236,17 +239,18 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
         {/* Stage selector */}
         <div>
           <label className="text-[10px] text-muted-foreground font-medium">Estágio inicial</label>
-          <select
-            value={stage}
-            onChange={(e) => setStage(e.target.value)}
-            className="w-full h-8 text-xs bg-background border border-border rounded-md px-2 mt-1"
-          >
-            {stages.map((s) => (
-              <option key={s.stage_key} value={s.stage_key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
+          <Select value={stage} onValueChange={setStage}>
+            <SelectTrigger className="w-full h-8 text-xs mt-1">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {stages.map((s) => (
+                <SelectItem key={s.stage_key} value={s.stage_key}>
+                  {s.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Notes */}

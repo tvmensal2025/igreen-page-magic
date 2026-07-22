@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
     // Resolve customer + phone
     const { data: customer } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, cpf, consultant_id, electricity_bill_value, flow_variant, conversation_step, last_custom_prompt_at, electricity_bill_photo_url, document_front_url, document_back_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_at, bill_data_confirmed_at, doc_data_confirmed_at, bill_holder_name, doc_holder_name, name_mismatch_flag, name_mismatch_acknowledged_at, rg, data_nascimento, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, cep, distribuidora, numero_instalacao, do_not_contact")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, cpf, consultant_id, electricity_bill_value, flow_variant, conversation_step, last_custom_prompt_at, electricity_bill_photo_url, document_front_url, document_back_url, last_inbound_media_url, last_inbound_media_kind, last_inbound_media_at, bill_data_confirmed_at, doc_data_confirmed_at, bill_holder_name, doc_holder_name, name_mismatch_flag, name_mismatch_acknowledged_at, rg, data_nascimento, address_street, address_number, address_complement, address_neighborhood, address_city, address_state, cep, distribuidora, numero_instalacao, do_not_contact")
       .eq("id", body.customerId)
       .maybeSingle();
     if (!customer) return json({ ok: false, blocked: true, code: "customer_not_found", error: "customer_not_found", message: "Lead não encontrado (pode ter sido removido). Recarregue a lista." });
@@ -115,8 +115,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const rawPhone = String(customer.phone_whatsapp || "");
-    if (rawPhone.startsWith("sem_celular_")) {
+    const rawPhone = String((customer as any).whatsapp_chat_id || customer.phone_whatsapp || "");
+    if (String(customer.phone_whatsapp || "").startsWith("sem_celular_")) {
       return json({
         ok: false, blocked: true,
         code: "lead_sem_whatsapp",

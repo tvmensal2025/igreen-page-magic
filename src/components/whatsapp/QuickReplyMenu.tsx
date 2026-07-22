@@ -56,7 +56,7 @@ export function QuickReplyMenu({ templates, search, onSelect, onClose, onExactSh
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-64 overflow-hidden z-50 flex flex-col"
+      className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-lg shadow-lg max-h-64 overflow-hidden z-[200] flex flex-col"
     >
       <div className="flex items-center justify-between px-2 py-1.5 border-b border-border/60 bg-secondary/30 shrink-0">
         <p className="text-[10px] text-muted-foreground">

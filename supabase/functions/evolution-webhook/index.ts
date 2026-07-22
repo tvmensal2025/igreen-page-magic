@@ -271,7 +271,13 @@ Deno.serve(async (req) => {
           if (mids.length > 0) {
             await supabase.from("outbound_message_log")
               .update({
-                result_status: mapped.status === "failed" ? "failed" : mapped.status === "queued" ? "queued" : "sent",
+                result_status: mapped.status === "failed"
+                  ? "failed"
+                  : mapped.status === "queued"
+                  ? "queued"
+                  : mapped.status === "delivered" || mapped.status === "read"
+                  ? "delivered"
+                  : "sent",
               })
               .in("evolution_message_id", mids);
           }

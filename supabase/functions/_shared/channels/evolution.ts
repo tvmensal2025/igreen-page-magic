@@ -77,8 +77,8 @@ export interface CreateEvolutionAdapterInput {
 export function createEvolutionAdapter(input: CreateEvolutionAdapterInput): ChannelAdapter {
   const sender = createEvolutionSender(input.apiUrl, input.apiKey, input.instanceName);
 
-  function toResult(ok: boolean): SendResult {
-    if (ok) return { ok: true, messageId: null };
+  function toResult(ok: boolean, messageId: string | null = null, pending = false): SendResult {
+    if (ok) return { ok: true, messageId, pending: pending || undefined };
     return { ok: false, reason: "unknown", detail: "evolution_send_returned_false" };
   }
 
@@ -88,8 +88,15 @@ export function createEvolutionAdapter(input: CreateEvolutionAdapterInput): Chan
     async sendText(jid, text, ctx) {
       const idem = idempotencyFromCtx(ctx, text.slice(0, 200));
       try {
-        const ok = await sender.sendText(jid, text, idem);
-        return toResult(ok);
+        const r = await sender.sendTextDetailed(jid, text, idem);
+        if (!r.ok) {
+          return {
+            ok: false,
+            reason: "unknown",
+            detail: r.error || "evolution_send_failed",
+          };
+        }
+        return toResult(true, r.messageId, !!r.pending);
       } catch (e: any) {
         return { ok: false, reason: "network", detail: e?.message ?? String(e) };
       }

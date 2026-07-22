@@ -19,6 +19,7 @@ import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
+import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import {
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
     // ─── 1. Candidatos a follow-up #1 ────────────────────────────────
     const { data: candidates } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, conversation_step, followup_count, last_bot_interaction_at, consultant_id")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, conversation_step, followup_count, last_bot_interaction_at, consultant_id")
       .lte("last_bot_interaction_at", sixHoursAgo)
       .gte("last_bot_interaction_at", fortyEightHoursAgo)
       .eq("followup_count", 0)
@@ -141,22 +142,53 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Sempre {{nome}} no fallback — nunca interpolar antes do loader.
-      // (Fallback personalizado + cache contaminava o próximo lead do batch.)
+      // Sempre {{nome}}/{{consultor}} no fallback — identidade do CONSULTOR do lead
+      // (nome, não gestor). Nunca interpolar antes do loader (cache contaminava o batch).
       const firstName = safeFirstNameForAddress(c.name, c.name_source);
+      let consultorLabel = "";
+      if (c.consultant_id) {
+        const { data: cons } = await supabase
+          .from("consultants")
+          .select("name, display_name")
+          .eq("id", c.consultant_id)
+          .maybeSingle();
+        consultorLabel = resolvePublicConsultantFirstName(
+          (cons as { name?: string } | null)?.name,
+          (cons as { display_name?: string } | null)?.display_name,
+        );
+      }
+      // Neutro (sem "o/a"): serve consultor e consultora de qualquer nível.
       const fallback =
-        `Oi {{nome}}, aqui é da *iGreen*.\n\nVi que sua simulação da conta de luz ficou pendente. Posso retomar de onde paramos — é só responder por aqui.`;
+        `*Oi, {{nome}}*! Aqui é *{{consultor}}* da *iGreen* ⚡\n\n` +
+        `Todo mês a *conta de luz chega*… e muitas pessoas só descobrem depois que estavam *pagando mais* do que precisavam.\n\n` +
+        `Você chegou a *iniciar sua simulação*, mas não finalizamos.\n` +
+        `*Vamos continuar* de onde paramos?\n\n` +
+        `*Me confirma* seu primeiro nome para eu *seguir com o atendimento?* 😊`;
       let msg = await loadAutomationTemplate(
         supabase,
         "bot_followup_sumiu",
         fallback,
-        { nome: firstName },
+        { nome: firstName, consultor: consultorLabel || "iGreen" },
         c.consultant_id,
       );
       if (!firstName) msg = scrubEmptyNameGreeting(msg);
       try {
         await markEffectSending(supabase, eff.effectId);
-        await sender.sendText(`${c.phone_whatsapp}@s.whatsapp.net`, msg);
+        const chatDigits = String((c as any).whatsapp_chat_id || c.phone_whatsapp || "").replace(/\D/g, "");
+        const sendOk = await sender.sendText(`${chatDigits}@s.whatsapp.net`, msg, {
+          idempotency: {
+            supabase,
+            customerId: c.id,
+            consultantId: c.consultant_id || undefined,
+          } as any,
+        });
+        if (!sendOk) {
+          await finishOutboundEffect(supabase, eff.effectId, "failed", {
+            errorCode: "send_returned_false",
+          });
+          await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+          continue;
+        }
         await finishOutboundEffect(supabase, eff.effectId, "sent");
         await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "done");
         await supabase.from("customers").update({
