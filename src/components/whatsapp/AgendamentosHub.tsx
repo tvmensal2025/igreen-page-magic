@@ -54,6 +54,9 @@ const AgendamentosGrupoAPanel = lazy(() =>
 const AgendamentosGrupoCPanel = lazy(() =>
   import("./AgendamentosGrupoCPanel").then((m) => ({ default: m.AgendamentosGrupoCPanel })),
 );
+const InvalidPhonesPanel = lazy(() =>
+  import("@/components/admin/InvalidPhonesPanel").then((m) => ({ default: m.InvalidPhonesPanel })),
+);
 
 /** Normaliza abas antigas para a nova estrutura */
 function normalizeHubTab(tab: AgendamentosHubTab): AgendamentosHubTab {
@@ -734,6 +737,7 @@ export function AgendamentosHub({
             <TabsTrigger value="agenda" className="text-xs">Agenda</TabsTrigger>
             <TabsTrigger value="carteira" className="text-xs">Carteira</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
+            <TabsTrigger value="numeros-invalidos" className="text-xs">Números inválidos</TabsTrigger>
           </TabsList>
 
           {/* ── Mapa A→B→C + fila ── */}
@@ -1264,6 +1268,13 @@ export function AgendamentosHub({
             </p>
             <Suspense fallback={<LoadingRow />}>
               <AutoMessageLog consultantId={consultantId} />
+            </Suspense>
+          </TabsContent>
+
+          {/* ── Números inválidos (IK/EK/CK/BK — Velip) ── */}
+          <TabsContent value="numeros-invalidos" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <InvalidPhonesPanel />
             </Suspense>
           </TabsContent>
         </Tabs>
