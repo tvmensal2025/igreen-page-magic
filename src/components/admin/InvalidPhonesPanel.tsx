@@ -31,13 +31,16 @@ interface Row {
 }
 
 const REASON_LABELS: Record<string, string> = {
-  auto_velip_ik: "Número inexistente (IK)",
-  auto_velip_ek: "Número inválido (EK)",
-  auto_velip_ck: "Bloqueio operadora (CK)",
-  auto_velip_bk: "Não perturbe (BK)",
-  auto_nonexistent: "Número inexistente",
-  auto_invalid_number: "Número inválido",
-  auto_do_not_disturb: "Não perturbe",
+  auto_velip_ik: "Voz — inexistente (IK)",
+  auto_velip_ek: "Voz — inválido (EK)",
+  auto_velip_ck: "Voz — bloqueio operadora (CK)",
+  auto_velip_bk: "Voz — não perturbe (BK)",
+  auto_nonexistent: "Voz — inexistente",
+  auto_invalid_number: "Voz — inválido",
+  auto_do_not_disturb: "Voz — não perturbe",
+  auto_sms_undeliv: "SMS — não entregue (2+×)",
+  auto_voice_reproved: "Voz reprovada (cross-channel)",
+  auto_cross_channel: "Canal morto (voz + SMS)",
 };
 
 function labelReason(r: string | null): string {
@@ -47,9 +50,11 @@ function labelReason(r: string | null): string {
 
 function looksAutoInvalid(reason: string | null): boolean {
   const r = String(reason || "").toLowerCase();
-  return r.startsWith("auto_velip_") ||
-    r === "auto_nonexistent" || r === "auto_invalid_number" || r === "auto_do_not_disturb";
+  return r.startsWith("auto_velip_") || r.startsWith("auto_sms_") || r.startsWith("auto_voice_") ||
+    r === "auto_nonexistent" || r === "auto_invalid_number" || r === "auto_do_not_disturb" ||
+    r === "auto_cross_channel";
 }
+
 
 export function InvalidPhonesPanel() {
   const [rows, setRows] = useState<Row[]>([]);
