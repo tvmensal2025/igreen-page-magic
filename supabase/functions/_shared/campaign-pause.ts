@@ -1,10 +1,8 @@
 /**
  * Helpers de pausa/encerramento de campanha Meta.
  *
- * Regra de ouro: pausa MANUAL e STOP do consultor NUNCA são revertidos por cron,
- * healthcheck, recarga de carteira ou realinhamento de lifetime.
- * Pause → só reativa com clique Play / toggle activate.
- * Stop (completed) → só reativa via Estender (facebook-extend-campaign).
+ * Regra de ouro: pausa MANUAL, STOP e AUTO_PERF_PAUSE (waste guard) NUNCA são
+ * revertidos por cron/healthcheck. Só Play / Estender reativa.
  */
 
 export const MANUAL_PAUSE_PREFIX = "MANUAL_PAUSE:";
@@ -25,9 +23,15 @@ export function isManualStop(reason: string | null | undefined): boolean {
   return r.startsWith(MANUAL_STOP_PREFIX) || /encerrad[ao] pelo consultor/i.test(r);
 }
 
-/** Consultor travou a campanha (pause ou stop) — cron/healthcheck não mexem. */
+/** Pausa automática por desempenho (waste guard) — só Play reativa. */
+export function isAutoPerfPause(reason: string | null | undefined): boolean {
+  if (!reason) return false;
+  return String(reason).startsWith("AUTO_PERF_PAUSE:");
+}
+
+/** Consultor travou OU waste guard — cron/healthcheck não mexem. */
 export function isConsultantLocked(reason: string | null | undefined): boolean {
-  return isManualPause(reason) || isManualStop(reason);
+  return isManualPause(reason) || isManualStop(reason) || isAutoPerfPause(reason);
 }
 
 /** Pausa automática por saldo/teto — pode reativar após recarga. */
@@ -44,7 +48,7 @@ export function isAutoBalancePause(reason: string | null | undefined): boolean {
   );
 }
 
-/** Motivos recuperáveis que o healthcheck PODE tentar reativar (nunca MANUAL/STOP). */
+/** Motivos recuperáveis que o healthcheck PODE tentar reativar (nunca MANUAL/STOP/PERF). */
 export function isRecoverableAutoPause(reason: string | null | undefined): boolean {
   if (!reason || isConsultantLocked(reason)) return false;
   const r = String(reason).toLowerCase();

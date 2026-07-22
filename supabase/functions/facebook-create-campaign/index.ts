@@ -95,6 +95,12 @@ interface Body {
   rodizio_partner_ids?: string[];
   /** Somente service_role: publica em nome deste consultor (automação interna). */
   consultant_id?: string;
+  /**
+   * Somente service_role: cria na Meta JÁ PAUSADA (fila de rotação).
+   * Não ativa, não notifica “campanha ativa”, e relaxa o piso de saldo
+   * (ainda exige saldo líquido > 0 e sem débito).
+   */
+  queue_only?: boolean;
 }
 
 function buildInitialMessage(raw: string | undefined, distribuidora?: string): string {
@@ -374,13 +380,17 @@ Deno.serve(async (req) => {
     // GUARDRAIL: campanhas com prazo exigem cobertura do orçamento total + taxa.
     // Campanhas contínuas mantêm a proteção mínima de dias configurada.
     const admin = adminDb;
+    const queueOnly = Boolean(body.queue_only) && isServiceRoleAuth(req);
     const { data: ps } = await admin.from("platform_settings").select("*").eq("id", true).maybeSingle();
     const budgetRequirement = calculateCampaignBudgetRequirement({
       dailyBudgetCents: body.daily_budget_cents,
       durationDays: body.duration_days,
       platformFeePercent: Number(ps?.platform_fee_percent ?? 20),
       safetyMultiplier: Number(ps?.campaign_safety_multiplier ?? 1),
-      minBalanceCents: Number(ps?.min_balance_to_create_campaign_cents ?? 3000),
+      // Fila de rotação: campanhas nascem pausadas — piso baixo (1 dia + taxa).
+      minBalanceCents: queueOnly
+        ? Math.max(META_MIN_DAILY_BUDGET_CENTS, Math.round(body.daily_budget_cents * 1.2))
+        : Number(ps?.min_balance_to_create_campaign_cents ?? 3000),
     });
     const feePct = Number(ps?.platform_fee_percent ?? 20) / 100;
     const requiredCents = budgetRequirement.requiredCents;
@@ -1484,12 +1494,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 7) Solicita ativação e confirma o effective_status antes de afirmar que está ativa.
+    // 7) Ativação — ou deixa na fila (queue_only = pausada na Meta + DB).
     let activated = false;
     let activationError: string | null = null;
     let effectiveStatus = "UNKNOWN";
-    let localStatus: "active" | "pending_review" | "rejected" = "pending_review";
-    try {
+    let localStatus: "active" | "pending_review" | "rejected" | "paused" = "pending_review";
+
+    if (queueOnly) {
+      localStatus = "paused";
+      effectiveStatus = "PAUSED";
+      await admin.from("facebook_campaigns").update({
+        status: "paused",
+        rejection_reason: "ROTATION_QUEUE: na fila de rotação MG — só o rotator ativa o slot",
+        updated_at: new Date().toISOString(),
+      }).eq("fb_campaign_id", campaignId);
+    } else try {
       await fbFetch(`/${adsetId}`, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
