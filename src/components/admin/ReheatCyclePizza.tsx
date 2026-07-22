@@ -249,7 +249,17 @@ function labelDelivery(channel: string, delivery: string | null, status: string)
     return delivery || status || "—";
   }
   if (channel === "voice") {
-    const code = String(delivery || "").toUpperCase();
+    const raw = String(delivery || "");
+    const code = raw.toUpperCase();
+    // Motor de cadência suprimiu antes de discar (número já reprovado antes).
+    if (/^velip_reproved:/i.test(raw)) {
+      const inner = raw.split(":")[1]?.toUpperCase() || "";
+      if (inner === "IK") return "Número inexistente — suprimido";
+      if (inner === "EK") return "Número inválido — suprimido";
+      if (inner === "CK") return "Bloqueio operadora — suprimido";
+      if (inner === "BK") return "Não perturbe — suprimido";
+      return "Suprimido (número reprovado)";
+    }
     if (code === "OK") return "Atendida";
     if (code === "NA") return "Não atendeu";
     if (code === "EK") return "Número inválido";
@@ -982,6 +992,10 @@ async function loadSliceHistoryInner(
             ? labelDelivery("voice", call.velip_status, call.status)
             : null);
         delivery = call.velip_status || call.status;
+      } else if (r.status === "failed" && typeof detail.dispatch === "string") {
+        // Motor bloqueou antes de discar (guard IK/EK/CK/BK). Não gera log Velip.
+        // Ex.: dispatch = "velip_reproved:IK" → rótulo "Número inexistente — suprimido".
+        delivery = detail.dispatch.replace(/^velip:/i, "") || delivery;
       }
       if (!mediaUrl && cfg?.voice_audio_clip_id) {
         mediaUrl = clipUrlById.get(cfg.voice_audio_clip_id) || null;

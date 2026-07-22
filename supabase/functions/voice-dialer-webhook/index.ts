@@ -331,8 +331,26 @@ Deno.serve(async (req) => {
         .update(patch)
         .eq("velip_call_id", cd_id)
         .is("velip_status", null)
-        .select("id");
+        .select("id, consultant_id, to_phone");
       if (updated && updated.length > 0) {
+        // Auto-DNC também para chamadas do motor de cadência (sem campaign_id).
+        // Antes: DNC só era gravado quando havia target/campaign — cadence-tick ficava
+        // dependendo do guard in-memory, e voice_dnc_list nascia vazio.
+        if (outcome === "do_not_disturb" || outcome === "invalid_number" || outcome === "nonexistent") {
+          const logRow = updated[0] as { consultant_id?: string | null; to_phone?: string | null };
+          const consultantId = logRow.consultant_id ?? null;
+          const phoneDigits = String(logRow.to_phone || dest || "").replace(/\D/g, "");
+          if (consultantId && phoneDigits) {
+            try {
+              await admin.from("voice_dnc_list").upsert({
+                consultant_id: consultantId,
+                phone: phoneDigits,
+                reason: `auto_${outcome}`,
+                source: "velip_callback_cadence",
+              }, { onConflict: "consultant_id,phone" });
+            } catch (_e) { /* ignore */ }
+          }
+        }
         return json(200, { ok: true, matched: true, cadence_log: true, updated: updated.length });
       }
     }
