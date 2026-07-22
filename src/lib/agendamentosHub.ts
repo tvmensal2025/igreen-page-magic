@@ -127,6 +127,7 @@ export type AgendamentosHubTab =
   | "agenda"
   | "carteira"
   | "historico"
+  | "numeros-invalidos"
   /** @deprecated use mapa */
   | "overview"
   /** @deprecated use grupo-b */
