@@ -656,36 +656,32 @@ async function dispatchVoiceCall(
 
   // Se a operadora já reprovou este destino (IK/EK/CK/BK), não disca de novo
   // (ex.: A_CALL → IK e A_CALL_RETRY tentaria o mesmo número morto).
-  // Match 13 e 12 dígitos (logs antigos sem o 9).
+  // Match 13 e 12 dígitos (logs antigos sem o 9). Além disso, SMS UNDELIV
+  // repetido também caracteriza número morto — bloqueia voz por reciprocidade.
   const destAlt = stripVelipNinthDigit(dest);
   const phoneCandidates = [...new Set([dest, destAlt].filter(Boolean))] as string[];
-  const { data: priorFails } = await supabase
-    .from("voice_call_logs")
-    .select("velip_status, to_phone, created_at")
-    .eq("consultant_id", row.consultant_id)
-    .in("to_phone", phoneCandidates)
-    .in("velip_status", ["IK", "EK", "CK", "BK", "ik", "ek", "ck", "bk"])
-    .order("created_at", { ascending: false })
-    .limit(3);
-  const priorFail = (priorFails as { velip_status: string | null }[] | null)?.[0] ?? null;
-  if (priorFail && isReprovedVelipCode(priorFail.velip_status)) {
-    // Belt-and-suspenders: também grava em voice_dnc_list para que
-    // qualquer outro subsistema (campanhas, reheat, painel de admin)
-    // enxergue o bloqueio sem depender do voice_call_logs.
+  const cross = await checkPhoneDeadForChannel(supabase, {
+    consultantId: row.consultant_id,
+    phoneCandidates,
+    channel: "voice",
+  });
+  if (cross.block) {
+    // Belt-and-suspenders: garante o número em voice_dnc_list.
     try {
       await supabase.from("voice_dnc_list").upsert({
         consultant_id: row.consultant_id,
         phone: dest,
-        reason: `auto_velip_${String(priorFail.velip_status).toLowerCase()}`,
+        reason: cross.dnc_reason || "auto_cross_channel",
         source: "cadence_guard",
       }, { onConflict: "consultant_id,phone" });
-    } catch (_e) { /* ignore — guard-only */ }
+    } catch (_e) { /* ignore */ }
     return {
       ok: false,
-      detail: `velip_reproved:${String(priorFail.velip_status).toUpperCase()}`,
+      detail: `phone_dead:${cross.reason}`,
       permanent: true,
     };
   }
+
 
   // Ctid estável por (estágio, sequência da jornada) — sem timestamp; ciclos
   // anuais do Grupo C ganham sequência nova, então não colidem.
