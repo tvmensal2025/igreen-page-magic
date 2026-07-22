@@ -4515,6 +4515,8 @@ export type Database = {
           updated_at: string
           variant_id: string | null
           welcome_sent_at: string | null
+          whatsapp_chat_id: string | null
+          whatsapp_chat_id_checked_at: string | null
         }
         Insert: {
           address_city?: string | null
@@ -4775,6 +4777,8 @@ export type Database = {
           updated_at?: string
           variant_id?: string | null
           welcome_sent_at?: string | null
+          whatsapp_chat_id?: string | null
+          whatsapp_chat_id_checked_at?: string | null
         }
         Update: {
           address_city?: string | null
@@ -5035,6 +5039,8 @@ export type Database = {
           updated_at?: string
           variant_id?: string | null
           welcome_sent_at?: string | null
+          whatsapp_chat_id?: string | null
+          whatsapp_chat_id_checked_at?: string | null
         }
         Relationships: [
           {
@@ -13141,6 +13147,8 @@ export type Database = {
           updated_at: string
           variant_id: string | null
           welcome_sent_at: string | null
+          whatsapp_chat_id: string | null
+          whatsapp_chat_id_checked_at: string | null
         }[]
         SetofOptions: {
           from: "*"
