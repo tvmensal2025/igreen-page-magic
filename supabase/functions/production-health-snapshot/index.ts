@@ -36,9 +36,23 @@ Deno.serve(async (req) => {
 
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
+    // Canal ativo do super admin = Whapi (não Evolution). Evita falso "needs_reconnect".
+    const { data: settingsRows } = await supabase
+      .from("settings")
+      .select("key, value")
+      .in("key", ["superadmin_consultant_id", "whapi_token"]);
+    const settingsMap: Record<string, string> = {};
+    for (const row of settingsRows || []) {
+      const k = String((row as { key?: string }).key || "");
+      const v = String((row as { value?: string }).value || "").trim();
+      if (k) settingsMap[k] = v;
+    }
+    const superadminId = settingsMap.superadmin_consultant_id || "";
+    const whapiConfigured = !!settingsMap.whapi_token;
+
     for (const c of consultants as any[]) {
       try {
-        // Instância
+        // Instância (Evolution legado — pode estar needs_reconnect mesmo com Whapi ok)
         const { data: inst } = await supabase
           .from("whatsapp_instances")
           .select("status, last_health_check_at, updated_at, connected_phone")
@@ -82,10 +96,22 @@ Deno.serve(async (req) => {
           .limit(1)
           .maybeSingle();
 
+        const isWhapiConsultant = !!superadminId && c.id === superadminId && whapiConfigured;
+        const evolutionStatus = inst?.status || "unknown";
+        // Fonte da verdade de envio do super admin = Whapi; Evolution offline não é queda do Zap.
+        const instanceStatus = isWhapiConsultant ? "connected" : evolutionStatus;
+        const snapErrors: Array<{ code: string; detail?: string }> = [];
+        if (isWhapiConsultant && evolutionStatus && evolutionStatus !== "connected") {
+          snapErrors.push({
+            code: "evolution_stale_whapi_primary",
+            detail: `Evolution=${evolutionStatus}; canal ativo=Whapi`,
+          });
+        }
+
         const snapshot = {
           consultant_id: c.id,
           captured_at: new Date().toISOString(),
-          instance_status: inst?.status || "unknown",
+          instance_status: instanceStatus,
           instance_last_seen: inst?.last_health_check_at || inst?.updated_at || null,
           pixel_ok: !!c.facebook_pixel_id,
           capi_ok: capiOk,
@@ -95,7 +121,7 @@ Deno.serve(async (req) => {
           notification_phone_ok: !!c.notification_phone,
           last_lead_at: lastLead?.created_at || null,
           leads_24h: leads24 || 0,
-          errors: [],
+          errors: snapErrors,
         };
 
         const { error } = await supabase.from("production_health_snapshot").insert(snapshot);

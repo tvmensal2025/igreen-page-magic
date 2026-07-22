@@ -2,8 +2,10 @@
  * speed-to-lead-check — cria alerta no painel se lead novo ficou sem 1ª resposta.
  *
  * NÃO envia WhatsApp ao cliente. Só `bot_handoff_alerts` (+ log).
- * Toggle: speed_to_lead_sla (default OFF).
+ * Toggle: speed_to_lead_sla.
  * Minutos: retention_settings.speed_to_lead_minutes (default 5).
+ * Critério: welcome_sent_at null + do_not_contact false + pelo menos 1 inbound
+ * (evita alerta em lead manual parado sem mensagem do cliente).
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -39,13 +41,16 @@ Deno.serve(async (_req) => {
   const cutoff = new Date(Date.now() - minutes * 60_000).toISOString();
   const lookback = new Date(Date.now() - 24 * 3600_000).toISOString();
 
-  // Leads criados há mais de N min e menos de 24h, ainda sem outbound automático/humano recente
+  // Leads novos sem 1ª resposta (welcome). Exclui bloqueados e quem já recebeu welcome.
+  // Sem inbound = não é "cliente mandou e ninguém respondeu" (evita ruído de lead manual parado).
   const { data: candidates, error } = await supabase
     .from("customers")
-    .select("id, name, phone_whatsapp, consultant_id, created_at, conversation_step")
+    .select("id, name, phone_whatsapp, consultant_id, created_at, conversation_step, welcome_sent_at")
     .lte("created_at", cutoff)
     .gte("created_at", lookback)
     .eq("bot_paused", false)
+    .eq("do_not_contact", false)
+    .is("welcome_sent_at", null)
     .is("assigned_human_id", null)
     .or(LEAD_ORIGIN_FILTER)
     .limit(MAX_PER_RUN);
@@ -60,6 +65,19 @@ Deno.serve(async (_req) => {
 
   for (const c of candidates || []) {
     try {
+      // Só alerta se o lead já falou (inbound). Cadastro manual sem msg ≠ SLA de resposta.
+      const { count: inCount } = await supabase
+        .from("conversations")
+        .select("id", { count: "exact", head: true })
+        .eq("customer_id", c.id)
+        .eq("message_direction", "inbound")
+        .gte("created_at", c.created_at);
+
+      if ((inCount ?? 0) === 0) {
+        skipped++;
+        continue;
+      }
+
       // Já teve outbound depois da criação?
       const { count: outCount } = await supabase
         .from("conversations")
