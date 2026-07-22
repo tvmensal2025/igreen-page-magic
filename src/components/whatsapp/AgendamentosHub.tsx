@@ -1270,6 +1270,13 @@ export function AgendamentosHub({
               <AutoMessageLog consultantId={consultantId} />
             </Suspense>
           </TabsContent>
+
+          {/* ── Números inválidos (IK/EK/CK/BK — Velip) ── */}
+          <TabsContent value="numeros-invalidos" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <InvalidPhonesPanel />
+            </Suspense>
+          </TabsContent>
         </Tabs>
       </div>
 
