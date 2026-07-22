@@ -607,6 +607,17 @@ async function dispatchVoiceCall(
     .limit(3);
   const priorFail = (priorFails as { velip_status: string | null }[] | null)?.[0] ?? null;
   if (priorFail && isReprovedVelipCode(priorFail.velip_status)) {
+    // Belt-and-suspenders: também grava em voice_dnc_list para que
+    // qualquer outro subsistema (campanhas, reheat, painel de admin)
+    // enxergue o bloqueio sem depender do voice_call_logs.
+    try {
+      await supabase.from("voice_dnc_list").upsert({
+        consultant_id: row.consultant_id,
+        phone: dest,
+        reason: `auto_velip_${String(priorFail.velip_status).toLowerCase()}`,
+        source: "cadence_guard",
+      }, { onConflict: "consultant_id,phone" });
+    } catch (_e) { /* ignore — guard-only */ }
     return {
       ok: false,
       detail: `velip_reproved:${String(priorFail.velip_status).toUpperCase()}`,
