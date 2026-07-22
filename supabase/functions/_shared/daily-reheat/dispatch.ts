@@ -32,6 +32,7 @@ import { isAutomationEnabled } from "../automation-gate.ts";
 import { isBotGloballyEnabled } from "../bot/global-flag.ts";
 import { resolveCanonicalFlowVariant } from "../bot/canonical-flow-variant.ts";
 import { assertCanContact } from "../contact-suppression.ts";
+import { assertBotOutboundAllowed } from "../bot/outbound-gate.ts";
 import {
   delayMinutesForTransition,
   stepDef,
@@ -95,7 +96,10 @@ export async function loadDispatchGates(
   };
 }
 
-export async function loadCycleKit(supabase: SB, consultantId: string): Promise<CycleKit | null> {
+/** Kit oficial (Rafael / Multicanal) — fallback quando o consultor não tem kit próprio. */
+const RAFAEL_KIT_CONSULTANT_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
+
+async function loadCycleKitRow(supabase: SB, consultantId: string): Promise<CycleKit | null> {
   const { data } = await supabase
     .from("daily_reheat_kit")
     .select("*")
@@ -132,6 +136,13 @@ export async function loadCycleKit(supabase: SB, consultantId: string): Promise<
     velip_audio_id,
     velip_audio_id_retry,
   } as CycleKit;
+}
+
+export async function loadCycleKit(supabase: SB, consultantId: string): Promise<CycleKit | null> {
+  const own = await loadCycleKitRow(supabase, consultantId);
+  if (own) return own;
+  if (consultantId === RAFAEL_KIT_CONSULTANT_ID) return null;
+  return await loadCycleKitRow(supabase, RAFAEL_KIT_CONSULTANT_ID);
 }
 
 /** Áudio WA do dia (BRT). Dom → sábado. */
@@ -509,6 +520,18 @@ export async function dispatchCandidate(
     return {
       ok: false,
       results: [{ action: "wait", ok: false, detail: `dnc:${contact.reason}` }],
+    };
+  }
+
+  // E2E_STRICT_OUTBOUND (opt-in): bloqueia live reheat fora da allowlist / sandbox 5500000.
+  const outbound = await assertBotOutboundAllowed(supabase, {
+    customerId: plan.customer_id,
+    consultantId: plan.consultant_id,
+  });
+  if (!outbound.allowed) {
+    return {
+      ok: false,
+      results: [{ action: "wait", ok: false, detail: `outbound_gate:${outbound.reason}` }],
     };
   }
 

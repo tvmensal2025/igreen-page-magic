@@ -13,6 +13,7 @@
 
 import { phraseMatchesMessage, QA_GENERIC_SINGLE, QA_STOPWORDS } from "../qa-phrase-match.ts";
 import { safeFirstNameForAddress } from "../customer-display-name.ts";
+import { resolveFlowId } from "../resolve-flow.ts";
 
 const STOPWORDS = QA_STOPWORDS;
 
@@ -75,13 +76,9 @@ export async function buscarRespostaDiretaFaq(
   if (!consultantId) return null;
 
   try {
-    // 1) Flows ativos do consultor.
-    const { data: flows } = await supabase
-      .from("bot_flows")
-      .select("id")
-      .eq("consultant_id", consultantId)
-      .eq("is_active", true);
-    const flowIds = ((flows as Array<{ id: string }>) || []).map((f) => f.id);
+    // Multicanal oficial: FAQ do flow resolvido (público A), não só flows locais.
+    const resolved = await resolveFlowId(supabase, consultantId, "A");
+    const flowIds = resolved?.id ? [resolved.id] : [];
     if (flowIds.length === 0) return null;
 
     // 2) QAs com resposta (ignora aberturas).

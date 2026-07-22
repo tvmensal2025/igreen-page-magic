@@ -80,45 +80,45 @@ function withFakeSetTimeout<T>(fn: (recorded: number[]) => Promise<T>): Promise<
   });
 }
 
-Deno.test("sleepForMedia(audio, 5) → cadência fixa 5000ms", async () => {
+Deno.test("sleepForMedia(audio, 5) → micro-gap 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 5);
-    assertEquals(rec[0], 5000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(audio, 9999) → cadência fixa 5000ms (ignora duração)", async () => {
+Deno.test("sleepForMedia(audio, 9999) → micro-gap 150ms (ignora duração)", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 9999);
-    assertEquals(rec[0], 5000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(audio, undefined) → cadência fixa 5000ms", async () => {
+Deno.test("sleepForMedia(audio, undefined) → micro-gap 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", undefined);
-    assertEquals(rec[0], 5000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(video, 2) → cadência fixa 3000ms", async () => {
+Deno.test("sleepForMedia(video, 2) → micro-gap 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 2);
-    assertEquals(rec[0], 3000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(video, 9999) → cadência fixa 3000ms (ignora duração)", async () => {
+Deno.test("sleepForMedia(video, 9999) → micro-gap 150ms (ignora duração)", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 9999);
-    assertEquals(rec[0], 3000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(other) → fallback 1000ms", async () => {
+Deno.test("sleepForMedia(other) → micro-gap 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("image", 0);
-    assertEquals(rec[0], 1000);
+    assertEquals(rec[0], 150);
   });
 });
 

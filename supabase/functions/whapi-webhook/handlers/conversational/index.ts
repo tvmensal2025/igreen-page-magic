@@ -26,7 +26,7 @@ import { matchTransition as matchTransitionShared, CADASTRO_STEPS as CADASTRO_ST
 import { matchButtonIntent, extractStepButtons } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
 import { safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
-import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
+import { resolveFlowId, resolveMediaOwnerId } from "../../../_shared/resolve-flow.ts";
 import {
   resolveCanonicalFlowVariant,
   needsCanonicalFlowVariantRepair,
@@ -45,6 +45,7 @@ import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 import { handleMakeCallStep } from "../../../_shared/bot/make-call-step.ts";
+import { detectQuestionIntent } from "../../../_shared/conversation-helpers.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -254,11 +255,19 @@ export async function matchQA(
         if (mr?.url) { url = mr.url; if (mr.kind) kind = mr.kind; }
       }
       if (!url && m.slot_key) {
+        const mediaOwnerId = await resolveMediaOwnerId(supabase, consultantId, "A");
         const { data: personal } = await supabase
           .from("ai_media_library").select("id, url")
-          .eq("consultant_id", consultantId).eq("slot_key", m.slot_key)
+          .eq("consultant_id", mediaOwnerId).eq("slot_key", m.slot_key)
           .eq("active", true).limit(1).maybeSingle();
         if (personal?.url) { url = personal.url; mediaId = personal.id || mediaId; }
+        if (!url) {
+          const { data: pub } = await supabase
+            .from("ai_media_library").select("id, url")
+            .eq("is_public", true).eq("slot_key", m.slot_key)
+            .eq("active", true).limit(1).maybeSingle();
+          if (pub?.url) { url = pub.url; mediaId = pub.id || mediaId; }
+        }
       }
       if (url) mediaUrls.push({ url, kind, mediaId });
     }
@@ -270,19 +279,10 @@ export async function matchQA(
   }
 }
 
-async function sleepForMedia(kind: string, _durationSec?: number | null, delayBeforeMs?: number | null): Promise<void> {
-  if (isMockMode()) return; // 🧪 modo teste: zero espera
-  // ⚠️ ANTES esperávamos a duração inteira do áudio/vídeo antes da próxima mídia.
-  // Isso fazia a Edge Function estourar 60-120s, dar timeout no Whapi e o passo
-  // nunca avançava. Agora usamos pausa curta: o Whapi já entrega na ordem.
-  const configuredDelay = Number(delayBeforeMs || 0);
-  if (configuredDelay > 0) {
-    await new Promise((r) => setTimeout(r, Math.min(configuredDelay, 5_000)));
-    return;
-  }
-  // Sincronia rápida entre mídias soltas (fora do cascade); 600ms padrão.
-  const pause = kind === "audio" || kind === "video" ? 800 : 600;
-  await new Promise((r) => setTimeout(r, pause));
+async function sleepForMedia(_kind: string, _durationSec?: number | null, _delayBeforeMs?: number | null): Promise<void> {
+  if (isMockMode()) return;
+  // Delays de áudio/vídeo zerados — só micro-gap de ordenação.
+  await new Promise((r) => setTimeout(r, 150));
 }// ---------------------------------------------------------------------------
 // Capture phase — usa extractors compartilhados (regex + extenso + validação)
 // ---------------------------------------------------------------------------
@@ -424,20 +424,24 @@ Responda em JSON: {"next_step_key": "<um_dos_passos_válidos>", "reason": "breve
 //   - mediaSent: true se ao menos uma mídia foi enviada, false se não havia mídia,
 //                null se tentou e falhou em TODAS.
 //   - textSentInline: true quando o texto já foi enviado dentro daqui (na posição certa).
+//   - abortedForPending: true quando abortou vídeo/restante porque chegou inbound novo (FAQ).
 async function sendStepMedia(
   ctx: BotContext,
   step: DbStep,
   consultantId: string,
   _waitForSend = true,
   textPayload?: { text: string; delayMs: number } | null,
-): Promise<{ mediaSent: boolean | null; textSentInline: boolean }> {
+): Promise<{ mediaSent: boolean | null; textSentInline: boolean; abortedForPending?: boolean }> {
   const slotKey = step.slot_key || step.step_key || step.id;
   if (!slotKey) return { mediaSent: false, textSentInline: false };
+
+  const variant = String((ctx.customer as any)?.flow_variant || "A").toUpperCase();
+  const mediaOwnerId = await resolveMediaOwnerId(ctx.supabase, consultantId, variant);
 
   let { data: mediaRows } = await ctx.supabase
     .from("ai_media_library")
     .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
-    .eq("consultant_id", consultantId)
+    .eq("consultant_id", mediaOwnerId)
     .eq("slot_key", slotKey)
     .eq("active", true)
     .order("send_order", { ascending: true });
@@ -448,7 +452,7 @@ async function sendStepMedia(
     const { data: aliasRows } = await ctx.supabase
       .from("ai_media_library")
       .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
-      .eq("consultant_id", consultantId)
+      .eq("consultant_id", mediaOwnerId)
       .eq("slot_key", "a3_audio_explain")
       .eq("active", true)
       .order("send_order", { ascending: true });
@@ -458,7 +462,18 @@ async function sendStepMedia(
     }
   }
 
-  const variant = (ctx.customer as any)?.flow_variant || "A";
+  // Fallback: mídia marcada is_public (slots oficiais Multicanal).
+  if (!mediaRows || mediaRows.length === 0) {
+    const { data: publicRows } = await ctx.supabase
+      .from("ai_media_library")
+      .select("id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript")
+      .eq("is_public", true)
+      .eq("slot_key", slotKey)
+      .eq("active", true)
+      .order("send_order", { ascending: true });
+    if (publicRows?.length) mediaRows = publicRows;
+  }
+
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
 
   // Multicanal A2/A3: NUNCA enviar MP3 da prévia (Maria/Rodrigo).
@@ -484,7 +499,7 @@ async function sendStepMedia(
       let safe: Awaited<ReturnType<typeof pickSafePersonalizedWaAudio>>;
       try {
         safe = await pickSafePersonalizedWaAudio(ctx.supabase, {
-          consultantId,
+          consultantId: mediaOwnerId,
           slotKey: String(slotKey),
           customerName: (ctx.customer as any)?.name,
           nameSource: (ctx.customer as any)?.name_source,
@@ -566,7 +581,7 @@ async function sendStepMedia(
   // Sem isso, fluxo D herda a ordem do fluxo A quando ambos compartilham `slot_key`.
   const uiOrder = await getStepMediaOrder(
     ctx.supabase,
-    consultantId,
+    mediaOwnerId,
     [step.step_key, step.slot_key, slotKey].filter(Boolean) as string[],
   );
   const stepOrder = Array.isArray(step.media_order) && step.media_order.length > 0
@@ -638,20 +653,39 @@ async function sendStepMedia(
   let mediaAttempted = false;
   let mediaFailed = false;
   let textSentInline = earlyTextSent;
+  let abortedForPending = false;
   let prevForPause: { kind: string; duration_sec?: number | null } | null = earlyTextSent
     ? { kind: "text" }
     : null;
 
+  const { customerHasPendingInbound } = await import("../../../_shared/bot/pending-inbound.ts");
+
   for (let i = 0; i < sequence.length; i++) {
     const item = sequence[i];
 
+    // ⚡ Abort: lead mandou mensagem no meio da cascata (ex.: pergunta FAQ).
+    // Pula vídeo/restante agora; o drain de pending responde a FAQ e o
+    // reemit pós-FAQ continua o passo (CTA/botões).
+    if (
+      ctx.customer?.id &&
+      i > 0 &&
+      (item.kind === "video" || item.kind === "audio" || item.kind === "image" || item.kind === "document")
+    ) {
+      try {
+        if (await customerHasPendingInbound(ctx.supabase, ctx.customer.id)) {
+          console.log(
+            `[sendStepMedia] ⚡ abort cascade step=${step.step_key} at ${item.kind} i=${i}/${sequence.length} — pending inbound (FAQ primeiro)`,
+          );
+          abortedForPending = true;
+          break;
+        }
+      } catch (_) { /* best-effort */ }
+    }
+
     if (item.kind === "text") {
-      // ⏱️ Respeita text_delay_ms antes do texto.
-      // Teto duro de 12s para não estourar o limite de 60s da Edge Function
-      // quando uma sequência tem 4+ itens. Consultor que precisa de pausa
-      // maior deve quebrar em dois passos.
+      // text_delay_ms: só respeita se >0 e com teto baixo (FAQ/velocidade).
       if (!isMockMode() && !isFlowInstantMode()) {
-        const wait = Math.max(0, Math.min(item.delayMs, 12_000));
+        const wait = Math.max(0, Math.min(item.delayMs, 1_500));
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
       try {
@@ -705,36 +739,10 @@ async function sendStepMedia(
       }
     }
 
-    // ⏱️ Pausa antes da mídia.
-    //
-    // Regra (ordem de precedência):
-    //   1. `delay_before_ms` configurado pelo consultor (teto 12s para não
-    //      estourar Edge Function timeout).
-    //   2. Pausa derivada do item anterior:
-    //      - texto → 800ms (humanização mínima);
-    //      - áudio/vídeo com duration_sec → 90% da duração + 600ms de buffer
-    //        (teto 12s). Isso garante que o cliente termina de escutar/ver
-    //        antes do próximo item chegar — sem essa folga, o WhatsApp
-    //        entregava 3-4 mensagens em rajada e a "sensação" era de bot.
-    //   3. Item anterior desconhecido → 800ms.
-    //
-    // O teto duro de 12s evita estourar o limite de 60s da Edge Function
-    // mesmo com 5+ mídias na sequência.
-    const configuredDelay = Number(m.delay_before_ms || 0);
-    if (!isMockMode() && !isFlowInstantMode()) {
-      if (configuredDelay > 0) {
-        const wait = Math.min(configuredDelay, 12_000);
-        await new Promise((r) => setTimeout(r, wait));
-      } else if (prevForPause) {
-        let pause = 800;
-        if ((prevForPause.kind === "audio" || prevForPause.kind === "video") && Number(prevForPause.duration_sec || 0) > 0) {
-          pause = Math.min(
-            Math.round(Number(prevForPause.duration_sec) * 1000 * 0.9) + 600,
-            12_000,
-          );
-        }
-        await new Promise((r) => setTimeout(r, pause));
-      }
+    // ⏱️ Delays de áudio/vídeo ZERADOS (só micro-gap 150ms de ordenação).
+    // Áudio com nome (stitch) já demora na geração — não soma pausa extra.
+    if (!isMockMode() && !isFlowInstantMode() && prevForPause) {
+      await new Promise((r) => setTimeout(r, 150));
     }
 
     mediaAttempted = true;
@@ -795,7 +803,7 @@ async function sendStepMedia(
   const mediaResult: boolean | null = medias.length === 0
     ? false
     : (mediaAttempted && mediaFailed && !mediaSent) ? null : mediaSent;
-  return { mediaSent: mediaResult, textSentInline };
+  return { mediaSent: mediaResult, textSentInline, abortedForPending };
 }
 
 // 🚫 REMOVIDO: fallbackTextForStep — inventava texto fora do /admin/fluxos.
@@ -1301,6 +1309,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           || recentSteps.has(firstActive.step_key)
           || recentSteps.has(firstActive.id)
           || recentSteps.has(`flow:${firstActive.id}`)
+          || recentSteps.has("welcome")
+          || recentSteps.has("a1_ask_name")
         ) {
           console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound recente do fluxo — pulando restart e processando input no landing=${landingForDup.step_key}`);
           currentStep = landingForDup;
@@ -1310,6 +1320,20 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }
     } catch (e) {
       console.warn(`[conversational] anti-welcome-duplicado check falhou: ${(e as Error)?.message}`);
+    }
+  }
+  // ❓ Pergunta/FAQ com step legacy (welcome) — NÃO reemitir A1 pedindo nome.
+  // Caso Rute (2026-07-22): "achei que o desconto seria direto na conta da Cemig"
+  // caía no restart-cascade e só pedia nome. Processa no landing → matchQA.
+  if (!currentStep && detectQuestionIntent(ctx.messageText || "")) {
+    const landingQ = resolveLandingStep(firstActive) || firstActive;
+    if (landingQ) {
+      console.log(
+        `[conversational] ❓ pergunta com step desconhecido="${stepKey}" → landing=${landingQ.step_key} (FAQ antes de restart)`,
+      );
+      currentStep = landingQ;
+      stepKey = landingQ.id;
+      _setTurnStepQuestion(landingQ.message_text || "", _turnVars);
     }
   }
   if (!currentStep) {

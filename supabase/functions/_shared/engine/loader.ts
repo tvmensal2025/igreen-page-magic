@@ -127,7 +127,7 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
 
   const ownSyncMode = String((ownFlowRow as any)?.sync_mode ?? "public").toLowerCase();
   if (!ownFlowRow || ownSyncMode === "public") {
-    const { data: pub } = await supabase
+    let { data: pub } = await supabase
       .from("bot_flows")
       .select("id, strict_mode, variant, sync_mode, is_public, consultant_id")
       .eq("is_public", true)
@@ -135,6 +135,17 @@ export async function loadContext(args: LoadContextArgs): Promise<LoadedContext>
       .eq("variant", variant)
       .limit(1)
       .maybeSingle();
+    // Fallback legado A→D só se ainda não houver Multicanal A público.
+    if (!pub && variant === "A") {
+      ({ data: pub } = await supabase
+        .from("bot_flows")
+        .select("id, strict_mode, variant, sync_mode, is_public, consultant_id")
+        .eq("is_public", true)
+        .eq("is_active", true)
+        .eq("variant", "D")
+        .limit(1)
+        .maybeSingle());
+    }
     if (pub) {
       flowRow = pub;
       mediaOwnerId = (pub as any).consultant_id as string;

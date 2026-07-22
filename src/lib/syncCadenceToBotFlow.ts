@@ -80,6 +80,17 @@ async function resolveActiveFlowId(
   consultantId: string,
   variant: string,
 ): Promise<string | null> {
+  // Multicanal oficial: se existir template PÚBLICO da variante, publica nele.
+  const { data: pub } = await supabase
+    .from("bot_flows")
+    .select("id")
+    .eq("is_public", true)
+    .eq("is_active", true)
+    .eq("variant", variant)
+    .limit(1)
+    .maybeSingle();
+  if (pub?.id) return String(pub.id);
+
   const { data: flow, error } = await supabase
     .from("bot_flows")
     .select("id")
@@ -372,19 +383,15 @@ export function buildStageConfigPatch(
 
 /**
  * Espelha textos do Multicanal (Grupo A escada + B + C) em `cadence_stage_config`
- * **do consultor** (isolado). Não sobrescreve o global nem o de outro parceiro.
+ * **global** (`consultant_id IS NULL`) — Multicanal oficial para todos.
  * Botões (ContentContract) vão junto para os stages WhatsApp.
  */
 export async function syncCadenceLibraryToStageConfig(
   lib: SavedCadenceLibrary,
-  consultantId: string,
+  _consultantId: string,
 ): Promise<{ updated: string[]; errors: string[] }> {
   const updated: string[] = [];
   const errors: string[] = [];
-  if (!consultantId) {
-    errors.push("motor: consultant_id ausente");
-    return { updated, errors };
-  }
   for (const [key, stage] of Object.entries(STAGE_TEXT_SYNC_MAP)) {
     const tpl = MULTICHANNEL_CADENCE_TEMPLATES.find((t) => t.key === key);
     if (!tpl) continue;
@@ -394,7 +401,7 @@ export async function syncCadenceLibraryToStageConfig(
     const { data: existing } = await supabase
       .from("cadence_stage_config")
       .select("id")
-      .eq("consultant_id", consultantId)
+      .is("consultant_id", null)
       .eq("stage", stage)
       .maybeSingle();
     if (existing?.id) {
@@ -414,7 +421,7 @@ export async function syncCadenceLibraryToStageConfig(
         .from("cadence_stage_config")
         .insert({
           stage,
-          consultant_id: consultantId,
+          consultant_id: null,
           enabled: true,
           delay_hours: 24,
           ...patch,
@@ -424,7 +431,7 @@ export async function syncCadenceLibraryToStageConfig(
           .from("cadence_stage_config")
           .insert({
             stage,
-            consultant_id: consultantId,
+            consultant_id: null,
             message_text: body,
             enabled: true,
             delay_hours: 24,
@@ -438,19 +445,14 @@ export async function syncCadenceLibraryToStageConfig(
 }
 
 /**
- * Espelha textos da aba Temas (ROTATING_CADENCE_THEMES, sem cruise) em
- * `cadence_theme_config` do consultor — o cadence-tick lê daqui.
+ * Espelha textos da aba Temas em `cadence_theme_config` **global**.
  */
 export async function syncCadenceThemesToConfig(
   lib: SavedCadenceLibrary,
-  consultantId: string,
+  _consultantId: string,
 ): Promise<{ updated: string[]; errors: string[] }> {
   const updated: string[] = [];
   const errors: string[] = [];
-  if (!consultantId) {
-    errors.push("themes: consultant_id ausente");
-    return { updated, errors };
-  }
 
   for (const info of ROTATING_CADENCE_THEMES) {
     const waTpl = getTemplate(info.waKey);
@@ -469,7 +471,7 @@ export async function syncCadenceThemesToConfig(
     const { data: existing } = await supabase
       .from("cadence_theme_config")
       .select("id")
-      .eq("consultant_id", consultantId)
+      .is("consultant_id", null)
       .eq("theme_id", info.id)
       .maybeSingle();
 
@@ -492,7 +494,7 @@ export async function syncCadenceThemesToConfig(
       }
     } else {
       const { error } = await supabase.from("cadence_theme_config").insert({
-        consultant_id: consultantId,
+        consultant_id: null,
         ...row,
       } as never);
       if (error) {
@@ -505,11 +507,9 @@ export async function syncCadenceThemesToConfig(
   return { updated, errors };
 }
 
-/** Lê textos + botões + clips de ligação do motor (Grupo B + C) para hidratar o painel.
- * Prefere config do consultor; se vazia, cai no global (fallback).
- */
+/** Lê textos + botões + clips do motor **global** (Multicanal oficial). */
 export async function loadCadenceLibraryFromStageConfig(
-  consultantId?: string | null,
+  _consultantId?: string | null,
 ): Promise<Partial<SavedCadenceLibrary>> {
   const stages = Object.values(STAGE_TEXT_SYNC_MAP);
   type StageRow = {
@@ -520,35 +520,23 @@ export async function loadCadenceLibraryFromStageConfig(
     consultant_id?: string | null;
   };
 
-  async function fetchRows(filterConsultant: string | null): Promise<StageRow[]> {
-    let q = supabase
+  async function fetchRows(): Promise<StageRow[]> {
+    const full = await supabase
       .from("cadence_stage_config")
       .select("stage, message_text, buttons, voice_audio_clip_id, consultant_id")
-      .in("stage", stages);
-    q = filterConsultant
-      ? q.eq("consultant_id", filterConsultant)
-      : q.is("consultant_id", null);
-    const full = await q;
+      .in("stage", stages)
+      .is("consultant_id", null);
     if (!full.error && full.data?.length) return full.data as StageRow[];
-    let q2 = supabase
+    const legacy = await supabase
       .from("cadence_stage_config")
       .select("stage, message_text, consultant_id")
-      .in("stage", stages);
-    q2 = filterConsultant
-      ? q2.eq("consultant_id", filterConsultant)
-      : q2.is("consultant_id", null);
-    const legacy = await q2;
+      .in("stage", stages)
+      .is("consultant_id", null);
     if (legacy.error || !legacy.data?.length) return [];
     return legacy.data as StageRow[];
   }
 
-  let rows: StageRow[] = [];
-  if (consultantId) {
-    rows = await fetchRows(consultantId);
-  }
-  if (!rows.length) {
-    rows = await fetchRows(null);
-  }
+  const rows = await fetchRows();
   if (!rows.length) return {};
 
   const stageToKey: Record<string, string> = {};

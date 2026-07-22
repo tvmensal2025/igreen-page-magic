@@ -117,6 +117,7 @@ import {
   X,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useUserRole } from "@/hooks/useUserRole";
 import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
 import { cn } from "@/lib/utils";
 import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
@@ -177,6 +178,7 @@ interface Props {
 
 export function MultichannelTextsPanel({ consultantId }: Props) {
   const { toast } = useToast();
+  const { isSuperAdmin } = useUserRole(consultantId);
   const [lib, setLib] = useState<SavedCadenceLibrary>(() => emptyLibrary());
   const [group, setGroup] = useState<CadenceGroup | "all">(() => {
     try {
@@ -368,10 +370,19 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
     };
   }, [consultantId]);
 
-  /** Espelha no fluxo WhatsApp sem o usuário precisar editar código. */
+  /** Espelha no fluxo WhatsApp público (Multicanal oficial) — só superadmin. */
   const publishNow = useCallback(
     async (nextLib: SavedCadenceLibrary, opts?: { quiet?: boolean }) => {
       saveLibrary(consultantId, nextLib);
+      if (!isSuperAdmin) {
+        if (!opts?.quiet) {
+          toast({
+            title: "Somente Super Admin publica o Multicanal oficial",
+            description: "Rascunho local salvo. Peça ao Super Admin para publicar Grupo A/B/C.",
+          });
+        }
+        return { updated: [] as string[], errors: [] as string[] };
+      }
       const result = await publishCadenceLibrary(consultantId, nextLib, "A");
       if (!opts?.quiet) {
         if (result.errors.length) {
@@ -381,20 +392,20 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
             variant: "destructive",
           });
         } else {
-          const flowN = result.updated.filter((u) => !u.startsWith("motor:")).length;
+          const flowN = result.updated.filter((u) => !u.startsWith("motor:") && !u.startsWith("theme:")).length;
           const motorN = result.updated.filter((u) => u.startsWith("motor:")).length;
           toast({
-            title: "Publicado (ContentContract)",
+            title: "Publicado (Multicanal oficial)",
             description:
               result.updated.length > 0
-                ? `Grupo A: ${flowN} passo(s) no fluxo · Grupos B/C: ${motorN} estágio(s) no motor (texto + botões).`
+                ? `Grupo A: ${flowN} passo(s) no fluxo público · Escada B/C: ${motorN} estágio(s) globais.`
                 : "Nada a sincronizar neste fluxo/motor.",
           });
         }
       }
       return result;
     },
-    [consultantId, toast],
+    [consultantId, isSuperAdmin, toast],
   );
 
   const schedulePublish = useCallback(

@@ -15,11 +15,16 @@
 //     com `capture_mode != 'manual'` (ou `manual_override_reactivate=true`).
 //   - Máximo 3 envios automáticos por lead (lifetime, por template).
 //   - Debounce: nenhum envio nas últimas 48h pro mesmo lead.
-//   - Lote ≤500 por execução para não saturar a Evolution.
+//   - Lote ≤500 por execução (Whapi ou Evolution — canal resolvido).
 //   - Sleep 2s entre envios.
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createEvolutionSender } from "../_shared/evolution-api.ts";
+import {
+  isUnavailable,
+  resolveChannelForCustomerWithFailover,
+  resolveConsultantOutboundChannel,
+} from "../_shared/channel-sender.ts";
+import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
 import { jsonLog } from "../_shared/audit.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
@@ -31,6 +36,7 @@ import {
   typingDurationMs,
   humanJitterMs,
 } from "../_shared/anti-ban.ts";
+import { normalizePhone } from "../_shared/utils.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import {
@@ -293,6 +299,8 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     console.warn("[reactivation-cron] load reactivation_settings falhou:", e?.message);
   }
 
+  // Credenciais Whapi (settings) + Evolution (env) — mesma fonte dos outros crons.
+  const channelEnv = await loadChannelEnv(supabase);
   let totalSentGlobal = 0;
 
   outer: for (const tpl of templates as any[]) {
@@ -302,15 +310,9 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
     const consultant = tpl.consultants;
     if (!consultant) continue;
 
-    // Configuração do consultor (ou defaults seguros).
     const settings = settingsByConsultant.get(tpl.consultant_id) ?? DEFAULT_SETTINGS;
+    if (!settings.auto_enabled) continue;
 
-    // Liga/desliga geral: se o consultor não habilitou, pula tudo dele.
-    if (!settings.auto_enabled) {
-      continue;
-    }
-
-    // Verifica janela horária configurável.
     if (!isInsideWindow(consultant.timezone ?? null, {
       inicio: settings.janela_inicio,
       fim: settings.janela_fim,
@@ -320,74 +322,39 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
       continue;
     }
 
-    // Resolve instância WhatsApp do consultor.
-    // Tenta `evolution_instances` primeiro (schema v2); fallback para
-    // `whatsapp_instances` (schema legado).
-    let instanceName: string | null = null;
-    let apiUrl: string | null = null;
-    let apiKey: string | null = null;
-
-    const { data: evInst } = await supabase
-      .from("evolution_instances")
-      .select("api_url, api_key, instance_name")
-      .eq("consultant_id", tpl.consultant_id)
-      .eq("status", "connected")
-      .maybeSingle() as { data: { api_url: string; api_key: string; instance_name: string } | null };
-
-    if (evInst?.instance_name) {
-      instanceName = evInst.instance_name;
-      apiUrl = evInst.api_url;
-      apiKey = evInst.api_key;
-    } else {
-      // Fallback: schema legado `whatsapp_instances`
-      const { data: waInst } = await supabase
-        .from("whatsapp_instances")
-        .select("instance_name")
-        .eq("consultant_id", tpl.consultant_id)
-        .eq("status", "open")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle() as { data: { instance_name: string } | null };
-      if (waInst?.instance_name) {
-        instanceName = waInst.instance_name;
-        apiUrl = Deno.env.get("EVOLUTION_API_URL") || "";
-        apiKey = Deno.env.get("EVOLUTION_API_KEY") || "";
-      }
-    }
-
-    if (!instanceName || !apiUrl || !apiKey) {
-      jsonLog("warn", "reactivation_cron_no_instance", {
+    const consultantChannel = await resolveConsultantOutboundChannel(
+      supabase,
+      tpl.consultant_id,
+      channelEnv,
+    );
+    if (isUnavailable(consultantChannel)) {
+      jsonLog("warn", "reactivation_cron_no_channel", {
         consultant_id: tpl.consultant_id,
         template_id: tpl.id,
+        reason: consultantChannel.reason,
+        detail: consultantChannel.detail,
       });
       continue;
     }
 
-    const sender = createEvolutionSender(apiUrl, apiKey, instanceName);
-    // Nunca vazar slug/login no WhatsApp.
     const consultantName =
       resolvePublicConsultantFirstName(consultant.name, consultant.display_name) || "iGreen";
 
-    // Leads candidatos para este template.
     const candidates = await fetchCandidates(supabase, tpl, settings);
     if (candidates.length === 0) continue;
 
     for (const customer of candidates) {
       if (totalSentGlobal >= MAX_PER_RUN) break outer;
 
-      // Respeita capture_mode='manual' (Req 17.5).
       if (customer.capture_mode === "manual" && !customer.manual_override_reactivate) {
         totalSkippedCaptureMode++;
         continue;
       }
 
-      // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
       const touch = await reserveProactiveTouch(supabase, customer.id, "reactivation_cron", {
         template_id: tpl.id,
       });
-      if (!touch.allowed) {
-        continue;
-      }
+      if (!touch.allowed) continue;
       let touchOpen = true;
       const releaseTouch = async () => {
         if (touchOpen) {
@@ -407,31 +374,46 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         continue;
       }
 
-      const finalText = renderMessage(tpl.message_text, customer, consultantName);
-      const remoteJid = customer.phone_whatsapp.includes("@")
-        ? customer.phone_whatsapp
-        : `${customer.phone_whatsapp}@s.whatsapp.net`;
+      let channel = await resolveChannelForCustomerWithFailover(
+        supabase,
+        customer.id,
+        channelEnv,
+      );
+      if (isUnavailable(channel)) channel = consultantChannel;
+      if (isUnavailable(channel)) {
+        await releaseTouch();
+        continue;
+      }
 
-      // Anti-ban: warmup/cap/circuit breaker/recovery mode.
+      const finalText = renderMessage(tpl.message_text, customer, consultantName);
+      const digits = normalizePhone(customer.phone_whatsapp).replace(/\D/g, "");
+      if (digits.length < 12) {
+        totalFailed++;
+        await releaseTouch();
+        continue;
+      }
+      const remoteJid = `${digits}@s.whatsapp.net`;
+      const instanceName = channel.instanceName;
+
       const quota = await checkSendQuota(supabase, instanceName);
       if (!quota.allowed) {
         jsonLog("info", "reactivation_cron_quota_block", {
           instance: instanceName, reason: quota.reason, warmup_day: quota.warmup_day,
         });
         await releaseTouch();
-        // Se o motivo é cota/intervalo, faz sentido tentar o próximo template noutra rodada.
-        // Se é recovery/circuit breaker, encerra o cron pra essa instância.
-        if (quota.reason === "recovery_mode" || quota.reason === "fatal_disconnect_pending_confirmation"
-            || quota.reason === "too_many_reconnects" || quota.reason === "too_many_send_failures") {
+        if (
+          quota.reason === "recovery_mode" ||
+          quota.reason === "fatal_disconnect_pending_confirmation" ||
+          quota.reason === "too_many_reconnects" ||
+          quota.reason === "too_many_send_failures"
+        ) {
           break;
         }
         if (quota.reason === "daily_cap_reached") break;
-        // min_interval_not_elapsed → pula este lead, aguarda jitter, segue
         await new Promise((r) => setTimeout(r, Math.max(2000, humanJitterMs() * 3)));
         continue;
       }
 
-      // Reserva atômica ANTES do envio (status=pending). Unique inflight impede double-send.
       let claimId: string | null = null;
       try {
         const { data: claimRow, error: claimErr } = await (supabase as any)
@@ -449,11 +431,14 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
           .maybeSingle();
         if (claimErr) {
           const msg = String(claimErr.message || claimErr.code || "");
-          if (msg.includes("uq_reactivation_sends_inflight") || msg.includes("duplicate") || claimErr.code === "23505") {
+          if (
+            msg.includes("uq_reactivation_sends_inflight") ||
+            msg.includes("duplicate") ||
+            claimErr.code === "23505"
+          ) {
             await releaseTouch();
-            continue; // outro worker já reservou
+            continue;
           }
-          // Sem índice ainda: segue com insert best-effort (não bloqueia o dia).
           console.warn("[reactivation-cron] claim pending falhou:", msg);
         } else {
           claimId = claimRow?.id ?? null;
@@ -464,12 +449,26 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
 
       let ok = false;
       try {
-        // Humaniza: digitando antes do envio.
-        await simulateTyping({
-          baseUrl: apiUrl, apiKey, instance: instanceName, remoteJid,
-          durationMs: typingDurationMs(finalText),
-        });
-        ok = await sender.sendText(remoteJid, finalText);
+        if (channel.kind === "evolution" && channelEnv.evolutionUrl && channelEnv.evolutionKey) {
+          await simulateTyping({
+            baseUrl: channelEnv.evolutionUrl,
+            apiKey: channelEnv.evolutionKey,
+            instance: instanceName,
+            remoteJid,
+            durationMs: typingDurationMs(finalText),
+          });
+        }
+        const sendCtx = {
+          customerId: customer.id,
+          consultantId: tpl.consultant_id,
+          stepId: `reactivation:${tpl.id}`,
+          idempotencyKey: claimId
+            ? `reactivation:${claimId}`
+            : `reactivation:${customer.id}:${tpl.id}:${Date.now()}`,
+          supabase,
+        };
+        const result = await channel.adapter.sendText(remoteJid, finalText, sendCtx);
+        ok = !!result.ok;
       } catch (e: any) {
         console.warn("[reactivation-cron] sendText raised:", e?.message);
       }
@@ -477,14 +476,18 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
       if (ok) await registerSend(supabase, instanceName);
 
       touchOpen = false;
-      await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, ok ? "done" : "released");
+      await finishProactiveTouch(
+        supabase,
+        touch.reservationId,
+        touch.claimToken,
+        ok ? "done" : "released",
+      );
 
-      // Finaliza reserva ou registra envio legado.
       try {
         if (claimId) {
           await (supabase as any).from("reactivation_sends").update({
             status: ok ? "sent" : "failed",
-            error_reason: ok ? null : "evolution_send_failed",
+            error_reason: ok ? null : `${channel.kind}_send_failed`,
             sent_at: new Date().toISOString(),
           }).eq("id", claimId);
         } else {
@@ -496,14 +499,13 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
             message_text: finalText,
             trigger_type: "auto",
             status: ok ? "sent" : "failed",
-            error_reason: ok ? null : "evolution_send_failed",
+            error_reason: ok ? null : `${channel.kind}_send_failed`,
           });
         }
       } catch (e: any) {
         console.warn("[reactivation-cron] finalize reactivation_sends falhou:", e?.message);
       }
 
-      // Registra em conversations para histórico (igual ao envio manual).
       if (ok) {
         try {
           await (supabase as any).from("conversations").insert({
@@ -512,13 +514,14 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
             message_text: finalText,
             message_type: "text",
             conversation_step: customer.conversation_step,
-            origin: "automation:reactivation-cron",
+            origin: `automation:reactivation-cron:${channel.kind}`,
           });
         } catch { /* não crítico */ }
         totalSent++;
         totalSentGlobal++;
-        // Jitter humano entre envios (700-2200ms × 4 ≈ 3-9s) substitui sleep fixo.
-        await new Promise((r) => setTimeout(r, Math.max(SLEEP_BETWEEN_SENDS_MS, humanJitterMs() * 4)));
+        await new Promise((r) =>
+          setTimeout(r, Math.max(SLEEP_BETWEEN_SENDS_MS, humanJitterMs() * 4))
+        );
       } else {
         totalFailed++;
       }

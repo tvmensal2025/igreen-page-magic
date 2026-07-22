@@ -482,7 +482,7 @@ export function hasBillEstimateOnly(customer: any): boolean {
 // Heurística leve para "isso parece uma pergunta?". Usada pelo midflow QA
 // para decidir se vale tentar casar uma FAQ no meio do cadastro.
 const RE_MIDFLOW_QUESTION =
-  /\?|\b(quanto|porqu[eê]|por\s*qu[eê]|é\s+seguro|é\s+golpe|como\s+funciona|tem\s+taxa|vou\s+pagar|fatura|garant|cancelar|desisti|prazo|demora|preço|valor\s+da|d[uú]vida|distribuidora|cemig|fidelidade|titular|cpf|aluguel|painel\s+solar|economiz|interessad)\b|(?:atende\s+(?:na\s+)?minha\s+(?:cidade|regi[aã]o)|tem\s+cobertura|funciona\s+(?:na\s+)?minha\s+cidade|minha\s+cidade|outra\s+cidade|cidade\s+vizinha|(?:nao|não)\s+(?:sou|moro)\s+(?:de|em)\s+\w{4,}|moro\s+em\s+(?!casa\b|apartamento\b|apto\b)\w{4,}|aqui\s+em\s+\w{4,})/i;
+  /\?|\b(quanto|porqu[eê]|por\s*qu[eê]|é\s+seguro|é\s+golpe|como\s+funciona|tem\s+taxa|vou\s+pagar|fatura|garant|cancelar|desisti|prazo|demora|preço|valor\s+da|d[uú]vida|distribuidora|cemig|fidelidade|titular|cpf|aluguel|painel\s+solar|economiz|interessad|achei\s+que|desconto\s+direto|desconto\s+seria)\b|(?:atende\s+(?:na\s+)?minha\s+(?:cidade|regi[aã]o)|tem\s+cobertura|funciona\s+(?:na\s+)?minha\s+cidade|minha\s+cidade|outra\s+cidade|cidade\s+vizinha|(?:nao|não)\s+(?:sou|moro)\s+(?:de|em)\s+\w{4,}|moro\s+em\s+(?!casa\b|apartamento\b|apto\b)\w{4,}|aqui\s+em\s+\w{4,})/i;
 
 export function detectQuestionIntent(text: string): boolean {
   if (!text) return false;

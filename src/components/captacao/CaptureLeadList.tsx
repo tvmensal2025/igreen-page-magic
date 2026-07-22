@@ -15,6 +15,9 @@ import {
   CheckCheck,
   LogOut,
   Loader2,
+  MessageCirclePlus,
+  Megaphone,
+  MessageCircle,
 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -38,7 +41,7 @@ import {
 } from "@/hooks/useCustomerTags";
 import { isValidBrNationalPhone, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
 import { stripWhatsAppMarkup } from "@/lib/whatsapp/formatWhatsAppText";
-import { isCrmCadastroEmAnalise } from "@/lib/crmVsLeadAnalysis";
+import { isCrmCadastroEmAnalise, isNuncaMaisContatar } from "@/lib/crmVsLeadAnalysis";
 
 export type CapturePeriodKey = "48h" | "7d" | "30d" | "60d" | "90d" | "all";
 
@@ -64,12 +67,35 @@ export interface CaptureBatchLead {
   conversationStep?: string | null;
   doNotContact?: boolean;
   botPaused?: boolean;
+  /** Veio de campanha Meta (source_campaign_id / ctwa / lead_source). */
+  fromCampaign?: boolean;
+}
+
+type OriginTab = "all" | "campanha" | "mensagem";
+
+/** Campanha Meta/CTWA vs mensagem orgânica qualquer. */
+function isFromCampaign(c: {
+  source_campaign_id?: string | null;
+  ctwa_clid?: string | null;
+  lead_source?: unknown;
+}): boolean {
+  if (c.source_campaign_id) return true;
+  if (c.ctwa_clid) return true;
+  const raw = c.lead_source;
+  const src =
+    typeof raw === "string"
+      ? raw
+      : raw && typeof raw === "object" && "source" in (raw as object)
+        ? String((raw as { source?: unknown }).source || "")
+        : "";
+  const s = src.toLowerCase();
+  return s === "meta_ads" || s === "ctwa" || s === "facebook" || s === "instagram" || s === "meta";
 }
 
 interface Props {
   consultantId: string;
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   gameOn?: boolean;
   whatsappConnected?: boolean;
   onOpenBatch?: (leads: CaptureBatchLead[], periodLabel: string) => void;
@@ -247,11 +273,33 @@ export function CaptureLeadList({
   const [flash, setFlash] = useState<Record<string, number>>({});
   const [tagsByJid, setTagsByJid] = useState<Map<string, CustomerTag[]>>(new Map());
   const [originLead, setOriginLead] = useState<CaptureBatchLead | null>(null);
+  const [originTab, setOriginTab] = useState<OriginTab>(() => {
+    try {
+      const v = localStorage.getItem("cap_origin_tab");
+      if (v === "campanha" || v === "mensagem" || v === "all") return v;
+    } catch {}
+    return "all";
+  });
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [startingByPhone, setStartingByPhone] = useState(false);
+  const newPhoneRef = useRef<HTMLInputElement>(null);
   const loadSeqRef = useRef(0);
   const selectedRef = useRef<string | null>(selectedId);
   useEffect(() => {
     selectedRef.current = selectedId;
   }, [selectedId]);
+
+  useEffect(() => {
+    try { localStorage.setItem("cap_origin_tab", originTab); } catch {}
+  }, [originTab]);
+
+  useEffect(() => {
+    if (showNewChat) {
+      const t = window.setTimeout(() => newPhoneRef.current?.focus(), 80);
+      return () => window.clearTimeout(t);
+    }
+  }, [showNewChat]);
 
   const reloadTags = useCallback(async () => {
     const jids = leads
@@ -282,10 +330,11 @@ export function CaptureLeadList({
     setLoading(true);
     try {
       const cols =
-        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, referral_partner_id, source_campaign_id, portal_submitted_at, conversation_step, do_not_contact, bot_paused, " +
+        "id, name, phone_whatsapp, capture_started_at, created_at, welcome_sent_at, attendance_rating_requested_at, igreen_code, assinatura_cliente, referral_partner_id, source_campaign_id, ctwa_clid, lead_source, portal_submitted_at, conversation_step, do_not_contact, bot_paused, " +
         CAPTURE_FIELDS.map((f) => f.key).join(", ");
       // Traz manual (Captação) + auto sem welcome (leads novos "Em espera"),
       // sempre respeitando: não fechado, não virou cliente iGreen.
+      // Bloqueados / cadastro em análise saem no filtro client-side abaixo.
       const { data, error } = await supabase
         .from("customers")
         .select(cols)
@@ -313,7 +362,26 @@ export function CaptureLeadList({
           .not("outcome", "is", null);
         closedElsewhere = new Set((closedSales || []).map((s: any) => s.customer_id));
       }
-      const filtered = (data || []).filter((c: any) => !closedElsewhere.has(c.id));
+      const filtered = (data || []).filter((c: any) => {
+        if (closedElsewhere.has(c.id)) return false;
+        // Fora da Captação: bloqueado e cadastro já na esteira iGreen (CRM).
+        if (
+          isNuncaMaisContatar({
+            do_not_contact: c.do_not_contact,
+          })
+        ) {
+          return false;
+        }
+        if (
+          isCrmCadastroEmAnalise({
+            portal_submitted_at: c.portal_submitted_at,
+            conversation_step: c.conversation_step,
+          })
+        ) {
+          return false;
+        }
+        return true;
+      });
 
       // Enriquecimento com nomes de parceiro/campanha (bulk)
       const partnerIds = Array.from(
@@ -355,13 +423,11 @@ export function CaptureLeadList({
         campaignId: c.source_campaign_id ?? null,
         campaignName: c.source_campaign_id ? campaignMap.get(c.source_campaign_id) ?? null : null,
         nextMissingLabel: firstMissingCaptureLabel(c),
-        cadastroEmAnalise: isCrmCadastroEmAnalise({
-          portal_submitted_at: c.portal_submitted_at,
-          conversation_step: c.conversation_step,
-        }),
+        cadastroEmAnalise: false,
         conversationStep: c.conversation_step ?? null,
-        doNotContact: !!c.do_not_contact,
+        doNotContact: false,
         botPaused: !!c.bot_paused,
+        fromCampaign: isFromCampaign(c),
       }));
       setLeads(sortByActivity(rows));
       setLoading(false);
@@ -514,7 +580,7 @@ export function CaptureLeadList({
   const periodMs = PERIOD_OPTIONS.find((o) => o.key === period)?.ms ?? null;
   const deferredQ = useDeferredValue(q);
 
-  const filtered = useMemo(() => {
+  const periodFiltered = useMemo(() => {
     const now = Date.now();
     return leads.filter((l) => {
       if (periodMs != null) {
@@ -526,6 +592,31 @@ export function CaptureLeadList({
       return (l.name || "").toLowerCase().includes(s) || (l.phone_whatsapp || "").includes(s);
     });
   }, [leads, deferredQ, periodMs]);
+
+  const filtered = useMemo(() => {
+    return periodFiltered.filter((l) => {
+      if (originTab === "campanha" && !l.fromCampaign) return false;
+      if (originTab === "mensagem" && l.fromCampaign) return false;
+      return true;
+    });
+  }, [periodFiltered, originTab]);
+
+  // Se o lead selecionado saiu da Captação (bloqueado / CRM / filtro), limpa.
+  useEffect(() => {
+    if (!selectedId) return;
+    if (leads.some((l) => l.id === selectedId)) return;
+    onSelect(null);
+  }, [leads, selectedId, onSelect]);
+
+  const originCounts = useMemo(() => {
+    let campanha = 0;
+    let mensagem = 0;
+    for (const l of periodFiltered) {
+      if (l.fromCampaign) campanha++;
+      else mensagem++;
+    }
+    return { all: periodFiltered.length, campanha, mensagem };
+  }, [periodFiltered]);
 
   const filteredIds = useMemo(() => new Set(filtered.map((l) => l.id)), [filtered]);
 
@@ -542,6 +633,72 @@ export function CaptureLeadList({
   useEffect(() => {
     try { localStorage.setItem("cap_active_tab", activeTab); } catch {}
   }, [activeTab]);
+
+  const startByPhone = useCallback(async (rawPhone: string) => {
+    const digits = toWhatsappCanonical(rawPhone);
+    if (!isValidBrNationalPhone(digits) || digits.length < 12 || digits.length > 13) {
+      toast.error("Telefone inválido — use DDD + celular");
+      return;
+    }
+    setStartingByPhone(true);
+    try {
+      const { data: existing } = await supabase
+        .from("customers")
+        .select("id, do_not_contact, portal_submitted_at, conversation_step, capture_closed_at, igreen_code, assinatura_cliente")
+        .eq("consultant_id", consultantId)
+        .eq("phone_whatsapp", digits)
+        .maybeSingle();
+
+      if (existing?.id) {
+        if (existing.do_not_contact) {
+          toast.error("Este número está bloqueado (nunca mais contatar)");
+          return;
+        }
+        if (
+          isCrmCadastroEmAnalise({
+            portal_submitted_at: existing.portal_submitted_at,
+            conversation_step: existing.conversation_step,
+          })
+        ) {
+          toast.error("Cadastro já enviado — acompanhe no CRM, não na Captação");
+          return;
+        }
+        if (existing.capture_closed_at || existing.igreen_code || existing.assinatura_cliente) {
+          toast.error("Este cliente já saiu da Captação");
+          return;
+        }
+        await supabase
+          .from("customers")
+          .update({ capture_mode: "manual", capture_started_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        onSelect(existing.id);
+        toast.success("Conversa aberta na Captação");
+      } else {
+        const { data: created, error } = await supabase
+          .from("customers")
+          .insert({
+            consultant_id: consultantId,
+            phone_whatsapp: digits,
+            capture_mode: "manual",
+            capture_started_at: new Date().toISOString(),
+            customer_origin: "whatsapp_lead",
+          })
+          .select("id")
+          .maybeSingle();
+        if (error || !created?.id) {
+          toast.error(error?.message || "Não consegui criar o lead");
+          return;
+        }
+        onSelect(created.id);
+        toast.success("Nova conversa criada");
+      }
+      setShowNewChat(false);
+      setNewPhone("");
+      void load();
+    } finally {
+      setStartingByPhone(false);
+    }
+  }, [consultantId, onSelect, load]);
 
   const unreadByTab = useMemo(() => {
     let atend = 0, esp = 0;
@@ -740,18 +897,69 @@ export function CaptureLeadList({
               {activeToday} hoje
             </span>
           )}
-          {onCollapseList && (
+          <div className="ml-auto flex items-center gap-1">
             <button
               type="button"
-              onClick={onCollapseList}
-              title="Recolher lista"
-              aria-label="Recolher lista"
-              className="ml-auto hidden md:inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50"
+              onClick={() => setShowNewChat((v) => !v)}
+              className="h-7 w-7 inline-flex items-center justify-center rounded-lg hover:bg-primary/10 text-muted-foreground hover:text-primary transition"
+              title="Nova conversa por número"
+              aria-label="Nova conversa por número"
             >
-              <PanelLeftClose className="h-3.5 w-3.5" />
+              <MessageCirclePlus className="h-4 w-4" />
             </button>
-          )}
+            {onCollapseList && (
+              <button
+                type="button"
+                onClick={onCollapseList}
+                title="Recolher lista"
+                aria-label="Recolher lista"
+                className="hidden md:inline-flex h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50"
+              >
+                <PanelLeftClose className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {showNewChat && (
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-2">
+            <p className="text-[10px] text-muted-foreground mb-1.5 font-medium">
+              Nova conversa — digite o número:
+            </p>
+            <div className="flex gap-1.5">
+              <Input
+                ref={newPhoneRef}
+                value={newPhone}
+                onChange={(e) => setNewPhone(e.target.value)}
+                placeholder="(11) 99999-9999"
+                className="h-8 text-xs flex-1 bg-background rounded-lg"
+                disabled={startingByPhone}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void startByPhone(newPhone);
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                className="h-8 px-3 text-xs"
+                disabled={startingByPhone || newPhone.replace(/\D/g, "").length < 10}
+                onClick={() => void startByPhone(newPhone)}
+              >
+                {startingByPhone ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Iniciar"}
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setShowNewChat(false); setNewPhone(""); }}
+                className="h-8 w-8 flex items-center justify-center rounded-lg hover:bg-secondary transition-colors"
+                title="Fechar"
+              >
+                <X className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </div>
+          </div>
+        )}
 
 
         <div className="flex items-center gap-1 min-w-0 max-w-full overflow-x-auto overscroll-x-contain scrollbar-none">
@@ -887,6 +1095,42 @@ export function CaptureLeadList({
           />
         </div>
 
+        {/* Origem: campanha Meta vs mensagem qualquer */}
+        <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/50 p-0.5">
+          {([
+            { key: "all" as const, label: "Todos", count: originCounts.all, icon: null },
+            { key: "campanha" as const, label: "Campanha", count: originCounts.campanha, icon: <Megaphone className="w-3 h-3 shrink-0" /> },
+            { key: "mensagem" as const, label: "Mensagem", count: originCounts.mensagem, icon: <MessageCircle className="w-3 h-3 shrink-0" /> },
+          ]).map((t) => {
+            const active = originTab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setOriginTab(t.key)}
+                title={
+                  t.key === "campanha"
+                    ? "Veio de anúncio/campanha Meta"
+                    : t.key === "mensagem"
+                      ? "Chegou por mensagem qualquer (sem campanha)"
+                      : "Todas as origens"
+                }
+                className={`relative flex items-center justify-center gap-1 rounded-md py-1.5 text-[11px] font-semibold transition ${
+                  active
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t.icon}
+                <span className="truncate">{t.label}</span>
+                <span className={`text-[10px] tabular-nums font-bold px-1.5 py-px rounded-full ${
+                  active ? "bg-primary/15 text-primary" : "bg-background/80 text-muted-foreground border border-border/60"
+                }`}>{t.count}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Abas Em atendimento / Em espera (padrão WhatsApp Business) */}
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-0.5">
           {([
@@ -965,11 +1209,15 @@ export function CaptureLeadList({
           <div className="p-6 text-center space-y-2">
             <UserPlus className="w-8 h-8 mx-auto text-muted-foreground/50" />
             <p className="text-xs text-muted-foreground">
-              Nenhum cliente neste período.
+              {originTab === "campanha"
+                ? "Nenhum lead de campanha neste período."
+                : originTab === "mensagem"
+                  ? "Nenhuma conversa por mensagem neste período."
+                  : "Nenhum cliente neste período."}
             </p>
             <p className="text-[11px] text-muted-foreground/80 max-w-[240px] mx-auto">
-              Use <span className="font-semibold text-foreground">Selecionar</span> + Iniciar atendimento
-              em um lead da lista, ou cadastre pelo botão de atendimento no chat.
+              Use o botão <span className="font-semibold text-foreground">+</span> para abrir conversa por número,
+              ou <span className="font-semibold text-foreground">Selecionar</span> para atendimento em lote.
             </p>
           </div>
         )}
@@ -1059,47 +1307,16 @@ export function CaptureLeadList({
             className="flex-1 min-h-[44px] lg:h-8 text-[11px] gap-1.5 rounded-lg"
             onClick={async () => {
               const phone = await prompt({
-                title: "Entrar em captação manual",
+                title: "Nova conversa por número",
                 description: "Informe o telefone do cliente interessado (com DDD).",
                 placeholder: "Ex: 11971254913",
-                confirmText: "Entrar",
+                confirmText: "Iniciar",
               });
               if (!phone) return;
-              const digits = toWhatsappCanonical(phone);
-              if (!isValidBrNationalPhone(digits) || digits.length < 12 || digits.length > 13) {
-                toast.error("Telefone inválido — use DDD + celular");
-                return;
-              }
-              const { data: existing } = await supabase
-                .from("customers")
-                .select("id")
-                .eq("consultant_id", consultantId)
-                .eq("phone_whatsapp", digits)
-                .maybeSingle();
-              if (existing?.id) {
-                await supabase
-                  .from("customers")
-                  .update({ capture_mode: "manual", capture_started_at: new Date().toISOString() })
-                  .eq("id", existing.id);
-                onSelect(existing.id);
-              } else {
-                const { data: created } = await supabase
-                  .from("customers")
-                  .insert({
-                    consultant_id: consultantId,
-                    phone_whatsapp: digits,
-                    capture_mode: "manual",
-                    capture_started_at: new Date().toISOString(),
-                    customer_origin: "whatsapp_lead",
-                  })
-                  .select("id")
-                  .maybeSingle();
-                if (created?.id) onSelect(created.id);
-              }
-              void load();
+              await startByPhone(phone);
             }}
           >
-            <UserPlus className="w-3.5 h-3.5" /> Novo cliente
+            <UserPlus className="w-3.5 h-3.5" /> Novo por número
           </Button>
           <Button
             size="icon"
@@ -1512,22 +1729,6 @@ function LeadCard({
             {l.lastMsg ? l.lastMsg : fmtPhone(l.phone_whatsapp)}
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            {l.doNotContact && (
-              <span
-                className="inline-flex items-center rounded-full border border-destructive/40 bg-destructive/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-destructive"
-                title="Nunca mais contatar"
-              >
-                Bloqueado
-              </span>
-            )}
-            {l.cadastroEmAnalise && (
-              <span
-                className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-amber-700 dark:text-amber-300"
-                title="Cadastro enviado — aguarda iGreen"
-              >
-                Cadastro em análise
-              </span>
-            )}
             {!ready && l.nextMissingLabel && (
               <span
                 className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[9.5px] font-medium text-primary max-w-[160px] truncate"
@@ -1536,7 +1737,15 @@ function LeadCard({
                 Falta {l.nextMissingLabel}
               </span>
             )}
-            {l.conversationStep && !l.cadastroEmAnalise && (
+            {l.fromCampaign && !l.campaignName && (
+              <span
+                className="inline-flex items-center rounded-full border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[9.5px] font-medium text-sky-700 dark:text-sky-300"
+                title="Veio de campanha / anúncio Meta"
+              >
+                Campanha
+              </span>
+            )}
+            {l.conversationStep && (
               <span
                 className="inline-flex items-center rounded-full border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground max-w-[140px] truncate"
                 title={`Passo: ${l.conversationStep}`}
@@ -1544,7 +1753,7 @@ function LeadCard({
                 {l.conversationStep.replace(/_/g, " ")}
               </span>
             )}
-            {l.botPaused && !l.doNotContact && (
+            {l.botPaused && (
               <span
                 className="inline-flex items-center rounded-full border border-border/70 bg-muted/40 px-1.5 py-0.5 text-[9.5px] font-medium text-muted-foreground"
                 title="IA pausada neste lead"

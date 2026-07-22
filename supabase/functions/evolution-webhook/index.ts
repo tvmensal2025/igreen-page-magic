@@ -563,7 +563,7 @@ Deno.serve(async (req) => {
     }
 
 
-    const {
+    let {
       remoteJid, buttonId, hasImage, hasDocument, hasAudio, hasVideo, isButton, mediaKind,
       imageMessage, documentMessage, audioMessage, key, message,
     } = parsed;
@@ -572,7 +572,7 @@ Deno.serve(async (req) => {
     // messageText pode ser sobrescrito pela transcrição automática quando o
     // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
     let messageText: string = parsed.messageText;
-    const messageId = String(key?.id || parsed.messageId || body.data?.key?.id || "");
+    let messageId = String(key?.id || parsed.messageId || body.data?.key?.id || "");
     // Type cast: dedupe.ts pins @supabase/supabase-js@2.49.4 while this file
     // pins @2; the runtime is identical but TS sees two protected-property
     // shapes. Same workaround used elsewhere in this file (line 141).
@@ -694,8 +694,10 @@ Deno.serve(async (req) => {
           .maybeSingle();
         const existingId = (existing as any)?.id ?? null;
         if (existingId) {
-          const ttlMs = 8000;
-          const maxWaitMs = isV2Active(v2Flag) ? 4000 : 0;
+          // Cobre cascatas com mídia; o turno concorrente entra na fila em
+          // vez de disputar o estado no meio do envio.
+          const ttlMs = 120_000;
+          const maxWaitMs = isV2Active(v2Flag) ? 25_000 : 0;
           const pollIntervalMs = 50;
           const startedAt = Date.now();
           while (true) {
@@ -733,10 +735,21 @@ Deno.serve(async (req) => {
                 max_wait_ms: maxWaitMs,
               });
               if (isV2Active(v2Flag)) {
-                // Caller short-circuits to a neutral 200 — no side effects.
-                // The other webhook holding the lock will respond.
+                // Espelho Whapi: não descarta o inbound que chegou durante a
+                // cascata. O dono atual do lock o reproduz antes de liberar.
+                try {
+                  await supabase.rpc("enqueue_pending_inbound", {
+                    _customer_id: existingId,
+                    _message_id: messageId || `noid-${Date.now()}`,
+                  });
+                } catch (enqueueErr) {
+                  jsonLog("warn", "customer_lock_enqueue_failed", {
+                    customer_id: existingId,
+                    message: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr),
+                  });
+                }
                 return new Response(
-                  JSON.stringify({ ok: true, mode: "customer_lock_timeout" }),
+                  JSON.stringify({ ok: true, skipped: "busy_enqueued" }),
                   { headers: { ...corsHeaders, "Content-Type": "application/json" } },
                 );
               }
@@ -2393,9 +2406,41 @@ Deno.serve(async (req) => {
       console.warn("[cadence-router] erro não-bloqueante:", e?.message);
     }
 
+    // ─── 🔒 Lock de processamento (paridade Whapi) ─────────────────────
+    // Serializa cascata de mídia + FAQ. Sem isso, inbound no meio do áudio/vídeo
+    // se perde mesmo com abort de cascata. TTL 120s cobre sequência longa.
+    let processingLockAcquired = false;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const { data: ok } = await supabase.rpc("try_lock_customer_processing", {
+        _customer_id: customer.id,
+        _seconds: 120,
+      });
+      if (ok === true) { processingLockAcquired = true; break; }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (!processingLockAcquired) {
+      try {
+        await supabase.rpc("enqueue_pending_inbound", {
+          _customer_id: customer.id,
+          _message_id: messageId || `noid-${Date.now()}`,
+        });
+        console.warn(`📥 [evolution] customer=${customer.id} busy — enfileirado pending_inbound`);
+      } catch (e) {
+        console.error("[evolution] enqueue_pending_inbound falhou:", (e as Error)?.message);
+      }
+      return new Response(JSON.stringify({ ok: true, skipped: "busy_enqueued" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    try {
+      const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
+      if (fresh) customer = fresh;
+    } catch (_) { /* mantém customer atual */ }
+
     let reply: string | null = "";
     let updates: Record<string, any> = {};
     let engineUsed: "sys" | "flow" = "sys";
+    let runEngine: (() => Promise<any>) | null = null;
 
     // ─── 7.6) Engine v3 — hook compartilhado (Semana 1 do rollout v3) ──
     // Helper único em `_shared/flow-engine/webhook-hook.ts` evita drift
@@ -2703,6 +2748,7 @@ Deno.serve(async (req) => {
           failed: v3Outcome.failed,
           error: v3Outcome.error,
         });
+        try { await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id }); } catch (_) {}
         return new Response(
           JSON.stringify({ ok: true, mode: "engine_v3", v3: v3Outcome }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -2811,6 +2857,34 @@ Deno.serve(async (req) => {
       // mesmo turno — evita resposta dupla. Em off/dark, respondeu=false e segue
       // o caminho atual normalmente (comportamento idêntico ao de hoje).
       if (_cerebroRespondeu) {
+        // O Cérebro também precisa consumir a rajada antes de liberar o lock;
+        // sem isso o segundo inbound ficava permanentemente pendente.
+        try {
+          const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
+          const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+          const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
+            const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
+            if (fresh) customer = fresh;
+            const replayIsMedia = replay.isFile && !replay.isButton;
+            await responderComCerebro({
+              supabase,
+              customerId: customer.id,
+              consultantId: instanceData.consultant_id,
+              inboundKind: replay.isButton ? "button_click" : (replayIsMedia ? "media" : "text"),
+              inboundText: replay.messageText || null,
+              inboundButtonId: replay.buttonId || null,
+              inboundMediaKind: replayIsMedia ? "image" : null,
+              inboundMessageId: replay.messageId || null,
+              channel: "evolution",
+              telefone: phone ?? null,
+              enviarTexto: (text: string) => sender.sendText(remoteJid, text),
+            });
+          });
+          if (drained > 0) console.log(`[pending-drain/cerebro] ${drained} turn(s) customer=${customer.id}`);
+        } catch (e) {
+          console.warn("[pending-drain/cerebro] falhou:", (e as Error).message);
+        }
+        try { await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id }); } catch (_) {}
         return new Response(
           JSON.stringify({ ok: true, mode: "cerebro" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
@@ -2822,13 +2896,14 @@ Deno.serve(async (req) => {
       // só loga e responde 200 sem disparar Portal 2.
       if (_isAtivoOrigin) {
         console.log(`[origin-guard] customer=${customer.id} origin=${_origin} — Cérebro silencioso; pulando cadastro determinístico`);
+        try { await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id }); } catch (_) {}
         return new Response(
           JSON.stringify({ ok: true, mode: "origin_guard_skip" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       }
 
-      const result = engine === "flow"
+      runEngine = async () => engine === "flow"
         ? await runConversationalFlow({
             supabase, sender, customer, consultorId, nomeRepresentante, nomeAssistente,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
@@ -2843,6 +2918,7 @@ Deno.serve(async (req) => {
             instanceName,
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           });
+      const result = await runEngine();
       reply = result.reply;
       updates = result.updates;
     } catch (botErr: any) {
@@ -2931,6 +3007,65 @@ Deno.serve(async (req) => {
         });
       }
     }
+
+    // 📥 Reprocessa a rajada que chegou enquanto este turno segurava o lock.
+    // O estado é buscado de novo a cada replay para manter a mesma serialização
+    // do Whapi; replies normais só saem depois que toda a fila foi persistida.
+    const primaryStepBefore = stepBefore;
+    try {
+      const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
+      const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
+        const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
+        if (fresh) customer = fresh;
+
+        messageText = replay.messageText || "";
+        messageId = replay.messageId || "";
+        isFile = replay.isFile;
+        isButton = replay.isButton;
+        buttonId = replay.buttonId;
+        // pending_inbound distingue mídia genérica; para o motor legado ela é
+        // tratada como imagem, o caso seguro de captura/OCR.
+        hasImage = replay.isFile && !replay.isButton;
+        hasDocument = false;
+        hasAudio = false;
+        rawStep = (customer as any).conversation_step || null;
+        const replayStepBefore = stripPrefix(rawStep);
+        stepBefore = replayStepBefore;
+        (customer as any).conversation_step = replayStepBefore;
+
+        console.log(`[pending-drain/evolution] replay customer=${customer.id} text="${String(messageText).slice(0, 80)}"`);
+        if (!runEngine) throw new Error("pending replay sem engine selecionado");
+        const replayResult = await runEngine();
+        const replayUpdates = { ...replayResult.updates };
+        if (replayUpdates.conversation_step) {
+          const prefixed = normalizeOutgoing(String(replayUpdates.conversation_step), engineUsed);
+          if (prefixed) replayUpdates.conversation_step = prefixed;
+        }
+        if (Object.keys(replayUpdates).length > 0 || replayResult.reply) {
+          (replayUpdates as any).last_bot_reply_at = new Date().toISOString();
+        }
+        for (const key of Object.keys(replayUpdates)) {
+          if (key.startsWith("__")) delete (replayUpdates as any)[key];
+        }
+        if (Object.keys(replayUpdates).length > 0) {
+          const { error } = await supabase.from("customers").update(replayUpdates).eq("id", customer.id);
+          if (error) throw error;
+          Object.assign(customer, replayUpdates);
+        }
+      });
+      if (drained > 0) console.log(`[pending-drain/evolution] ${drained} turn(s) customer=${customer.id}`);
+    } catch (e) {
+      console.warn("[pending-drain/evolution] falhou:", (e as Error).message);
+    } finally {
+      // A resposta externa deste turno ainda pertence ao step que a originou;
+      // os replays já deixaram seu novo estado persistido no customer.
+      stepBefore = primaryStepBefore;
+    }
+
+    // 🔓 Libera lock de processamento (pending já drenado) — paridade Whapi.
+    try {
+      await supabase.rpc("release_customer_processing_lock", { _customer_id: customer.id });
+    } catch (_) { /* noop */ }
 
     jsonLog("info", "handler_done", {
       customer_id: customer.id,

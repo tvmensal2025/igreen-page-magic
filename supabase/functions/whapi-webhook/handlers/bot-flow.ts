@@ -111,7 +111,7 @@ import {
 } from "../../_shared/bot/salvage-doc-at-bill-ocr.ts";
 import { uploadMediaToMinio, OCR_CONFIDENCE_THRESHOLD } from "../_helpers.ts";
 import { jsonLog } from "../../_shared/audit.ts";
-import { isMockMode, isCustomerSandbox, shouldBypassQuietHours, shouldUseFastClock } from "../../_shared/test-mode.ts";
+import { isMockMode, isCustomerSandbox, shouldBypassQuietHours } from "../../_shared/test-mode.ts";
 import { isFlowInstantMode } from "../../_shared/flow-pace.ts";
 import { notifyHandoff } from "../../_shared/notify-consultant.ts";
 import { phraseMatchesMessage } from "../../_shared/qa-phrase-match.ts";
@@ -135,27 +135,13 @@ function trigramSim(a: string, b: string): number {
   return inter / Math.max(ta.size, tb.size);
 }
 
-// ── Sleep based on media duration (lets audio finish before sending video) ──
-async function sleepForMedia(kind: string, durationSec?: number | null): Promise<void> {
-  if (isMockMode()) return; // 🧪 modo teste: zero espera entre mídias
-  if (isFlowInstantMode()) return; // ⚡ modo instantâneo: zero espera entre mídias
-  // Simulador real → cadência curta (serviços reais continuam reais, só corta espera artificial)
-  if (shouldUseFastClock()) {
-    const ms = (kind === "audio" || kind === "video") ? 1200 : 600;
-    await new Promise((r) => setTimeout(r, ms));
-    return;
-  }
-  if (kind === "audio") {
-    const ms = Math.min(((durationSec && durationSec > 0) ? durationSec : 90) * 1000, 120_000);
-    await new Promise((r) => setTimeout(r, ms));
-    return;
-  }
-  if (kind === "video") {
-    const ms = Math.min(((durationSec && durationSec > 0) ? durationSec : 30) * 1000, 90_000);
-    await new Promise((r) => setTimeout(r, ms));
-    return;
-  }
-  await new Promise((r) => setTimeout(r, 1500));
+// ── Sleep entre mídias (ZERO espera artificial — lead não aguarda áudio/vídeo acabar) ──
+async function sleepForMedia(_kind: string, _durationSec?: number | null): Promise<void> {
+  if (isMockMode()) return;
+  if (isFlowInstantMode()) return;
+  // Só um micro-gap de ordenação no WhatsApp; stitch de nome gera na hora e
+  // já segura o turno com "gravando…" — não soma delay aqui.
+  await new Promise((r) => setTimeout(r, 150));
 }
 
 // ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
@@ -1742,8 +1728,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         const delayMs = Number(m.delay_before_ms || 0);
-        // 🧪 mock: pula delay configurado pelo consultor (simulador é apenas validação)
-        if (delayMs > 0 && !isMockMode() && !isFlowInstantMode()) await new Promise((r) => setTimeout(r, Math.min(delayMs, 10_000)));
+        // Áudio/vídeo: delay zerado. Outros kinds: teto baixo.
+        const kindLower = String(kind).toLowerCase();
+        const effectiveDelay = (kindLower === "audio" || kindLower === "video")
+          ? 0
+          : Math.min(delayMs, 1_500);
+        if (effectiveDelay > 0 && !isMockMode() && !isFlowInstantMode()) {
+          await new Promise((r) => setTimeout(r, effectiveDelay));
+        }
 
         try {
           const ok = await sendMedia(remoteJid, m.url, "", kind, Number(m.duration_sec || 0) || undefined);

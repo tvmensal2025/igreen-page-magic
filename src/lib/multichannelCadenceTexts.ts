@@ -1090,10 +1090,10 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     timing: "T+0 · AGUARDA resposta com o nome",
     canGenerateAudio: false,
     notes:
-      "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação Gestor + protocolo + pedido do nome.",
+      "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação do consultor + protocolo + pedido do nome.",
     body: `*iGreen | Conta de Luz Mais Barata 🌱*
 
-Olá! Aqui é *{{representante}}*, *Gestor* da *iGreen*.
+Olá! Aqui é *{{representante}}* da *iGreen*.
 
 Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
 
@@ -2446,13 +2446,13 @@ _Para não receber mais contatos, responda SAIR._`,
     canGenerateAudio: false,
     notes:
       "Um dos temas rotativos do Grupo B. Publish grava em cadence_theme_config (motor). Não é o 1º contato: o D+1 usa o texto fixo de reabrir. Dia 2 referencia {{tema_whatsapp}}.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Boa notícia: agora dá para começar sua análise só com o valor médio da conta — sem foto e sem burocracia.
+Boa notícia: agora dá para começar sua *análise* só com o *valor médio* da conta — *sem foto* e *sem burocracia*. ✅
 
 {{frase_disponibilidade}}
 
-Qual faixa está sua conta hoje?`,
+*Qual faixa está sua conta hoje?*`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -2476,13 +2476,13 @@ Qual faixa está sua conta hoje?`,
     requiresApproval: "CRUISE_CAMPAIGN_APPROVED",
     canGenerateAudio: false,
     notes: "3 botões: economia / regras / ligar. Não afirmar “você ganhou”. Ainda SEM destino no motor (não entra no rotativo Dia 2/7).",
-    body: `Olá, {{nome}}! Você sabia dessa novidade?
+    body: `Olá, *{{nome}}*! Você sabia dessa novidade? 🚢
 
-Além da economia na conta de energia, clientes elegíveis podem participar de um sorteio de uma cabine de cruzeiro para duas pessoas, conforme o regulamento vigente.
+Além da *economia* na conta de energia, clientes elegíveis podem participar de um *sorteio de cabine de cruzeiro* para duas pessoas, conforme o regulamento vigente.
 
 {{frase_disponibilidade}}
 
-O que você quer conhecer primeiro?`,
+*O que você quer conhecer primeiro?*`,
     buttons: [
       { id: "economy", title: "Como funciona" },
       { id: "cruise_rules", title: "Regras do cruzeiro" },
@@ -2498,7 +2498,7 @@ O que você quer conhecer primeiro?`,
     theme: "cruise",
     requiresApproval: "ADVANCE_PAYMENT_DOUBLE_COUPON_APPROVED",
     canGenerateAudio: false,
-    body: `Conforme o regulamento vigente, o pagamento antecipado pode gerar uma participação adicional.`,
+    body: `Conforme o regulamento vigente, o *pagamento antecipado* pode gerar uma *participação adicional*.`,
   },
   {
     key: "theme_cruise_audio",
@@ -2549,13 +2549,13 @@ Além da possibilidade de economia na conta de energia, existe uma novidade espe
     theme: "tariff_flags",
     canGenerateAudio: false,
     notes: "Nunca afirmar isenção de bandeira.",
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*!
 
-As bandeiras amarela e vermelha podem aumentar o valor final da conta.
+As bandeiras *amarela* e *vermelha* podem aumentar o valor final da conta. ⚡
 
-O benefício de economia pode ajudar a reduzir o impacto desses aumentos, conforme o consumo e as condições aplicáveis.
+O benefício de economia pode *ajudar a reduzir* o impacto desses aumentos, conforme o consumo e as condições aplicáveis.
 
-Quer análise inicial pelo valor médio? Qual faixa?`,
+Quer *análise inicial* pelo valor médio? *Qual faixa?*`,
     buttons: [...BILL_RANGE_BUTTONS],
   },
   {
@@ -2577,11 +2577,11 @@ Quer análise inicial pelo valor médio? Qual faixa?`,
     timing: "Alternável",
     theme: "no_home_panels",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Para conhecer essa possibilidade de economia, não é necessário instalar placas solares na sua casa, fazer obra ou alterar sua instalação.
+Para conhecer essa possibilidade de economia, *não é necessário* instalar placas solares na sua casa, fazer obra ou alterar sua instalação. ✅
 
-A análise pode começar pelo valor médio. Como prefere?`,
+A análise pode começar pelo *valor médio*. Como prefere?`,
     buttons: [
       { id: "explain", title: "Explicar por aqui" },
       { id: "call_me", title: "Pode me ligar" },
@@ -2607,9 +2607,9 @@ A análise pode começar pelo valor médio. Como prefere?`,
     timing: "Alternável",
     theme: "security",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}. Aqui é {{consultor}}.
+    body: `Olá, *{{nome}}*! Aqui é *{{consultor}}*.
 
-Reforço: não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
+🔒 *Reforço importante:* não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
 
 {{frase_disponibilidade}}
 
@@ -2635,11 +2635,11 @@ Como prefere seguir?`,
     timing: "Alternável · números só de config",
     theme: "benefits_club",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-O benefício não termina na economia da conta: clientes elegíveis podem ter vantagens em estabelecimentos parceiros, conforme condições vigentes.
+O benefício *não termina* na economia da conta: clientes elegíveis podem ter vantagens em estabelecimentos parceiros, conforme condições vigentes.
 
-O que você quer conhecer?`,
+*O que você quer conhecer?*`,
     buttons: [
       { id: "economy", title: "Economia na conta" },
       { id: "club", title: "Clube benefícios" },
@@ -2665,11 +2665,11 @@ O que você quer conhecer?`,
     timing: "Alternável · valor só de config",
     theme: "referral_cashback",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Além da própria economia, também podem existir benefícios por indicação, conforme as regras vigentes.
+Além da própria economia, também podem existir *benefícios por indicação*, conforme as regras vigentes.
 
-O que você quer conhecer?`,
+*O que você quer conhecer?*`,
     buttons: [
       { id: "economy", title: "Economia mensal" },
       { id: "referral", title: "Indicação" },
@@ -2695,9 +2695,9 @@ O que você quer conhecer?`,
     timing: "Alternável · Dia 2 (e Dia 7 se silêncio)",
     theme: "digital_app",
     canGenerateAudio: false,
-    body: `Olá, {{nome}}.
+    body: `Olá, *{{nome}}*! 👋
 
-Além da economia na conta, clientes elegíveis podem acompanhar o benefício pelo aplicativo, conforme as condições vigentes.
+Além da economia na conta, clientes elegíveis podem acompanhar o benefício pelo *aplicativo*, conforme as condições vigentes. 📱
 
 {{frase_disponibilidade}}
 

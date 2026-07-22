@@ -80,17 +80,17 @@ const OPT_OUT_TEXT = /^(sair|parar|stop|cancelar|encerrar|nao\s+quero|não\s+que
 
 const EDUCATIONAL_REPLIES: Readonly<Record<string, string>> = {
   explain:
-    "Funciona assim: você continua com a mesma distribuidora e instalação. A iGreen aplica créditos de energia limpa na sua conta — sem obra e sem trocar relógio.\n\nPara ver se compensa no seu caso, me diga a faixa da conta ou envie a foto 📸",
+    "Funciona assim: você continua com a *mesma distribuidora* e instalação. A iGreen aplica *créditos de energia limpa* na sua conta — *sem obra* e sem trocar relógio.\n\nPara ver se compensa no seu caso, me diga a *faixa da conta* ou envie a foto 📸",
   economy:
-    "A economia vem dos créditos de energia na fatura — o percentual depende do seu consumo e da distribuidora. Sem taxa para começar a análise.\n\nQual a faixa da sua conta hoje?",
+    "A economia vem dos *créditos de energia* na fatura — o percentual depende do seu consumo e da distribuidora. *Sem taxa* para começar a análise.\n\n*Qual a faixa da sua conta hoje?*",
   club:
-    "Além da economia na conta, clientes elegíveis podem ter vantagens em parceiros — conforme regras vigentes.\n\nQuer iniciar a análise? Escolha a faixa da conta ou envie a foto 👇",
+    "Além da economia na conta, clientes elegíveis podem ter *vantagens em parceiros* — conforme regras vigentes.\n\nQuer iniciar a análise? Escolha a *faixa da conta* ou envie a foto 👇",
   referral:
-    "Indicações podem gerar benefícios conforme as regras da iGreen — primeiro vale conhecer sua economia.\n\nEm qual faixa está sua conta?",
+    "Indicações podem gerar *benefícios* conforme as regras da iGreen — primeiro vale conhecer sua economia.\n\n*Em qual faixa está sua conta?*",
   more_benefits:
-    "O benefício inclui economia na conta e, para elegíveis, vantagens extras no clube de parceiros.\n\nPara calcular no seu caso, qual a média da sua conta de luz?",
+    "O benefício inclui *economia na conta* e, para elegíveis, vantagens extras no *clube de parceiros*.\n\nPara calcular no seu caso, qual a *média da sua conta de luz?*",
   how_it_works:
-    "É simples: analisamos sua conta, confirmamos viabilidade e seguimos com o cadastro digital — sem obra na casa.\n\nQual faixa da sua conta hoje?",
+    "É simples: analisamos sua conta, confirmamos viabilidade e seguimos com o *cadastro digital* — sem obra na casa.\n\n*Qual faixa da sua conta hoje?*",
 };
 
 export type CadenceInboundInput = {

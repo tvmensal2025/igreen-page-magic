@@ -14,7 +14,6 @@ import { getStepMediaOrder, makeKindComparator } from "../../../_shared/step-med
 import { isMockMode, isTestMode } from "../../../_shared/test-mode.ts";
 import { isFlowInstantMode } from "../../../_shared/flow-pace.ts";
 // rules-engine removido em Sprint 2.5 (bot_flow_rules = 0 linhas, código morto)
-import { answerFaqWithAI } from "../../../_shared/ai-faq-answerer.ts";
 import { ensureAudioTranscript } from "../../../_shared/audio-transcript.ts";
 import { isStrictScriptMode } from "../../../_shared/ai-decisions.ts";
 import { validateAiFallbackChoice } from "../../../_shared/grounding.ts";
@@ -24,7 +23,8 @@ import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersi
 import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
-import { resolveFlowId } from "../../../_shared/resolve-flow.ts";
+import { resolveFlowId, resolveMediaOwnerId } from "../../../_shared/resolve-flow.ts";
+import { assignProtocolToCustomer } from "../../../_shared/protocol.ts";
 import {
   resolveCanonicalFlowVariant,
   needsCanonicalFlowVariantRepair,
@@ -42,6 +42,7 @@ import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 import { handleMakeCallStep } from "../../../_shared/bot/make-call-step.ts";
+import { detectQuestionIntent } from "../../../_shared/conversation-helpers.ts";
 
 export { CONVERSATIONAL_STEPS };
 
@@ -107,6 +108,25 @@ function resolveFaqReturnStep(current: DbStep, steps: DbStep[]): DbStep {
     if (a3) return a3;
   }
   return current;
+}
+
+function stepHasInteractiveWait(st: DbStep | null | undefined): boolean {
+  const captures = Array.isArray(st?.captures) ? st!.captures as any[] : [];
+  const hasButtons = captures.some((c: any) =>
+    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
+  );
+  if (hasButtons) return true;
+
+  const transitions = Array.isArray(st?.transitions) ? st!.transitions as any[] : [];
+  const hasReplyTransition = transitions.some((t: any) => {
+    const intent = String(t?.trigger_intent || "").trim();
+    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
+    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
+  });
+  if (hasReplyTransition) return true;
+
+  const fallbackMode = String(st?.fallback?.mode || "").trim();
+  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
 }
 
 async function loadFlow(supabase: any, consultantId: string, variant: string = "A"): Promise<LoadedFlow | null> {
@@ -223,13 +243,13 @@ export async function matchQA(
         if (mr?.url) { url = mr.url; if (mr.kind) kind = mr.kind; }
       }
       if (!url && m.slot_key) {
+        // Paridade Whapi: mídia do dono do template público A (não do consultor cru).
+        const mediaOwnerId = await resolveMediaOwnerId(supabase, consultantId, "A");
         const { data: personal } = await supabase
           .from("ai_media_library").select("id, url")
-          .eq("consultant_id", consultantId).eq("slot_key", m.slot_key)
+          .eq("consultant_id", mediaOwnerId).eq("slot_key", m.slot_key)
           .eq("active", true).limit(1).maybeSingle();
         if (personal?.url) { url = personal.url; mediaId = personal.id || mediaId; }
-        // Fallback: mídia pública (template oficial) quando o consultor não
-        // tem nada cadastrado nesse slot.
         if (!url) {
           const { data: pub } = await supabase
             .from("ai_media_library").select("id, url")
@@ -248,20 +268,10 @@ export async function matchQA(
   }
 }
 
-async function sleepForMedia(kind: string, _durationSec?: number | null, delayBeforeMs?: number | null): Promise<void> {
-  if (isTestMode()) return; // 🧪 modo teste: zero espera
-  // ⚠️ ANTES esperávamos a duração inteira do áudio/vídeo antes da próxima mídia.
-  // Isso fazia a Edge Function estourar 60-120s, dar timeout no Whapi e o passo
-  // nunca avançava. Agora usamos pausa curta: o Whapi já entrega na ordem.
-  const configuredDelay = Number(delayBeforeMs || 0);
-  if (configuredDelay > 0) {
-    await new Promise((r) => setTimeout(r, Math.min(configuredDelay, 2_500)));
-    return;
-  }
-  // Pausa curta e fixa — WhatsApp já entrega na ordem, não precisamos esperar
-  // a duração inteira do áudio/vídeo (causava ~25s de "digitando").
-  const pause = kind === "audio" || kind === "video" ? 900 : 400;
-  await new Promise((r) => setTimeout(r, pause));
+async function sleepForMedia(_kind: string, _durationSec?: number | null, _delayBeforeMs?: number | null): Promise<void> {
+  if (isMockMode()) return;
+  // Micro-gap de ordenação; áudio/vídeo não seguram a cascata.
+  await new Promise((r) => setTimeout(r, 150));
 }
 
 // ─── Render botões como lista numerada no texto ─────────────────────────
@@ -445,27 +455,39 @@ async function sendStepMedia(
   consultantId: string,
   _waitForSend = true,
   textPayload?: { text: string; delayMs: number } | null,
-): Promise<{ mediaSent: boolean | null; textSentInline: boolean }> {
+): Promise<{ mediaSent: boolean | null; textSentInline: boolean; abortedForPending?: boolean }> {
   const slotKey = step.slot_key || step.step_key || step.id;
   if (!slotKey) return { mediaSent: false, textSentInline: false };
 
-  // Busca a mídia do PRÓPRIO consultor primeiro; se não houver nada nesse
-  // slot, cai na mídia PÚBLICA (consultant_id NULL / is_public=true — os
-  // templates oficiais do super admin). Sem esse fallback, consultores que
-  // usam os slots públicos (ex.: `como_funciona`) não recebiam áudio/vídeo
-  // nenhum: a query só com `.eq(consultant_id)` voltava vazia e só o texto
-  // era enviado. Mesma estratégia já usada no handler bot-flow.ts.
+  // Multicanal oficial: mídia do dono do template público (resolveMediaOwnerId).
   const mediaSelect =
     "id, kind, label, url, slot_key, send_order, duration_sec, delay_before_ms, transcript";
-  const { data: personalRows } = await ctx.supabase
+  const variant = String((ctx.customer as any)?.flow_variant || "A").toUpperCase();
+  const mediaOwnerId = await resolveMediaOwnerId(ctx.supabase, consultantId, variant);
+
+  let { data: mediaRows } = await ctx.supabase
     .from("ai_media_library")
     .select(mediaSelect)
-    .eq("consultant_id", consultantId)
+    .eq("consultant_id", mediaOwnerId)
     .eq("slot_key", slotKey)
     .eq("active", true)
     .order("send_order", { ascending: true });
 
-  let mediaRows = personalRows;
+  // Sofia passo 3: alias legado a3_audio_explain
+  if ((!mediaRows || mediaRows.length === 0) && slotKey === "a3_explain_with_buttons") {
+    const { data: aliasRows } = await ctx.supabase
+      .from("ai_media_library")
+      .select(mediaSelect)
+      .eq("consultant_id", mediaOwnerId)
+      .eq("slot_key", "a3_audio_explain")
+      .eq("active", true)
+      .order("send_order", { ascending: true });
+    if (aliasRows?.length) {
+      console.log(`[sendStepMedia] fallback slot a3_audio_explain → ${aliasRows.length} mídia(s)`);
+      mediaRows = aliasRows;
+    }
+  }
+
   if (!mediaRows || mediaRows.length === 0) {
     const { data: publicRows } = await ctx.supabase
       .from("ai_media_library")
@@ -477,22 +499,6 @@ async function sendStepMedia(
     mediaRows = publicRows;
   }
 
-  // Sofia passo 3: alias legado a3_audio_explain
-  if ((!mediaRows || mediaRows.length === 0) && slotKey === "a3_explain_with_buttons") {
-    const { data: aliasRows } = await ctx.supabase
-      .from("ai_media_library")
-      .select(mediaSelect)
-      .eq("consultant_id", consultantId)
-      .eq("slot_key", "a3_audio_explain")
-      .eq("active", true)
-      .order("send_order", { ascending: true });
-    if (aliasRows?.length) {
-      console.log(`[sendStepMedia] fallback slot a3_audio_explain → ${aliasRows.length} mídia(s)`);
-      mediaRows = aliasRows;
-    }
-  }
-
-  const variant = (ctx.customer as any)?.flow_variant || "A";
   let medias = ((mediaRows as any[]) || []).filter((m) => !!m?.url);
 
   // Multicanal A2/A3: NUNCA enviar MP3 da prévia (Maria/Rodrigo).
@@ -516,7 +522,7 @@ async function sendStepMedia(
       let safe: Awaited<ReturnType<typeof pickSafePersonalizedWaAudio>>;
       try {
         safe = await pickSafePersonalizedWaAudio(ctx.supabase, {
-          consultantId,
+          consultantId: mediaOwnerId,
           slotKey: String(slotKey),
           customerName: (ctx.customer as any)?.name,
           nameSource: (ctx.customer as any)?.name_source,
@@ -593,7 +599,7 @@ async function sendStepMedia(
   // Sem isso, fluxo D herda a ordem do fluxo A quando ambos compartilham `slot_key`.
   const uiOrder = await getStepMediaOrder(
     ctx.supabase,
-    consultantId,
+    mediaOwnerId,
     [step.step_key, step.slot_key, slotKey].filter(Boolean) as string[],
   );
   const stepOrder = Array.isArray(step.media_order) && step.media_order.length > 0
@@ -665,19 +671,35 @@ async function sendStepMedia(
   let mediaAttempted = false;
   let mediaFailed = false;
   let textSentInline = earlyTextSent;
+  let abortedForPending = false;
   let prevForPause: { kind: string; duration_sec?: number | null } | null = earlyTextSent
     ? { kind: "text" }
     : null;
 
+  const { customerHasPendingInbound } = await import("../../../_shared/bot/pending-inbound.ts");
+
   for (let i = 0; i < sequence.length; i++) {
     const item = sequence[i];
 
+    if (
+      ctx.customer?.id &&
+      i > 0 &&
+      (item.kind === "video" || item.kind === "audio" || item.kind === "image" || item.kind === "document")
+    ) {
+      try {
+        if (await customerHasPendingInbound(ctx.supabase, ctx.customer.id)) {
+          console.log(
+            `[sendStepMedia/evo] ⚡ abort cascade step=${step.step_key} at ${item.kind} i=${i}/${sequence.length} — pending inbound`,
+          );
+          abortedForPending = true;
+          break;
+        }
+      } catch (_) { /* best-effort */ }
+    }
+
     if (item.kind === "text") {
-      // ⏱️ Respeita text_delay_ms antes do texto.
-      // 🚀 2026-06-05: teto reduzido para 2s (era 12s) — corte de latência
-      // no Evolution. Consultor que precisa pausa maior deve quebrar o passo.
       if (!isTestMode()) {
-        const wait = Math.max(0, Math.min(item.delayMs, 2_000));
+        const wait = Math.max(0, Math.min(item.delayMs, 1_500));
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
       try {
@@ -731,34 +753,9 @@ async function sendStepMedia(
       }
     }
 
-    // ⏱️ Pausa antes da mídia.
-    //
-    // Regra (ordem de precedência):
-    //   1. `delay_before_ms` configurado pelo consultor (teto 12s para não
-    //      estourar Edge Function timeout).
-    //   2. Pausa derivada do item anterior:
-    //      - texto → 800ms (humanização mínima);
-    //      - áudio/vídeo com duration_sec → 90% da duração + 600ms de buffer
-    //        (teto 12s). Isso garante que o cliente termina de escutar/ver
-    //        antes do próximo item chegar — sem essa folga, o WhatsApp
-    //        entregava 3-4 mensagens em rajada e a "sensação" era de bot.
-    //   3. Item anterior desconhecido → 800ms.
-    //
-    // O teto duro de 12s evita estourar o limite de 60s da Edge Function
-    // mesmo com 5+ mídias na sequência.
-    const configuredDelay = Number(m.delay_before_ms || 0);
-    if (!isTestMode()) {
-      if (configuredDelay > 0) {
-        // Respeita config do consultor, mas teto de 4s para não estourar Edge.
-        const wait = Math.min(configuredDelay, 4_000);
-        await new Promise((r) => setTimeout(r, wait));
-      } else if (prevForPause) {
-        // Pausa curta e fixa: 900ms após áudio/vídeo, 400ms após texto/imagem.
-        // ANTES esperávamos 90% da duração do item anterior (até 12s),
-        // o que somava ~25s entre 3 mídias e o lead achava que o bot travou.
-        const pause = (prevForPause.kind === "audio" || prevForPause.kind === "video") ? 900 : 400;
-        await new Promise((r) => setTimeout(r, pause));
-      }
+    // Delays de áudio/vídeo ZERADOS — só micro-gap de ordenação.
+    if (!isTestMode() && prevForPause) {
+      await new Promise((r) => setTimeout(r, 150));
     }
 
     mediaAttempted = true;
@@ -825,7 +822,7 @@ async function sendStepMedia(
   const mediaResult: boolean | null = medias.length === 0
     ? false
     : (mediaAttempted && mediaFailed && !mediaSent) ? null : mediaSent;
-  return { mediaSent: mediaResult, textSentInline };
+  return { mediaSent: mediaResult, textSentInline, abortedForPending };
 }
 
 // 🚫 REMOVIDO: fallbackTextForStep — inventava texto fora do /admin/fluxos.
@@ -1275,6 +1272,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           || recentSteps.has(firstActive.step_key)
           || recentSteps.has(firstActive.id)
           || recentSteps.has(`flow:${firstActive.id}`)
+          || recentSteps.has("welcome")
+          || recentSteps.has("a1_ask_name")
         ) {
           console.log(`[conversational] 🛡️ anti-welcome-duplicado: outbound recente do fluxo — pulando restart e processando input no landing=${landingForDup.step_key}`);
           currentStep = landingForDup;
@@ -1284,6 +1283,18 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }
     } catch (e) {
       console.warn(`[conversational] anti-welcome-duplicado check falhou: ${(e as Error)?.message}`);
+    }
+  }
+  // ❓ Pergunta/FAQ com step legacy (welcome) — NÃO reemitir A1 pedindo nome.
+  if (!currentStep && detectQuestionIntent(ctx.messageText || "")) {
+    const landingQ = resolveLandingStep(firstActive) || firstActive;
+    if (landingQ) {
+      console.log(
+        `[conversational/evo] ❓ pergunta com step desconhecido="${stepKey}" → landing=${landingQ.step_key} (FAQ antes de restart)`,
+      );
+      currentStep = landingQ;
+      stepKey = landingQ.id;
+      _setTurnStepQuestion(landingQ.message_text || "", _turnVars);
     }
   }
   if (!currentStep) {
@@ -1315,9 +1326,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     //   fallback.goto_step_id até achar um step com conteúdo real OU um
     //   step que precise esperar resposta (wait_for=reply).
     console.log(`[conversational] unknown step="${stepKey}" → restart at firstActive=${firstActive?.id} (steps=${dbSteps.length})`);
+    let protocoloBoot = String((ctx.customer as any).tracking_protocol || "").trim();
+    if (!protocoloBoot) {
+      try {
+        const assigned = await assignProtocolToCustomer(ctx.supabase, ctx.customer.id, {
+          partnerId: (ctx.customer as any).referral_partner_id || null,
+          consultantId: consultantId || ctx.customer.consultant_id || null,
+          consultantName: ctx.nomeRepresentante || null,
+        });
+        protocoloBoot = String(assigned?.protocol || "").trim();
+        if (protocoloBoot) (ctx.customer as any).tracking_protocol = protocoloBoot;
+      } catch (e) {
+        console.warn("[conversational/evo] assignProtocol (boot) falhou:", (e as Error).message);
+      }
+    }
     const vars = {
       nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
+      protocolo: protocoloBoot,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
       cpf: (ctx.customer as any).cpf,
@@ -2019,24 +2045,57 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     console.log(`[conversational/evo] ✋ handoff IGNORADO — input casa transição/captura configurada. Fluxo determinístico assume.`);
   }
 
-  // ─── AI FAQ Answerer (Lovable AI) ──────────────────────────────────
-  // Quando o lead faz pergunta (tem_duvida) que NÃO casou em bot_flow_qa
-  // E não é uma captura legítima, tenta responder via Lovable AI usando
-  // ai_knowledge_sections como base. Mantém o passo atual (não avança
-  // o funil). Se confidence < 0.6 OU shouldHandoff → pula e deixa o
-  // fluxo default seguir (que vai disparar regras/handoff conforme cfg).
+  // ─── AI Orchestrator (memória persistente + RAG) ─────────────────────
   if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour) {
     try {
-      const ai = await answerFaqWithAI({
+      const { data: hist } = await ctx.supabase
+        .from("conversations")
+        .select("message_direction, message_text, created_at")
+        .eq("customer_id", ctx.customer.id)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      const recentHistory = ((hist as any[]) || [])
+        .slice()
+        .reverse()
+        .map((r) => `${r.message_direction === "inbound" ? "Lead" : "Bot"}: ${String(r.message_text || "").slice(0, 240)}`)
+        .join("\n");
+
+      const { runOrchestrator } = await import("../../../_shared/ai-orchestrator.ts");
+      const orch = await runOrchestrator({
         supabase: ctx.supabase,
-        question: ctx.messageText || "",
-        leadName: ctx.customer.name,
-        currentStepLabel: currentStep.step_key,
+        customer: ctx.customer,
         consultantId: ctx.customer.consultant_id,
+        message: ctx.messageText || "",
+        step: stepKey,
+        history: recentHistory,
+        isButton: !!ctx.buttonId,
+        hasMedia: false,
       });
-      if (ai.source === "ai" && ai.text && ai.confidence >= 0.6 && !ai.shouldHandoff) {
-        console.log(`[ai-faq] hit step="${stepKey}" conf=${ai.confidence.toFixed(2)}`);
-        const renderedFaq = renderTemplate(ai.text, {
+      try {
+        const { count: inboundCount } = await ctx.supabase
+          .from("conversations").select("id", { count: "exact", head: true })
+          .eq("customer_id", ctx.customer.id).eq("message_direction", "inbound");
+        const { maybeUpdateSummary } = await import("../../../_shared/ai-summary.ts");
+        void maybeUpdateSummary({
+          supabase: ctx.supabase, customerId: ctx.customer.id,
+          consultantId: ctx.customer.consultant_id, history: recentHistory,
+          customer: ctx.customer, inboundTurnCount: inboundCount || 0,
+          previousSummary: (ctx.customer as any).conversation_summary || null,
+        });
+      } catch (_) { /* best-effort */ }
+
+      const answerText = (orch.reply || "").trim();
+      if (answerText && orch.confidence >= 0.55) {
+        console.log(`[conversational-orch/evo] hit step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} handoff=${orch.shouldHandoff}`);
+        const handoffUpdates = orch.shouldHandoff
+          ? { bot_paused: true, bot_paused_reason: "ai_handoff_duvidas", bot_paused_at: new Date().toISOString() }
+          : {};
+        if (orch.shouldHandoff) {
+          try {
+            await notifyHandoff(ctx.supabase, ctx.customer, `Dúvida exigiu humano (passo ${stepKey})`).catch(() => {});
+          } catch (_) { /* best-effort */ }
+        }
+        const renderedFaq = renderTemplate(answerText, {
           nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
           representante: ctx.nomeRepresentante,
           valor_conta: (ctx.customer as any).electricity_bill_value,
@@ -2055,31 +2114,28 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             });
           }
         } catch (e) {
-          console.warn("[ai-faq] sendText falhou:", (e as Error)?.message || e);
+          console.warn("[conversational-orch/evo] sendText falhou:", (e as Error)?.message || e);
         }
-        // a3b sem botões → volta ao a3 (mesmo mapa do bot-flow / 11971254913).
         const returnStep = resolveFaqReturnStep(currentStep, dbSteps);
         if (returnStep.id !== currentStep.id) {
-          console.log(`[ai-faq] return ${currentStep.step_key} → ${returnStep.step_key}`);
+          console.log(`[conversational-orch/evo] return ${currentStep.step_key} → ${returnStep.step_key}`);
           currentStep = returnStep;
           stepKey = returnStep.id;
         }
-        try {
-          await reemitStepButtons({
-            supabase: ctx.supabase,
-            customerId: ctx.customer.id,
-            consultantId: consultantId || ctx.customer.consultant_id,
-            flowVariant: flowVariant,
-            stepKey: currentStep.id || stepKey,
-            remoteJid: ctx.remoteJid,
-            sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
-            sendText: (jid, text) => ctx.sender.sendText(jid, text),
-            buttons: extractStepButtons(currentStep),
-            followups: Number((ctx.customer as any).ai_followups_count || 0),
-            delayMs: 500,
-          });
-        } catch (e) {
-          console.warn("[ai-faq] reemit falhou:", (e as Error)?.message || e);
+        if (!orch.shouldHandoff) {
+          try {
+            await reemitStepButtons({
+              supabase: ctx.supabase, customerId: ctx.customer.id,
+              consultantId: consultantId || ctx.customer.consultant_id, flowVariant,
+              stepKey: currentStep.id || stepKey, remoteJid: ctx.remoteJid,
+              sendButtons: (jid, text, btns) => ctx.sender.sendButtons(jid, text, btns),
+              sendText: (jid, text) => ctx.sender.sendText(jid, text),
+              buttons: extractStepButtons(currentStep),
+              followups: Number((ctx.customer as any).ai_followups_count || 0), delayMs: 500,
+            });
+          } catch (e) {
+            console.warn("[conversational-orch/evo] reemit falhou:", (e as Error)?.message || e);
+          }
         }
         return _finalize(stepKey, {
           reply: "",
@@ -2087,17 +2143,16 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             conversation_step: stepKey,
             __intent: cls.intent,
             __confidence: cls.confidence,
-            __ai_faq: true,
+            __ai_orch: true,
             __inline_sent: true,
+            ...handoffUpdates,
             ...restoreDetourUpdates,
           },
         });
       }
-      if (ai.shouldHandoff) {
-        console.log(`[ai-faq] handoff sugerido step="${stepKey}" — deixando fluxo default tratar`);
-      }
+      console.log(`[conversational-orch/evo] miss step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} reply_len=${answerText.length} — fluxo default segue`);
     } catch (e) {
-      console.warn("[ai-faq] erro, ignorando:", (e as Error).message);
+      console.warn("[conversational-orch/evo] erro, ignorando:", (e as Error).message);
     }
   }
 
@@ -2204,10 +2259,26 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // declarações de goToStep/emitStep/vars — caso contrário, chamar goToStep
   // aqui dispara TDZ "Cannot access 'goToStep' before initialization".)
 
+  // Protocolo no A1 (paridade Whapi): gera ANTES de renderizar {{protocolo}}.
+  let protocolo = String((ctx.customer as any).tracking_protocol || "").trim();
+  if (!protocolo) {
+    try {
+      const assigned = await assignProtocolToCustomer(ctx.supabase, ctx.customer.id, {
+        partnerId: (ctx.customer as any).referral_partner_id || null,
+        consultantId: consultantId || ctx.customer.consultant_id || null,
+        consultantName: ctx.nomeRepresentante || null,
+      });
+      protocolo = String(assigned?.protocol || "").trim();
+      if (protocolo) (ctx.customer as any).tracking_protocol = protocolo;
+    } catch (e) {
+      console.warn("[conversational/evo] assignProtocol falhou:", (e as Error).message);
+    }
+  }
 
   const vars = {
     nome: captureUpdates.name || ctx.customer.name, nome_source: (captureUpdates as any).name_source || (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
+    protocolo,
     valor_conta: captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value,
     telefone: captureUpdates.phone_whatsapp || ctx.customer.phone_whatsapp,
     cpf: captureUpdates.cpf || (ctx.customer as any).cpf,
@@ -2569,11 +2640,14 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       );
     const cursorCascades = (st: DbStep): boolean => {
       if (_hasTextCapture(st)) return false;
+      if (stepHasInteractiveWait(st)) return false;
       if (st.wait_for !== "none") return false;
       if (_looksLikeQuestion(st)) return false;
       return true;
     };
-    for (let guard = 0; cursor && cursorCascades(cursor) && guard < 3; guard++) {
+    const forceFirstHop = !replyText && !inlineSent && cursor
+      && !_hasTextCapture(cursor) && !stepHasInteractiveWait(cursor) && !_looksLikeQuestion(cursor);
+    for (let guard = 0; cursor && (cursorCascades(cursor) || (guard === 0 && forceFirstHop)) && guard < 3; guard++) {
       const nextStep = findCascadeNext(cursor);
       if (!nextStep) {
         console.log(`[conversational] cascade parou em step=${cursor.step_key} (sem próximo step ativo)`);
@@ -2586,9 +2660,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
       const cascadeCadastroStep = stepTypeToCadastro(nextStep.step_type, nextStep.step_key);
       // Se o próximo passo parece pergunta, emite uma vez e para — não cascateia além.
-      const nextIsQuestion = !cascadeCadastroStep && _looksLikeQuestion(nextStep);
-      const nextWillCascade = !cascadeCadastroStep && !nextIsQuestion
-        && nextStep.wait_for === "none"
+      const nextIsQuestion = !cascadeCadastroStep && (_looksLikeQuestion(nextStep) || stepHasInteractiveWait(nextStep));
+      const nextWillCascade = !cascadeCadastroStep && cursorCascades(nextStep)
         && !!findCascadeNext(nextStep);
 
       // PERSIST FIRST: marca o lead já no nextStep ANTES de enviar mídia pesada.

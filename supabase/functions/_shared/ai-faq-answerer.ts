@@ -17,6 +17,7 @@
 import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage } from "./ai-cost-tracker.ts";
 import { formatFaqReply, withSoftFlowClose } from "./format-reply.ts";
+import { resolveFlowId } from "./resolve-flow.ts";
 
 export interface FaqAnswer {
   text: string;
@@ -87,15 +88,11 @@ async function findExactFaqMatch(opts: {
   const norm = normalizeFaqQuestion(opts.question);
   if (!norm) return null;
 
-  // Pega flow ativo do consultor (qualquer variante; QA é por consultor).
+  // Multicanal oficial: flow resolvido (público A).
   let flowIds: string[] = [];
   if (opts.consultantId) {
-    const { data: flows } = await opts.supabase
-      .from("bot_flows")
-      .select("id")
-      .eq("consultant_id", opts.consultantId)
-      .eq("is_active", true);
-    flowIds = ((flows as Array<{ id: string }>) || []).map((f) => f.id);
+    const resolved = await resolveFlowId(opts.supabase, opts.consultantId, "A");
+    if (resolved?.id) flowIds = [resolved.id];
   }
   if (flowIds.length === 0) return null;
 

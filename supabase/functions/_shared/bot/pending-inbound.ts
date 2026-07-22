@@ -11,6 +11,24 @@ export type PendingInboundReplay = {
   buttonId: string | null;
 };
 
+/** true se há inbound enfileirado (lock ocupado / cascata de mídia em andamento). */
+export async function customerHasPendingInbound(
+  supabase: any,
+  customerId: string,
+): Promise<boolean> {
+  if (!customerId) return false;
+  try {
+    const { data: row } = await supabase
+      .from("customers")
+      .select("pending_inbound_message_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    return !!String((row as any)?.pending_inbound_message_id || "").trim();
+  } catch {
+    return false;
+  }
+}
+
 function normalizeReplayText(raw: string, messageType: string): string {
   const t = String(raw || "").trim();
   if (!t) return "";

@@ -153,45 +153,45 @@ function withFakeSetTimeout<T>(fn: (recorded: number[]) => Promise<T>): Promise<
   });
 }
 
-Deno.test("sleepForMedia(audio, 5) → ~5000ms", async () => {
+Deno.test("sleepForMedia(audio, 5) → micro-gap 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 5);
-    assertEquals(rec[0], 5000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(audio, 9999) → cap 120000ms", async () => {
+Deno.test("sleepForMedia(audio, 9999) → ainda 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", 9999);
-    assertEquals(rec[0], 120_000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(audio, undefined) → default 90000ms", async () => {
+Deno.test("sleepForMedia(audio, undefined) → 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("audio", undefined);
-    assertEquals(rec[0], 90_000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(video, 2) → 2000ms", async () => {
+Deno.test("sleepForMedia(video, 2) → 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 2);
-    assertEquals(rec[0], 2000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(video, 9999) → cap 90000ms", async () => {
+Deno.test("sleepForMedia(video, 9999) → 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("video", 9999);
-    assertEquals(rec[0], 90_000);
+    assertEquals(rec[0], 150);
   });
 });
 
-Deno.test("sleepForMedia(other) → fallback 1500ms", async () => {
+Deno.test("sleepForMedia(other) → 150ms", async () => {
   await withFakeSetTimeout(async (rec) => {
     await sleepForMedia("image", 0);
-    assertEquals(rec[0], 1500);
+    assertEquals(rec[0], 150);
   });
 });
 

@@ -244,10 +244,8 @@ async function loadStageConfig(
     return null;
   }
 
-  if (consultantId) {
-    const own = await pick(consultantId);
-    if (own) return own;
-  }
+  // Política global: Multicanal oficial — só config global (consultant_id IS NULL).
+  // Overrides por consultor no banco ficam órfãos (não apagados).
   return await pick(null);
 }
 

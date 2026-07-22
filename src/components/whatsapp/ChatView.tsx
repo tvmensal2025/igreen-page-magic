@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { MessageBubble } from "./MessageBubble";
 import { MessageComposer } from "./MessageComposer";
 import { AddCustomerDialog } from "./AddCustomerDialog";
-import { useMessages } from "@/hooks/useMessages";
+import { useMessages, type ChatMessage } from "@/hooks/useMessages";
 import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/services/messageSender";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +51,29 @@ import type { Tables } from "@/integrations/supabase/types";
 const logger = createLogger("ChatView");
 
 type PartnerJoin = { nome?: string | null } | { nome?: string | null }[] | null;
+
+/** Chave local do dia (evita misturar datas por fuso UTC). */
+function dayKeyFromTs(ts: number): string {
+  if (!ts) return "unknown";
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Rótulo de data no estilo WhatsApp: Hoje / Ontem / DD/MM/AAAA. */
+function dayLabelFromTs(ts: number): string {
+  if (!ts) return "";
+  const d = new Date(ts * 1000);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return "Hoje";
+  if (d.toDateString() === yesterday.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+type ChatFeedItem =
+  | { kind: "day"; id: string; label: string }
+  | { kind: "msg"; id: string; message: ChatMessage };
 
 function readPartnerName(row: {
   referral_partner_id?: string | null;
@@ -574,12 +597,30 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   const lastPinnedMsgIdRef = useRef<string | null>(null);
   const scrollSettleTimersRef = useRef<number[]>([]);
 
+  // Intercala chips de data entre mensagens (Hoje / Ontem / DD/MM/AAAA).
+  const feedItems = useMemo<ChatFeedItem[]>(() => {
+    const items: ChatFeedItem[] = [];
+    let prevDay: string | null = null;
+    for (const msg of messages) {
+      const key = dayKeyFromTs(msg.timestamp);
+      if (key !== "unknown" && key !== prevDay) {
+        const label = dayLabelFromTs(msg.timestamp);
+        if (label) {
+          items.push({ kind: "day", id: `day-${key}`, label });
+        }
+        prevDay = key;
+      }
+      items.push({ kind: "msg", id: msg.id, message: msg });
+    }
+    return items;
+  }, [messages]);
+
   const rowVirtualizer = useVirtualizer({
-    count: messages.length,
+    count: feedItems.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => 96,
+    estimateSize: (index) => (feedItems[index]?.kind === "day" ? 36 : 96),
     overscan: 12,
-    getItemKey: (index) => messages[index]?.id ?? index,
+    getItemKey: (index) => feedItems[index]?.id ?? index,
   });
 
   const pinToBottom = useCallback(() => {
@@ -1286,12 +1327,13 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           }}
         >
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const msg = messages[virtualRow.index]!;
+            const item = feedItems[virtualRow.index];
+            if (!item) return null;
             return (
               <div
                 key={virtualRow.key}
                 data-index={virtualRow.index}
-                data-msg-bubble
+                data-msg-bubble={item.kind === "msg" ? true : undefined}
                 ref={rowVirtualizer.measureElement}
                 style={{
                   position: "absolute",
@@ -1301,21 +1343,29 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >
-                <MessageBubble
-                  message={msg}
-                  onLoadMedia={loadMedia}
-                  consultantId={consultantId}
-                  customerId={customerId}
-                  onAttachToCapture={customerId ? async (m, key, loaded) => {
-                    await attachMediaToCapture({
-                      customerId,
-                      key,
-                      sourceUrl: loaded,
-                      fileName: m.fileName,
-                      mediaId: m.whapiMediaId,
-                    });
-                  } : undefined}
-                />
+                {item.kind === "day" ? (
+                  <div className="flex items-center justify-center py-2">
+                    <span className="px-3 py-0.5 rounded-full bg-card/95 border border-border/60 text-[11px] font-medium text-muted-foreground shadow-sm">
+                      {item.label}
+                    </span>
+                  </div>
+                ) : (
+                  <MessageBubble
+                    message={item.message}
+                    onLoadMedia={loadMedia}
+                    consultantId={consultantId}
+                    customerId={customerId}
+                    onAttachToCapture={customerId ? async (m, key, loaded) => {
+                      await attachMediaToCapture({
+                        customerId,
+                        key,
+                        sourceUrl: loaded,
+                        fileName: m.fileName,
+                        mediaId: m.whapiMediaId,
+                      });
+                    } : undefined}
+                  />
+                )}
               </div>
             );
           })}

@@ -135,18 +135,10 @@ function trigramSim(a: string, b: string): number {
   return inter / Math.max(ta.size, tb.size);
 }
 
-// ── Sleep based on media duration (lets audio finish before sending video) ──
-async function sleepForMedia(kind: string, _durationSec?: number | null): Promise<void> {
-  if (isTestMode()) return; // 🧪 modo teste: zero espera entre mídias
-  // 🚀 2026-06-05: cadência fixa curta (ignora duração real da mídia).
-  // Antes esperava 100% do áudio/vídeo (até 120s/90s), causando latência
-  // percebida enorme (ex.: áudio de 50s = 50s parado entre passos).
-  // WhatsApp empilha mensagens; áudio continua disponível pra ouvir depois.
-  // Whapi MANTÉM comportamento antigo — só Evolution muda.
-  let ms = 1000;
-  if (kind === "audio") ms = 5000;
-  else if (kind === "video") ms = 3000;
-  await new Promise((r) => setTimeout(r, ms));
+// ── Sleep entre mídias (ZERO espera artificial) ──
+async function sleepForMedia(_kind: string, _durationSec?: number | null): Promise<void> {
+  if (isTestMode()) return;
+  await new Promise((r) => setTimeout(r, 150));
 }
 
 // ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
@@ -635,7 +627,7 @@ const NO_QA_STEPS = new Set([
   "ask_email", "ask_cep", "ask_number", "ask_complement",
   "ask_installation_number", "ask_distribuidora", "ask_bill_value",
   "ask_doc_frente_manual", "ask_doc_verso_manual", "ask_contaunica", "ask_transferir_titularidade", "ask_finalizar",
-  "finalizando", "portal_submitting", "aguardando_otp", "validando_otp", "otp_falhou",
+  "finalizando", "portal_submitting", "aguardando_otp", "validando_otp", "otp_falhou", "otp_confirmar",
   "aguardando_assinatura", "complete", "aguardando_humano",
   "aguardando_avaliacao_atendimento", "atendimento_finalizado",
   // Loop de correção Portal 2 — steps determinísticos, QA semântico não dispara.
@@ -1756,7 +1748,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         const delayMs = Number(m.delay_before_ms || 0);
-        if (delayMs > 0) await new Promise((r) => setTimeout(r, Math.min(delayMs, 10_000)));
+        // Áudio/vídeo seguem imediatamente; os demais tipos têm teto baixo
+        // para não segurar a cascata nem estourar o lock do customer.
+        const kindLower = String(kind).toLowerCase();
+        const effectiveDelay = (kindLower === "audio" || kindLower === "video")
+          ? 0
+          : Math.min(delayMs, 1_500);
+        if (effectiveDelay > 0 && !isTestMode()) {
+          await new Promise((r) => setTimeout(r, effectiveDelay));
+        }
 
         // R3 (2026-06-26): healthcheck NÃO desativa mais a mídia automaticamente.
         // O check antigo derrubava mídia boa quando o backend respondia 400 em
@@ -2975,7 +2975,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "ask_complement", "ask_email", "ask_rg", "ask_contaunica", "ask_transferir_titularidade", "ask_finalizar", "ask_distribuidora",
     "confirmar_titularidade", "validacao_facial", "pos_video",
     "finalizando", "finalizar_cadastro", "complete", "valor_baixo",
-    "cadastro_em_analise", "aguardando_facial", "otp_falhou",
+    "cadastro_em_analise", "aguardando_facial", "otp_falhou", "otp_confirmar",
     "aguardando_humano",
     // Loop de correção Portal 2: steps que pedem o dado rejeitado ao cliente.
     "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
@@ -6314,6 +6314,43 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
     case "validando_otp": {
       reply = "⏳ Estamos validando seu código no portal. Aguarde um momento...\n\nSe já passou mais de 2 minutos, digite o código novamente.";
+      break;
+    }
+
+    case "otp_confirmar": {
+      // Paridade Whapi: resposta sim/não no intercept; fallback textual aqui.
+      const { parseOtpConfirmReply, handleOtpConfirmedByClient, handleOtpDeniedByClient, resolveCodigoConfirmCopy } =
+        await import("../../_shared/otp-confirm-flow.ts");
+      const decision = parseOtpConfirmReply(messageText || "", buttonId || null);
+      if (decision === "sim") {
+        const { clientReply } = await handleOtpConfirmedByClient(supabase, {
+          id: customer.id,
+          name: customer.name,
+          phone_whatsapp: customer.phone_whatsapp,
+          consultant_id: customer.consultant_id,
+          otp_code: (customer as any).otp_code,
+        });
+        reply = clientReply;
+        break;
+      }
+      if (decision === "nao") {
+        const { clientReply } = await handleOtpDeniedByClient(
+          supabase,
+          customer.id,
+          customer.consultant_id,
+        );
+        reply = clientReply;
+        updates.conversation_step = "aguardando_otp";
+        updates.status = "awaiting_otp";
+        break;
+      }
+      {
+        const code = String((customer as any).otp_code || "").replace(/\D/g, "") || "???";
+        const copy = await resolveCodigoConfirmCopy(supabase, customer.consultant_id, code);
+        // Evolution: lista numerada (sendOptions já formata 1/2/3).
+        await sendOptions(remoteJid, copy.ask, copy.buttons);
+        reply = "";
+      }
       break;
     }
 
