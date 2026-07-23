@@ -8,7 +8,9 @@ import {
   MessageCircle,
   RefreshCw,
   RotateCcw,
+  Ban,
 } from "lucide-react";
+import { suppressContact } from "@/services/contactSuppression";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -123,6 +125,30 @@ export function HandoffLeadsDialog({
     onOpenChange(false);
   };
 
+  async function blockContact(row: HandoffLead) {
+    const ok = window.confirm(
+      `Bloquear ${row.displayName}?\n\nO lead sai do handoff e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para a pizza.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    const res = await suppressContact({
+      consultantId,
+      customerId: row.customerId,
+      phone: row.phone,
+      reason: "requested",
+      channel: "handoff_dialog",
+      notes: "Bloqueado a partir do painel de handoff",
+    });
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(res.error || "Falha ao bloquear contato");
+      return;
+    }
+    toast.success(`${row.displayName} bloqueado — não recebe mais contatos`);
+    await reload();
+    onChanged?.();
+  }
+
   const selectedIds = Array.from(selected);
 
   return (
@@ -226,6 +252,18 @@ export function HandoffLeadsDialog({
                       >
                         <RotateCcw className="h-3.5 w-3.5 mr-1" />
                         Voltar à pizza
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-8 text-xs"
+                        disabled={busy}
+                        onClick={() => void blockContact(row)}
+                        title="Bloqueia contato e remove sem voltar para a pizza"
+                      >
+                        <Ban className="h-3.5 w-3.5 mr-1" />
+                        Bloquear
                       </Button>
                     </div>
                   </TableCell>
