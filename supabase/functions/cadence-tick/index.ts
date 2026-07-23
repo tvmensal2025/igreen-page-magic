@@ -980,7 +980,7 @@ Deno.serve(async (req) => {
 
   if (!due || due.length === 0) {
     await finishAutomationRun(supabase, runId, "completed", { processed: 0 });
-    return json({ processed: 0, cold_cap: coldCap, cold_today: coldTouchesToday });
+    return json({ processed: 0, caps, touched_today: { b: touchedB, c: touchedC } });
   }
 
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
@@ -1091,11 +1091,20 @@ Deno.serve(async (req) => {
     if (!def) { skipped++; continue; }
 
     // Cap 60 pessoas/dia — adia, nunca descarta.
-    if (isColdOutreachStage(stage) && coldTouchesToday >= coldCap) {
-      await finishRow(row.id, claimToken, {
-        next_action_at: tomorrowMorningBRT(),
-      });
-      deferred++; continue;
+    // Cap por grupo (A=∞, B=capB, C=capC, Global outreach=B+C ≤ capGlobal). Adia, nunca descarta.
+    {
+      const grp = stageGroup(stage);
+      if (grp !== "A") {
+        const usedGlobal = touchedB + touchedC;
+        const overGlobal = usedGlobal >= caps.capGlobal;
+        const overGroup = grp === "B" ? touchedB >= caps.capB : touchedC >= caps.capC;
+        if (overGroup || overGlobal) {
+          await maybeAlertCap(grp, grp === "B" ? touchedB : touchedC, grp === "B" ? caps.capB : caps.capC);
+          await maybeAlertCap("G", usedGlobal, caps.capGlobal);
+          await finishRow(row.id, claimToken, { next_action_at: tomorrowMorningBRT() });
+          deferred++; continue;
+        }
+      }
     }
 
     if (def.requiresBusinessHours && !isBusinessHour(now)) {
