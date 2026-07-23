@@ -117,7 +117,7 @@ const DEFAULT_CAP_GLOBAL_OUTREACH = 200;
 
 interface OutreachCaps { capB: number; capC: number; capGlobal: number; }
 
-/** Caps por grupo (A=∞, B=ramp/reengaj., C=RECALL_*, Global=B+C anti-ban). */
+/** Caps por grupo (A=∞, B=reengajamento cap fixo configurável, C=RECALL_*, Global=B+C anti-ban). */
 async function loadOutreachCaps(supabase: any): Promise<OutreachCaps> {
   try {
     const { data } = await supabase
