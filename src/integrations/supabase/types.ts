@@ -5568,6 +5568,11 @@ export type Database = {
           age_max: number
           age_min: number
           age_min_preferred: number | null
+          brain_scale_enabled: boolean
+          brain_scale_last_at: string | null
+          brain_scale_max_budget_cents: number
+          brain_scale_step_pct: number
+          brain_scale_target_cpl_cents: number
           cities: Json
           commission_rate: number | null
           consultant_id: string
@@ -5575,11 +5580,6 @@ export type Database = {
           creative_format: string | null
           creative_pack_id: string | null
           daily_budget_cents: number
-          brain_scale_enabled: boolean
-          brain_scale_step_pct: number
-          brain_scale_max_budget_cents: number
-          brain_scale_target_cpl_cents: number
-          brain_scale_last_at: string | null
           distribuidora: string | null
           duration_days: number | null
           end_time_utc: string | null
@@ -5610,6 +5610,11 @@ export type Database = {
           age_max?: number
           age_min?: number
           age_min_preferred?: number | null
+          brain_scale_enabled?: boolean
+          brain_scale_last_at?: string | null
+          brain_scale_max_budget_cents?: number
+          brain_scale_step_pct?: number
+          brain_scale_target_cpl_cents?: number
           cities?: Json
           commission_rate?: number | null
           consultant_id: string
@@ -5617,11 +5622,6 @@ export type Database = {
           creative_format?: string | null
           creative_pack_id?: string | null
           daily_budget_cents: number
-          brain_scale_enabled?: boolean
-          brain_scale_step_pct?: number
-          brain_scale_max_budget_cents?: number
-          brain_scale_target_cpl_cents?: number
-          brain_scale_last_at?: string | null
           distribuidora?: string | null
           duration_days?: number | null
           end_time_utc?: string | null
@@ -5652,6 +5652,11 @@ export type Database = {
           age_max?: number
           age_min?: number
           age_min_preferred?: number | null
+          brain_scale_enabled?: boolean
+          brain_scale_last_at?: string | null
+          brain_scale_max_budget_cents?: number
+          brain_scale_step_pct?: number
+          brain_scale_target_cpl_cents?: number
           cities?: Json
           commission_rate?: number | null
           consultant_id?: string
@@ -5659,11 +5664,6 @@ export type Database = {
           creative_format?: string | null
           creative_pack_id?: string | null
           daily_budget_cents?: number
-          brain_scale_enabled?: boolean
-          brain_scale_step_pct?: number
-          brain_scale_max_budget_cents?: number
-          brain_scale_target_cpl_cents?: number
-          brain_scale_last_at?: string | null
           distribuidora?: string | null
           duration_days?: number | null
           end_time_utc?: string | null
