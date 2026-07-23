@@ -26,9 +26,10 @@ Fonte: #[[file:docs/auditoria/06-integracoes.md]] · helper: #[[file:supabase/fu
 
 ## Primário vs fallback
 - **Primário:** MinIO S3 SigV4 (`MINIO_BUCKET` default `igreen`)
-- **Fallback:** Supabase Storage `whatsapp-media` (privado — não assumir URL pública)
+- **Fallback:** Supabase Storage bucket `whatsapp-media` (**público** via `getPublicUrl` em `_shared/media-storage.ts`)
 - Ainda Storage direto em alguns paths: `consultant-photos` (Ads)
 - Webhook/OCR: **não** gravar data-URL base64 no banco
+- Não assumir que todo Storage do projeto é privado — este fallback WA é público de propósito
 
 ## Prefixos
 `documentos/{consultor}/{cliente}/`, `whatsapp/`, `templates/`, `consultores/`, `public/`, `private/`

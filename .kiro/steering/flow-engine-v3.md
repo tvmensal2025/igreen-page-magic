@@ -6,6 +6,8 @@ fileMatchPattern:
   - "supabase/functions/_shared/feature-flag.ts"
   - "supabase/functions/migrate-engine-v3/**"
   - "supabase/functions/flow-engine-*-cron/**"
+  - "supabase/functions/whapi-webhook/**"
+  - "supabase/functions/evolution-webhook/**"
   - ".kiro/specs/flow-engine-v3-rewrite/**"
   - "mem/whatsapp/flow-engine-v3-rollout.md"
 ---
@@ -17,7 +19,8 @@ fileMatchPattern:
 ## Onde
 - Núcleo: `_shared/engine/` (`router`, `webhook-entry`, `runner`, `loader`, `decision`, `variants/*`)
 - Side-effects **só** em `_shared/dispatcher/`
-- Flags consultor: `flow_engine_v3` ∈ {off,dark,canary,on} **ou** `use_engine_v3=true`
+- **V3 assume o turno** só se `flow_engine_v3='on'` **OU** `use_engine_v3=true` (`isEngineV3Enabled` em `engine/router.ts`)
+- Enum completo `{off,dark,canary,on}`: `dark` = observar/log (não assume); `canary` no enum existe, mas o gate atual de takeover é só `'on'` (+ bool legado)
 - Gate nos webhooks: `runEngineV3IfEnabled` (`engine/webhook-hook.ts`) em whapi/evolution
 - Ops: `migrate-engine-v3?dryRun=true`, `flow-engine-v3-rollout-cron`
 - Tabelas: `customer_flow_state`, `engine_logs`

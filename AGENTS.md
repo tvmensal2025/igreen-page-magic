@@ -15,17 +15,17 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 4. Envio real → preferir `dryRun`
 
 ## Always-on (já injetados pelo Kiro)
-`regras-duras` · `armadilhas` · `product` · `tech` · `structure` · `idioma` · `helpers-canonicos`
+`regras-duras` · `armadilhas` · `product` · `tech` · `structure` · `idioma`
 
-## Sob demanda (digite `#nome` ou `/` no Kiro)
+## Sob demanda (digite `#nome` ou `/` no Kiro; `auto` também pode ativar sozinho)
 | Steering | Quando |
 |---|---|
-| `#banco` `#edge-functions` `#fluxos` | Schema, edges, jornadas |
+| `#helpers-canonicos` `#banco` `#edge-functions` `#fluxos` | Helpers, schema, edges, jornadas |
 | `#portal2-fluxo-canonico` `#club-api-oficial` `#igreen-sync-oficial` | Workers iGreen |
 | `#cerebro-mg-e-rodizio` `#ads-contraste` `#wallet-stripe` | Ads / Cérebro / carteira |
 | `#pos-venda` `#flow-engine-v3` `#minio-storage` | Pós-venda WA, motor v3, mídia |
 | `#solar-3d` `#remote-support` | Telhado Google Solar, suporte remoto |
-| `#nomes-e-tema` `#convencoes` `#rotas-ui` `#deploy` | Nomes/tema, código, UI, deploy |
+| `#nomes-e-tema` `#convencoes` `#rotas-ui` `#deploy` `#projeto` | Nomes/tema, código, UI, deploy |
 | `#security-auth` | Auth edges / CORS / verify_jwt |
 
 ## Kill switch
