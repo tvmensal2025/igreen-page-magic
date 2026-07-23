@@ -253,6 +253,18 @@ export function HandoffLeadsDialog({
                         <RotateCcw className="h-3.5 w-3.5 mr-1" />
                         Voltar à pizza
                       </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="h-8 text-xs"
+                        disabled={busy}
+                        onClick={() => void blockContact(row)}
+                        title="Bloqueia contato e remove sem voltar para a pizza"
+                      >
+                        <Ban className="h-3.5 w-3.5 mr-1" />
+                        Bloquear
+                      </Button>
                     </div>
                   </TableCell>
                 </TableRow>
