@@ -51,14 +51,16 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const authHeader = req.headers.get("Authorization") ?? "";
-    const token = authHeader.replace("Bearer ", "");
+    const token = authHeader.replace(/^Bearer\s+/i, "").trim();
 
     const admin = createClient(supabaseUrl, serviceKey);
 
+    type AuthMode = "service" | "user";
+    let authMode: AuthMode | null = null;
     let ownerConsultantId: string | null = null;
 
     if (token && token === serviceKey) {
-      // chamada interna
+      authMode = "service";
     } else if (token) {
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: `Bearer ${token}` } },
@@ -66,8 +68,17 @@ Deno.serve(async (req) => {
       const { data: userData } = await userClient.auth.getUser();
       if (userData?.user) {
         const { data: c } = await admin.from("consultants").select("id").eq("user_id", userData.user.id).maybeSingle();
-        if (c) ownerConsultantId = (c as any).id;
+        if (c) {
+          authMode = "user";
+          ownerConsultantId = (c as { id: string }).id;
+        }
       }
+    }
+
+    if (!authMode) {
+      return new Response(JSON.stringify({ error: "unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const parsed = BodySchema.safeParse(await req.json());
@@ -83,10 +94,13 @@ Deno.serve(async (req) => {
       await logSkipped(admin, "notify_partner_leads_batch", { customer_ids });
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "notify_partner_leads_batch" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    if (!ownerConsultantId) ownerConsultantId = owner_consultant_id || null;
-    if (!ownerConsultantId) {
-      const { data: c0 } = await admin.from("customers").select("consultant_id").eq("id", customer_ids[0]).maybeSingle();
-      ownerConsultantId = (c0 as any)?.consultant_id || null;
+    // service role pode passar owner; usuário autenticado NÃO — evita impersonação.
+    if (authMode === "service") {
+      if (!ownerConsultantId) ownerConsultantId = owner_consultant_id || null;
+      if (!ownerConsultantId) {
+        const { data: c0 } = await admin.from("customers").select("consultant_id").eq("id", customer_ids[0]).maybeSingle();
+        ownerConsultantId = (c0 as { consultant_id?: string } | null)?.consultant_id || null;
+      }
     }
     if (!ownerConsultantId) {
       return new Response(JSON.stringify({ error: "cannot resolve owner_consultant_id" }), {

@@ -12,7 +12,7 @@ Doc completa: `docs/cerebro-e-rodizio-avisos.md`
 
 - **1 âncora** (Uberlândia) + **até N exploradoras** `MG-ROT-*` (default 4 → 5 no ar).
 - Config: `consultant_ad_settings.brain_config` (normalize em `_shared/brain-config.ts`).
-- Autopilot: `facebook-auto-pause` (waste) → tick `facebook-mg-city-rotator` (`ensure_active_slots`).
+- Autopilot: `facebook-auto-pause` (waste) → tick `facebook-mg-city-rotator` (`ensure_active_slots`) **só com diff** (ver seção Idempotência).
 
 ## Escala da âncora (NÃO confundir)
 
@@ -40,6 +40,39 @@ Doc completa: `docs/cerebro-e-rodizio-avisos.md`
 - `_shared/campaign-waste-guard.ts` — lookback 48h; prefixo `AUTO_PERF_PAUSE:`.
 - Health/rotator **não** reativam; só Play do consultor.
 
+## Idempotência Meta — NUNCA “reiniciar” anúncio (incidente 2026-07-23)
+
+**Bug que aconteceu:** a cada 30 min o autopilot fazia POST de `targeting`/`age_range` nos AdSets vivos mesmo já corretos → Meta resetava aprendizado (“anúncio reiniciando”).
+
+### Regra de ouro
+
+1. **Só PATCH na Graph se o valor atual ≠ desejado** (comparar GET ou atalho DB).
+2. Se `facebook_campaigns.age_min_preferred` já = alvo → **não chamar Graph** no tick de 30 min.
+3. `updated_at` / aviso WA “Cérebro MG — N praças” **só quando mudou** slot, budget ou status — nunca a cada tick noop.
+4. Autopilot só com `brain_config.autopilot === true` (não tratar `null` como ligado).
+5. Waste de ad: se `paused_by_ai_at` já preenchido → **não** re-pausar / não spam.
+
+### O que o tick de 30 min PODE fazer
+
+- Pausar waste (campanha/ad) com regra clara.
+- Ativar/pausar exploradora **só se** slot preferido mudou ou está fora do set.
+- Alinhar budget **só se** `daily_budget_cents` diverge do config.
+- Escala âncora / brain_scale com gap anti-spam (~4h) e só quando critérios batem.
+
+### O que o tick de 30 min NÃO PODE fazer
+
+- Reescrever targeting/idade/criativo “por garantia”.
+- Recriar/clonar campanha ativa.
+- Notificar consultor em loop sem mudança real.
+- Tocar AdSet só para “sincronizar” o que já está certo.
+
+### Checklist ao mexer em rotator / auto-pause
+
+- [ ] Todo POST Meta tem guarda “já está igual? → skip”
+- [ ] Dry-run / log distingue `age_range_noop` vs `age_range_patch`
+- [ ] Sem novo POST periódico de `targeting` sem diff
+- [ ] Testar: 2 ticks seguidos com slots estáveis → **zero** PATCH de targeting
+
 ## Proibido
 
 - Appendar protocolo na mensagem WA.
@@ -47,3 +80,4 @@ Doc completa: `docs/cerebro-e-rodizio-avisos.md`
 - Ligar envio em massa novo sem pedido explícito.
 - Apagar guards/migrations/flags.
 - Ligar `brain_scale` em MG-ROT ou âncora.
+- **POST cego de targeting/age/criativo em campanha já ativa.**

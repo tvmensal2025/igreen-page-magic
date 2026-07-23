@@ -29,15 +29,15 @@ const BATCH = 40;
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  if (!assertCronAuth(req)) {
-    return cronAuthUnauthorized(corsHeaders);
-  }
-
   const t0 = Date.now();
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  // deno-lint-ignore no-explicit-any
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
   const { data: settingsRows } = await supabase.from("settings").select("key, value");
   const settings: Record<string, string> = {};

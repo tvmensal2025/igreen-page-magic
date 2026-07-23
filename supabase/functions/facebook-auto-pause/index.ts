@@ -259,7 +259,18 @@ Deno.serve(async (req) => {
       }
 
       // Ads zumbi dentro de campanha que ainda tem conversa no total
-      for (const adId of c.fb_ad_ids || []) {
+      const adIds = (c.fb_ad_ids || []) as string[];
+      let alreadyPausedAds = new Set<string>();
+      if (adIds.length) {
+        const { data: pausedRows } = await admin
+          .from("ad_creative_performance")
+          .select("fb_ad_id")
+          .in("fb_ad_id", adIds)
+          .not("paused_by_ai_at", "is", null);
+        alreadyPausedAds = new Set((pausedRows || []).map((r: any) => String(r.fb_ad_id)));
+      }
+      for (const adId of adIds) {
+        if (alreadyPausedAds.has(String(adId))) continue;
         const am = adMetrics.get(adId);
         if (!am) continue;
         const adVerdict = evaluateAdWaste({
@@ -314,7 +325,7 @@ Deno.serve(async (req) => {
         const base = Deno.env.get("SUPABASE_URL") || "";
         for (const row of settings || []) {
           const bc = (row as any).brain_config;
-          if (!bc || bc.autopilot === false) continue;
+          if (!bc || bc.autopilot !== true) continue;
           const r = await fetch(`${base}/functions/v1/facebook-mg-city-rotator`, {
             method: "POST",
             headers: {

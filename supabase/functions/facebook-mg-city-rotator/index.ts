@@ -173,20 +173,35 @@ async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token:
   if (!r.ok) throw new Error(`budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`);
 }
 
-/** Aplica age_range preferido nos AdSets (Advantage+). Hard age_min fica ≤25. */
+/** Aplica age_range preferido nos AdSets (Advantage+). Hard age_min fica ≤25.
+ *  Idempotente: não POST se targeting já está no alvo (evita resetar aprendizado na Meta). */
 async function patchAdsetAgeRange(
   adsetId: string,
   agePref: number,
   token: string,
-): Promise<{ ok: boolean; detail: string }> {
+): Promise<{ ok: boolean; detail: string; skipped?: boolean }> {
   const getUrl = `${FB_GRAPH}/${adsetId}?fields=targeting&access_token=${encodeURIComponent(token)}`;
   const getRes = await fetch(getUrl);
   const getJson = await getRes.json().catch(() => ({}));
   if (!getRes.ok) {
     return { ok: false, detail: `GET ${adsetId}: ${JSON.stringify(getJson).slice(0, 180)}` };
   }
-  const targeting = { ...(getJson.targeting || {}) };
+  const current = getJson.targeting || {};
   const hardMin = Math.min(25, agePref);
+  const curRange = Array.isArray(current.age_range) ? current.age_range : null;
+  const curAuto = Number(current?.targeting_automation?.advantage_audience ?? 0);
+  const alreadyOk =
+    Number(current.age_min) === hardMin &&
+    Number(current.age_max) === 65 &&
+    curRange != null &&
+    Number(curRange[0]) === agePref &&
+    Number(curRange[1]) === 65 &&
+    curAuto === 1;
+  if (alreadyOk) {
+    return { ok: true, skipped: true, detail: `noop age_range=[${agePref},65]` };
+  }
+
+  const targeting = { ...current };
   targeting.age_min = hardMin;
   targeting.age_max = 65;
   targeting.age_range = [agePref, 65];
@@ -597,29 +612,47 @@ Deno.serve(async (req) => {
         ensured.push(slug);
       }
 
-      try {
-        await notifyConsultant(
-          consultantId,
-          "info",
-          `Cérebro MG — ${1 + ensured.length} praças no ar`,
-          `Uberlândia (R$ ${(anchorBudget / 100).toFixed(0)}) + ${ensured.join(", ")} a R$ ${(explorerBudget / 100).toFixed(0)}/dia. Idade preferida ${ageMinPref}+.`,
-        );
-      } catch (_) { /* */ }
+      // Notifica só se houve mudança real (ativa/pausa/budget) — evita spam a cada 30 min
+      const slotChanged = log.some((e: any) =>
+        e?.action === "activate" || e?.action === "pause_queue" || e?.action === "budget_align"
+      );
+      if (slotChanged) {
+        try {
+          await notifyConsultant(
+            consultantId,
+            "info",
+            `Cérebro MG — ${1 + ensured.length} praças no ar`,
+            `Uberlândia (R$ ${(anchorBudget / 100).toFixed(0)}) + ${ensured.join(", ")} a R$ ${(explorerBudget / 100).toFixed(0)}/dia. Idade preferida ${ageMinPref}+.`,
+          );
+        } catch (_) { /* */ }
+      }
 
       // Sync age_range preferido nos AdSets ativos (âncora + exploradoras)
+      // Só PATCH na Meta se DB ainda não está alinhado OU Graph ainda diverge (idempotente).
       if (!dryRun && ageMinPref > 25) {
         const { data: liveForAge } = await admin
           .from("facebook_campaigns")
-          .select("id, fb_adset_ids, cities, name")
+          .select("id, fb_adset_ids, cities, name, age_min_preferred")
           .eq("consultant_id", consultantId)
           .in("status", ["active", "pending_review"])
           .or(`id.eq.${ANCHOR_CAMPAIGN_ID},name.ilike.MG-ROT-%`);
         for (const camp of liveForAge || []) {
+          const dbAligned = Number((camp as any).age_min_preferred) === ageMinPref;
+          // DB já alinhado → não chama Graph (evita “reinício” / aprendizado a cada 30 min)
+          if (dbAligned) {
+            log.push({
+              action: "age_range_noop",
+              campaign_id: camp.id,
+              city: camp.cities?.[0]?.name,
+              detail: "db_aligned_skip",
+            });
+            continue;
+          }
           for (const adsetId of (camp.fb_adset_ids || []) as string[]) {
             try {
               const res = await patchAdsetAgeRange(adsetId, ageMinPref, token);
               log.push({
-                action: "age_range_patch",
+                action: res.skipped ? "age_range_noop" : "age_range_patch",
                 campaign_id: camp.id,
                 city: camp.cities?.[0]?.name,
                 adset: adsetId,
@@ -630,7 +663,7 @@ Deno.serve(async (req) => {
                   age_min_preferred: ageMinPref,
                   age_min: Math.min(25, ageMinPref),
                   age_max: 65,
-                  updated_at: new Date().toISOString(),
+                  ...(res.skipped ? {} : { updated_at: new Date().toISOString() }),
                 }).eq("id", camp.id);
               }
             } catch (e) {
