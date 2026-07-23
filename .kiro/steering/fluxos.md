@@ -28,6 +28,7 @@ Estado: `lead_cadence_state`. Engine: `_shared/cadence-engine.ts` (`STAGE_MAP`).
 - Canais: whatsapp | sms | voice (Velip) | meta_audience | system
 - Inbound B/C → volta A: `cadence-inbound-router` (whapi/evolution)
 - Gates: `isBotGloballyEnabled`, `isAutomationEnabled("cadence_engine")`, `app_settings.cadence_engine_enabled`, toggles por stage, janela, DNC, nome seguro
+- **Caps outreach**: `stageGroup(stage)` (A=∞, B=`cap_b`, C=`cap_c`, Global B+C=`cap_global_outreach` em `daily_reheat_settings`); contagem via `countOutreachTouchesToday` (`cadence_action_log` do dia BRT). Excedeu → adia p/ próxima manhã BRT; alertas em `automation_skip_log` (60/85/100 %).
 - Terminais: `PAUSED`, `WON`
 
 ## 3) Três “em análise” — nunca misturar
