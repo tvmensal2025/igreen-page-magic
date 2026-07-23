@@ -90,7 +90,7 @@ export function HandoffLeadsDialog({
   };
 
   const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(rows.map((r) => r.cadenceId)) : new Set());
+    setSelected(checked ? new Set(filteredRows.map((r) => r.cadenceId)) : new Set());
   };
 
   const toggleOne = (id: string, checked: boolean) => {
