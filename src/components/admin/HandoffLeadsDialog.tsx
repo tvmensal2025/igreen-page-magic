@@ -62,15 +62,16 @@ export function HandoffLeadsDialog({
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<HandoffLead[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<"all" | BlockedCategory>("all");
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const list = await loadHandoffLeads(consultantId);
       setRows(list);
-      setSelected(new Set(list.map((r) => r.cadenceId)));
+      setSelected(new Set());
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar handoffs");
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar leads fora da pizza");
     } finally {
       setLoading(false);
     }
@@ -79,6 +80,14 @@ export function HandoffLeadsDialog({
   useEffect(() => {
     if (open) void reload();
   }, [open, reload]);
+
+  const filteredRows = filter === "all" ? rows : rows.filter((r) => r.category === filter);
+  const counts = {
+    all: rows.length,
+    handoff: rows.filter((r) => r.category === "handoff").length,
+    security: rows.filter((r) => r.category === "security").length,
+    other: rows.filter((r) => r.category === "other").length,
+  };
 
   const toggleAll = (checked: boolean) => {
     setSelected(checked ? new Set(rows.map((r) => r.cadenceId)) : new Set());
