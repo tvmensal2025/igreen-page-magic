@@ -87,8 +87,11 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `portal2-fluxo-canonico` | fileMatch portal | Cadastro iGreen oficial |
 | `club-api-oficial` | fileMatch club | Club worker |
 | `igreen-sync-oficial` | fileMatch sync | Sync carteira (Playwright) |
-| `cerebro-mg-e-rodizio` | auto | Escala Meta + rodízio de parceiro |
+| `cerebro-mg-e-rodizio` | auto | Escala Meta + waste + broadcast horário do rodízio |
+| `rodizio-parceiros-campanha` | fileMatch wizard ads / rodizio | Mecânica do rodízio de PARCEIROS por campanha (RPC `rodizio_assign_lead`) |
+| `parceiros-referral` | fileMatch parceiros / qr-phrase / keyword-matcher | Cadastro parceiro, keyword, `short_code`, matching webhook, `notifyPartnerNewLead` |
 | `ads-contraste` | auto | UI Ads, waste guard, métricas |
+
 | `wallet-stripe` | fileMatch wallet | Carteira, Stripe, comissão |
 | `pos-venda` | fileMatch pos-venda | Pós-venda WA D30–120 |
 | `esteira-multiproduto` | fileMatch esteira | Sales / sale_stage_* (≠ pós-venda) |
