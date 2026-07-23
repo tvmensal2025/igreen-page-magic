@@ -31,6 +31,10 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | `fluxo-b-ia/` | agent simulador | Admin dryRun |
 | `daily-reheat/` | `planDailyReheat`, `canLiveDispatch` | Reheat |
 | `voice-dialer/` | `resolvePersonalizedCallAudio`, Velip | Voz/SMS |
+| `minio-upload.ts` / `media-storage.ts` | upload SigV4 + fallback Storage | Mídia (não data-URL no DB) |
+| `engine/` + `dispatcher/` | `runEngine`, `executeActions` | Flow engine v3 |
+| `brain-*.ts` / `campaign-waste-guard.ts` | escala + waste | Cérebro MG |
+| `validate-campaign-activation.ts` | saldo wallet | Criar campanha Ads |
 
 ## Front `src/lib/`
 

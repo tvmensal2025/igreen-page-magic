@@ -23,8 +23,11 @@ Fontes: docs Kiro (steering inclusion), AGENTS.md standard, gap vs `.cursor/rule
 - AGENTS.md limpo (padrão agents.md)
 - `convencoes` tema dual; portal2 globs expandidos
 
-## Ainda aberto (próximo)
-- Steering `fileMatch` para pos-venda, wallet, solar-3d, remote-support, engine-v3
+## Round 2 (2026-07-23) — domínios secundários
+Adicionados `fileMatch`/`auto`: `pos-venda`, `wallet-stripe`, `minio-storage`, `solar-3d`, `remote-support`, `flow-engine-v3`, `nomes-e-tema`.
+
+## Ainda aberto (fino)
 - Instalar Biome no analyzer MCP ou documentar `npm run lint`
 - Fundir `projeto.md` residual com `product.md` se redundante
 - Testar no Kiro painel Steering: always count ≤ 7
+- Esteira multiproduto (`sale_stage_*` / `src/features/produtos/esteira`) se virar foco
