@@ -111,50 +111,67 @@ const STAGE_TOGGLE_KEY: Partial<Record<Stage, string>> = {
   RECALL_YEARLY_CALL: "cadence_recall_yearly",
 };
 
-const DEFAULT_COLD_DAILY_CAP = 60;
+const DEFAULT_CAP_B = 150;
+const DEFAULT_CAP_C = 50;
+const DEFAULT_CAP_GLOBAL_OUTREACH = 200;
 
-/** Cap diário de pessoas frias (BRT) — reutiliza daily_reheat_settings.daily_whapi_cap. */
-async function loadColdDailyCap(supabase: any): Promise<number> {
+interface OutreachCaps { capB: number; capC: number; capGlobal: number; }
+
+/** Caps por grupo (A=∞, B=ramp/reengaj., C=RECALL_*, Global=B+C anti-ban). */
+async function loadOutreachCaps(supabase: any): Promise<OutreachCaps> {
   try {
     const { data } = await supabase
       .from("daily_reheat_settings")
-      .select("daily_whapi_cap")
+      .select("cap_b, cap_c, cap_global_outreach, daily_whapi_cap")
       .limit(1)
       .maybeSingle();
-    const n = Number(data?.daily_whapi_cap);
-    if (Number.isFinite(n) && n >= 1 && n <= 600) return Math.floor(n);
+    const capB = Math.floor(Number(data?.cap_b));
+    const capC = Math.floor(Number(data?.cap_c));
+    const capG = Math.floor(Number(data?.cap_global_outreach));
+    return {
+      capB: Number.isFinite(capB) && capB > 0 ? capB : DEFAULT_CAP_B,
+      capC: Number.isFinite(capC) && capC > 0 ? capC : DEFAULT_CAP_C,
+      capGlobal: Number.isFinite(capG) && capG > 0 ? capG : DEFAULT_CAP_GLOBAL_OUTREACH,
+    };
   } catch { /* fallback */ }
-  return DEFAULT_COLD_DAILY_CAP;
+  return { capB: DEFAULT_CAP_B, capC: DEFAULT_CAP_C, capGlobal: DEFAULT_CAP_GLOBAL_OUTREACH };
 }
 
-/** Pessoas distintas tocadas hoje (BRT) em estágios frios. */
-async function countColdTouchesToday(supabase: any): Promise<number> {
+const B_STAGES = [
+  "COLD_1","COLD_2","COLD_3","COLD_4",
+  "CALL_1","CALL_2","CALL_3",
+  "SMS_1","SMS_2","SMS_TEMA_2","SMS_TEMA_7",
+];
+const C_STAGES = [
+  "RECALL_60D","RECALL_60D_SMS","RECALL_60D_CALL",
+  "RECALL_90D","RECALL_90D_SMS","RECALL_90D_CALL",
+  "RECALL_5M","RECALL_5M_SMS","RECALL_5M_CALL",
+  "RECALL_8M","RECALL_8M_SMS","RECALL_8M_CALL",
+  "RECALL_12M","RECALL_12M_SMS","RECALL_12M_CALL",
+  "RECALL_YEARLY","RECALL_YEARLY_SMS","RECALL_YEARLY_CALL",
+];
+
+/** Pessoas distintas tocadas hoje (BRT) por grupo B e C. Grupo A não é contado. */
+async function countOutreachTouchesToday(supabase: any): Promise<{ b: number; c: number }> {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
+    year: "numeric", month: "2-digit", day: "2-digit",
   });
-  const day = fmt.format(new Date()); // YYYY-MM-DD
+  const day = fmt.format(new Date());
   const startIso = new Date(`${day}T00:00:00-03:00`).toISOString();
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from("cadence_action_log")
-    .select("customer_id")
+    .select("customer_id, stage")
     .eq("status", "sent")
     .gte("created_at", startIso)
-    .in("stage", [
-      "COLD_1", "COLD_2", "COLD_3", "COLD_4",
-      "CALL_1", "CALL_2", "CALL_3",
-      "SMS_1", "SMS_2", "SMS_TEMA_2", "SMS_TEMA_7",
-      "RECALL_60D", "RECALL_60D_SMS", "RECALL_60D_CALL",
-      "RECALL_90D", "RECALL_90D_SMS", "RECALL_90D_CALL",
-      "RECALL_5M", "RECALL_5M_SMS", "RECALL_5M_CALL",
-      "RECALL_8M", "RECALL_8M_SMS", "RECALL_8M_CALL",
-      "RECALL_12M", "RECALL_12M_SMS", "RECALL_12M_CALL",
-      "RECALL_YEARLY", "RECALL_YEARLY_SMS", "RECALL_YEARLY_CALL",
-    ]);
-  if (error || !data) return 0;
-  return new Set(data.map((r: { customer_id: string }) => r.customer_id)).size;
+    .in("stage", [...B_STAGES, ...C_STAGES]);
+  const b = new Set<string>();
+  const c = new Set<string>();
+  for (const r of (data || []) as { customer_id: string; stage: string }[]) {
+    if (stageGroup(r.stage) === "C") c.add(r.customer_id);
+    else b.add(r.customer_id);
+  }
+  return { b: b.size, c: c.size };
 }
 
 /** Lead engajou desde o último toque da cadência? (anti-spam: skip SMS/call). */
