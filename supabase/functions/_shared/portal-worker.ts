@@ -124,7 +124,7 @@ async function checkDocsPresentForPortal2(supabase: any, customerId: string): Pr
   // Confirma bytes baixáveis (bucket privado) — senão o worker 422-a em loop
   const deep = await preflightPortalDocuments(supabase, c);
   if (deep.ok) return { ok: true, missing: [] };
-  return { ok: false, missing: deep.missing };
+  return { ok: false, missing: (deep as { ok: false; missing: string[] }).missing };
 }
 
 // Exportada para teste de propriedade (Property 7 do spec rodizio-leads-anuncio).
