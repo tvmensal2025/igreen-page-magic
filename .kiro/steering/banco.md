@@ -24,7 +24,7 @@ Types: `src/integrations/supabase/types.ts`. Chat = `conversations` (não existe
 | `cadence_action_log` / `cadence_stage_config` / `cadence_theme_config` | log + overrides |
 | `app_settings` | id=`global`: `bot_global_enabled`, `cadence_engine_enabled`, `fluxo_b_persona` |
 | `automation_toggles` | `key`, `enabled` |
-| `daily_reheat_settings` | `enabled`, `live_dispatch_enabled`, `daily_whapi_cap`, `pilot_consultant_ids`, janela BRT |
+| `daily_reheat_settings` | `enabled`, `live_dispatch_enabled`, **`cap_b`/`cap_c`/`cap_global_outreach`** (caps A/B/C cadence-tick), `daily_whapi_cap` (legado reheat), `pilot_consultant_ids`, janela BRT |
 | `daily_reheat_queue` / `runs` / `kit` | fila reheat |
 
 ## Meta / rodízio

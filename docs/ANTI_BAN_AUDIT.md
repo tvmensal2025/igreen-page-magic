@@ -112,3 +112,21 @@ Frontend
 O sistema está no padrão usado por empresas grandes que vendem **Evolution/Baileys como serviço** (Wazzap, Whapi, Chatarmin). Todo consultor que respeitar o warmup e não forçar bypass está protegido pelas 10 camadas acima — o backend bloqueia automaticamente comportamentos que historicamente causam ban, e o painel dá ao consultor visibilidade total + um kill switch manual.
 
 Próximo nível de proteção só existe abandonando a stack atual e indo para WhatsApp Cloud API oficial — decisão de produto, não de engenharia.
+
+## 8. Caps outreach A/B/C (2026-07)
+
+Camada adicional sobre `cadence-tick` (independente do reheat clássico). Segmenta o teto anti-ban por origem do envio:
+
+| Grupo | Stages | Cap padrão | Fonte |
+|---|---|---|---|
+| **A** — em conversa / inbound | `NEW`, `GREETED`, `AI_QUALIFYING`, `A_NUDGE`, `A_SMS`, `A_CALL`, `A_CALL_RETRY` | **ilimitado** (bypass, não conta no global) | `stageGroup()` |
+| **B** — reengajamento frio | `COLD_1…4`, `SMS_1/2`, `SMS_TEMA_2/7`, `CALL_1/2/3` | `daily_reheat_settings.cap_b` (150) | `loadOutreachCaps()` |
+| **C** — recall longo | `RECALL_60D`…`RECALL_YEARLY` (+ `_SMS`/`_CALL`) | `daily_reheat_settings.cap_c` (50) | `loadOutreachCaps()` |
+| **Global B+C** | soma das pessoas distintas tocadas em B+C hoje BRT | `daily_reheat_settings.cap_global_outreach` (200) | `countOutreachTouchesToday()` |
+
+**Comportamento ao exceder**: `cadence-tick` **adia** o lead para a próxima manhã BRT (08:00, `clamp_to_business_window_brt`). Nunca descarta.
+
+**Alertas**: ao cruzar 60/85/100 % do cap (B, C ou Global), `cadence-tick` grava em `automation_skip_log` com `reason='outreach_cap_{b|c|g}_{60|85|100}pct'`. UI: `ColdCadenceCapCard` exibe 3 barras dinâmicas com cores de alerta e edição inline dos caps.
+
+**Colunas em `daily_reheat_settings`**: `cap_b` (int, default 150) · `cap_c` (int, default 50) · `cap_global_outreach` (int, default 200). Coluna legada `daily_whapi_cap` mantida só para retrocompat do reheat clássico.
+

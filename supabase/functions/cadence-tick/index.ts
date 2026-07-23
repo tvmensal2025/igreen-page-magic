@@ -874,15 +874,22 @@ async function dispatchSMS(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  const bootTs = Date.now();
+  console.info("[cadence-tick] boot", { method: req.method, url: req.url });
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
   // deno-lint-ignore no-explicit-any
   const cronAuth = await assertCronAuth(req, supabase as any);
-  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+  if (!cronAuth.ok) {
+    console.warn("[cadence-tick] cron_auth_failed", { reason: cronAuth.reason });
+    return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+  }
 
     if (!(await isAutomationEnabled(supabase, "cadence_engine"))) {
+      console.warn("[cadence-tick] skipped_automation_disabled", { key: "cadence_engine" });
       await logSkipped(supabase, "cadence_engine");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "cadence_engine" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
@@ -902,8 +909,11 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (!settings?.cadence_engine_enabled) {
+    console.warn("[cadence-tick] skipped_cadence_disabled");
     return json({ skipped: "cadence_disabled" });
   }
+  console.info("[cadence-tick] guards_ok", { ms: Date.now() - bootTs });
+  try {
 
   const now = new Date();
   const loadAvail = createAvailabilityLoader(supabase);
@@ -1479,7 +1489,7 @@ Deno.serve(async (req) => {
     audience_blocked: audienceBlocked,
   });
 
-  return json({
+  const summary = {
     processed: due.length,
     dispatched,
     deferred,
@@ -1490,7 +1500,16 @@ Deno.serve(async (req) => {
     audience_blocked: audienceBlocked,
     caps,
     touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
-  });
+    ms: Date.now() - bootTs,
+  };
+  console.info("[cadence-tick] done", summary);
+  return json(summary);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[cadence-tick] fatal", { error: msg, stack, ms: Date.now() - bootTs });
+    return json({ error: "cadence_tick_fatal", message: msg }, 500);
+  }
 });
 
 function json(body: unknown, status = 200) {

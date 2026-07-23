@@ -14,7 +14,7 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | `customer-display-name.ts` | `safeFirstNameForAddress`, `isAddressableNameSource`… | Saudação/TTS com nome |
 | `consultant-public-label.ts` | `resolvePublicConsultantLabel` | Nome consultor ao lead |
 | `automation-gate.ts` | `isAutomationEnabled`, `logSkipped` | Toggle + skip log |
-| `cadence-engine.ts` | `STAGE_MAP`, `computeNextActionAt` | Estágios A/B/C |
+| `cadence-engine.ts` | `STAGE_MAP`, `computeNextActionAt`, `stageGroup` (A/B/C) | Estágios A/B/C |
 | `cadence-inbound-router.ts` | `resolveCadenceInboundRoute`, `applyCadenceInboundRoute` | Inbound na cadência |
 | `cron-auth.ts` | `assertCronAuth` | Crons |
 | `caller-auth.ts` | `resolveCaller`, `assertOwnership` | UI JWT + posse |

@@ -44,6 +44,17 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - Kill: `app_settings.bot_global_enabled` + `isBotGloballyEnabled`; UI `BotGlobalKillSwitch`.
 - Rollback: `live_dispatch_enabled` → `daily_reheat.enabled` → `cadence_engine` → `bot_global_enabled`.
 
+## Caps outreach A/B/C (cadence-tick)
+- **A = ilimitado** (inbound/em conversa; bypass total, não conta no global).
+- **B = `daily_reheat_settings.cap_b`** (default 150) — reengajamento (COLD/SMS/CALL/TEMA).
+- **C = `daily_reheat_settings.cap_c`** (default 50) — RECALL_* (60D…YEARLY, incl. `_SMS`/`_CALL`).
+- **Global B+C = `daily_reheat_settings.cap_global_outreach`** (default 200) — teto anti-ban somado.
+- Excedeu → **adia** para próxima manhã BRT (nunca descarta o lead).
+- Classificação: `stageGroup(stage)` em `_shared/cadence-engine.ts`.
+- Alertas 60 / 85 / 100 % em `automation_skip_log` (`outreach_cap_{b|c|g}_{60|85|100}pct`); UI: `ColdCadenceCapCard` (3 barras).
+- `daily_whapi_cap` = legado, mantido só para retrocompat do reheat clássico.
+
+
 ## Portal / Club / Sync (workers distintos)
 - Detalhes sob demanda: `#portal2-fluxo-canonico` · `#club-api-oficial` · `#igreen-sync-oficial`
 - Portal: `dispatchPortalWorker` → worker-portal-2 (Portal 1 morto)
