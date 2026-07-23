@@ -43,6 +43,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/cadenceCalendarMap";
 import { getTemplate } from "@/lib/multichannelCadenceTexts";
+import { isLegacyInteractiveCallScript } from "@/lib/cadencePreview";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { HandoffLeadsBanner } from "@/components/admin/HandoffLeadsDialog";

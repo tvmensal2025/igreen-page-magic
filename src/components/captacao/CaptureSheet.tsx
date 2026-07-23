@@ -507,7 +507,7 @@ function CaptureSheetInner({
               consultantId={consultantId}
               customerName={customerName || phoneNumber}
               nameSource={(customer as { name_source?: string | null } | null)?.name_source}
-              customer={customer as Record<string, unknown> | null}
+              customer={customer as unknown as Record<string, unknown> | null}
               instanceName={instanceName}
               isWhapi={isWhapi}
               className="w-full h-7 text-[10px] rounded-full border-primary/40 text-primary hover:bg-primary/10 gap-1 font-semibold"
@@ -788,7 +788,7 @@ function CaptureSheetInner({
               consultantId={consultantId}
               customerName={customerName || phoneNumber}
               nameSource={(customer as { name_source?: string | null } | null)?.name_source}
-              customer={customer as Record<string, unknown> | null}
+              customer={customer as unknown as Record<string, unknown> | null}
               instanceName={instanceName}
               isWhapi={isWhapi}
               className={`w-full gap-1 font-semibold border-primary/40 text-primary hover:bg-primary/10 rounded-full ${expanded ? "h-10 text-xs" : "h-7 text-[10px]"}`}
