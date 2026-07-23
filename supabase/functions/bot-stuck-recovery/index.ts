@@ -1,5 +1,5 @@
 // AI Rescue Cron — bot-stuck-recovery.
-// Roda a cada 5 min. Para cada lead parado:
+// Roda a cada 10 min (pg_cron). Para cada lead parado:
 //   1) Resolve canal do lead (Whapi OU Evolution) via channel-sender + failover.
 //   2) Verifica cooldown (next_rescue_allowed_at).
 //   3) Gera texto via Cérebro (mode rescue / followup-hook).

@@ -1,25 +1,31 @@
 // Worker server-side de Disparo PRO
-// Roda via pg_cron a cada 1 min. Processa campanhas agendadas e/ou em andamento
-// que não estão sendo tocadas pelo cliente, mandando mensagens direto na Evolution API.
+// Roda via pg_cron a cada 5 min. Processa campanhas agendadas e/ou em andamento
+// que não estão sendo tocadas pelo cliente.
 //
+// Canal: Whapi ou Evolution via resolveConsultantOutboundChannel (mesmo da agenda).
 // Estratégia: cada execução pega até MAX_CAMPAIGNS_PER_TICK campanhas elegíveis,
 // dispara até MAX_MSGS_PER_TICK por campanha respeitando intervalos, e sai.
 // O próximo tick retoma de onde parou (sempre lendo targets status='queued').
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { checkSendQuota, registerSend, simulateTyping, typingDurationMs } from "../_shared/anti-ban.ts";
+import { checkSendQuota, registerSend, typingDurationMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
+import {
+  isUnavailable,
+  resolveConsultantOutboundChannel,
+} from "../_shared/channel-sender.ts";
+import { ctx } from "../_shared/channel-sender.ts";
 
 const cronCorsHeaders = {
   ...corsHeaders,
   "Access-Control-Allow-Headers":
     `${corsHeaders["Access-Control-Allow-Headers"] || "authorization, x-client-info, apikey, content-type"}, x-service-secret, x-internal-secret`,
 };
-import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
-
 
 const MAX_CAMPAIGNS_PER_TICK = 5;
 const MAX_MSGS_PER_TICK = 25; // por campanha por execução
@@ -90,84 +96,9 @@ function inWindow(cfg: any, at: Date = new Date()): boolean {
   return cur >= startMin && cur <= endMin;
 }
 
-async function sendViaEvolution(opts: {
-  baseUrl: string; apiKey: string; instance: string;
-  phone: string; text?: string; mediaUrl?: string | null;
-  mediaType?: string | null; fileName?: string | null;
-  mediaOrder: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  const { baseUrl, apiKey, instance, text, mediaUrl, mediaType, fileName, mediaOrder } = opts;
-  const headers = { "Content-Type": "application/json", apikey: apiKey };
-  const base = baseUrl.replace(/\/+$/, "");
-
-  // Resolve JID real (BR com/sem 9º) — evita HTTP 200 sem entrega.
-  const { resolveWhatsAppChatId, digitsOnlyPhone } = await import("../_shared/resolve-whatsapp-chat-id.ts");
-  const resolved = await resolveWhatsAppChatId({
-    phoneOrJid: opts.phone,
-    provider: {
-      kind: "evolution",
-      apiUrl: base,
-      apiKey,
-      instanceName: instance,
-    },
-    fallbackProviders: Deno.env.get("WHAPI_TOKEN")
-      ? [{
-        kind: "whapi",
-        apiToken: Deno.env.get("WHAPI_TOKEN")!,
-        baseUrl: Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud",
-      }]
-      : [],
-  });
-  if (!resolved.ok) {
-    return { ok: false, error: `invalid_whatsapp_jid:${resolved.reason}:${resolved.detail || ""}` };
-  }
-  const phone = digitsOnlyPhone(resolved.chatId) || digitsOnlyPhone(opts.phone);
-
-  async function post(path: string, body: any) {
-    const r = await fetch(`${base}/${path}/${instance}`, {
-      method: "POST", headers, body: JSON.stringify(body),
-    });
-    const txt = await r.text();
-    if (!r.ok) return { ok: false, error: `${r.status} ${txt.slice(0, 200)}` };
-    return { ok: true };
-  }
-
-  try {
-    if (mediaUrl && mediaType && mediaType !== "text") {
-      const isImg = mediaType === "image";
-      const isVid = mediaType === "video";
-      const isAud = mediaType === "audio";
-      // text_first → manda texto antes
-      if (mediaOrder === "text_first" && text?.trim()) {
-        const r = await post("message/sendText", { number: phone, text });
-        if (!r.ok) return r;
-        await new Promise(rs => setTimeout(rs, 1500));
-      }
-      if (isAud) {
-        const r = await post("message/sendWhatsAppAudio", { number: phone, audio: mediaUrl });
-        if (!r.ok) return r;
-      } else if (isImg || isVid) {
-        const caption = (mediaOrder === "caption_only" || mediaOrder === "media_first") ? (text || "") : "";
-        const r = await post("message/sendMedia", { number: phone, mediatype: isImg ? "image" : "video", media: mediaUrl, caption });
-        if (!r.ok) return r;
-      } else {
-        // document
-        const r = await post("message/sendMedia", { number: phone, mediatype: "document", media: mediaUrl, fileName: fileName || "documento" });
-        if (!r.ok) return r;
-      }
-      // media_first + áudio/doc → manda texto depois
-      if (mediaOrder === "media_first" && text?.trim() && (isAud || (!isImg && !isVid))) {
-        await new Promise(rs => setTimeout(rs, 1500));
-        const r = await post("message/sendText", { number: phone, text });
-        if (!r.ok) return r;
-      }
-      return { ok: true };
-    }
-    if (!text?.trim()) return { ok: false, error: "Mensagem vazia" };
-    return await post("message/sendText", { number: phone, text });
-  } catch (e: any) {
-    return { ok: false, error: e?.message || "Erro de rede" };
-  }
+function toJid(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return `${digits}@s.whatsapp.net`;
 }
 
 Deno.serve(async (req) => {
@@ -176,23 +107,29 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const evoUrl = Deno.env.get("EVOLUTION_API_URL");
-  const evoKey = Deno.env.get("EVOLUTION_API_KEY");
-
-  if (!evoUrl || !evoKey) {
-    return new Response(JSON.stringify({ error: "EVOLUTION_API_URL/KEY ausentes" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
 
   const supabase = createClient(supabaseUrl, serviceKey);
   const cronAuth = await assertCronAuth(req, supabase);
   if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, cronCorsHeaders);
 
-    if (!(await isAutomationEnabled(supabase, "bulk_campaigns_runner"))) {
-      await logSkipped(supabase, "bulk_campaigns_runner");
-      return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bulk_campaigns_runner" }), { status: 200, headers: { "Content-Type": "application/json" } });
-    }
+  if (!(await isAutomationEnabled(supabase, "bulk_campaigns_runner"))) {
+    await logSkipped(supabase, "bulk_campaigns_runner");
+    return new Response(JSON.stringify({ skipped: "automation_disabled", key: "bulk_campaigns_runner" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  const channelEnv = await loadChannelEnv(supabase);
+  if (!channelEnv.whapiToken && !(channelEnv.evolutionUrl && channelEnv.evolutionKey)) {
+    return new Response(
+      JSON.stringify({
+        error: "Nenhum canal WhatsApp configurado (Whapi ou Evolution)",
+        pending: "configure_whatsapp_channel",
+      }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 
   const report: any[] = [];
 
@@ -234,33 +171,43 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    // Instância do consultor
-    const { data: inst } = await supabase
-      .from("whatsapp_instances")
-      .select("instance_name")
-      .eq("consultant_id", camp.consultant_id)
-      .maybeSingle();
-    const instance = inst?.instance_name;
-    if (!instance) {
-      report.push({ id: camp.id, skipped: "no_instance" });
+    // Canal do consultor (Whapi preferencial se hint/superadmin; senão Evolution saudável)
+    const channel = await resolveConsultantOutboundChannel(
+      supabase,
+      camp.consultant_id,
+      channelEnv,
+      null,
+    );
+    if (isUnavailable(channel)) {
+      report.push({
+        id: camp.id,
+        skipped: "no_channel",
+        reason: channel.reason,
+        detail: channel.detail,
+      });
       continue;
     }
+    const instance = channel.instanceName;
 
-    // 🛡️ Trava de proteção: phone do consultor precisa bater com instância
-    const guard = await canSendProactive(supabase, { consultantId: camp.consultant_id, instanceName: instance });
-    if (!guard.allowed) {
-      await logProactiveBlock(supabase, {
+    // Guard Evolution: phone do consultor vs connected_phone.
+    // Whapi não tem linha em whatsapp_instances — não aplica.
+    if (channel.kind === "evolution") {
+      const guard = await canSendProactive(supabase, {
         consultantId: camp.consultant_id,
         instanceName: instance,
-        reason: guard.reason,
-        context: { source: "bulk-scheduler", campaign_id: camp.id, detail: guard.detail },
       });
-      // Pausa a campanha para o consultor reabrir o cadastro
-      await supabase.from("bulk_campaigns").update({ status: "paused" }).eq("id", camp.id);
-      report.push({ id: camp.id, paused: "phone_guard", reason: guard.reason, detail: guard.detail });
-      continue;
+      if (!guard.allowed) {
+        await logProactiveBlock(supabase, {
+          consultantId: camp.consultant_id,
+          instanceName: instance,
+          reason: guard.reason,
+          context: { source: "bulk-scheduler", campaign_id: camp.id, detail: guard.detail },
+        });
+        await supabase.from("bulk_campaigns").update({ status: "paused" }).eq("id", camp.id);
+        report.push({ id: camp.id, paused: "phone_guard", reason: guard.reason, detail: guard.detail });
+        continue;
+      }
     }
-
 
     // Pega próximos targets
     const { data: targets } = await supabase
@@ -301,7 +248,6 @@ Deno.serve(async (req) => {
         const d = String((row as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
         if (d) suppressedPhones.add(d);
       }
-      // Também tenta match pelos últimos 11 dígitos via like — phones podem diferir de formato
       const { data: dncAll } = await supabase
         .from("customers")
         .select("phone_whatsapp")
@@ -351,9 +297,14 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // 🛡️ Anti-ban guard: warmup + recovery + circuit breaker.
+      // Anti-ban: Whapi sem linha em whatsapp_instances → instance_not_found é esperado
       const quota = await checkSendQuota(supabase, instance);
-      if (!quota.allowed) {
+      const bypassQuota = channel.kind === "whapi" &&
+        (!quota.allowed &&
+          (quota.reason === "instance_not_found" ||
+            quota.reason === "empty_response" ||
+            quota.reason === "rpc_error"));
+      if (!quota.allowed && !bypassQuota) {
         report.push({
           id: camp.id, paused: "anti_ban_guard",
           reason: quota.reason, warmup_day: quota.warmup_day,
@@ -364,7 +315,6 @@ Deno.serve(async (req) => {
       }
 
       // Claim atômico: só prossegue se ESTE worker mudou queued→sending.
-      // Se outro tick concorrente já reivindicou o alvo, data volta vazio.
       const { data: claimed, error: claimError } = await supabase
         .from("bulk_campaign_targets")
         .update({ status: "sending", claimed_at: new Date().toISOString() })
@@ -380,30 +330,96 @@ Deno.serve(async (req) => {
         city: t.vars?.city ?? null,
       });
 
-      // Humaniza: "digitando..." antes do envio (proporcional ao tamanho)
+      const jid = toJid(t.phone);
+      // Claim em bulk_campaign_targets já é a idempotência do lote.
+      // Não passa supabase no ctx (customer_id do target não é UUID de customers).
+      const sendCtx = ctx(
+        camp.consultant_id,
+        camp.consultant_id,
+        `bulk-scheduler:${camp.id}`,
+        t.id,
+      );
+
+      // Humaniza: presence "digitando" (Whapi) ou delay proporcional
       if (finalMsg) {
-        await simulateTyping({
-          baseUrl: evoUrl, apiKey: evoKey, instance,
-          remoteJid: t.phone, durationMs: typingDurationMs(finalMsg),
-        });
+        const waitMs = typingDurationMs(finalMsg);
+        if (channel.adapter.capabilities.supportsTypingPresence) {
+          await channel.adapter.sendPresence(jid, "composing", waitMs).catch(() => {});
+        }
+        await new Promise((r) => setTimeout(r, Math.min(waitMs, 2500)));
       }
 
-      const r = await sendViaEvolution({
-        baseUrl: evoUrl, apiKey: evoKey, instance,
-        phone: t.phone, text: finalMsg,
-        mediaUrl: camp.media_url, mediaType: camp.media_type, fileName: camp.media_filename,
-        mediaOrder,
-      });
+      let ok = false;
+      let errText: string | undefined;
+      try {
+        const hasMedia = !!(camp.media_url && camp.media_type && camp.media_type !== "text");
+        const mediaKind = camp.media_type as "image" | "video" | "audio" | "document";
+        if (hasMedia && mediaOrder === "media_first") {
+          // Imagem/vídeo/doc: caption no media. Áudio: caption fraco → texto depois.
+          const useCaption = mediaKind !== "audio";
+          const mr = await channel.adapter.sendMedia(
+            jid,
+            {
+              kind: mediaKind,
+              url: camp.media_url!,
+              caption: useCaption ? (finalMsg || undefined) : undefined,
+              fileName: camp.media_filename || undefined,
+            } as any,
+            sendCtx as any,
+          );
+          ok = mr.ok;
+          if (!mr.ok) errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
+          else if (finalMsg && mediaKind === "audio") {
+            const tr = await channel.adapter.sendText(jid, finalMsg, {
+              ...sendCtx,
+              idempotencyKey: `${sendCtx.idempotencyKey}:text`,
+            } as any);
+            ok = tr.ok;
+            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+          }
+        } else if (hasMedia && mediaOrder === "text_first") {
+          if (finalMsg) {
+            const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
+            ok = tr.ok;
+            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+          } else {
+            ok = true;
+          }
+          if (ok) {
+            const mr = await channel.adapter.sendMedia(
+              jid,
+              {
+                kind: camp.media_type as "image" | "video" | "audio" | "document",
+                url: camp.media_url!,
+                fileName: camp.media_filename || undefined,
+              } as any,
+              { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey}:media` } as any,
+            );
+            ok = mr.ok;
+            if (!mr.ok) errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
+          }
+        } else if (finalMsg) {
+          const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
+          ok = tr.ok;
+          if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+        } else {
+          ok = false;
+          errText = "empty_message";
+        }
+      } catch (e) {
+        ok = false;
+        errText = (e as Error).message;
+      }
 
       const patch: any = {
-        status: r.ok ? "sent" : "failed",
+        status: ok ? "sent" : "failed",
         final_message: finalMsg.slice(0, 4000),
         sent_at: new Date().toISOString(),
       };
-      if (!r.ok) patch.error = r.error?.slice(0, 500);
+      if (!ok) patch.error = (errText || "send_failed").slice(0, 500);
       await supabase.from("bulk_campaign_targets").update(patch).eq("id", t.id);
 
-      if (r.ok) {
+      if (ok) {
         processed++;
         consecutiveFailures = 0;
         await registerSend(supabase, instance);
@@ -416,14 +432,13 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // Intervalo respeita o mínimo do warmup (do quota check)
       const minS = Math.max(
         Math.ceil((quota.min_interval_ms ?? 18000) / 1000),
         Number(cfg.intervalMinS ?? 18),
       );
       const maxS = Math.max(minS + 4, Number(cfg.intervalMaxS ?? 32));
       const secs = minS + Math.random() * (maxS - minS);
-      await new Promise(rs => setTimeout(rs, Math.round(secs * 1000)));
+      await new Promise((rs) => setTimeout(rs, Math.round(secs * 1000)));
     }
     if (quotaBlocked) continue;
 
@@ -438,7 +453,14 @@ Deno.serve(async (req) => {
       .update({ sent: sentN, failed: failedN })
       .eq("id", camp.id);
 
-    report.push({ id: camp.id, processed, sent: sentN, failed: failedN });
+    report.push({
+      id: camp.id,
+      processed,
+      sent: sentN,
+      failed: failedN,
+      channel: channel.kind,
+      instance,
+    });
   }
 
   return new Response(JSON.stringify({ ok: true, elapsed_ms: Date.now() - startedAt, report }), {

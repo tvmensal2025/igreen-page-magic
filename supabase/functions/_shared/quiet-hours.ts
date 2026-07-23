@@ -1,5 +1,6 @@
 // Janela de silêncio do bot: 21:30 → 08:00 (horário de Brasília).
-// Bloqueia envios automáticos (bot/IA/cron). Não afeta envios manuais do consultor.
+// Bloqueia envios AUTOMÁTICOS (bot/IA/cron de cadência, follow-up, reheat…).
+// NÃO usar em send-scheduled-messages — agenda manual do consultor envia na hora marcada.
 
 export function isQuietHourBRT(now: Date = new Date()): boolean {
   const fmt = new Intl.DateTimeFormat("en-GB", {

@@ -1177,22 +1177,34 @@ html.dark .ads-wizard-scope {
   max-width: 100%;
   min-width: 0;
 }
-/* Evita span 12 em grid de 6/1 colunas (cria tracks implícitas e estoura a página) */
+/*
+  Sem colSpan explícito, o filho ocupava 1/12 (~76px) e esmagava KPIs/textos.
+  Default = faixa inteira; use style gridColumn span N só quando for bento real.
+*/
 .ads-central-2026 .ads-bento > * {
+  grid-column: 1 / -1;
   min-width: 0;
   max-width: 100%;
+  width: 100%;
 }
 @media (max-width: 900px) {
   .ads-central-2026 .ads-bento { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .ads-central-2026 .ads-bento > [style*="span 12"] {
-    grid-column: 1 / -1 !important;
-  }
 }
 @media (max-width: 560px) {
   .ads-central-2026 .ads-bento { grid-template-columns: minmax(0, 1fr); }
-  .ads-central-2026 .ads-bento > * {
-    grid-column: 1 / -1 !important;
-  }
+}
+
+/* Charts / tiles: altura fluida no mobile */
+.ads-central-2026 .ads-chart-h {
+  height: 14rem; /* 224px */
+  min-width: 0;
+  width: 100%;
+}
+@media (min-width: 640px) {
+  .ads-central-2026 .ads-chart-h { height: 16rem; }
+}
+@media (min-width: 1024px) {
+  .ads-central-2026 .ads-chart-h { height: 18rem; }
 }
 
 /* Force readable colors on light theme — overrides app's dark shadcn tokens

@@ -70,7 +70,7 @@ export function CampaignBrainScaleDialog({ open, onOpenChange, campaign, onUpdat
       const maxCents = Math.max(517, Math.min(50000, Math.round(Number(maxReais || "0") * 100)));
       const targetCents = Math.max(50, Math.min(2000, Math.round(Number(targetCpl || "0") * 100)));
       const step = Math.max(15, Math.min(30, stepPct));
-      const { error } = await supabase
+      const { data: saved, error } = await supabase
         .from("facebook_campaigns")
         .update({
           brain_scale_enabled: enabled,
@@ -78,9 +78,12 @@ export function CampaignBrainScaleDialog({ open, onOpenChange, campaign, onUpdat
           brain_scale_max_budget_cents: maxCents,
           brain_scale_target_cpl_cents: targetCents,
           updated_at: new Date().toISOString(),
-        } as any)
-        .eq("id", campaign.id);
+        })
+        .eq("id", campaign.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!saved?.id) throw new Error("Nenhuma linha atualizada — verifique se a campanha é sua.");
       onUpdated({
         id: campaign.id,
         brain_scale_enabled: enabled,

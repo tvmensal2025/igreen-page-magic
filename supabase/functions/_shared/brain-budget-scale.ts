@@ -1,9 +1,8 @@
 /**
- * Escala automática do budget da âncora (Uberlândia).
- * Sobe em degraus de ~15% enquanto CPL estiver ok — sem trava de 48h.
- * O lookback de métricas (ex.: 48h) só mede o CPL; não impede novo aumento.
- * Há um intervalo mínimo curto entre subidas (default 4h) só pra não
- * disparar a cada cron de 30 min.
+ * Escala automática do budget da âncora (Uberlândia) e do Cérebro por campanha.
+ * Sobe/desce em degraus (~15%) conforme CPL — sem trava de 48h entre mudanças.
+ * O lookback de métricas (ex.: 48h) só mede o CPL; não impede novo degrau.
+ * Intervalo mínimo curto entre escalas (default 4h) evita spam do cron ~30 min.
  */
 
 export type AnchorScaleInput = {
@@ -24,7 +23,7 @@ export type AnchorScaleInput = {
   minConversations?: number;
   /** ISO da última escala (up/down). Evita spam do cron 30 min — NÃO é trava de 48h. */
   lastScaleAtIso?: string | null;
-  /** Horas mínimas entre subidas (default 4). 0 = sobe em todo ciclo com CPL ok. */
+  /** Horas mínimas entre degraus up/down (default 4). 0 = pode mudar a cada ciclo. */
   minHoursBetweenScaleUps?: number;
 };
 
@@ -66,7 +65,16 @@ export function decideAnchorBudgetScale(input: AnchorScaleInput): AnchorScaleRes
     return { action: "hold", budgetCents: cur, reason: "CPL indisponível — mantém" };
   }
 
-  // CPL ruim (> 1,35× alvo) → desce um degrau (sem trava de intervalo longo)
+  // Intervalo anti-spam do cron (~30 min): vale para sobe e desce.
+  if (minGapH > 0 && sinceLast != null && sinceLast < minGapH) {
+    return {
+      action: "hold",
+      budgetCents: cur,
+      reason: `última escala há ${sinceLast.toFixed(1)}h — próximo degrau em ~${(minGapH - sinceLast).toFixed(1)}h`,
+    };
+  }
+
+  // CPL ruim (> 1,35× alvo) → desce um degrau
   if (cpl > targetCpl * 1.35) {
     const down = Math.max(META_MIN, Math.round(cur * (1 - stepPct / 100)));
     if (down >= cur) {
@@ -81,13 +89,6 @@ export function decideAnchorBudgetScale(input: AnchorScaleInput): AnchorScaleRes
 
   // CPL ok (≤ alvo) → sobe se ainda abaixo do teto (sem trava de 48h)
   if (cpl <= targetCpl && cur < maxBud) {
-    if (minGapH > 0 && sinceLast != null && sinceLast < minGapH) {
-      return {
-        action: "hold",
-        budgetCents: cur,
-        reason: `CPL ok, mas última subida há ${sinceLast.toFixed(1)}h — próximo degrau em ~${(minGapH - sinceLast).toFixed(1)}h`,
-      };
-    }
     const up = Math.min(maxBud, Math.round(cur * (1 + stepPct / 100)));
     if (up <= cur) {
       return { action: "hold", budgetCents: cur, reason: "já no teto efetivo" };

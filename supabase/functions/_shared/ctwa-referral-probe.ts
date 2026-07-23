@@ -4,7 +4,7 @@
 // sending referral fields and, if so, at what path — so we can fix the parsers
 // without guessing.
 
-import { matchesMetaCtwaPhrase } from "./meta-ctwa-fallback.ts";
+import { matchesMetaCtwaPhrase, looksLikePaidCtwaOpener } from "./meta-ctwa-fallback.ts";
 
 const REFERRAL_KEYS = new Set([
   "referral",
@@ -103,7 +103,10 @@ export async function logReferralProbe(
 ): Promise<ProbeHit | null> {
   try {
     const hit = findReferralPaths(args.payload);
-    const hadCtwaPhrase = !!(args.messageText && matchesMetaCtwaPhrase(args.messageText));
+    const hadCtwaPhrase = !!(
+      args.messageText &&
+      (matchesMetaCtwaPhrase(args.messageText) || looksLikePaidCtwaOpener(args.messageText))
+    );
 
     // Only log when there's SOMETHING interesting: either referral fields were found,
     // or the text opened with a Meta CTWA phrase (meaning we probably lost the referral).

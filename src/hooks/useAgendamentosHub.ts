@@ -12,14 +12,16 @@ import type { PosVendaStage } from "@/lib/posVenda/format";
 import {
   buildAgendamentosTimeline,
   DEFAULT_REACTIVATION_SETTINGS,
-  type AgendamentoTimelineItem,
   type BotFollowupRow,
   type BulkCampaignRow,
   type CadenceScheduleRow,
   type CadenceStageInfo,
+  type DailyReheatRow,
+  type PendingMediaRow,
   type ReactivationSettingsSummary,
   type ScheduledMessageRow,
   type VoiceCampaignRow,
+  type VoiceRetryRow,
 } from "@/lib/agendamentosHub";
 
 export function useAgendamentosHub(consultantId: string) {
@@ -31,6 +33,9 @@ export function useAgendamentosHub(consultantId: string) {
   const [voiceCampaigns, setVoiceCampaigns] = useState<VoiceCampaignRow[]>([]);
   const [cadence, setCadence] = useState<CadenceScheduleRow[]>([]);
   const [cadenceStageInfo, setCadenceStageInfo] = useState<Record<string, CadenceStageInfo>>({});
+  const [dailyReheat, setDailyReheat] = useState<DailyReheatRow[]>([]);
+  const [pendingMedia, setPendingMedia] = useState<PendingMediaRow[]>([]);
+  const [voiceRetries, setVoiceRetries] = useState<VoiceRetryRow[]>([]);
   const [reactivationSettings, setReactivationSettings] = useState<ReactivationSettingsSummary>(
     DEFAULT_REACTIVATION_SETTINGS,
   );
@@ -53,6 +58,8 @@ export function useAgendamentosHub(consultantId: string) {
         templatesRes,
         pendingValidationRes,
         cadenceRes,
+        reheatRes,
+        mediaRes,
       ] = await Promise.all([
         supabase
           .from("scheduled_messages")
@@ -86,8 +93,6 @@ export function useAgendamentosHub(consultantId: string) {
           .from("bulk_campaigns")
           .select("id, name, status, total, sent, failed, scheduled_at, started_at")
           .eq("consultant_id", consultantId)
-          // "paused" incluída: campanha pausada pelo guard anti-ban/telefone
-          // sumia da lista e o consultor não sabia que precisava agir.
           .in("status", ["scheduled", "running", "paused"])
           .order("scheduled_at", { ascending: true, nullsFirst: false }),
         (supabase as any)
@@ -114,8 +119,6 @@ export function useAgendamentosHub(consultantId: string) {
           .eq("customer_origin", "igreen_sync")
           .not("pos_venda_pending_stage", "is", null)
           .eq("pos_venda_invalid", false),
-        // Motor de cadência A→B→C: TODOS os próximos envios programados (sem limite de horizonte).
-        // Inclui paused_reason para filtrar leads congelados no mesmo critério da pizza.
         supabase
           .from("lead_cadence_state")
           .select("id, customer_id, stage, next_action_at, paused_until, paused_reason")
@@ -124,6 +127,20 @@ export function useAgendamentosHub(consultantId: string) {
           .not("stage", "in", "(WON)")
           .order("next_action_at", { ascending: true })
           .limit(2000),
+        (supabase as any)
+          .from("daily_reheat_queue")
+          .select("id, customer_id, queue, step, status, next_action_at, planned_actions")
+          .eq("consultant_id", consultantId)
+          .in("status", ["planned", "claimed"])
+          .order("next_action_at", { ascending: true })
+          .limit(500),
+        (supabase as any)
+          .from("pending_outbound_media")
+          .select("id, customer_id, scheduled_for, payload")
+          .eq("consultant_id", consultantId)
+          .is("succeeded_at", null)
+          .order("scheduled_for", { ascending: true })
+          .limit(200),
       ]);
 
       setManual((manualRes.data || []) as ScheduledMessageRow[]);
@@ -153,9 +170,6 @@ export function useAgendamentosHub(consultantId: string) {
       setBulkCampaigns((bulkRes.data || []) as BulkCampaignRow[]);
       setVoiceCampaigns((voiceRes.data || []) as VoiceCampaignRow[]);
 
-      // Mapeia rows do motor + busca dados dos clientes em 1 query só.
-      // Aplica o MESMO filtro de elegibilidade da Pizza A·B·C para que
-      // "Próximos envios" reflita exatamente quem está no ciclo vivo.
       const cadenceRows = (cadenceRes.data || []) as Array<{
         id: string;
         customer_id: string;
@@ -164,12 +178,35 @@ export function useAgendamentosHub(consultantId: string) {
         paused_until: string | null;
         paused_reason: string | null;
       }>;
-      const cadenceCustomerIds = Array.from(new Set(cadenceRows.map((r) => r.customer_id).filter(Boolean)));
-      const cadenceCustomers = cadenceCustomerIds.length
+      const reheatRows = (reheatRes.data || []) as Array<{
+        id: string;
+        customer_id: string;
+        queue: string;
+        step: string;
+        status: string;
+        next_action_at: string;
+        planned_actions: unknown;
+      }>;
+      const mediaRows = (mediaRes.data || []) as Array<{
+        id: string | number;
+        customer_id: string | null;
+        scheduled_for: string;
+        payload: unknown;
+      }>;
+
+      const enrichIds = Array.from(
+        new Set([
+          ...cadenceRows.map((r) => r.customer_id),
+          ...reheatRows.map((r) => r.customer_id),
+          ...mediaRows.map((r) => r.customer_id).filter(Boolean) as string[],
+        ]),
+      );
+
+      const cadenceCustomers = enrichIds.length
         ? await supabase
             .from("customers")
             .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
-            .in("id", cadenceCustomerIds)
+            .in("id", enrichIds)
         : { data: [] as Array<{
             id: string;
             name: string | null;
@@ -180,6 +217,7 @@ export function useAgendamentosHub(consultantId: string) {
             portal_submitted_at: string | null;
             do_not_contact: boolean | null;
           }> };
+
       const custMap = new Map<string, {
         name: string | null;
         phone_whatsapp: string | null;
@@ -209,6 +247,7 @@ export function useAgendamentosHub(consultantId: string) {
           do_not_contact: c.do_not_contact,
         });
       }
+
       const eligibleCadence = cadenceRows.filter((r) => {
         const c = custMap.get(r.customer_id);
         if (!c) return false;
@@ -226,8 +265,73 @@ export function useAgendamentosHub(consultantId: string) {
         })),
       );
 
-      // Textos + áudios reais de cada estágio (Grupo B / Motor A→B→C).
-      // Preferência: config do consultor; fallback: config global (consultant_id IS NULL).
+      setDailyReheat(
+        reheatRows.map((r) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          queue: r.queue,
+          step: r.step,
+          status: r.status,
+          next_action_at: r.next_action_at,
+          planned_actions: r.planned_actions,
+          customer_name: custMap.get(r.customer_id)?.name ?? null,
+          customer_phone: custMap.get(r.customer_id)?.phone_whatsapp ?? null,
+        })),
+      );
+
+      setPendingMedia(
+        mediaRows.map((r) => ({
+          id: r.id,
+          customer_id: r.customer_id,
+          scheduled_for: r.scheduled_for,
+          payload: r.payload,
+          customer_name: r.customer_id ? custMap.get(r.customer_id)?.name ?? null : null,
+          customer_phone: r.customer_id ? custMap.get(r.customer_id)?.phone_whatsapp ?? null : null,
+        })),
+      );
+
+      // Retries de voz: targets com próxima tentativa (campanhas do consultor).
+      const campaignIds = ((voiceRes.data || []) as VoiceCampaignRow[]).map((c) => c.id);
+      const campaignNameById = new Map(
+        ((voiceRes.data || []) as VoiceCampaignRow[]).map((c) => [c.id, c.name] as const),
+      );
+      if (campaignIds.length) {
+        const { data: targetRows } = await (supabase as any)
+          .from("voice_campaign_targets")
+          .select("id, campaign_id, customer_id, name, phone, status, next_attempt_at, attempts, max_attempts")
+          .in("campaign_id", campaignIds)
+          .in("status", ["queued", "dialing"])
+          .not("next_attempt_at", "is", null)
+          .order("next_attempt_at", { ascending: true })
+          .limit(300);
+        setVoiceRetries(
+          ((targetRows || []) as Array<{
+            id: string;
+            campaign_id: string;
+            customer_id: string | null;
+            name: string | null;
+            phone: string | null;
+            status: string;
+            next_attempt_at: string;
+            attempts: number;
+            max_attempts: number;
+          }>).map((t) => ({
+            id: t.id,
+            campaign_id: t.campaign_id,
+            campaign_name: campaignNameById.get(t.campaign_id) ?? null,
+            customer_id: t.customer_id,
+            name: t.name,
+            phone: t.phone,
+            status: t.status,
+            next_attempt_at: t.next_attempt_at,
+            attempts: t.attempts ?? 0,
+            max_attempts: t.max_attempts ?? 3,
+          })),
+        );
+      } else {
+        setVoiceRetries([]);
+      }
+
       const stageCfg = await (supabase as any)
         .from("cadence_stage_config")
         .select("stage, message_text, voice_audio_clip_id, buttons, consultant_id")
@@ -239,7 +343,6 @@ export function useAgendamentosHub(consultantId: string) {
         buttons: unknown;
         consultant_id: string | null;
       }>;
-      // consultor tem prioridade sobre global
       const cfgByStage = new Map<
         string,
         { message_text: string | null; voice_audio_clip_id: string | null; buttons: unknown }
@@ -315,6 +418,9 @@ export function useAgendamentosHub(consultantId: string) {
     voice: voiceCampaigns,
     cadence,
     cadenceStageInfo,
+    dailyReheat,
+    pendingMedia,
+    voiceRetries,
   });
 
   const pendingManual = manual.filter((m) => m.status === "pending");
@@ -329,6 +435,9 @@ export function useAgendamentosHub(consultantId: string) {
     botFollowups,
     bulkCampaigns,
     voiceCampaigns,
+    dailyReheat,
+    pendingMedia,
+    voiceRetries,
     reactivationSettings,
     autoReactivateTemplates,
     pendingValidation,
@@ -343,6 +452,17 @@ export function useAgendamentosHub(consultantId: string) {
       failedManual,
       posVendaOverdue: posVenda.filter((p) => p.isOverdue).length,
       pendingValidation,
+      overdue: timeline.filter((t) => t.status === "overdue").length,
+      byChannel: {
+        whatsapp: timeline.filter((t) => t.channel === "whatsapp" || t.channel === "mixed").length,
+        sms: timeline.filter((t) => t.channel === "sms" || t.channel === "mixed").length,
+        voice: timeline.filter((t) => t.channel === "voice" || t.channel === "mixed").length,
+      },
+      byPizza: {
+        A: timeline.filter((t) => t.pizzaGroup === "A").length,
+        B: timeline.filter((t) => t.pizzaGroup === "B").length,
+        C: timeline.filter((t) => t.pizzaGroup === "C").length,
+      },
     },
   };
 }

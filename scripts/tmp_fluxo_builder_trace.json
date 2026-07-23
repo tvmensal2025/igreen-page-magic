@@ -1,0 +1,2500 @@
+{
+  "module": "FluxoBuilder / flow-builder",
+  "file_count": 61,
+  "total_lines": 18487,
+  "total_bytes": 727323,
+  "category_hit_totals": {
+    "regras_transicoes": 1069,
+    "diagrama": 926,
+    "bots_runtime": 592,
+    "media": 335,
+    "modal_lateral": 297,
+    "texto_mensagem": 134,
+    "validacao": 122,
+    "iris_guided": 112
+  },
+  "entry": {
+    "entry": "src/pages/FluxoBuilder.tsx",
+    "direct_local_imports": [
+      "src/components/admin/flow-builder/FlowHealthDialog.tsx",
+      "src/components/admin/flow-builder/FlowSimulator.tsx",
+      "src/components/admin/flow-builder/FlowTemplatesDialog.tsx",
+      "src/components/admin/flow-builder/FlowTourOverlay.tsx",
+      "src/components/admin/flow-builder/FluxoBHeaderStats.tsx",
+      "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+      "src/components/admin/flow-builder/StepCoachPanel.tsx",
+      "src/components/admin/flow-builder/StepInspector.tsx",
+      "src/components/admin/flow-builder/StepListToolbar.tsx",
+      "src/components/admin/flow-builder/StepTimelineItem.tsx",
+      "src/components/admin/flow-builder/TemplateGalleryDialog.tsx",
+      "src/components/admin/flow-builder/VariantDistributionBar.tsx",
+      "src/components/admin/flow-builder/ViewToggle.tsx",
+      "src/components/admin/flow-builder/WhatsAppPreview.tsx",
+      "src/components/admin/flow-builder/flowTypes.ts",
+      "src/components/admin/flow-builder/useFlowConflicts.ts",
+      "src/components/admin/flow-builder/useFlowStepsCrud.ts",
+      "src/components/admin/flow-builder/useFlowValidation.ts"
+    ],
+    "entry_exports": [
+      "FluxoBuilder"
+    ],
+    "entry_lines": 779
+  },
+  "top_by_category": {
+    "iris_guided": [
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 23,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/buildGuidedStepSeed.test.ts",
+        "hits": 20,
+        "lines": 182
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/guidedCaptureCatalog.test.ts",
+        "hits": 19,
+        "lines": 103
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/guidedStepValidation.test.ts",
+        "hits": 14,
+        "lines": 132
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/mediaOrder.test.ts",
+        "hits": 11,
+        "lines": 41
+      },
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 9,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/flowTypes.ts",
+        "hits": 5,
+        "lines": 521
+      },
+      {
+        "path": "src/components/admin/flow-builder/StepInspector.tsx",
+        "hits": 3,
+        "lines": 893
+      }
+    ],
+    "media": [
+      {
+        "path": "src/components/admin/flow-builder/flowTemplates.ts",
+        "hits": 46,
+        "lines": 553
+      },
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 36,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 29,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/mediaOrder.test.ts",
+        "hits": 26,
+        "lines": 41
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+        "hits": 26,
+        "lines": 615
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowSimulator.tsx",
+        "hits": 21,
+        "lines": 658
+      },
+      {
+        "path": "src/components/admin/flow-builder/ConversationPreview.tsx",
+        "hits": 20,
+        "lines": 278
+      },
+      {
+        "path": "src/components/admin/flow-builder/StepInspector.tsx",
+        "hits": 19,
+        "lines": 893
+      }
+    ],
+    "texto_mensagem": [
+      {
+        "path": "src/components/admin/flow-builder/flowTemplates.ts",
+        "hits": 32,
+        "lines": 553
+      },
+      {
+        "path": "src/components/admin/flow-builder/StepInspector.tsx",
+        "hits": 13,
+        "lines": 893
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx",
+        "hits": 9,
+        "lines": 560
+      },
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 8,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 8,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowSpreadsheet.tsx",
+        "hits": 7,
+        "lines": 322
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowStepsCrud.ts",
+        "hits": 6,
+        "lines": 364
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+        "hits": 6,
+        "lines": 615
+      }
+    ],
+    "regras_transicoes": [
+      {
+        "path": "src/components/admin/flow-builder/FlowDiagram.tsx",
+        "hits": 163,
+        "lines": 2250
+      },
+      {
+        "path": "src/components/admin/flow-builder/StepInspector.tsx",
+        "hits": 91,
+        "lines": 893
+      },
+      {
+        "path": "src/components/admin/flow-builder/flowTypes.ts",
+        "hits": 85,
+        "lines": 521
+      },
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 75,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+        "hits": 72,
+        "lines": 615
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/flowExits.test.ts",
+        "hits": 69,
+        "lines": 291
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/buildGuidedStepSeed.test.ts",
+        "hits": 59,
+        "lines": 182
+      },
+      {
+        "path": "src/components/admin/flow-builder/flowTemplates.ts",
+        "hits": 53,
+        "lines": 553
+      }
+    ],
+    "bots_runtime": [
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 86,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/VariantDistributionBar.tsx",
+        "hits": 83,
+        "lines": 306
+      },
+      {
+        "path": "src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx",
+        "hits": 54,
+        "lines": 596
+      },
+      {
+        "path": "src/components/admin/flow-builder/VariantsPanel.tsx",
+        "hits": 54,
+        "lines": 290
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowDiagram.tsx",
+        "hits": 41,
+        "lines": 2250
+      },
+      {
+        "path": "src/components/admin/flow-builder/TemplateGalleryDialog.tsx",
+        "hits": 37,
+        "lines": 222
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowSimulator.tsx",
+        "hits": 22,
+        "lines": 658
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowSpreadsheet.tsx",
+        "hits": 21,
+        "lines": 322
+      }
+    ],
+    "modal_lateral": [
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 52,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowReviewPanel.tsx",
+        "hits": 41,
+        "lines": 336
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowTemplatesDialog.tsx",
+        "hits": 21,
+        "lines": 234
+      },
+      {
+        "path": "src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx",
+        "hits": 20,
+        "lines": 596
+      },
+      {
+        "path": "src/components/admin/flow-builder/FlowHealthDialog.tsx",
+        "hits": 20,
+        "lines": 184
+      },
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 20,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/PublishTemplateDialog.tsx",
+        "hits": 20,
+        "lines": 127
+      },
+      {
+        "path": "src/components/admin/flow-builder/StepInspector.tsx",
+        "hits": 18,
+        "lines": 893
+      }
+    ],
+    "validacao": [
+      {
+        "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+        "hits": 36,
+        "lines": 967
+      },
+      {
+        "path": "src/components/admin/flow-builder/flowTypes.ts",
+        "hits": 19,
+        "lines": 521
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowConflicts.ts",
+        "hits": 13,
+        "lines": 129
+      },
+      {
+        "path": "src/pages/FluxoBuilder.tsx",
+        "hits": 12,
+        "lines": 779
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/flowCoverage.test.ts",
+        "hits": 11,
+        "lines": 62
+      },
+      {
+        "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+        "hits": 6,
+        "lines": 615
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/guidedStepValidation.test.ts",
+        "hits": 5,
+        "lines": 132
+      },
+      {
+        "path": "src/components/admin/flow-builder/__tests__/guidedCaptureCatalog.test.ts",
+        "hits": 4,
+        "lines": 103
+      }
+    ],
+    "diagrama": [
+      {
+        "path": "src/components/admin/flow-builder/FlowDiagram.tsx",
+        "hits": 365,
+        "lines": 2250
+      },
+      {
+        "path": "src/hooks/useDiagramLayout.ts",
+        "hits": 201,
+        "lines": 424
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx",
+        "hits": 115,
+        "lines": 465
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram/FlowDiagramEdge.tsx",
+        "hits": 39,
+        "lines": 309
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram-v2/useAutoLayout.ts",
+        "hits": 38,
+        "lines": 40
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram-v2/useFlowGraphV2.ts",
+        "hits": 33,
+        "lines": 139
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram/DiagramToolbar.tsx",
+        "hits": 25,
+        "lines": 444
+      },
+      {
+        "path": "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx",
+        "hits": 24,
+        "lines": 560
+      }
+    ]
+  },
+  "largest_files": [
+    {
+      "path": "src/components/admin/flow-builder/FlowDiagram.tsx",
+      "lines": 2250,
+      "bytes": 88449,
+      "exports": [
+        "FlowDiagramProps"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+      "lines": 967,
+      "bytes": 42016,
+      "exports": [
+        "GuidedStepInput",
+        "aceitaBotoesPara",
+        "buildGuidedStepSeed",
+        "GuidedStepDialog"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepInspector.tsx",
+      "lines": 893,
+      "bytes": 41146,
+      "exports": [
+        "StepInspector"
+      ]
+    },
+    {
+      "path": "src/pages/FluxoBuilder.tsx",
+      "lines": 779,
+      "bytes": 37218,
+      "exports": [
+        "FluxoBuilder"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowSimulator.tsx",
+      "lines": 658,
+      "bytes": 29973,
+      "exports": [
+        "FlowSimulator"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+      "lines": 615,
+      "bytes": 25093,
+      "exports": [
+        "FlowWarning",
+        "MediaCountsMap",
+        "FlowValidation",
+        "useFlowValidation"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx",
+      "lines": 596,
+      "bytes": 22600,
+      "exports": [
+        "CreateFlowFromTemplateDialog"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx",
+      "lines": 560,
+      "bytes": 22659,
+      "exports": []
+    },
+    {
+      "path": "src/components/admin/flow-builder/flowTemplates.ts",
+      "lines": 553,
+      "bytes": 21069,
+      "exports": [
+        "TemplateStepSeed",
+        "FlowTemplate",
+        "FLOW_TEMPLATES"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/flowTypes.ts",
+      "lines": 521,
+      "bytes": 20495,
+      "exports": [
+        "IconKey",
+        "Variant",
+        "ALL_VARIANTS",
+        "Transition",
+        "VALID_GOTO_SPECIAL",
+        "GotoSpecial",
+        "DETERMINISTIC_INTENTS",
+        "isDeterministicIntent",
+        "StepLayout",
+        "CaptureField",
+        "Capture",
+        "FallbackMode"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepCoachPanel.tsx",
+      "lines": 474,
+      "bytes": 17467,
+      "exports": [
+        "StepCoachPanel"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx",
+      "lines": 465,
+      "bytes": 16039,
+      "exports": [
+        "FlowDiagramV2Props",
+        "FlowDiagramV2"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/DiagramToolbar.tsx",
+      "lines": 444,
+      "bytes": 15180,
+      "exports": [
+        "DiagramToolbarProps",
+        "DiagramToolbar"
+      ]
+    },
+    {
+      "path": "src/hooks/useDiagramLayout.ts",
+      "lines": 424,
+      "bytes": 17565,
+      "exports": [
+        "UseDiagramLayoutArgs",
+        "UseDiagramLayoutResult",
+        "useDiagramLayout"
+      ]
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/TransitionPopover.tsx",
+      "lines": 420,
+      "bytes": 14254,
+      "exports": [
+        "TransitionPopoverState",
+        "TransitionPopoverProps",
+        "TransitionPopover"
+      ]
+    }
+  ],
+  "export_index": {
+    "src/pages/FluxoBuilder.tsx": [
+      "FluxoBuilder"
+    ],
+    "src/hooks/useFlowSteps.ts": [
+      "FlowStepOption",
+      "useFlowSteps"
+    ],
+    "src/hooks/useDiagramLayout.ts": [
+      "UseDiagramLayoutArgs",
+      "UseDiagramLayoutResult",
+      "useDiagramLayout"
+    ],
+    "src/components/admin/flow-builder/canonicalStepTypes.ts": [
+      "StepTypeCanonical",
+      "CANONICAL_STEP_TYPE_OPTIONS",
+      "CanonicalValidationError",
+      "validateCanonicalStep"
+    ],
+    "src/components/admin/flow-builder/channelPreview.ts": [
+      "PreviewChannel",
+      "PreviewChoice",
+      "PreviewRendered",
+      "previewChoice"
+    ],
+    "src/components/admin/flow-builder/diagram/stepTypeColors.ts": [
+      "StepTypeColor",
+      "getStepTypeColor"
+    ],
+    "src/components/admin/flow-builder/diagram-v2/useAutoLayout.ts": [
+      "LayoutDirection",
+      "autoLayout"
+    ],
+    "src/components/admin/flow-builder/diagram-v2/useFlowGraphV2.ts": [
+      "V2NodeData",
+      "V2EdgeData",
+      "useFlowGraphV2"
+    ],
+    "src/components/admin/flow-builder/flowExits.ts": [
+      "ExitKind",
+      "ExitDestKind",
+      "StepExit",
+      "getStepExits"
+    ],
+    "src/components/admin/flow-builder/flowTemplates.ts": [
+      "TemplateStepSeed",
+      "FlowTemplate",
+      "FLOW_TEMPLATES"
+    ],
+    "src/components/admin/flow-builder/flowTypes.ts": [
+      "IconKey",
+      "Variant",
+      "ALL_VARIANTS",
+      "Transition",
+      "VALID_GOTO_SPECIAL",
+      "GotoSpecial",
+      "DETERMINISTIC_INTENTS",
+      "isDeterministicIntent",
+      "StepLayout",
+      "CaptureField",
+      "Capture",
+      "FallbackMode",
+      "Fallback",
+      "Step",
+      "STEP_TYPE_OPTIONS",
+      "GuidedIntent",
+      "GuidedCaptureOption",
+      "GUIDED_CAPTURE_OPTIONS",
+      "VARIANT_LABEL",
+      "BUTTON_PRESETS",
+      "parseTransitions",
+      "parseCaptures",
+      "parseFallback",
+      "getButtons",
+      "isOcrStep",
+      "isAiAnswerStep",
+      "resolveGotoLabel",
+      "renderVarsPreview",
+      "PREVIEW_PERSONA",
+      "SimulatedReply",
+      "simulatedClientReply",
+      "botConfirmationAfter",
+      "FlowMilestone",
+      "FLOW_MILESTONES",
+      "FlowCoverage",
+      "computeFlowCoverage",
+      "defaultPromptForType"
+    ],
+    "src/components/admin/flow-builder/journey/useFlowJourney.ts": [
+      "JourneyStageId",
+      "JourneyStageStatus",
+      "JourneyStage",
+      "useFlowJourney"
+    ],
+    "src/components/admin/flow-builder/journey/voice.ts": [
+      "falarRegra",
+      "falarDiagnostico",
+      "falarEtapa",
+      "falarDestinoAbstrato"
+    ],
+    "src/components/admin/flow-builder/useFlowConflicts.ts": [
+      "ConflictKind",
+      "StepConflict",
+      "UseFlowConflictsResult",
+      "detectConflicts",
+      "useFlowConflicts"
+    ],
+    "src/components/admin/flow-builder/useFlowStepsCrud.ts": [
+      "UseFlowStepsCrudArgs",
+      "UseFlowStepsCrudResult",
+      "useFlowStepsCrud"
+    ],
+    "src/components/admin/flow-builder/useFlowValidation.ts": [
+      "FlowWarning",
+      "MediaCountsMap",
+      "FlowValidation",
+      "useFlowValidation"
+    ],
+    "src/components/admin/flow-builder/AiPreferencesCard.tsx": [
+      "AiPreferencesCard"
+    ],
+    "src/components/admin/flow-builder/ConversationPreview.tsx": [
+      "ConversationPreview"
+    ],
+    "src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx": [
+      "CreateFlowFromTemplateDialog"
+    ],
+    "src/components/admin/flow-builder/FlowDiagram.tsx": [
+      "FlowDiagramProps"
+    ],
+    "src/components/admin/flow-builder/FlowHealthDialog.tsx": [
+      "FlowHealthDialog"
+    ],
+    "src/components/admin/flow-builder/FlowReviewPanel.tsx": [
+      "ReviewIssue",
+      "ReviewResult",
+      "FlowReviewPanel"
+    ],
+    "src/components/admin/flow-builder/FlowSimulator.tsx": [
+      "FlowSimulator"
+    ],
+    "src/components/admin/flow-builder/FlowSpreadsheet.tsx": [
+      "FlowSpreadsheet"
+    ],
+    "src/components/admin/flow-builder/FlowTemplatesDialog.tsx": [
+      "FlowTemplatesDialog"
+    ],
+    "src/components/admin/flow-builder/FlowTourOverlay.tsx": [
+      "FlowTourOverlay",
+      "tourPendente"
+    ],
+    "src/components/admin/flow-builder/FluxoBEditor.tsx": [
+      "FluxoBEditor"
+    ],
+    "src/components/admin/flow-builder/FluxoBHeaderStats.tsx": [
+      "FluxoBHeaderStats"
+    ],
+    "src/components/admin/flow-builder/GuidedStepDialog.tsx": [
+      "GuidedStepInput",
+      "aceitaBotoesPara",
+      "buildGuidedStepSeed",
+      "GuidedStepDialog"
+    ],
+    "src/components/admin/flow-builder/InlineAiButton.tsx": [
+      "InlineAiButton"
+    ],
+    "src/components/admin/flow-builder/PublishTemplateDialog.tsx": [
+      "PublishTemplateDialog"
+    ],
+    "src/components/admin/flow-builder/StepCoachPanel.tsx": [
+      "StepCoachPanel"
+    ],
+    "src/components/admin/flow-builder/StepInspector.tsx": [
+      "StepInspector"
+    ],
+    "src/components/admin/flow-builder/StepListToolbar.tsx": [
+      "StepListToolbar"
+    ],
+    "src/components/admin/flow-builder/StepSuggestions.tsx": [
+      "StepSuggestions"
+    ],
+    "src/components/admin/flow-builder/StepTimelineItem.tsx": [
+      "StepTimelineItem"
+    ],
+    "src/components/admin/flow-builder/TemplateGalleryDialog.tsx": [
+      "TemplateGalleryDialog"
+    ],
+    "src/components/admin/flow-builder/VariantDistributionBar.tsx": [
+      "VariantDistributionBar"
+    ],
+    "src/components/admin/flow-builder/VariantsPanel.tsx": [
+      "VariantsPanel"
+    ],
+    "src/components/admin/flow-builder/ViewToggle.tsx": [
+      "ViewMode",
+      "ViewToggleProps",
+      "ViewToggle"
+    ],
+    "src/components/admin/flow-builder/WhatsAppPreview.tsx": [
+      "WhatsAppPreview"
+    ],
+    "src/components/admin/flow-builder/diagram/DiagramToolbar.tsx": [
+      "DiagramToolbarProps",
+      "DiagramToolbar"
+    ],
+    "src/components/admin/flow-builder/diagram/FlowDiagramEdge.tsx": [
+      "FlowDiagramEdge"
+    ],
+    "src/components/admin/flow-builder/diagram/NodeContextMenu.tsx": [
+      "NodeContextMenuState",
+      "NodeContextMenuProps",
+      "NodeContextMenu"
+    ],
+    "src/components/admin/flow-builder/diagram/TransitionPopover.tsx": [
+      "TransitionPopoverState",
+      "TransitionPopoverProps",
+      "TransitionPopover"
+    ],
+    "src/components/admin/flow-builder/diagram/WarningBadge.tsx": [
+      "WarningBadgeProps",
+      "WarningBadge"
+    ],
+    "src/components/admin/flow-builder/diagram-v2/CanvasToolbar.tsx": [
+      "CanvasToolbar"
+    ],
+    "src/components/admin/flow-builder/diagram-v2/ExpandableNode.tsx": [
+      "ExpandableNode"
+    ],
+    "src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx": [
+      "FlowDiagramV2Props",
+      "FlowDiagramV2"
+    ],
+    "src/components/admin/flow-builder/journey/JourneyStepper.tsx": [
+      "JourneyStepper"
+    ]
+  },
+  "import_graph_edges": 35,
+  "import_graph": {
+    "src/pages/FluxoBuilder.tsx": [
+      "src/components/admin/flow-builder/FlowHealthDialog.tsx",
+      "src/components/admin/flow-builder/FlowSimulator.tsx",
+      "src/components/admin/flow-builder/FlowTemplatesDialog.tsx",
+      "src/components/admin/flow-builder/FlowTourOverlay.tsx",
+      "src/components/admin/flow-builder/FluxoBHeaderStats.tsx",
+      "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+      "src/components/admin/flow-builder/StepCoachPanel.tsx",
+      "src/components/admin/flow-builder/StepInspector.tsx",
+      "src/components/admin/flow-builder/StepListToolbar.tsx",
+      "src/components/admin/flow-builder/StepTimelineItem.tsx",
+      "src/components/admin/flow-builder/TemplateGalleryDialog.tsx",
+      "src/components/admin/flow-builder/VariantDistributionBar.tsx",
+      "src/components/admin/flow-builder/ViewToggle.tsx",
+      "src/components/admin/flow-builder/WhatsAppPreview.tsx",
+      "src/components/admin/flow-builder/flowTypes.ts",
+      "src/components/admin/flow-builder/useFlowConflicts.ts",
+      "src/components/admin/flow-builder/useFlowStepsCrud.ts",
+      "src/components/admin/flow-builder/useFlowValidation.ts"
+    ],
+    "src/hooks/useDiagramLayout.ts": [
+      "src/components/admin/flow-builder/flowTypes.ts"
+    ],
+    "src/components/admin/flow-builder/__tests__/sofiaMulticanalTemplate.test.ts": [
+      "src/components/admin/flow-builder/flowTemplates.ts"
+    ],
+    "src/components/admin/flow-builder/FlowDiagram.tsx": [
+      "src/components/admin/flow-builder/diagram/DiagramToolbar.tsx",
+      "src/components/admin/flow-builder/diagram/FlowDiagramEdge.tsx",
+      "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx",
+      "src/components/admin/flow-builder/diagram/NodeContextMenu.tsx",
+      "src/components/admin/flow-builder/diagram/TerminalNode.tsx",
+      "src/components/admin/flow-builder/diagram/TransitionPopover.tsx",
+      "src/components/admin/flow-builder/flowTypes.ts",
+      "src/components/admin/flow-builder/useFlowValidation.ts",
+      "src/hooks/useDiagramLayout.ts"
+    ],
+    "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx": [
+      "src/components/admin/flow-builder/diagram/WarningBadge.tsx",
+      "src/components/admin/flow-builder/diagram/stepTypeColors.ts",
+      "src/components/admin/flow-builder/flowTypes.ts"
+    ],
+    "src/components/admin/flow-builder/diagram/NodeContextMenu.tsx": [
+      "src/components/admin/flow-builder/flowTypes.ts"
+    ],
+    "src/components/admin/flow-builder/diagram/TransitionPopover.tsx": [
+      "src/components/admin/flow-builder/flowTypes.ts"
+    ],
+    "src/components/admin/flow-builder/diagram/WarningBadge.tsx": [
+      "src/components/admin/flow-builder/useFlowValidation.ts"
+    ]
+  },
+  "files": [
+    {
+      "path": "src/pages/FluxoBuilder.tsx",
+      "lines": 779,
+      "bytes": 37218,
+      "exports": [
+        "FluxoBuilder"
+      ],
+      "imports": [
+        "react",
+        "react-router-dom",
+        "@/integrations/supabase/client",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "lucide-react",
+        "@dnd-kit/core",
+        "@dnd-kit/sortable",
+        "@/components/admin/flow-builder/StepTimelineItem",
+        "@/components/admin/flow-builder/FluxoBHeaderStats",
+        "@/components/admin/flow-builder/StepInspector",
+        "@/components/admin/flow-builder/StepListToolbar",
+        "@/components/admin/flow-builder/WhatsAppPreview",
+        "@/components/admin/flow-builder/VariantDistributionBar",
+        "@/components/admin/flow-builder/FlowSimulator",
+        "@/components/admin/flow-builder/StepCoachPanel",
+        "@/components/admin/flow-builder/FlowTourOverlay",
+        "@/components/admin/flow-builder/FlowHealthDialog",
+        "@/components/admin/flow-builder/TemplateGalleryDialog",
+        "@/components/admin/flow-builder/FlowTemplatesDialog",
+        "@/components/admin/flow-builder/GuidedStepDialog",
+        "@/components/admin/flow-builder/useFlowValidation",
+        "@/components/admin/flow-builder/useFlowStepsCrud",
+        "@/components/admin/flow-builder/useFlowConflicts",
+        "sonner",
+        "@/components/admin/flow-builder/flowTypes",
+        "@/lib/multichannelCadenceTexts",
+        "@/components/admin/flow-builder/ViewToggle",
+        "@/hooks/useViewportWidth",
+        "@/components/layout/AppSidebar",
+        "@/components/layout/AppTopbar",
+        "@/components/ui/tooltip",
+        "@/hooks/useUserRole"
+      ],
+      "categories": {
+        "iris_guided": 9,
+        "media": 36,
+        "texto_mensagem": 8,
+        "regras_transicoes": 16,
+        "bots_runtime": 86,
+        "modal_lateral": 52,
+        "validacao": 12,
+        "diagrama": 8
+      }
+    },
+    {
+      "path": "src/hooks/useFlowSteps.ts",
+      "lines": 110,
+      "bytes": 3854,
+      "exports": [
+        "FlowStepOption",
+        "useFlowSteps"
+      ],
+      "imports": [
+        "react",
+        "@/integrations/supabase/client",
+        "@/lib/flowStepResolver",
+        "@/lib/flowStepResolver"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 7,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/hooks/useDiagramLayout.ts",
+      "lines": 424,
+      "bytes": 17565,
+      "exports": [
+        "UseDiagramLayoutArgs",
+        "UseDiagramLayoutResult",
+        "useDiagramLayout"
+      ],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "dagre",
+        "sonner",
+        "@/integrations/supabase/client",
+        "@/components/ui/confirm-dialog",
+        "@/components/admin/flow-builder/flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 6,
+        "bots_runtime": 10,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 201
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/buildGuidedStepSeed.test.ts",
+      "lines": 182,
+      "bytes": 6480,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../GuidedStepDialog",
+        "../../../../../supabase/functions/_shared/flow-router",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 20,
+        "media": 0,
+        "texto_mensagem": 2,
+        "regras_transicoes": 59,
+        "bots_runtime": 0,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/flowCoverage.test.ts",
+      "lines": 62,
+      "bytes": 2254,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 1,
+        "texto_mensagem": 2,
+        "regras_transicoes": 12,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 11,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/flowExits.test.ts",
+      "lines": 291,
+      "bytes": 9564,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../flowExits",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 1,
+        "texto_mensagem": 2,
+        "regras_transicoes": 69,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/guidedCaptureCatalog.test.ts",
+      "lines": 103,
+      "bytes": 4490,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../GuidedStepDialog",
+        "../flowTypes",
+        "../useFlowValidation",
+        "@testing-library/react",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 19,
+        "media": 1,
+        "texto_mensagem": 2,
+        "regras_transicoes": 33,
+        "bots_runtime": 2,
+        "modal_lateral": 1,
+        "validacao": 4,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/guidedStepValidation.test.ts",
+      "lines": 132,
+      "bytes": 5019,
+      "exports": [],
+      "imports": [
+        "@testing-library/react",
+        "vitest",
+        "../GuidedStepDialog",
+        "../useFlowValidation",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 14,
+        "media": 1,
+        "texto_mensagem": 3,
+        "regras_transicoes": 18,
+        "bots_runtime": 0,
+        "modal_lateral": 1,
+        "validacao": 5,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/mediaOrder.test.ts",
+      "lines": 41,
+      "bytes": 1911,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../GuidedStepDialog",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 11,
+        "media": 26,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 0,
+        "modal_lateral": 2,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/simulatedClientReply.test.ts",
+      "lines": 73,
+      "bytes": 2927,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 1,
+        "media": 1,
+        "texto_mensagem": 2,
+        "regras_transicoes": 16,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/sofiaMulticanalTemplate.test.ts",
+      "lines": 64,
+      "bytes": 2495,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "@/components/admin/flow-builder/flowTemplates"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 4,
+        "texto_mensagem": 0,
+        "regras_transicoes": 6,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/__tests__/useFlowConflicts.test.ts",
+      "lines": 72,
+      "bytes": 2372,
+      "exports": [],
+      "imports": [
+        "vitest",
+        "../useFlowConflicts",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 2,
+        "texto_mensagem": 1,
+        "regras_transicoes": 7,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 1,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/canonicalStepTypes.ts",
+      "lines": 135,
+      "bytes": 4720,
+      "exports": [
+        "StepTypeCanonical",
+        "CANONICAL_STEP_TYPE_OPTIONS",
+        "CanonicalValidationError",
+        "validateCanonicalStep"
+      ],
+      "imports": [
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 5,
+        "texto_mensagem": 0,
+        "regras_transicoes": 17,
+        "bots_runtime": 2,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/channelPreview.ts",
+      "lines": 77,
+      "bytes": 2386,
+      "exports": [
+        "PreviewChannel",
+        "PreviewChoice",
+        "PreviewRendered",
+        "previewChoice"
+      ],
+      "imports": [],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 3,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/stepTypeColors.ts",
+      "lines": 99,
+      "bytes": 3291,
+      "exports": [
+        "StepTypeColor",
+        "getStepTypeColor"
+      ],
+      "imports": [],
+      "categories": {
+        "iris_guided": 0,
+        "media": 1,
+        "texto_mensagem": 0,
+        "regras_transicoes": 4,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 2
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/useAutoLayout.ts",
+      "lines": 40,
+      "bytes": 1271,
+      "exports": [
+        "LayoutDirection",
+        "autoLayout"
+      ],
+      "imports": [
+        "dagre",
+        "@xyflow/react"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 38
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/useFlowGraphV2.ts",
+      "lines": 139,
+      "bytes": 4654,
+      "exports": [
+        "V2NodeData",
+        "V2EdgeData",
+        "useFlowGraphV2"
+      ],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "../flowTypes",
+        "../flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 10,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 33
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/flowExits.ts",
+      "lines": 211,
+      "bytes": 8938,
+      "exports": [
+        "ExitKind",
+        "ExitDestKind",
+        "StepExit",
+        "getStepExits"
+      ],
+      "imports": [
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 41,
+        "bots_runtime": 0,
+        "modal_lateral": 2,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/flowTemplates.ts",
+      "lines": 553,
+      "bytes": 21069,
+      "exports": [
+        "TemplateStepSeed",
+        "FlowTemplate",
+        "FLOW_TEMPLATES"
+      ],
+      "imports": [],
+      "categories": {
+        "iris_guided": 0,
+        "media": 46,
+        "texto_mensagem": 32,
+        "regras_transicoes": 53,
+        "bots_runtime": 2,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/flowTypes.ts",
+      "lines": 521,
+      "bytes": 20495,
+      "exports": [
+        "IconKey",
+        "Variant",
+        "ALL_VARIANTS",
+        "Transition",
+        "VALID_GOTO_SPECIAL",
+        "GotoSpecial",
+        "DETERMINISTIC_INTENTS",
+        "isDeterministicIntent",
+        "StepLayout",
+        "CaptureField",
+        "Capture",
+        "FallbackMode",
+        "Fallback",
+        "Step",
+        "STEP_TYPE_OPTIONS",
+        "GuidedIntent",
+        "GuidedCaptureOption",
+        "GUIDED_CAPTURE_OPTIONS",
+        "VARIANT_LABEL",
+        "BUTTON_PRESETS",
+        "parseTransitions",
+        "parseCaptures",
+        "parseFallback",
+        "getButtons",
+        "isOcrStep",
+        "isAiAnswerStep",
+        "resolveGotoLabel",
+        "renderVarsPreview",
+        "PREVIEW_PERSONA",
+        "SimulatedReply",
+        "simulatedClientReply",
+        "botConfirmationAfter",
+        "FlowMilestone",
+        "FLOW_MILESTONES",
+        "FlowCoverage",
+        "computeFlowCoverage",
+        "defaultPromptForType"
+      ],
+      "imports": [],
+      "categories": {
+        "iris_guided": 5,
+        "media": 8,
+        "texto_mensagem": 5,
+        "regras_transicoes": 85,
+        "bots_runtime": 20,
+        "modal_lateral": 0,
+        "validacao": 19,
+        "diagrama": 8
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/journey/useFlowJourney.ts",
+      "lines": 178,
+      "bytes": 6833,
+      "exports": [
+        "JourneyStageId",
+        "JourneyStageStatus",
+        "JourneyStage",
+        "useFlowJourney"
+      ],
+      "imports": [
+        "react",
+        "../flowTypes",
+        "../useFlowValidation"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 1,
+        "regras_transicoes": 5,
+        "bots_runtime": 5,
+        "modal_lateral": 0,
+        "validacao": 1,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/journey/voice.ts",
+      "lines": 94,
+      "bytes": 6160,
+      "exports": [
+        "falarRegra",
+        "falarDiagnostico",
+        "falarEtapa",
+        "falarDestinoAbstrato"
+      ],
+      "imports": [
+        "../flowTypes",
+        "../flowExits",
+        "../useFlowValidation"
+      ],
+      "categories": {
+        "iris_guided": 1,
+        "media": 1,
+        "texto_mensagem": 0,
+        "regras_transicoes": 7,
+        "bots_runtime": 0,
+        "modal_lateral": 4,
+        "validacao": 1,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/useFlowConflicts.ts",
+      "lines": 129,
+      "bytes": 4332,
+      "exports": [
+        "ConflictKind",
+        "StepConflict",
+        "UseFlowConflictsResult",
+        "detectConflicts",
+        "useFlowConflicts"
+      ],
+      "imports": [
+        "react",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 8,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 13,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/useFlowStepsCrud.ts",
+      "lines": 364,
+      "bytes": 12656,
+      "exports": [
+        "UseFlowStepsCrudArgs",
+        "UseFlowStepsCrudResult",
+        "useFlowStepsCrud"
+      ],
+      "imports": [
+        "react",
+        "@/integrations/supabase/client",
+        "sonner",
+        "./flowTypes",
+        "./useFlowConflicts"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 9,
+        "texto_mensagem": 6,
+        "regras_transicoes": 16,
+        "bots_runtime": 17,
+        "modal_lateral": 1,
+        "validacao": 2,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/useFlowValidation.ts",
+      "lines": 615,
+      "bytes": 25093,
+      "exports": [
+        "FlowWarning",
+        "MediaCountsMap",
+        "FlowValidation",
+        "useFlowValidation"
+      ],
+      "imports": [
+        "react",
+        "@/lib/multichannelCadenceTexts",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 26,
+        "texto_mensagem": 6,
+        "regras_transicoes": 72,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 6,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/AiPreferencesCard.tsx",
+      "lines": 225,
+      "bytes": 7547,
+      "exports": [
+        "AiPreferencesCard"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/card",
+        "@/components/ui/badge",
+        "@/components/ui/label",
+        "@/components/ui/radio-group",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 3,
+        "bots_runtime": 1,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/ConversationPreview.tsx",
+      "lines": 278,
+      "bytes": 11842,
+      "exports": [
+        "ConversationPreview"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils",
+        "./flowTypes",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 1,
+        "media": 20,
+        "texto_mensagem": 3,
+        "regras_transicoes": 3,
+        "bots_runtime": 0,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/CreateFlowFromTemplateDialog.tsx",
+      "lines": 596,
+      "bytes": 22600,
+      "exports": [
+        "CreateFlowFromTemplateDialog"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/radio-group",
+        "@/components/ui/checkbox",
+        "@/components/ui/badge",
+        "@/components/ui/scroll-area",
+        "@/components/ui/separator",
+        "@/components/ui/alert",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 1,
+        "texto_mensagem": 0,
+        "regras_transicoes": 7,
+        "bots_runtime": 54,
+        "modal_lateral": 20,
+        "validacao": 0,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowDiagram.tsx",
+      "lines": 2250,
+      "bytes": 88449,
+      "exports": [
+        "FlowDiagramProps"
+      ],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "lucide-react",
+        "sonner",
+        "@/components/admin/flow-builder/diagram/DiagramToolbar",
+        "@/components/admin/flow-builder/diagram/FlowDiagramEdge",
+        "@/components/admin/flow-builder/diagram/FlowDiagramNode",
+        "@/components/admin/flow-builder/diagram/NodeContextMenu",
+        "@/components/admin/flow-builder/diagram/TerminalNode",
+        "@/components/admin/flow-builder/diagram/TransitionPopover",
+        "@/components/admin/flow-builder/flowTypes",
+        "@/components/admin/flow-builder/useFlowValidation",
+        "@/components/ui/button",
+        "@/lib/utils",
+        "@/hooks/useDiagramData",
+        "@/hooks/useDiagramExport",
+        "@/hooks/useDiagramLayout",
+        "@/hooks/useDiagramMetrics",
+        "@/hooks/useDiagramSearch",
+        "@/hooks/useViewportPersistence"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 15,
+        "texto_mensagem": 0,
+        "regras_transicoes": 163,
+        "bots_runtime": 41,
+        "modal_lateral": 7,
+        "validacao": 2,
+        "diagrama": 365
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowHealthDialog.tsx",
+      "lines": 184,
+      "bytes": 7353,
+      "exports": [
+        "FlowHealthDialog"
+      ],
+      "imports": [
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/scroll-area",
+        "lucide-react",
+        "./useFlowValidation",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 4,
+        "bots_runtime": 1,
+        "modal_lateral": 20,
+        "validacao": 1,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowReviewPanel.tsx",
+      "lines": 336,
+      "bytes": 12839,
+      "exports": [
+        "ReviewIssue",
+        "ReviewResult",
+        "FlowReviewPanel"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/sheet",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/components/ui/textarea",
+        "@/components/ui/scroll-area",
+        "@/components/ui/alert-dialog",
+        "lucide-react",
+        "sonner",
+        "./flowTypes",
+        "@/integrations/supabase/client"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 2,
+        "regras_transicoes": 3,
+        "bots_runtime": 6,
+        "modal_lateral": 41,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowSimulator.tsx",
+      "lines": 658,
+      "bytes": 29973,
+      "exports": [
+        "FlowSimulator"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/badge",
+        "lucide-react",
+        "./flowTypes",
+        "@/integrations/supabase/client",
+        "sonner"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 21,
+        "texto_mensagem": 0,
+        "regras_transicoes": 12,
+        "bots_runtime": 22,
+        "modal_lateral": 16,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowSpreadsheet.tsx",
+      "lines": 322,
+      "bytes": 12711,
+      "exports": [
+        "FlowSpreadsheet"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/badge",
+        "lucide-react",
+        "./flowTypes",
+        "@/lib/flowSpreadsheetExport",
+        "@/lib/utils"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 15,
+        "texto_mensagem": 7,
+        "regras_transicoes": 30,
+        "bots_runtime": 21,
+        "modal_lateral": 2,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowTemplatesDialog.tsx",
+      "lines": 234,
+      "bytes": 8175,
+      "exports": [
+        "FlowTemplatesDialog"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/components/ui/scroll-area",
+        "@/components/ui/checkbox",
+        "@/components/ui/label",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner",
+        "./flowTemplates"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 4,
+        "texto_mensagem": 2,
+        "regras_transicoes": 25,
+        "bots_runtime": 6,
+        "modal_lateral": 21,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FlowTourOverlay.tsx",
+      "lines": 128,
+      "bytes": 4428,
+      "exports": [
+        "FlowTourOverlay",
+        "tourPendente"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 1,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 2,
+        "modal_lateral": 14,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FluxoBEditor.tsx",
+      "lines": 199,
+      "bytes": 10039,
+      "exports": [
+        "FluxoBEditor"
+      ],
+      "imports": [
+        "react",
+        "@/integrations/supabase/client",
+        "@/components/ui/card",
+        "@/components/ui/button",
+        "@/components/ui/textarea",
+        "@/components/ui/slider",
+        "@/components/ui/switch",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/use-toast",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 8,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/FluxoBHeaderStats.tsx",
+      "lines": 123,
+      "bytes": 4219,
+      "exports": [
+        "FluxoBHeaderStats"
+      ],
+      "imports": [
+        "react",
+        "react-router-dom",
+        "@/integrations/supabase/client",
+        "@/components/ui/badge",
+        "@/components/ui/button",
+        "@/components/ui/tooltip",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 7,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/GuidedStepDialog.tsx",
+      "lines": 967,
+      "bytes": 42016,
+      "exports": [
+        "GuidedStepInput",
+        "aceitaBotoesPara",
+        "buildGuidedStepSeed",
+        "GuidedStepDialog"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/textarea",
+        "@/components/ui/label",
+        "@/components/ui/badge",
+        "@/components/ui/select",
+        "@/lib/utils",
+        "lucide-react",
+        "./flowTypes",
+        "./ConversationPreview"
+      ],
+      "categories": {
+        "iris_guided": 23,
+        "media": 29,
+        "texto_mensagem": 8,
+        "regras_transicoes": 75,
+        "bots_runtime": 10,
+        "modal_lateral": 20,
+        "validacao": 36,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/InlineAiButton.tsx",
+      "lines": 145,
+      "bytes": 4859,
+      "exports": [
+        "InlineAiButton"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/components/ui/button",
+        "@/components/ui/popover",
+        "@/components/ui/input",
+        "@/integrations/supabase/client",
+        "@/hooks/use-toast",
+        "@/lib/utils"
+      ],
+      "categories": {
+        "iris_guided": 2,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 2,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/PublishTemplateDialog.tsx",
+      "lines": 127,
+      "bytes": 4684,
+      "exports": [
+        "PublishTemplateDialog"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/textarea",
+        "@/components/ui/switch",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 1,
+        "modal_lateral": 20,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepCoachPanel.tsx",
+      "lines": 474,
+      "bytes": 17467,
+      "exports": [
+        "StepCoachPanel"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/card",
+        "@/components/ui/badge",
+        "@/components/ui/button",
+        "lucide-react",
+        "./flowTypes",
+        "./flowExits",
+        "./useFlowValidation",
+        "./journey/voice",
+        "./journey/useFlowJourney",
+        "./journey/JourneyStepper"
+      ],
+      "categories": {
+        "iris_guided": 2,
+        "media": 0,
+        "texto_mensagem": 2,
+        "regras_transicoes": 1,
+        "bots_runtime": 7,
+        "modal_lateral": 3,
+        "validacao": 2,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepInspector.tsx",
+      "lines": 893,
+      "bytes": 41146,
+      "exports": [
+        "StepInspector"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/sheet",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/textarea",
+        "@/components/ui/switch",
+        "@/components/ui/select",
+        "@/components/ui/badge",
+        "@/components/ui/tabs",
+        "lucide-react",
+        "@/components/ui/popover",
+        "@/lib/utils",
+        "@/components/admin/fluxo/StepMediaPanel",
+        "./StepSuggestions",
+        "./InlineAiButton",
+        "./flowTypes",
+        "@/integrations/supabase/client"
+      ],
+      "categories": {
+        "iris_guided": 3,
+        "media": 19,
+        "texto_mensagem": 13,
+        "regras_transicoes": 91,
+        "bots_runtime": 17,
+        "modal_lateral": 18,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepListToolbar.tsx",
+      "lines": 98,
+      "bytes": 3416,
+      "exports": [
+        "StepListToolbar"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/components/ui/input",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/lib/utils",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 1,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepSuggestions.tsx",
+      "lines": 126,
+      "bytes": 4178,
+      "exports": [
+        "StepSuggestions"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/button",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 1,
+        "texto_mensagem": 4,
+        "regras_transicoes": 5,
+        "bots_runtime": 4,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/StepTimelineItem.tsx",
+      "lines": 394,
+      "bytes": 16748,
+      "exports": [
+        "StepTimelineItem"
+      ],
+      "imports": [
+        "react",
+        "@dnd-kit/sortable",
+        "@dnd-kit/utilities",
+        "@/components/ui/badge",
+        "@/components/ui/button",
+        "@/components/ui/tooltip",
+        "@/components/ui/popover",
+        "@/lib/utils",
+        "lucide-react",
+        "./flowTypes",
+        "./flowExits",
+        "./useFlowConflicts"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 14,
+        "texto_mensagem": 4,
+        "regras_transicoes": 11,
+        "bots_runtime": 5,
+        "modal_lateral": 0,
+        "validacao": 2,
+        "diagrama": 2
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/TemplateGalleryDialog.tsx",
+      "lines": 222,
+      "bytes": 8862,
+      "exports": [
+        "TemplateGalleryDialog"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/dialog",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/components/ui/scroll-area",
+        "lucide-react",
+        "@/integrations/supabase/client",
+        "sonner",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 37,
+        "modal_lateral": 17,
+        "validacao": 0,
+        "diagrama": 2
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/VariantDistributionBar.tsx",
+      "lines": 306,
+      "bytes": 12196,
+      "exports": [
+        "VariantDistributionBar"
+      ],
+      "imports": [
+        "react",
+        "@/integrations/supabase/client",
+        "@/components/ui/switch",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/components/ui/tooltip",
+        "@/components/ui/dropdown-menu",
+        "lucide-react",
+        "sonner",
+        "@/components/ui/confirm-dialog",
+        "@/components/ui/prompt-dialog",
+        "./flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 2,
+        "bots_runtime": 83,
+        "modal_lateral": 2,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/VariantsPanel.tsx",
+      "lines": 290,
+      "bytes": 11945,
+      "exports": [
+        "VariantsPanel"
+      ],
+      "imports": [
+        "react",
+        "@/integrations/supabase/client",
+        "@/components/ui/card",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "@/components/ui/input",
+        "@/components/ui/switch",
+        "@/components/ui/label",
+        "lucide-react",
+        "@/components/ui/use-toast"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 54,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/ViewToggle.tsx",
+      "lines": 98,
+      "bytes": 2576,
+      "exports": [
+        "ViewMode",
+        "ViewToggleProps",
+        "ViewToggle"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/components/ui/toggle-group",
+        "@/components/ui/tooltip",
+        "@/lib/utils"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 2
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/WhatsAppPreview.tsx",
+      "lines": 174,
+      "bytes": 6329,
+      "exports": [
+        "WhatsAppPreview"
+      ],
+      "imports": [
+        "react",
+        "@/lib/utils",
+        "./flowTypes",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 12,
+        "texto_mensagem": 4,
+        "regras_transicoes": 6,
+        "bots_runtime": 0,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 1
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/DiagramToolbar.tsx",
+      "lines": 444,
+      "bytes": 15180,
+      "exports": [
+        "DiagramToolbarProps",
+        "DiagramToolbar"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/components/ui/button",
+        "@/components/ui/dropdown-menu",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/switch",
+        "@/components/ui/tooltip",
+        "@/lib/utils"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 7,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 25
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/FlowDiagramEdge.tsx",
+      "lines": 309,
+      "bytes": 10920,
+      "exports": [
+        "FlowDiagramEdge"
+      ],
+      "imports": [
+        "react",
+        "react",
+        "@xyflow/react",
+        "@/components/ui/tooltip",
+        "@/lib/utils",
+        "@/hooks/useDiagramData"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 3,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 39
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/FlowDiagramNode.tsx",
+      "lines": 560,
+      "bytes": 22659,
+      "exports": [],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "lucide-react",
+        "@/components/ui/badge",
+        "@/components/ui/tooltip",
+        "@/lib/utils",
+        "@/components/admin/flow-builder/flowTypes",
+        "@/hooks/useDiagramData",
+        "@/components/admin/flow-builder/diagram/WarningBadge",
+        "@/components/admin/flow-builder/diagram/stepTypeColors"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 11,
+        "texto_mensagem": 9,
+        "regras_transicoes": 23,
+        "bots_runtime": 8,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 24
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/NodeContextMenu.tsx",
+      "lines": 348,
+      "bytes": 11974,
+      "exports": [
+        "NodeContextMenuState",
+        "NodeContextMenuProps",
+        "NodeContextMenu"
+      ],
+      "imports": [
+        "react",
+        "lucide-react",
+        "@/lib/utils",
+        "@/components/ui/confirm-dialog",
+        "@/components/admin/flow-builder/flowTypes"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 1,
+        "modal_lateral": 2,
+        "validacao": 0,
+        "diagrama": 14
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/TerminalNode.tsx",
+      "lines": 103,
+      "bytes": 3969,
+      "exports": [],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "@/lib/utils",
+        "@/hooks/useDiagramData"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 3,
+        "bots_runtime": 2,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 21
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/TransitionPopover.tsx",
+      "lines": 420,
+      "bytes": 14254,
+      "exports": [
+        "TransitionPopoverState",
+        "TransitionPopoverProps",
+        "TransitionPopover"
+      ],
+      "imports": [
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/components/ui/label",
+        "@/components/ui/select",
+        "@/components/admin/flow-builder/flowTypes",
+        "@/hooks/useDiagramData"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 20,
+        "bots_runtime": 5,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 4
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram/WarningBadge.tsx",
+      "lines": 93,
+      "bytes": 3149,
+      "exports": [
+        "WarningBadgeProps",
+        "WarningBadge"
+      ],
+      "imports": [
+        "lucide-react",
+        "@/components/ui/tooltip",
+        "@/lib/utils",
+        "@/components/admin/flow-builder/useFlowValidation"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 0,
+        "modal_lateral": 0,
+        "validacao": 3,
+        "diagrama": 0
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/CanvasToolbar.tsx",
+      "lines": 106,
+      "bytes": 3715,
+      "exports": [
+        "CanvasToolbar"
+      ],
+      "imports": [
+        "@/components/ui/button",
+        "lucide-react"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 0,
+        "bots_runtime": 12,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 6
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/ExpandableNode.tsx",
+      "lines": 236,
+      "bytes": 8109,
+      "exports": [
+        "ExpandableNode"
+      ],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "lucide-react",
+        "@/lib/utils",
+        "@/components/ui/button",
+        "@/components/ui/badge",
+        "../flowTypes",
+        "../diagram/stepTypeColors",
+        "./useFlowGraphV2"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 3,
+        "regras_transicoes": 5,
+        "bots_runtime": 5,
+        "modal_lateral": 0,
+        "validacao": 0,
+        "diagrama": 8
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/diagram-v2/FlowDiagramV2.tsx",
+      "lines": 465,
+      "bytes": 16039,
+      "exports": [
+        "FlowDiagramV2Props",
+        "FlowDiagramV2"
+      ],
+      "imports": [
+        "react",
+        "@xyflow/react",
+        "sonner",
+        "./ExpandableNode",
+        "./CanvasToolbar",
+        "./useFlowGraphV2",
+        "./useAutoLayout",
+        "../flowTypes",
+        "../useFlowValidation",
+        "@/components/ui/command"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 4,
+        "texto_mensagem": 1,
+        "regras_transicoes": 8,
+        "bots_runtime": 8,
+        "modal_lateral": 3,
+        "validacao": 1,
+        "diagrama": 115
+      }
+    },
+    {
+      "path": "src/components/admin/flow-builder/journey/JourneyStepper.tsx",
+      "lines": 68,
+      "bytes": 2711,
+      "exports": [
+        "JourneyStepper"
+      ],
+      "imports": [
+        "lucide-react",
+        "./useFlowJourney"
+      ],
+      "categories": {
+        "iris_guided": 0,
+        "media": 0,
+        "texto_mensagem": 0,
+        "regras_transicoes": 1,
+        "bots_runtime": 0,
+        "modal_lateral": 1,
+        "validacao": 0,
+        "diagrama": 0
+      }
+    }
+  ]
+}

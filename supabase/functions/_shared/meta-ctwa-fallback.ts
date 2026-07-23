@@ -26,6 +26,10 @@ export const META_CTWA_OPENING_PHRASES = [
   "ola tenho interesse",
   "ola gostaria de saber mais",
   "ola quero mais informacoes",
+  // iGreen / energia CTWA (autofill típico dos anúncios)
+  "quero saber como consigo pagar menos na conta de luz",
+  "pagar menos na conta de luz",
+  "conta de luz mais barata",
 ];
 
 function norm(s: string): string {
@@ -46,6 +50,21 @@ export function matchesMetaCtwaPhrase(text: string | null | undefined): boolean 
     if (n.includes(p) || p.includes(n)) return true;
   }
   return false;
+}
+
+/** Abertura típica CTWA iGreen/energia (inclui frases Meta genéricas). */
+export function looksLikePaidCtwaOpener(text: string | null | undefined): boolean {
+  if (!text) return false;
+  if (matchesMetaCtwaPhrase(text)) return true;
+  const n = norm(text);
+  if (n.length < 12) return false;
+  return (
+    n.includes("pagar menos na conta de luz") ||
+    n.includes("economia na conta de luz") ||
+    n.includes("desconto na conta de luz") ||
+    n.includes("conta de luz mais barata") ||
+    n.includes("quero saber como consigo pagar menos")
+  );
 }
 
 // resolveSingleActivePool foi REMOVIDO — não reintroduzir. Se um caller

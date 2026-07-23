@@ -18,7 +18,7 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 min-w-0">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8 min-w-0">
         {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-24 rounded-xl" />
         ))}
@@ -70,7 +70,7 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
   const noData = (data?.spendCents ?? 0) === 0 && (data?.impressions ?? 0) === 0;
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3 min-w-0 w-full">
       {!data?.hasConnection && noData && (
         <div className="text-[11px] text-muted-foreground/70 px-1">
           Sem conexão Meta Ads — conecte sua conta para popular gasto, impressões e conversas Meta.
@@ -87,28 +87,30 @@ export function AdMetricsCards({ consultantId, periodDays }: Props) {
         </div>
       )}
       {data?.hasCampaigns && !noData && (
-        <div className="text-[11px] text-muted-foreground/70 px-1">
-          Fonte: Insights Meta (gasto/impr./cliques/conversas) + CRM com prova Meta
-          (campanha ∪ meta_ads ∪ CTWA/ad — sem fallback de rodízio). Período {data.periodSince} →{" "}
-          {data.periodUntil}
-          {typeof data.crmLeadsStrict === "number" && data.crmLeadsStrict !== data.crmLeads
-            ? ` · só source_campaign: ${data.crmLeadsStrict}`
-            : ""}
-          {(data.metaLeadActions ?? 0) > 0 ? ` · Lead forms Meta: ${data.metaLeadActions}` : ""}.
+        <div className="rounded-lg border border-border/40 bg-secondary/20 px-2.5 py-2 text-[11px] text-muted-foreground leading-snug">
+          <span className="font-medium text-foreground/80">Fonte Meta + CRM</span>
+          <span className="mx-1.5 text-border">·</span>
+          <span className="whitespace-normal break-words">
+            {data.periodSince} → {data.periodUntil}
+            {typeof data.crmLeadsStrict === "number" && data.crmLeadsStrict !== data.crmLeads
+              ? ` · campanha direta: ${data.crmLeadsStrict}`
+              : ""}
+            {(data.metaLeadActions ?? 0) > 0 ? ` · lead forms: ${data.metaLeadActions}` : ""}
+          </span>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 min-w-0">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-8 min-w-0">
         {cards.map((c) => (
           <Card
             key={c.label}
-            className="p-3 bg-card/60 border-border/40 backdrop-blur hover:bg-card/80 transition-colors min-w-0"
+            className="p-2.5 sm:p-3 bg-card/60 border-border/40 backdrop-blur hover:bg-card/80 transition-colors min-w-0"
             title={c.hint}
           >
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground min-w-0">
+            <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] text-muted-foreground min-w-0">
               <c.icon className={`w-3.5 h-3.5 shrink-0 ${c.tone}`} />
               <span className="line-clamp-2 leading-tight">{c.label}</span>
             </div>
-            <div className="mt-1.5 font-bold text-lg text-foreground tabular-nums break-words">
+            <div className="mt-1.5 font-bold text-base sm:text-lg text-foreground tabular-nums break-words">
               {c.value}
             </div>
           </Card>

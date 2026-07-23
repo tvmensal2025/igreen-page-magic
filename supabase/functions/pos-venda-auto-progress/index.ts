@@ -8,7 +8,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { isConsultantAIDisabled, isPausedByPhone } from "../_shared/bot/paused.ts";
 import {
-  resolveChannelForCustomer,
+  resolveChannelForCustomerWithFailover,
   isUnavailable,
   sendStageAutoMessages,
   formatSendStatus,
@@ -136,7 +136,7 @@ async function processCustomer(
   if (await isConsultantAIDisabled(supabase, ownerId)) return { moved: true, sent: false };
   if (await isPausedByPhone(supabase, phone, ownerId)) return { moved: true, sent: false };
 
-  const channel = await resolveChannelForCustomer(supabase, customer.id, env);
+  const channel = await resolveChannelForCustomerWithFailover(supabase, customer.id, env);
   if (isUnavailable(channel)) {
     // upsert ignoreDuplicates: corrida com outro cron não explode no UNIQUE.
     await supabase.from("customer_auto_message_log").upsert({

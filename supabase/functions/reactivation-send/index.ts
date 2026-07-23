@@ -8,7 +8,6 @@
 // Reqs cobertos: 13, 14, 15, 17, 18.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { jsonLog, captureError } from "../_shared/audit.ts";
 import { checkSendQuota, registerSend, humanJitterMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
@@ -16,16 +15,18 @@ import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
 import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
-
+import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
+import {
+  ctx,
+  isUnavailable,
+  resolveConsultantOutboundChannel,
+} from "../_shared/channel-sender.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-
-const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") || "";
-const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
 
 interface SingleBody {
   mode: "single";
@@ -66,18 +67,6 @@ function renderVars(template: string, customer: any, consultantName: string): st
     .replaceAll("{{valor_conta}}", valor)
     .replaceAll("{{representante}}", consultantName)
     .replaceAll(/\{\{[a-zA-Z_]+\}\}/g, ""); // remove vars não resolvidas
-}
-
-async function fetchInstanceName(supabase: any, consultantId: string): Promise<string | null> {
-  const { data } = await supabase
-    .from("whatsapp_instances")
-    .select("instance_name")
-    .eq("consultant_id", consultantId)
-    .eq("status", "open")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return data?.instance_name ?? null;
 }
 
 async function logSend(
@@ -167,33 +156,63 @@ Deno.serve(async (req: Request) => {
       resolvePublicConsultantFirstName(cons.name, (cons as { display_name?: string | null }).display_name) ||
       "iGreen";
 
-    const instanceName = await fetchInstanceName(supabase, consultantId);
-    if (!instanceName) {
-      return new Response(JSON.stringify({ error: "WhatsApp instance not found or not open" }), {
+    const channelEnv = await loadChannelEnv(supabase);
+    const channel = await resolveConsultantOutboundChannel(
+      supabase,
+      consultantId,
+      channelEnv,
+    );
+    if (isUnavailable(channel)) {
+      return new Response(JSON.stringify({
+        error: "WhatsApp do consultor indisponível (Whapi/Evolution). Conecte o canal e tente de novo.",
+        reason: channel.reason,
+        detail: channel.detail,
+      }), {
         status: 412,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    const instanceName = channel.instanceName;
 
-    // 🛡️ Trava de proteção: phone do consultor precisa bater com instância
-    const proactiveGuard = await canSendProactive(supabase, { consultantId, instanceName });
-    if (!proactiveGuard.allowed) {
-      await logProactiveBlock(supabase, {
-        consultantId, instanceName,
-        reason: proactiveGuard.reason,
-        context: { source: "reactivation-send", mode: body.mode, detail: proactiveGuard.detail },
-      });
-      return new Response(JSON.stringify({
-        error: "WhatsApp do consultor não confere com a instância conectada. Atualize o telefone no painel para liberar envios.",
-        reason: proactiveGuard.reason,
-        detail: proactiveGuard.detail,
-      }), { status: 412, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    // Guard Evolution: phone vs connected_phone. Whapi não tem linha em whatsapp_instances.
+    if (channel.kind === "evolution") {
+      const proactiveGuard = await canSendProactive(supabase, { consultantId, instanceName });
+      if (!proactiveGuard.allowed) {
+        await logProactiveBlock(supabase, {
+          consultantId, instanceName,
+          reason: proactiveGuard.reason,
+          context: { source: "reactivation-send", mode: body.mode, detail: proactiveGuard.detail },
+        });
+        return new Response(JSON.stringify({
+          error: "WhatsApp do consultor não confere com a instância conectada. Atualize o telefone no painel para liberar envios.",
+          reason: proactiveGuard.reason,
+          detail: proactiveGuard.detail,
+        }), { status: 412, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     }
 
-    const _rawSender = createEvolutionSender(EVOLUTION_API_URL, EVOLUTION_API_KEY, instanceName);
-    const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
-    const sender = wrapSenderWithGuard(_rawSender, { supabase, instanceName });
-
+    async function sendViaChannel(
+      customerId: string,
+      remoteJid: string,
+      text: string,
+      mediaUrl?: string | null,
+      mediaKind?: "image" | "video" | "document" | null,
+    ): Promise<boolean> {
+      const sendCtx = {
+        ...ctx(consultantId, customerId, "reactivation-send", customerId),
+        supabase,
+      };
+      if (mediaUrl && mediaKind) {
+        const r = await channel.adapter.sendMedia(
+          remoteJid,
+          { kind: mediaKind, url: mediaUrl, caption: text || undefined } as any,
+          sendCtx as any,
+        );
+        return !!r.ok;
+      }
+      const r = await channel.adapter.sendText(remoteJid, text, sendCtx as any);
+      return !!r.ok;
+    }
 
     // ─── Single ──────────────────────────────────────────────────────
     if (body.mode === "single") {
@@ -282,9 +301,13 @@ Deno.serve(async (req: Request) => {
       const remoteJid = `${(customer as any).phone_whatsapp}@s.whatsapp.net`;
       try {
         const hasMedia = !!body.media_url && !!body.media_kind;
-        const ok = hasMedia
-          ? await sender.sendMedia(remoteJid, body.media_url!, finalText, body.media_kind!)
-          : await sender.sendText(remoteJid, finalText);
+        const ok = await sendViaChannel(
+          customer_id,
+          remoteJid,
+          finalText,
+          hasMedia ? body.media_url : null,
+          hasMedia ? body.media_kind : null,
+        );
         const status = ok ? "sent" : "failed";
         await logSend(supabase, {
           customer_id,
@@ -294,10 +317,11 @@ Deno.serve(async (req: Request) => {
           message_text: finalText,
           trigger_type: "manual",
           status,
-          error_reason: ok ? undefined : "evolution_send_failed",
+          error_reason: ok ? undefined : "channel_send_failed",
         });
         // Loga em conversations pra histórico do CRM
         if (ok) {
+          await registerSend(supabase, instanceName).catch(() => {});
           await supabase.from("conversations").insert({
             customer_id,
             message_direction: "outbound",
@@ -306,9 +330,9 @@ Deno.serve(async (req: Request) => {
             conversation_step: (customer as any).conversation_step,
           });
         }
-        jsonLog("info", "reactivation_send_single", { customer_id, status, consultant_id: consultantId });
+        jsonLog("info", "reactivation_send_single", { customer_id, status, consultant_id: consultantId, channel: channel.kind });
         return new Response(
-          JSON.stringify({ ok, status, customer_id, sent_at: new Date().toISOString() }),
+          JSON.stringify({ ok, status, customer_id, sent_at: new Date().toISOString(), channel: channel.kind }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } },
         );
       } catch (e) {
@@ -420,33 +444,35 @@ Deno.serve(async (req: Request) => {
         const finalText = renderVars(rawMsg, customer, consultantName);
         const remoteJid = `${customer.phone_whatsapp}@s.whatsapp.net`;
 
-        // 🛡️ Anti-ban guard: respeita warmup + recovery + circuit breaker
-        const instName = await fetchInstanceName(supabase, consultantId);
-        if (instName) {
-          const quota = await checkSendQuota(supabase, instName);
-          if (!quota.allowed) {
-            failed++;
-            failures.push({ customer_id: customer.id, reason: `anti_ban:${quota.reason}` });
-            await logSend(supabase, {
-              customer_id: customer.id,
-              consultant_id: consultantId,
-              template_id: tpl?.id ?? null,
-              conversation_step: step,
-              message_text: finalText,
-              trigger_type: "batch",
-              status: "failed",
-              error_reason: `anti_ban_guard:${quota.reason}`,
-              batch_id: finalBatchId,
-            });
-            break;
-          }
+        // Anti-ban guard: respeita warmup + recovery + circuit breaker
+        const quota = await checkSendQuota(supabase, instanceName);
+        const bypassQuota = channel.kind === "whapi" &&
+          (!quota.allowed &&
+            (quota.reason === "instance_not_found" ||
+              quota.reason === "empty_response" ||
+              quota.reason === "rpc_error"));
+        if (!quota.allowed && !bypassQuota) {
+          failed++;
+          failures.push({ customer_id: customer.id, reason: `anti_ban:${quota.reason}` });
+          await logSend(supabase, {
+            customer_id: customer.id,
+            consultant_id: consultantId,
+            template_id: tpl?.id ?? null,
+            conversation_step: step,
+            message_text: finalText,
+            trigger_type: "batch",
+            status: "failed",
+            error_reason: `anti_ban_guard:${quota.reason}`,
+            batch_id: finalBatchId,
+          });
+          break;
         }
 
         try {
-          const ok = await sender.sendText(remoteJid, finalText);
+          const ok = await sendViaChannel(customer.id, remoteJid, finalText);
           if (ok) {
             sent++;
-            if (instName) await registerSend(supabase, instName);
+            await registerSend(supabase, instanceName).catch(() => {});
             await supabase.from("conversations").insert({
               customer_id: customer.id,
               message_direction: "outbound",
@@ -466,7 +492,7 @@ Deno.serve(async (req: Request) => {
             });
           } else {
             failed++;
-            failures.push({ customer_id: customer.id, reason: "evolution_send_failed" });
+            failures.push({ customer_id: customer.id, reason: "channel_send_failed" });
             await logSend(supabase, {
               customer_id: customer.id,
               consultant_id: consultantId,
@@ -475,7 +501,7 @@ Deno.serve(async (req: Request) => {
               message_text: finalText,
               trigger_type: "batch",
               status: "failed",
-              error_reason: "evolution_send_failed",
+              error_reason: "channel_send_failed",
               batch_id: finalBatchId,
             });
           }

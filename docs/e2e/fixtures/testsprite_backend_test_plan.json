@@ -1,0 +1,23 @@
+[
+  {
+    "id": "TC001",
+    "title": "Supabase Auth password grant with valid E2E credentials",
+    "description": "POST /auth/v1/token?grant_type=password against the real Supabase project with {{E2E_EMAIL}} / {{E2E_PASSWORD}} and anon apikey. Assert HTTP 200, access_token and user.email. Do NOT call /admin/* on the Supabase host (those routes are the Vite SPA).",
+    "category": "Auth API",
+    "steps": [
+      {
+        "type": "action",
+        "description": "POST {{SUPABASE_URL}}/auth/v1/token?grant_type=password with headers apikey={{SUPABASE_ANON_KEY}} and Content-Type application/json; body email={{E2E_EMAIL}} password={{E2E_PASSWORD}}"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify HTTP 200 and JSON contains access_token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify user.email matches {{E2E_EMAIL}}"
+      }
+    ],
+    "priority": "High"
+  }
+]

@@ -10,8 +10,6 @@
 // Respeita quiet hours (BRT 22h-7h).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { executarFollowupCerebro } from "../_shared/cerebro/followup-hook.ts";
-import { createWhapiSender } from "../_shared/whapi-api.ts";
-import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { isQuietHourBRT } from "../_shared/quiet-hours.ts";
 import { LEAD_ORIGIN_FILTER, isLeadEligible } from "../_shared/origin-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -24,6 +22,12 @@ import {
 } from "../_shared/journey-effects.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { loadChannelEnv } from "../_shared/attendance-channel-env.ts";
+import {
+  ctx,
+  isUnavailable,
+  resolveChannelForCustomerWithFailover,
+} from "../_shared/channel-sender.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -122,14 +126,8 @@ Deno.serve(async (req) => {
     );
     if (rows.length === 0) return json({ ok: true, processed: 0 });
 
-    // Carrega credenciais Whapi global (fallback)
-    const { data: settingsRows } = await supabase.from("settings").select("key, value");
-    const settings: Record<string, string> = {};
-    (settingsRows || []).forEach((s: any) => { settings[s.key] = s.value; });
-    const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
-    const whapiBaseUrl = settings.whapi_api_url || "https://gate.whapi.cloud";
-    const evolutionUrl = Deno.env.get("EVOLUTION_API_URL") || "";
-    const evolutionKey = Deno.env.get("EVOLUTION_API_KEY") || "";
+    // Credenciais de canal (Whapi settings + Evolution env)
+    const channelEnv = await loadChannelEnv(supabase);
 
     let okCount = 0;
     let errCount = 0;
@@ -179,36 +177,19 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Resolve canal via whatsapp_instances do consultor
-        const { data: inst } = await supabase
-          .from("whatsapp_instances")
-          .select("instance_name, status")
-          .eq("consultant_id", c.consultant_id)
-          .eq("status", "connected")
-          .order("updated_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        let sender: any = null;
-        let channelTag = "";
-        if (inst?.instance_name && /^whapi/i.test(inst.instance_name) && whapiToken) {
-          sender = createWhapiSender(whapiToken, whapiBaseUrl);
-          channelTag = "whapi";
-        } else if (inst?.instance_name && evolutionUrl && evolutionKey) {
-          sender = createEvolutionSender(evolutionUrl, evolutionKey, inst.instance_name);
-          channelTag = `evolution:${inst.instance_name}`;
-        } else if (whapiToken) {
-          // Fallback legado: Whapi global (compatível com bot-followup-checker)
-          sender = createWhapiSender(whapiToken, whapiBaseUrl);
-          channelTag = "whapi:fallback";
-        } else {
-          // Sem canal disponível: reagenda em 30min, sem consumir tentativa
+        const channel = await resolveChannelForCustomerWithFailover(
+          supabase,
+          c.id,
+          channelEnv,
+        );
+        if (isUnavailable(channel)) {
           await rescheduleFollowup(supabase, c.id, 30, attempts);
           skipCount++;
-          errors.push({ id: c.id, reason: "no_channel_available" });
+          errors.push({ id: c.id, reason: "no_channel_available", detail: channel.detail });
           await releaseTouch();
           continue;
         }
+        const channelTag = `${channel.kind}:${channel.instanceName}`;
 
         // Cérebro IA é fonte única do nudge (vendedora apagada). Como
         // cerebro_ativo='on' é default global, executarFollowupCerebro sempre
@@ -216,7 +197,7 @@ Deno.serve(async (req) => {
         const t0 = Date.now();
         let aiResult: any = null;
 
-        const canalFollowup = channelTag.startsWith("whapi") ? "whapi" : "evolution";
+        const canalFollowup = channel.kind;
         const cerebro = await executarFollowupCerebro({
           supabase,
           customerId: c.id,
@@ -266,15 +247,18 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Envia pelo canal escolhido
+        // Envia pelo canal resolvido (Whapi/Evolution)
         const remoteJid = `${(c as any).whatsapp_chat_id || c.phone_whatsapp}@s.whatsapp.net`;
         await markEffectSending(supabase, eff.effectId);
         let sent = false;
         let sendThrew = false;
         try {
-          const r = await sender.sendText(remoteJid, reply);
-          sent = r === true || (r && (r.ok === true || r.messageId));
-          if (sent === undefined || sent === null) sent = true; // whapi sender retorna boolean
+          const sendCtx = {
+            ...ctx(c.consultant_id || "system", c.id, "process-followups", String(attempts + 1)),
+            supabase,
+          };
+          const r = await channel.adapter.sendText(remoteJid, reply, sendCtx as any);
+          sent = !!r.ok;
         } catch (e: any) {
           sendThrew = true;
           errors.push({ id: c.id, phase: "send", channel: channelTag, error: String(e?.message || e).slice(0, 200) });

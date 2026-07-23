@@ -11,11 +11,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Clock, MessageCircle, RefreshCw, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Clock, MessageCircle, RefreshCw, CheckCircle2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import BotHealthIntel from "./BotHealthIntel";
 import AIBrainPanel from "./AIBrainPanel";
 import FlowEngineHealthCard from "./FlowEngineHealthCard";
+import {
+  formatHandoffReason,
+  returnHandoffToPizza,
+} from "@/lib/handoffReturnToPizza";
 
 type Alert = {
   id: string;
@@ -37,16 +41,7 @@ type StuckLead = {
 };
 
 function formatReason(r: string): string {
-  const map: Record<string, string> = {
-    auto_loop_detected: "Loop detectado — lead repetiu o mesmo passo várias vezes",
-    auto_orphan_step_detected: "Passo órfão — fluxo foi alterado e o lead ficou em um passo inexistente",
-    custom_step_no_match_retries_exhausted: "IA não entendeu a resposta após 3 tentativas",
-    duvida_fora_faq: "Cliente interessado fez uma pergunta que não está na base de conhecimento",
-    cadastro_falhou: "Cadastro no portal falhou",
-    no_media_received: "Cliente interessado não enviou a foto/documento solicitado",
-    step_misconfigured_or_lead_off_topic: "Passo mal configurado ou lead saiu do roteiro",
-  };
-  return map[r] || r.replace(/_/g, " ");
+  return formatHandoffReason(r);
 }
 
 export default function BotHealthDashboard({ userId }: { userId: string }) {
@@ -140,7 +135,27 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
       .update({ bot_paused: false, bot_paused_reason: null, bot_paused_at: null })
       .eq("id", customerId);
     if (error) { toast.error("Erro: " + error.message); return; }
-    toast.success("Bot reativado para esse lead");
+    toast.success("Bot reativado — se o lead estiver em handoff, ainda fica fora da pizza até você devolver");
+    load(userId);
+  }
+
+  async function returnToPizza(customerId: string, alertId: string) {
+    if (!userId) return;
+    const result = await returnHandoffToPizza({
+      customerId,
+      resolvedBy: userId,
+    });
+    if (!result.ok) {
+      toast.error(result.error || "Falha ao devolver à pizza");
+      return;
+    }
+    // Alerta já resolvido no helper; se não havia cadence handoff, ainda resolve o alerta atual
+    await supabase
+      .from("bot_handoff_alerts")
+      .update({ resolved_at: new Date().toISOString(), resolved_by: userId })
+      .eq("id", alertId)
+      .is("resolved_at", null);
+    toast.success("Lead voltou à pizza — motor retoma no próximo tick");
     load(userId);
   }
 
@@ -193,9 +208,13 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
           <AlertTriangle className="h-4 w-4 text-warning" />
           Leads que precisam de você ({alerts.length})
         </h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Handoff fica fora da pizza até você devolver. <strong>Voltar à pizza</strong> libera o ciclo;
+          <strong> Resolvi</strong> só fecha o aviso (atendimento manual, sem motor).
+        </p>
         {alerts.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <CheckCircle2 className="h-4 w-4 text-primary" /> Nenhum alerta aberto. 🎉
+            <CheckCircle2 className="h-4 w-4 text-primary" /> Nenhum alerta aberto.
           </div>
         ) : (
           <ul className="space-y-2">
@@ -218,8 +237,12 @@ export default function BotHealthDashboard({ userId }: { userId: string }) {
                     </div>
                   </div>
                   <div className="flex gap-1 flex-wrap">
+                    <Button size="sm" onClick={() => returnToPizza(a.customer_id, a.id)}>
+                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                      Voltar à pizza
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => resumeBot(a.customer_id)}>
-                      Reativar bot
+                      Só reativar bot
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => resolveAlert(a.id)}>
                       Resolvi

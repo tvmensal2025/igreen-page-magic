@@ -42,7 +42,7 @@ export function CampaignRodizioLeadsDialog({
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [poolId, setPoolId] = useState<string | null>(null);
-  const [interval, setIntervalMin] = useState<number>(60);
+  const [interval, setIntervalMin] = useState<number>(180);
   const [quietStart, setQuietStart] = useState<number>(21);
   const [quietEnd, setQuietEnd] = useState<number>(9);
   const [savingInterval, setSavingInterval] = useState(false);
@@ -65,7 +65,7 @@ export function CampaignRodizioLeadsDialog({
         if (e1) throw e1;
         if (!cancelled) {
           setPoolId(pool?.id ?? null);
-          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 60));
+          setIntervalMin(Number((pool as any)?.metrics_broadcast_interval_minutes ?? 180));
           setQuietStart(Number((pool as any)?.metrics_quiet_start_hour ?? 21));
           setQuietEnd(Number((pool as any)?.metrics_quiet_end_hour ?? 9));
         }

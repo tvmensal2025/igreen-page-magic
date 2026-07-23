@@ -46,12 +46,12 @@ interface Props {
 
 function ChartCard({ title, subtitle, children, className = "" }: { title: string; subtitle?: string; children: React.ReactNode; className?: string }) {
   return (
-    <Card className={`p-4 bg-card/60 border-border/40 backdrop-blur min-w-0 overflow-hidden ${className}`}>
+    <Card className={`p-3 sm:p-4 bg-card/60 border-border/40 backdrop-blur min-w-0 overflow-hidden ${className}`}>
       <div className="mb-3 min-w-0">
         <h4 className="text-sm font-semibold text-foreground truncate">{title}</h4>
         {subtitle && <p className="text-[11px] text-muted-foreground break-words">{subtitle}</p>}
       </div>
-      <div className="h-64 min-w-0 w-full">{children}</div>
+      <div className="ads-chart-h">{children}</div>
     </Card>
   );
 }
@@ -153,7 +153,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
             <BarChart data={byConsultant} layout="vertical" margin={{ top: 5, right: 16, left: 8, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
               <XAxis type="number" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
-              <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
+              <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <Tooltip
                 contentStyle={tooltipStyle}
                 formatter={(value: number, _name, item: any) => {

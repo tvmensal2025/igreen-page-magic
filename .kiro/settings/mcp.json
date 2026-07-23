@@ -3,19 +3,6 @@
     "supabase": {
       "url": "https://mcp.supabase.com/mcp?project_ref=zlzasfhcxcznaprrragl"
     },
-    "supabase-pat": {
-      "command": "/usr/bin/bash",
-      "args": [
-        "/home/dev/Documents/ultra-cursor/igreen-page-magic/scripts/mcp-supabase.sh"
-      ],
-      "env": {
-        "PATH": "/home/dev/.local/bin:/usr/bin:/bin:/usr/local/bin",
-        "HOME": "/home/dev",
-        "SUPABASE_ACCESS_TOKEN": "sbp_375b96bb25c58689429b8ce471288ae8b4f0d931",
-        "SUPABASE_PROJECT_REF": "zlzasfhcxcznaprrragl",
-        "SUPABASE_MCP_READ_ONLY": "false"
-      }
-    },
     "github": {
       "command": "/usr/bin/bash",
       "args": [
@@ -74,6 +61,16 @@
       "url": "https://vox20.velip.com.br/mcpserver/velip",
       "headers": {
         "Authorization": "Bearer v24uXPx5xwrp2pp7bXg26X8EUzTMYU"
+      }
+    },
+    "TestSprite": {
+      "command": "/usr/bin/bash",
+      "args": [
+        "/home/dev/Documents/ultra-cursor/igreen-page-magic/scripts/mcp-testsprite.sh"
+      ],
+      "env": {
+        "PATH": "/home/dev/.local/bin:/usr/bin:/bin:/usr/local/bin",
+        "HOME": "/home/dev"
       }
     }
   }

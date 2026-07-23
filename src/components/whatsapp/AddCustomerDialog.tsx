@@ -141,6 +141,10 @@ export function AddCustomerDialog({
       const insertData: TablesInsert<"customers"> = {
         phone_whatsapp: rawPhone,
         consultant_id: consultantId,
+        // Canal do chat (projeto Whapi). Heal no webhook também cobre se faltar.
+        origin_channel: "whapi",
+        origin_instance_name: "whapi-superadmin",
+        origin_consultant_id: consultantId,
         ...(form.name && { name: form.name }),
         ...(form.cpf && { cpf: form.cpf.replace(/\D/g, "") }),
         ...(form.data_nascimento && { data_nascimento: form.data_nascimento }),

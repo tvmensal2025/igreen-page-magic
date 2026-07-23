@@ -413,33 +413,53 @@ Deno.serve(async (req) => {
           lastScaleAtIso: cfg.last_anchor_scale_at || null,
           minHoursBetweenScaleUps: 4,
         });
-        desiredAnchorBudget = decision.budgetCents;
-        scaleMeta = {
-          action: decision.action,
-          reason: decision.reason,
-          cpl,
-          conv,
-          spend,
-          from: fromBudget,
-        };
-        log.push({
-          action: "anchor_scale",
-          decision: decision.action,
-          reason: decision.reason,
-          cpl_cents: cpl,
-          to: desiredAnchorBudget,
-        });
-        // Persiste o alvo escalado + timestamp (próximos ciclos herdam)
-        if (decision.action !== "hold" && !dryRun) {
-          const nextCfg = {
-            ...cfg,
-            anchor_budget_cents: desiredAnchorBudget,
-            last_anchor_scale_at: new Date().toISOString(),
+        if (decision.action === "scale_up" && liquid < decision.budgetCents) {
+          desiredAnchorBudget = fromBudget;
+          scaleMeta = {
+            action: "hold",
+            reason: `CPL ok, mas saldo R$ ${(liquid / 100).toFixed(2)} < orçamento R$ ${(decision.budgetCents / 100).toFixed(2)} — não sobe`,
+            cpl,
+            conv,
+            spend,
+            from: fromBudget,
           };
-          await admin.from("consultant_ad_settings").update({
-            brain_config: nextCfg,
-            updated_at: new Date().toISOString(),
-          }).eq("consultant_id", consultantId);
+          log.push({
+            action: "anchor_scale",
+            decision: "hold",
+            reason: scaleMeta.reason,
+            cpl_cents: cpl,
+            to: fromBudget,
+            liquid_cents: liquid,
+          });
+        } else {
+          desiredAnchorBudget = decision.budgetCents;
+          scaleMeta = {
+            action: decision.action,
+            reason: decision.reason,
+            cpl,
+            conv,
+            spend,
+            from: fromBudget,
+          };
+          log.push({
+            action: "anchor_scale",
+            decision: decision.action,
+            reason: decision.reason,
+            cpl_cents: cpl,
+            to: desiredAnchorBudget,
+          });
+          // Persiste o alvo escalado + timestamp (próximos ciclos herdam)
+          if (decision.action !== "hold" && !dryRun) {
+            const nextCfg = {
+              ...cfg,
+              anchor_budget_cents: desiredAnchorBudget,
+              last_anchor_scale_at: new Date().toISOString(),
+            };
+            await admin.from("consultant_ad_settings").update({
+              brain_config: nextCfg,
+              updated_at: new Date().toISOString(),
+            }).eq("consultant_id", consultantId);
+          }
         }
       }
 

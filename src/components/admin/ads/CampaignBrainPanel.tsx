@@ -666,9 +666,9 @@ export function CampaignBrainPanel({
             <div>
               <Label className="text-[11px]">Degrau de escala (%)</Label>
               <Input
-                type="number" min={8} max={25}
+                type="number" min={8} max={30}
                 value={cfg.scale_step_pct}
-                onChange={(e) => setCfg({ ...cfg, scale_step_pct: Math.max(8, Math.min(25, Number(e.target.value) || 15)) })}
+                onChange={(e) => setCfg({ ...cfg, scale_step_pct: Math.max(8, Math.min(30, Number(e.target.value) || 15)) })}
               />
             </div>
             <div>

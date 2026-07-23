@@ -16,7 +16,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sender.ts";
+import { resolveChannelForCustomerWithFailover, isUnavailable } from "../_shared/channel-sender.ts";
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { normalizePhone } from "../_shared/utils.ts";
 import { isQuietHoursBRT } from "../_shared/bot/nudge-quiet-hours.ts";
@@ -132,7 +132,7 @@ serve(async (req: Request) => {
       });
       if (!gate.allowed) { await releaseTouch(); continue; }
 
-      const channel = await resolveChannelForCustomer(supabase, lead.id, env);
+      const channel = await resolveChannelForCustomerWithFailover(supabase, lead.id, env);
       if (isUnavailable(channel)) {
         console.warn(`[faq-nudge] canal indisponível lead=${lead.id} instance=${channel.instanceName} reason=${channel.reason}`);
         await releaseTouch(); continue;

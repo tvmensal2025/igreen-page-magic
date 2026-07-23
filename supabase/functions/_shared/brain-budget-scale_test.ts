@@ -56,6 +56,20 @@ Deno.test("CPL ok mas última subida recente — segura sem trava de 48h", () =>
   if (r.action !== "hold") throw new Error(`expected hold got ${r.action}`);
 });
 
+Deno.test("CPL ruim mas última escala recente — segura (gap também no down)", () => {
+  const r = decideAnchorBudgetScale({
+    currentBudgetCents: 2000,
+    maxBudgetCents: 50000,
+    targetCplCents: 200,
+    recentCplCents: 400,
+    recentConversations: 8,
+    recentSpendCents: 3200,
+    lastScaleAtIso: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    minHoursBetweenScaleUps: 4,
+  });
+  if (r.action !== "hold") throw new Error(`expected hold got ${r.action}`);
+});
+
 Deno.test("após intervalo curto — sobe de novo (não precisa esperar 48h)", () => {
   const r = decideAnchorBudgetScale({
     currentBudgetCents: 1000,

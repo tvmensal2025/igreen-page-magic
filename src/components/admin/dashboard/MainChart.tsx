@@ -45,45 +45,47 @@ export function MainChart({ data = [] }: Props) {
         </div>
       </header>
       <div className="p-2 pt-4">
-        <ResponsiveContainer width="100%" height={360}>
-          <AreaChart data={data} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="gV" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={COLOR_VISITAS} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={COLOR_VISITAS} stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="gC" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={COLOR_CLIQUES} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={COLOR_CLIQUES} stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="gL" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={COLOR_LEADS} stopOpacity={0.25} />
-                <stop offset="100%" stopColor={COLOR_LEADS} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} />
-            <XAxis
-              dataKey="label"
-              fontSize={11}
-              tick={{ fill: "hsl(var(--muted-foreground))" }}
-              axisLine={{ stroke: "hsl(var(--border))" }}
-              tickLine={false}
-              interval="preserveStartEnd"
-              minTickGap={24}
-            />
-            <YAxis
-              fontSize={11}
-              tick={{ fill: "hsl(var(--muted-foreground))" }}
-              axisLine={false}
-              tickLine={false}
-              width={32}
-            />
-            <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--primary))", strokeDasharray: "2 4", strokeWidth: 1 }} />
-            <Area type="monotone" dataKey="visitas" name="Visitas" stroke={COLOR_VISITAS} strokeWidth={2} fill="url(#gV)" />
-            <Area type="monotone" dataKey="cliques" name="Cliques" stroke={COLOR_CLIQUES} strokeWidth={2} fill="url(#gC)" />
-            <Area type="monotone" dataKey="leads" name="Clientes interessados" stroke={COLOR_LEADS} strokeWidth={2} fill="url(#gL)" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <div className="w-full min-w-0 h-[220px] sm:h-[280px] lg:h-[360px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gV" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={COLOR_VISITAS} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={COLOR_VISITAS} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gC" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={COLOR_CLIQUES} stopOpacity={0.3} />
+                  <stop offset="100%" stopColor={COLOR_CLIQUES} stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="gL" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={COLOR_LEADS} stopOpacity={0.25} />
+                  <stop offset="100%" stopColor={COLOR_LEADS} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="2 4" vertical={false} />
+              <XAxis
+                dataKey="label"
+                fontSize={11}
+                tick={{ fill: "hsl(var(--muted-foreground))" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
+                tickLine={false}
+                interval="preserveStartEnd"
+                minTickGap={24}
+              />
+              <YAxis
+                fontSize={11}
+                tick={{ fill: "hsl(var(--muted-foreground))" }}
+                axisLine={false}
+                tickLine={false}
+                width={32}
+              />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: "hsl(var(--primary))", strokeDasharray: "2 4", strokeWidth: 1 }} />
+              <Area type="monotone" dataKey="visitas" name="Visitas" stroke={COLOR_VISITAS} strokeWidth={2} fill="url(#gV)" />
+              <Area type="monotone" dataKey="cliques" name="Cliques" stroke={COLOR_CLIQUES} strokeWidth={2} fill="url(#gC)" />
+              <Area type="monotone" dataKey="leads" name="Clientes interessados" stroke={COLOR_LEADS} strokeWidth={2} fill="url(#gL)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </section>
   );

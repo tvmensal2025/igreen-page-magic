@@ -350,7 +350,7 @@ Deno.serve(async (req) => {
           "id, name, consultant_id, status, fb_campaign_id, daily_budget_cents, cities, brain_scale_enabled, brain_scale_step_pct, brain_scale_max_budget_cents, brain_scale_target_cpl_cents, brain_scale_last_at",
         )
         .eq("brain_scale_enabled", true)
-        .in("status", ["active", "pending_review"]);
+        .eq("status", "active");
 
       const walletCache = new Map<string, number>();
       async function liquidFor(consultantId: string): Promise<number> {
@@ -392,7 +392,7 @@ Deno.serve(async (req) => {
         const cpl = conv > 0 ? Math.round(spend / conv) : null;
         const fromBudget = Number(c.daily_budget_cents) || 517;
         const stepPct = Math.max(15, Math.min(30, Number(c.brain_scale_step_pct) || 15));
-        const decision = decideAnchorBudgetScale({
+        let decision = decideAnchorBudgetScale({
           currentBudgetCents: fromBudget,
           maxBudgetCents: Number(c.brain_scale_max_budget_cents) || 50000,
           targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
@@ -404,6 +404,15 @@ Deno.serve(async (req) => {
           minHoursBetweenScaleUps: 4,
         });
 
+        const liquid = await liquidFor(c.consultant_id);
+        if (decision.action === "scale_up" && liquid < decision.budgetCents) {
+          decision = {
+            action: "hold",
+            budgetCents: fromBudget,
+            reason: `CPL ok, mas saldo R$ ${(liquid / 100).toFixed(2)} < orçamento R$ ${(decision.budgetCents / 100).toFixed(2)} — não sobe`,
+          };
+        }
+
         const tick: Record<string, unknown> = {
           id: c.id,
           name: c.name,
@@ -414,6 +423,7 @@ Deno.serve(async (req) => {
           cpl,
           conv,
           spend,
+          liquid,
           dry_run: dryRun,
         };
 
@@ -437,7 +447,6 @@ Deno.serve(async (req) => {
               updated_at: new Date().toISOString(),
             }).eq("id", c.id);
 
-            const liquid = await liquidFor(c.consultant_id);
             const cityLabel = campaignCityLabel(c.name, c.cities);
             const text = decision.action === "scale_up"
               ? formatAnchorScaleUpWhatsApp({

@@ -32,7 +32,7 @@ import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-id
 import { summarizeWebhookBody } from "../_shared/log-redact.ts";
 import { verifyWebhookOrigin } from "../_shared/webhook-auth.ts";
 import { resolveWorker } from "../_shared/portal-worker.ts";
-import { matchesMetaCtwaPhrase } from "../_shared/meta-ctwa-fallback.ts";
+import { matchesMetaCtwaPhrase, looksLikePaidCtwaOpener } from "../_shared/meta-ctwa-fallback.ts";
 import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
 import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assign.ts";
 import {
@@ -992,6 +992,18 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Heal origin Whapi: leads legados / sync sem origin_channel ───
+    if (customer && (!customer.origin_channel || !customer.origin_instance_name)) {
+      await supabase.from("customers").update({
+        origin_channel: "whapi",
+        origin_instance_name: "whapi-superadmin",
+        origin_consultant_id: customer.origin_consultant_id || superAdminConsultantId,
+      }).eq("id", customer.id);
+      customer.origin_channel = "whapi";
+      customer.origin_instance_name = "whapi-superadmin";
+      customer.origin_consultant_id = customer.origin_consultant_id || superAdminConsultantId;
+    }
+
     // ─── Backfill: se o customer existe mas ainda não tem nome, usa o pushName do WhatsApp ─
     // Depois de clicar em "Zerar", não reaproveitamos from_name/pushName do WhatsApp.
     // Isso evita parecer que o bot "lembrou" do número durante testes do fluxo.
@@ -1115,9 +1127,50 @@ Deno.serve(async (req) => {
               }
             }
 
+            // RETRY Whapi API: webhook sem context.ad, mas texto parece CTWA pago.
+            // GET /messages/list costuma trazer AD ID que o POST omitiu.
+            // NÃO envia mensagem ao lead — só lê.
+            let ctwaEnrichTried = false;
+            let ctwaEnrichHit = false;
+            try {
+              const { looksLikePaidCtwaOpener } = await import("../_shared/meta-ctwa-fallback.ts");
+              if (
+                !ctwaClid && !sourceAdId && !sourceUrl && !fields.fbCampaignId &&
+                looksLikePaidCtwaOpener(messageText)
+              ) {
+                ctwaEnrichTried = true;
+                const { enrichCtwaFromWhapiApi } = await import("../_shared/ctwa-whapi-enrich.ts");
+                const enriched = await enrichCtwaFromWhapiApi({
+                  token: whapiToken,
+                  baseUrl: settings.whapi_api_url || "https://gate.whapi.cloud",
+                  phoneOrChatId: remoteJid || phone,
+                  messageId: rawMsg?.id || null,
+                });
+                if (enriched && (enriched.sourceAdId || enriched.ctwaClid || enriched.sourceUrl)) {
+                  ctwaEnrichHit = true;
+                  ctwaClid = ctwaClid || enriched.ctwaClid;
+                  sourceAdId = sourceAdId || enriched.sourceAdId;
+                  sourceUrl = sourceUrl || enriched.sourceUrl;
+                  referral = enriched.referral || referral;
+                  if (enriched.fbCampaignId) {
+                    (fields as any).fbCampaignId = fields.fbCampaignId || enriched.fbCampaignId;
+                  }
+                  console.log(
+                    `[ctwa-enrich] recovered via ${enriched.recoveredFrom} ad=${sourceAdId || "-"} clid=${ctwaClid ? "yes" : "no"} customer=${(customer as any).id}`,
+                  );
+                } else {
+                  console.warn(
+                    `[ctwa-enrich] miss após retry Whapi customer=${(customer as any).id}`,
+                  );
+                }
+              }
+            } catch (e) {
+              console.warn("[ctwa-enrich] falhou:", (e as Error).message);
+            }
+
             strongMetaSignalPresent = !!(sourceAdId || ctwaClid || fields.fbCampaignId || sourceUrl);
 
-            // Probe diagnóstico (fire-and-forget).
+            // Probe diagnóstico (fire-and-forget) — sempre grava payload se CTWA/enrich.
             try {
               const { logReferralProbe } = await import("../_shared/ctwa-referral-probe.ts");
               logReferralProbe(supabase, {
@@ -1146,19 +1199,35 @@ Deno.serve(async (req) => {
             }
 
             // Persistir referral bruto quando algum sinal veio, mesmo sem match.
-            if ((referral || ctwaClid || sourceAdId || sourceUrl) && (customer as any).id) {
+            if ((referral || ctwaClid || sourceAdId || sourceUrl || ctwaEnrichTried) && (customer as any).id) {
               try {
-                const patch: Record<string, any> = { lead_source: "meta_ads" };
+                const prevDetail = ((customer as any).lead_source_detail && typeof (customer as any).lead_source_detail === "object")
+                  ? (customer as any).lead_source_detail
+                  : {};
+                const patch: Record<string, any> = {};
+                if (ctwaClid || sourceAdId || sourceUrl) patch.lead_source = "meta_ads";
                 if (ctwaClid) patch.source_ctwa_clid = ctwaClid;
                 if (sourceAdId) patch.source_ad_id = String(sourceAdId);
-                patch.source_referral = {
-                  source_id: sourceAdId,
-                  ctwa_clid: ctwaClid,
-                  source_url: sourceUrl,
-                  raw: referral,
-                };
-                await supabase.from("customers").update(patch).eq("id", (customer as any).id);
-                Object.assign(customer as any, patch);
+                if (referral || ctwaClid || sourceAdId || sourceUrl) {
+                  patch.source_referral = {
+                    source_id: sourceAdId,
+                    ctwa_clid: ctwaClid,
+                    source_url: sourceUrl,
+                    raw: referral,
+                    enrich_retry: ctwaEnrichTried ? (ctwaEnrichHit ? "hit" : "miss") : "skipped",
+                  };
+                }
+                if (ctwaEnrichTried) {
+                  patch.lead_source_detail = {
+                    ...prevDetail,
+                    ctwa_enrich_retry: ctwaEnrichHit ? "hit" : "miss",
+                    ctwa_enrich_at: new Date().toISOString(),
+                  };
+                }
+                if (Object.keys(patch).length) {
+                  await supabase.from("customers").update(patch).eq("id", (customer as any).id);
+                  Object.assign(customer as any, patch);
+                }
               } catch (e) {
                 console.warn("[lead-source whapi] persist referral falhou:", (e as Error).message);
               }
@@ -1197,7 +1266,7 @@ Deno.serve(async (req) => {
           //      protocolo FB-xxxxx → 1 pool ativa (sole) → fuzzy Jaccard.
           //      Com 2+ pools e sem protocolo, mantém metaCtwaSignal → fila manual.
           if (!candidateCampaignId && !strongMetaSignalPresent && messageText && !isFile && !hasAudio) {
-            if (matchesMetaCtwaPhrase(messageText)) {
+            if (looksLikePaidCtwaOpener(messageText) || matchesMetaCtwaPhrase(messageText)) {
               metaCtwaSignal = true;
               try {
                 const { resolveCampaignBySinglePoolFuzzy } = await import(
@@ -2137,12 +2206,48 @@ Deno.serve(async (req) => {
       const alreadyTagged = !!(customer as any).source_campaign_id || !!(customer as any).lead_source;
       if (!alreadyTagged) {
         const rawMsg: any = body?.messages?.[0] || {};
-        const fields = extractMetaReferralFields(rawMsg, body);
-        const referral = fields.referral;
-        const ctwaClid = fields.ctwaClid;
+        let fields = extractMetaReferralFields(rawMsg, body);
+        let referral = fields.referral;
+        let ctwaClid = fields.ctwaClid;
         // source_id = AD ID que originou o clique (doc oficial Meta: referral.source_id).
-        const sourceAdId = fields.sourceAdId;
-        const sourceUrl = fields.sourceUrl;
+        let sourceAdId = fields.sourceAdId;
+        let sourceUrl = fields.sourceUrl;
+
+        // Retry Whapi se webhook veio sem AD ID mas parece CTWA pago.
+        if (
+          !ctwaClid && !sourceAdId && !sourceUrl && !fields.fbCampaignId &&
+          looksLikePaidCtwaOpener(messageText)
+        ) {
+          try {
+            const { enrichCtwaFromWhapiApi } = await import("../_shared/ctwa-whapi-enrich.ts");
+            const enriched = await enrichCtwaFromWhapiApi({
+              token: whapiToken,
+              baseUrl: settings.whapi_api_url || "https://gate.whapi.cloud",
+              phoneOrChatId: remoteJid || phone,
+              messageId: rawMsg?.id || null,
+            });
+            if (enriched) {
+              ctwaClid = ctwaClid || enriched.ctwaClid;
+              sourceAdId = sourceAdId || enriched.sourceAdId;
+              sourceUrl = sourceUrl || enriched.sourceUrl;
+              referral = enriched.referral || referral;
+              fields = {
+                ...fields,
+                referral,
+                ctwaClid,
+                sourceAdId,
+                sourceUrl,
+                fbCampaignId: fields.fbCampaignId || enriched.fbCampaignId,
+              };
+              console.log(
+                `[ctwa-enrich:lead-source] recovered via ${enriched.recoveredFrom} ad=${sourceAdId || "-"}`,
+              );
+            }
+          } catch (e) {
+            console.warn("[ctwa-enrich:lead-source] falhou:", (e as Error).message);
+          }
+        }
+
         const sourceType = (referral as any)?.source_type || (referral as any)?.sourceType || null;
         const hasReferral = !!(referral || ctwaClid || sourceAdId || sourceUrl);
         const strongMetaSignalPresent = !!(sourceAdId || ctwaClid || fields.fbCampaignId || sourceUrl);

@@ -8,7 +8,6 @@
 // Retry: até MAX_ATTEMPTS reagenda +10min; depois 'failed' com last_error.
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { captureError } from "../_shared/sentry.ts";
-import { isQuietHourBRT, nextQuietWindowEndISO, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { renderTemplateVars } from "../_shared/render-vars.ts";
 import { checkSendQuota, registerSend, simulateTyping, typingDurationMs, humanJitterMs } from "../_shared/anti-ban.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -69,21 +68,9 @@ Deno.serve(async (req) => {
       console.log(`[scheduled] ${reconciled} mensagem(ns) destravada(s) de processing`);
     }
 
-    if (isQuietHourBRT()) {
-      const nextRun = nextQuietWindowEndISO();
-      const { data: deferred, error: deferError } = await supabase
-        .from("scheduled_messages")
-        .update({ scheduled_at: nextRun })
-        .eq("status", "pending")
-        .lte("scheduled_at", new Date().toISOString())
-        .select("id");
-      if (deferError) throw deferError;
-      logQuietSkip("send-scheduled-messages", { deferred: deferred?.length ?? 0, next_run: nextRun });
-      return new Response(
-        JSON.stringify({ skipped: "quiet_hours", deferred: deferred?.length ?? 0, next_run: nextRun }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+    // Agenda MANUAL: NÃO aplica quiet hours (21:30–08:00).
+    // quiet-hours.ts é do bot/IA; o consultor agenda horário próprio e espera
+    // envio na hora marcada (incluindo madrugada).
 
     const { data: messages, error: fetchError } = await supabase
       .rpc("claim_scheduled_messages", { p_limit: 50 });

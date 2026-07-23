@@ -1,0 +1,1329 @@
+[
+  {
+    "id": "TC001",
+    "title": "Landing de cadastro exige licença válida para mostrar QR",
+    "description": "Produto real: /cadastro/:licenca NÃO tem formulário HTML. Compara licença válida (QR/CTA WhatsApp) vs inválida (Consultor não encontrado).",
+    "category": "Public Cadastro WhatsApp Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/tvmensal12"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify QR Code or CTA \"Abrir WhatsApp Agora\" / \"Escaneie o QR Code\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify there is a wa.me link OR QR SVG and no Nome/CPF registration inputs are required"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/licenca-inexistente-e2e-xyz"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Consultor não encontrado\" (or equivalent safe error) is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Log in and reach the admin dashboard shell",
+    "description": "Consultant signs in and lands on /admin shell with sidebar. Do NOT require deep route hrefs like /admin/motor on the dashboard DOM (SPA tabs).",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "If cookie banner appears, click Aceitar; if product tour appears, click Encerrar tour"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify sidebar or title shows Painel OR Clientes interessados OR Captação"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Landing de cadastro mostra CTA WhatsApp (wa.me)",
+    "description": "Lead abre /cadastro/tvmensal12 e vê CTA para WhatsApp. NÃO preencher formulário Nome/CPF (não existe). NÃO clicar até WhatsApp Web externo.",
+    "category": "Public Cadastro WhatsApp Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/tvmensal12"
+      },
+      {
+        "type": "action",
+        "description": "Accept cookies if a banner appears"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify button/link \"Abrir WhatsApp Agora\" OR \"Clique aqui para abrir\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an href containing wa.me exists (do not navigate away to WhatsApp Web)"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Acesso autenticado redireciona para login quando a sessão não está presente",
+    "description": "Verifies that protected admin pages send an unauthenticated user to the login page instead of showing protected content.",
+    "category": "route guard redirects from protected pages to /auth",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the login page is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /super-admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the login page is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Consultor abre uma conversa e continua o atendimento no WhatsApp",
+    "description": "Verifies that a logged-in consultant can open a client conversation, review the iGreen context, and use the message composer to continue the lead flow.",
+    "category": "WhatsApp clients chat opening and composer",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the WhatsApp clients area"
+      },
+      {
+        "type": "action",
+        "description": "Open a client conversation"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the iGreen conversation context is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the message composer is available"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Redirect unauthenticated users away from admin pages",
+    "description": "Verifies that opening a protected admin route without a session sends the user back to the authentication screen.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the authentication screen is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Cadastro com licença inexistente mostra erro seguro",
+    "description": "Licença inválida não crasha e mostra mensagem segura ao lead.",
+    "category": "Public Cadastro WhatsApp Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/licenca-inexistente-e2e-xyz"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify \"Consultor não encontrado\" (or equivalent) is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify page did not crash and no HTML registration form is shown"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Landing licenciado carrega CTA para licença válida",
+    "description": "Página /licenciado/tvmensal12 carrega com CTA (não é formulário de cadastro HTML).",
+    "category": "Public Licenciado Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /licenciado/tvmensal12"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the licensed landing page loaded without crash"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a primary CTA or consultant branding is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Consultor accede ao painel admin e alterna entre áreas principais",
+    "description": "Verifies that a logged-in consultant can open the admin dashboard, switch between CRM and WhatsApp-related areas, and keep the admin shell available across sections.",
+    "category": "CRM Kanban",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the CRM area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the CRM board is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Click the WhatsApp clients area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the admin shell remains visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Landing de cadastro carrega QR/CTA para licença válida",
+    "description": "Licença válida mostra captação via QR/WhatsApp, não formulário de campos.",
+    "category": "Public Cadastro WhatsApp Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/tvmensal12"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify \"Escaneie o QR Code\" OR \"Abrir WhatsApp Agora\" is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify QR SVG OR wa.me link is present"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Switch between admin dashboard sections",
+    "description": "Verifies that the consultant can move across core admin tabs and keep the dashboard shell available.",
+    "category": "Admin Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the CRM section from the admin dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Open the WhatsApp section from the admin dashboard"
+      },
+      {
+        "type": "action",
+        "description": "Open the cadência section from the admin dashboard"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard shell remains available across section changes"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Open a WhatsApp conversation and use the composer",
+    "description": "Verifies that a consultant can open a client conversation, view the iGreen context, and continue the conversation with the message composer.",
+    "category": "WhatsApp Clients",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the WhatsApp clients page"
+      },
+      {
+        "type": "action",
+        "description": "Open a client conversation"
+      },
+      {
+        "type": "action",
+        "description": "Switch to the iGreen view for the conversation"
+      },
+      {
+        "type": "action",
+        "description": "Open the message composer"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the conversation context is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the message composer is available"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "Landing de cadastro oferece impressão/instruções do QR",
+    "description": "Após scroll, instruções ou Imprimir QR Code ficam acessíveis. Sem validação de form HTML.",
+    "category": "Public Cadastro WhatsApp Landing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /cadastro/tvmensal12"
+      },
+      {
+        "type": "action",
+        "description": "Scroll down the landing page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text about QR / WhatsApp instructions OR \"Imprimir QR Code\" / \"Voltar ao QR Code\" is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "View super admin controls",
+    "description": "This verifies that an authenticated super admin can open the super admin area and see the global controls.",
+    "category": "Super Admin",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /super-admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the super admin controls are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC015",
+    "title": "Inspect the global bot kill switch",
+    "description": "This verifies that a super admin can open the global bot control and see the kill switch state and control.",
+    "category": "Super Admin",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /super-admin"
+      },
+      {
+        "type": "action",
+        "description": "Inspect the global bot kill switch"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the kill switch control is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC016",
+    "title": "Captação Em espera mostra badge Bloqueado",
+    "description": "Lead E2E-BLOQUEADO na aba Em espera. Captação → Em espera → E2E-BLOQUEADO → Bloqueado.",
+    "category": "Captação / Bloqueados",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss Aceitar / Encerrar tour / Pular tour if present"
+      },
+      {
+        "type": "action",
+        "description": "Open Captação from the admin sidebar"
+      },
+      {
+        "type": "action",
+        "description": "Click tab labeled Em espera"
+      },
+      {
+        "type": "action",
+        "description": "Type E2E-BLOQUEADO in the Captação search box if present"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify E2E-BLOQUEADO row is visible with badge Bloqueado"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC017",
+    "title": "Consultor abre páginas operacionais por rota direta",
+    "description": "Rotas profundas: /admin/fluxos, /admin/motor, /admin/saude-bot. Sidebar pode não listar Fluxos.",
+    "category": "Admin Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill email {{LOGIN_USER}} and password {{LOGIN_PASSWORD}} and submit"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss Aceitar / Encerrar tour / Pular tour if present"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/fluxos"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify fluxos page loaded. If Iris panel appears, click Pular tour; pass if builder/timeline visible even with Iris."
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/motor"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify motor de cadência page content is visible"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/saude-bot"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify saúde do bot page is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC018",
+    "title": "Consultor abre /admin/fluxos e vê o builder",
+    "description": "URL direta /admin/fluxos. Pular Iris se aparecer.",
+    "category": "Cadence Flow Builder",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss cookies/tour if present"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/fluxos"
+      },
+      {
+        "type": "action",
+        "description": "If Iris panel appears, click Pular tour or Encerrar tour or Fechar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify cadence flow builder page loaded without crash"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC019",
+    "title": "Show an error for invalid login credentials",
+    "description": "Verifies that submitting invalid credentials shows an authentication error and does not grant access.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with invalid-user@example.com"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with invalid-password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an authentication error message is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the admin dashboard is not displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC020",
+    "title": "Bot health overview loads for the consultant",
+    "description": "This verifies that a logged-in consultant can open the bot health area and see the overall bot status overview.",
+    "category": "Bot Health and Reheat",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the bot health page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the bot status overview is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC021",
+    "title": "Consultor acompanha campanhas, agendamentos e protocolos",
+    "description": "Verifies that a logged-in consultant can view Meta Ads, the central scheduling area, and protocol guidance pages from the admin suite.",
+    "category": "Meta Ads and Captacao",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/meta-ads"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify campaign management content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Open the central scheduling area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the agenda and capture view is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC022",
+    "title": "Open remote support from super admin",
+    "description": "This verifies that a super admin can navigate to the remote support page from the super admin area.",
+    "category": "Super Admin",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /super-admin"
+      },
+      {
+        "type": "action",
+        "description": "Open remote support"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the remote support page is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC023",
+    "title": "Consultor confere continuidade entre fluxos e áreas operacionais",
+    "description": "Verifies that a logged-in consultant can move from the flow builder to the motor, Meta Ads, and bot health areas without losing the operational context.",
+    "category": "Cadence Flow Builder",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/fluxos"
+      },
+      {
+        "type": "action",
+        "description": "Open the cadence motor area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the motor configuration view is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/meta-ads"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify campaign management content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC024",
+    "title": "Production health view opens from bot health",
+    "description": "This verifies that a logged-in consultant can open the production health page and see the production health overview.",
+    "category": "Bot Health and Reheat",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open the production health page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the production health overview is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC025",
+    "title": "Super admin acessa o painel global e o suporte remoto",
+    "description": "Verifies that a logged-in super admin can open the global admin page, inspect the bot control area, and access the remote support page.",
+    "category": "Super admin",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /super-admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the global admin controls are displayed"
+      },
+      {
+        "type": "action",
+        "description": "Open the remote support area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the remote support tools are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC026",
+    "title": "Access the knowledge base from the admin area",
+    "description": "This verifies that an authenticated consultant can open the knowledge area from admin and see the knowledge base content.",
+    "category": "Knowledge Voice Audio",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/conhecimento"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the knowledge base content is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC027",
+    "title": "Portal monitor abre pela rota /admin/portal-monitor",
+    "description": "Rota profunda /admin/portal-monitor (não está no sidebar Captação).",
+    "category": "Bot Health and Reheat",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss tour/cookies if present"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/portal-monitor"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify portal monitor page loaded (not redirected to /auth)"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC028",
+    "title": "Access the super admin home and support area",
+    "description": "Verifies that a super admin can open the global control panel and reach the remote support tools.",
+    "category": "Super Admin",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Open the super admin area from the app navigation"
+      },
+      {
+        "type": "action",
+        "description": "Open the remote support page from the super admin area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the super admin control panel is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the remote support tools are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC029",
+    "title": "Reaquecimento abre pela rota /admin/reaquecimento",
+    "description": "Daily reheat em /admin/reaquecimento.",
+    "category": "Bot Health and Reheat",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss tour/cookies if present"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/reaquecimento and wait for load; if ERR_EMPTY_RESPONSE, reload once"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify reaquecimento page content is visible (not auth redirect)"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC030",
+    "title": "Open the voice controls from the knowledge area",
+    "description": "This verifies that an authenticated consultant can access the voice section and see the TTS controls.",
+    "category": "Knowledge Voice Audio",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/conhecimento"
+      },
+      {
+        "type": "action",
+        "description": "Open the voice area"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the TTS controls are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC031",
+    "title": "Admin materials section loads from the dashboard",
+    "description": "This verifies that a logged-in consultant can open the materials area from admin and see the materials section load.",
+    "category": "Materials Products Partners Links",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the materials section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the materials section is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC032",
+    "title": "Sofia áudios abre em /admin/sofia-audios",
+    "description": "Rota direta /admin/sofia-audios. Assert título Sofia — Áudios. Sem viewport mobile. Reload 1x se empty response.",
+    "category": "Knowledge Voice Audio",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss Aceitar / Encerrar tour / Pular tour if present"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /admin/sofia-audios and wait for SPA hydrate; if ERR_EMPTY_RESPONSE reload once"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify heading or text containing \"Sofia\" and \"Áudio\" (e.g. Sofia — Áudios Olá+nome e Nome) is visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC033",
+    "title": "Admin products area shows catalog and quotation options",
+    "description": "This verifies that a logged-in consultant can open the products area and see the product catalog and quotation-related content.",
+    "category": "Materials Products Partners Links",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the products section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product catalog and quotation areas are displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC034",
+    "title": "Licensed landing page loads for a valid license",
+    "description": "This verifies that a visitor can open the licensed landing page and see the license-specific landing content.",
+    "category": "Public Cadastro Portal",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /licenciado/preview"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the licensed landing page content is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC035",
+    "title": "Admin shell remains usable after login",
+    "description": "CRITICAL: do NOT call set_viewport_size / device emulation / narrow screen APIs. Desktop shell only.",
+    "category": "Admin Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth and login with {{LOGIN_USER}} / {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Dismiss Aceitar / Encerrar tour if present"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify URL contains /admin"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify sidebar shows Captação OR Clientes interessados OR Painel"
+      },
+      {
+        "type": "action",
+        "description": "Click Captação in the sidebar"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify Captação area loads (list or empty state text visible)"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC036",
+    "title": "Admin partners section loads successfully",
+    "description": "This verifies that a logged-in consultant can open the partners area from admin and see the partner section load.",
+    "category": "Materials Products Partners Links",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the partners section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the partner section is displayed"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC037",
+    "title": "Admin links section loads successfully",
+    "description": "This verifies that a logged-in consultant can open the links area from admin and see the links section load.",
+    "category": "Materials Products Partners Links",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /auth"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Click the links section link"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the links section is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC038",
+    "title": "Acesso público exibe páginas utilitárias e de suporte sem login",
+    "description": "Verifies that public utility routes such as policy, install, assistant, and CRM landing pages load without requiring authentication.",
+    "category": "utility/public pages /politica-privacidade, /install, /assistente, /reset, /crm, /licenciado/:licenca",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /politica-privacidade"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the privacy policy content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /install"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the install page content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /assistente"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the assistant page content is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC039",
+    "title": "Páginas públicas tratam licenças ausentes ou malformadas de forma segura",
+    "description": "Verifies that malformed or missing public license routes do not expose protected content and show an empty or fallback state.",
+    "category": "malformed or missing licenca in public routes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /licenciado/preview"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the licensed preview page content is displayed"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /licenciado/intvmensal12-value"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a fallback or empty state is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC040",
+    "title": "View the privacy policy page",
+    "description": "This verifies that a public visitor can open the privacy policy content page.",
+    "category": "Legal and Utility Pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /politica-privacidade"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the privacy policy content is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC041",
+    "title": "Open the installation page",
+    "description": "This verifies that a public visitor can access the app installation page.",
+    "category": "Legal and Utility Pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /install"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the installation page content is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC042",
+    "title": "Open the public assistant page",
+    "description": "This verifies that a public visitor can access the assistant page without logging in.",
+    "category": "Legal and Utility Pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /assistente"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the public assistant page is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC043",
+    "title": "Open the app reset page",
+    "description": "Public /reset shows Recuperar acesso / Resetar app after SPA hydrate.",
+    "category": "Legal and Utility Pages",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /reset"
+      },
+      {
+        "type": "action",
+        "description": "Wait up to 10s for the SPA to hydrate"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify text \"Recuperar acesso\" OR button \"Resetar app\" is visible"
+      }
+    ],
+    "priority": "Low"
+  }
+]

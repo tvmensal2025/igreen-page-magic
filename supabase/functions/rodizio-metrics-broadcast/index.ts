@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
         errors++;
         continue;
       }
-      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 60);
+      const intervalMin: number = Number(pool.metrics_broadcast_interval_minutes ?? 180);
       if (!camp?.id || !camp.fb_campaign_id) continue;
       if (intervalMin <= 0) { skippedInterval++; continue; }
 
@@ -374,7 +374,10 @@ Deno.serve(async (req) => {
       }
 
 
-      for (const m of eligible as any[]) {
+      // Posição 1-based só entre elegíveis (mesmo critério do aviso de aprovação).
+      const sortedEligibleMetrics = [...eligible].sort((a: any, b: any) => a.position - b.position);
+
+      for (const m of sortedEligibleMetrics as any[]) {
         const partner = m.referral_partners;
         const idemKey = `rodizio_metrics:${m.partner_id}:${camp.id}:${intervalMin}:${slot}`;
 
@@ -400,6 +403,8 @@ Deno.serve(async (req) => {
         ]);
         const partnerTotalLeads = partnerAll.length;
         const partnerNewLeads = partnerNew.length;
+        const myPosition =
+          sortedEligibleMetrics.findIndex((mm: any) => mm.partner_id === m.partner_id) + 1;
 
         let text: string;
         if (!live) {
@@ -419,7 +424,7 @@ Deno.serve(async (req) => {
             clicks7d: live.clicks7d,
             leadsCrmToday: leadsCrmToday || 0,
             leadsCrm7d: leadsCrm7d || 0,
-            partnerPosition: (m.position ?? 0) + 1,
+            partnerPosition: myPosition,
             partnerPoolSize: poolSize,
             partnerLeadsTotal: partnerTotalLeads,
             partnerNewLeadsSinceLast: partnerNewLeads,

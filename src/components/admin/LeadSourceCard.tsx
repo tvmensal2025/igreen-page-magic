@@ -84,13 +84,14 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
   const adsPct = total > 0 ? Math.round((adsLeads / total) * 100) : 0;
 
   return (
-    <div className="premium-card">
+    <div className="premium-card min-w-0 w-full overflow-hidden">
       <div className="flex items-start justify-between mb-1 gap-2 flex-wrap">
-        <div>
-          <h3 className="font-heading font-bold text-foreground flex items-center gap-2">
-            <Megaphone className="w-4 h-4 text-primary" /> Origem dos Clientes interessados (WhatsApp)
+        <div className="min-w-0">
+          <h3 className="font-heading font-bold text-foreground flex items-center gap-2 text-sm sm:text-base">
+            <Megaphone className="w-4 h-4 text-primary shrink-0" />
+            <span className="truncate">Origem dos clientes interessados</span>
           </h3>
-          <p className="text-xs text-muted-foreground">Últimos {periodDays} dias — atribuição automática por mensagem pré-preenchida do anúncio ou CTWA</p>
+          <p className="text-xs text-muted-foreground">Últimos {periodDays} dias — CTWA / mensagem do anúncio</p>
         </div>
         {total > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">

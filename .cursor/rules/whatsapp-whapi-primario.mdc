@@ -20,10 +20,11 @@ alwaysApply: true
 ## O que fazer
 
 - Ao diagnosticar envio/agenda: priorizar **Whapi** (`whapi-webhook`, `whapiApi`, token Whapi, health `AUTH`).
-- Se algo ainda for só Evolution (ex.: `send-scheduled-messages` via Evolution API), diga que é **código legado no cron**, não que o usuário está desconectado — e proponha alinhar o envio ao Whapi.
+- Agenda manual (`send-scheduled-messages`) já resolve Whapi via hint `whapi*` / superadmin — **não** quiet hours (agenda humana).
+- Disparo PRO (`bulk-scheduler`) também resolve Whapi/Evolution via `resolveConsultantOutboundChannel`.
 - Mensagens ao usuário: português simples — “seu WhatsApp (Whapi) está ok”; nunca assustar com reconnect Evolution sem evidência Whapi.
 
 ## Lembrete técnico
 
-- Agenda manual (`scheduled_messages`) ainda pode gravar `instance_name` Evolution e o cron `send-scheduled-messages` fala com Evolution.
-- Isso é dívida técnica: **corrigir o envio para Whapi**, não mandar o consultor “conectar de novo”.
+- Hub grava `instance_name=whapi-superadmin` quando `isWhapi`.
+- `whatsapp_instances.needs_reconnect` (Evolution) ≠ Zap offline no Whapi.

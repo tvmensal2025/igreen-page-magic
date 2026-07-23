@@ -103,10 +103,13 @@ Portal SaaS multi-tenant para consultores de energia solar (iGreen): WhatsApp (W
 - CRM kanban renderiza colunas
 - Fluxo builder abre e lista steps
 - Meta ads / materiais / produtos páginas carregam sem crash
-- Portal /cadastro/:licenca renderiza formulário
+- Portal /cadastro/:licenca renderiza landing QR + CTA WhatsApp (wa.me), NÃO formulário Nome/CPF
+- Captação mostra badge Bloqueado (do_not_contact); NÃO exigir coluna Bloqueado no Kanban CRM
+- Admin shell pós-login: URL /admin + sidebar (Painel/Captação) — NÃO exigir hrefs /admin/motor no DOM do dashboard
 - Mobile viewport (375px) sem overflow crítico nas páginas admin principais
 - Labels em português (BR)
 - Sem vazamento de secrets no DOM
+- Glossário: Grupo A/B/C = escada cadence-tick; daily-reheat é motor separado; flow_variant B ≠ Grupo B
 `;
   fs.writeFileSync(path.join(PRD_DIR, 'igreen-prd.md'), prd);
 }
@@ -240,7 +243,7 @@ async function main() {
       testIds: [],
       serverMode: 'development',
       additionalInstruction:
-        'Maximum coverage and precision. Exhaustively test: auth login/logout and protected redirects; admin dashboard tabs; WhatsApp clients/chat composer; CRM; fluxos builder; fluxo-b; saude-bot; portal-monitor; conhecimento; reaquecimento; voz; meta-ads; motor cadencia; agendamentos-central; materiais; produtos; parceiros; links; solar-design; cadastro portal public form; licenciado page; mobile 375px; form validation; empty/error states; authorization. Prefer deep assertions. UI labels in Brazilian Portuguese. Do not skip high-priority cases.',
+        'Maximum coverage aligned to product: auth login/logout and protected redirects; admin dashboard tabs (SPA ?tab=, not raw href list); WhatsApp clients/chat composer; CRM Kanban; Captação with Bloqueado badge; fluxos builder; saude-bot; reaquecimento preview; voz; meta-ads; motor cadencia UI; materiais; produtos; parceiros; links; /cadastro/:licenca QR+wa.me (NOT HTML registration form); /licenciado page; mobile 375px; empty/error states. Do NOT send WhatsApp to real customers. Do NOT assert CRM column Bloqueado. UI labels in Brazilian Portuguese.',
     },
     2_400_000,
   );

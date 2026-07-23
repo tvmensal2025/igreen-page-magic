@@ -89,7 +89,7 @@ export function normalizeBrainConfig(raw: unknown): BrainConfig {
     ),
     scale_step_pct: Math.max(
       8,
-      Math.min(25, Math.round(Number(o.scale_step_pct) || DEFAULT_BRAIN_CONFIG.scale_step_pct)),
+      Math.min(30, Math.round(Number(o.scale_step_pct) || DEFAULT_BRAIN_CONFIG.scale_step_pct)),
     ),
     explorer_budget_cents: clampMoney(
       Number(o.explorer_budget_cents) || DEFAULT_BRAIN_CONFIG.explorer_budget_cents,

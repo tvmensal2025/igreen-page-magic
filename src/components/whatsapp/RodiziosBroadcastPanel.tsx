@@ -67,7 +67,7 @@ export function RodiziosBroadcastPanel({ consultantId }: Props) {
           label: r.label || "Rodízio",
           campaign_id: r.campaign_id,
           campaign_name: r.campaign_id ? campaignNames[r.campaign_id] ?? null : null,
-          metrics_broadcast_interval_minutes: Number(r.metrics_broadcast_interval_minutes ?? 60),
+          metrics_broadcast_interval_minutes: Number(r.metrics_broadcast_interval_minutes ?? 180),
           members: counts[r.id] || 0,
         })),
       );

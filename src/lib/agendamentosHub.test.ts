@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildAgendamentosTimeline, type BulkCampaignRow, type ScheduledMessageRow } from "@/lib/agendamentosHub";
+import {
+  buildAgendamentosTimeline,
+  groupTimelineByDay,
+  type BulkCampaignRow,
+  type CadenceScheduleRow,
+  type DailyReheatRow,
+  type ScheduledMessageRow,
+} from "@/lib/agendamentosHub";
 
 const baseManual: ScheduledMessageRow = {
   id: "m1",
@@ -103,5 +110,105 @@ describe("buildAgendamentosTimeline", () => {
     const sooner = { ...baseManual, id: "m-sooner", scheduled_at: new Date(Date.now() + 600_000).toISOString() };
     const items = buildAgendamentosTimeline({ manual: [later, sooner], posVenda: [], botFollowups: [], bulk: [] });
     expect(items.map((i) => i.id)).toEqual(["manual-m-sooner", "manual-m-later"]);
+  });
+
+  it("cadência expõe channel e pizzaGroup", () => {
+    const cadence: CadenceScheduleRow[] = [{
+      id: "c1",
+      customer_id: "cust-1",
+      stage: "COLD_1",
+      next_action_at: new Date(Date.now() + 3600_000).toISOString(),
+      paused_until: null,
+      customer_name: "Maria",
+      customer_phone: "5511999999999",
+    }];
+    const items = buildAgendamentosTimeline({
+      manual: [],
+      posVenda: [],
+      botFollowups: [],
+      bulk: [],
+      cadence,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("cadence_send");
+    expect(items[0].channel).toBe("whatsapp");
+    expect(items[0].pizzaGroup).toBe("B");
+    expect(items[0].motorLabel).toBe("Motor A→B→C");
+  });
+
+  it("inclui daily_reheat planned com actionsPreview", () => {
+    const reheat: DailyReheatRow[] = [{
+      id: "r1",
+      customer_id: "cust-2",
+      queue: "A",
+      step: "nudge",
+      status: "planned",
+      next_action_at: new Date(Date.now() + 1800_000).toISOString(),
+      planned_actions: ["send_audio", "sms"],
+      customer_name: "João",
+    }];
+    const items = buildAgendamentosTimeline({
+      manual: [],
+      posVenda: [],
+      botFollowups: [],
+      bulk: [],
+      dailyReheat: reheat,
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].kind).toBe("daily_reheat");
+    expect(items[0].pizzaGroup).toBe("A");
+    expect(items[0].actionsPreview).toEqual(["Áudio", "SMS"]);
+    expect(items[0].channel).toBe("mixed");
+  });
+
+  it("deduplica reheat quando cadência do mesmo lead está na mesma janela", () => {
+    const at = new Date(Date.now() + 3600_000).toISOString();
+    const items = buildAgendamentosTimeline({
+      manual: [],
+      posVenda: [],
+      botFollowups: [],
+      bulk: [],
+      cadence: [{
+        id: "c1",
+        customer_id: "same",
+        stage: "A_NUDGE",
+        next_action_at: at,
+        paused_until: null,
+        customer_name: "Lead",
+      }],
+      dailyReheat: [{
+        id: "r1",
+        customer_id: "same",
+        queue: "A",
+        step: "nudge",
+        status: "planned",
+        next_action_at: at,
+        planned_actions: ["send_audio"],
+        customer_name: "Lead",
+      }],
+    });
+    expect(items.map((i) => i.kind)).toEqual(["cadence_send"]);
+  });
+
+  it("groupTimelineByDay separa atrasados e hoje", () => {
+    const overdue = {
+      ...baseManual,
+      id: "over",
+      scheduled_at: new Date(Date.now() - 3600_000).toISOString(),
+    };
+    const soon = {
+      ...baseManual,
+      id: "soon",
+      scheduled_at: new Date(Date.now() + 600_000).toISOString(),
+    };
+    const items = buildAgendamentosTimeline({
+      manual: [overdue, soon],
+      posVenda: [],
+      botFollowups: [],
+      bulk: [],
+    });
+    const groups = groupTimelineByDay(items);
+    expect(groups.some((g) => g.key === "overdue")).toBe(true);
+    expect(groups.some((g) => g.key === "today")).toBe(true);
   });
 });

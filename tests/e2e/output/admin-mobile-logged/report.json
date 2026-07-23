@@ -1,0 +1,618 @@
+[
+  {
+    "tab": "dashboard",
+    "label": "Painel",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 32,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "pointer-events-none absolute -right-20 -top-20 h-64 w-64 rou",
+          "right": 457
+        }
+      ],
+      "notes": [
+        "32 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "dashboard.png"
+  },
+  {
+    "tab": "crm",
+    "label": "Clientes interessados",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 63,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "flex items-center gap-2",
+          "right": 860
+        },
+        {
+          "tag": "LABEL",
+          "cls": "flex items-center gap-1.5 text-[11px] text-muted-foreground ",
+          "right": 487
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center whitespace-nowrap ri",
+          "right": 701
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center whitespace-nowrap ri",
+          "right": 860
+        },
+        {
+          "tag": "DIV",
+          "cls": "shrink-0 snap-start h-full min-h-0 min-w-0 flex flex-col bg-",
+          "right": 524
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 ",
+          "right": 523
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex items-center gap-2 min-w-0 flex-1 overflow-hidden",
+          "right": 478
+        },
+        {
+          "tag": "DIV",
+          "cls": "kanban-safe-scroll flex-1 min-h-0 min-w-0 max-w-full overflo",
+          "right": 523
+        }
+      ],
+      "notes": [
+        "63 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "crm.png"
+  },
+  {
+    "tab": "crm-clientes",
+    "label": "Clientes ativos (PV)",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 1271,
+      "fixedBottomElements": 4,
+      "overflowElements": [],
+      "notes": [
+        "1271 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "crm-clientes.png"
+  },
+  {
+    "tab": "whatsapp",
+    "label": "WhatsApp",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 9,
+      "fixedBottomElements": 3,
+      "overflowElements": [],
+      "notes": [
+        "9 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "whatsapp.png"
+  },
+  {
+    "tab": "produtos",
+    "label": "Produtos & Vendas",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 11,
+      "fixedBottomElements": 4,
+      "overflowElements": [],
+      "notes": [
+        "11 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "produtos.png"
+  },
+  {
+    "tab": "captacao",
+    "label": "Captação",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 39,
+      "fixedBottomElements": 3,
+      "overflowElements": [],
+      "notes": [
+        "39 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "captacao.png"
+  },
+  {
+    "tab": "conversao",
+    "label": "Conversão",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 16,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "",
+          "right": 608
+        },
+        {
+          "tag": "DIV",
+          "cls": "rounded-lg border bg-card text-card-foreground shadow-sm gro",
+          "right": 608
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex items-start gap-3 pl-1.5",
+          "right": 595
+        },
+        {
+          "tag": "DIV",
+          "cls": "min-w-0 flex-1",
+          "right": 595
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex items-center gap-1.5",
+          "right": 595
+        },
+        {
+          "tag": "DIV",
+          "cls": "mt-1 flex flex-wrap items-center gap-1.5",
+          "right": 595
+        },
+        {
+          "tag": "DIV",
+          "cls": "mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-1.5 te",
+          "right": 595
+        },
+        {
+          "tag": "P",
+          "cls": "mt-2 line-clamp-2 border-t border-border/30 pt-2 pl-1.5 text",
+          "right": 595
+        }
+      ],
+      "notes": [
+        "16 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "conversao.png"
+  },
+  {
+    "tab": "clientes",
+    "label": "Base de clientes",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 11,
+      "fixedBottomElements": 3,
+      "overflowElements": [],
+      "notes": [
+        "11 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "clientes.png"
+  },
+  {
+    "tab": "parceiros",
+    "label": "Parceiros",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 36,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "TABLE",
+          "cls": "w-full caption-bottom text-sm",
+          "right": 474
+        },
+        {
+          "tag": "THEAD",
+          "cls": "[&_tr]:border-b",
+          "right": 474
+        },
+        {
+          "tag": "TR",
+          "cls": "border-b transition-colors data-[state=selected]:bg-muted ho",
+          "right": 474
+        },
+        {
+          "tag": "TH",
+          "cls": "h-12 px-4 align-middle font-medium text-muted-foreground [&:",
+          "right": 400
+        },
+        {
+          "tag": "TH",
+          "cls": "h-12 px-4 align-middle font-medium text-muted-foreground [&:",
+          "right": 474
+        },
+        {
+          "tag": "TBODY",
+          "cls": "[&_tr:last-child]:border-0",
+          "right": 474
+        },
+        {
+          "tag": "TR",
+          "cls": "border-b transition-colors data-[state=selected]:bg-muted ho",
+          "right": 474
+        },
+        {
+          "tag": "TD",
+          "cls": "p-4 align-middle [&:has([role=checkbox])]:pr-0 text-right",
+          "right": 400
+        }
+      ],
+      "notes": [
+        "36 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "parceiros.png"
+  },
+  {
+    "tab": "central-anuncios",
+    "label": "Central de anúncios",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 9,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "flex items-center gap-2 flex-wrap shrink-0",
+          "right": 447
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center gap-2 whitespace-now",
+          "right": 447
+        },
+        {
+          "tag": "DIV",
+          "cls": "ads-nav-pill",
+          "right": 737
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center gap-2 whitespace-now",
+          "right": 495
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center gap-2 whitespace-now",
+          "right": 614
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "inline-flex items-center justify-center gap-2 whitespace-now",
+          "right": 732
+        }
+      ],
+      "notes": [
+        "9 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "central-anuncios.png"
+  },
+  {
+    "tab": "links",
+    "label": "Links",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 9,
+      "fixedBottomElements": 3,
+      "overflowElements": [],
+      "notes": [
+        "9 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "links.png"
+  },
+  {
+    "tab": "materiais",
+    "label": "Materiais",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 24,
+      "fixedBottomElements": 3,
+      "overflowElements": [],
+      "notes": [
+        "24 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "materiais.png"
+  },
+  {
+    "tab": "audio-studio",
+    "label": "Estúdio de áudio",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 68,
+      "fixedBottomElements": 3,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-24 -right-24 w-64 h-64 rounded-full bg-primary",
+          "right": 473
+        },
+        {
+          "tag": "SECTION",
+          "cls": "space-y-3",
+          "right": 765
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex items-center gap-2 px-1",
+          "right": 765
+        },
+        {
+          "tag": "DIV",
+          "cls": "bg-card rounded-2xl border border-border/50 p-4 space-y-3 sh",
+          "right": 765
+        },
+        {
+          "tag": "DIV",
+          "cls": "space-y-1",
+          "right": 748
+        },
+        {
+          "tag": "INPUT",
+          "cls": "flex w-full rounded-md border px-3 py-2 ring-offset-backgrou",
+          "right": 748
+        },
+        {
+          "tag": "DIV",
+          "cls": "space-y-1",
+          "right": 748
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex gap-2",
+          "right": 748
+        }
+      ],
+      "notes": [
+        "68 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "audio-studio.png"
+  },
+  {
+    "tab": "academy",
+    "label": "Academy",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 83,
+      "fixedBottomElements": 4,
+      "overflowElements": [
+        {
+          "tag": "DIV",
+          "cls": "absolute -top-10 -right-10 w-40 h-40 rounded-full blur-3xl o",
+          "right": 413
+        },
+        {
+          "tag": "DIV",
+          "cls": "flex-none flex flex-col items-center gap-1.5 min-w-[72px] px",
+          "right": 471
+        },
+        {
+          "tag": "DIV",
+          "cls": "w-10 h-10 rounded-full flex items-center justify-center text",
+          "right": 454
+        },
+        {
+          "tag": "BUTTON",
+          "cls": "group/card relative flex-none w-40 sm:w-48 overflow-hidden t",
+          "right": 516
+        },
+        {
+          "tag": "DIV",
+          "cls": "relative aspect-video overflow-hidden rounded-md",
+          "right": 516
+        },
+        {
+          "tag": "IMG",
+          "cls": "w-full h-full object-cover transition-transform duration-500",
+          "right": 516
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 pointer-events-none",
+          "right": 516
+        },
+        {
+          "tag": "DIV",
+          "cls": "absolute inset-0 flex items-center justify-center\n          ",
+          "right": 516
+        }
+      ],
+      "notes": [
+        "83 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "academy.png"
+  },
+  {
+    "tab": "produtos-Orçam.",
+    "label": "Produtos — Orçam.",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 46,
+      "fixedBottomElements": 4,
+      "overflowElements": [],
+      "notes": [
+        "46 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "produtos-Orçam.png"
+  },
+  {
+    "tab": "produtos-Pipe.",
+    "label": "Produtos — Pipe.",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 13,
+      "fixedBottomElements": 4,
+      "overflowElements": [],
+      "notes": [
+        "13 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "produtos-Pipe.png"
+  },
+  {
+    "tab": "produtos-Cat.",
+    "label": "Produtos — Cat.",
+    "metrics": {
+      "horizontalOverflow": false,
+      "scrollW": 390,
+      "viewportW": 390,
+      "viewportH": 844,
+      "composerFound": false,
+      "composerWidth": null,
+      "composerBottom": null,
+      "composerClipped": false,
+      "textareaWidth": null,
+      "smallTouchBottomZone": 26,
+      "fixedBottomElements": 4,
+      "overflowElements": [],
+      "notes": [
+        "26 botões pequenos na zona inferior"
+      ]
+    },
+    "screenshot": "produtos-Cat.png"
+  }
+]

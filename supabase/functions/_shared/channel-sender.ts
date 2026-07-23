@@ -21,11 +21,12 @@ export interface ResolvedChannel {
  * Canal de saída do consultor conectado (agenda / lembretes / envios sem customer origin).
  *
  * Ordem:
- * 1) Super admin com Whapi → Whapi
- * 2) Evolution saudável do consultor → Evolution
- * 3) Hint gravado `whapi*` + mesmo consultor é super admin → Whapi (safety-net)
+ * 1) Hint gravado `whapi*` + token Whapi → Whapi (UI já escolheu o canal)
+ * 2) Super admin com Whapi → Whapi
+ * 3) Evolution saudável do consultor → Evolution
  *
- * NÃO usa token Whapi da plataforma para consultor Evolution comum.
+ * NÃO usa token Whapi da plataforma para consultor Evolution comum
+ * (sem hint whapi* e sem ser super admin).
  */
 export async function resolveConsultantOutboundChannel(
   supabase: any,
@@ -45,11 +46,11 @@ export async function resolveConsultantOutboundChannel(
 
   const superId = env.superadminConsultantId ?? null;
   const isSuper = !!superId && String(superId) === String(consultantId);
+  const hintWhapi = !!hintInstanceName?.startsWith("whapi");
 
-  // 1) Super admin / Whapi como canal principal
-  if (isSuper && env.whapiToken) {
-    const name =
-      hintInstanceName?.startsWith("whapi") ? hintInstanceName : "whapi-superadmin";
+  // 1) Hint da agenda/UI já diz Whapi — respeita sem depender só do match superadmin
+  if (hintWhapi && env.whapiToken) {
+    const name = hintInstanceName!;
     const adapter = getAdapter({
       kind: "whapi",
       input: { apiToken: env.whapiToken, instanceName: name },
@@ -57,7 +58,17 @@ export async function resolveConsultantOutboundChannel(
     return { kind: "whapi", instanceName: name, adapter };
   }
 
-  // 2) Evolution saudável do consultor
+  // 2) Super admin / Whapi como canal principal
+  if (isSuper && env.whapiToken) {
+    const name = "whapi-superadmin";
+    const adapter = getAdapter({
+      kind: "whapi",
+      input: { apiToken: env.whapiToken, instanceName: name },
+    });
+    return { kind: "whapi", instanceName: name, adapter };
+  }
+
+  // 3) Evolution saudável do consultor
   if (env.evolutionUrl && env.evolutionKey) {
     let q = supabase
       .from("whatsapp_instances")
@@ -91,15 +102,6 @@ export async function resolveConsultantOutboundChannel(
       });
       return { kind: "evolution", instanceName: inst.instance_name, adapter };
     }
-  }
-
-  // 3) Safety-net: hint whapi* só se for o super admin (nunca consultor Evolution).
-  if (isSuper && env.whapiToken && hintInstanceName?.startsWith("whapi")) {
-    const adapter = getAdapter({
-      kind: "whapi",
-      input: { apiToken: env.whapiToken, instanceName: hintInstanceName },
-    });
-    return { kind: "whapi", instanceName: hintInstanceName, adapter };
   }
 
   return {
