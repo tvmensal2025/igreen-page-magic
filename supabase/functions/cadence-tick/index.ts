@@ -1382,7 +1382,15 @@ Deno.serve(async (req) => {
             };
             if (res.ok) {
               sent++;
-              if (isColdOutreachStage(stage)) coldTouchesToday++;
+              {
+                const grp = stageGroup(stage);
+                if (grp === "B") touchedB++;
+                else if (grp === "C") touchedC++;
+                if (grp !== "A") {
+                  await maybeAlertCap(grp, grp === "B" ? touchedB : touchedC, grp === "B" ? caps.capB : caps.capC);
+                  await maybeAlertCap("G", touchedB + touchedC, caps.capGlobal);
+                }
+              }
               await finishOutboundEffect(supabase, eff.effectId, "sent", {
                 providerStatus: String(res.detail || "").slice(0, 200),
                 providerMessageId: res.messageId || null,
@@ -1480,8 +1488,8 @@ Deno.serve(async (req) => {
     failed,
     resumed,
     audience_blocked: audienceBlocked,
-    cold_cap: coldCap,
-    cold_today: coldTouchesToday,
+    caps,
+    touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
   });
 });
 
