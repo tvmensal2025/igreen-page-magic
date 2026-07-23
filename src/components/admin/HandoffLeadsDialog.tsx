@@ -394,14 +394,14 @@ export function HandoffLeadsBanner({
         <HandHelping className="h-4 w-4 text-sky-700 shrink-0" />
         <div className="min-w-0 flex-1 text-sm">
           <span className="font-semibold text-sky-950 dark:text-sky-50">
-            {count} lead(s) em handoff — fora da pizza
+            {count} lead(s) fora da pizza — handoff + bloqueados por segurança
           </span>
           <span className="block text-[11px] text-sky-900/80 dark:text-sky-100/80">
-            Atendimento humano. Use <strong>Voltar à pizza</strong> quando quiser que o motor retome o ciclo.
+            Escolha lead a lead: <strong>Voltar à pizza</strong> reativa o ciclo, <strong>Bloquear</strong> encerra o contato.
           </span>
         </div>
         <Button type="button" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
-          Ver handoffs
+          Ver todos
         </Button>
       </div>
       <HandoffLeadsDialog
