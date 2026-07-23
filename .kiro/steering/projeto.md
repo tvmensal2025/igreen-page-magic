@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: projeto
+description: Visão geral do monorepo iGreen (complementa product/tech/structure).
 ---
 
 # Projeto — iGreen Official Portal

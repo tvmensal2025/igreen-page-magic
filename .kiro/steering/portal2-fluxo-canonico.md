@@ -1,45 +1,43 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "worker-portal-2/**|supabase/functions/portal2-*/**|docs/portal-api/**"
+fileMatchPattern:
+  - "worker-portal-2/**"
+  - "supabase/functions/portal2-*/**"
+  - "supabase/functions/_shared/portal-worker.ts"
+  - "supabase/functions/_shared/portalValidation.ts"
+  - "src/lib/captacao/portalValidation.ts"
+  - "docs/portal-api/**"
+  - "supabase/functions/finalize-capture/**"
+  - "supabase/functions/submit-otp/**"
+  - "supabase/functions/worker-callback/**"
 ---
 
-# Portal 2 — Fluxo de cadastro canônico (gravado em produção)
+# Portal 2 — Fluxo de cadastro canônico
 
-**Última validação:** 2026-05-29
-**Doc detalhado:** `docs/portal-api/PORTAL2_FLUXO_CANONICO.md`
-**Trace oficial (Supabase):** `portal2_audit_traces` onde `is_official_reference = true`
+**Última validação:** 2026-05-29 · Doc: #[[file:worker-portal-2/PORTAL-OFICIAL.md]]  
+Trace: `portal2_audit_traces` onde `is_official_reference = true`  
+Deploy do monorepo: `tvmensal2025/igreen-page-magic` (ver `#deploy`).
 
-## Não re-mapear sem motivo
+## Fatos de ouro (violar = quebrar produção)
 
-O fluxo abaixo foi validado fim-a-fim em produção:
+1. Fatura → `POST /extractor/extract` (`files`). **Nunca** `extract-receipt` (só comprovante; causa `IA_REPROVADA_CONTA`).
+2. `is_authentic` só em comprovante. Fatura = legibilidade ≥2 de 4 campos (`evaluateIaGate` / `IA_CONTA_ILEGIVEL`).
+3. `contaunica` = forma de cobrança; slot `energy-bill` **sempre** fatura (não exigir boleto bancário).
+4. `name_validation.match=false` → `transferir_titularidade=true` (não bloqueia).
+5. `validate/upload` só FOTO (PDF → 500).
+6. `manual-fallback` só escolha humana — nunca timeout/transporte.
+7. `POST /verification-codes/generate` manda OTP no WA — não disparar em teste.
 
-- **Distribuidora:** resolvida por `CEP → ViaCEP → CITY_HINT`. Override por OCR ou input manual só quando CEP não bate.
-- **Consumo:** `media_consumo` → OCR `consumomedio` → estimativa R$ ÷ 1,10/kWh (clamp 100..2000).
-- **Bonus rule:** `desconto_padrao=true` (tier A, **menor desconto da região** — regra de negócio do cliente).
-- **Telefone:** `formatPhone` remove DDI 55 e formata pra `(DD) 9XXXX-XXXX` (14 chars).
-- **CEP:** `formatCep` insere hífen (`XXXXX-XXX`, 9 chars).
+## Canônico operacional
+- Distribuidora: CEP → ViaCEP → CITY_HINT
+- Consumo: `media_consumo` → OCR → estimativa R$÷1,10/kWh (clamp 100..2000)
+- Bonus: `desconto_padrao=true` (tier A = **menor** desconto — pedido do cliente)
+- Telefone: `formatPhone` tira DDI 55 → `(DD) 9XXXX-XXXX`
+- CEP: `formatCep` → `XXXXX-XXX`
+- Dispatch: `dispatchPortalWorker` → worker-portal-2 (Portal 1 morto)
 
-Se for mexer em qualquer um desses pontos, abrir o doc `PORTAL2_FLUXO_CANONICO.md` e o trace oficial primeiro.
-
-## Cobertura iGreen (verificado via /bonus/distributors)
-
-iGreen **não atende**: ENEL SP capital + Grande SP, EDP Vale do Paraíba, LIGHT (Rio capital + baixada), DF, AM, AP, AC, RO, RR. Pra essas, `resolveConcessionariaByCep` retorna `{naoAtendida: true}`.
+## Cobertura
+iGreen **não** atende: ENEL SP capital+GSP, EDP Vale, LIGHT RJ, DF, AM, AP, AC, RO, RR → `{naoAtendida:true}`.
 
 ## Auditoria IA
-
-`PORTAL2_AI_AUDIT_LIMIT` (default 10) controla quantos cadastros vão pra `portal2-ai-audit` (edge function que chama Gemini). Custo ~$0.0002/lead. Desligar quando estiver estável (`=0`).
-
-## Erros conhecidos do POST /customers
-
-| code | field | tratamento |
-|------|-------|-----------|
-| `error.generic.validationError` (Too small celular) | `celular` | `formatPhone` já trata DDI 55 |
-| `error.customer.duplicatePhone` | `celular` | esperado em retry; o `/customers/check-exists` da iGreen NÃO checa celular |
-| `error.customer.duplicateDocument` | `cpf_cnpj` | nosso `checkCustomerExists` deveria pegar antes |
-| `error.generic.validationError` (Too small cep) | `cep` | `formatCep` insere hífen |
-
-## Não confundir
-
-- O cliente pediu **MENOR desconto da região** (não o maior). Isso significa preferir `desconto_padrao=true` (tier A=8%). NÃO inverter pra "maior desconto".
-- "Worker Portal 2" é stack Easypanel (`igreen_portal-worker-2`, VPS 72.60.159.48), repo de deploy é `tvmensal2025/igreen-official-portal` (não ayla-magic-mirror).
-- O endpoint `/extractor/extract-receipt` retorna estrutura DIFERENTE pra fatura vs boleto. Boleto traz `tipo_comprovante: "BOLETO"`, `beneficiario` (com erros de OCR tipo "PRA TININGA" pra "PIRATININGA"), `valor_pago`, mas SEM `consumomedio`.
+`PORTAL2_AI_AUDIT_LIMIT` (default 10); `=0` desliga.

@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: deploy
+description: Como fazer deploy de edge functions via GitHub Actions neste repo.
 ---
 
 # Deploy (jeito certo, já testado)

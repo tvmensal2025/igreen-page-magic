@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: fluxos
+description: Jornadas CTWA, cadência A/B/C, portal, club, reheat, voz. Use em bugs de fluxo de negócio.
 ---
 
 # Fluxos de negócio críticos

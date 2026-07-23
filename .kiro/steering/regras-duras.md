@@ -45,14 +45,14 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - Rollback: `live_dispatch_enabled` → `daily_reheat.enabled` → `cadence_engine` → `bot_global_enabled`.
 
 ## Portal / Club / Sync (workers distintos)
-- Portal: `worker-portal-2/PORTAL-OFICIAL.md` + `dispatchPortalWorker` (Portal 1 morto).
-- Club: `worker-club/CLUB-OFICIAL.md` + `dispatchClubWorker` (porta 3102, colunas `club_*`).
-- Sync carteira: `igreen_sync_worker_url` + `_shared/igreen-sync-worker.ts` — **≠** portal2/club URLs.
+- Detalhes sob demanda: `#portal2-fluxo-canonico` · `#club-api-oficial` · `#igreen-sync-oficial`
+- Portal: `dispatchPortalWorker` → worker-portal-2 (Portal 1 morto)
+- Club: `dispatchClubWorker` (3102, `club_*`) ≠ portal
+- Sync: `igreen_sync_worker_url` ≠ `portal2_worker_url` / `club_worker_url`
 
-## Ads / Cérebro MG / rodízio avisos
-- Contraste: tokens `--ads-*` / chips `.ads-chip-*` (não `text-warning`+`bg-warning/15`).
-- Cérebro: âncora + `MG-ROT-*`; escala em `brain-budget-scale.ts`; waste via `facebook-auto-pause`.
-- Avisos parceiro: RPC `configure_rodizio_pool`; cron `rodizio-metrics-broadcast`; não inventar métricas.
+## Ads / Cérebro / rodízio
+- Detalhes: `#cerebro-mg-e-rodizio` · `#ads-contraste`
+- Sem protocolo/keyword no WA; waste `AUTO_PERF_PAUSE:`; métricas reais ao parceiro
 
 ## Tema
 - Dual light/dark via `ThemeProvider` (`igreen-theme`); default light; Academy/`painel-elite`/ads seguem `html.dark`.

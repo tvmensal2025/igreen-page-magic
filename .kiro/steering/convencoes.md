@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: convencoes
+description: Convenções TS, erros, Whapi, nomes seguros, kill switch. Use em code review ou código novo.
 ---
 
 # Convenções de código
@@ -86,7 +88,7 @@ Proibido `display_name || name` cru (slug vaza). Usar `resolvePublicConsultantLa
 
 ## Front / UI
 
-- Tema light-only (ver regra tema); shadcn em `src/components/ui/`
+- Tema dual light/dark (`ThemeProvider`, `igreen-theme`); shadcn em `src/components/ui/`
 - QueryClient: staleTime 30s, retry 1 (ver `App.tsx`)
 - Testes: Vitest (`*.test.ts`), Playwright em `tests/`
 

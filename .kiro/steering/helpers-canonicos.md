@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: helpers-canonicos
+description: Helpers canônicos _shared e src/lib para reusar. Use antes de reinventar lógica.
 ---
 
 # Helpers canônicos — reusar, não reimplementar

@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: banco
+description: Schema Postgres, tabelas customers/cadência/rodízio, FKs e padrões de query. Use ao mexer em SQL, types ou queries.
 ---
 
 # Banco — tabelas críticas

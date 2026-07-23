@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: rotas-ui
+description: Rotas React Router e páginas admin. Use ao mexer em App.tsx, pages ou navegação.
 ---
 
 # Rotas UI (src/App.tsx)

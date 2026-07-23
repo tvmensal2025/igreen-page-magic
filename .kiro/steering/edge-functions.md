@@ -1,5 +1,7 @@
 ---
-inclusion: always
+inclusion: auto
+name: edge-functions
+description: Mapa de edge functions Supabase, auth cron/caller/webhook. Use ao criar ou editar functions/.
 ---
 
 # Edge Functions — mapa + auth
