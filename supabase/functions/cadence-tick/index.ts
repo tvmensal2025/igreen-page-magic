@@ -907,8 +907,27 @@ Deno.serve(async (req) => {
 
   const now = new Date();
   const loadAvail = createAvailabilityLoader(supabase);
-  const coldCap = await loadColdDailyCap(supabase);
-  let coldTouchesToday = await countColdTouchesToday(supabase);
+  const caps = await loadOutreachCaps(supabase);
+  const touchedToday = await countOutreachTouchesToday(supabase);
+  let touchedB = touchedToday.b;
+  let touchedC = touchedToday.c;
+  const alertedThresholds = new Set<string>(); // ex: "B:60", "C:100", "G:85"
+  async function maybeAlertCap(kind: "B" | "C" | "G", used: number, limit: number) {
+    if (limit <= 0) return;
+    const pct = Math.floor((used / limit) * 100);
+    for (const t of [60, 85, 100]) {
+      if (pct >= t && !alertedThresholds.has(`${kind}:${t}`)) {
+        alertedThresholds.add(`${kind}:${t}`);
+        try {
+          await logSkipped(supabase, {
+            source: "cadence-tick",
+            reason: `outreach_cap_${kind.toLowerCase()}_${t}pct`,
+            details: { group: kind, used, limit, pct },
+          } as any);
+        } catch { /* best-effort */ }
+      }
+    }
+  }
   const audienceCfg = await loadCadenceAudienceConfig(supabase);
   const runId = await startAutomationRun(supabase, "cadence_engine", { triggerKind: "cron" });
 
