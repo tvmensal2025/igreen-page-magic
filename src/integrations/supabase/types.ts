@@ -5403,6 +5403,9 @@ export type Database = {
       }
       daily_reheat_settings: {
         Row: {
+          cap_b: number
+          cap_c: number
+          cap_global_outreach: number
           cold_min_age_hours: number
           cooldown_hours: number
           daily_whapi_cap: number
@@ -5420,6 +5423,9 @@ export type Database = {
           window_start_brt: string
         }
         Insert: {
+          cap_b?: number
+          cap_c?: number
+          cap_global_outreach?: number
           cold_min_age_hours?: number
           cooldown_hours?: number
           daily_whapi_cap?: number
@@ -5437,6 +5443,9 @@ export type Database = {
           window_start_brt?: string
         }
         Update: {
+          cap_b?: number
+          cap_c?: number
+          cap_global_outreach?: number
           cold_min_age_hours?: number
           cooldown_hours?: number
           daily_whapi_cap?: number
