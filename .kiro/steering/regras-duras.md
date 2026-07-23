@@ -46,13 +46,18 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 
 ## Caps outreach A/B/C (cadence-tick)
 - **A = ilimitado** (inbound/em conversa; bypass total, não conta no global).
-- **B = `daily_reheat_settings.cap_b`** (default 150) — reengajamento (COLD/SMS/CALL/TEMA).
+- **B = `daily_reheat_settings.cap_b`** (default 150, **cap fixo configurável — NÃO é ramp**) — reengajamento (COLD/SMS/CALL/TEMA).
 - **C = `daily_reheat_settings.cap_c`** (default 50) — RECALL_* (60D…YEARLY, incl. `_SMS`/`_CALL`).
 - **Global B+C = `daily_reheat_settings.cap_global_outreach`** (default 200) — teto anti-ban somado.
 - Excedeu → **adia** para próxima manhã BRT (nunca descarta o lead).
 - Classificação: `stageGroup(stage)` em `_shared/cadence-engine.ts`.
 - Alertas 60 / 85 / 100 % em `automation_skip_log` (`outreach_cap_{b|c|g}_{60|85|100}pct`); UI: `ColdCadenceCapCard` (3 barras).
 - `daily_whapi_cap` = legado, mantido só para retrocompat do reheat clássico.
+
+## Janelas horárias BRT (duas, distintas)
+- **Clamp geral** (`clamp_to_business_window_brt`, aplicado pelo motor a todo agendamento): Seg–Sex 08:00–20:00, **Sáb 08:00–14:00**, **Dom fechado** (empurra p/ 2ª-feira 08:05).
+- **Janela do reheat clássico** (`daily_reheat_settings.window_start_brt` / `window_end_brt`): default **09:00–18:30**, usada só pelo daily-reheat legado — independente do clamp geral.
+- Não simplificar como “08–20h”; sempre citar Sáb/Dom e a janela própria do reheat.
 
 
 ## Portal / Club / Sync (workers distintos)

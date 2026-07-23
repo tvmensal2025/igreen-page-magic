@@ -15,7 +15,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Editar texto/áudio de um stage (Voz, SMS, WhatsApp) | UI `/admin/textos` → grava em `cadence_stage_config.message_text` via `syncCadenceLibraryToStageConfig` (`src/lib/syncCadenceToBotFlow.ts`). Fonte da verdade no código: `src/lib/multichannelCadenceTexts.ts` |
 | Mudar cap diário B / C / global | Colunas `cap_b`, `cap_c`, `cap_global_outreach` em `daily_reheat_settings` (edite pela UI `ColdCadenceCapCard` ou SQL). Consumido em `supabase/functions/cadence-tick/index.ts` |
 | Adicionar novo stage | `_shared/cadence-engine.ts` (`STAGE_MAP` + `stageGroup`) + migration em `cadence_stage_config` + revisar `cadence-inbound-router.ts` |
-| Mudar janela horária de envio | Trava `clamp_to_business_window_brt` em migration; motor respeita 08–20h BRT |
+| Mudar janela horária de envio | Trava `clamp_to_business_window_brt` em migration. **Duas janelas distintas:** (1) clamp geral = Seg–Sex 08:00–20:00, Sáb 08:00–14:00, Dom fechado (empurra p/ 2ª 08:05); (2) `daily_reheat_settings.window_start_brt/end_brt` (default 09:00–18:30) usada só pelo reheat clássico. |
 | Pausar/despausar cadência | `app_settings.cadence_engine_enabled` + `automation_toggles(key='cadence_engine')` |
 | Investigar “por que não enviou” | `automation_skip_log` (motivos: cap, DNC, quiet, nome inseguro, canal morto) + logs `cadence-tick` (`boot`/`guards_ok`/`done`/`fatal`) |
 
@@ -83,7 +83,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Áudio personalizado | `_shared/voice-dialer/` → `resolvePersonalizedCallAudio` |
 | DNC voz | `voice_dnc_list` + `customers.do_not_contact` |
 | Painel números inválidos | `src/components/admin/InvalidPhonesPanel.tsx` |
-| Cross-channel suppression | `checkPhoneDeadForChannel` em `cadence-tick.ts` |
+| Cross-channel suppression | `checkPhoneDeadForChannel` em `supabase/functions/cadence-tick/index.ts` |
 
 ## Nomes seguros (cliente/consultor)
 

@@ -1,5 +1,9 @@
 # Status da auditoria
 
+> ⚠️ **SNAPSHOT HISTÓRICO** (2026-07-16). Spec vivo em `.kiro/steering/`. Não usar como fonte de verdade atual — consultar apenas para contexto histórico do go-live.
+
+
+
 **Estado:** APLICADO EM PRODUÇÃO (2026-07-16) — grace, sem `ENFORCE_*`.
 
 - [x] Auditoria 00–18 + go-live `19`
