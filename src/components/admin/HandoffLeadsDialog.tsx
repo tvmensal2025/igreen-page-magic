@@ -125,6 +125,30 @@ export function HandoffLeadsDialog({
     onOpenChange(false);
   };
 
+  async function blockContact(row: HandoffLead) {
+    const ok = window.confirm(
+      `Bloquear ${row.displayName}?\n\nO lead sai do handoff e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para a pizza.`,
+    );
+    if (!ok) return;
+    setBusy(true);
+    const res = await suppressContact({
+      consultantId,
+      customerId: row.customerId,
+      phone: row.phone,
+      reason: "requested",
+      channel: "handoff_dialog",
+      notes: "Bloqueado a partir do painel de handoff",
+    });
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(res.error || "Falha ao bloquear contato");
+      return;
+    }
+    toast.success(`${row.displayName} bloqueado — não recebe mais contatos`);
+    await reload();
+    onChanged?.();
+  }
+
   const selectedIds = Array.from(selected);
 
   return (
