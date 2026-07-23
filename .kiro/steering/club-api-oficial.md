@@ -2,9 +2,10 @@
 inclusion: fileMatch
 fileMatchPattern:
   - "worker-club/**"
-  - "**/club-worker*"
   - "supabase/functions/finalize-club/**"
-  - "**/*Club*"
+  - "supabase/functions/_shared/club-worker.ts"
+  - "supabase/functions/_shared/clubValidation.ts"
+  - "src/lib/clubCadastroUrl.ts"
 ---
 
 # iGreen Club — fatos oficiais

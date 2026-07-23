@@ -23,9 +23,9 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 | `#helpers-canonicos` `#banco` `#edge-functions` `#fluxos` | Helpers, schema, edges, jornadas |
 | `#portal2-fluxo-canonico` `#club-api-oficial` `#igreen-sync-oficial` | Workers iGreen |
 | `#cerebro-mg-e-rodizio` `#ads-contraste` `#wallet-stripe` | Ads / Cérebro / carteira |
-| `#pos-venda` `#flow-engine-v3` `#minio-storage` | Pós-venda WA, motor v3, mídia |
+| `#pos-venda` `#esteira-multiproduto` `#flow-engine-v3` `#minio-storage` | Pós-venda WA ≠ esteira venda; motor v3; mídia |
 | `#solar-3d` `#remote-support` | Telhado Google Solar, suporte remoto |
-| `#nomes-e-tema` `#convencoes` `#rotas-ui` `#deploy` `#projeto` | Nomes/tema, código, UI, deploy |
+| `#nomes-e-tema` `#convencoes` `#rotas-ui` `#deploy` | Nomes/tema, código, UI, deploy |
 | `#security-auth` | Auth edges / CORS / verify_jwt |
 
 ## Kill switch

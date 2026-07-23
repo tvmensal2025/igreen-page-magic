@@ -4,7 +4,7 @@ fileMatchPattern:
   - "worker-igreen-sync/**"
   - "supabase/functions/sync-igreen-customers/**"
   - "supabase/functions/_shared/igreen-sync-worker.ts"
-  - "supabase/functions/*igreen*/**"
+  - "src/lib/igreenSync.ts"
 ---
 
 # iGreen sync worker — leitura de carteira
