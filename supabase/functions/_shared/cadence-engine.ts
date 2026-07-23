@@ -129,6 +129,19 @@ export function isColdOutreachStage(stage: string): boolean {
   return COLD_OUTREACH_STAGES.has(stage as Stage);
 }
 
+/**
+ * Classifica o estágio no grupo da esteira Multicanal:
+ *   A = lead novo/inbound (nunca conta cap, nunca alerta) — qualquer coisa fora do outreach frio.
+ *   B = reengajamento — nós tocamos primeiro (COLD_*, CALL_1-3, SMS_1/2, SMS_TEMA_*).
+ *   C = reciclagem fria — RECALL_* (60d, 90d, 5m, 8m, 12m, yearly).
+ * Base para caps separados: A=ilimitado, B=ramp, C=50/dia, TETO GLOBAL B+C=200/dia.
+ */
+export function stageGroup(stage: string): "A" | "B" | "C" {
+  if (stage.startsWith("RECALL_")) return "C";
+  if (COLD_OUTREACH_STAGES.has(stage as Stage)) return "B";
+  return "A";
+}
+
 export function computeNextActionAt(
   fromStage: Stage,
   base: Date = new Date(),
