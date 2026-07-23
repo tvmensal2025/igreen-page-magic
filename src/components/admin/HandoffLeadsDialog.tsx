@@ -33,8 +33,10 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   formatHandoffReason,
+  formatSecurityReason,
   loadHandoffLeads,
   returnHandoffsToPizza,
+  type BlockedCategory,
   type HandoffLead,
 } from "@/lib/handoffReturnToPizza";
 import { toast } from "sonner";
@@ -60,15 +62,16 @@ export function HandoffLeadsDialog({
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<HandoffLead[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<"all" | BlockedCategory>("all");
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const list = await loadHandoffLeads(consultantId);
       setRows(list);
-      setSelected(new Set(list.map((r) => r.cadenceId)));
+      setSelected(new Set());
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar handoffs");
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar leads fora da pizza");
     } finally {
       setLoading(false);
     }
@@ -78,8 +81,16 @@ export function HandoffLeadsDialog({
     if (open) void reload();
   }, [open, reload]);
 
+  const filteredRows = filter === "all" ? rows : rows.filter((r) => r.category === filter);
+  const counts = {
+    all: rows.length,
+    handoff: rows.filter((r) => r.category === "handoff").length,
+    security: rows.filter((r) => r.category === "security").length,
+    other: rows.filter((r) => r.category === "other").length,
+  };
+
   const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(rows.map((r) => r.cadenceId)) : new Set());
+    setSelected(checked ? new Set(filteredRows.map((r) => r.cadenceId)) : new Set());
   };
 
   const toggleOne = (id: string, checked: boolean) => {
@@ -157,19 +168,40 @@ export function HandoffLeadsDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <HandHelping className="h-5 w-5 text-amber-600" />
-            Handoff — aguardando você
+            Leads fora da pizza — escolha o que fazer
           </DialogTitle>
           <DialogDescription>
-            Estes leads saíram da pizza enquanto você atende.{" "}
-            <strong>Voltar à pizza</strong> libera a cadência e reativa o bot no ciclo.
-            Se já resolveu na mão e não quer o motor, só feche sem devolver.
+            Aqui estão <strong>todos os leads fora do ciclo</strong>: handoff humano e bloqueados por segurança
+            (telefone inválido, DNC, opt-out). Use <strong>Voltar à pizza</strong> para reativar a cadência, ou
+            <strong> Bloquear</strong> para não receber mais contato.
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <p className="text-sm text-muted-foreground">
-            {loading ? "Carregando…" : `${rows.length} em handoff`}
-          </p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {([
+              { key: "all", label: "Todos" },
+              { key: "handoff", label: "Handoff humano" },
+              { key: "security", label: "Bloqueados por segurança" },
+              ...(counts.other > 0 ? [{ key: "other" as const, label: "Outros" }] : []),
+            ] as Array<{ key: "all" | BlockedCategory; label: string }>).map((chip) => {
+              const active = filter === chip.key;
+              const n = counts[chip.key as keyof typeof counts];
+              return (
+                <Button
+                  key={chip.key}
+                  type="button"
+                  size="sm"
+                  variant={active ? "default" : "outline"}
+                  className="h-7 text-xs"
+                  onClick={() => setFilter(chip.key)}
+                >
+                  {chip.label}
+                  <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">{n}</Badge>
+                </Button>
+              );
+            })}
+          </div>
           <Button type="button" variant="outline" size="sm" onClick={() => void reload()} disabled={loading || busy}>
             <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
             Atualizar
@@ -180,15 +212,17 @@ export function HandoffLeadsDialog({
           <div className="flex justify-center py-10 text-muted-foreground">
             <Loader2 className="h-6 w-6 animate-spin" />
           </div>
-        ) : rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-6 text-center">Nenhum handoff aberto agora.</p>
+        ) : filteredRows.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            {rows.length === 0 ? "Nenhum lead fora da pizza." : "Nenhum lead nesta categoria."}
+          </p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    checked={selected.size === rows.length && rows.length > 0}
+                    checked={selected.size === filteredRows.length && filteredRows.length > 0}
                     onCheckedChange={(v) => toggleAll(!!v)}
                     aria-label="Selecionar todos"
                   />
@@ -200,7 +234,9 @@ export function HandoffLeadsDialog({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => {
+                const isSecurity = row.category === "security";
+                return (
                 <TableRow key={row.cadenceId}>
                   <TableCell>
                     <Checkbox
@@ -218,9 +254,19 @@ export function HandoffLeadsDialog({
                       </div>
                     )}
                   </TableCell>
-                  <TableCell className="text-xs max-w-[180px]">
-                    {formatHandoffReason(row.alertReason || row.botPausedReason || "handoff_humano")}
-                    {row.botPaused && (
+                  <TableCell className="text-xs max-w-[200px]">
+                    <Badge
+                      variant={isSecurity ? "destructive" : "secondary"}
+                      className="mb-1 text-[10px]"
+                    >
+                      {isSecurity ? "Bloqueado" : row.category === "handoff" ? "Handoff" : "Outro"}
+                    </Badge>
+                    <div>
+                      {isSecurity
+                        ? formatSecurityReason(row.pausedReasonRaw)
+                        : formatHandoffReason(row.alertReason || row.botPausedReason || "handoff_humano")}
+                    </div>
+                    {row.botPaused && !isSecurity && (
                       <Badge variant="outline" className="mt-1 text-[10px]">
                         Bot pausado
                       </Badge>
@@ -249,6 +295,7 @@ export function HandoffLeadsDialog({
                         className="h-8 text-xs"
                         disabled={busy}
                         onClick={() => void returnSelected([row.cadenceId])}
+                        title={isSecurity ? "Reativa o lead mesmo bloqueado — use com cuidado" : "Devolve o lead à pizza A/B/C"}
                       >
                         <RotateCcw className="h-3.5 w-3.5 mr-1" />
                         Voltar à pizza
@@ -268,10 +315,12 @@ export function HandoffLeadsDialog({
                     </div>
                   </TableCell>
                 </TableRow>
-              ))}
+                );
+              })}
             </TableBody>
           </Table>
         )}
+
 
         <DialogFooter className="flex-wrap gap-2 sm:justify-between">
           <span className="text-xs text-muted-foreground self-center">
@@ -345,14 +394,14 @@ export function HandoffLeadsBanner({
         <HandHelping className="h-4 w-4 text-sky-700 shrink-0" />
         <div className="min-w-0 flex-1 text-sm">
           <span className="font-semibold text-sky-950 dark:text-sky-50">
-            {count} lead(s) em handoff — fora da pizza
+            {count} lead(s) fora da pizza — handoff + bloqueados por segurança
           </span>
           <span className="block text-[11px] text-sky-900/80 dark:text-sky-100/80">
-            Atendimento humano. Use <strong>Voltar à pizza</strong> quando quiser que o motor retome o ciclo.
+            Escolha lead a lead: <strong>Voltar à pizza</strong> reativa o ciclo, <strong>Bloquear</strong> encerra o contato.
           </span>
         </div>
         <Button type="button" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
-          Ver handoffs
+          Ver todos
         </Button>
       </div>
       <HandoffLeadsDialog

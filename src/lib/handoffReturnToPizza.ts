@@ -13,6 +13,8 @@ import { resolveLeadPanelDisplayName } from "@/lib/customerDisplayName";
 
 export const HANDOFF_PAUSE_REASON = "handoff_humano";
 
+export type BlockedCategory = "handoff" | "security" | "other";
+
 export type HandoffLead = {
   cadenceId: string;
   customerId: string;
@@ -28,6 +30,8 @@ export type HandoffLead = {
   botPaused: boolean;
   botPausedReason: string | null;
   pausedUntil: string | null;
+  pausedReasonRaw: string | null;
+  category: BlockedCategory;
   alertId: string | null;
   alertReason: string | null;
   alertMessage: string | null;
@@ -63,20 +67,76 @@ function formatPhoneBr(raw: string | null | undefined): string {
   return raw || d || "—";
 }
 
-/** Lista leads do consultor pausados por handoff_humano. */
+/** Motivos "security" — lead sai da pizza por bloqueio/qualidade, não por handoff humano. */
+export const SECURITY_PAUSE_REASONS = [
+  "invalid_phone",
+  "dnc",
+  "opt_out",
+  "manual_admin_clear_sla_backlog",
+] as const;
+
+const SECURITY_PAUSE_PREFIXES = ["dnc:", "not_lead_outside_ddd"];
+
+export function classifyPauseReason(reason: string | null | undefined): BlockedCategory {
+  const r = String(reason || "").trim().toLowerCase();
+  if (!r) return "other";
+  if (r === HANDOFF_PAUSE_REASON) return "handoff";
+  if ((SECURITY_PAUSE_REASONS as readonly string[]).includes(r)) return "security";
+  if (SECURITY_PAUSE_PREFIXES.some((p) => r.startsWith(p))) return "security";
+  return "other";
+}
+
+const SECURITY_REASON_LABEL: Record<string, string> = {
+  invalid_phone: "Telefone inválido (canal morto)",
+  dnc: "Bloqueado — nunca mais contatar",
+  opt_out: "Opt-out — pediu para não receber",
+  manual_admin_clear_sla_backlog: "Congelado pelo admin (backlog)",
+};
+
+export function formatSecurityReason(reason: string | null | undefined): string {
+  const r = String(reason || "").trim().toLowerCase();
+  if (!r) return "Bloqueado";
+  if (SECURITY_REASON_LABEL[r]) return SECURITY_REASON_LABEL[r];
+  if (r.startsWith("dnc:")) return `Bloqueado (${r.slice(4)})`;
+  if (r.startsWith("not_lead_outside_ddd")) return "Fora do DDD atendido";
+  return r.replace(/_/g, " ");
+}
+
+/**
+ * Lista leads do consultor fora da pizza:
+ *  - handoff humano (aguardando atendente)
+ *  - bloqueados por segurança (invalid_phone / dnc / opt_out / backlog)
+ */
 export async function loadHandoffLeads(consultantId: string): Promise<HandoffLead[]> {
+  const reasons: string[] = [HANDOFF_PAUSE_REASON, ...SECURITY_PAUSE_REASONS];
   const { data: cadenceRows, error } = await supabase
     .from("lead_cadence_state")
-    .select("id, customer_id, stage, paused_until, paused_reason, next_action_at")
+    .select("id, customer_id, stage, paused_until, paused_reason, next_action_at, updated_at")
     .eq("consultant_id", consultantId)
-    .eq("paused_reason", HANDOFF_PAUSE_REASON)
+    .in("paused_reason", reasons)
     .order("updated_at", { ascending: false })
-    .limit(100);
+    .limit(300);
 
   if (error) throw new Error(error.message);
-  if (!cadenceRows?.length) return [];
+  // Também aceita paused_reason com prefixos (dnc:*, not_lead_outside_ddd*)
+  const { data: prefixRows } = await supabase
+    .from("lead_cadence_state")
+    .select("id, customer_id, stage, paused_until, paused_reason, next_action_at, updated_at")
+    .eq("consultant_id", consultantId)
+    .or("paused_reason.ilike.dnc:%,paused_reason.ilike.not_lead_outside_ddd%")
+    .order("updated_at", { ascending: false })
+    .limit(200);
 
-  const customerIds = cadenceRows.map((r) => r.customer_id).filter(Boolean) as string[];
+  const allRows = [...(cadenceRows || []), ...(prefixRows || [])];
+  const seen = new Set<string>();
+  const rows = allRows.filter((r) => {
+    if (!r?.id || seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
+  if (!rows.length) return [];
+
+  const customerIds = rows.map((r) => r.customer_id).filter(Boolean) as string[];
 
   const [{ data: customers }, { data: alerts }] = await Promise.all([
     supabase
@@ -102,7 +162,7 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
     if (!alertByCustomer.has(a.customer_id)) alertByCustomer.set(a.customer_id, a);
   }
 
-  return cadenceRows.map((row) => {
+  return rows.map((row) => {
     const c = custById.get(row.customer_id);
     const alert = alertByCustomer.get(row.customer_id);
     const phone = c?.phone_whatsapp || "";
@@ -112,6 +172,7 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
       nameSource: (c as { name_source?: string | null } | undefined)?.name_source,
     });
     const grupo = cadenceStageGroup(String(row.stage));
+    const category = classifyPauseReason(row.paused_reason);
     return {
       cadenceId: row.id,
       customerId: row.customer_id,
@@ -127,6 +188,8 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
       botPaused: !!c?.bot_paused,
       botPausedReason: c?.bot_paused_reason ?? null,
       pausedUntil: row.paused_until,
+      pausedReasonRaw: row.paused_reason ?? null,
+      category,
       alertId: alert?.id ?? null,
       alertReason: alert?.reason ?? null,
       alertMessage: alert?.user_message ?? null,
