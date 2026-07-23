@@ -8,7 +8,9 @@ import {
   MessageCircle,
   RefreshCw,
   RotateCcw,
+  Ban,
 } from "lucide-react";
+import { suppressContact } from "@/services/contactSuppression";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
