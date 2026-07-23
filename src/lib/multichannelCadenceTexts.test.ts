@@ -29,6 +29,7 @@ import {
   spokenSegmentText,
   stepMediaLookupKeys,
   unresolvedConsultantIdentityPlaceholders,
+  SOFIA_OPENING,
 } from "./multichannelCadenceTexts";
 
 describe("Whapi safety", () => {

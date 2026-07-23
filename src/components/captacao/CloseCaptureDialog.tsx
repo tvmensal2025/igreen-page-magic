@@ -472,7 +472,7 @@ export function CloseCaptureDialog({
                       value={selectedCampaignId || undefined}
                       onValueChange={(v) => {
                         setSelectedCampaignId(v);
-                        if (sourceKind === "organic") setSourceKind("campaign");
+                        if ((sourceKind as string) === "organic") setSourceKind("campaign");
                       }}
                     >
                       <SelectTrigger className="h-9">
@@ -498,7 +498,7 @@ export function CloseCaptureDialog({
                       value={selectedPartnerId || undefined}
                       onValueChange={(v) => {
                         setSelectedPartnerId(v);
-                        if (sourceKind === "organic") setSourceKind("partner");
+                        if ((sourceKind as string) === "organic") setSourceKind("partner");
                       }}
                     >
                       <SelectTrigger className="h-9">

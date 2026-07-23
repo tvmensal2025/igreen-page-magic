@@ -270,7 +270,7 @@ function MessagePreviewEditor({
         customerId,
         conversationStep,
       });
-      if (!result.ok) {
+      if (result.ok !== true) {
         toast({ title: result.error, variant: "destructive" });
         return;
       }
@@ -585,7 +585,7 @@ function RetentionCustomerName({
         customerId: customer.id,
         conversationStep,
       });
-      if (!result.ok) {
+      if (result.ok !== true) {
         toast({ title: result.error, variant: "destructive" });
         return;
       }
