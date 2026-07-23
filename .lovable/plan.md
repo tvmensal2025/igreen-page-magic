@@ -1,45 +1,66 @@
-## Diagnóstico
-Você tem razão — mapeei errado no plano anterior. O typecheck padrão do projeto (`tsc --noEmit`, sem strict) passa em 0, mas o CI roda o modo estrito e pega os 10 erros que você colou. Todos são pontuais e não afetam a lógica dos motores.
+# Tetos diários — Grupo A sem limite
 
-**Nenhum motor, edge function crítica, schema, RLS ou fluxo A/B/C será tocado.** As correções são só de tipagem e um import faltando.
+## Regra final
 
-## As 10 correções (arquivo por arquivo)
 
-### 1. `src/components/admin/ReheatCyclePizza.tsx` — 1 erro
-Import faltando. A função `isLegacyInteractiveCallScript` existe em `src/lib/cadencePreview.ts` mas nunca foi importada aqui.
-**Ação:** adicionar `import { isLegacyInteractiveCallScript } from "@/lib/cadencePreview";`.
+| Grupo                                            | Perfil                                | Teto/dia                             | Comportamento                                          |
+| ------------------------------------------------ | ------------------------------------- | ------------------------------------ | ------------------------------------------------------ |
+| **A — Novos leads (inbound)**                    | Cliente respondeu / clicou no anúncio | **SEM LIMITE**                       | Nunca bloqueia, nunca alerta por volume. Passa direto. |
+| **B — Reengajamento (silêncio)**                 | Nós tocamos primeiro                  | **Ramp anti-ban** (D1=20 → D15+=200) | Excedente vai para amanhã 08:00.                       |
+| **C — Reciclagem fria** (30/60/90d, 5m, 8m, 12m) | Lead antigo                           | **50**                               | Excedente vai para amanhã 08:00.                       |
+| **TETO GLOBAL (só B+C)**                         | Outreach frio por instância           | **200/dia**                          | Freio anti-ban. **Grupo A não conta aqui.**            |
 
-### 2. `src/components/admin/RetentionCard.tsx` — 2 erros (linhas 274, 589)
-`sendRetentionViaInstance` retorna união discriminada `{ ok: true } | { ok: false; error: string }`. Sob strict, `!result.ok` não está estreitando de forma confiável nesse arquivo.
-**Ação:** trocar `if (!result.ok)` por `if (result.ok !== true)` nos dois pontos. Preserva 100% do comportamento; só melhora o estreitamento.
 
-### 3. `src/components/captacao/CaptureSheet.tsx` — 2 erros (linhas 510, 791)
-`customer as Record<string, unknown>` falha porque `CaptureCustomer` não tem index signature.
-**Ação:** trocar por `customer as unknown as Record<string, unknown> | null` nos dois pontos (cast em duas etapas, padrão TS quando tipos não se sobrepõem).
+Consequência: com 200/dia de outreach frio (B+C), tocar 1000 leads leva ~5 dias úteis — lento de propósito, protege o número. O Grupo A responde sempre, sem restrição.
 
-### 4. `src/components/captacao/CloseCaptureDialog.tsx` — 2 erros (linhas 475, 501)
-Dentro do bloco `{sourceKind !== "organic" && ...}`, o TS estreita o tipo para `"partner" | "campaign"`, então `sourceKind === "organic"` fica sempre falso — mas o handler é o `onValueChange` do Select, que executa depois, quando o usuário pode ter voltado ao estado "organic". O código está correto; só a análise estática está errada.
-**Ação:** `(sourceKind as string) === "organic"` nos dois `if`. Comportamento idêntico.
+## Alertas de preenchimento (só B, C e global)
 
-### 5. `src/lib/multichannelCadenceTexts.test.ts` — 2 erros (linhas 404, 405)
-Falta importar `SOFIA_OPENING`.
-**Ação:** adicionar `SOFIA_OPENING` à lista de imports de `./multichannelCadenceTexts`.
+Dispara toast + registra em `automation_skip_log`. **Grupo A não gera alerta de volume.**
 
-### 6. `supabase/functions/_shared/portal-worker.ts` — 1 erro (linha 126)
-`deep.ok ? { ok: true, missing: [] } : { ok: false, missing: deep.missing }` — no ramo `false`, o TS não estreita porque foi só uma expressão ternária inline.
-**Ação:** trocar por bloco explícito:
-```ts
-if (deep.ok) return { ok: true, missing: [] };
-return { ok: false, missing: deep.missing };
+- **60% do teto** (B, C ou global) → aviso amarelo (`"Grupo B: 36/60 hoje"`).
+- **85% do teto** → aviso laranja + banner em `/admin/motor` e `/admin/agendamentos`.
+- **100% do teto** → hard stop **daquele grupo** (ou global de B+C) até 00:00 BRT; agendamentos remanescentes clampam para amanhã 08:00.
+
+## O que muda no código
+
+1. `**supabase/functions/_shared/whapi-throttle.ts**`
+  - Aceita `group: "A"|"B"|"C"`.
+  - `group === "A"` → **bypass total** (nunca conta, nunca bloqueia, nunca alerta).
+  - Envs: `WHAPI_CAP_B` (ramp), `WHAPI_CAP_C=50`, `WHAPI_CAP_GLOBAL=200`.
+2. **RPC `whapi_send_throttle**`
+  - `ADD COLUMN group_key text NOT NULL DEFAULT 'B'`.
+  - Conta `sent_today` só para B e C; ignora A.
+  - Retorna `{ sent_today_group, sent_today_outreach, next_warn_level }`.
+3. **Chamadas**
+  - `cadence-tick`: passa `group` do `cadence_stage_config.group`.
+  - `sofia-*` / `wa-inbound-*` / respostas ao cliente: `group: "A"` → bypass.
+  - `daily_reheat` (quando ligar): `group: "C"`.
+4. **UI — `ColdCadenceCapCard` (renomeado para OutreachCapCard)**
+  - 3 barras: `B: 12/60 (ramp D5)` · `C: 3/50` · `Global outreach: 15/200`.
+  - `A: ilimitado ✓` (só informativo, sem barra).
+  - Aparece em `/admin/motor` e no topo de `/admin/agendamentos` quando ≥ 60%.
+5. **Alertas**
+  - Helper `checkOutreachCapAndAlert(group, sent, cap)` — nunca é chamado para A.
+
+## Fora de escopo (não mexer)
+
+- Motor A/B/C, elegibilidade, janela 08–20 BRT, kill switch.
+- Ramp anti-ban existente (só B/C).
+- Velip (voz/SMS) — sem cap.
+- Jitter / intervalo mínimo — iguais.
+
+## Detalhes técnicos (1 migration)
+
+```sql
+ALTER TABLE whapi_send_throttle
+  ADD COLUMN IF NOT EXISTS group_key text NOT NULL DEFAULT 'B';
+CREATE INDEX IF NOT EXISTS whapi_throttle_group_day_idx
+  ON whapi_send_throttle (instance_id, group_key, (created_at::date));
 ```
 
-## Validação
-1. Após as edições, rodar `npx tsc --noEmit -p tsconfig.app.json --strict 2>&1 | grep -E "ReheatCyclePizza|RetentionCard|CaptureSheet|CloseCaptureDialog|multichannelCadenceTexts|portal-worker"` — meta: zero linhas dos 10 erros listados.
-2. Rodar `npx tsc --noEmit` (config padrão do projeto) — meta: continuar em 0.
-3. Não rodar `vitest` (ambiente do sandbox está com `canvas.node` quebrado; irrelevante para as correções).
+- função `whapi_send_throttle(...)` passa a receber `group_key`; se `= 'A'`, retorna imediatamente sem gravar nem checar cap.
 
-## Sobre "listar todas as funções da plataforma"
-Depois que o CI ficar verde, faço a Parte 2 que você pediu antes: análise ponta-a-ponta se cada função está funcional — Anúncio Meta → captura → rodízio → Pizza → Grupo A/B/C → Parceiro. Entrego em texto (sem mexer em código), com evidência de arquivo/linha e status ✅/⚠️/❌ por função. Isso não faz parte deste patch — evita misturar correção de CI com auditoria.
+Defaults embutidos no código (`ramp/50/200`) para não quebrar se envs faltarem.
+Testes em `whapi-throttle_test.ts`: bypass total de A, cap B, cap C, cap global de outreach, alertas 60/85/100.
 
-## Fora de escopo
-Os outros ~15 erros de `--strict` que apareceram no meu check local (StepBudget, StepRegion, BotHealthDashboard, WhatsAppTab, TourProvider etc.) **não estão na lista que você colou do CI** — não vou tocar neles agora. Se o CI reclamar depois, aviso e faço em patch separado.
+Confirma esses valores (C=50, global outreach=200) para eu implementar?
