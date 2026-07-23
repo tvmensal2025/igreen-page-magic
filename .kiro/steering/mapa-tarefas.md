@@ -36,11 +36,23 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Tarefa | Onde |
 |---|---|
 | Atribuir campanha a lead | `_shared/deterministic-campaign-resolver.ts` (ordem: `ad_id → fb_campaign_id → ctwa_clid → protocol → initial_message exact`) |
-| Rodízio de parceiro | `rodizio_pools.campaign_id` (UUID) + RPC atômica; parceiros em `referral_partners` |
-| Notificar parceiro | edge `notify-partner-leads-batch` |
+| Rodízio de parceiro por campanha | RPC atômica `rodizio_assign_lead` + wizard `RodizioBlock.tsx`. Detalhe em `#rodizio-parceiros-campanha` |
+| Notificar parceiro | `_shared/notify-consultant.ts` `notifyPartnerNewLead` + edge `notify-partner-leads-batch` |
 | Lead Ads webhook | edge `meta-leadads-webhook` (precisa `PAGE_ACCESS_TOKEN`) |
 | Métricas anúncio | `useAdMetrics.ts` + `AdMetricsCards.tsx` (CTWA reporta conversas, não `meta_lead_actions`) |
 | Waste guard | `_shared/campaign-waste-guard.ts` (`AUTO_PERF_PAUSE:`) |
+
+## Parceiros indicadores (keyword + short_code)
+
+| Tarefa | Onde |
+|---|---|
+| Cadastrar/editar parceiro | UI `src/components/admin/parceiros/*` + hook `useReferralPartners` |
+| Bloquear keyword genérica | `GENERIC_KEYWORD_BLOCKLIST` em `qrPhrase.ts` (front) — Deno usa mesma normalização |
+| Frase do QR / marcador `#R{code}` | `qrPhrase.ts` + espelho `_shared/qr-phrase.ts` (editar SEMPRE juntos; `qrPhraseParity.test.ts` trava) |
+| Rota `/r/{licenca}/{code}` | edge `qr-redirect` |
+| Matching no webhook (short_code → keyword) | `_shared/keyword-matcher.ts` + blocos em `whapi-webhook` e `evolution-webhook` (paridade) |
+| Detalhe canônico | `#parceiros-referral` |
+
 
 ## Portal 2 (cadastro iGreen)
 
