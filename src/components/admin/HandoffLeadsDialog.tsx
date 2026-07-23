@@ -33,8 +33,10 @@ import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import {
   formatHandoffReason,
+  formatSecurityReason,
   loadHandoffLeads,
   returnHandoffsToPizza,
+  type BlockedCategory,
   type HandoffLead,
 } from "@/lib/handoffReturnToPizza";
 import { toast } from "sonner";
