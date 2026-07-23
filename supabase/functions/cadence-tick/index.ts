@@ -1489,7 +1489,7 @@ Deno.serve(async (req) => {
     audience_blocked: audienceBlocked,
   });
 
-  return json({
+  const summary = {
     processed: due.length,
     dispatched,
     deferred,
@@ -1500,7 +1500,16 @@ Deno.serve(async (req) => {
     audience_blocked: audienceBlocked,
     caps,
     touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
-  });
+    ms: Date.now() - bootTs,
+  };
+  console.info("[cadence-tick] done", summary);
+  return json(summary);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[cadence-tick] fatal", { error: msg, stack, ms: Date.now() - bootTs });
+    return json({ error: "cadence_tick_fatal", message: msg }, 500);
+  }
 });
 
 function json(body: unknown, status = 200) {
