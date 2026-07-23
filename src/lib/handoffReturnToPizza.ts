@@ -13,6 +13,8 @@ import { resolveLeadPanelDisplayName } from "@/lib/customerDisplayName";
 
 export const HANDOFF_PAUSE_REASON = "handoff_humano";
 
+export type BlockedCategory = "handoff" | "security" | "other";
+
 export type HandoffLead = {
   cadenceId: string;
   customerId: string;
@@ -28,6 +30,8 @@ export type HandoffLead = {
   botPaused: boolean;
   botPausedReason: string | null;
   pausedUntil: string | null;
+  pausedReasonRaw: string | null;
+  category: BlockedCategory;
   alertId: string | null;
   alertReason: string | null;
   alertMessage: string | null;
