@@ -24,6 +24,45 @@ import {
   WASTE_LOOKBACK_DAYS,
   WASTE_MIN_AGE_MS,
 } from "../_shared/campaign-waste-guard.ts";
+import {
+  decideAnchorBudgetScale,
+  formatAnchorScaleDownWhatsApp,
+  formatAnchorScaleUpWhatsApp,
+} from "../_shared/brain-budget-scale.ts";
+import { notifyAnchorBudgetScale } from "../_shared/notify-consultant.ts";
+
+/** Âncora MG — escala fica no rotator, não no Cérebro por campanha. */
+const ANCHOR_CAMPAIGN_ID = "a0189d12-413a-477d-b903-1bca7a61f44a";
+
+async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token: string) {
+  const r = await fetch(`${FB_GRAPH}/${fbCampaignId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      daily_budget: String(dailyBudgetCents),
+      access_token: token,
+    }),
+  });
+  const body = await r.text();
+  if (!r.ok) throw new Error(`budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`);
+}
+
+function campaignCityLabel(name: string, cities: unknown): string {
+  if (Array.isArray(cities) && cities[0] && typeof (cities[0] as any).name === "string") {
+    return String((cities[0] as any).name);
+  }
+  const raw = String(name || "Campanha")
+    .replace(/\[CONS-[^\]]+\]/gi, "")
+    .replace(/^MG-ROT-/i, "")
+    .split(/\s*[·—–]\s*/)[0]
+    .trim();
+  return raw.slice(0, 40) || "Campanha";
+}
+
+function isMgRotOrAnchor(id: string, name: string): boolean {
+  if (id === ANCHOR_CAMPAIGN_ID) return true;
+  return /^MG-ROT-/i.test(String(name || ""));
+}
 
 async function postStatus(id: string, status: "PAUSED" | "ACTIVE", token: string) {
   const r = await fetch(`${FB_GRAPH}/${id}`, {
@@ -263,6 +302,179 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Autopilot Cérebro: após waste, alinha slots + escala âncora (consultores com flag)
+    let brainTicks: Array<Record<string, unknown>> = [];
+    if (!dryRun) {
+      try {
+        const { data: settings } = await admin
+          .from("consultant_ad_settings")
+          .select("consultant_id, brain_config")
+          .not("brain_config", "is", null);
+        const sr = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+        const base = Deno.env.get("SUPABASE_URL") || "";
+        for (const row of settings || []) {
+          const bc = (row as any).brain_config;
+          if (!bc || bc.autopilot === false) continue;
+          const r = await fetch(`${base}/functions/v1/facebook-mg-city-rotator`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${sr}`,
+              apikey: sr,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              consultant_id: row.consultant_id,
+              ensure_active_slots: true,
+              seed: false,
+            }),
+          });
+          const resp = await r.json().catch(() => ({}));
+          brainTicks.push({
+            consultant_id: row.consultant_id,
+            status: r.status,
+            ok: r.ok,
+            ensured: (resp as any)?.ensured,
+          });
+        }
+      } catch (e) {
+        brainTicks.push({ error: (e as Error).message });
+      }
+    }
+
+    // Cérebro por campanha (parceiro / outras cidades — NÃO MG-ROT nem âncora)
+    const campaignScaleTicks: Array<Record<string, unknown>> = [];
+    try {
+      const { data: scaleCamps } = await admin
+        .from("facebook_campaigns")
+        .select(
+          "id, name, consultant_id, status, fb_campaign_id, daily_budget_cents, cities, brain_scale_enabled, brain_scale_step_pct, brain_scale_max_budget_cents, brain_scale_target_cpl_cents, brain_scale_last_at",
+        )
+        .eq("brain_scale_enabled", true)
+        .in("status", ["active", "pending_review"]);
+
+      const walletCache = new Map<string, number>();
+      async function liquidFor(consultantId: string): Promise<number> {
+        if (walletCache.has(consultantId)) return walletCache.get(consultantId)!;
+        const { data: wallet } = await admin
+          .from("consultant_wallet")
+          .select("balance_cents, debt_cents")
+          .eq("consultant_id", consultantId)
+          .maybeSingle();
+        const liquid = Math.max(
+          0,
+          Number(wallet?.balance_cents || 0) - Number(wallet?.debt_cents || 0),
+        );
+        walletCache.set(consultantId, liquid);
+        return liquid;
+      }
+
+      for (const c of (scaleCamps || []) as any[]) {
+        if (isMgRotOrAnchor(String(c.id), String(c.name || ""))) {
+          campaignScaleTicks.push({ id: c.id, skipped: "mg_rot_or_anchor" });
+          continue;
+        }
+        if (!c.fb_campaign_id) {
+          campaignScaleTicks.push({ id: c.id, skipped: "no_fb_id" });
+          continue;
+        }
+
+        const sinceScale = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        const { data: metrics } = await admin
+          .from("facebook_metrics_daily")
+          .select("spend_cents, messaging_conversations_started")
+          .eq("campaign_id", c.id)
+          .gte("date", sinceScale);
+        const spend = (metrics || []).reduce((s: number, r: any) => s + Number(r.spend_cents || 0), 0);
+        const conv = (metrics || []).reduce(
+          (s: number, r: any) => s + Number(r.messaging_conversations_started || 0),
+          0,
+        );
+        const cpl = conv > 0 ? Math.round(spend / conv) : null;
+        const fromBudget = Number(c.daily_budget_cents) || 517;
+        const stepPct = Math.max(15, Math.min(30, Number(c.brain_scale_step_pct) || 15));
+        const decision = decideAnchorBudgetScale({
+          currentBudgetCents: fromBudget,
+          maxBudgetCents: Number(c.brain_scale_max_budget_cents) || 50000,
+          targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+          recentCplCents: cpl,
+          recentConversations: conv,
+          recentSpendCents: spend,
+          stepPct,
+          lastScaleAtIso: c.brain_scale_last_at || null,
+          minHoursBetweenScaleUps: 4,
+        });
+
+        const tick: Record<string, unknown> = {
+          id: c.id,
+          name: c.name,
+          action: decision.action,
+          reason: decision.reason,
+          from: fromBudget,
+          to: decision.budgetCents,
+          cpl,
+          conv,
+          spend,
+          dry_run: dryRun,
+        };
+
+        if (decision.action === "hold" || decision.budgetCents === fromBudget) {
+          campaignScaleTicks.push(tick);
+          continue;
+        }
+
+        if (!dryRun) {
+          const token = await tokenFor(c.consultant_id);
+          if (!token) {
+            tick.error = "no_meta_token";
+            campaignScaleTicks.push(tick);
+            continue;
+          }
+          try {
+            await postBudget(c.fb_campaign_id, decision.budgetCents, token);
+            await admin.from("facebook_campaigns").update({
+              daily_budget_cents: decision.budgetCents,
+              brain_scale_last_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }).eq("id", c.id);
+
+            const liquid = await liquidFor(c.consultant_id);
+            const cityLabel = campaignCityLabel(c.name, c.cities);
+            const text = decision.action === "scale_up"
+              ? formatAnchorScaleUpWhatsApp({
+                fromCents: fromBudget,
+                toCents: decision.budgetCents,
+                stepPct,
+                walletLiquidCents: liquid,
+                cplCents: cpl,
+                conversations: conv,
+                spendCents: spend,
+                targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+                reason: decision.reason,
+                cityLabel,
+              })
+              : formatAnchorScaleDownWhatsApp({
+                fromCents: fromBudget,
+                toCents: decision.budgetCents,
+                stepPct,
+                walletLiquidCents: liquid,
+                cplCents: cpl,
+                conversations: conv,
+                targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+                reason: decision.reason,
+                cityLabel,
+              });
+            const ok = await notifyAnchorBudgetScale(c.consultant_id, text);
+            tick.notify_ok = ok;
+          } catch (e) {
+            tick.error = (e as Error).message;
+          }
+        }
+        campaignScaleTicks.push(tick);
+      }
+    } catch (e) {
+      campaignScaleTicks.push({ error: (e as Error).message });
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -272,6 +484,8 @@ Deno.serve(async (req) => {
         paused_campaigns: pausedCampaigns,
         paused_ads: pausedAds,
         actions,
+        brain_ticks: brainTicks,
+        campaign_scale_ticks: campaignScaleTicks,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

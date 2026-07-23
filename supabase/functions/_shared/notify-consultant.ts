@@ -829,7 +829,7 @@ export async function notifyOwnerManualReview(
 
     const reasonText: Record<string, string> = {
       no_campaign_ctwa_phrase:
-        "Lead chegou do anúncio (frase genérica do Meta) sem AD ID, sem ctwa_clid e sem protocolo FB-xxxxx na mensagem. Com 2+ campanhas ativas o sistema não chuta — atribua manualmente ou garanta o protocolo na mensagem do anúncio.",
+        "Lead do anúncio sem AD ID/ctwa_clid no webhook (mesmo após retry Whapi). Atribua a campanha manualmente no painel. Confira no WhatsApp Business se 'Atribuição de anúncios' está ligada.",
       rodizio_pool_empty:
         "Campanha sem parceiros na pool — o lead fica com você (consultor dono). Confirme em “Ficar comigo” na fila, se ainda aparecer.",
       rodizio_rpc_error:
@@ -851,6 +851,20 @@ export async function notifyOwnerManualReview(
     return sendRawToAlertNumber(ownerConsultantId, text);
   } catch (e) {
     console.warn("[notify-owner-review] erro:", (e as Error).message);
+    return false;
+  }
+}
+
+/** Aviso Whapi/Evolution quando o Cérebro sobe ou desce o budget da âncora. */
+export async function notifyAnchorBudgetScale(
+  consultantId: string,
+  text: string,
+): Promise<boolean> {
+  try {
+    if (!consultantId || !text?.trim()) return false;
+    return await sendRawToAlertNumber(consultantId, text);
+  } catch (e) {
+    console.warn("[notify-anchor-scale] erro:", (e as Error).message);
     return false;
   }
 }

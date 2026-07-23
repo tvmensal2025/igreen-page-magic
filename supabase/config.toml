@@ -27,6 +27,12 @@ verify_jwt = true
 [functions.facebook-create-campaign]
 verify_jwt = true
 
+[functions.facebook-mg-city-rotator]
+verify_jwt = false
+
+[functions.campaign-brain-rank]
+verify_jwt = false
+
 [functions.facebook-list-assets]
 verify_jwt = true
 

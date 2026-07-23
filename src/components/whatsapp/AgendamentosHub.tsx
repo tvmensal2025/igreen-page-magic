@@ -35,7 +35,6 @@ import { AutomacoesAtivasBadge } from "@/features/produtos/acompanhamento/Automa
 import { SistemaCapacidadesHelp } from "@/components/admin/SistemaCapacidadesHelp";
 import { AgendamentosTextosDialog } from "@/components/whatsapp/AgendamentosTextosDialog";
 
-const AutoMessageLog = lazy(() => import("./AutoMessageLog").then((m) => ({ default: m.AutoMessageLog })));
 const AutomacaoIgreenCard = lazy(() =>
   import("@/features/produtos/acompanhamento/AutomacaoIgreenCard").then((m) => ({ default: m.AutomacaoIgreenCard })),
 );
@@ -47,6 +46,12 @@ const AgendamentosZeroLeadPanel = lazy(() =>
 );
 const AgendamentosJornadaMap = lazy(() =>
   import("./AgendamentosJornadaMap").then((m) => ({ default: m.AgendamentosJornadaMap })),
+);
+const AgendamentosFuturosPanel = lazy(() =>
+  import("./AgendamentosFuturosPanel").then((m) => ({ default: m.AgendamentosFuturosPanel })),
+);
+const AgendamentosHistoricoPanel = lazy(() =>
+  import("./AgendamentosHistoricoPanel").then((m) => ({ default: m.AgendamentosHistoricoPanel })),
 );
 const AgendamentosGrupoAPanel = lazy(() =>
   import("./AgendamentosGrupoAPanel").then((m) => ({ default: m.AgendamentosGrupoAPanel })),
@@ -123,8 +128,36 @@ function describeSource(item: AgendamentoTimelineItem): {
       return {
         where: "Motor A→B→C (cadência automática)",
         hint: "Envio programado pelo motor de reengajamento. Para pausar/editar textos, abra Grupo B ou o Motor de Cadência.",
-        targetTab: "grupo-b",
-        ctaLabel: "Abrir Grupo B",
+        targetTab: item.pizzaGroup === "A" ? "grupo-a" : item.pizzaGroup === "C" ? "grupo-c" : "grupo-b",
+        ctaLabel: item.pizzaGroup === "A" ? "Abrir Grupo A" : item.pizzaGroup === "C" ? "Abrir Grupo C" : "Abrir Grupo B",
+      };
+    case "daily_reheat":
+      return {
+        where: "Reheat diário (pizza)",
+        hint: "Passo da fila diária A/B. Textos e kit ficam na pizza / Programação do ciclo.",
+        targetTab: item.pizzaGroup === "A" ? "grupo-a" : "grupo-b",
+        ctaLabel: "Abrir pizza",
+      };
+    case "pending_media":
+      return {
+        where: "Fila de mídia (bot)",
+        hint: "Cauda de mídia do fluxo conversacional. Sai sozinha no horário; não edita aqui.",
+        targetTab: "grupo-a",
+        ctaLabel: "Abrir Grupo A",
+      };
+    case "voice_retry":
+      return {
+        where: "Retry de ligação",
+        hint: "Nova tentativa de um alvo da campanha de voz. Acompanhe em Campanhas / Ligação.",
+        targetTab: "campanhas",
+        ctaLabel: "Ver campanhas",
+      };
+    default:
+      return {
+        where: item.motorLabel || "Agendamento",
+        hint: "Envio programado. Abra Futuros para ver a fila completa.",
+        targetTab: "futuros",
+        ctaLabel: "Abrir Futuros",
       };
   }
 }
@@ -167,8 +200,11 @@ function kindIcon(kind: AgendamentoTimelineItem["kind"]) {
     case "pos_venda_auto": return <Sparkles className="w-3.5 h-3.5 text-primary" />;
     case "bot_followup": return <Flame className="w-3.5 h-3.5 text-info" />;
     case "bulk_campaign": return <Megaphone className="w-3.5 h-3.5 text-warning" />;
-    case "voice_campaign": return <Phone className="w-3.5 h-3.5 text-info" />;
-    case "cadence_send": return <Flame className="w-3.5 h-3.5 text-primary" />;
+    case "voice_campaign":
+    case "voice_retry": return <Phone className="w-3.5 h-3.5 text-info" />;
+    case "cadence_send":
+    case "daily_reheat": return <Flame className="w-3.5 h-3.5 text-primary" />;
+    case "pending_media": return <Clock className="w-3.5 h-3.5 text-primary" />;
     default: return <Clock className="w-3.5 h-3.5 text-primary" />;
   }
 }
@@ -229,8 +265,6 @@ export function AgendamentosHub({
   const [editText, setEditText] = useState("");
   const [editAt, setEditAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
-  // Filtro visual dos "Próximos envios" (client-side, não altera dados)
-  const [timelineFilter, setTimelineFilter] = useState<"all" | AgendamentoTimelineItem["kind"]>("all");
 
   const goTab = (tab: AgendamentosHubTab) => setActiveTab(normalizeHubTab(tab));
 
@@ -538,7 +572,7 @@ export function AgendamentosHub({
     {
       id: "rodizios" as const,
       title: "Métricas para parceiros de rodízio",
-      desc: "Enviamos automaticamente no WhatsApp de cada parceiro do rodízio: gasto, alcance, conversas e leads da campanha. Escolha o intervalo (10min, 30min, 1h, 2h ou 4h) por campanha.",
+      desc: "Enviamos automaticamente no WhatsApp de cada parceiro do rodízio: gasto, alcance, conversas e leads. Intervalo por campanha (30min, 1h, 2h, 3h, 4h, 6h, 12h ou 1x/dia).",
       icon: Bell,
       badge: "Configurável",
       badgeOn: true,
@@ -702,14 +736,24 @@ export function AgendamentosHub({
         <div className="mb-6 rounded-2xl border border-border/60 bg-card/40 backdrop-blur-sm overflow-hidden">
           <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-border/40">
             {[
-              { n: stats.timelineUpcoming, label: "Próximos envios", icon: Clock, tone: "text-primary", bg: "bg-primary/10" },
-              { n: stats.pendingManual, label: "Agenda manual", icon: CalendarClock, tone: "text-warning", bg: "bg-warning/10" },
-              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-primary", bg: "bg-accent/10" },
-              { n: stats.bulkActive, label: "Campanhas", icon: Megaphone, tone: "text-info", bg: "bg-info/10" },
+              { n: stats.timelineUpcoming, label: "Próximos envios", icon: Clock, tone: "text-primary", bg: "bg-primary/10", tab: "futuros" as const },
+              { n: stats.pendingManual, label: "Agenda manual", icon: CalendarClock, tone: "text-warning", bg: "bg-warning/10", tab: "agenda" as const },
+              { n: stats.posVendaUpcoming, label: "Pós-venda", icon: Sparkles, tone: "text-primary", bg: "bg-accent/10", tab: "agenda" as const },
+              { n: stats.bulkActive, label: "Campanhas", icon: Megaphone, tone: "text-info", bg: "bg-info/10", tab: "agenda" as const },
             ].map((k) => {
               const Icon = k.icon;
               return (
-                <div key={k.label} className="flex items-center gap-3 p-4">
+                <button
+                  key={k.label}
+                  type="button"
+                  onClick={() => {
+                    goTab(k.tab);
+                    if (k.tab === "agenda" && k.label === "Agenda manual") setAgendaSub("manual");
+                    if (k.tab === "agenda" && k.label === "Pós-venda") setAgendaSub("pos-venda");
+                    if (k.tab === "agenda" && k.label === "Campanhas") setAgendaSub("campanhas");
+                  }}
+                  className="flex items-center gap-3 p-4 text-left hover:bg-secondary/20 transition-colors w-full"
+                >
                   <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
                     <Icon className={`w-4.5 h-4.5 ${k.tone}`} />
                   </div>
@@ -721,7 +765,7 @@ export function AgendamentosHub({
                       {k.label}
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -735,6 +779,7 @@ export function AgendamentosHub({
             <TabsTrigger value="grupo-b" className="text-xs font-semibold">Grupo B</TabsTrigger>
             <TabsTrigger value="grupo-c" className="text-xs">Grupo C</TabsTrigger>
             <TabsTrigger value="agenda" className="text-xs">Agenda</TabsTrigger>
+            <TabsTrigger value="futuros" className="text-xs font-semibold">Futuros</TabsTrigger>
             <TabsTrigger value="carteira" className="text-xs">Carteira</TabsTrigger>
             <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
             <TabsTrigger value="numeros-invalidos" className="text-xs">Números inválidos</TabsTrigger>
@@ -746,151 +791,80 @@ export function AgendamentosHub({
               <AgendamentosJornadaMap onGoTab={goTab} stats={stats} />
             </Suspense>
             <section className="border-t pt-6">
-              {(() => {
-                const filtered = timelineFilter === "all" ? timeline : timeline.filter((i) => i.kind === timelineFilter);
-                const chips: Array<{ id: "all" | AgendamentoTimelineItem["kind"]; label: string }> = [
-                  { id: "all", label: "Todos" },
-                  { id: "cadence_send", label: "Motor A→B→C" },
-                  { id: "manual_scheduled", label: "Manual" },
-                  { id: "pos_venda_auto", label: "Pós-venda" },
-                  { id: "bulk_campaign", label: "WA" },
-                  { id: "voice_campaign", label: "Ligação" },
-                  { id: "bot_followup", label: "Reaquecer" },
-                ];
-                return (
-                  <>
-                    <div className="flex items-end justify-between gap-3 flex-wrap mb-3">
-                      <div>
-                        <h4 className="font-[Sora,ui-sans-serif] font-semibold text-foreground text-base">
-                          Próximos envios
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground mt-0.5">
-                          {filtered.length === 0
-                            ? "Nada na fila com esse filtro"
-                            : `${filtered.length} ${filtered.length === 1 ? "envio programado" : "envios programados"}`}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {chips.map((c) => {
-                          const active = timelineFilter === c.id;
-                          return (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => setTimelineFilter(c.id)}
-                              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors font-medium ${
-                                active
-                                  ? "bg-primary/15 border-primary/40 text-primary"
-                                  : "bg-transparent border-border/50 text-muted-foreground hover:border-border hover:text-foreground"
-                              }`}
-                            >
-                              {c.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {loading ? (
-                      <div className="flex items-center justify-center py-10 text-sm text-muted-foreground gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
-                      </div>
-                    ) : filtered.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 px-6 py-12 text-center flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 rounded-2xl bg-muted/40 flex items-center justify-center">
-                          <CalendarClock className="w-7 h-7 text-muted-foreground/50" />
+              <div className="flex items-end justify-between gap-3 flex-wrap mb-3">
+                <div>
+                  <h4 className="font-[Sora,ui-sans-serif] font-semibold text-foreground text-base">
+                    Próximos envios
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Resumo da fila viva. A visão completa (WA, SMS, ligação, pizza) fica em Futuros.
+                  </p>
+                </div>
+                <Button type="button" variant="outline" size="sm" className="text-xs gap-1.5" onClick={() => goTab("futuros")}>
+                  <CalendarClock className="w-3.5 h-3.5" />
+                  Ver todos em Futuros
+                </Button>
+              </div>
+              {loading ? (
+                <div className="flex items-center justify-center py-8 text-sm text-muted-foreground gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Carregando…
+                </div>
+              ) : timeline.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border/60 bg-muted/10 px-6 py-10 text-center">
+                  <p className="text-sm font-[Sora,ui-sans-serif] font-semibold text-foreground">Fila limpa por aqui</p>
+                  <p className="text-[11.5px] text-muted-foreground mt-1">Nada programado no momento.</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {timeline.slice(0, 8).map((item) => {
+                    const d = item.at;
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    const dayLabel = format(d, "dd MMM", { locale: ptBR });
+                    const timeLabel = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setSelected(item);
+                          if (item.kind === "manual_scheduled") {
+                            setEditText(item.preview || "");
+                            setEditAt(
+                              `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                            );
+                          }
+                        }}
+                        className="group relative w-full text-left rounded-xl border border-transparent hover:border-border/60 hover:bg-secondary/15 px-3 py-2 transition-colors flex items-start gap-3"
+                      >
+                        <div className="w-[52px] shrink-0 text-right leading-tight pt-0.5">
+                          <div className="font-[Sora,ui-sans-serif] font-semibold text-xs text-foreground tabular-nums">{timeLabel}</div>
+                          <div className="text-[10px] text-muted-foreground uppercase tracking-wide tabular-nums">{dayLabel}</div>
                         </div>
-                        <div>
-                          <p className="text-sm font-[Sora,ui-sans-serif] font-semibold text-foreground">
-                            Fila limpa por aqui
-                          </p>
-                          <p className="text-[11.5px] text-muted-foreground mt-1 max-w-xs mx-auto">
-                            Assim que algo for agendado — manual, pós-venda ou campanha — aparece nesta lista.
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <ScrollArea className="max-h-[420px] pr-1">
-                        <div className="relative">
-                          {/* Linha vertical da timeline */}
-                          <div className="absolute left-[46px] top-2 bottom-2 w-px bg-gradient-to-b from-border/60 via-border/40 to-transparent" />
-                          <div className="space-y-1.5">
-                            {filtered.slice(0, 30).map((item) => {
-                              const d = item.at;
-                              const pad = (n: number) => String(n).padStart(2, "0");
-                              const dayLabel = format(d, "dd MMM", { locale: ptBR });
-                              const timeLabel = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                              const dotColor =
-                                item.kind === "pos_venda_auto"
-                                  ? "bg-accent"
-                                  : item.kind === "bot_followup"
-                                  ? "bg-info"
-                                  : item.kind === "bulk_campaign"
-                                  ? "bg-warning"
-                                  : item.kind === "voice_campaign"
-                                  ? "bg-info"
-                                  : "bg-primary";
-                              return (
-                                <button
-                                  key={item.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelected(item);
-                                    if (item.kind === "manual_scheduled") {
-                                      setEditText(item.preview || "");
-                                      setEditAt(
-                                        `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
-                                      );
-                                    }
-                                  }}
-                                  className="group relative w-full text-left rounded-xl border border-transparent hover:border-border/60 hover:bg-secondary/15 px-3 py-2.5 transition-colors flex items-start gap-3"
-                                >
-                                  {/* Horário */}
-                                  <div className="w-[52px] shrink-0 text-right leading-tight pt-0.5">
-                                    <div className="font-[Sora,ui-sans-serif] font-semibold text-xs text-foreground tabular-nums">
-                                      {timeLabel}
-                                    </div>
-                                    <div className="text-[10px] text-muted-foreground uppercase tracking-wide tabular-nums">
-                                      {dayLabel}
-                                    </div>
-                                  </div>
-                                  {/* Bolinha da timeline + ícone */}
-                                  <div className="relative z-10 shrink-0 mt-1">
-                                    <div className={`w-2.5 h-2.5 rounded-full ${dotColor} ring-4 ring-card`} />
-                                  </div>
-                                  {/* Conteúdo */}
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-muted/40">
-                                        {kindIcon(item.kind)}
-                                      </span>
-                                      <span className="text-[13px] font-[Sora,ui-sans-serif] font-semibold text-foreground truncate">
-                                        {item.title}
-                                      </span>
-                                      <Badge variant="outline" className="text-[9px] border-border/60 text-muted-foreground">
-                                        {item.badge}
-                                      </Badge>
-                                      {timelineStatusBadge(item.status)}
-                                    </div>
-                                    {item.preview && (
-                                      <p className="text-[11.5px] text-muted-foreground line-clamp-2 mt-1 italic">
-                                        “{item.preview}”
-                                      </p>
-                                    )}
-                                  </div>
-                                  <span className="hidden sm:inline text-[10px] text-muted-foreground/70 opacity-0 group-hover:opacity-100 transition-opacity self-center whitespace-nowrap">
-                                    abrir / excluir →
-                                  </span>
-                                </button>
-                              );
-                            })}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-md bg-muted/40">{kindIcon(item.kind)}</span>
+                            <span className="text-[13px] font-[Sora,ui-sans-serif] font-semibold text-foreground truncate">{item.title}</span>
+                            <Badge variant="outline" className="text-[9px] border-border/60 text-muted-foreground">{item.badge}</Badge>
+                            {timelineStatusBadge(item.status)}
                           </div>
+                          {item.preview && (
+                            <p className="text-[11.5px] text-muted-foreground line-clamp-1 mt-1 italic">“{item.preview}”</p>
+                          )}
                         </div>
-                      </ScrollArea>
-                    )}
-                  </>
-                );
-              })()}
+                      </button>
+                    );
+                  })}
+                  {timeline.length > 8 && (
+                    <button
+                      type="button"
+                      onClick={() => goTab("futuros")}
+                      className="w-full text-center text-[12px] font-medium text-primary py-2 hover:underline"
+                    >
+                      +{timeline.length - 8} na fila — abrir Futuros →
+                    </button>
+                  )}
+                </div>
+              )}
             </section>
 
             <section>
@@ -1250,6 +1224,28 @@ export function AgendamentosHub({
             </Tabs>
           </TabsContent>
 
+          {/* ── Futuros ── */}
+          <TabsContent value="futuros" className="mt-0">
+            <Suspense fallback={<LoadingRow />}>
+              <AgendamentosFuturosPanel
+                loading={loading}
+                timeline={timeline}
+                stats={stats}
+                onSelectItem={(item) => {
+                  setSelected(item);
+                  if (item.kind === "manual_scheduled") {
+                    const d = item.at;
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    setEditText(item.preview || "");
+                    setEditAt(
+                      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`,
+                    );
+                  }
+                }}
+              />
+            </Suspense>
+          </TabsContent>
+
           {/* ── Carteira iGreen ── */}
           <TabsContent value="carteira" className="mt-0">
             <p className="text-[11px] text-muted-foreground mb-3">
@@ -1263,11 +1259,8 @@ export function AgendamentosHub({
 
           {/* ── Histórico ── */}
           <TabsContent value="historico" className="mt-0">
-            <p className="text-[11px] text-muted-foreground mb-3">
-              Mensagens que já saíram — pós-venda automático, CRM (ao mover card) e demais envios.
-            </p>
             <Suspense fallback={<LoadingRow />}>
-              <AutoMessageLog consultantId={consultantId} />
+              <AgendamentosHistoricoPanel consultantId={consultantId} />
             </Suspense>
           </TabsContent>
 

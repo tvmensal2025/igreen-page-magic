@@ -269,7 +269,7 @@ export function CampaignRodizioLeadsDialog({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
                     <div className="text-[11px] text-muted-foreground">
-                      Gasto, visualizações, conversas e leads — ao vivo da Meta
+                      1× ao aprovar na Meta · depois gasto, CTR, conversas, CPL e leads · aviso se pausar
                     </div>
                   </div>
                   <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>
@@ -337,6 +337,33 @@ export function CampaignRodizioLeadsDialog({
                     <span className="text-[10px] text-warning">Silêncio desligado (24h)</span>
                   )}
                 </div>
+
+                {(() => {
+                  const noPhone = rows.filter((r) => !r.notification_phone);
+                  if (noPhone.length === 0 && interval > 0) {
+                    return (
+                      <p className="text-[11px] text-muted-foreground pt-1 border-t border-border/50">
+                        Pronto: {rows.length} parceiro(s) com telefone de aviso · intervalo {interval < 60 ? `${interval} min` : `${interval / 60}h`}.
+                      </p>
+                    );
+                  }
+                  if (noPhone.length > 0) {
+                    return (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400 pt-1 border-t border-border/50">
+                        Atenção: {noPhone.length} parceiro(s) sem telefone de aviso — não recebem métricas (
+                        {noPhone.map((p) => p.nome).slice(0, 3).join(", ")}
+                        {noPhone.length > 3 ? "…" : ""}).
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+            )}
+
+            {!poolId && !loading && (
+              <div className="rounded-lg border border-dashed border-border/60 bg-muted/20 p-3 text-[11px] text-muted-foreground">
+                Esta campanha não tem pool de rodízio ligada. Configure o rodízio na edição da campanha para liberar avisos e leads por parceiro.
               </div>
             )}
 

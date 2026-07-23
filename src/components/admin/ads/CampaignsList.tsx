@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Pause, Play, Square, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2 } from "lucide-react";
+import { Pause, Play, Square, Loader2, MapPin, TrendingUp, Users, MessageCircle, DollarSign, Heart, AlertTriangle, RefreshCw, Trash2, Facebook, CalendarClock, Image as ImageIcon, PlayCircle, Settings2, Users2, Brain } from "lucide-react";
 import { EditCampaignDialog } from "./EditCampaignDialog";
 import { CampaignRodizioLeadsDialog } from "./CampaignRodizioLeadsDialog";
+import { CampaignBrainScaleDialog, isBrainScaleEligible } from "./CampaignBrainScaleDialog";
 
 import { useToast } from "@/hooks/use-toast";
 import { CampaignHealthCheck } from "./CampaignHealthCheck";
@@ -26,7 +27,12 @@ interface Campaign {
   ended_at: string | null; started_at: string | null;
   thumbnail_url: string | null; creative_format: string | null;
   age_min?: number | null; age_max?: number | null;
+  age_min_preferred?: number | null;
   duration_days?: number | null;
+  brain_scale_enabled?: boolean;
+  brain_scale_step_pct?: number;
+  brain_scale_max_budget_cents?: number;
+  brain_scale_target_cpl_cents?: number;
 }
 interface Creative { kind: "video" | "image" | "none"; url: string | null }
 interface Metric { campaign_id: string; impressions: number; clicks: number; spend_cents: number; meta_lead_actions: number; messaging_conversations_started: number; cost_per_lead_cents: number }
@@ -131,6 +137,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [confirmStop, setConfirmStop] = useState<Campaign | null>(null);
   const [extending, setExtending] = useState<Campaign | null>(null);
   const [editing, setEditing] = useState<Campaign | null>(null);
+  const [brainScaleCampaign, setBrainScaleCampaign] = useState<Campaign | null>(null);
   const [rodizioCampaign, setRodizioCampaign] = useState<Campaign | null>(null);
   const [rodizioSet, setRodizioSet] = useState<Set<string>>(new Set());
   const [refreshTick, setRefreshTick] = useState(0);
@@ -149,7 +156,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
       const [campsRes, settingsRes] = await Promise.all([
         supabase
           .from("facebook_campaigns")
-          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,started_at,thumbnail_url,creative_format,age_min,age_max,duration_days")
+          .select("id,name,status,cities,daily_budget_cents,fb_campaign_id,created_at,rejection_reason,ended_at,started_at,thumbnail_url,creative_format,age_min,age_max,age_min_preferred,duration_days,brain_scale_enabled,brain_scale_step_pct,brain_scale_max_budget_cents,brain_scale_target_cpl_cents")
           .eq("consultant_id", consultantId)
           .order("created_at", { ascending: false }),
         supabase
@@ -491,8 +498,19 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                         </span>
                         <span>{geo.summary}</span>
                         {typeof c.age_min === "number" && typeof c.age_max === "number" && (
-                          <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] text-foreground">
-                            {c.age_min}–{c.age_max} anos
+                          <span
+                            className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] text-foreground"
+                            title="Hard Advantage+ na Meta (sempre 25–65 com público automático)"
+                          >
+                            Hard {c.age_min}–{c.age_max}
+                          </span>
+                        )}
+                        {typeof c.age_min_preferred === "number" && (
+                          <span
+                            className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary"
+                            title="Preferência enviada via age_range (sugestão Meta)"
+                          >
+                            Pref. {c.age_min_preferred}+
                           </span>
                         )}
                         <span className="rounded bg-secondary/70 px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -519,6 +537,14 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                       <span className="rounded-md bg-secondary/60 px-2 py-0.5 text-foreground font-medium" title="Orçamento diário atual, sincronizado da Meta">
                         R$ {(c.daily_budget_cents / 100).toFixed(2)}/dia
                       </span>
+                      {c.brain_scale_enabled && (
+                        <span
+                          className="rounded-md bg-primary/15 px-2 py-0.5 text-primary font-medium"
+                          title="Cérebro de orçamento ligado nesta campanha"
+                        >
+                          Cérebro +{c.brain_scale_step_pct ?? 15}%
+                        </span>
+                      )}
                       <span className="rounded-md bg-secondary/60 px-2 py-0.5 text-muted-foreground" title="Dias desde o início da campanha">
                         Rodando há {days} {days === 1 ? "dia" : "dias"}
                       </span>
@@ -637,6 +663,18 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     title="Estender prazo / mudar orçamento"
                   >
                     <CalendarClock className="w-4 h-4 text-primary" />
+                  </Button>
+                )}
+                {c.fb_campaign_id && isBrainScaleEligible(c) && (
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8"
+                    onClick={() => setBrainScaleCampaign(c)}
+                    aria-label="Cérebro de orçamento"
+                    title={c.brain_scale_enabled ? `Cérebro ligado (+${c.brain_scale_step_pct ?? 15}%)` : "Ativar Cérebro de orçamento"}
+                  >
+                    <Brain className={`w-4 h-4 ${c.brain_scale_enabled ? "text-primary" : "text-muted-foreground"}`} />
                   </Button>
                 )}
                 {rodizioSet.has(c.id) && (
@@ -820,6 +858,15 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         }}
       />
 
+      <CampaignBrainScaleDialog
+        open={!!brainScaleCampaign}
+        onOpenChange={(o) => { if (!o) setBrainScaleCampaign(null); }}
+        campaign={brainScaleCampaign}
+        onUpdated={(patch) => {
+          setItems((prev) => prev.map((x) => x.id === patch.id ? { ...x, ...patch } : x));
+        }}
+      />
+
       <EditCampaignDialog
         open={!!editing}
         onClose={() => setEditing(null)}
@@ -868,3 +915,5 @@ function CreativeThumb({ creative }: { creative?: Creative }) {
     </div>
   );
 }
+
+export default CampaignsList;

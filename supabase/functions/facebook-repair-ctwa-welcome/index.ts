@@ -1,5 +1,6 @@
 // Realinha campanha CTWA já publicada:
-// 1) mensagem WhatsApp (page_welcome_message) sem citar cidade
+// 1) mensagem WhatsApp (page_welcome_message) — frase ÚNICA por campanha
+//    (pode citar a cidade; NÃO genificar, senão o fallback por frase colide)
 // 2) tracking_specs no pixel oficial da plataforma (igreen-oficial-remarketing)
 // 3) se for remarketing: inclui Custom Audience + Lookalike na targeting do adset
 import {
@@ -36,12 +37,14 @@ async function isAdminUser(admin: ReturnType<typeof adminClient>, userId: string
   return !!data;
 }
 
-/** Remove menção explícita de cidade no autofill CTWA (evita confusão). */
+/**
+ * Limpa protocolo legado na frase CTWA.
+ * NÃO remove cidade: a frase precisa ser única por campanha ativa — é o
+ * fallback quando Whapi/Meta não manda AD ID / ctwa_clid no webhook.
+ */
 function sanitizeInitialMessage(raw: string | null | undefined): string {
   let s = stripTrackingProtocol(raw || "").trim();
   if (!s) s = DEFAULT_MSG;
-  // "… em Uberlândia." / "… em Belo Horizonte?" → genérico
-  s = s.replace(/\s+em\s+[A-Za-zÀ-ÿ'’\-]+(?:\s+[A-Za-zÀ-ÿ'’\-]+)?([.!?…]*)\s*$/i, "$1");
   s = s.replace(/\s+/g, " ").trim();
   if (s.length < 8) s = DEFAULT_MSG;
   if (!/[.!?…]$/.test(s)) s = `${s}.`;

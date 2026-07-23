@@ -50,6 +50,9 @@ describe("Tarefa 5.3 — com rodizio_enabled, cria pool ligada à campanha", () 
       label: LABEL,
       is_enabled: true,
       is_active: false,
+      metrics_broadcast_interval_minutes: 180,
+      metrics_quiet_start_hour: 21,
+      metrics_quiet_end_hour: 9,
     });
   });
 

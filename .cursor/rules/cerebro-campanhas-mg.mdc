@@ -1,0 +1,49 @@
+---
+description: Cérebro MG + campanhas Meta — NÃO quebrar escala, CTWA, waste, slots
+globs: supabase/functions/facebook-mg-city-rotator/**,supabase/functions/facebook-auto-pause/**,supabase/functions/campaign-brain-rank/**,supabase/functions/_shared/brain-*.ts,supabase/functions/_shared/ad-copy-bank.ts,supabase/functions/_shared/campaign-waste-guard.ts,src/components/admin/ads/CampaignBrainPanel.tsx,src/components/admin/ads/CampaignBrainScaleDialog.tsx,src/components/admin/ads/CampaignsList.tsx
+alwaysApply: false
+---
+
+# Cérebro de Campanhas MG
+
+Doc completa: `docs/cerebro-e-rodizio-avisos.md`
+
+## Modelo
+
+- **1 âncora** (Uberlândia) + **até N exploradoras** `MG-ROT-*` (default 4 → 5 no ar).
+- Config: `consultant_ad_settings.brain_config` (normalize em `_shared/brain-config.ts`).
+- Autopilot: `facebook-auto-pause` (waste) → tick `facebook-mg-city-rotator` (`ensure_active_slots`).
+
+## Escala da âncora (NÃO confundir)
+
+- Janela **48h** = só **medir** CPL (`facebook_metrics_daily`).
+- Degrau sobe/desce (~**15%**) com intervalo anti-spam ~**4h** (`brain-budget-scale.ts`).
+- **Não** existe trava de 48h entre subidas.
+- Aviso WA vai para o **consultor** (`notifyAnchorBudgetScale`), não para parceiro.
+
+## Cérebro por campanha (outra cidade / parceiro)
+
+- Colunas `brain_scale_*` + botão Brain na lista (`CampaignBrainScaleDialog`).
+- Melhora **só aquela** campanha; % escolhida 15–30; default desligado.
+- **Proibido** em `MG-ROT-*` e na âncora UDI (rotator brigaria com o budget).
+- Tick em `facebook-auto-pause` → `campaign_scale_ticks`.
+
+## Criativos / CTWA
+
+- Banco: `_shared/ad-copy-bank.ts` — 100 títulos + descrições + primários + CTWA.
+- CTWA **sem nome de cidade**. Atribuição = **AD ID / ctwa_clid** → UUID campanha.
+- Rotator no **seed** manda `headline`/`description`/`primary_text`/`initial_message` + foto fixa.
+- **Não reescrever** criativo de campanhas **já ativas** só para trocar copy.
+
+## Waste
+
+- `_shared/campaign-waste-guard.ts` — lookback 48h; prefixo `AUTO_PERF_PAUSE:`.
+- Health/rotator **não** reativam; só Play do consultor.
+
+## Proibido
+
+- Appendar protocolo na mensagem WA.
+- Matching de campanha por keyword/cidade no texto.
+- Ligar envio em massa novo sem pedido explícito.
+- Apagar guards/migrations/flags.
+- Ligar `brain_scale` em MG-ROT ou âncora.

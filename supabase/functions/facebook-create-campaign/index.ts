@@ -638,12 +638,18 @@ Deno.serve(async (req) => {
               distance_unit: "kilometer",
             })), location_types: ["home", "recent"] }
         : { cities: body.cities.map((c) => ({ key: c.key })), location_types: ["home", "recent"] };
-      const precheckTargeting = {
+      const precheckTargeting: Record<string, unknown> = {
         geo_locations: precheckGeo,
         age_min: ageMin,
         age_max: ageMax,
         targeting_automation: { advantage_audience: 1 },
       };
+      if (ageMinSuggested != null || ageMaxSuggested != null) {
+        precheckTargeting.age_range = [
+          ageMinSuggested ?? ageMin,
+          ageMaxSuggested ?? ageMax,
+        ];
+      }
       const precheckPromoted = { page_id: conn.page_id, whatsapp_phone_number: authoritativeDigits };
       const params = new URLSearchParams({
         targeting_spec: JSON.stringify(precheckTargeting),
@@ -738,15 +744,17 @@ Deno.serve(async (req) => {
       geo_locations: geoLocations,
       age_min: ageMin,
       age_max: ageMax,
-      // Advantage+ Audience (padrão Meta v23+, opt-in explícito).
-      // age_min hard ≤25; age_max hard = 65 (Meta rejeita <65 com Advantage+).
-      // Preferências 30–60 ficam só em telemetria (ageMinSuggested/ageMaxSuggested).
+      // Advantage+ Audience (Marketing API): hard age_min ≤25 + age_max 65.
+      // Preferência de negócio (ex. 30+) vai em age_range — sugestão oficial Meta.
+      // Docs: targeting-expansion/advantage-audience (age_range + advantage_audience: 1).
       targeting_automation: { advantage_audience: 1 },
     };
-    if (ageMinSuggested || ageMaxSuggested) {
+    if (ageMinSuggested != null || ageMaxSuggested != null) {
+      const rangeMin = ageMinSuggested ?? ageMin;
+      const rangeMax = ageMaxSuggested ?? ageMax;
+      (targeting as any).age_range = [rangeMin, rangeMax];
       console.log(
-        `[fb-create] age preference=${ageMinSuggested ?? ageMin}+` +
-          `${ageMaxSuggested ? `-${ageMaxSuggested}` : ""} hard_min=${ageMin} hard_max=${ageMax}`,
+        `[fb-create] age preference age_range=[${rangeMin},${rangeMax}] hard_min=${ageMin} hard_max=${ageMax}`,
       );
     }
     // Placements: por padrão omite tudo → Meta aplica Advantage+ Placements
@@ -769,6 +777,12 @@ Deno.serve(async (req) => {
         if (fbPos.length) (targeting as any).facebook_positions = fbPos;
         if (igPos.length) (targeting as any).instagram_positions = igPos;
       }
+    }
+    // Vídeo 9:16: positions Reels/Stories DEVEM ir no AdSet (antes do POST), não depois.
+    if (creativeMode === "video") {
+      (targeting as any).publisher_platforms = ["facebook", "instagram"];
+      (targeting as any).facebook_positions = ["facebook_reels", "story"];
+      (targeting as any).instagram_positions = ["reels", "story"];
     }
     // Lookalike + Custom Audience:
     // - Captação: LAL como âncora; exclui CRM (já clientes/leads ativos) pra não gastar verba.
@@ -1026,13 +1040,8 @@ Deno.serve(async (req) => {
       }
 
 
-      // Placements 9:16 exclusivamente — vídeos são gravados em modo retrato (Reels/Stories).
-      // Feed quadrado e in-stream horizontal cortariam o vídeo. Explore será
-      // descontinuado pela Meta em jan/2026 (docs: business/help/682655495435254).
-      (targeting as any).publisher_platforms = ["facebook", "instagram"];
-      (targeting as any).facebook_positions = ["facebook_reels", "story"];
-      (targeting as any).instagram_positions = ["reels", "story"];
-
+      // Placements 9:16 já aplicados no AdSet (acima). Aqui só criativo.
+      // Explore IG em descontinuação — não usar.
       const initialMessageV = trackedInitialMessage;
       const waNumberCleanV = String(conn.whatsapp_destination_number).replace(/\D/g, "");
       const waLinkV = `https://api.whatsapp.com/send?phone=${waNumberCleanV}&text=${encodeURIComponent(initialMessageV)}`;
@@ -1387,6 +1396,9 @@ Deno.serve(async (req) => {
         cities: citiesPersist,
         age_min: ageMin,
         age_max: ageMax,
+        // Preferência de negócio (ex. 30) — hard Meta fica em age_min/age_max.
+        // Coluna opcional: se existir age_min_preferred no schema, gravamos; senão ignora via spread só se definido.
+        ...(ageMinSuggested != null ? { age_min_preferred: ageMinSuggested } as any : {}),
         daily_budget_cents: body.daily_budget_cents,
         lifetime_cap_cents: lifetimeCapCents,
         duration_days: body.duration_days ?? null,

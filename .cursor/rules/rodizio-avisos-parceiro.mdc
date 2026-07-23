@@ -1,0 +1,34 @@
+---
+description: Rodízio — avisos WhatsApp ao parceiro (aprovada, métricas, pausa)
+globs: supabase/functions/rodizio-metrics-broadcast/**,supabase/functions/_shared/rodizio-metrics-format.ts,supabase/functions/_shared/rodizio-pause-notify.ts,supabase/functions/facebook-create-campaign/rodizio-pool.ts,src/components/admin/ads/CampaignRodizioLeadsDialog.tsx,src/components/whatsapp/RodiziosBroadcastPanel.tsx
+alwaysApply: false
+---
+
+# Avisos de rodízio ao parceiro
+
+Doc completa: `docs/cerebro-e-rodizio-avisos.md`
+
+## Fluxo
+
+1. Criar campanha com rodízio ON → RPC `configure_rodizio_pool`.
+2. **Novas** pools: intervalo **180 min (3h)** + quiet **21h–09h** (INSERT; UPDATE não sobrescreve intervalo).
+3. Meta `ACTIVE` → trigger `is_active` → cron `rodizio-metrics-broadcast`.
+4. **1×** `formatCampaignApprovedMessage` (`approval_notified_at`).
+5. Métricas periódicas `formatRodizioMetricsMessage` (números **reais** Meta; sem fake).
+6. Pausa → `notifyRodizioOnCampaignPaused` 1× (`paused_notified_at`).
+
+## Controles UI
+
+- Lista campanhas → ícone pessoas → `CampaignRodizioLeadsDialog` (intervalo + quiet + leads).
+- Central Agendamentos → `RodiziosBroadcastPanel` (só intervalo).
+
+## Elegibilidade
+
+Parceiro precisa: no pool, `notification_phone`, `rodizio_metrics_enabled`, `is_active`.
+
+## Proibido
+
+- Inventar métricas (fallback honesto se Meta falhar).
+- Reenviar “aprovada” se `approval_notified_at` já setado.
+- Alterar intervalo das pools **atuais** sem pedido (defaults só em INSERT/novas).
+- Confundir com escala do Cérebro (isso é do consultor).

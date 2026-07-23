@@ -22,7 +22,7 @@ interface Props {
 /**
  * Painel de configuração de disparos de métricas de rodízio.
  * Espelha o seletor do CampaignRodizioLeadsDialog para que o consultor/admin
- * possa mudar o intervalo (10min / 30min / 1h / 2h / 4h / desligado) de
+ * possa mudar o intervalo (30min / 1h / 2h / 3h / 4h / 6h / 12h / 1x dia / off) de
  * cada pool ativa direto da Central de Agendamentos.
  */
 export function RodiziosBroadcastPanel({ consultantId }: Props) {

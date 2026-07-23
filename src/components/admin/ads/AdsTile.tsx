@@ -32,19 +32,19 @@ export function AdsTile({
     animationDelay: `${delay}ms`,
   };
   return (
-    <div className={cn("ads-tile flex flex-col min-w-0", className)} style={style}>
+    <div className={cn("ads-tile flex flex-col min-w-0 w-full max-w-full overflow-hidden", className)} style={style}>
       {(label || action) && (
-        <div className="flex items-center justify-between mb-2 gap-2">
+        <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
           {label && (
-            <span className="ads-tile-label">
+            <span className="ads-tile-label min-w-0 truncate">
               {icon}
-              {label}
+              <span className="truncate">{label}</span>
             </span>
           )}
           {action}
         </div>
       )}
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0 w-full max-w-full overflow-x-clip">{children}</div>
     </div>
   );
 }

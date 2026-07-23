@@ -4,8 +4,8 @@
  * (e o bônus). NÃO existe mais "adicionar distribuidora inteira" — cada cidade
  * é adicionada individualmente, mantendo a lista limpa.
  */
-import { useMemo } from "react";
-import { MapPin, Target, Search, TrendingUp, X, Check, Plus, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { MapPin, Target, Search, TrendingUp, X, Check, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,8 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, Cell } from "recharts";
 import { AddressRadiusPicker } from "../../AddressRadiusPicker";
 import { findDistribuidoraForCity } from "@/data/distribuidoraPresets";
 import { dddsFromCampaignGeo } from "@/lib/cityToDdd";
-import type { CityHit } from "@/services/facebookAds";
+import { searchCitiesBulk, type CityHit } from "@/services/facebookAds";
+import { supabase } from "@/integrations/supabase/client";
 import type { WizardState } from "../hooks/useWizardState";
 import type { useRegionLogic } from "../hooks/useRegionLogic";
 
@@ -23,11 +24,57 @@ interface Props {
   state: WizardState;
   patch: (p: Partial<WizardState>) => void;
   region: ReturnType<typeof useRegionLogic>;
+  consultantId?: string;
 }
 
 const TIER_LABEL: Record<string, string> = { alto: "🟢 Bônus alto", medio: "🟡 Bônus médio", sem_bonus: "⚪ Sem bônus" };
 
-export function StepRegion({ state, patch, region }: Props) {
+export function StepRegion({ state, patch, region, consultantId }: Props) {
+  const [mgSuggest, setMgSuggest] = useState<{ city: string; protocol: string | null } | null>(null);
+  const [mgApplying, setMgApplying] = useState(false);
+
+  useEffect(() => {
+    if (!consultantId || state.cities.length > 0) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("facebook_campaigns")
+        .select("cities, tracking_protocol, rejection_reason")
+        .eq("consultant_id", consultantId)
+        .ilike("name", "MG-ROT-%")
+        .eq("status", "paused")
+        .ilike("rejection_reason", "%ROTATION_QUEUE%")
+        .order("created_at", { ascending: true })
+        .limit(20);
+      if (cancelled) return;
+      const next = (data || []).find((row: any) => {
+        const reason = String(row.rejection_reason || "");
+        return !reason.toLowerCase().includes("duplicata");
+      });
+      const city = next?.cities?.[0]?.name as string | undefined;
+      if (city) {
+        setMgSuggest({ city, protocol: next.tracking_protocol || null });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [consultantId, state.cities.length]);
+
+  async function applyMgSuggest() {
+    if (!mgSuggest) return;
+    setMgApplying(true);
+    try {
+      const res = await searchCitiesBulk([{ name: mgSuggest.city, uf: "MG" }]);
+      const hit = res.cities?.[0];
+      if (!hit?.key) throw new Error(`Não achei "${mgSuggest.city}" na Meta`);
+      region.addCity(hit);
+      patch({ namePrefix: "MG-ROT" });
+    } catch (e) {
+      console.warn("[StepRegion] mg suggest fail", e);
+    } finally {
+      setMgApplying(false);
+    }
+  }
+
   const reach = state.liveReach;
   const reachPct = reach ? Math.min(100, Math.round((reach.upper / 5_000_000) * 100)) : 0;
   const reachColor = !reach
@@ -94,6 +141,24 @@ export function StepRegion({ state, patch, region }: Props) {
           </div>
         )}
       </div>
+
+      {mgSuggest && state.cities.length === 0 && state.geoMode === "cities" && (
+        <div className="rounded-xl border border-[hsl(var(--ads-emerald)/.35)] bg-[hsl(var(--ads-emerald)/.08)] p-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-[hsl(var(--ads-text))] flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald))]" />
+              Sugestão da fila MG
+            </div>
+            <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1">
+              Próximo local da rotação: <strong className="text-[hsl(var(--ads-text))]">{mgSuggest.city}</strong>
+              {mgSuggest.protocol ? ` · ${mgSuggest.protocol}` : ""}. Você pode usar ou buscar outra cidade.
+            </p>
+          </div>
+          <Button type="button" size="sm" onClick={applyMgSuggest} disabled={mgApplying} className="shrink-0">
+            {mgApplying ? "Aplicando…" : `Usar ${mgSuggest.city}`}
+          </Button>
+        </div>
+      )}
 
       {/* Modo de geo */}
       <div className="grid grid-cols-2 gap-2">

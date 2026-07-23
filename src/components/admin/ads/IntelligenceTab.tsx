@@ -2,12 +2,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, Calendar, Brain, MessageSquare } from "lucide-react";
+import { Activity, Calendar, Brain, MessageSquare, Sparkles } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CompetitorsPanel } from "./CompetitorsPanel";
 import { InsightsPanel } from "./InsightsPanel";
 import { AutoLearningTab } from "../ai/AutoLearningTab";
+import { CampaignBrainPanel } from "./CampaignBrainPanel";
 
 interface Props {
   consultantId: string;
@@ -16,11 +17,11 @@ interface Props {
 
 interface Event { ts: string; label: string; emoji: string }
 
-type IntelView = "ads" | "conversation";
+type IntelView = "campaigns" | "ads" | "conversation";
 
 export function IntelligenceTab({ consultantId }: Props) {
   const [events, setEvents] = useState<Event[]>([]);
-  const [intelView, setIntelView] = useState<IntelView>("ads");
+  const [intelView, setIntelView] = useState<IntelView>("campaigns");
 
   useEffect(() => {
     (async () => {
@@ -51,16 +52,24 @@ export function IntelligenceTab({ consultantId }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Seletor de contexto de inteligência */}
-      <div className="flex items-center gap-1 rounded-lg bg-secondary p-1 w-full sm:w-fit">
+      <div className="flex items-center gap-1 rounded-lg bg-secondary p-1 w-full sm:w-fit flex-wrap">
+        <Button
+          size="sm"
+          variant={intelView === "campaigns" ? "default" : "ghost"}
+          onClick={() => setIntelView("campaigns")}
+          className="h-8 gap-1.5"
+        >
+          <Brain className="w-3.5 h-3.5" />
+          Cérebro
+        </Button>
         <Button
           size="sm"
           variant={intelView === "ads" ? "default" : "ghost"}
           onClick={() => setIntelView("ads")}
           className="h-8 gap-1.5"
         >
-          <Brain className="w-3.5 h-3.5" />
-          Anúncios
+          <Sparkles className="w-3.5 h-3.5" />
+          Criativos
         </Button>
         <Button
           size="sm"
@@ -72,6 +81,10 @@ export function IntelligenceTab({ consultantId }: Props) {
           Conversa
         </Button>
       </div>
+
+      {intelView === "campaigns" && (
+        <CampaignBrainPanel consultantId={consultantId} />
+      )}
 
       {intelView === "ads" && (
         <>

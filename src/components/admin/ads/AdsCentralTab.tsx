@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { CreateCampaignWizard } from "./campaign-wizard";
-import { CampaignsList } from "./CampaignsList";
+import CampaignsList from "./CampaignsList";
 import { MetaAudiencePanel } from "./MetaAudiencePanel";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
@@ -11,6 +11,7 @@ import { DragResizer } from "@/components/layout/DragResizer";
 import { IntelligenceTab } from "./IntelligenceTab";
 import { ResultsDashboard } from "./ResultsDashboard";
 import { CommissionPanel } from "./CommissionPanel";
+import { DashboardInsights } from "./DashboardInsights";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -77,21 +78,20 @@ export function AdsCentralTab({ consultantId }: Props) {
     { id: "gallery", label: "Modelos", icon: LayoutGrid },
     { id: "campaigns", label: "Campanhas", icon: ListChecks },
     { id: "performance", label: "Performance", icon: TrendingUp },
-    { id: "intel", label: "Inteligência", icon: Brain },
+    { id: "intel", label: "Cérebro", icon: Brain },
     { id: "commissions", label: "Comissões", icon: BadgeDollarSign },
   ];
 
   return (
     <div className="ads-central-2026 w-full max-w-full min-w-0 rounded-2xl overflow-x-clip border border-[hsl(var(--ads-border))]">
-      {/* Sticky glass header */}
       <header className="ads-header">
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Megaphone className="w-4 h-4 text-primary shrink-0" />
           <span className="ads-wordmark truncate">
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
-          <span className="hidden lg:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
-            Centro de comando 2026 — modelos, campanhas, performance e inteligência.
+          <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
+            Dashboard rico · Cérebro na aba própria.
           </span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 w-full sm:w-auto">
@@ -108,7 +108,6 @@ export function AdsCentralTab({ consultantId }: Props) {
       <div className="p-3 sm:p-4 md:p-5 space-y-4 min-w-0 max-w-full">
         <CtwaConnectGuide consultantId={consultantId} />
 
-        {/* Nav pill — scroll horizontal interno; nunca estoura a página */}
         <div className="ads-nav-pill" role="tablist" aria-label="Seções da Central de Anúncios">
           {navItems.map((n) => {
             const Icon = n.icon;
@@ -129,7 +128,6 @@ export function AdsCentralTab({ consultantId }: Props) {
 
         {view === "dashboard" && (
           <div className="space-y-4 min-w-0 max-w-full">
-            {/* Toolbar */}
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               <AdAccountSwitcher userId={consultantId} value={adAccountId} onChange={setAdAccountId} />
               <Select value={String(periodDays)} onValueChange={(v) => setPeriodDays(Number(v))}>
@@ -143,22 +141,27 @@ export function AdsCentralTab({ consultantId }: Props) {
                   <SelectItem value="90">Últimos 90 dias</SelectItem>
                 </SelectContent>
               </Select>
-              <div className="ml-auto text-[11px] text-[hsl(var(--ads-muted))] hidden md:block">
-                Atualizado em tempo real · sincronização Meta a cada 30 min
-              </div>
+              <button
+                type="button"
+                onClick={() => setView("intel")}
+                className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 text-[11px] font-medium text-primary transition-colors"
+              >
+                <Brain className="w-3.5 h-3.5" />
+                Abrir Cérebro
+              </button>
             </div>
 
-            {/* Bento — KPIs hero (sem colSpan fixo: evita overflow em grid 6/1 cols) */}
             <div className="ads-bento">
-              <AdsTile delay={0} className="!p-0 overflow-hidden">
-                <div className="p-3 sm:p-4 min-w-0">
-                  <AdMetricsCards consultantId={adAccountId} periodDays={periodDays} />
-                </div>
+              <AdsTile delay={0} className="overflow-hidden">
+                <AdMetricsCards consultantId={adAccountId} periodDays={periodDays} />
               </AdsTile>
             </div>
 
-            {/* Charts */}
-            <AdsTile delay={120} label="Visão geral de performance" icon={<TrendingUp className="w-3 h-3" />}>
+            <AdsTile delay={40} label="Panorama da operação" icon={<Sparkles className="w-3 h-3" />}>
+              <DashboardInsights consultantId={adAccountId} periodDays={periodDays} />
+            </AdsTile>
+
+            <AdsTile delay={80} label="Visão geral de performance" icon={<TrendingUp className="w-3 h-3" />}>
               <AdMetricsCharts
                 consultantId={adAccountId}
                 periodDays={periodDays}
@@ -166,7 +169,7 @@ export function AdsCentralTab({ consultantId }: Props) {
               />
             </AdsTile>
 
-            <AdsTile delay={180} label="Tráfego principal" icon={<LayoutDashboard className="w-3 h-3" />}>
+            <AdsTile delay={120} label="Tráfego principal" icon={<LayoutDashboard className="w-3 h-3" />}>
               <MainChart data={(analytics as any)?.dailyMain} />
             </AdsTile>
 
@@ -176,7 +179,7 @@ export function AdsCentralTab({ consultantId }: Props) {
               style={{ "--ads-left-w": "min(520px, 50%)" } as React.CSSProperties}
             >
               <AdsTile
-                delay={220}
+                delay={160}
                 className="w-full lg:w-[var(--ads-left-w)] lg:max-w-[min(55%,var(--ads-left-w))] min-w-0"
                 label="CPC por destino"
               >
@@ -193,16 +196,16 @@ export function AdsCentralTab({ consultantId }: Props) {
                 maxPx={720}
                 className="!hidden lg:!flex"
               />
-              <AdsTile delay={260} className="flex-1 min-w-0 w-full" label="Cliques recentes">
+              <AdsTile delay={200} className="flex-1 min-w-0 w-full" label="Cliques recentes">
                 <RecentClicks clicks={(analytics as any)?.recentClicks} />
               </AdsTile>
             </div>
 
-            <AdsTile delay={300} label="Funil de conversão" icon={<Sparkles className="w-3 h-3" />}>
+            <AdsTile delay={240} label="Funil de conversão" icon={<Sparkles className="w-3 h-3" />}>
               <FunnelStrip funnel={(analytics as any)?.funnel} />
             </AdsTile>
 
-            <AdsTile delay={340} label="Fontes de cliente interessado" icon={<Brain className="w-3 h-3" />}>
+            <AdsTile delay={280} label="Fontes de cliente interessado" icon={<Megaphone className="w-3 h-3" />}>
               <LeadSourceCard consultantId={adAccountId} periodDays={periodDays} />
             </AdsTile>
           </div>
@@ -249,14 +252,13 @@ export function AdsCentralTab({ consultantId }: Props) {
           </div>
         )}
 
-        {view !== "dashboard" && view !== "performance" && view !== "commissions" && (
+        {view !== "dashboard" && view !== "performance" && view !== "commissions" && view !== "intel" && (
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">
             <Sparkles className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
             <div>
               Recarregue sua carteira no botão acima e escolha um modelo pronto na{" "}
               <strong className="text-[hsl(var(--ads-emerald-2))]">Galeria</strong>. A campanha sobe
-              pré-otimizada em seu nome e os leads caem no WhatsApp já conectado em{" "}
-              <strong className="text-[hsl(var(--ads-emerald-2))]">Dados</strong>.
+              pré-otimizada e os leads caem no WhatsApp já conectado.
             </div>
           </div>
         )}

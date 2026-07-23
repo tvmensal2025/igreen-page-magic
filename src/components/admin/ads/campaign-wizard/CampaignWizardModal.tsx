@@ -141,7 +141,7 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
 
   const renderStep = () => {
     switch (state.step) {
-      case 1: return <StepRegion state={state} patch={patch} region={region} />;
+      case 1: return <StepRegion state={state} patch={patch} region={region} consultantId={consultantId} />;
       case 2: return <StepCreative state={state} patch={patch} patchFn={patchFn} creative={creative} consultantId={consultantId} />;
       case 3: return <StepCopy state={state} derived={derived} patch={patch} copyLogic={copyLogic} />;
       case 4: return <StepBudget open={open} state={state} patch={patch} patchFn={patchFn} />;

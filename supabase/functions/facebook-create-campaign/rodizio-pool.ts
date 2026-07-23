@@ -29,6 +29,10 @@ export interface RodizioPoolInsert {
   label: string;
   is_enabled: boolean;
   is_active: boolean;
+  /** Padrão para campanhas novas: aviso de métricas a cada 3h. */
+  metrics_broadcast_interval_minutes?: number;
+  metrics_quiet_start_hour?: number;
+  metrics_quiet_end_hour?: number;
 }
 
 /** Payload de insert em `rodizio_pool_members`. */
@@ -129,6 +133,10 @@ export function buildRodizioPoolPlan(args: {
       is_enabled: true,
       // A configuração existe, mas só fica operacional após a campanha ativa.
       is_active: false,
+      // Novas campanhas: métricas a cada 3h (consultor pode mudar no modal).
+      metrics_broadcast_interval_minutes: 180,
+      metrics_quiet_start_hour: 21,
+      metrics_quiet_end_hour: 9,
     },
     buildMembers: (poolId: string) => buildRodizioPoolMembers(poolId, partnerIds),
   };

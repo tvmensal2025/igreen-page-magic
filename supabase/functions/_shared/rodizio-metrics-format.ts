@@ -24,6 +24,13 @@ export interface RodizioMetricsInput {
   partnerNewLeadsSinceLast: number;
   nowLabel: string; // "09/07 14:00"
   intervalMinutes: number; // para o rodapé
+  // Extras (opcionais — enriquecem sem inventar)
+  dailyBudgetCents?: number | null;
+  trackingProtocol?: string | null;
+  cities?: string[];
+  partnerName?: string | null;
+  quietStartHour?: number | null;
+  quietEndHour?: number | null;
 }
 
 function brl(cents: number): string {
@@ -40,24 +47,59 @@ function ordinal(num: number): string {
 }
 
 function intervalLabel(min: number): string {
-  if (min < 60) return `${min} min`;
-  const h = min / 60;
-  return h === 1 ? "1 hora" : `${h} horas`;
+  const m = Math.max(0, Math.round(Number(min) || 0));
+  if (m <= 0) return "desligado";
+  if (m < 60) return `${m} min`;
+  if (m % 1440 === 0) {
+    const d = m / 1440;
+    return d === 1 ? "1 dia" : `${d} dias`;
+  }
+  if (m % 60 === 0) {
+    const h = m / 60;
+    return h === 1 ? "1 hora" : `${h} horas`;
+  }
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  return `${h}h ${rest}min`;
 }
 
-/** Nome amigável: tira [CONS-...], data e sufixo longo. */
+function pct(num: number, den: number): number | null {
+  if (!den || den <= 0 || !Number.isFinite(num)) return null;
+  return Math.round((num / den) * 1000) / 10;
+}
+
+function quietLabel(start?: number | null, end?: number | null): string | null {
+  if (start == null || end == null) return null;
+  if (start === end) return null;
+  const a = String(start).padStart(2, "0");
+  const b = String(end).padStart(2, "0");
+  return `${a}h–${b}h`;
+}
+
+/** Nome amigável: tira [CONS-...], prefixo MG-ROT, data e sufixo longo. */
 export function shortCampaignName(raw: string): string {
   let s = String(raw || "").trim();
-  s = s.replace(/^\[CONS-[^\]]+\]\s*/i, "");
-  // "Jaraguá · iGreen — Jaraguá, Setor Oeste..." → pega o trecho antes do em-dash longo
+  s = s.replace(/\[CONS-[^\]]+\]/gi, "");
+  s = s.replace(/\s*·\s*/g, " · ").replace(/\s{2,}/g, " ").replace(/(?:\s·\s*)+$/g, "").trim();
+  const mg = s.match(/^MG-ROT-([a-z0-9-]+)/i);
+  if (mg) {
+    s = mg[1].replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
   const em = s.split(/\s*[—–]\s*/);
-  if (em.length > 1 && em[0].length >= 3) s = em[0];
+  if (em.length > 1 && em[0].length >= 3) s = em[0].trim();
   s = s.replace(/\s*·\s*\d{4}-\d{2}-\d{2}.*$/, "").trim();
-  // Se ainda ficou "X · iGreen", mantém; se ficou só "iGreen", usa original limpo
+  if (/\s·\s/.test(s)) {
+    const left = s.split(/\s·\s/)[0]?.trim() || s;
+    if (left.length >= 3) s = left;
+  }
+  s = s.replace(/^remarketing[- ]+/i, "").replace(/[-_]+/g, " ").trim();
   if (s.length < 3) {
-    s = String(raw || "").replace(/^\[CONS-[^\]]+\]\s*/i, "").trim();
+    s = String(raw || "").replace(/\[CONS-[^\]]+\]/gi, "").replace(/(?:\s·\s*)+$/g, "").trim();
   }
   if (s.length > 60) s = s.slice(0, 57) + "…";
+  if (s === s.toLowerCase() && /^[a-zà-ú0-9 -]+$/i.test(s)) {
+    s = s.replace(/\b\w/g, (c) => c.toUpperCase());
+  }
   return s || "Campanha";
 }
 
@@ -69,40 +111,69 @@ function cplCents(spend: number, leads: number): number | null {
 export function formatRodizioMetricsMessage(m: RodizioMetricsInput): string {
   const lines: string[] = [];
   const name = shortCampaignName(m.campaignName);
+  const firstName = m.partnerName
+    ? String(m.partnerName).trim().split(/\s+/)[0]
+    : "";
 
-  // Safety: 7d nunca menor que hoje (caller já soma last_7d+today; CRM pode divergir)
   const spend7d = Math.max(Number(m.spend7dCents || 0), Number(m.spendTodayCents || 0));
   const conv7d = Math.max(Number(m.conversations7d || 0), Number(m.conversationsStartedToday || 0));
   const clicks7d = Math.max(Number(m.clicks7d || 0), Number(m.clicksToday || 0));
   const leads7d = Math.max(Number(m.leadsCrm7d || 0), Number(m.leadsCrmToday || 0));
 
+  if (firstName) {
+    lines.push(`Olá, ${firstName}! 👋`);
+    lines.push(``);
+  }
+
   if (m.partnerNewLeadsSinceLast > 0) {
     const q = m.partnerNewLeadsSinceLast;
     lines.push(`🔥 *Você recebeu ${q} lead${q > 1 ? "s" : ""} novo${q > 1 ? "s" : ""}!*`);
+    lines.push(`📲 Já estão no funil — a equipe segue o atendimento.`);
     lines.push(``);
   }
 
   lines.push(`📊 *Atualização do anúncio*`);
-  lines.push(``);
+  lines.push(`━━━━━━━━━━━━━━━━`);
   lines.push(`🎯 *${name}*`);
   lines.push(`🕐 ${m.nowLabel}`);
+  if (m.trackingProtocol) lines.push(`🔖 Protocolo: *${m.trackingProtocol}*`);
   if (m.campaignStatus === "active") {
-    lines.push(`🟢 Status: no ar`);
+    lines.push(`🟢 Status: *no ar* e entregando`);
   } else if (m.campaignStatus) {
-    lines.push(`⚠️ Status: ${m.campaignStatus}`);
+    lines.push(`⚠️ Status: *${m.campaignStatus}*`);
+  }
+  if (m.cities && m.cities.length > 0) {
+    lines.push(`📍 ${m.cities.slice(0, 4).join(", ")}${m.cities.length > 4 ? "…" : ""}`);
+  }
+  if (m.dailyBudgetCents != null && m.dailyBudgetCents > 0) {
+    lines.push(`💵 Orçamento/dia: *R$ ${brl(m.dailyBudgetCents)}*`);
+    const used = pct(m.spendTodayCents, m.dailyBudgetCents);
+    if (used != null) {
+      lines.push(`📉 Uso do orçamento hoje: *${used}%*`);
+    }
   }
 
   lines.push(``);
-  lines.push(`☀️ *Hoje*`);
+  lines.push(`☀️ *Hoje (ao vivo)*`);
   lines.push(`💰 Gasto: *R$ ${brl(m.spendTodayCents)}*`);
   lines.push(`👀 Alcance: *${n(m.reachToday)}* pessoas`);
   lines.push(`📢 Visualizações: *${n(m.impressionsToday)}*`);
   lines.push(`👆 Cliques: *${n(m.clicksToday)}*`);
+  const ctr = pct(m.clicksToday, m.impressionsToday);
+  if (ctr != null) lines.push(`📌 CTR (clique/visualização): *${ctr}%*`);
   lines.push(`💬 Conversas (Meta): *${n(m.conversationsStartedToday)}*`);
+  const clickToConv = pct(m.conversationsStartedToday, m.clicksToday);
+  if (clickToConv != null) lines.push(`🔁 Clique → conversa: *${clickToConv}%*`);
   lines.push(`📥 Leads no WhatsApp: *${n(m.leadsCrmToday)}*`);
+  const convToLead = pct(m.leadsCrmToday, m.conversationsStartedToday);
+  if (convToLead != null) lines.push(`🤝 Conversa → lead: *${convToLead}%*`);
   const cplToday = cplCents(m.spendTodayCents, m.leadsCrmToday);
   if (cplToday != null) {
     lines.push(`🎯 Custo por lead: *R$ ${brl(cplToday)}*`);
+  }
+  const cpc = cplCents(m.spendTodayCents, m.clicksToday);
+  if (cpc != null && m.clicksToday > 0) {
+    lines.push(`💸 Custo por clique: *R$ ${brl(cpc)}*`);
   }
 
   lines.push(``);
@@ -113,31 +184,43 @@ export function formatRodizioMetricsMessage(m: RodizioMetricsInput): string {
   lines.push(`📥 Leads no WhatsApp: *${n(leads7d)}*`);
   const cpl7 = cplCents(spend7d, leads7d);
   if (cpl7 != null) {
-    lines.push(`🎯 Custo por lead: *R$ ${brl(cpl7)}*`);
+    lines.push(`🎯 Custo por lead (7d): *R$ ${brl(cpl7)}*`);
   }
 
   lines.push(``);
-  lines.push(`👥 *Seu rodízio*`);
-  lines.push(`🏅 Posição: *${ordinal(m.partnerPosition)}* de ${m.partnerPoolSize}`);
+  lines.push(`👥 *Seu resultado*`);
+  if (m.partnerPoolSize <= 1) {
+    lines.push(`🏅 Campanha *exclusiva* pra você`);
+  } else {
+    lines.push(`🏅 Posição no rodízio: *${ordinal(m.partnerPosition)}* de ${m.partnerPoolSize}`);
+  }
   lines.push(`📈 Seus leads nesta campanha: *${n(m.partnerLeadsTotal)}*`);
+  if (m.partnerNewLeadsSinceLast > 0) {
+    lines.push(`🆕 Desde o último aviso: *${n(m.partnerNewLeadsSinceLast)}*`);
+  }
 
   lines.push(``);
-  // Insight honesto — só com base nos números reais
+  lines.push(`💡 *Leitura rápida*`);
   if (m.spendTodayCents === 0 && m.impressionsToday === 0 && m.campaignStatus === "active") {
-    lines.push(`🌱 Campanha no ar — a Meta começa a entregar em até 24h.`);
+    lines.push(`🌱 No ar — a Meta começa a entregar em até 24h.`);
   } else if (m.leadsCrmToday > 0) {
     lines.push(`✅ Hoje já entrou lead no WhatsApp. Bom ritmo!`);
   } else if (m.conversationsStartedToday > 0 && m.leadsCrmToday === 0) {
-    lines.push(`💬 Meta já abriu conversa — o lead deve aparecer no WhatsApp em breve.`);
+    lines.push(`💬 Meta já abriu conversa — o lead deve aparecer no Zap em breve.`);
   } else if (m.clicksToday > 0 && m.conversationsStartedToday === 0) {
     lines.push(`👆 Teve clique, ainda sem conversa. Aguardando.`);
   } else if (m.impressionsToday > 0) {
     lines.push(`👀 Já está sendo visto. Aguardando o primeiro clique.`);
+  } else {
+    lines.push(`📡 Aguardando novos números da Meta.`);
   }
 
   lines.push(``);
-  lines.push(`⏰ Próxima atualização em ~${intervalLabel(m.intervalMinutes)}`);
+  lines.push(`⏰ Próxima atualização em ~*${intervalLabel(m.intervalMinutes)}*`);
+  const quiet = quietLabel(m.quietStartHour, m.quietEndHour);
+  if (quiet) lines.push(`🌙 Silêncio noturno: *${quiet}* (sem avisos)`);
   lines.push(`✨ _Números ao vivo da Meta + WhatsApp_`);
+  lines.push(`_iGreen Ads_`);
 
   return lines.join("\n");
 }
@@ -146,12 +229,14 @@ export function formatRodizioFallbackMessage(campaignName: string, nowLabel: str
   const name = shortCampaignName(campaignName);
   return [
     `📊 *Atualização do anúncio*`,
+    `━━━━━━━━━━━━━━━━`,
     ``,
     `🎯 *${name}*`,
     `🕐 ${nowLabel}`,
     ``,
     `⚠️ Não consegui puxar as métricas ao vivo da Meta agora.`,
-    `🔄 Tento de novo em ~${intervalLabel(intervalMinutes)}.`,
+    `🔄 Tento de novo em ~*${intervalLabel(intervalMinutes)}*.`,
+    `💚 Seus leads no WhatsApp continuam sendo trabalhados.`,
     ``,
     `✨ _iGreen Ads_`,
   ].join("\n");
@@ -163,35 +248,41 @@ export interface CampaignApprovedInput {
   fbCampaignId?: string | null;
   dailyBudgetCents?: number | null;
   durationDays?: number | null;
-  cities?: string[];               // até 5+ nomes
+  cities?: string[];
   estimatedReach?: { lower: number; upper: number } | null;
   partnerName?: string | null;
   partnerIgreenId?: string | null;
-  position?: number | null;        // 1-based
+  position?: number | null;
   totalPositions?: number | null;
-  rosterLines?: string[];          // ["1º Fulano · ID 123 ← você", ...]
+  rosterLines?: string[];
   intervalMinutes: number;
+  quietStartHour?: number | null;
+  quietEndHour?: number | null;
 }
 
 /**
  * Mensagem única de "campanha aprovada pela Meta". Enviada 1x por pool para
- * cada parceiro elegível assim que a campanha entra em ACTIVE. Traz o pacote
- * completo (protocolo, orçamento, cidades, alcance, rodízio) — campos sem
- * dado confiável são simplesmente omitidos.
+ * cada parceiro elegível assim que a campanha entra em ACTIVE.
  */
 export function formatCampaignApprovedMessage(input: CampaignApprovedInput): string {
   const name = shortCampaignName(input.campaignName);
-  const hi = input.partnerName ? `Olá, ${String(input.partnerName).split(" ")[0]}! 👋\n\n` : "";
+  const firstName = input.partnerName
+    ? String(input.partnerName).trim().split(/\s+/)[0]
+    : "";
 
   const lines: string[] = [];
-  lines.push(`${hi}✅ *Campanha aprovada pela Meta!*`);
-  lines.push(`🚀 Seu anúncio já está no ar.`);
+  if (firstName) {
+    lines.push(`Olá, ${firstName}! 👋`);
+    lines.push(``);
+  }
+  lines.push(`✅ *Campanha aprovada pela Meta!*`);
+  lines.push(`🚀 Seu anúncio já está *no ar* e pode começar a gerar leads.`);
   lines.push(``);
 
-  // Campanha
   lines.push(`📢 *Campanha*`);
+  lines.push(`━━━━━━━━━━━━━━━━`);
   lines.push(`🎯 *${name}*`);
-  if (input.fbCampaignId) lines.push(`🆔 ID Meta: \`${input.fbCampaignId}\``);
+  if (input.fbCampaignId) lines.push(`🆔 ID Meta: *${input.fbCampaignId}*`);
   if (input.trackingProtocol) lines.push(`🔖 Protocolo: *${input.trackingProtocol}*`);
   if (input.durationDays && input.durationDays > 0) {
     lines.push(`📅 Duração: *${input.durationDays} ${input.durationDays === 1 ? "dia" : "dias"}*`);
@@ -212,30 +303,41 @@ export function formatCampaignApprovedMessage(input: CampaignApprovedInput): str
   }
   lines.push(``);
 
-  // Cadastro do parceiro
   if (input.partnerName || input.partnerIgreenId) {
     lines.push(`🪪 *Seu cadastro*`);
-    if (input.partnerName) lines.push(`   Nome: *${input.partnerName}*`);
-    if (input.partnerIgreenId) lines.push(`   ID iGreen: *${input.partnerIgreenId}*`);
+    if (input.partnerName) lines.push(`👤 Nome: *${input.partnerName}*`);
+    if (input.partnerIgreenId) lines.push(`🔢 ID iGreen: *${input.partnerIgreenId}*`);
     lines.push(``);
   }
 
-  // Rodízio
-  if (input.position && input.totalPositions && input.totalPositions > 1) {
-    lines.push(`👥 *Rodízio*`);
+  if (input.totalPositions && input.totalPositions > 1 && input.position) {
+    lines.push(`👥 *Rodízio de leads*`);
     lines.push(`🏅 Sua posição: *${input.position}º* de *${input.totalPositions}*`);
     if (input.rosterLines && input.rosterLines.length > 0) {
       lines.push(`📋 Integrantes:`);
       lines.push(...input.rosterLines);
     }
+    lines.push(`🔄 Os leads entram na sua vez, na ordem acima.`);
+    lines.push(``);
+  } else if (input.totalPositions === 1 || (input.position === 1 && !input.totalPositions)) {
+    lines.push(`🏅 Esta campanha é *exclusiva* pra você.`);
+    lines.push(`📥 Todos os leads deste anúncio vão para o seu atendimento.`);
     lines.push(``);
   }
 
-  lines.push(`📊 Atualização de métricas a cada *${intervalLabel(input.intervalMinutes)}*`);
-  lines.push(`   (gasto, cliques, conversas e seus leads)`);
-  lines.push(`🌙 Sem mensagens de madrugada.`);
+  lines.push(`📬 *O que você vai receber daqui pra frente*`);
+  lines.push(`1️⃣ Aviso de *novo lead* (quando cair no seu Zap)`);
+  lines.push(`2️⃣ Atualização de *métricas* a cada *${intervalLabel(input.intervalMinutes)}*`);
+  lines.push(`   → gasto · cliques · conversas · seus leads · CPL`);
+  lines.push(`3️⃣ Aviso se a campanha for *pausada* ou *encerrada*`);
+  const quiet = quietLabel(input.quietStartHour, input.quietEndHour);
+  if (quiet) {
+    lines.push(`🌙 Sem mensagens de madrugada (*${quiet}*)`);
+  } else {
+    lines.push(`🌙 Sem mensagens de madrugada (padrão 21h–09h).`);
+  }
   lines.push(``);
-  lines.push(`💪 Bons leads!`);
+  lines.push(`💪 Bons leads — estamos juntos!`);
   lines.push(`✨ _iGreen Ads_`);
   return lines.join("\n");
 }
@@ -249,8 +351,6 @@ export type CampaignPausedReason =
 
 /**
  * Mensagem única de "campanha pausada". Sempre com tom positivo/tranquilizador.
- * Disparada 1x por evento de pausa (usa `rodizio_pools.paused_notified_at`
- * para dedup; o campo é resetado ao reativar a campanha).
  */
 export function formatCampaignPausedMessage(campaignName: string, reason: CampaignPausedReason | string): string {
   const name = shortCampaignName(campaignName || "Sua campanha");
@@ -258,6 +358,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     ``,
     `💚 Os leads que já chegaram *seguem sendo trabalhados*`,
     `pela equipe — ninguém fica parado.`,
+    `📊 Você continua recebendo avisos se houver novidade.`,
     ``,
     `✨ _iGreen Ads_`,
   ];
@@ -266,6 +367,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     case "manual":
       return [
         `🌿 *Pausa estratégica*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `A campanha foi pausada por um momento`,
@@ -278,6 +380,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     case "low_balance":
       return [
         `🔋 *Recarregando energia*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `Pausamos rapidinho para *repor o saldo*`,
@@ -290,6 +393,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     case "ended":
       return [
         `✨ *Missão cumprida!*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `A campanha encerrou — e o melhor começa agora.`,
@@ -306,6 +410,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     case "rejected":
       return [
         `🎨 *Ajuste fino no criativo*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `A Meta pediu um pequeno ajuste no anúncio.`,
@@ -316,6 +421,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     case "auto_performance":
       return [
         `🧪 *Otimização em andamento*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `Pausamos para *testar novas variações*`,
@@ -328,6 +434,7 @@ export function formatCampaignPausedMessage(campaignName: string, reason: Campai
     default:
       return [
         `🌿 *Pausa temporária*`,
+        `━━━━━━━━━━━━━━━━`,
         `🎯 *${name}*`,
         ``,
         `Estamos *cuidando da campanha*`,

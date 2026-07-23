@@ -8,7 +8,7 @@
 //
 // Guardrails principais:
 //  - Quiet hours POR POOL (padrão 21h–09h BRT; configurável na UI)
-//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 30/60/120/240; padrão 60)
+//  - Respeita `rodizio_pools.metrics_broadcast_interval_minutes` (0=off, 30/60/120/180/240/360/720/1440; novas pools default 180)
 //  - NUNCA envia com métricas fake: se a Meta API falhar → mensagem de fallback
 //  - Se campanha < 30 min e tudo zero → skip (evita "vazio")
 //  - Dedup por (partner_id, campaign_id, slot_da_pool) via outbound_message_log
@@ -341,6 +341,8 @@ Deno.serve(async (req) => {
             totalPositions: sortedEligible.length,
             rosterLines,
             intervalMinutes: intervalMin,
+            quietStartHour: quietStart,
+            quietEndHour: quietEnd,
           });
 
           const approvedIdem = `rodizio_approved:${m.partner_id}:${camp.id}`;
@@ -423,6 +425,14 @@ Deno.serve(async (req) => {
             partnerNewLeadsSinceLast: partnerNewLeads,
             nowLabel: label,
             intervalMinutes: intervalMin,
+            dailyBudgetCents: camp.daily_budget_cents ?? null,
+            trackingProtocol: camp.tracking_protocol || null,
+            cities: Array.isArray(camp.cities)
+              ? (camp.cities as any[]).map((c) => c?.name).filter((x) => typeof x === "string" && x.length > 0)
+              : [],
+            partnerName: partner?.nome || null,
+            quietStartHour: quietStart,
+            quietEndHour: quietEnd,
           });
         }
 
