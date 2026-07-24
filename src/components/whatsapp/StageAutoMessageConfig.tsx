@@ -258,12 +258,34 @@ function MessageItem({
                 </div>
               )}
               {msg.media_url && msg.message_type === "audio" && (
-                <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 border border-border/40">
-                  <Mic className="h-4 w-4 text-primary shrink-0" />
-                  <audio src={msg.media_url} controls className="h-8 flex-1" />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 border border-border/40">
+                    <Mic className="h-4 w-4 text-primary shrink-0" />
+                    <audio src={msg.media_url} controls className="h-8 flex-1" />
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onChange({ ...msg, media_url: "" })}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {msg.image_url ? (
+                    <div className="flex items-center gap-2 p-2 rounded-md bg-muted/40 border border-border/40">
+                      <img
+                        src={msg.image_url}
+                        alt="Imagem enviada antes do áudio"
+                        className="h-16 w-16 rounded object-cover border border-border/40"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground">Imagem (antes do áudio)</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{msg.image_url}</p>
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onChange({ ...msg, image_url: "" })}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground px-1">
+                      Sem imagem anexada — use “opções avançadas” para adicionar (enviada antes do áudio).
+                    </p>
+                  )}
                 </div>
               )}
             </div>
