@@ -68,7 +68,7 @@ Visualização dos leads ativos por grupo A/B/C na UI (`ReheatCyclePizza`, `Admi
 **Portal 1** (Playwright direto no site iGreen) foi **descontinuado em 2026-06**. **Portal 2** é a API oficial iGreen consumida por `worker-portal-2/`. Sempre use `dispatchPortalWorker`.
 
 ## Pós-venda WA
-Sequência automatizada D30/D60/D90/D120 pós-cadastro (`pos_venda_*`, edge `pos-venda-auto-progress`). **Não** é a esteira multiproduto de venda (`sales` / `sale_stage_*`).
+Sequência automatizada **D30→D210** (+ saudação aprovado/reprovado + **retentativa** após 60d) em `pos_venda_*`, edge `pos-venda-auto-progress`. **Não** é a esteira multiproduto (`sales` / `sale_stage_*`). Não depende de `bot_global_enabled` — usa toggle `pos_venda_auto_messages` + validação manual.
 
 ## Protocolo `2026-####`
 Identificador interno do lead. Fica **só no banco/admin**; **nunca** appendar em mensagem WA.

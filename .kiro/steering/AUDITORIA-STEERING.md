@@ -1,47 +1,103 @@
 ---
 inclusion: manual
+name: AUDITORIA-STEERING
+description: Histórico de rounds do pack steering.
 ---
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-23** (round 4).
+Última atualização: **2026-07-24** (incidente CPL Meta triplicado + round 10).
 
-## Estado atual
+## Incidente 2026-07-24 — CPL Cérebro ~1/3 do real
+Sintoma: aviso WA “CPL R$2 / sobe 15%” na âncora Uberlândia; Ads Manager ~R$90 / 14 conv = **R$6,50**.
+Causa: `facebook-sync-metrics` somava `messaging_conversation_started` + `first_reply` + `total_messaging_connection`.
+Fix: `_shared/meta-insight-actions.ts` (`pickMetaConversations` / `pickMetaLeads`); armadilha #26; métricas âncora corrigidas (14 conv, CPL R$6,48); budget DB → R$6,29 aguardando tick scale_down na Meta.
+**Requer deploy** de `facebook-sync-metrics` (+ creatives + rodizio-metrics-broadcast) senão o cron re-triple.
 
-- **Always (6):** `idioma`, `regras-duras`, `armadilhas`, `product`, `tech`, `structure`
-- **Auto:** `helpers-canonicos`, `banco`, `edge-functions`, `fluxos`, `nomes-e-tema`, `convencoes`, `rotas-ui`, `deploy`, `security-auth`, `ads-contraste`, `cerebro-mg-e-rodizio`, `minio-storage`, **`mapa-tarefas` (novo)**
-- **Manual:** **`glossario` (novo)**, `AUDITORIA-STEERING`
-- **fileMatch:** portal2 / club / sync / pós-venda / esteira / wallet / solar / remote / flow-engine-v3
-- `AGENTS.md` reescrito com **árvore de decisão** + índice completo dos steering
-- `projeto.md` seguiu removido (fundido em `product.md` desde round 3)
+## Round 10 — caminho 10/10 (cuidado + MCP)
+Fontes: Supabase MCP (`execute_sql`, `get_advisors`) · Context7 (`/websites/agents_md`, `/supabase/supabase`) · analyzer Biome · 4 agentes paralelos.
 
-## Novidades cobertas nesta round
+### Doc / CI
+- CI `check-agent-docs`: anchors, god-lines ±8%, símbolos canônicos, V3=sombra, nested novos, SQL `scripts/refresh-evidencia-prod-snippet.sql`
+- Nested AGENTS: `sync-igreen-customers`, `_shared/bot`, `bulk-scheduler`, `finalize-capture`, `src/lib`
+- Specs risco Evolution: banner Whapi em reliability/message-send/multiconsultor/channel-unification/_done evolution + scheduled + flow-v3
+- `armadilhas`: cross-sell sem consumidor · V3 sombra · (quiet/needs_reconnect já cobertos)
+- `EVIDENCIA-PROD` revalidada: counts estáveis; advisors **ERROR 2** (só exceções DEFINER)
+- `cross-sell.md`: `avaliarCrossSell` sem consumidor de produção
 
-- **Caps outreach A/B/C** documentados em `regras-duras`, `banco`, `fluxos`, `AGENTS.md`, `mapa-tarefas`, `glossario`.
-  - A = ilimitado (bypass) · B = `cap_b` (150) · C = `cap_c` (50) · Global B+C = `cap_global_outreach` (200).
-  - Migration: `supabase/migrations/20260721000000_whapi_throttle_groups.sql`.
-  - Motor: `supabase/functions/cadence-tick/index.ts` + `_shared/cadence-engine.ts::stageGroup`.
-  - UI: `src/components/admin/ColdCadenceCapCard.tsx` (3 barras + edit inline).
-  - Alertas: `automation_skip_log` (`outreach_cap_{b|c|g}_{60|85|100}pct`).
-- **Cross-channel suppression** (voz `IK/EK/CK/BK` + 2× SMS `UNDELIV`/72h → DNC automática): `voice-dialer-webhook`, `checkPhoneDeadForChannel` em `cadence-tick`.
-- **Janela horária BRT 08–20h** com trava `clamp_to_business_window_brt` (migration + gate no motor).
-- **Logs de tick**: `boot` / `guards_ok` / `done` / `fatal` em `cadence-tick` para diagnosticar “shutdown mudo”.
-- **Tema forçado light** (opcional a redocumentar em `nomes-e-tema` se voltar a mudar).
+### Código seguro
+- Fatia pura `flow-predicates.ts` (+ testes) nos 2 bot-flows — Deno **21 passed** (predicates + step/holder/confirm)
 
-## Fatos conferidos no código
+## Round 9 — auditoria código × documentação
+Cruzamento código + MCP prod. **Claims operacionais OK** (kill outbound-only, PV sem `bot_global`, agenda sem quiet, dryRun Fluxo B, caps 150/50/200, views 3 invoker + 2 DEFINER, helpers importados nos 2 bot-flows, nested AGENTS).
 
-pós-venda · wallet líquido · MinIO · Club · sync · Portal extract · Whapi primário · `conversations` (não `messages`) · dedup canônico `webhook_message_dedup` · tema dual · V3 takeover só `on`/bool · rodízio UUID · `deterministic-campaign-resolver` (ad_id → fb_campaign_id → ctwa_clid → protocol → exact msg).
+Correções factuais aplicadas:
+- `wa-webhook.md`: ordem real V3 sombra → Cérebro → `runEngine()`; retentativa antes dos motores; contagens bot-flow; citação CTWA/rodízio
+- `cerebro-fluxo-b.md` / `voz-sms.md` / `armadilhas` / `mapa-dominios` (ver hist. round 9)
 
-## Riscos residuais
+## Round 8
+- `ads-contraste`, `cerebro-mg-e-rodizio`, `minio-storage` → **inclusion: auto**
+- `name` + `description` em steers que faltavam
+- Nested AGENTS: `evolution-webhook`, `send-scheduled-messages`, `voice-dialer-webhook`, `src/components/whatsapp`
+- Extração: `_shared/bot/holder-match.ts` + `confirmation-formatters.ts` (70 testes Deno)
+- CI drift: valida name/description, mapa→steering, nested AGENTS
+- Specs high-risk: `agentStatus` em `.config.kiro`
 
-- Pós-venda ignora `bot_global` (só toggle próprio) — fato do código; documentado em `#pos-venda`.
-- Lead Ads sem `PAGE_ACCESS_TOKEN` pode descartar leads pagos silenciosamente — mitigar em `meta-leadads-webhook`.
-- Nested `AGENTS.md` por subpasta e Biome analyzer — skip por ora.
-- `ctwa_clid_mapping` sem alerta quando pool de rodízio vazio — considerar log em `automation_skip_log`.
+## Round 7 — engenharia (não só markdown)
 
-## Convenção para próximas rounds
+### Views (MCP apply_migration + SQL local)
+- `security_invoker=true`: `v_boletos_carteira`, `cadence_metrics_daily`, `igreen_recon_queue_progress`
+- DEFINER **mantido de propósito**: `consultants_public`, `platform_facebook_audience_status` (documentado em `#security-auth`)
+- Evidência pós-migrate: reloptions conferidos via SQL
 
-1. Toda regra nova estabelecida em conversa entra em `regras-duras` **ou** `armadilhas` no mesmo PR.
-2. Todo caminho novo tarefa→arquivo entra em `mapa-tarefas`.
-3. Toda sigla nova entra em `glossario`.
-4. Este arquivo (`AUDITORIA-STEERING.md`) marca a data e resume o delta.
+### UI DNC
+- VozTab, HandoffLeadsDialog, VoiceDashboardPanel, VoiceCallHistoryPanel, VoiceDncPanel, CloseAttendanceBatchDialog
+
+### CI drift
+- `scripts/check-agent-docs-drift.sh` · `npm run check:agent-docs` · job CI `agent-docs-drift`
+
+### God-file (PR mínima segura)
+- `_shared/bot/step-interaction.ts` + testes
+- Import em whapi + evolution `bot-flow.ts`
+- Deno: **62 passed** (step-interaction + bot-flow_test ambos canais)
+
+## Round 6 — (anterior) evidência doc
+… ver histórico abaixo / `#evidencia-prod`
+
+### Novos steerings (com evidência prod embutida)
+- `wa-webhook.md`
+- `cerebro-fluxo-b.md`
+- `voz-sms.md`
+- `agendamentos-hub.md`
+- `cross-sell.md`
+- `EVIDENCIA-PROD.md` (snapshot SQL + advisors 199 sec / 792 perf)
+
+### Nested AGENTS.md
+- `supabase/functions/whapi-webhook/AGENTS.md`
+- `supabase/functions/cadence-tick/AGENTS.md`
+- `supabase/functions/pos-venda-auto-progress/AGENTS.md`
+- `supabase/functions/_shared/cerebro/AGENTS.md`
+
+### Anti-ruído specs
+- `.kiro/specs/STATUS.md` (archived / active-ref / Evolution-first risk)
+
+### Índice
+- `AGENTS.md` árvore de decisão + índice + exceção kill switch vs pós-venda
+- `mapa-dominios.json` (round 5, ainda válido; doc_status dos missing → ok)
+
+## Evidência-chave (revalidar em `#evidencia-prod`)
+- 1270 customers · 1115 sync · 1114 PV espera
+- Caps B150/C50/G200 · janela reheat 08–20 · live on
+- Voz: 685 calls (IK=9) · DNC 26 · dedup 1363
+- Advisors: baseline de 5 views `SECURITY DEFINER` remediado em 3; 2 exceções seguem documentadas
+- Skip 7d agenda: 1115
+
+## Ainda aberto (pós-round 10 — não bloqueia nota de doc)
+1. ~~P0 RPC~~ **feito** (`20260724140000`): cron admin + claim_scheduled só `service_role`. Restam 21 anon+DEFINER (P1–P3).
+2. Mais fatias `bot-flow` (PRs pequenas, espelho Whapi↔Evolution).
+3. Perf advisors (RLS initplan / índices) — só com medição.
+4. Revisar quem no front lê `platform_facebook_audience_status`.
+5. WARN security restante em RPCs `authenticated`+DEFINER (155) — mapa; não massa.
+
+## Convenção
+Regra nova → `regras-duras`/`armadilhas` + `mapa-dominios.json` + (se número) `EVIDENCIA-PROD.md`.

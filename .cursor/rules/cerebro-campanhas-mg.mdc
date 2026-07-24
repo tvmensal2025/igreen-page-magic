@@ -20,6 +20,7 @@ Doc completa: `docs/cerebro-e-rodizio-avisos.md`
 - Degrau sobe/desce (~**15%**) com intervalo anti-spam ~**4h** (`brain-budget-scale.ts`).
 - **Não** existe trava de 48h entre subidas.
 - Aviso WA vai para o **consultor** (`notifyAnchorBudgetScale`), não para parceiro.
+- Conversas Meta: **`pickMetaConversations`** (`_shared/meta-insight-actions.ts`) — 1 action_type. Nunca somar `started`+`first_reply`+`total_connection` (incidente 2026-07-24: CPL real R$6,50 virava ~R$2 e budget subia).
 
 ## Cérebro por campanha (outra cidade / parceiro)
 

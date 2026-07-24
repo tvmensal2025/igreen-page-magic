@@ -172,7 +172,7 @@ export function HandoffLeadsDialog({
           </DialogTitle>
           <DialogDescription>
             Aqui estão <strong>todos os leads fora do ciclo</strong>: handoff humano e bloqueados por segurança
-            (telefone inválido, DNC, opt-out). Use <strong>Voltar à pizza</strong> para reativar a cadência, ou
+            (telefone inválido, nunca mais contatar, opt-out). Use <strong>Voltar à pizza</strong> para reativar a cadência, ou
             <strong> Bloquear</strong> para não receber mais contato.
           </DialogDescription>
         </DialogHeader>

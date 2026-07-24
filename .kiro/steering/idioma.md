@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: idioma
+description: Respostas e raciocínio sempre em pt-BR.
 ---
 
 # Idioma

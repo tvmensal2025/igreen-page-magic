@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: solar-3d
+description: Telhado solar 3D / Google Solar.
 fileMatchPattern:
   - "src/features/solar-3d/**"
   - "supabase/functions/solar-*/**"

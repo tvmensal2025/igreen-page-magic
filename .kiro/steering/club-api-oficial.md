@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: club-api-oficial
+description: Worker e API iGreen Club oficiais.
 fileMatchPattern:
   - "worker-club/**"
   - "supabase/functions/finalize-club/**"

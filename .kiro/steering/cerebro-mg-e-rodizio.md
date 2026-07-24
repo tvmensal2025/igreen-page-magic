@@ -1,20 +1,7 @@
 ---
-inclusion: fileMatch
-fileMatchPattern:
-  - "supabase/functions/facebook-mg-city-rotator/**"
-  - "supabase/functions/facebook-auto-pause/**"
-  - "supabase/functions/campaign-brain-rank/**"
-  - "supabase/functions/rodizio-metrics-broadcast/**"
-  - "supabase/functions/_shared/brain-*.ts"
-  - "supabase/functions/_shared/ad-copy-bank.ts"
-  - "supabase/functions/_shared/campaign-waste-guard.ts"
-  - "supabase/functions/_shared/rodizio-*.ts"
-  - "supabase/functions/facebook-create-campaign/rodizio-pool.ts"
-  - "src/components/admin/ads/CampaignBrain*"
-  - "src/components/admin/ads/CampaignRodizio*"
-  - "src/components/whatsapp/RodiziosBroadcastPanel.tsx"
-  - "docs/cerebro-e-rodizio-avisos.md"
-  - ".cursor/rules/cerebro-campanhas-mg.mdc"
+inclusion: auto
+name: cerebro-mg-e-rodizio
+description: Cérebro MG Meta + waste + avisos rodízio. Use em Ads/escala/rodízio.
 ---
 
 # Cérebro MG + avisos de rodízio
@@ -26,6 +13,7 @@ Doc: #[[file:docs/cerebro-e-rodizio-avisos.md]] · rule: #[[file:.cursor/rules/c
 - Autopilot: `facebook-auto-pause` (waste) → `facebook-mg-city-rotator` **só com diff**
 - Autopilot só se `brain_config.autopilot === true` (null ≠ ligado)
 - Escala âncora: 48h mede CPL; degrau ~15% / ~4h — **sem** trava 48h entre subidas
+- Conversas Meta = `pickMetaConversations` (1 action_type canônico). **Nunca** somar `started`+`first_reply`+`total_connection` (incidente 2026-07-24: CPL R$6,50 aparecia R$2 e budget subia)
 - `brain_scale_*` **proibido** em `MG-ROT-*` e âncora UDI
 - Waste: `AUTO_PERF_PAUSE:`; se `paused_by_ai_at` já setado → **não** re-pausar
 - Health/rotator **não** reativam waste — só Play do consultor

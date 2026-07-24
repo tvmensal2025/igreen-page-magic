@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: wallet-stripe
+description: Carteira consultor e Stripe.
 fileMatchPattern:
   - "supabase/functions/wallet-*/**"
   - "src/components/wallet/**/*"

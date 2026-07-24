@@ -102,6 +102,14 @@ jobs:
           deno test --allow-read --no-check \
             supabase/functions/_shared/engine/__tests__/purity_lint_test.ts
 
+  agent-docs-drift:
+    name: Agent docs drift (Cursor ↔ Kiro)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check mirrors + inclusion + DNC labels
+        run: bash scripts/check-agent-docs-drift.sh
+
   spec-format:
     name: Kiro spec format
     runs-on: ubuntu-latest

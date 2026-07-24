@@ -1,5 +1,5 @@
 /**
- * Lista Não Perturbe (DNC) — números bloqueados para ligação/SMS Velip.
+ * Lista Não Perturbe — números bloqueados para ligação/SMS Velip.
  * Mostra nome (CRM), motivo, origem (manual vs automático) e busca.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -156,7 +156,7 @@ export function VoiceDncPanel({ consultantId, customers = [], onOpenChat }: Prop
 
   return (
     <VozCampaignShell
-      title="Não Perturbe (DNC)"
+      title="Não Perturbe"
       subtitle="Bloqueados do CRM: nome, etapa/status, motivo e origem. Não recebem ligação nem SMS."
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2">

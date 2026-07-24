@@ -510,7 +510,7 @@ export function CloseAttendanceBatchDialog({
           } else if (body.skipped === "do_not_contact") {
             softChannelStreak = 0;
             skipped++;
-            patchResult(lead.id, { status: "skipped", detail: "Não contato (DNC)" }, snapshot);
+            patchResult(lead.id, { status: "skipped", detail: "Bloqueado — nunca mais contatar" }, snapshot);
           } else {
             softChannelStreak = 0;
             ok++;

@@ -122,7 +122,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 |---|---|
 | Cores / tokens | `src/index.css` (Verde iGreen, `#464C5B` texto) |
 | Tema dual | `src/contexts/ThemeContext.tsx` (chave `igreen-theme`) |
-| Forçar desktop no mobile | `src/components/ForceDesktopLayout.tsx` |
+| Forçar desktop no mobile | `src/components/layout/ForceDesktopLayout.tsx` |
 | Rotas | `src/App.tsx` + `.kiro/steering/rotas-ui.md` |
 
 ## Auth de edges

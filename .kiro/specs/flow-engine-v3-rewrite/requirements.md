@@ -1,5 +1,7 @@
 # Requirements Document
 
+> ⚠️ FONTE DE VERDADE WA = **Whapi** (não Evolution). Este spec pode estar defasado — siga `.kiro/steering/regras-duras.md` + `wa-webhook.md`. Ver `.kiro/specs/STATUS.md`.
+
 ## Introduction
 
 The iGreen bot is the WhatsApp conversational front door of a multi-tenant SaaS platform that originates leads for an energy-co-op (iGreen Energy). Each consultor configures their own sales flow in `/admin/fluxos` (FluxoBuilder UI, table `bot_flow_steps`) and expects the bot to follow that flow to the letter on every inbound message.

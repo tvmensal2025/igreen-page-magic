@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: armadilhas
+description: Sintoma → correção canônica. Leia antes de consertar.
 ---
 
 # Armadilhas — erros típicos de modelo fraco
@@ -22,7 +24,13 @@ Sintoma → correção canônica. Se for fazer o lado esquerdo, pare.
 14. **Label “DNC” na UI** → “bloqueado” / “nunca mais contatar” (`isNuncaMaisContatar`).
 15. **Protocolo na msg WA** → `2026-####` só banco/admin.
 16. **Club com HMAC/fluxo do Portal** → workers e colunas separados (`club_*` ≠ `portal2_*`).
-17. **`finalize-club` live sem querer** → default dryRun; `ALLOW_LIVE_CLUB_POST`.
-18. **Fatura via `extract-receipt`** → fatura = `POST /extractor/extract` (ver PORTAL-OFICIAL).
-19. **CORS `*` em edge nova sensível** → preferir `buildCors(req)`.
-20. **Cron sem `assertCronAuth`** → sempre gate; preferir 200 `{ skipped }` a 5xx barulhento.
+17. **Pós-venda “usa `bot_global`” / só D120 / “via Evolution”** → marcos **D30…D210** + **retentativa**; canal Whapi primeiro; toggle `pos_venda_auto_messages` + `pos_venda_manual` (**não** exige `bot_global`).
+18. **Cross-sell em massa ou chamar `avaliarCrossSell` sem consumidor** → card/manual (`#cross-sell`); Cérebro em sombra (`CROSS_SELL_SHADOW`); só avaliar com consumidor elegível e só ligar massa com pedido explícito.
+19. **Assumir que ads / cérebro-mg / minio só carregam via `#nome`** → frontmatter real é `inclusion: auto` (CI `check:agent-docs` confere).
+20. **Seguir spec Evolution-first em `.kiro/specs`** → leia `.kiro/specs/STATUS.md`; regra dura Whapi vence.
+21. **Números “de memória”** → `#evidencia-prod` / `mapa-dominios.json` (snapshot auditado).
+22. **Fatura via `extract-receipt`** → fatura = `POST /extractor/extract` (ver PORTAL-OFICIAL).
+23. **CORS `*` em edge nova sensível** → preferir `buildCors(req)`.
+24. **Cron sem `assertCronAuth`** → sempre gate; preferir 200 `{ skipped }` a 5xx barulhento.
+25. **Assumir que o V3 já decide o turno** → `flow_engine_v3` ainda é sombra/canário conforme rollout; preserve a ordem real de roteamento documentada em `#wa-webhook`.
+26. **Somar action_types de conversa Meta** (`started`+`first_reply`+`total_connection`) → triplica conversas e CPL cai ~3×; Cérebro sobe budget à toa. Use `pickMetaConversations` / `pickMetaLeads` em `_shared/meta-insight-actions.ts` (prioridade, nunca soma).

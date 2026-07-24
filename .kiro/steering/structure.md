@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: structure
+description: Onde colocar cada tipo de arquivo no monorepo.
 ---
 
 # Estrutura — onde colocar código

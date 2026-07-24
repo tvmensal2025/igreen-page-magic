@@ -16,6 +16,12 @@ import {
   resolveStepReentry,
 } from "../../_shared/bot/step-goal.ts";
 import {
+  isClubProgressIntent,
+  isComoFuncionaStep,
+  isConfidentDocDetection,
+  isPositiveCheckinIntent,
+} from "../../_shared/bot/flow-predicates.ts";
+import {
   resolveOcrFallback,
   sendOcrRetryMessage,
 } from "../../_shared/bot/ocr-fallback.ts";
@@ -116,24 +122,14 @@ import { isFlowInstantMode } from "../../_shared/flow-pace.ts";
 import { notifyHandoff } from "../../_shared/notify-consultant.ts";
 import { phraseMatchesMessage } from "../../_shared/qa-phrase-match.ts";
 import type { BotContext, BotResult } from "./types.ts";
-
-// Trigrama similarity para anti-loop (0..1)
-function trigramSim(a: string, b: string): number {
-  const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-zà-ú0-9 ]/gi, "").replace(/\s+/g, " ").trim();
-  const A = norm(a), B = norm(b);
-  if (!A || !B) return 0;
-  if (A === B) return 1;
-  const trig = (s: string) => {
-    const set = new Set<string>();
-    const p = `  ${s}  `;
-    for (let i = 0; i < p.length - 2; i++) set.add(p.slice(i, i + 3));
-    return set;
-  };
-  const ta = trig(A), tb = trig(B);
-  let inter = 0;
-  ta.forEach((t) => { if (tb.has(t)) inter++; });
-  return inter / Math.max(ta.size, tb.size);
-}
+import {
+  trigramSim,
+  resolvePostBillNextStepId,
+  stepHasInteractiveWait,
+} from "../../_shared/bot/step-interaction.ts";
+import { checkHolderMatch, nameLevSim } from "../../_shared/bot/holder-match.ts";
+export { checkHolderMatch };
+import { buildConfirmacaoConta, buildConfirmacaoDoc, formatBRL } from "../../_shared/bot/confirmation-formatters.ts";
 
 // ── Sleep entre mídias (ZERO espera artificial — lead não aguarda áudio/vídeo acabar) ──
 async function sleepForMedia(_kind: string, _durationSec?: number | null): Promise<void> {
@@ -142,43 +138,6 @@ async function sleepForMedia(_kind: string, _durationSec?: number | null): Promi
   // Só um micro-gap de ordenação no WhatsApp; stitch de nome gera na hora e
   // já segura o turno com "gravando…" — não soma delay aqui.
   await new Promise((r) => setTimeout(r, 150));
-}
-
-// ── Resolve o destino EXPLÍCITO configurado no capture_conta após o SIM ──
-// PURE. Dado o `fallback` do step capture_conta, retorna o step_id que o
-// consultor configurou para rodar após confirmar a conta (a simulação), ou
-// null quando não há destino explícito (aí o handler busca por posição).
-//
-// PRIORIDADE: success_goto_step_id → goto_step_id (quando mode === "goto").
-// Esta é a regra que impede o CHAIN amplo de despachar TODOS os passos
-// `message` entre o capture_conta e o próximo capture (causa da duplicação
-// d_como_funciona + d_resultado). Ver bug 2026-05-30 (número 11971254913).
-function resolvePostBillNextStepId(
-  fallback: { mode?: string | null; goto_step_id?: string | null; success_goto_step_id?: string | null } | null | undefined,
-): string | null {
-  const fb = fallback || {};
-  if (fb.success_goto_step_id) return String(fb.success_goto_step_id);
-  if (fb.mode === "goto" && fb.goto_step_id) return String(fb.goto_step_id);
-  return null;
-}
-
-function stepHasInteractiveWait(row: any): boolean {
-  const captures = Array.isArray(row?.captures) ? row.captures : [];
-  const hasButtons = captures.some((c: any) =>
-    c?.enabled !== false && c?.field === "_buttons" && Array.isArray(c?.value) && c.value.length > 0
-  );
-  if (hasButtons) return true;
-
-  const transitions = Array.isArray(row?.transitions) ? row.transitions : [];
-  const hasReplyTransition = transitions.some((t: any) => {
-    const intent = String(t?.trigger_intent || "").trim();
-    const phrases = Array.isArray(t?.trigger_phrases) ? t.trigger_phrases.filter(Boolean) : [];
-    return !!t?.goto_special || (!!t?.goto_step_id && (intent !== "default" || phrases.length > 0));
-  });
-  if (hasReplyTransition) return true;
-
-  const fallbackMode = String(row?.fallback?.mode || "").trim();
-  return fallbackMode === "repeat" || fallbackMode === "ai" || fallbackMode === "ai_answer";
 }
 
 // ── Fetch URL → base64 (for OCR when proxy didn't deliver bytes) ──
@@ -346,28 +305,6 @@ const RE_SELF_INTRO = /(?:me\s+chamo|meu\s+nome\s+(?:é|eh|e)|aqui\s+(?:é|eh|e)
 // Lead recusa mandar foto da conta — aceita seguir sem.
 const RE_REFUSE_BILL = /\b(n[aã]o\s+(?:tenho|quero|posso|vou)\s+(?:mandar|enviar|tirar|mostrar)|sem\s+(?:foto|conta|comprovante)|n[aã]o\s+(?:tenho|achei)\s+a\s+conta|conta\s+(?:n[aã]o|nao)\s+est[aá]\s+aqui|s[oó]\s+(?:o\s+)?valor)\b/i;
 
-function isPositiveCheckinIntent(text: string): boolean {
-  return /^(sim|s|ss+|joia|ok|okay|blz|beleza|perfeito|quero|pode|vamos|bora|seguir|claro|certo|tranquilo|entendi|deu|show|fechou)\b/i.test(text) || /[👍✅]/.test(text);
-}
-
-function isClubProgressIntent(text: string): boolean {
-  // ⚠️ "nao|não" sozinho NÃO conta como progresso (regressão fixed 2026-06-05) —
-  // se o lead disser apenas "não", é recusa, não avanço pra documento.
-  return isPositiveCheckinIntent(text) || /^(pode seguir|sem duvida|nenhuma|nao tenho|não tenho|tudo certo|partiu|segue)\b/i.test(text) || /(quero|vamos|bora).*(cadastr|seguir|finaliz)/i.test(text);
-}
-
-function isComoFuncionaStep(row: any): boolean {
-  return /(?:^|[_\s-])como[_\s-]*funciona|d_como_funciona/i.test(`${row?.step_key || ""} ${row?.slot_key || ""} ${row?.title || ""}`);
-}
-
-function isConfidentDocDetection(det: any): boolean {
-  if (!det || det.source === "fallback") return false;
-  const conf = Number(det.confianca || 0);
-  const tipo = String(det.tipo || "").toLowerCase();
-  if (tipo === "cnh") return conf >= 0.62;
-  return conf >= 0.78;
-}
-
 function buildMissingDocPrompt(label: string, merged: any): string {
   const missing = [
     !String(merged?.cpf || "").replace(/\D/g, "") ? "CPF" : "",
@@ -430,47 +367,11 @@ function buildNotReadyReply(nomeRepresentante: string): string {
 // ───────────────────────────────────────────────────────────────
 const RG_HEADER_TERMS = /REP[ÚU]BLICA|FEDERATIVA|CARTEIRA|IDENTIDADE|MINIST[ÉE]RIO|NACIONAL|SECRETARIA|SEGURAN[ÇC]A|INSTITUTO|DETRAN|VALIDA EM TODO|REGISTRO GERAL/i;
 
-function _normName(s: string): string {
-  return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, "").replace(/\s+/g, " ").trim();
-}
-function _levSim(a: string, b: string): number {
-  a = _normName(a); b = _normName(b);
-  if (!a || !b) return 0;
-  if (a === b) return 1;
-  const m = a.length, n = b.length;
-  const dp: number[] = Array(n + 1).fill(0).map((_, i) => i);
-  for (let i = 1; i <= m; i++) {
-    let prev = i - 1; dp[0] = i;
-    for (let j = 1; j <= n; j++) {
-      const tmp = dp[j];
-      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
-      prev = tmp;
-    }
-  }
-  return 1 - dp[n] / Math.max(m, n);
-}
-
 /**
  * Fontes de nome consideradas "confiáveis" — uma vez setado, só pode ser
  * sobrescrito por confirmação explícita do usuário (editing_* / user_confirmed).
  */
 const TRUSTED_NAME_SOURCES_LOCK = new Set(["user_confirmed", "ocr_conta", "ocr_doc"]);
-
-/**
- * Verifica se dois nomes (conta de luz × RG) representam a mesma pessoa.
- * Match se similaridade ≥ 0.85 ou se primeiro+último nome coincidem.
- */
-export function checkHolderMatch(billName: string | null | undefined, docName: string | null | undefined): { match: boolean; similarity: number; reason: string } {
-  const a = _normName(String(billName || ""));
-  const b = _normName(String(docName || ""));
-  if (!a || !b) return { match: true, similarity: 1, reason: "missing_one_side" };
-  const sim = _levSim(a, b);
-  const partsA = a.split(/\s+/);
-  const partsB = b.split(/\s+/);
-  const firstLastMatch = partsA[0] === partsB[0] && partsA[partsA.length - 1] === partsB[partsB.length - 1];
-  const match = sim >= 0.85 || firstLastMatch;
-  return { match, similarity: sim, reason: `sim=${sim.toFixed(2)} firstLast=${firstLastMatch}` };
-}
 
 /**
  * Decide o nome a usar dado OCR de doc.
@@ -499,8 +400,8 @@ function safeAssignName(currentName: string | null | undefined, currentSource: s
   }
   // Nome atual veio de OCR e é muito diferente: mantém (não confiamos no novo OCR)
   if (isOcrSource && currentName && String(currentName).trim().length >= 5) {
-    if (_levSim(currentName, cleaned) < 0.7) {
-      console.warn(`[name-lock] OCR rejeitado por baixa similaridade: atual="${currentName}" novo="${cleaned}" sim=${_levSim(currentName, cleaned).toFixed(2)}`);
+    if (nameLevSim(currentName, cleaned) < 0.7) {
+      console.warn(`[name-lock] OCR rejeitado por baixa similaridade: atual="${currentName}" novo="${cleaned}" sim=${nameLevSim(currentName, cleaned).toFixed(2)}`);
       return null;
     }
   }
@@ -628,32 +529,6 @@ const NO_QA_STEPS = new Set([
   "editing_doc_menu", "editing_doc_nome", "editing_doc_cpf", "editing_doc_rg",
   "editing_doc_nascimento",
 ]);
-
-// Helpers de tela de confirmação completa (usados após editar campo)
-function _formatBRL(n: number): string {
-  return Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function buildConfirmacaoConta(merged: any): string {
-  const v = Number(merged.electricity_bill_value || 0);
-  return "📋 *Dados da conta:*\n\n" +
-    `👤 *Nome:* ${merged.bill_holder_name || merged.name || "❌"}\n` +
-    `📍 *Endereço:* ${merged.address_street || "❌"} ${merged.address_number || ""}\n` +
-    `🏘️ *Bairro:* ${merged.address_neighborhood || "❌"}\n` +
-    `🏙️ *Cidade:* ${merged.address_city || "❌"} - ${merged.address_state || ""}\n` +
-    `📮 *CEP:* ${merged.cep || "❌"}\n` +
-    `⚡ *Distribuidora:* ${merged.distribuidora || "❌"}\n` +
-    `🔢 *Nº Instalação:* ${merged.numero_instalacao || "❌"}\n` +
-    `💰 *Valor:* R$ ${_formatBRL(v)}\n\n` +
-    "Está tudo correto?";
-}
-function buildConfirmacaoDoc(merged: any): string {
-  return `📋 *Confirme seus dados pessoais:*\n\n` +
-    `👤 Nome: *${merged.doc_holder_name || merged.name || "—"}*\n` +
-    `🆔 CPF: *${merged.cpf || "—"}*\n` +
-    `🪪 RG: *${merged.rg || "—"}*\n` +
-    `🎂 Nascimento: *${merged.data_nascimento || "—"}*\n\n` +
-    "Está tudo correto?";
-}
 
 export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // ⚠️ Quiet hours NÃO se aplica em webhook reativo (cliente mandou msg agora
@@ -5626,7 +5501,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.electricity_bill_value = val;
       updates.conversation_step = "confirmando_dados_conta";
       const merged = { ...customer, ...updates };
-      await sendOptions(remoteJid, `✅ Valor: *R$ ${_formatBRL(val)}*\n\n` + buildConfirmacaoConta(merged), [
+      await sendOptions(remoteJid, `✅ Valor: *R$ ${formatBRL(val)}*\n\n` + buildConfirmacaoConta(merged), [
         { id: "sim_conta", title: "✅ SIM" }, { id: "nao_conta", title: "❌ NÃO" }, { id: "editar_conta", title: "✏️ EDITAR" },
       ]);
       reply = "";

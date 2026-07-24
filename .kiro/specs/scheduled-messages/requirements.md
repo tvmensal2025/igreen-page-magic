@@ -1,5 +1,7 @@
 # Documento de Requisitos — Mensagens Agendadas
 
+> ⚠️ FONTE DE VERDADE WA = **Whapi** (não Evolution). Este spec pode estar defasado — siga `.kiro/steering/regras-duras.md` + `wa-webhook.md`. Ver `.kiro/specs/STATUS.md`.
+
 ## Introdução
 
 Sistema de agendamento de mensagens personalizadas via WhatsApp para consultores iGreen. Permite que consultores programem envios de mensagens para clientes individuais ou em massa, com suporte a recorrência (diária, semanal, mensal) e integração com o sistema de templates existente. O envio efetivo é executado por uma Supabase Edge Function que verifica mensagens pendentes e as envia pela Evolution API.

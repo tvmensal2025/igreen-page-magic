@@ -1,0 +1,759 @@
+{
+  "updated_at": "2026-07-24-r8",
+  "purpose": "Fonte de verdade máquina-legível: domínio → código → steering → regras Cursor. Agentes (Kiro/Cursor/outros) devem consultar isto antes de editar.",
+  "how_to_use": [
+    "Classifique o pedido em um id de domains[].id",
+    "Abra code_anchors + helpers antes de reinventar",
+    "Obedeça ai_donts; se doc_status != ok, leia o código âncora e não confie só no markdown antigo",
+    "Espelhe mudanças de regra em steering[] E cursor_rules[] no mesmo PR"
+  ],
+  "prod_snapshot": {
+    "as_of": "2026-07-24",
+    "source": "Supabase MCP project zlzasfhcxcznaprrragl",
+    "customers": 1270,
+    "customers_origem_igreen_sync": 1115,
+    "pos_venda_espera": 1114,
+    "conversations": 2821,
+    "lead_cadence_state": 226,
+    "automation_skip_log_total": 15659,
+    "edges_local_folders": 210,
+    "edges_deployed": 230,
+    "migrations": 823,
+    "bot_global_enabled": true,
+    "cadence_engine_enabled": true,
+    "pos_venda_auto_messages": true,
+    "reheat": {
+      "enabled": true,
+      "live_dispatch_enabled": true,
+      "cap_b": 150,
+      "cap_c": 50,
+      "cap_global_outreach": 200,
+      "daily_whapi_cap": 60,
+      "window_brt": "08:00-20:00"
+    },
+    "cadence_stages_top": {
+      "PAUSED": 59,
+      "COLD_1": 59,
+      "AI_QUALIFYING": 57,
+      "GREETED": 19
+    },
+    "skip_keys_7d_top": {
+      "send_scheduled_messages": 1115,
+      "cadence_engine": 366,
+      "daily_reheat": 112,
+      "pos_venda_auto_messages": 22
+    },
+    "voice_calls": 685,
+    "voice_ok": 266,
+    "voice_na": 402,
+    "voice_ik": 9,
+    "voice_dnc": 26,
+    "dedup": 1363,
+    "outbound_log": 1295,
+    "campaign_match": 306,
+    "rodizio_assign": 28,
+    "pv_log_reprovado": 18,
+    "cross_sell_templates": 1,
+    "advisors_security_error": 2,
+    "advisors_security_warn": 180,
+    "advisors_perf_warn": 577,
+    "advisors_perf_info": 215,
+    "anon_security_definer_functions": 21,
+    "security_definer_views_intentional": [
+      "consultants_public",
+      "platform_facebook_audience_status"
+    ],
+    "security_invoker_views_remediated": [
+      "v_boletos_carteira",
+      "cadence_metrics_daily",
+      "igreen_recon_queue_progress"
+    ],
+    "p0_rpc_revoke_applied": true
+  },
+  "domains": [
+    {
+      "id": "wa-webhook",
+      "labels": [
+        "WhatsApp inbound",
+        "Whapi",
+        "webhook"
+      ],
+      "steering": [
+        "wa-webhook.md",
+        "fluxos.md",
+        "banco.md"
+      ],
+      "cursor_rules": [
+        "whatsapp-whapi-primario.mdc",
+        "nome-cliente-seguro.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/whapi-webhook/index.ts",
+        "supabase/functions/whapi-webhook/handlers/conversational/index.ts",
+        "supabase/functions/whapi-webhook/handlers/bot-flow.ts"
+      ],
+      "tables": [
+        "conversations",
+        "webhook_message_dedup",
+        "customers",
+        "whatsapp_instances"
+      ],
+      "edges": [
+        "whapi-webhook",
+        "evolution-webhook"
+      ],
+      "helpers": [
+        "_shared/channels/whapi.ts",
+        "_shared/channel-sender.ts",
+        "_shared/deterministic-campaign-resolver.ts",
+        "_shared/bot/dedupe.ts"
+      ],
+      "ai_donts": [
+        "não tratar Evolution needs_reconnect como Zap offline",
+        "não usar tabela messages; chat = conversations",
+        "não quebrar paridade Whapi/Evolution sem checklist"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering #wa-webhook + nested AGENTS; evidência dedup 1363"
+    },
+    {
+      "id": "cadence",
+      "labels": [
+        "cadência A/B/C",
+        "zero lead perdido"
+      ],
+      "steering": [
+        "fluxos.md",
+        "banco.md",
+        "helpers-canonicos.md",
+        "regras-duras.md"
+      ],
+      "cursor_rules": [
+        "producao-sem-envio-automatico.mdc",
+        "crm-vs-lead-analise.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/cadence-tick/index.ts",
+        "supabase/functions/_shared/cadence-engine.ts",
+        "src/lib/multichannelCadenceTexts.ts"
+      ],
+      "tables": [
+        "lead_cadence_state",
+        "cadence_action_log",
+        "cadence_stage_config",
+        "daily_reheat_settings",
+        "automation_skip_log"
+      ],
+      "edges": [
+        "cadence-tick"
+      ],
+      "helpers": [
+        "_shared/cadence-engine.ts",
+        "_shared/cadence-inbound-router.ts",
+        "_shared/automation-gate.ts",
+        "_shared/bot/global-flag.ts"
+      ],
+      "ai_donts": [
+        "Grupo A não conta em cap B/C/global",
+        "excedeu cap → adia, nunca descarta",
+        "não ligar massa nova sem pedido"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Caps produção: B=150 C=50 global=200. Janela reheat prod 08–20 BRT (não assumir só o default 09–18:30 do texto antigo)."
+    },
+    {
+      "id": "cerebro-fluxo-b",
+      "labels": [
+        "Cérebro",
+        "Fluxo B",
+        "Sofia",
+        "vendedora"
+      ],
+      "steering": [
+        "cerebro-fluxo-b.md",
+        "fluxos.md"
+      ],
+      "cursor_rules": [
+        "nome-cliente-seguro.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/_shared/cerebro/resposta-hook.ts",
+        "supabase/functions/fluxo-b-ai/index.ts"
+      ],
+      "tables": [
+        "customers",
+        "app_settings",
+        "ai_decisions"
+      ],
+      "edges": [
+        "whapi-webhook",
+        "fluxo-b-ai"
+      ],
+      "helpers": [
+        "_shared/cerebro/resposta-hook.ts",
+        "_shared/fluxo-b-ia/"
+      ],
+      "ai_donts": [
+        "produção = cerebro/resposta-hook; não _shared/vendedora",
+        "fluxo-b-ai default dryRun",
+        "não confundir Cérebro conversa com Cérebro MG Ads"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering #cerebro-fluxo-b + nested AGENTS cerebro"
+    },
+    {
+      "id": "portal2",
+      "labels": [
+        "cadastro iGreen",
+        "OTP",
+        "OCR"
+      ],
+      "steering": [
+        "portal2-fluxo-canonico.md"
+      ],
+      "cursor_rules": [
+        "portal-igreen-api-oficial.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/finalize-capture/index.ts",
+        "supabase/functions/_shared/portal-worker.ts",
+        "worker-portal-2/"
+      ],
+      "tables": [
+        "customers",
+        "portal2_audit_traces"
+      ],
+      "edges": [
+        "finalize-capture",
+        "worker-callback",
+        "submit-otp"
+      ],
+      "helpers": [
+        "_shared/portal-worker.ts",
+        "_shared/portalValidation.ts"
+      ],
+      "ai_donts": [
+        "Portal 1 morto",
+        "não misturar com Club/Sync URLs"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Worker separado porta/fila próprias."
+    },
+    {
+      "id": "club",
+      "labels": [
+        "iGreen Club"
+      ],
+      "steering": [
+        "club-api-oficial.md"
+      ],
+      "cursor_rules": [
+        "club-igreen-api-oficial.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/finalize-club/index.ts",
+        "worker-club/",
+        "supabase/functions/_shared/club-worker.ts"
+      ],
+      "tables": [
+        "customers"
+      ],
+      "edges": [
+        "finalize-club"
+      ],
+      "helpers": [
+        "_shared/club-worker.ts",
+        "_shared/clubValidation.ts"
+      ],
+      "ai_donts": [
+        "JWT Club ≠ HMAC Portal",
+        "live só com ALLOW_LIVE_CLUB_POST"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Porta 3102, colunas club_*."
+    },
+    {
+      "id": "sync-igreen",
+      "labels": [
+        "sync carteira",
+        "consumo"
+      ],
+      "steering": [
+        "igreen-sync-oficial.md"
+      ],
+      "cursor_rules": [
+        "igreen-sync-worker-oficial.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/sync-igreen-customers/index.ts",
+        "worker-igreen-sync/",
+        "supabase/functions/_shared/igreen-sync-worker.ts"
+      ],
+      "tables": [
+        "igreen_*",
+        "customers",
+        "igreen_sync_runs"
+      ],
+      "edges": [
+        "sync-igreen-customers"
+      ],
+      "helpers": [
+        "_shared/igreen-sync-worker.ts"
+      ],
+      "ai_donts": [
+        "URL sync ≠ portal2_worker_url",
+        "protege pos_venda_recadastro_at"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "1115/1270 customers com origem igreen_sync em prod."
+    },
+    {
+      "id": "rodizio-campanha",
+      "labels": [
+        "rodízio",
+        "parceiros",
+        "UUID campanha"
+      ],
+      "steering": [
+        "rodizio-parceiros-campanha.md",
+        "parceiros-referral.md",
+        "cerebro-mg-e-rodizio.md"
+      ],
+      "cursor_rules": [
+        "campanha-uuid-nao-texto.mdc",
+        "rodizio-avisos-parceiro.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/_shared/deterministic-campaign-resolver.ts",
+        "supabase/functions/_shared/rodizio-assign.ts"
+      ],
+      "tables": [
+        "facebook_campaigns",
+        "rodizio_pools",
+        "rodizio_pool_members",
+        "rodizio_assignments",
+        "campaign_match_log",
+        "referral_partners"
+      ],
+      "edges": [
+        "rodizio-metrics-broadcast",
+        "notify-partner-leads-batch"
+      ],
+      "helpers": [
+        "_shared/deterministic-campaign-resolver.ts",
+        "_shared/rodizio-assign.ts"
+      ],
+      "ai_donts": [
+        "nunca keyword/cidade",
+        "protocolo 2026-#### só banco"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Ordem: AD ID → fb_campaign_id → ctwa_clid → protocol → exact_message."
+    },
+    {
+      "id": "pos-venda",
+      "labels": [
+        "pós-venda",
+        "pv_d30",
+        "retentativa",
+        "D210"
+      ],
+      "steering": [
+        "pos-venda.md"
+      ],
+      "cursor_rules": [
+        "producao-sem-envio-automatico.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/pos-venda-auto-progress/index.ts",
+        "supabase/functions/_shared/pos-venda-retentativa.ts",
+        "src/lib/posVendaSchedule.ts",
+        "src/lib/posVenda/format.ts"
+      ],
+      "tables": [
+        "customers.pos_venda_*",
+        "pos_venda_default_media",
+        "consultant_pos_venda_media",
+        "customer_auto_message_log"
+      ],
+      "edges": [
+        "pos-venda-auto-progress",
+        "pos-venda-bucket-cron"
+      ],
+      "helpers": [
+        "_shared/pos-venda-retentativa.ts",
+        "src/lib/posVendaSchedule.ts"
+      ],
+      "ai_donts": [
+        "≠ esteira sale_stage_*",
+        "só com pos_venda_manual=true + toggle",
+        "NÃO usa bot_global_enabled (só pos_venda_auto_messages)",
+        "marcos D30…D210 + retentativa 60d"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Nav docs D210 corrigidos round 5; steering canônico"
+    },
+    {
+      "id": "esteira",
+      "labels": [
+        "esteira multiproduto",
+        "sales"
+      ],
+      "steering": [
+        "esteira-multiproduto.md"
+      ],
+      "cursor_rules": [],
+      "code_anchors": [
+        "src/features/produtos/esteira/"
+      ],
+      "tables": [
+        "sales",
+        "sale_stage_*",
+        "proposals",
+        "products"
+      ],
+      "edges": [
+        "proposal-public-get",
+        "proposal-respond"
+      ],
+      "helpers": [
+        "src/features/produtos/esteira/api.ts"
+      ],
+      "ai_donts": [
+        "não misturar com pos_venda_*",
+        "sem automação WA da esteira"
+      ],
+      "risk": "medium",
+      "doc_status": "ok",
+      "notes": "Pipeline de venda multiproduto, não retenção WA."
+    },
+    {
+      "id": "cross-sell",
+      "labels": [
+        "cross-sell",
+        "venda cruzada"
+      ],
+      "steering": [
+        "cross-sell.md"
+      ],
+      "cursor_rules": [],
+      "code_anchors": [
+        "src/features/produtos/acompanhamento/crossSellConfig.ts",
+        "src/features/produtos/acompanhamento/CrossSellCard.tsx",
+        "supabase/functions/_shared/cerebro/cross-sell.ts"
+      ],
+      "tables": [
+        "consultant_message_templates",
+        "customers"
+      ],
+      "edges": [],
+      "helpers": [
+        "src/features/produtos/acompanhamento/crossSellConfig.ts"
+      ],
+      "ai_donts": [
+        "card/manual — NÃO transformar em disparo em massa sem pedido explícito"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering #cross-sell; template 1 row; sombra default"
+    },
+    {
+      "id": "agendamentos-hub",
+      "labels": [
+        "agenda",
+        "hub agendamentos"
+      ],
+      "steering": [
+        "agendamentos-hub.md",
+        "mapa-tarefas.md"
+      ],
+      "cursor_rules": [
+        "whatsapp-whapi-primario.mdc"
+      ],
+      "code_anchors": [
+        "src/hooks/useAgendamentosHub.ts",
+        "src/components/whatsapp/AgendamentosHub.tsx",
+        "supabase/functions/send-scheduled-messages/index.ts"
+      ],
+      "tables": [
+        "scheduled_messages"
+      ],
+      "edges": [
+        "send-scheduled-messages"
+      ],
+      "helpers": [
+        "src/lib/agendamentosHub.ts"
+      ],
+      "ai_donts": [
+        "agenda humana SEM quiet hours de bot",
+        "Whapi primário no resolve de canal"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering #agendamentos-hub; skip_log agenda 1115/7d"
+    },
+    {
+      "id": "voz-sms",
+      "labels": [
+        "Velip",
+        "voz",
+        "SMS",
+        "discador"
+      ],
+      "steering": [
+        "voz-sms.md",
+        "fluxos.md"
+      ],
+      "cursor_rules": [
+        "nome-cliente-seguro.mdc",
+        "producao-sem-envio-automatico.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/voice-dialer-cron/index.ts",
+        "supabase/functions/voice-dialer-webhook/index.ts",
+        "supabase/functions/voice-sms-send/index.ts"
+      ],
+      "tables": [
+        "voice_campaigns",
+        "voice_call_logs",
+        "voice_sms_log",
+        "voice_dnc_list",
+        "voice_audio_clips"
+      ],
+      "edges": [
+        "voice-dialer-enqueue",
+        "voice-dialer-cron",
+        "voice-dialer-webhook",
+        "voice-sms-send"
+      ],
+      "helpers": [
+        "_shared/customer-display-name.ts"
+      ],
+      "ai_donts": [
+        "respeitar DNC voz+customers",
+        "TTS sem nome sujo"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering #voz-sms; IK=9 DNC=26 em prod"
+    },
+    {
+      "id": "wallet",
+      "labels": [
+        "Stripe",
+        "carteira"
+      ],
+      "steering": [
+        "wallet-stripe.md"
+      ],
+      "cursor_rules": [],
+      "code_anchors": [
+        "supabase/functions/wallet-create-topup/index.ts",
+        "supabase/functions/wallet-stripe-webhook/index.ts"
+      ],
+      "tables": [
+        "consultant_wallet",
+        "wallet_transactions"
+      ],
+      "edges": [
+        "wallet-create-topup",
+        "wallet-stripe-webhook"
+      ],
+      "helpers": [],
+      "ai_donts": [
+        "crédito líquido com taxa",
+        "não expor Stripe secret no front"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Gate de ativação de campanha Ads."
+    },
+    {
+      "id": "ads-cerebro-mg",
+      "labels": [
+        "Cérebro MG",
+        "waste",
+        "Meta Ads"
+      ],
+      "steering": [
+        "cerebro-mg-e-rodizio.md",
+        "ads-contraste.md"
+      ],
+      "cursor_rules": [
+        "cerebro-campanhas-mg.mdc",
+        "ads-contraste-status.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/facebook-mg-city-rotator/index.ts",
+        "supabase/functions/_shared/campaign-waste-guard.ts"
+      ],
+      "tables": [
+        "facebook_campaigns",
+        "consultant_ad_settings",
+        "ad_creative_performance"
+      ],
+      "edges": [
+        "facebook-mg-city-rotator",
+        "facebook-auto-pause",
+        "campaign-brain-rank"
+      ],
+      "helpers": [
+        "_shared/brain-*.ts",
+        "_shared/campaign-waste-guard.ts"
+      ],
+      "ai_donts": [
+        "não tratar Cérebro MG (Ads) como Cérebro conversacional WA — ver #cerebro-fluxo-b"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Steering auto: cerebro-mg-e-rodizio + ads-contraste"
+    },
+    {
+      "id": "flow-engine-v3",
+      "labels": [
+        "motor V3"
+      ],
+      "steering": [
+        "flow-engine-v3.md"
+      ],
+      "cursor_rules": [
+        "producao-sem-envio-automatico.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/_shared/engine/router.ts",
+        "supabase/functions/_shared/engine/webhook-entry.ts"
+      ],
+      "tables": [
+        "customer_flow_state",
+        "engine_logs",
+        "bot_flows"
+      ],
+      "edges": [
+        "flow-engine-v3-rollout-cron",
+        "whapi-webhook"
+      ],
+      "helpers": [
+        "_shared/engine/"
+      ],
+      "ai_donts": [
+        "takeover só on/bool true",
+        "não side-effect fora dispatcher"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "bot_engine_production_mode=false em prod no snapshot."
+    },
+    {
+      "id": "minio",
+      "labels": [
+        "MinIO",
+        "mídia"
+      ],
+      "steering": [
+        "minio-storage.md"
+      ],
+      "cursor_rules": [],
+      "code_anchors": [
+        "supabase/functions/_shared/minio-upload.ts",
+        "supabase/functions/_shared/media-storage.ts"
+      ],
+      "tables": [],
+      "edges": [
+        "upload-media",
+        "upload-documents-minio",
+        "minio-quota-check"
+      ],
+      "helpers": [
+        "_shared/minio-upload.ts",
+        "_shared/media-storage.ts"
+      ],
+      "ai_donts": [
+        "não base64 no banco",
+        "não reverter inclusion:auto de minio-storage sem atualizar AGENTS + CI drift"
+      ],
+      "risk": "medium",
+      "doc_status": "ok",
+      "notes": "Steering auto: minio-storage"
+    }
+  ],
+  "god_files_lines": [
+    {
+      "path": "src/integrations/supabase/types.ts",
+      "lines": 14263
+    },
+    {
+      "path": "supabase/functions/whapi-webhook/handlers/bot-flow.ts",
+      "lines": 7012
+    },
+    {
+      "path": "supabase/functions/evolution-webhook/handlers/bot-flow.ts",
+      "lines": 6737
+    },
+    {
+      "path": "supabase/functions/evolution-webhook/index.ts",
+      "lines": 3636
+    },
+    {
+      "path": "supabase/functions/whapi-webhook/handlers/conversational/index.ts",
+      "lines": 3626
+    },
+    {
+      "path": "supabase/functions/whapi-webhook/index.ts",
+      "lines": 3505
+    },
+    {
+      "path": "src/lib/multichannelCadenceTexts.ts",
+      "lines": 2993
+    },
+    {
+      "path": "supabase/functions/sync-igreen-customers/index.ts",
+      "lines": 2591
+    },
+    {
+      "path": "src/components/whatsapp/AgendamentosHub.tsx",
+      "lines": 1912
+    },
+    {
+      "path": "supabase/functions/cadence-tick/index.ts",
+      "lines": 1518
+    }
+  ],
+  "pack_stats": {
+    "steering_files": 38,
+    "steering_lines": 2169,
+    "cursor_rules": 15,
+    "kiro_specs_folders": 23,
+    "workers": [
+      "worker-portal-2",
+      "worker-club",
+      "worker-igreen-sync"
+    ],
+    "shared_ts_files": 382,
+    "whatsapp_components_tsx": 77,
+    "nested_agents_md": "raiz + 13 nested (wa/evo/cadence/pv/sync/bot/cerebro/bulk/finalize/agenda/voz/whatsapp-ui/src-lib)"
+  },
+  "context7_guidance": {
+    "agents_md": "Monorepos devem ter AGENTS.md nested por pacote/domínio quente; o mais próximo do arquivo editado prevalece (/websites/agents_md).",
+    "supabase_edges": "Preferir _shared/ + fat functions + testes co-localizados; hyphen names (/supabase/supabase)."
+  },
+  "priority_fixes": [
+    "Revalidar advisors após migration 20260724120000; manter só as 2 exceções DEFINER (consultants_public, platform_facebook_audience_status)",
+    "Extrair módulos god-files bot-flow/conversational sem mudar comportamento",
+    "CI drift Cursor rules ↔ Kiro steering",
+    "Revalidar EVIDENCIA-PROD.md após mudanças grandes de schema"
+  ],
+  "evidence_doc": "EVIDENCIA-PROD.md",
+  "kiro_protocol": [
+    "Antes de editar: #mapa-dominios + #evidencia-prod + steering do domínio",
+    "ads/cerebro-mg/minio são inclusion:auto",
+    "Nested AGENTS nearest wins"
+  ]
+}

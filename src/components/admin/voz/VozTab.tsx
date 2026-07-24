@@ -149,7 +149,7 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
             <TabsTrigger value="nova" className="gap-1.5 shrink-0 text-xs sm:text-sm"><Phone className="h-4 w-4" /> <span className="sm:hidden">Ligação</span><span className="hidden sm:inline">Nova ligação</span></TabsTrigger>
             <TabsTrigger value="sms" className="gap-1.5 shrink-0 text-xs sm:text-sm"><MessageSquare className="h-4 w-4" /> SMS</TabsTrigger>
             <TabsTrigger value="bases" className="gap-1.5 shrink-0 text-xs sm:text-sm"><Users className="h-4 w-4" /> Bases</TabsTrigger>
-            <TabsTrigger value="dnc" className="gap-1.5 shrink-0 text-xs sm:text-sm"><ShieldBan className="h-4 w-4" /> <span className="sm:hidden">DNC</span><span className="hidden sm:inline">Não Perturbe</span></TabsTrigger>
+            <TabsTrigger value="dnc" className="gap-1.5 shrink-0 text-xs sm:text-sm"><ShieldBan className="h-4 w-4" /> <span className="sm:hidden">Bloq.</span><span className="hidden sm:inline">Não Perturbe</span></TabsTrigger>
             <TabsTrigger value="kit" className="gap-1.5 shrink-0 text-xs sm:text-sm"><RefreshCw className="h-4 w-4" /> <span className="sm:hidden">Ciclo</span><span className="hidden sm:inline">Programação do ciclo</span></TabsTrigger>
             <TabsTrigger value="textos" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BookOpen className="h-4 w-4" /> <span className="sm:hidden">Textos</span><span className="hidden sm:inline">Textos Multicanal</span></TabsTrigger>
             <TabsTrigger value="historico" className="gap-1.5 shrink-0 text-xs sm:text-sm"><History className="h-4 w-4" /> Histórico</TabsTrigger>

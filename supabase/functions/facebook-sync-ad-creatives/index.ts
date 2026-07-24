@@ -6,25 +6,12 @@
 // (ad-creative-learner) não consegue identificar padrões vencedores.
 import { adminClient, authConsultant, FB_GRAPH, fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { pickMetaConversations, pickMetaLeads } from "../_shared/meta-insight-actions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-const CONV_ACTIONS = [
-  "onsite_conversion.messaging_conversation_started_7d",
-  "onsite_conversion.messaging_first_reply",
-  "onsite_conversion.total_messaging_connection",
-];
-const LEAD_ACTIONS = ["lead", "onsite_conversion.lead_grouped"];
-
-function sumActions(actions: any[] | undefined, types: string[]): number {
-  if (!Array.isArray(actions)) return 0;
-  let total = 0;
-  for (const a of actions) if (types.includes(a?.action_type)) total += Number(a?.value || 0);
-  return total;
-}
 
 // Extrai copy + thumb real do creative.object_story_spec, cobrindo os formatos comuns:
 // link_data (image), video_data (video), template_data (catálogo/carousel), asset_feed_spec (Advantage+).
@@ -227,8 +214,8 @@ Deno.serve(async (req) => {
           const impressions = ins ? parseInt(ins.impressions || "0") : 0;
           const clicks = ins ? parseInt(ins.clicks || "0") : 0;
           const spend_cents = ins ? Math.round(parseFloat(ins.spend || "0") * 100) : 0;
-          const directLeads = sumActions(ins?.actions, LEAD_ACTIONS);
-          const conv = sumActions(ins?.actions, CONV_ACTIONS);
+          const directLeads = pickMetaLeads(ins?.actions);
+          const conv = pickMetaConversations(ins?.actions);
           const leads = directLeads > 0 ? directLeads : conv;
 
           // Resolve thumb: lista → copy → vídeo → adimages(image_hash)

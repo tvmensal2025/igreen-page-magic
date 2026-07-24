@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: regras-duras
+description: Regras invioláveis FAÇA/NÃO FAÇA.
 ---
 
 # REGRAS DURAS

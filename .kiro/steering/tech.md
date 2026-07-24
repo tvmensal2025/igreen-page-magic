@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: tech
+description: Stack e integrações preferidas.
 ---
 
 # Tech — stack deste monorepo

@@ -1,6 +1,6 @@
 /**
  * Labels PT-BR dos status Velip (espelha `_shared/voice-dialer/velip.ts`).
- * Usado no histórico, painel e DNC para não exibir só código cru (OK/NA/EK…).
+ * Usado no histórico, painel e lista Não Perturbe para não exibir só código cru (OK/NA/EK…).
  */
 
 export type VelipCode = "OK" | "NA" | "EK" | "CK" | "BK" | "IK";

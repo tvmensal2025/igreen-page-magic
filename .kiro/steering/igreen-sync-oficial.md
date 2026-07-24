@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: igreen-sync-oficial
+description: Sync carteira iGreen (Playwright).
 fileMatchPattern:
   - "worker-igreen-sync/**"
   - "supabase/functions/sync-igreen-customers/**"

@@ -1,13 +1,7 @@
 ---
-inclusion: fileMatch
-fileMatchPattern:
-  - "supabase/functions/_shared/minio*"
-  - "supabase/functions/_shared/media-storage.ts"
-  - "supabase/functions/upload-media/**"
-  - "supabase/functions/upload-documents-minio/**"
-  - "supabase/functions/migrate-supabase-to-minio/**"
-  - "supabase/functions/minio-quota-check/**"
-  - "src/services/minioUpload.*"
+inclusion: auto
+name: minio-storage
+description: Upload MinIO SigV4 e fallback Storage. Use ao mexer em mídia.
 ---
 
 # MinIO — storage de mídia

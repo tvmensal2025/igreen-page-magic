@@ -1,3 +1,5 @@
+> ⚠️ FONTE DE VERDADE WA = **Whapi** (não Evolution). Este spec pode estar defasado — siga `.kiro/steering/regras-duras.md` + `wa-webhook.md`. Ver `.kiro/specs/STATUS.md`.
+
 # WhatsApp Message Send Fix — Bugfix Design
 
 ## Overview

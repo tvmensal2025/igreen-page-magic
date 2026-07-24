@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: flow-engine-v3
+description: Motor de fluxo V3 e takeover.
 fileMatchPattern:
   - "supabase/functions/_shared/engine/**"
   - "supabase/functions/_shared/dispatcher/**"

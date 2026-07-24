@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: portal2-fluxo-canonico
+description: Cadastro Portal 2 oficial.
 fileMatchPattern:
   - "worker-portal-2/**"
   - "supabase/functions/portal2-*/**"

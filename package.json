@@ -11,7 +11,8 @@
     "typecheck": "tsc -b --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:agent-docs": "bash scripts/check-agent-docs-drift.sh"
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",

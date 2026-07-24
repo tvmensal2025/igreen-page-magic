@@ -1,6 +1,6 @@
 /**
  * Painel Velip — KPIs 30d: ligações, duração média, atendidas, não atendeu,
- * reprovadas, bloqueados (DNC), custo e SMS com nome.
+ * reprovadas, bloqueados (Não Perturbe), custo e SMS com nome.
  */
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -131,7 +131,7 @@ export function VoiceDashboardPanel({ consultantId, customers = [] }: Props) {
       value: m?.failed ?? 0,
       color: "#dc2626",
     },
-    { icon: ShieldBan, label: "Bloqueados (DNC)", value: dncCount, color: "#dc2626" },
+    { icon: ShieldBan, label: "Bloqueados (Não Perturbe)", value: dncCount, color: "#dc2626" },
     {
       icon: DollarSign,
       label: "Custo 30d",

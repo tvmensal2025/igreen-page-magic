@@ -112,87 +112,129 @@ function brl(cents: number): string {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-/** Mensagem WhatsApp (negrito *...*, emoji) ao subir budget da âncora. */
-export function formatAnchorScaleUpWhatsApp(input: {
+function nowBrLabel(): string {
+  return new Date().toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Leitura rápida CPL vs alvo (texto amigável pro Zap). */
+function cplHealthLine(cplCents: number | null, targetCplCents: number): string {
+  if (cplCents == null || !Number.isFinite(cplCents)) {
+    return `📡 Ainda sem CPL suficiente na janela — seguimos de olho.`;
+  }
+  const target = Math.max(50, Math.round(targetCplCents || 200));
+  if (cplCents <= target) {
+    return `🟢 CPL *abaixo do alvo* — performance boa, dá pra acelerar.`;
+  }
+  if (cplCents <= target * 1.35) {
+    return `🟡 CPL na *faixa de observação* — sem pressa de mexer forte.`;
+  }
+  return `🔴 CPL *acima do conforto* — melhor proteger a carteira.`;
+}
+
+type ScaleMsgInput = {
   fromCents: number;
   toCents: number;
   stepPct: number;
   walletLiquidCents: number;
   cplCents: number | null;
   conversations: number;
-  spendCents: number;
+  spendCents?: number;
   targetCplCents: number;
   reason: string;
   cityLabel?: string;
-}): string {
+};
+
+/** Mensagem WhatsApp (negrito *...*, emoji) ao subir budget da âncora. */
+export function formatAnchorScaleUpWhatsApp(input: ScaleMsgInput): string {
   const city = input.cityLabel || "Uberlândia";
   const from = brl(input.fromCents);
   const to = brl(input.toCents);
+  const delta = brl(Math.max(0, input.toCents - input.fromCents));
   const wallet = brl(Math.max(0, input.walletLiquidCents));
   const cpl = input.cplCents != null ? brl(input.cplCents) : "—";
-  const spend = brl(input.spendCents);
+  const spend = input.spendCents != null ? brl(input.spendCents) : null;
   const target = brl(input.targetCplCents);
-  const when = new Date().toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const when = nowBrLabel();
 
   return [
-    `🚀 *Cérebro · Budget subiu!*`,
+    `🧠✨ *Cérebro iGreen · Autopilot*`,
+    `━━━━━━━━━━━━━━━━`,
+    `🚀 *Budget subiu!* 📈🔥`,
     ``,
-    `📍 *Campanha:* ${city}`,
-    `📈 *Investimento:* ${from} → *${to}*  (+${input.stepPct}%)`,
+    `📍 *Campanha âncora*`,
+    `🏙️ ${city}`,
+    `🕐 ${when}`,
     ``,
-    `💰 *Carteira (saldo):* ${wallet}`,
-    `🎯 *Custo por lead:* ${cpl}`,
-    `💬 *Conversas (janela):* ${input.conversations}`,
-    `📊 *Gasto (janela):* ${spend}`,
-    `📌 *CPL alvo:* ${target}`,
+    `💵 *Investimento diário*`,
+    `📤 Antes: ${from}`,
+    `📥 Agora: *${to}*`,
+    `⬆️ Degrau: *+${input.stepPct}%*  (+${delta})`,
     ``,
-    `✅ *Por que subiu?*`,
-    input.reason,
+    `📊 *Janela recente (48h)*`,
+    `🎯 Custo por conversa: *${cpl}*`,
+    `📌 CPL alvo: *${target}*`,
+    `💬 Conversas: *${input.conversations}*`,
+    ...(spend ? [`💸 Gasto na janela: *${spend}*`] : []),
     ``,
-    `_iGreen Autopilot · ${when}_`,
+    `💼 *Carteira*`,
+    `💰 Saldo líquido: *${wallet}*`,
+    ``,
+    `💡 *Leitura rápida*`,
+    cplHealthLine(input.cplCents, input.targetCplCents),
+    `✅ ${input.reason}`,
+    ``,
+    `💪 Seguimos no piloto automático.`,
+    `✨ _iGreen Ads · Cérebro_`,
   ].join("\n");
 }
 
 /** Mensagem WhatsApp ao reduzir budget (CPL ruim). */
-export function formatAnchorScaleDownWhatsApp(input: {
-  fromCents: number;
-  toCents: number;
-  stepPct: number;
-  walletLiquidCents: number;
-  cplCents: number | null;
-  conversations: number;
-  targetCplCents: number;
-  reason: string;
-  cityLabel?: string;
-}): string {
+export function formatAnchorScaleDownWhatsApp(input: ScaleMsgInput): string {
   const city = input.cityLabel || "Uberlândia";
-  const when = new Date().toLocaleString("pt-BR", {
-    timeZone: "America/Sao_Paulo",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  const from = brl(input.fromCents);
+  const to = brl(input.toCents);
+  const delta = brl(Math.max(0, input.fromCents - input.toCents));
+  const wallet = brl(Math.max(0, input.walletLiquidCents));
+  const cpl = input.cplCents != null ? brl(input.cplCents) : "—";
+  const spend = input.spendCents != null ? brl(input.spendCents) : null;
+  const target = brl(input.targetCplCents);
+  const when = nowBrLabel();
+
   return [
-    `📉 *Cérebro · Budget reduzido*`,
+    `🧠✨ *Cérebro iGreen · Autopilot*`,
+    `━━━━━━━━━━━━━━━━`,
+    `📉 *Budget reduzido* 🛡️⚠️`,
     ``,
-    `📍 *Campanha:* ${city}`,
-    `📈 *Investimento:* ${brl(input.fromCents)} → *${brl(input.toCents)}*  (−${input.stepPct}%)`,
+    `📍 *Campanha âncora*`,
+    `🏙️ ${city}`,
+    `🕐 ${when}`,
     ``,
-    `💰 *Carteira:* ${brl(Math.max(0, input.walletLiquidCents))}`,
-    `🎯 *Custo por lead:* ${input.cplCents != null ? brl(input.cplCents) : "—"}`,
-    `💬 *Conversas:* ${input.conversations}`,
-    `📌 *CPL alvo:* ${brl(input.targetCplCents)}`,
+    `💵 *Investimento diário*`,
+    `📤 Antes: ${from}`,
+    `📥 Agora: *${to}*`,
+    `⬇️ Degrau: *−${input.stepPct}%*  (−${delta})`,
     ``,
-    `⚠️ *Por que baixou?*`,
-    input.reason,
+    `📊 *Janela recente (48h)*`,
+    `🎯 Custo por conversa: *${cpl}*`,
+    `📌 CPL alvo: *${target}*`,
+    `💬 Conversas: *${input.conversations}*`,
+    ...(spend ? [`💸 Gasto na janela: *${spend}*`] : []),
     ``,
-    `_iGreen Autopilot · ${when}_`,
+    `💼 *Carteira*`,
+    `💰 Saldo líquido: *${wallet}*`,
+    ``,
+    `💡 *Leitura rápida*`,
+    cplHealthLine(input.cplCents, input.targetCplCents),
+    `⚠️ ${input.reason}`,
+    ``,
+    `🛡️ Protegendo o saldo — quando o CPL melhorar, subimos de novo.`,
+    `✨ _iGreen Ads · Cérebro_`,
   ].join("\n");
 }

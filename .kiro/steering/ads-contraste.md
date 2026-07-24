@@ -1,12 +1,7 @@
 ---
-inclusion: fileMatch
-fileMatchPattern:
-  - "src/components/admin/ads/**/*Chip*"
-  - "src/components/admin/ads/**/*Alert*"
-  - "src/components/admin/ads/**/*Badge*"
-  - "src/components/admin/ads/**/*Status*"
-  - "src/components/admin/ads/AdsCentral*"
-  - "src/components/admin/ads/**/*.css"
+inclusion: auto
+name: ads-contraste
+description: Contraste de status na UI Ads. Use ao editar chips/alerts/badges Ads.
 ---
 
 # Ads — contraste de status

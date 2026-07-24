@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: remote-support
+description: Suporte remoto e códigos de acesso.
 fileMatchPattern:
   - "src/features/remote-support/**"
   - "supabase/functions/remote-support-*/**"

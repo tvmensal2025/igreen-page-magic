@@ -479,6 +479,7 @@ Deno.serve(async (req) => {
                 walletLiquidCents: liquid,
                 cplCents: cpl,
                 conversations: conv,
+                spendCents: spend,
                 targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
                 reason: decision.reason,
                 cityLabel,

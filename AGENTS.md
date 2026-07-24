@@ -20,32 +20,41 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 ## Protocolo antes de editar (obrigatório)
 
 1. **Classifique o domínio** do pedido — um só destes:
-   `WA` · `cadência A/B/C` · `portal` · `Club` · `sync carteira` · `Meta/rodízio` · `CRM` · `voz/SMS` · `ads UI` · `front/tema` · `wallet` · `pós-venda` · `esteira multi-produto` · `motor flow v3` · `solar 3D` · `suporte remoto`
-2. **Carregue o steering do domínio** (tabela abaixo) + `#helpers-canonicos` + `#banco` se mexer em dados.
+   `WA` · `cadência A/B/C` · `portal` · `Club` · `sync carteira` · `Meta/rodízio` · `CRM` · `voz/SMS` · `ads UI` · `front/tema` · `wallet` · `pós-venda` · `esteira multi-produto` · `motor flow v3` · `solar 3D` · `suporte remoto` · `cross-sell` · `agendamentos` · `Cérebro/Fluxo B`
+2. **Carregue o steering do domínio** (tabela abaixo) + `#helpers-canonicos` + `#banco` se mexer em dados. Em dúvida: `.kiro/steering/mapa-dominios.json` + `#evidencia-prod`.
 3. **Reuse helper canônico** — nunca reimplementar nome do cliente, nome do consultor, classificação CRM/lead, telefone BR, cadência stage map, campanha UUID, kill switch.
 4. **Não apagar** migrations, toggles, guardas, flags, edges “mortas”. Se estiver errado, **conserte**.
 5. **Não ligar** motor ou envio em massa novo sem pedido explícito do usuário; E2E com envio real → `dryRun` primeiro.
 6. **Kill switch:** `app_settings.bot_global_enabled` via `_shared/bot/global-flag.ts` (`isBotGloballyEnabled`) + UI `BotGlobalKillSwitch`. Rollback: `live_dispatch` → `daily_reheat.enabled` → `cadence_engine` → `bot_global`.
+   - Exceção documentada: **pós-venda** ignora `bot_global` (usa `pos_venda_auto_messages` + `pos_venda_manual`). Ver `#pos-venda` / `#evidencia-prod`.
 
 ## Árvore de decisão rápida
 
 | Pergunta que o usuário está fazendo | Ative primeiro |
 |---|---|
-| “por que o lead não recebeu / recebeu errado?” | `#fluxos` `#armadilhas` `#banco` |
+| “por que o lead não recebeu / recebeu errado?” | `#fluxos` `#armadilhas` `#banco` `#evidencia-prod` |
 | “mude texto/áudio da cadência B ou C” | `#fluxos` `#helpers-canonicos` + `src/lib/multichannelCadenceTexts.ts` |
+| “webhook Whapi / Evolution / dedupe / ACK” | `#wa-webhook` |
+| “Sofia / Cérebro / Fluxo B / simulador” | `#cerebro-fluxo-b` |
+| “voz / SMS / Velip / DNC” | `#voz-sms` |
+| “hub de agendamentos / agenda manual” | `#agendamentos-hub` |
+| “cross-sell / telecom / seguros no card” | `#cross-sell` |
 | “cadastro no portal falhou” | `#portal2-fluxo-canonico` `#fluxos` |
 | “Club deu erro” | `#club-api-oficial` |
 | “carteira/consumo iGreen não bateu” | `#igreen-sync-oficial` |
-| “rodízio / atribuição de campanha errada” | `#cerebro-mg-e-rodizio` `#fluxos` (jornada 1) |
+| “rodízio / atribuição de campanha errada” | `#cerebro-mg-e-rodizio` `#rodizio-parceiros-campanha` `#fluxos` |
 | “anúncio Meta / métricas / waste” | `#ads-contraste` `#cerebro-mg-e-rodizio` |
 | “consultor sem saldo / Stripe” | `#wallet-stripe` |
 | “mídia (áudio/imagem/vídeo) não subiu” | `#minio-storage` |
 | “bot ignorou etapa / motor v3” | `#flow-engine-v3` `#armadilhas` |
 | “mudar rota, tema, cor, sidebar” | `#rotas-ui` `#nomes-e-tema` |
 | “edge/CORS/JWT/cron auth” | `#security-auth` `#edge-functions` `#convencoes` |
+| “RPC anon / SECURITY DEFINER” | `#security-auth` + `.kiro/steering/RPC-ANON-DEFINER-INVENTARIO.md` |
 | “code review / novo arquivo” | `#convencoes` `#structure` |
 | “deploy / GitHub Actions” | `#deploy` |
 | “onde fica o schema/coluna X” | `#banco` |
+| “números reais de prod / advisors” | `#evidencia-prod` |
+| “posso seguir uma spec .kiro/specs?” | `.kiro/specs/STATUS.md` |
 | “esteira de venda vs pós-venda WA” | `#esteira-multiproduto` `#pos-venda` |
 | “telhado solar 3D” | `#solar-3d` |
 | “suporte remoto / código de acesso” | `#remote-support` |
@@ -91,12 +100,19 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `rodizio-parceiros-campanha` | fileMatch wizard ads / rodizio | Mecânica do rodízio de PARCEIROS por campanha (RPC `rodizio_assign_lead`) |
 | `parceiros-referral` | fileMatch parceiros / qr-phrase / keyword-matcher | Cadastro parceiro, keyword, `short_code`, matching webhook, `notifyPartnerNewLead` |
 | `ads-contraste` | auto | UI Ads, waste guard, métricas |
-
 | `wallet-stripe` | fileMatch wallet | Carteira, Stripe, comissão |
-| `pos-venda` | fileMatch pos-venda | Pós-venda WA D30–120 |
+| `pos-venda` | fileMatch pos-venda | Pós-venda WA D30–D210 + retentativa |
+| `wa-webhook` | fileMatch whapi/evolution webhook | Contrato inbound Whapi + paridade Evolution |
+| `cerebro-fluxo-b` | fileMatch cerebro / fluxo-b | Produção vs simulador Sofia |
+| `voz-sms` | fileMatch voice-* / voz UI | Velip, DNC, cross-channel IK/UNDELIV |
+| `agendamentos-hub` | fileMatch AgendamentosHub / send-scheduled | Timeline multi-motor; agenda sem quiet hours |
+| `cross-sell` | fileMatch crossSell* | Card manual + sombra Cérebro — NÃO massa |
 | `esteira-multiproduto` | fileMatch esteira | Sales / sale_stage_* (≠ pós-venda) |
 | `flow-engine-v3` | fileMatch engine v3 | Motor de fluxo novo |
 | `minio-storage` | auto | Upload mídia SigV4 + fallback Storage |
+| `mapa-dominios.json` | manual | Inventário máquina-legível domínio→código→steering |
+| `EVIDENCIA-PROD` | manual | Snapshot prod + advisors (números auditados) |
+| `AUDITORIA-STEERING` | manual | Histórico de rounds do pack |
 | `nomes-e-tema` | auto | Naming e tema dual light/dark |
 | `convencoes` | auto | TS strict, erros, auth, CORS, UI |
 | `rotas-ui` | auto | Rotas React Router e páginas |
@@ -104,6 +120,13 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `security-auth` | auto | Auth edges, CORS, verify_jwt |
 | `solar-3d` | fileMatch solar | Telhado Google Solar |
 | `remote-support` | fileMatch remote | Suporte remoto |
+
+Specs: leia `.kiro/specs/STATUS.md` antes de seguir qualquer design antigo (várias são Evolution-first / archived).
+
+Nested `AGENTS.md` (Context7: nearest wins):
+`whapi-webhook/` · `evolution-webhook/` · `cadence-tick/` · `pos-venda-auto-progress/` · `sync-igreen-customers/` · `_shared/bot/` · `_shared/cerebro/` · `bulk-scheduler/` · `finalize-capture/` · `send-scheduled-messages/` · `voice-dialer-webhook/` · `src/lib/` · `src/components/whatsapp/`.
+
+Protocolo Kiro sugerido no chat: antes de editar, leia `#mapa-dominios` + `#evidencia-prod` (e o steering do domínio).
 
 ## Se algo faltar
 

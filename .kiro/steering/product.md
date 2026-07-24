@@ -1,5 +1,7 @@
 ---
 inclusion: always
+name: product
+description: Personas, jornadas e o que o produto não é.
 ---
 
 # Produto — iGreen Official Portal
@@ -23,7 +25,7 @@ Stack/estrutura detalhada: `tech.md` + `structure.md` (always). Domínios sob de
 3. Portal 2: `finalize-capture` → worker-portal-2 → OTP/facial → CRM em análise
 4. Club separado: `finalize-club` → worker-club
 5. Humano: takeover, agenda, manual-step-send
-6. **Esteira multiproduto** (`sales` / `sale_stage_*`) ≠ **pós-venda WA** (`pos_venda_*` D30–120)
+6. **Esteira multiproduto** (`sales` / `sale_stage_*`) ≠ **pós-venda WA** (`pos_venda_*` D30–D210 + retentativa)
 7. Ads + Stripe wallet
 
 ## O que NÃO é

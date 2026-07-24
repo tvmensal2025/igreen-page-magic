@@ -34,7 +34,7 @@ UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `Pendin
 - Helper: `_shared/pos-venda-retentativa.ts` (botão `pv_retentativa_cadastro`)
 
 ## Cadeados
-1. Toggle `pos_venda_auto_messages`
+1. Toggle `pos_venda_auto_messages` — **não** usa `bot_global_enabled`
 2. Quiet hours BRT + `assertCronAuth`
 3. Só envia se `pos_venda_manual=true` (consultor validou)
 4. Canal via `resolveChannelForCustomerWithFailover` (Whapi primeiro)

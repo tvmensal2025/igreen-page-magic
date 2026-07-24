@@ -81,7 +81,7 @@ Separado do portal: **finalize-club** → `validateForClub` → **worker-club**.
 
 - **start-customer-attendance** / **end-customer-attendance** / **customer-takeover**
 - Envio manual: chat UI, **manual-step-send**
-- Pós-venda: **pos-venda-auto-progress** (D30–120)
+- Pós-venda: **pos-venda-auto-progress** (D30–D210 + retentativa; Whapi primeiro)
 
 ## Kill switch (emergência)
 

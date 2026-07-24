@@ -7,33 +7,13 @@ import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.t
 import { resolveCampaignEffectiveStatus } from "../_shared/campaign-effective-status.ts";
 import { isConsultantLocked } from "../_shared/campaign-pause.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { pickMetaConversations, pickMetaLeads } from "../_shared/meta-insight-actions.ts";
 
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-// Meta retorna conversas CTWA em vários action_types dependendo da versão da campanha
-// (legado vs nova messaging objective). Somamos todos os candidatos relevantes.
-const CONV_ACTIONS = [
-  "onsite_conversion.messaging_conversation_started_7d",
-  "onsite_conversion.messaging_first_reply",
-  "onsite_conversion.total_messaging_connection",
-  "messaging_conversation_started_7d",
-  "messaging_first_reply",
-  "total_messaging_connection",
-];
-const LEAD_ACTIONS = ["lead", "onsite_conversion.lead_grouped"];
-
-function sumActions(actions: any[] | undefined, types: string[]): number {
-  if (!Array.isArray(actions)) return 0;
-  let total = 0;
-  for (const a of actions) {
-    if (types.includes(a?.action_type)) total += Number(a?.value || 0);
-  }
-  return total;
-}
 
 
 
@@ -183,8 +163,8 @@ Deno.serve(async (req) => {
           for (const row of bp?.data || []) {
             const key = `${row.publisher_platform || "?"}:${row.platform_position || "?"}`;
             const spend = Math.round(parseFloat(row.spend || "0") * 100);
-            const leadsDirect = sumActions(row.actions, LEAD_ACTIONS);
-            const conversations = sumActions(row.actions, CONV_ACTIONS);
+            const leadsDirect = pickMetaLeads(row.actions);
+            const conversations = pickMetaConversations(row.actions);
             cplByPlacement[key] = {
               spend,
               leads: leadsDirect,
@@ -207,8 +187,8 @@ Deno.serve(async (req) => {
               Array.from(new Set(row.actions.map((a: any) => a.action_type))).join(","));
             loggedActions = true;
           }
-          const leadsDirect = sumActions(row.actions, LEAD_ACTIONS);
-          const conv = sumActions(row.actions, CONV_ACTIONS);
+          const leadsDirect = pickMetaLeads(row.actions);
+          const conv = pickMetaConversations(row.actions);
           const regs = (row.actions || []).find((a: any) => a.action_type === "complete_registration")?.value || 0;
           const spend = Math.round(parseFloat(row.spend || "0") * 100);
           // `leads` permanece híbrido apenas para compatibilidade legada.
@@ -310,8 +290,8 @@ Deno.serve(async (req) => {
           const adJson = await fbFetch(urlAd);
           for (const row of adJson?.data || []) {
             if (!row.ad_id) continue;
-            const leadsAd = sumActions(row.actions, LEAD_ACTIONS);
-            const convAd = sumActions(row.actions, CONV_ACTIONS);
+            const leadsAd = pickMetaLeads(row.actions);
+            const convAd = pickMetaConversations(row.actions);
             const regsAd = (row.actions || []).find((a: any) => a.action_type === "complete_registration")?.value || 0;
             await admin.from("facebook_ad_metrics_daily").upsert({
               fb_ad_id: row.ad_id,
@@ -451,7 +431,7 @@ Deno.serve(async (req) => {
         const daily = (json.data || []).slice().sort((a: any, b: any) => (a.date_start > b.date_start ? -1 : 1));
         let zeroLeadStreak = 0;
         for (const row of daily) {
-          const directLeads = sumActions(row.actions, LEAD_ACTIONS);
+          const directLeads = pickMetaLeads(row.actions);
           if (directLeads === 0) zeroLeadStreak++; else break;
         }
 

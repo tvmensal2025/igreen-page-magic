@@ -518,6 +518,7 @@ Deno.serve(async (req) => {
               walletLiquidCents: liquid,
               cplCents: scaleMeta.cpl,
               conversations: scaleMeta.conv,
+              spendCents: scaleMeta.spend,
               targetCplCents: targetCpl,
               reason: scaleMeta.reason,
               cityLabel: "Uberlândia",

@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: esteira-multiproduto
+description: Sales/sale_stage — distinto de pós-venda WA.
 fileMatchPattern:
   - "src/features/produtos/esteira/**"
   - "src/features/produtos/vendas/**"
@@ -16,7 +18,7 @@ fileMatchPattern:
 # Esteira multiproduto — NÃO é pós-venda WA
 
 Módulo **Produtos**: catálogo → orçamento (`proposals`) → venda (`sales`) → etapas (`sale_stage_*`).  
-**Diferente** de `#pos-venda` (WhatsApp D30–120 em `customers.pos_venda_*`).
+**Diferente** de `#pos-venda` (WhatsApp D30–D210 + retentativa em `customers.pos_venda_*`).
 
 | | Esteira | Pós-venda WA |
 |---|---|---|

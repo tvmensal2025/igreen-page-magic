@@ -1,1 +1,1 @@
-{"specId": "96700c4f-e206-4125-909c-8454658159c5", "workflowType": "requirements-first", "specType": "bugfix"}
+{"specId": "96700c4f-e206-4125-909c-8454658159c5", "workflowType": "requirements-first", "specType": "bugfix", "agentStatus": "archived-risk", "supersededBy": "#wa-webhook"}

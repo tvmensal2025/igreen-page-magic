@@ -385,7 +385,7 @@ export function VoiceCallHistoryPanel({ consultantId, customers = [], onOpenChat
               <Phone className="h-3 w-3" /> {outcomeStats.reproved} reprovadas / falha
             </span>
             <span className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
-              <ShieldBan className="h-3 w-3" /> {outcomeStats.blocked} bloqueio / DNC
+              <ShieldBan className="h-3 w-3" /> {outcomeStats.blocked} bloqueio / Não Perturbe
             </span>
           </div>
 

@@ -25,6 +25,7 @@ import {
 import { fbFetch, loadCampaignConnection } from "../_shared/fb-graph.ts";
 import { META_CAMPAIGN_PROOF_OR } from "../_shared/meta-campaign-proof.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { pickMetaConversations } from "../_shared/meta-insight-actions.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,13 +109,9 @@ function parseInsightRow(row: any): {
   const impressions = Number(row?.impressions || 0);
   // link_clicks / clicks — Meta manda em actions ou campo clicks
   let clicks = Number(row?.clicks || 0);
-  let conversations = 0;
+  const conversations = pickMetaConversations(row?.actions);
   for (const a of (row?.actions || []) as any[]) {
     const t = typeof a?.action_type === "string" ? a.action_type : "";
-    // CTWA: onsite_conversion.messaging_conversation_started_7d
-    if (t.includes("messaging_conversation_started")) {
-      conversations += Number(a.value || 0);
-    }
     if (!clicks && (t === "link_click" || t === "outbound_click")) {
       clicks += Number(a.value || 0);
     }

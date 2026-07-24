@@ -1,6 +1,7 @@
 import {
   decideAnchorBudgetScale,
   formatAnchorScaleUpWhatsApp,
+  formatAnchorScaleDownWhatsApp,
 } from "./brain-budget-scale.ts";
 
 Deno.test("escala sobe com CPL bom", () => {
@@ -125,9 +126,30 @@ Deno.test("mensagem WhatsApp de subida tem carteira e CPL", () => {
     targetCplCents: 200,
     reason: "CPL R$ 1,80 ≤ alvo R$ 2,00 — sobe 15%",
   });
-  if (!msg.includes("*Cérebro · Budget subiu!*")) throw new Error("titulo");
-  if (!msg.includes("*Campanha:*")) throw new Error("label campanha");
-  if (!msg.includes("*Carteira")) throw new Error("carteira");
-  if (!msg.includes("Custo por lead")) throw new Error("cpl");
-  if (!msg.includes("Por que subiu")) throw new Error("motivo");
+  if (!msg.includes("Budget subiu")) throw new Error("titulo");
+  if (!msg.includes("Campanha âncora")) throw new Error("label campanha");
+  if (!msg.includes("Carteira")) throw new Error("carteira");
+  if (!msg.includes("Custo por conversa")) throw new Error("cpl");
+  if (!msg.includes("Leitura rápida")) throw new Error("leitura");
+  if (!msg.includes("abaixo do alvo")) throw new Error("health");
+  if (!msg.includes("iGreen Ads")) throw new Error("footer");
+});
+
+Deno.test("mensagem WhatsApp de descida tem proteção e CPL alto", () => {
+  const msg = formatAnchorScaleDownWhatsApp({
+    fromCents: 1150,
+    toCents: 978,
+    stepPct: 15,
+    walletLiquidCents: 5000,
+    cplCents: 650,
+    conversations: 14,
+    spendCents: 9100,
+    targetCplCents: 200,
+    reason: "CPL R$ 6,50 > alvo R$ 2,00 — reduz 15%",
+    cityLabel: "Uberlândia",
+  });
+  if (!msg.includes("Budget reduzido")) throw new Error("titulo");
+  if (!msg.includes("acima do conforto")) throw new Error("health");
+  if (!msg.includes("Protegendo o saldo")) throw new Error("cta");
+  if (!msg.includes("Gasto na janela")) throw new Error("spend");
 });
