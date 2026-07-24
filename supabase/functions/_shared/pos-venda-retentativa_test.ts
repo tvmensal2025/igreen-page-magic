@@ -29,6 +29,8 @@ Deno.test("retentativa: só aceita clique se stage=retentativa", () => {
 Deno.test("retentativa: aceita texto 1 e aliases", () => {
   const c = { pos_venda_stage: "retentativa" };
   assertEquals(isPosVendaRetentativaClick(null, "1", c), true);
+  assertEquals(isPosVendaRetentativaClick(null, "1.", c), true);
+  assertEquals(isPosVendaRetentativaClick(null, "1)", c), true);
   assertEquals(isPosVendaRetentativaClick(null, "quero tentar de novo", c), true);
   assertEquals(isPosVendaRetentativaClick(null, "oi", c), false);
 });

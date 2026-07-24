@@ -558,6 +558,15 @@ export function StageAutoMessageConfig({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
+          {(stageKey === "pv_retentativa" || stageKey === "retentativa") && (
+            <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs text-orange-700 dark:text-orange-300">
+              <p className="font-semibold mb-0.5">Escolha automática no envio</p>
+              <p className="text-[11px] opacity-90">
+                Whapi: botão <span className="font-medium">Quero tentar de novo</span>.
+                {" "}Evolution (sem botão): texto <span className="font-medium">*1.* Quero tentar de novo</span> — cliente digita 1.
+              </p>
+            </div>
+          )}
           {messages.length === 0 ? (
             <div className="text-center py-10 px-4 rounded-xl border-2 border-dashed border-border bg-muted/20">
               <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-3">

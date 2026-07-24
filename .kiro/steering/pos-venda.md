@@ -1,5 +1,7 @@
 ---
 inclusion: fileMatch
+name: pos-venda
+description: Pós-venda WA D30–D210 + retentativa.
 fileMatchPattern:
   - "supabase/functions/pos-venda-*/**"
   - "supabase/migrations/**pos_venda*"
@@ -42,8 +44,10 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
 
 ### Retentativa (qualquer consultor)
 1. Validar reprovado → carimba `pos_venda_rejected_at` + msg `pv_reprovado` (sem botão)
-2. Após **60 dias** → move para `retentativa` + msg + botão “Quero tentar de novo”
-3. Clique → `activatePosVendaRecadastro` (origem `whatsapp_lead`, Grupo A / cadastro); sync não re-flipa enquanto `pos_venda_recadastro_at` ativo
+2. Após **60 dias** → move para `retentativa` + msg + escolha:
+   - **Whapi:** botão `Quero tentar de novo` (`pv_retentativa_cadastro`)
+   - **Evolution:** texto numerado `*1.* Quero tentar de novo` (canal sem botão real)
+3. Clique / resposta `1` → `activatePosVendaRecadastro` (origem `whatsapp_lead`, Grupo A / cadastro); sync não re-flipa enquanto `pos_venda_recadastro_at` ativo
 
 ## NÃO FAÇA
 Msg sem validação manual / sem toggle · misturar `sale_stage_*` · apagar edges/toggles · massa nova sem pedido · hardcode UUID de um consultor nos seeds (usar `CROSS JOIN consultants`).

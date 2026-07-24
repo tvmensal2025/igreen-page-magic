@@ -1,7 +1,8 @@
 /**
  * Retentativa pós-reprovado (~60 dias):
- * 1) Cron move para `retentativa` e manda WA com botão
- * 2) Clique → sai da carteira, entra Grupo A (cadastro)
+ * 1) Cron move para `retentativa` e manda WA com botão (Whapi)
+ *    ou lista numerada *1.* (Evolution — sem botão real)
+ * 2) Clique / resposta "1" → sai da carteira, entra Grupo A (cadastro)
  */
 
 export const PV_RETENTATIVA_DAYS = 60;
@@ -9,6 +10,10 @@ export const PV_RETENTATIVA_BUTTON_ID = "pv_retentativa_cadastro";
 export const PV_RETENTATIVA_BUTTON_TITLE = "Quero tentar de novo";
 export const PV_RETENTATIVA_STAGE = "retentativa";
 export const PV_RETENTATIVA_STAGE_KEY = "pv_retentativa";
+
+/** Prompt do sendChoice: Whapi = botão; Evolution = texto com *1.* */
+export const PV_RETENTATIVA_CHOICE_PROMPT =
+  "Toque no botão *Quero tentar de novo* ou digite *1* se quiser participar de uma nova análise.";
 
 const BUTTON_ALIASES = new Set([
   PV_RETENTATIVA_BUTTON_ID,
@@ -35,7 +40,8 @@ export function isPosVendaRetentativaClick(
 
   const txt = String(messageText || "").trim().toLowerCase();
   if (!txt) return false;
-  if (txt === "1") return true; // fallback numerado Evolution
+  // Evolution: "1", "1.", "1)" — opção única da lista numerada
+  if (/^1[.)]?$/.test(txt)) return true;
   for (const alias of BUTTON_ALIASES) {
     if (txt.includes(alias)) return true;
   }

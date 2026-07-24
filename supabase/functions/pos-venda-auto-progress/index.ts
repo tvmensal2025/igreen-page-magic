@@ -1,7 +1,7 @@
 // Engine de autoprogressão Pós-Venda iGreen.
-// - Move clientes entre as colunas pv_aprovado / pv_d30/60/90/120 / pv_reprovado.
-// - Dispara mensagens automáticas (texto/áudio/imagem/vídeo) via Evolution
-//   (instância do consultor) ou Whapi (fallback compartilhado).
+// - Move clientes entre pv_aprovado / pv_d30…pv_d210 / pv_reprovado / pv_retentativa.
+// - Dispara mídia via resolveChannelForCustomerWithFailover (Whapi primeiro; Evolution fallback).
+// - NÃO usa bot_global_enabled — só toggle pos_venda_auto_messages + pos_venda_manual.
 // - Idempotente via customer_auto_message_log (UNIQUE customer_id+stage_key).
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
@@ -23,6 +23,7 @@ import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import {
   PV_RETENTATIVA_BUTTON_ID,
   PV_RETENTATIVA_BUTTON_TITLE,
+  PV_RETENTATIVA_CHOICE_PROMPT,
   PV_RETENTATIVA_DAYS,
 } from "../_shared/pos-venda-retentativa.ts";
 import { applyOutboundTemplateVars } from "../_shared/outbound-template-vars.ts";
@@ -250,16 +251,13 @@ async function processCustomer(
     );
   }
 
-  // Retentativa: após texto/áudio, manda botão para optar pelo novo cadastro (Grupo A).
+  // Retentativa: após texto/áudio, manda escolha (Whapi=botão; Evolution=*1.* numerado).
   if (targetStage === "retentativa") {
-    const btnBody = applyOutboundTemplateVars(
-      "Toque no botão abaixo se quiser participar de uma nova análise.",
-      {
-        customerName: customer.name || "",
-        nameSource: (customer as any).name_source ?? null,
-        phone,
-      },
-    );
+    const btnBody = applyOutboundTemplateVars(PV_RETENTATIVA_CHOICE_PROMPT, {
+      customerName: customer.name || "",
+      nameSource: (customer as any).name_source ?? null,
+      phone,
+    });
     const sendCtxBtn = ctx(ownerId, customer.id, stageKey, "retentativa_button");
     try {
       const btnOk = await channel.adapter.sendChoice(
