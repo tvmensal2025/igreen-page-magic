@@ -19,8 +19,8 @@ Deno.test("saudacaoMuitoByHourBRT: dia / tarde / noite", () => {
   assertEquals(saudacaoMuitoByHourBRT(atBrtHour(18)), "Muito boa noite");
 });
 
-Deno.test("applyOutboundTemplateVars: Olá + saudacao + nome seguro", () => {
-  const raw = "Olá, {{nome}}.\n\n{{saudacao}}.\n\nSeu cadastro foi aprovado.";
+Deno.test("applyOutboundTemplateVars: Olá + nome + Tudo bem + saudacao", () => {
+  const raw = "Olá, {{nome}} Tudo bem?\n\n{{saudacao}}\n\nSeu cadastro foi aprovado.";
   const out = applyOutboundTemplateVars(raw, {
     customerName: "Maria Silva",
     nameSource: "igreen_portal",
@@ -29,15 +29,15 @@ Deno.test("applyOutboundTemplateVars: Olá + saudacao + nome seguro", () => {
   });
   assertEquals(
     out,
-    "Olá, Maria.\n\nMuito boa tarde.\n\nSeu cadastro foi aprovado.",
+    "Olá, Maria Tudo bem?\n\nMuito boa tarde\n\nSeu cadastro foi aprovado.",
   );
 });
 
-Deno.test("applyOutboundTemplateVars: sem nome confiável → Olá. limpo", () => {
-  const out = applyOutboundTemplateVars("Olá, {{nome}}.\n\n{{saudacao}}.", {
+Deno.test("applyOutboundTemplateVars: sem nome confiável → Olá. Tudo bem?", () => {
+  const out = applyOutboundTemplateVars("Olá, {{nome}} Tudo bem?\n\n{{saudacao}}", {
     customerName: "Zap User",
     nameSource: "whatsapp_profile",
     now: atBrtHour(9),
   });
-  assertEquals(out, "Olá.\n\nMuito bom dia.");
+  assertEquals(out, "Olá. Tudo bem?\n\nMuito bom dia");
 });

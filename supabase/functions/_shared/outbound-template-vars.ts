@@ -18,7 +18,9 @@ export function applyOutboundTemplateVars(
     .replace(/\{\{saudacao\}\}/gi, saudacao)
     .replace(/\{\{nome\}\}/gi, nome)
     .replace(/\{\{telefone\}\}/gi, telefone);
-  // Olá, {{nome}}. com nome vazio → Olá.
+  // Abertura canônica "Olá, {{nome}} Tudo bem?" sem nome → "Olá. Tudo bem?"
+  out = out.replace(/Ol[áa],\s+Tudo bem\?/gi, "Olá. Tudo bem?");
+  // Legado: Olá, {{nome}}. com nome vazio → Olá.
   out = out.replace(/Ol[áa],\s*\./gi, "Olá.");
   out = out.replace(/Ol[áa],\s*!\s*/gi, "Olá! ");
   out = out.replace(/Ol[áa],\s*\n/gi, "Olá.\n");
