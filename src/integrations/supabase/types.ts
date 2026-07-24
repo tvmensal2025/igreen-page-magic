@@ -4485,6 +4485,8 @@ export type Database = {
           pos_venda_manual: boolean
           pos_venda_pending_stage: string | null
           pos_venda_reason: string | null
+          pos_venda_recadastro_at: string | null
+          pos_venda_rejected_at: string | null
           pos_venda_stage: string | null
           possui_placas: boolean | null
           possui_procurador: boolean | null
@@ -4747,6 +4749,8 @@ export type Database = {
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
+          pos_venda_recadastro_at?: string | null
+          pos_venda_rejected_at?: string | null
           pos_venda_stage?: string | null
           possui_placas?: boolean | null
           possui_procurador?: boolean | null
@@ -5009,6 +5013,8 @@ export type Database = {
           pos_venda_manual?: boolean
           pos_venda_pending_stage?: string | null
           pos_venda_reason?: string | null
+          pos_venda_recadastro_at?: string | null
+          pos_venda_rejected_at?: string | null
           pos_venda_stage?: string | null
           possui_placas?: boolean | null
           possui_procurador?: boolean | null
@@ -13144,6 +13150,8 @@ export type Database = {
           pos_venda_manual: boolean
           pos_venda_pending_stage: string | null
           pos_venda_reason: string | null
+          pos_venda_recadastro_at: string | null
+          pos_venda_rejected_at: string | null
           pos_venda_stage: string | null
           possui_placas: boolean | null
           possui_procurador: boolean | null

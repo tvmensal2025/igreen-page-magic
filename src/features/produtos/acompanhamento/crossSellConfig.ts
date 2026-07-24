@@ -9,7 +9,7 @@
 
 export const CROSS_SELL_TEMPLATE_KEY = "cross_sell_hint";
 
-export const CROSS_SELL_STAGES = ["aprovado", "d30", "d60", "d90", "d120"] as const;
+export const CROSS_SELL_STAGES = ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"] as const;
 export type CrossSellStage = (typeof CROSS_SELL_STAGES)[number];
 
 export const CROSS_SELL_PRODUCTS = ["telecom", "seguros"] as const;
@@ -149,6 +149,9 @@ export const STAGE_LABELS: Record<CrossSellStage, string> = {
   d60: "60 dias",
   d90: "90 dias",
   d120: "120 dias",
+  d150: "150 dias",
+  d180: "180 dias",
+  d210: "210 dias",
 };
 
 export const PRODUCT_LABELS: Record<CrossSellProduct, string> = {

@@ -22,7 +22,7 @@ const ANDAMENTO_OK = new Set([
   "licenciado",
 ]);
 
-const POS_VENDA_OK = new Set(["aprovado", "d30", "d60", "d90", "d120"]);
+const POS_VENDA_OK = new Set(["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"]);
 
 function norm(s: string | null | undefined): string {
   return String(s || "")

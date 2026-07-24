@@ -632,6 +632,15 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                             <DropdownMenuItem onClick={() => handleApproveClick(c, "d120")}>
                                               120 dias
                                             </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d150")}>
+                                              150 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d180")}>
+                                              180 dias
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "d210")}>
+                                              210 dias
+                                            </DropdownMenuItem>
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleApproveClick(c)}>
                                               Recém aprovado (padrão)

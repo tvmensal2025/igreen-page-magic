@@ -4,6 +4,7 @@
 
 import { checkSendQuota, registerSend } from "./anti-ban.ts";
 import { getAdapter, type ChannelAdapter, type SendContext } from "./channels/index.ts";
+import { applyOutboundTemplateVars } from "./outbound-template-vars.ts";
 
 export interface ChannelEnv {
   evolutionUrl: string | undefined;
@@ -476,6 +477,9 @@ export function formatSendStatus(r: SendResult): { status: string; tag: string }
   return { status: `partial:${fails.join("+")}_missing`, tag };
 }
 
+/** Substitui {{nome}}, {{saudacao}}, {{telefone}} (BRT). Nome vazio → limpa "Olá, .". */
+export { applyOutboundTemplateVars } from "./outbound-template-vars.ts";
+
 async function sendSingleMessage(
   supabase: any,
   channel: ResolvedChannel,
@@ -484,11 +488,13 @@ async function sendSingleMessage(
   msg: MsgConfig,
   sendCtx: SendContext,
   customerName?: string,
+  nameSource?: string | null,
 ): Promise<SendResult> {
-  const displayName = customerName || phone;
-  const messageText = (msg.message_text || "")
-    .replace(/\{\{nome\}\}/g, displayName)
-    .replace(/\{\{telefone\}\}/g, phone);
+  const messageText = applyOutboundTemplateVars(msg.message_text || "", {
+    customerName,
+    nameSource,
+    phone,
+  });
   const msgType = msg.message_type || "text";
 
   const result: SendResult = emptyResult();
@@ -554,6 +560,7 @@ export async function sendStageAutoMessages(
   rejectionReason?: string | null,
   dealOrigin?: string | null,
   customerName?: string,
+  nameSource?: string | null,
 ): Promise<SendResult> {
   const sendCtx = ctx(consultantId, customerId, stageData.stage_key);
 
@@ -577,7 +584,9 @@ export async function sendStageAutoMessages(
       if (i > 0 && msg.delay_seconds > 0) {
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
-      const r = await sendSingleMessage(supabase, channel, jid, phone, msg, sendCtx, customerName);
+      const r = await sendSingleMessage(
+        supabase, channel, jid, phone, msg, sendCtx, customerName, nameSource,
+      );
       acc = mergeResults(acc, r);
     }
   } else {
@@ -588,7 +597,7 @@ export async function sendStageAutoMessages(
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
       image_url: stageData.auto_message_image_url,
-    }, sendCtx, customerName);
+    }, sendCtx, customerName, nameSource);
   }
 
   return acc;

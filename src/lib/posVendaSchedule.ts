@@ -6,19 +6,28 @@ export const POS_VENDA_DAY_MILESTONES = [
   { days: 60, stage: "d60" as const, stageKey: "pv_d60", label: "60 dias" },
   { days: 90, stage: "d90" as const, stageKey: "pv_d90", label: "90 dias" },
   { days: 120, stage: "d120" as const, stageKey: "pv_d120", label: "120 dias" },
+  { days: 150, stage: "d150" as const, stageKey: "pv_d150", label: "150 dias" },
+  { days: 180, stage: "d180" as const, stageKey: "pv_d180", label: "180 dias" },
+  { days: 210, stage: "d210" as const, stageKey: "pv_d210", label: "210 dias" },
 ] as const;
 
 export const PV_STAGE_KEY_LABELS: Record<string, string> = {
   pv_espera: "Aguardando classificação",
   pv_aprovado: "Aprovado",
   pv_reprovado: "Reprovado",
+  pv_retentativa: "Retentativa",
   pv_d30: "30 dias",
   pv_d60: "60 dias",
   pv_d90: "90 dias",
   pv_d120: "120 dias",
+  pv_d150: "150 dias",
+  pv_d180: "180 dias",
+  pv_d210: "210 dias",
 };
 
-const APPROVED_TRACK = new Set<string>(["aprovado", "d30", "d60", "d90", "d120"]);
+const APPROVED_TRACK = new Set<string>([
+  "aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210",
+]);
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -28,6 +37,7 @@ export interface PosVendaCustomerRow {
   phone_whatsapp: string | null;
   pos_venda_stage: string | null;
   pos_venda_approved_at: string | null;
+  pos_venda_rejected_at?: string | null;
 }
 
 export interface UpcomingPosVendaItem {
@@ -59,9 +69,12 @@ export function groupSentStageKeys(
   return map;
 }
 
+const RETENTATIVA_DAYS = 60;
+
 /**
  * Calcula próximos envios automáticos do pós-venda (não vão para scheduled_messages).
- * Datas derivadas de pos_venda_approved_at + marcos 30/60/90/120.
+ * Datas derivadas de pos_venda_approved_at + marcos 30/60/90/120/150/180/210
+ * e retentativa (pos_venda_rejected_at + 60d).
  */
 export function buildUpcomingPosVendaMessages(
   customers: PosVendaCustomerRow[],
@@ -92,6 +105,43 @@ export function buildUpcomingPosVendaMessages(
           scheduledAt: now,
           isOverdue: true,
           messagePreview: defaultPreviews.reprovado?.slice(0, 120) ?? null,
+          kind: "pos_venda_auto",
+        });
+      }
+      // Agenda retentativa ~60d após rejected_at
+      if (!sent.has("pv_retentativa") && c.pos_venda_rejected_at) {
+        const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
+        if (Number.isFinite(rejectedMs)) {
+          const at = new Date(rejectedMs + RETENTATIVA_DAYS * MS_PER_DAY);
+          out.push({
+            id: `${c.id}-pv_retentativa`,
+            customerId: c.id,
+            customerName: name,
+            phone,
+            stageKey: "pv_retentativa",
+            stageLabel: "Retentativa",
+            scheduledAt: at,
+            isOverdue: at.getTime() <= nowMs,
+            messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
+            kind: "pos_venda_auto",
+          });
+        }
+      }
+      continue;
+    }
+
+    if (stage === "retentativa") {
+      if (!sent.has("pv_retentativa")) {
+        out.push({
+          id: `${c.id}-pv_retentativa`,
+          customerId: c.id,
+          customerName: name,
+          phone,
+          stageKey: "pv_retentativa",
+          stageLabel: "Retentativa",
+          scheduledAt: now,
+          isOverdue: true,
+          messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
           kind: "pos_venda_auto",
         });
       }

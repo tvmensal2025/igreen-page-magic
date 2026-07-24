@@ -94,13 +94,27 @@ export function prettyStepLabel(
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export type PosVendaStage = "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
+export type PosVendaStage =
+  | "aprovado"
+  | "reprovado"
+  | "retentativa"
+  | "d30"
+  | "d60"
+  | "d90"
+  | "d120"
+  | "d150"
+  | "d180"
+  | "d210";
 
 export const POS_VENDA_STAGES: { key: PosVendaStage; label: string; description: string }[] = [
   { key: "aprovado", label: "Aprovado", description: "Mensagem de boas-vindas após validação" },
   { key: "reprovado", label: "Reprovado", description: "Devolutiva quando o cadastro não passa" },
+  { key: "retentativa", label: "Retentativa", description: "Nova chance ~60 dias após reprovado (botão → Grupo A)" },
   { key: "d30", label: "30 dias", description: "Acompanhamento no primeiro mês" },
   { key: "d60", label: "60 dias", description: "Check-in de segundo mês" },
   { key: "d90", label: "90 dias", description: "Reativação trimestral" },
-  { key: "d120", label: "120 dias", description: "Reaquecimento longo prazo" },
+  { key: "d120", label: "120 dias", description: "Acompanhamento 4 meses" },
+  { key: "d150", label: "150 dias", description: "Acompanhamento 5 meses" },
+  { key: "d180", label: "180 dias", description: "Acompanhamento 6 meses" },
+  { key: "d210", label: "210 dias", description: "Acompanhamento 7 meses" },
 ];

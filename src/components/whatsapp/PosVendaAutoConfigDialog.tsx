@@ -21,7 +21,19 @@ interface PvStage {
   auto_message_image_url: string | null;
 }
 
-const PV_STAGE_ORDER = ["pv_espera", "pv_aprovado", "pv_reprovado", "pv_d30", "pv_d60", "pv_d90", "pv_d120"];
+const PV_STAGE_ORDER = [
+  "pv_espera",
+  "pv_aprovado",
+  "pv_reprovado",
+  "pv_retentativa",
+  "pv_d30",
+  "pv_d60",
+  "pv_d90",
+  "pv_d120",
+  "pv_d150",
+  "pv_d180",
+  "pv_d210",
+];
 
 export default function PosVendaAutoConfigDialog({ consultantId }: { consultantId: string }) {
   const [open, setOpen] = useState(false);

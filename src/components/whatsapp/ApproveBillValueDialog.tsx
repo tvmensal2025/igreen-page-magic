@@ -22,7 +22,7 @@ export interface BillValueCustomer {
 }
 
 /** Estágio destino opcional escolhido na hora de aprovar (split button). */
-export type ApproveTargetStage = "aprovado" | "d30" | "d60" | "d90" | "d120";
+export type ApproveTargetStage = "aprovado" | "d30" | "d60" | "d90" | "d120" | "d150" | "d180" | "d210";
 
 interface Props {
   customer: BillValueCustomer | null;

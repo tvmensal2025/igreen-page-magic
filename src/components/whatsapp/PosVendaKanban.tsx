@@ -24,7 +24,7 @@ import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
 import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
 import { resolveScheduleChannel } from "@/lib/scheduleChannel";
 
-type Stage = "espera" | "aprovado" | "reprovado" | "d30" | "d60" | "d90" | "d120";
+type Stage = "espera" | "aprovado" | "reprovado" | "retentativa" | "d30" | "d60" | "d90" | "d120" | "d150" | "d180" | "d210";
 
 interface PosVendaCustomer {
   id: string;
@@ -33,6 +33,7 @@ interface PosVendaCustomer {
   electricity_bill_value: number | null;
   portal_submitted_at: string | null;
   pos_venda_approved_at: string | null;
+  pos_venda_rejected_at?: string | null;
   andamento_igreen: string | null;
   status: string;
   consultant_id: string;
@@ -48,10 +49,14 @@ const STAGES: { key: Stage; label: string; badge: string; bar: string; dot: stri
   { key: "espera",     label: "Aguardando Classificação", badge: "bg-warning/15 text-warning border-warning/40",   bar: "bg-warning/100",   dot: "bg-warning" },
   { key: "aprovado",   label: "Aprovado",   badge: "bg-primary/20 text-primary border-primary/50", bar: "bg-primary/100", dot: "bg-primary" },
   { key: "reprovado",  label: "Reprovado",  badge: "bg-destructive/20 text-destructive border-destructive/50",      bar: "bg-destructive/100",    dot: "bg-destructive" },
+  { key: "retentativa", label: "Retentativa", badge: "bg-orange-500/15 text-orange-600 border-orange-500/40", bar: "bg-orange-500", dot: "bg-orange-500" },
   { key: "d30",        label: "30 dias",    badge: "bg-primary/15 text-primary border-primary/40",      bar: "bg-primary/100",    dot: "bg-primary" },
   { key: "d60",        label: "60 dias",    badge: "bg-primary/15 text-primary border-primary/40",      bar: "bg-primary/100",    dot: "bg-primary" },
   { key: "d90",        label: "90 dias",    badge: "bg-info/15 text-info border-info/40",      bar: "bg-info/100",    dot: "bg-info" },
   { key: "d120",       label: "120 dias",   badge: "bg-info/15 text-info border-info/40", bar: "bg-info/100",  dot: "bg-info" },
+  { key: "d150",       label: "150 dias",   badge: "bg-info/15 text-info border-info/40", bar: "bg-info/100",  dot: "bg-info" },
+  { key: "d180",       label: "180 dias",   badge: "bg-info/15 text-info border-info/40", bar: "bg-info/100",  dot: "bg-info" },
+  { key: "d210",       label: "210 dias",   badge: "bg-info/15 text-info border-info/40", bar: "bg-info/100",  dot: "bg-info" },
 ];
 
 function daysSince(iso: string | null): number | null {
@@ -65,6 +70,9 @@ function computeStage(c: PosVendaCustomer): Stage {
   // Esteira temporal: aprovação canônica, fallback portal_submitted_at (backfill).
   const d = daysSince(c.pos_venda_approved_at || c.portal_submitted_at);
   if (d == null) return "espera";
+  if (d >= 210) return "d210";
+  if (d >= 180) return "d180";
+  if (d >= 150) return "d150";
   if (d >= 120) return "d120";
   if (d >= 90)  return "d90";
   if (d >= 60)  return "d60";
@@ -121,7 +129,7 @@ export default function PosVendaKanban({
 
     let q = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,pos_venda_rejected_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
 
@@ -193,7 +201,10 @@ export default function PosVendaKanban({
       const q = search.toLowerCase();
       return (c.name || "").toLowerCase().includes(q) || (c.phone_whatsapp || "").includes(q);
     });
-    const out: Record<Stage, PosVendaCustomer[]> = { espera: [], aprovado: [], reprovado: [], d30: [], d60: [], d90: [], d120: [] };
+    const out: Record<Stage, PosVendaCustomer[]> = {
+      espera: [], aprovado: [], reprovado: [], retentativa: [],
+      d30: [], d60: [], d90: [], d120: [], d150: [], d180: [], d210: [],
+    };
     for (const c of filtered) out[computeStage(c)].push(c);
     return out;
   }, [customers, search]);
@@ -219,10 +230,16 @@ export default function PosVendaKanban({
     };
     // Carimba a data de aprovação ao entrar em "aprovado" (marco da esteira
     // 30/60/90/120). Em "reprovado" / "espera" o marco é zerado.
+    // Em "reprovado" carimba pos_venda_rejected_at (relógio da retentativa).
     if (target === "aprovado") {
       patch.pos_venda_approved_at = c.pos_venda_approved_at ?? new Date().toISOString();
-    } else if (target === "reprovado" || target === "espera") {
+      patch.pos_venda_rejected_at = null;
+    } else if (target === "reprovado") {
       patch.pos_venda_approved_at = null;
+      patch.pos_venda_rejected_at = (c as any).pos_venda_rejected_at ?? new Date().toISOString();
+    } else if (target === "espera") {
+      patch.pos_venda_approved_at = null;
+      patch.pos_venda_rejected_at = null;
     }
     const { error } = await supabase.from("customers").update(patch).eq("id", c.id);
     if (error) { toast.error("Erro: " + error.message); return; }

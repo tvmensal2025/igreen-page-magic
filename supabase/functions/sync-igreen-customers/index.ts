@@ -2170,13 +2170,14 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
 
   const allPhones = records.map((r) => String(r.phone_whatsapp));
   const midConvoPhones = new Set<string>();
+  const recadastroPhones = new Set<string>();
   const flippingToWalletIds: string[] = [];
   const flipCompleteStepIds: string[] = [];
   for (let i = 0; i < allPhones.length; i += 200) {
     const chunk = allPhones.slice(i, i + 200);
     let q = supabase
       .from("customers")
-      .select("id, phone_whatsapp, conversation_step, customer_origin, status")
+      .select("id, phone_whatsapp, conversation_step, customer_origin, status, pos_venda_recadastro_at")
       .in("phone_whatsapp", chunk);
     if (consultantId) q = q.eq("consultant_id", consultantId);
     const { data: existing } = await q;
@@ -2187,9 +2188,15 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
         conversation_step: string | null;
         customer_origin: string | null;
         status: string | null;
+        pos_venda_recadastro_at: string | null;
       }>) {
         const midConvo = isMidConversation(e.conversation_step, e.status);
         if (midConvo) midConvoPhones.add(e.phone_whatsapp);
+        // Retentativa ativa: não re-flipar origem/status enquanto o novo cadastro roda.
+        if (e.pos_venda_recadastro_at && !isPostCadastro(e.conversation_step, e.status)) {
+          recadastroPhones.add(e.phone_whatsapp);
+          continue;
+        }
         const isLeadOrigin = !e.customer_origin || e.customer_origin === "whatsapp_lead" || e.customer_origin === "manual";
         // Lead no batch do portal → sai do funil de leads (Kanban), independente do step.
         if (consultantId && isLeadOrigin) {
@@ -2202,8 +2209,17 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   if (midConvoPhones.size > 0) {
     console.log(`⚠️ Protecting status of ${midConvoPhones.size} mid-conversation leads (origin still flips to wallet)`);
   }
+  if (recadastroPhones.size > 0) {
+    console.log(`⚠️ Protecting ${recadastroPhones.size} recadastro (retentativa) phones from wallet flip`);
+  }
   for (const rec of records) {
-    if (midConvoPhones.has(String(rec.phone_whatsapp))) {
+    const phone = String(rec.phone_whatsapp);
+    if (recadastroPhones.has(phone)) {
+      delete rec.customer_origin;
+      delete rec.status;
+      continue;
+    }
+    if (midConvoPhones.has(phone)) {
       // Preserva status do bot no meio do funil; NÃO apaga customer_origin.
       delete rec.status;
     }
@@ -2275,7 +2291,10 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
         const idChunk = flipCompleteStepIds.slice(i, i + 100);
         const { error: stepErr, count: stepCount } = await supabase
           .from("customers")
-          .update({ conversation_step: "complete" }, { count: "exact" })
+          .update({
+            conversation_step: "complete",
+            pos_venda_recadastro_at: null,
+          }, { count: "exact" })
           .in("id", idChunk)
           .neq("conversation_step", "complete");
         if (stepErr) console.error(`conversation_step complete error at ${i}:`, stepErr);

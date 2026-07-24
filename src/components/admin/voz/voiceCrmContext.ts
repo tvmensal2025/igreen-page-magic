@@ -11,10 +11,14 @@ const POS_VENDA_LABEL: Record<string, string> = {
   espera: "Pós-venda · aguardando",
   aprovado: "Pós-venda · aprovado",
   reprovado: "Pós-venda · reprovado",
+  retentativa: "Pós-venda · retentativa",
   d30: "Pós-venda · 30 dias",
   d60: "Pós-venda · 60 dias",
   d90: "Pós-venda · 90 dias",
   d120: "Pós-venda · 120 dias",
+  d150: "Pós-venda · 150 dias",
+  d180: "Pós-venda · 180 dias",
+  d210: "Pós-venda · 210 dias",
 };
 
 export function statusCrmLabel(status: string | null | undefined): string {

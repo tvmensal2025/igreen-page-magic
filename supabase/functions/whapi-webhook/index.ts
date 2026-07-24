@@ -1843,6 +1843,36 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Retentativa pós-reprovado: botão → sai da carteira e entra Grupo A (cadastro).
+    if (customer && (buttonId || messageText)) {
+      const { isPosVendaRetentativaClick, activatePosVendaRecadastro } = await import(
+        "../_shared/pos-venda-retentativa.ts"
+      );
+      if (isPosVendaRetentativaClick(buttonId, messageText, customer as any)) {
+        const act = await activatePosVendaRecadastro(supabase, {
+          id: customer.id,
+          name: (customer as any).name,
+          name_source: (customer as any).name_source,
+          consultant_id: (customer as any).consultant_id || superAdminConsultantId,
+        });
+        if (act.ok) {
+          Object.assign(customer as any, act.patch);
+          try {
+            await sender.sendText(
+              remoteJid,
+              "Perfeito! Vamos recomeçar o cadastro juntos. Em instantes eu te guio no próximo passo. 💚",
+            );
+          } catch (e) {
+            console.warn("[pos-venda-retentativa] ack falhou:", (e as Error).message);
+          }
+          console.log(`[pos-venda-retentativa] recadastro ativado customer=${customer.id}`);
+          // Segue o fluxo normal já como whatsapp_lead / Grupo A.
+        } else {
+          console.warn("[pos-venda-retentativa] activate falhou:", act.error);
+        }
+      }
+    }
+
     // Override por lead: customer.bot_force_enabled=true ignora IA global off.
     // Setado pelo botão "Zerar" (via trigger apply_force_bot_on_customer_insert
     // + tabela force_bot_phones) e pelo toggle individual no chat.

@@ -14,11 +14,18 @@ import {
   formatSendStatus,
   isValidJid,
   toJid,
+  ctx,
   type ChannelEnv,
   type SendResult,
 } from "../_shared/channel-sender.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import {
+  PV_RETENTATIVA_BUTTON_ID,
+  PV_RETENTATIVA_BUTTON_TITLE,
+  PV_RETENTATIVA_DAYS,
+} from "../_shared/pos-venda-retentativa.ts";
+import { applyOutboundTemplateVars } from "../_shared/outbound-template-vars.ts";
 
 
 const corsHeaders = {
@@ -31,6 +38,9 @@ const PROGRESSION = [
   { days: 60,  stage_key: "pv_d60" },
   { days: 90,  stage_key: "pv_d90" },
   { days: 120, stage_key: "pv_d120" },
+  { days: 150, stage_key: "pv_d150" },
+  { days: 180, stage_key: "pv_d180" },
+  { days: 210, stage_key: "pv_d210" },
 ];
 
 function findBucket(daysSince: number): string | null {
@@ -45,10 +55,14 @@ const STAGE_TO_KEY: Record<string, string> = {
   espera:    "pv_espera",
   aprovado:  "pv_aprovado",
   reprovado: "pv_reprovado",
+  retentativa: "pv_retentativa",
   d30:       "pv_d30",
   d60:       "pv_d60",
   d90:       "pv_d90",
   d120:      "pv_d120",
+  d150:      "pv_d150",
+  d180:      "pv_d180",
+  d210:      "pv_d210",
 };
 
 async function processCustomer(
@@ -63,14 +77,24 @@ async function processCustomer(
 
   // Mover o customer para o bucket alvo (apenas se mudou)
   if (customer.pos_venda_stage !== targetStage) {
+    const movePatch: Record<string, unknown> = { pos_venda_stage: targetStage };
+    // Relógio da retentativa: carimba na entrada em reprovado.
+    if (targetStage === "reprovado" && !customer.pos_venda_rejected_at) {
+      movePatch.pos_venda_rejected_at = new Date().toISOString();
+    }
     const { error: upErr } = await supabase
       .from("customers")
-      .update({ pos_venda_stage: targetStage })
+      .update(movePatch)
       .eq("id", customer.id);
     if (upErr) {
       console.error("[pos-venda] erro mover customer", customer.id, upErr.message);
       return { moved: false, sent: false };
     }
+  } else if (targetStage === "reprovado" && !customer.pos_venda_rejected_at) {
+    await supabase
+      .from("customers")
+      .update({ pos_venda_rejected_at: new Date().toISOString() })
+      .eq("id", customer.id);
   }
 
   // Checar se já enviou para este estágio (idempotência)
@@ -181,7 +205,8 @@ async function processCustomer(
   }
 
   const jid = toJid(phone);
-  const dealOrigin = targetStage === "reprovado" ? "reprovado" : "aprovado";
+  const dealOrigin =
+    targetStage === "reprovado" || targetStage === "retentativa" ? "reprovado" : "aprovado";
 
   let result: SendResult;
   if (consultantHasContent) {
@@ -197,6 +222,7 @@ async function processCustomer(
       customer.pos_venda_reason || null,
       dealOrigin,
       customer.name || "",
+      (customer as any).name_source ?? null,
     );
   } else {
     // Fallback: config-padrão global. Monta um stageData sintético e reusa o
@@ -220,7 +246,42 @@ async function processCustomer(
       customer.pos_venda_reason || null,
       dealOrigin,
       customer.name || "",
+      (customer as any).name_source ?? null,
     );
+  }
+
+  // Retentativa: após texto/áudio, manda botão para optar pelo novo cadastro (Grupo A).
+  if (targetStage === "retentativa") {
+    const btnBody = applyOutboundTemplateVars(
+      "Toque no botão abaixo se quiser participar de uma nova análise.",
+      {
+        customerName: customer.name || "",
+        nameSource: (customer as any).name_source ?? null,
+        phone,
+      },
+    );
+    const sendCtxBtn = ctx(ownerId, customer.id, stageKey, "retentativa_button");
+    try {
+      const btnOk = await channel.adapter.sendChoice(
+        jid,
+        btnBody,
+        {
+          preferred: "button",
+          options: [{ id: PV_RETENTATIVA_BUTTON_ID, title: PV_RETENTATIVA_BUTTON_TITLE }],
+        },
+        sendCtxBtn,
+      );
+      if (btnOk?.ok === false && (btnOk as any).reason !== "downgraded") {
+        console.warn("[pos-venda] botão retentativa falhou", customer.id, (btnOk as any).detail);
+        // Não derruba o pacote imagem/áudio/texto se o botão falhar; marca text se vazio.
+        if (result.text_ok == null) result.text_ok = false;
+      } else if (result.text_ok == null) {
+        result.text_ok = true;
+      }
+    } catch (e) {
+      console.warn("[pos-venda] botão retentativa erro", customer.id, (e as Error).message);
+      if (result.text_ok == null) result.text_ok = false;
+    }
   }
 
   const { status, tag } = formatSendStatus(result);
@@ -289,7 +350,7 @@ Deno.serve(async (req) => {
     //    "Validar novos clientes".
     const { data: approvedCustomers } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "aprovado")
       .eq("pos_venda_manual", true);
@@ -303,7 +364,7 @@ Deno.serve(async (req) => {
     // 2. Clientes REPROVADOS PELO CONSULTOR (pos_venda_manual=true).
     const { data: rejectedCustomers } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_rejected_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "reprovado")
       .eq("pos_venda_manual", true);
@@ -314,25 +375,48 @@ Deno.serve(async (req) => {
       if (r.sent) sent++;
     }
 
-    // 3. Progressão aprovados → 30/60/90/120 dias (somente quem já passou por aprovado)
+    // 3. Progressão aprovados → 30/60/90/120/150/180/210 (somente quem já passou por aprovado)
     //    O marco temporal é a DATA DE APROVAÇÃO (pos_venda_approved_at), não o
-    //    envio ao portal.
+    //    envio ao portal. Inclui o próprio bucket atual para reprocessar envio
+    //    pendente (idempotente via customer_auto_message_log).
     const { data: approvedTrack } = await supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_manual", true)
-      .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90"])
+      .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"])
       .not("pos_venda_approved_at", "is", null);
 
     for (const c of approvedTrack || []) {
       const ref = c.pos_venda_approved_at ? new Date(c.pos_venda_approved_at).getTime() : now;
       const days = Math.floor((now - ref) / (1000 * 60 * 60 * 24));
       const targetKey = findBucket(days);
+      // Ainda em "aprovado" e <30 dias: o bloco 1 já cuida do pv_aprovado.
       if (!targetKey) continue;
       const target = targetKey.replace("pv_", ""); // 'd30' etc.
-      if (target === c.pos_venda_stage) continue;
       const r = await processCustomer(supabase, env, c, target, defaults);
+      if (r.moved) moved++;
+      if (r.sent) sent++;
+    }
+
+    // 4. Retentativa: reprovado há >= 60 dias → coluna retentativa + msg com botão.
+    //    Também reprocessa quem já está em `retentativa` (envio/botão pendente).
+    //    Filtro de data em JS (ISO com ":" quebra o parser .or do PostgREST).
+    const retentativaCutoffMs = now - PV_RETENTATIVA_DAYS * 24 * 60 * 60 * 1000;
+    const { data: retentativaCandidates } = await supabase
+      .from("customers")
+      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_rejected_at, status, andamento_igreen")
+      .eq("customer_origin", "igreen_sync")
+      .eq("pos_venda_manual", true)
+      .in("pos_venda_stage", ["reprovado", "retentativa"]);
+
+    for (const c of retentativaCandidates || []) {
+      if (c.pos_venda_stage === "reprovado") {
+        if (!c.pos_venda_rejected_at) continue;
+        const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
+        if (!Number.isFinite(rejectedMs) || rejectedMs > retentativaCutoffMs) continue;
+      }
+      const r = await processCustomer(supabase, env, c, "retentativa", defaults);
       if (r.moved) moved++;
       if (r.sent) sent++;
     }

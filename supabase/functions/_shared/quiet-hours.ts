@@ -16,6 +16,28 @@ export function isQuietHourBRT(now: Date = new Date()): boolean {
   return minutes >= start || minutes < end;
 }
 
+/** Hora 0–23 em America/Sao_Paulo. */
+export function hourBRT(now: Date = new Date()): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "America/Sao_Paulo",
+      hour: "2-digit",
+      hour12: false,
+    }).format(now),
+  ) % 24;
+}
+
+/**
+ * Saudação longa p/ pós-venda / áudio: "Muito bom dia|boa tarde|boa noite".
+ * Faixas iguais ao attendance (`greetingByHour`): <12 dia, <18 tarde, senão noite.
+ */
+export function saudacaoMuitoByHourBRT(now: Date = new Date()): string {
+  const h = hourBRT(now);
+  if (h < 12) return "Muito bom dia";
+  if (h < 18) return "Muito boa tarde";
+  return "Muito boa noite";
+}
+
 // Retorna ISO do próximo 08:00 BRT (hoje se ainda for madrugada, senão amanhã).
 export function nextQuietWindowEndISO(now: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
