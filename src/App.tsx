@@ -65,6 +65,7 @@ import { GuideCoachProvider } from "@/features/onboarding/GuideCoachProvider";
 import { SupportChatButton } from "@/components/support/SupportChatButton";
 
 const SuperAdminRemoteSupport = lazy(() => import("./pages/SuperAdminRemoteSupport"));
+const SuperAdminPortais = lazy(() => import("./pages/SuperAdminPortais"));
 
 
 const queryClient = new QueryClient({
@@ -142,6 +143,7 @@ const App = () => (
 
               <Route path="/super-admin" element={<ProtectedRoute><SuperAdmin /></ProtectedRoute>} />
               <Route path="/super-admin/suporte" element={<ProtectedRoute><SuperAdminRemoteSupport /></ProtectedRoute>} />
+              <Route path="/super-admin/portais" element={<ProtectedRoute><SuperAdminPortais /></ProtectedRoute>} />
               <Route path="/assistente" element={<AssistentePage />} />
               <Route path="/crm" element={<CRMLandingPage />} />
               <Route path="/licenciado/preview" element={<LicenciadaPreview />} />

@@ -40,6 +40,7 @@ Shell `Admin.tsx` (abas WhatsApp/CRM/ads/voz…). Atalhos:
 |---|---|
 | `/super-admin` | SuperAdmin (kill switch, plataforma) |
 | `/super-admin/suporte` | SuperAdminRemoteSupport |
+| `/super-admin/portais` | SuperAdminPortais (atalhos Lovable/Gemini/GPT/Velip/EasyPanel/Whapi + todos os SaaS) |
 | `/admin/saude-producao` | SaudeProducao |
 
 CRM/captação/agenda vivem como **abas** em `/admin` (`components/whatsapp`, `captacao`), não rotas soltas.

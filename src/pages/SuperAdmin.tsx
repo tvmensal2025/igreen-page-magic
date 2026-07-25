@@ -11,7 +11,7 @@ import {
   Shield, Users, CheckCircle, XCircle, LogOut, Loader2, UserCheck, UserX,
   KeyRound, Brain, MessageSquare, Wifi, WifiOff, AlertTriangle, Send,
   Search, Eye, TrendingUp, Phone, Calendar, RefreshCw, Sparkles, Activity,
-  ChevronRight, BarChart3, Megaphone, Target, Sun,
+  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 // Heavy panels — lazy load on demand to shrink initial bundle
@@ -329,6 +329,9 @@ const SuperAdmin = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => navigate("/super-admin/portais")} className="gap-2">
+              <Link2 className="w-4 h-4" /> <span className="hidden sm:inline">Portais</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.location.assign("/super-admin/suporte")} className="gap-2">
               <Shield className="w-4 h-4" /> <span className="hidden sm:inline">Suporte Remoto</span>
             </Button>
