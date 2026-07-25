@@ -27,6 +27,11 @@
   --pe-accent-warm: #c9a84c;
   --pe-success: #00A859;
   --pe-warning: #F59E0B;
+  /* Texto de badge/status — pares escuros p/ AA sobre fundo soft (≠ ícone/borda) */
+  --pe-success-ink: #005c2e;
+  --pe-warning-ink: #92400e;
+  --pe-danger-ink: #991b1b;
+  --pe-info-ink: #1e40af;
   --pe-danger: #DC2626;
   --pe-info: #2563EB;
 
@@ -50,7 +55,7 @@
   --card-foreground: 215 28% 17%;
   --popover: 0 0% 100%;
   --popover-foreground: 215 28% 17%;
-  --primary: 152 100% 33%;
+  --primary: 152 100% 28%;
   --primary-foreground: 0 0% 100%;
   --secondary: 150 14% 94%;
   --secondary-foreground: 215 28% 17%;
@@ -62,7 +67,7 @@
   --destructive-foreground: 0 0% 100%;
   --border: 150 10% 86%;
   --input: 150 10% 86%;
-  --ring: 152 100% 33%;
+  --ring: 152 100% 28%;
   /* Sidebar do pe-sidebar é verde sólido; tokens sidebar alinhados ao escuro da marca */
   --sidebar-background: 150 100% 18%;
   --sidebar-foreground: 0 0% 100%;
@@ -102,6 +107,12 @@ html.dark .painel-elite {
   --pe-emerald-10: rgba(0, 168, 89, 0.14);
   --pe-emerald-20: rgba(0, 168, 89, 0.28);
   --pe-accent-glow: rgba(0, 168, 89, 0.18);
+  /* Info/warning em dark: tons mais claros p/ contraste no fundo #1a1a1a */
+  --pe-info: #60a5fa;
+  --pe-info-ink: #93c5fd;
+  --pe-warning-ink: #fbbf24;
+  --pe-success-ink: #34d399;
+  --pe-danger-ink: #f87171;
 
   --background: 0 0% 7%;
   --foreground: 0 0% 100%;
@@ -484,10 +495,10 @@ html.dark .painel-elite {
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.painel-elite .pe-badge-success { color: var(--pe-success); background: rgba(5, 150, 105, 0.10); }
-.painel-elite .pe-badge-warning { color: var(--pe-warning); background: rgba(217, 119, 6, 0.10); }
-.painel-elite .pe-badge-danger  { color: var(--pe-danger);  background: rgba(220, 38, 38, 0.10); }
-.painel-elite .pe-badge-info    { color: var(--pe-info);    background: rgba(2, 132, 199, 0.10); }
+.painel-elite .pe-badge-success { color: var(--pe-success-ink); background: rgba(5, 150, 105, 0.10); }
+.painel-elite .pe-badge-warning { color: var(--pe-warning-ink); background: rgba(217, 119, 6, 0.10); }
+.painel-elite .pe-badge-danger  { color: var(--pe-danger-ink);  background: rgba(220, 38, 38, 0.10); }
+.painel-elite .pe-badge-info    { color: var(--pe-info-ink);    background: rgba(2, 132, 199, 0.10); }
 
 /* Maintenance / inline banner — hairline */
 .painel-elite .pe-banner {

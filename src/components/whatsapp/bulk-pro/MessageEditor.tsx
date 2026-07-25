@@ -132,9 +132,9 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
       <div className="space-y-4 min-w-0">
 
       {/* Template picker */}
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c9a84c]/30 bg-[#c9a84c]/5 px-3 py-2">
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--pe-accent-warm)]/30 bg-[color:var(--pe-accent-warm)]/5 px-3 py-2">
         <div className="flex items-center gap-2 min-w-0">
-          <FilePlus2 className="w-4 h-4 text-[#c9a84c] shrink-0" />
+          <FilePlus2 className="w-4 h-4 text-[color:var(--pe-accent-warm)] shrink-0" />
           <div className="min-w-0">
             <p className="text-xs font-bold text-[#064e3b]">Templates salvos</p>
             <p className="text-[10px] text-[#064e3b]/60 truncate">

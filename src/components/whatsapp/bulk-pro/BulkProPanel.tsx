@@ -454,12 +454,12 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         <div className="bg-[#064e3b] text-white px-5 sm:px-7 py-4 sm:py-5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#c9a84c]/20 border border-[#c9a84c]/40 flex items-center justify-center">
-                <Megaphone className="w-5 h-5 text-[#c9a84c]" />
+              <div className="w-10 h-10 rounded-xl bg-[color:var(--pe-accent-warm)]/20 border border-[color:var(--pe-accent-warm)]/40 flex items-center justify-center">
+                <Megaphone className="w-5 h-5 text-[color:var(--pe-accent-warm)]" />
               </div>
               <div>
                 <h3 className="text-lg sm:text-xl font-bold tracking-tight" style={{ fontFamily: "'Outfit', system-ui, sans-serif" }}>
-                  <span className="text-[#c9a84c]">Disparo</span> PRO
+                  <span className="text-[color:var(--pe-accent-warm)]">Disparo</span> PRO
                 </h3>
                 <p className="text-[11px] text-primary/70 hidden sm:block">Mensagens em massa com mídia, agendamento e anti-bloqueio</p>
               </div>
@@ -502,7 +502,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                   <span
                     className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
                       active
-                        ? "bg-[#c9a84c] text-[#064e3b] ring-4 ring-[#c9a84c]/25"
+                        ? "bg-[color:var(--pe-accent-warm)] text-[#064e3b] ring-4 ring-[color:var(--pe-accent-warm)]/25"
                         : past
                         ? "bg-primary/40 text-white"
                         : "bg-white/15 text-white/60"
@@ -536,7 +536,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                   <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Selecionados</p>
                   <p className="text-2xl font-bold text-[#0d7a5f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{deduped.length}</p>
                 </div>
-                <div className="rounded-xl bg-[#c9a84c]/10 border border-[#c9a84c]/30 p-3 text-center">
+                <div className="rounded-xl bg-[color:var(--pe-accent-warm)]/10 border border-[color:var(--pe-accent-warm)]/30 p-3 text-center">
                   <p className="text-[10px] text-[#064e3b]/60 uppercase font-semibold tracking-wider">Duplicados</p>
                   <p className="text-2xl font-bold text-[#a8862f]" style={{ fontFamily: "'Outfit', sans-serif" }}>{dupCount}</p>
                 </div>

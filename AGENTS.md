@@ -6,7 +6,7 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 
 ## Como usar este pacote de documentação
 
-1. **Sempre carregado:** `regras-duras`, `armadilhas`, `product`, `tech`, `structure`, `idioma` — leia primeiro se estiver em dúvida.
+1. **Sempre carregado:** `regras-duras`, `armadilhas`, `product`, `tech`, `structure`, `idioma`, **`cerebro-fluxo-b`** — leia primeiro se estiver em dúvida.
 2. **Sob demanda:** todos os demais arquivos em `.kiro/steering/`. Ative com `#nome` no chat, ou o Kiro pode ativar sozinho via `inclusion: auto`.
 3. **Mapa rápido tarefa→arquivo:** `#mapa-tarefas`.
 4. **Glossário de siglas do projeto:** `#glossario`.
@@ -40,7 +40,8 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 | “auditoria design / cores / botões / velocidade / Web Vitals” | `#auditoria-design-velocidade` · `.cursor/commands/auditoria-design-velocidade.md` · `docs/PROMPT-AUDITORIA-DESIGN-VELOCIDADE-OPUS.md` |
 | “mude texto/áudio da cadência B ou C” | `#fluxos` `#helpers-canonicos` + `src/lib/multichannelCadenceTexts.ts` |
 | “webhook Whapi / Evolution / dedupe / ACK” | `#wa-webhook` |
-| “Sofia / Cérebro / Fluxo B / simulador” | `#cerebro-fluxo-b` |
+| “Sofia / Cérebro / Fluxo B / simulador / Grupo A vs IA” | `#cerebro-fluxo-b` (always) · armadilha #36 |
+| “ligar Cérebro / modal automações / opt-in” | `#cerebro-fluxo-b` · `src/lib/consultantAutomationPrefs.ts` (`CEREBRO_OPT_IN`) · `ConsultantAutomationPrefsModal` |
 | “voz / SMS / Velip / DNC” | `#voz-sms` |
 | “hub de agendamentos / agenda manual” | `#agendamentos-hub` |
 | “cross-sell / telecom / seguros no card” | `#cross-sell` |
@@ -79,6 +80,7 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
   - **C = `cap_c`** (default 50) — RECALL_*
   - **Global B+C = `cap_global_outreach`** (default 200) — teto anti-ban
   - Excedeu → adia p/ próxima manhã BRT (nunca descarta). Alertas 60/85/100 % em `automation_skip_log`.
+- **Cérebro ≠ Grupo A ≠ cadência A/B/C:** funil cadastro determinístico manda; Cérebro só laterais (opt-in `cerebro_ativo` default off). Ver `#cerebro-fluxo-b` / armadilha #36.
 
 ## Steering — índice completo
 
@@ -109,7 +111,7 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `wallet-stripe` | fileMatch wallet | Carteira, Stripe, comissão |
 | `pos-venda` | fileMatch pos-venda | Pós-venda WA D30–D210 + retentativa |
 | `wa-webhook` | fileMatch whapi/evolution webhook | Contrato inbound Whapi + paridade Evolution |
-| `cerebro-fluxo-b` | fileMatch cerebro / fluxo-b | Produção vs simulador Sofia |
+| `cerebro-fluxo-b` | always | Cérebro × Fluxo B × **Grupo A** (como deve funcionar) |
 | `erros-operacionais` | auto | Playbook falhas: Velip crédito/SMS/voz, IA muda, OCR, Easy Panel, Supabase, caps |
 | `voz-sms` | fileMatch voice-* / voz UI | Velip, DNC, cross-channel IK/UNDELIV |
 | `agendamentos-hub` | fileMatch AgendamentosHub / send-scheduled | Timeline multi-motor; agenda sem quiet hours |

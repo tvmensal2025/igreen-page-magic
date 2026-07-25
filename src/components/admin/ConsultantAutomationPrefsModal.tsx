@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
+import { CEREBRO_OPT_IN } from "@/lib/consultantAutomationPrefs";
 import { toast } from "sonner";
 
 type Props = {
@@ -29,6 +30,8 @@ export function ConsultantAutomationPrefsModal({
   const {
     draft,
     setPack,
+    cerebroEnabled,
+    setCerebroEnabled,
     loading,
     saving,
     error,
@@ -67,12 +70,13 @@ export function ConsultantAutomationPrefsModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Mensagens automáticas</DialogTitle>
           <DialogDescription>
-            Padrão: tudo ligado. Você pode desligar o que não quiser. Conversar no
-            chat e agendar mensagem à mão continuam liberados.
+            Escolha o que o sistema pode mandar sozinho. Conversar no chat e
+            agendar à mão continuam liberados. O Cérebro (IA) nasce desligado —
+            só liga se você marcar abaixo.
           </DialogDescription>
         </DialogHeader>
 
@@ -85,6 +89,29 @@ export function ConsultantAutomationPrefsModal({
                 Tem coisa desligada. Ligue só o que você realmente quer usar.
               </p>
             )}
+
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-3">
+              <div className="min-w-0 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{CEREBRO_OPT_IN.title}</span>
+                  {!cerebroEnabled && (
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      Desligado
+                    </Badge>
+                  )}
+                  <Badge variant="outline" className="text-[10px] font-normal">
+                    Opt-in
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">{CEREBRO_OPT_IN.help}</p>
+              </div>
+              <Switch
+                checked={cerebroEnabled}
+                onCheckedChange={setCerebroEnabled}
+                aria-label={CEREBRO_OPT_IN.title}
+              />
+            </div>
+
             {packs.map((p) => {
               const on = !!draft[p.field];
               return (

@@ -21,12 +21,20 @@ Stack/estrutura detalhada: `tech.md` + `structure.md` (always). Domínios sob de
 ## Jornadas
 
 1. Meta/CTWA → atribuição UUID → rodízio → Whapi → bot/Cérebro
-2. Cadência Zero Lead Perdido (`cadence-tick` + `lead_cadence_state`) — A/B/C
+2. Cadência Zero Lead Perdido (`cadence-tick` + `lead_cadence_state`) — A/B/C (**disparo**; não é o Cérebro)
 3. Portal 2: `finalize-capture` → worker-portal-2 → OTP/facial → CRM em análise
 4. Club separado: `finalize-club` → worker-club
 5. Humano: takeover, agenda, manual-step-send
-6. **Esteira multiproduto** (`sales` / `sale_stage_*`) ≠ **pós-venda WA** (`pos_venda_*` D30–D210 + retentativa)
+6. **Esteira multiproduto** (`sales` / `sale_stage_*`) ≠ **pós-venda WA** (`pos_venda_*` D30…D210 + retentativa)
 7. Ads + Stripe wallet
+
+### Cérebro × Grupo A (obrigatório saber)
+
+- **Cadência A/B/C** = dispara quando o lead some.
+- **Grupo A cadastro** = funil determinístico (conta/doc/portal) **manda** nos passos.
+- **Cérebro (Sofia)** = IA só responde inbound nas laterais (dúvida livre / fora do cadastro / carteira). **Não** substitui o funil.
+- Opt-in: `consultants.cerebro_ativo` default **`off`**; modal Mensagens automáticas (`CEREBRO_OPT_IN`). Novo consultor tem que ligar de propósito.
+- Canônico completo: `#cerebro-fluxo-b` · armadilha #36 · rule Cursor `cerebro-vs-grupo-a`.
 
 ## O que NÃO é
 
@@ -34,6 +42,7 @@ Stack/estrutura detalhada: `tech.md` + `structure.md` (always). Domínios sob de
 - Portal 1 / Playwright cadastro default (morto 2026-06)
 - CRM SaaS genérico ou chatbot avulso
 - Ligar motor/massa novo sem pedido
+- Cérebro conduzindo o Grupo A inteiro / Cérebro = cadência A/B/C
 
 ## Regras de ouro
 

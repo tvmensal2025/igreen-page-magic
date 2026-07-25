@@ -253,7 +253,7 @@ export function FlowQuickBar({ consultantId, customerId, customerName, disabled 
         <PopoverTrigger asChild>
           <Button
             variant="ghost" size="icon"
-            className="h-9 w-9 lg:h-8 lg:w-8 shrink-0 text-muted-foreground hover:text-primary relative"
+            className="h-11 w-11 shrink-0 text-muted-foreground hover:text-primary relative"
             disabled={disabled || !!seq || !customerId}
             title={!customerId ? "Carregando lead…" : "Enviar passo do fluxo"}
           >

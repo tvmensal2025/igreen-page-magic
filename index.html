@@ -37,7 +37,13 @@
     <meta name="format-detection" content="telephone=no" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Fontes: carregadas uma única vez via src/index.css (evita duplicar Google Fonts + @fontsource) -->
+    <!-- Fontes no <head> (não @import no CSS): quebra a cadeia serial CSS→fonts.
+         Mantém todas as famílias referenciadas em tokens/tailwind/ilhas (não cortar
+         Space Grotesk/DM Sans/Inter/Bricolage — ainda usadas). -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=Noto+Color+Emoji&display=swap"
+    />
     <title>suporte-igreen</title>
     <meta name="description" content="igreen.cloud is a web application for managing and interacting with AI-powered services.">
     <meta name="author" content="iGreen Energy" />

@@ -72,7 +72,7 @@ export function AiSuggestReplies({ customerId, disabled, onPick }: AiSuggestRepl
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 lg:h-8 lg:w-8 shrink-0 text-muted-foreground hover:text-primary"
+          className="h-11 w-11 shrink-0 text-muted-foreground hover:text-primary"
           disabled={disabled || !customerId}
           title="Sugerir resposta com IA"
         >

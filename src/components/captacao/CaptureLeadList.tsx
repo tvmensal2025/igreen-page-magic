@@ -1289,7 +1289,7 @@ export function CaptureLeadList({
           <Button
             size="sm"
             variant="default"
-            className="flex-1 min-h-[44px] lg:h-8 text-[11px] rounded-lg"
+            className="flex-1 min-h-[44px] text-[11px] rounded-lg"
             disabled={!whatsappConnected}
             title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
             onClick={openBatch}
@@ -1304,7 +1304,7 @@ export function CaptureLeadList({
           <Button
             size="sm"
             variant="default"
-            className="flex-1 min-h-[44px] lg:h-8 text-[11px] gap-1.5 rounded-lg"
+            className="flex-1 min-h-[44px] text-[11px] gap-1.5 rounded-lg"
             onClick={async () => {
               const phone = await prompt({
                 title: "Nova conversa por número",
@@ -1321,7 +1321,7 @@ export function CaptureLeadList({
           <Button
             size="icon"
             variant="ghost"
-            className="h-11 w-11 lg:h-8 lg:w-8 shrink-0"
+            className="h-11 w-11 shrink-0"
             title="Atualizar lista"
             onClick={() => void load()}
           >

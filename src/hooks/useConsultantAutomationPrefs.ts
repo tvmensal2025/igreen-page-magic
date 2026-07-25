@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  CEREBRO_OPT_IN,
   CONSULTANT_AUTO_PACKS,
   DEFAULT_CONSULTANT_AUTOMATION_PREFS,
   SUGGESTED_FIRST_ACK_PREFS,
@@ -37,6 +38,7 @@ function toSuggestedDraft(): PrefsDraft {
 export function useConsultantAutomationPrefs(consultantId: string | null | undefined) {
   const [prefs, setPrefs] = useState<ConsultantAutomationPrefs | null>(null);
   const [draft, setDraft] = useState<PrefsDraft>(toDraft(null));
+  const [cerebroEnabled, setCerebroEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,28 +47,34 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     if (!consultantId) {
       setPrefs(null);
       setDraft(toDraft(null));
+      setCerebroEnabled(false);
       setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
-    const { data, error: err } = await supabase
-      .from("consultant_automation_prefs")
-      .select(
-        "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
-      )
-      .eq("consultant_id", consultantId)
-      .maybeSingle();
 
-    if (err) {
-      setError(err.message);
+    const [prefsRes, consRes] = await Promise.all([
+      supabase
+        .from("consultant_automation_prefs")
+        .select(
+          "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
+        )
+        .eq("consultant_id", consultantId)
+        .maybeSingle(),
+      supabase.from("consultants").select("cerebro_ativo").eq("id", consultantId).maybeSingle(),
+    ]);
+
+    if (prefsRes.error) {
+      setError(prefsRes.error.message);
       setPrefs(null);
-      // Erro de leitura → fail-closed (igual ao motor), não "tudo ligado".
       setDraft(toDraft(null));
+      setCerebroEnabled(false);
       setLoading(false);
       return;
     }
 
+    const data = prefsRes.data;
     const row = data
       ? ({
           consultant_id: consultantId,
@@ -82,9 +90,13 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
           ...DEFAULT_CONSULTANT_AUTOMATION_PREFS,
         };
 
+    const needsFirstAck = !data || !row.acked_at;
+    const cerebroDbOn = String((consRes.data as { cerebro_ativo?: string } | null)?.cerebro_ativo || "") === "on";
+    // 1º ack: sugere OFF (opt-in). Depois: espelha o banco.
+    setCerebroEnabled(needsFirstAck ? CEREBRO_OPT_IN.suggestedOnFirstAck : cerebroDbOn);
+
     setPrefs(row);
-    // Sem row / sem ack: modal sugere tudo ligado; estado real continua OFF até save.
-    setDraft(!data || !row.acked_at ? toSuggestedDraft() : toDraft(row));
+    setDraft(needsFirstAck ? toSuggestedDraft() : toDraft(row));
     setLoading(false);
   }, [consultantId]);
 
@@ -111,6 +123,8 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
           }
         : (opts?.draftOverride ?? draft);
 
+      const nextCerebro = opts?.leaveAllOff ? false : cerebroEnabled;
+
       const payload = {
         consultant_id: consultantId,
         ...body,
@@ -119,17 +133,27 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         updated_by: consultantId,
       };
 
-      const { data, error: err } = await supabase
-        .from("consultant_automation_prefs")
-        .upsert(payload, { onConflict: "consultant_id" })
-        .select(
-          "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
-        )
-        .maybeSingle();
+      const [{ data, error: err }, consUpd] = await Promise.all([
+        supabase
+          .from("consultant_automation_prefs")
+          .upsert(payload, { onConflict: "consultant_id" })
+          .select(
+            "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
+          )
+          .maybeSingle(),
+        supabase
+          .from("consultants")
+          .update({ cerebro_ativo: nextCerebro ? "on" : "off" })
+          .eq("id", consultantId),
+      ]);
 
       setSaving(false);
       if (err) {
         setError(err.message);
+        return false;
+      }
+      if (consUpd.error) {
+        setError(consUpd.error.message);
         return false;
       }
 
@@ -145,15 +169,18 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
 
       setPrefs(row);
       setDraft(toDraft(row));
+      setCerebroEnabled(nextCerebro);
       return true;
     },
-    [consultantId, draft],
+    [consultantId, draft, cerebroEnabled],
   );
 
   return {
     prefs,
     draft,
     setPack,
+    cerebroEnabled,
+    setCerebroEnabled,
     loading,
     saving,
     error,
@@ -161,6 +188,6 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     save,
     packs: CONSULTANT_AUTO_PACKS,
     needsAck: needsAutomationPrefsAck(prefs),
-    hasOff: anyPackOff(prefs),
+    hasOff: anyPackOff(prefs) || !cerebroEnabled,
   };
 }

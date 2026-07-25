@@ -76,26 +76,44 @@ export default defineConfig({
     // dentro do DevTools. Sem isso, o que aparece é só o bundle minificado.
     sourcemap: false,
     chunkSizeWarningLimit: 900,
+    // Objeto em manualChunks força Rollup a tratar esses pacotes como deps do
+    // entry e o Vite emite <link rel="modulepreload"> no index.html — /auth
+    // baixava three/jspdf/charts/xyflow sem usar. Função só nomeia o chunk
+    // quando o módulo entra no grafo (rota lazy). Filtro abaixo é cinto.
+    modulePreload: {
+      resolveDependencies: (_filename, deps) =>
+        deps.filter((dep) => {
+          const heavy =
+            /(?:^|\/)(?:three|jspdf|charts|xyflow|xlsx|html2canvas|pdf|framer-motion)(?:-|\/|\.js)/i;
+          return !heavy.test(dep);
+        }),
+    },
     rollupOptions: {
       output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          "supabase": ["@supabase/supabase-js"],
-          "radix": [
-            "@radix-ui/react-dialog",
-            "@radix-ui/react-dropdown-menu",
-            "@radix-ui/react-tabs",
-            "@radix-ui/react-popover",
-            "@radix-ui/react-select",
-            "@radix-ui/react-tooltip",
-          ],
-          "charts": ["recharts"],
-          "icons": ["lucide-react"],
-          "xlsx": ["xlsx"],
-          "xyflow": ["@xyflow/react"],
-          "three": ["three", "@react-three/fiber", "@react-three/drei"],
-          "jspdf": ["jspdf"],
-          "framer-motion": ["framer-motion"],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          // Ordem importa: pacotes com "react" no path (radix, lucide-react,
+          // @react-three) precisam casar ANTES do vendor React.
+          if (id.includes("@radix-ui/")) return "radix";
+          if (id.includes("@supabase/supabase-js")) return "supabase";
+          if (id.includes("recharts")) return "charts";
+          if (id.includes("lucide-react")) return "icons";
+          if (id.includes("/xlsx/") || id.endsWith("/xlsx") || id.includes("node_modules/xlsx")) {
+            return "xlsx";
+          }
+          if (id.includes("@xyflow/")) return "xyflow";
+          if (id.includes("@react-three/") || /node_modules\/three\//.test(id)) {
+            return "three";
+          }
+          if (id.includes("jspdf")) return "jspdf";
+          if (id.includes("html2canvas")) return "html2canvas";
+          if (id.includes("framer-motion")) return "framer-motion";
+          if (
+            /node_modules\/(?:react|react-dom)\//.test(id) ||
+            /node_modules\/react-router(?:-dom)?\//.test(id)
+          ) {
+            return "react-vendor";
+          }
         },
       },
     },

@@ -106,7 +106,7 @@ export function VoiceTemplatePicker({ consultantId, customerName, onSendAudioUrl
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 lg:h-8 lg:w-8 shrink-0 text-primary hover:text-primary hover:bg-primary/10"
+          className="h-11 w-11 shrink-0 text-primary hover:text-primary hover:bg-primary/10"
           disabled={disabled}
           title="Enviar template de voz personalizado"
         >

@@ -18,6 +18,15 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - NÃO FAÇA: pedir reconnect Evolution por `whatsapp_instances.needs_reconnect`.
 - FAÇA: agenda (`send-scheduled-messages`) e Disparo PRO (`bulk-scheduler`) via `resolveConsultantOutboundChannel`; agenda **sem** quiet hours.
 
+## Cérebro × Grupo A (conversa WA)
+- FAÇA: funil de cadastro do **Grupo A** (determinístico) manda nos passos (conta/doc/portal). Evidência: `fluxo-a-bypass` + `classifyCadastroInput` em `whapi-webhook`.
+- FAÇA: Cérebro só nas laterais — dúvida livre, fora do cadastro, ou cliente carteira. Opt-in `cerebro_ativo` (**default `off`**). Modal: `CEREBRO_OPT_IN` / Mensagens automáticas. 1º ack sugere Cérebro OFF.
+- FAÇA: lembrar — cadência A/B/C = **disparo**; Cérebro = **resposta** inbound; lead responde → pausa cadência ~72h.
+- FAÇA: teste só com `cerebro_numeros_teste` e **esvaziar** depois; não ligar Cérebro em massa sem pedido.
+- NÃO FAÇA: tratar `cerebro_ativo=on` como “IA conduz o Grupo A inteiro”.
+- NÃO FAÇA: Cérebro no lugar do OCR/portal/passo esperado; confundir com Cérebro Ads/MG.
+- Detalhe: `#cerebro-fluxo-b` (always) · armadilha #36 · `#wa-webhook` item 10 · rule `cerebro-vs-grupo-a`.
+
 ## Campanha / rodízio = UUID
 - FAÇA: `facebook_campaigns.id` → `customers.source_campaign_id` → `rodizio_pools.campaign_id`.
 - FAÇA ordem: AD ID → `fb_campaign_id` → `ctwa_clid`; fallback: protocolo → `initial_message` exact.

@@ -19,6 +19,8 @@ Classificação em `_shared/cadence-engine.ts` via `stageGroup(stage)`.
 ## Cérebro
 Módulo de IA de produção que responde no WhatsApp: `_shared/cerebro/resposta-hook.ts` → `responderComCerebro`. Também mora aqui a escala de campanhas Meta (`_shared/brain-*.ts`). Não confundir com o **Simulador Fluxo B** (dryRun em `_shared/fluxo-b-ia/`).
 
+**Com o Grupo A:** o funil de cadastro organizado (passos determinísticos) **manda**. O Cérebro **não substitui** essa trilha — responde dúvida livre / fora do passo / carteira. Opt-in: `consultants.cerebro_ativo` (default `off`, modal Mensagens automáticas). Canônico: `#cerebro-fluxo-b`.
+
 ## Cadence Tick
 Cron que roda o motor A/B/C: edge `cadence-tick`. Consome `lead_cadence_state`, aplica gates (kill switch, toggle, janela BRT, DNC, cross-channel dead, cap A/B/C/global) e dispara Voz/SMS/WhatsApp/Meta audience.
 

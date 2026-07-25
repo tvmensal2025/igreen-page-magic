@@ -1,0 +1,67 @@
+---
+description: Cérebro × Grupo A × A/B/C — canônico completo (sempre ativo)
+alwaysApply: true
+---
+
+# Cérebro × Grupo A × cadência — memória obrigatória
+
+Quando o usuário falar de Sofia, Cérebro, Grupo A, automações, “IA no Zap”, opt-in do modal — use ESTE canônico. Detalhe longo: `.kiro/steering/cerebro-fluxo-b.md` (`#cerebro-fluxo-b`).
+
+## Três coisas diferentes (nunca misturar)
+
+| Peça | O que é | Quando age |
+|---|---|---|
+| **Cadência A/B/C** | Motor de **disparo** (`cadence-tick`) | Lead sumiu / esfriou / recall — procura o lead |
+| **Grupo A (funil cadastro)** | Passos **determinísticos** (conta → doc → e-mail → portal) | Lead **em cadastro**; OCR/portal |
+| **Cérebro (Sofia)** | IA de **resposta** inbound (`responderComCerebro`) | Lead **escreveu**; dúvida / abertura / laterais |
+
+- Cérebro **≠** pack A/B/C e **≠** “conduz o Grupo A inteiro”.
+- Lead responde → cadência **pausa ~72h** (`lead_responded`).
+
+## Como DEVE funcionar (webhook)
+
+| Situação | Quem responde |
+|---|---|
+| Variante **A** + em cadastro | **Determinístico** — Cérebro **pulado** (`fluxo-a-bypass`) |
+| Em cadastro + input **esperado** (foto, valor, botão do passo) | **Determinístico** — Cérebro não interpreta |
+| Em cadastro + pergunta **livre** / off-topic | Cérebro responde **sem mudar o step** |
+| **Fora** do cadastro | Cérebro pode assumir o turno |
+| Cliente carteira (`igreen_sync` / `igreen_extension`) | Cérebro dúvidas — **sem** OCR/Portal 2 |
+| Lead **silencioso** | Cadência Grupo A (nudge/SMS/call) — **não** Cérebro |
+| Humano assumiu / DNC / bot pausado | Silêncio automático |
+| Variantes scriptadas D/M/C/E/F | Construtor — IA pulada |
+
+Evidência: `whapi-webhook/index.ts` ~3352–3396. Paridade Evolution.
+
+## Ativação (opt-in)
+
+- Coluna: `consultants.cerebro_ativo` = `on` | `off`
+- **Default banco: `off`** (migration `20260725190000_cerebro_ativo_default_off_opt_in`) — **novo consultor nasce OFF**
+- UI: modal/card **Mensagens automáticas** (`ConsultantAutomationPrefsModal` / `CEREBRO_OPT_IN` em `src/lib/consultantAutomationPrefs.ts`)
+- No **1º ack** o toggle Cérebro vem **sugerido OFF** — tem que ligar de propósito
+- “Deixar tudo desligado” também zera `cerebro_ativo`
+- Teste controlado: `rollout_config.cerebro_numeros_teste` (CSV) — liberar Cérebro só nesses números sem ligar o consultor; **esvaziar** quando acabar o teste
+- Também pode responder se `flow_engine_v3` ∈ `canary`/`on` (gate separado do motor V3)
+- **V3** (`flow_engine_v3`) ≠ Cérebro: V3 só assume turno se `on` / `use_engine_v3`; default seguro off; cron rollout = `manual_only`
+
+## Piloto / estado conhecido
+
+- Rafael (`rafael.ids@icloud.com` / `0c2711ad-…`): `cerebro_ativo=on` (ligado sob pedido)
+- Não ligar Cérebro em massa em outros consultores sem pedido explícito
+- Não confundir com **Cérebro MG / Ads** (`brain_config`, `#cerebro-mg-e-rodizio`)
+
+## FAÇA / NÃO FAÇA
+
+- FAÇA: Grupo A determinístico manda no cadastro; Cérebro só laterais
+- FAÇA: opt-in no modal; default off para novos
+- FAÇA: se mexer no roteamento, preservar `fluxo-a-bypass` + `classifyCadastroInput`
+- NÃO FAÇA: `cerebro_ativo=on` = “IA conduz o Grupo A”
+- NÃO FAÇA: Cérebro substituir OCR/portal/passos esperados
+- NÃO FAÇA: achar que Cérebro dispara A/B/C ou conta em `cap_b`/`cap_c`
+- NÃO FAÇA: deixar `cerebro_numeros_teste` cheio em produção sem teste ativo
+
+## Onde está na doc (sempre / sob demanda)
+
+- Always Cursor: esta rule
+- Always Kiro: `#regras-duras` · `#armadilhas` #36 · `#product`
+- Completo: `#cerebro-fluxo-b` · `#wa-webhook` item 10 · `#glossario` Cérebro · `AUDITORIA-STEERING`

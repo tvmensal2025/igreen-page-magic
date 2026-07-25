@@ -36,6 +36,7 @@ Nested: #[[file:supabase/functions/whapi-webhook/AGENTS.md]]
 7. Keyword/parceiro: `keyword-matcher` + `qr-phrase` (paridade nos dois webhooks)
 8. **Retentativa PV** — `activatePosVendaRecadastro` ~`:1846–1868` (antes dos motores; clique → Grupo A)
 9. **Motores (ordem real)** — V3 sombra `runEngineV3IfEnabled` ~`:3163–3174` (hoje observa/delega) → Cérebro sombra ~`:3179–3200` → Cérebro/Fluxo B resposta ~`:3272–3307` → fallback `runEngine()` (`runBotFlow`/`runConversationalFlow`) ~`:3438–3440`. O `:3213` é só a **definição** de `runEngine`, não a execução.
+10. **Cérebro × Grupo A (cadastro)** — **não** é “Cérebro manda em tudo”. Em variante A + cadastro → `fluxo-a-bypass` (determinístico). Em cadastro + input esperado → determinístico. Só freeform / fora do cadastro / carteira → Cérebro. Detalhe canônico: `#cerebro-fluxo-b` § “Como DEVE funcionar com o Grupo A”.
 
 Paridade Evolution: mesmos helpers compartilhados (`normalizePhone`, dedupe, `runBotFlow`, `runConversationalFlow`, `routeEngineV2`, rodízio, `isBotGloballyEnabled`) — espelho em `evolution-webhook/index.ts` imports.
 

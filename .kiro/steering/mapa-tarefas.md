@@ -37,6 +37,9 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Dedupe evento | `webhook_message_dedup` via `_shared/bot/dedupe.ts` |
 | Throttle anti-ban | `whapi-throttle.ts` + RPC `claim_whapi_send_slot` |
 | Kill switch geral | `app_settings.bot_global_enabled` + `_shared/bot/global-flag.ts` |
+| Cérebro × Grupo A (como deve funcionar) | **`#cerebro-fluxo-b`** (always) · armadilha #36 · `whapi-webhook` `fluxo-a-bypass` |
+| Ligar/desligar Cérebro (opt-in) | `consultants.cerebro_ativo` + modal `ConsultantAutomationPrefsModal` / `CEREBRO_OPT_IN` |
+| Teste Cérebro só em números | `rollout_config.cerebro_numeros_teste` (CSV) — esvaziar depois |
 
 ## Meta / rodízio / atribuição
 

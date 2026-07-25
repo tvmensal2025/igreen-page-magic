@@ -39,6 +39,20 @@ export const SUGGESTED_FIRST_ACK_PREFS: Omit<ConsultantAutomationPrefs, "consult
   acked_at: null,
 };
 
+/**
+ * Cérebro IA (consultants.cerebro_ativo) — separado dos packs A/B/C.
+ * Novo consultor nasce OFF; só liga se marcar no modal.
+ */
+export const CEREBRO_OPT_IN = {
+  title: "Cérebro (Sofia) no WhatsApp",
+  help:
+    "Quando o lead manda mensagem, a IA ajuda na conversa (dúvidas, abertura). " +
+    "O cadastro organizado do Grupo A continua mandando nos passos (conta, documento, portal) — a IA não fura essa ordem. " +
+    "Não é o disparo A/B/C (não procura quem sumiu sozinho). Você pode assumir o chat a qualquer momento.",
+  /** 1º ack: sugerido desligado — tem que ligar de propósito. */
+  suggestedOnFirstAck: false,
+} as const;
+
 export const CONSULTANT_AUTO_PACKS: Array<{
   pack: ConsultantAutoPack;
   field: keyof Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;

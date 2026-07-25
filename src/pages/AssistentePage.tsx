@@ -229,7 +229,7 @@ export default function AssistentePage() {
       {/* Messages */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 space-y-3 scroll-smooth"
+        className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 py-4 space-y-3 scroll-smooth"
       >
         <div className="max-w-2xl mx-auto space-y-3">
           {messages.map((msg, i) => (

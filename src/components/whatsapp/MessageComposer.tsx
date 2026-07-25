@@ -37,8 +37,8 @@ interface MessageComposerProps {
   hideFlowQuickBar?: boolean;
 }
 
-const TOOL_BTN = "h-9 w-9 lg:h-8 lg:w-8 shrink-0 text-muted-foreground hover:text-primary";
-const SEND_BTN = "h-11 w-11 lg:h-8 lg:w-8 shrink-0 bg-primary hover:bg-primary/90 disabled:opacity-50";
+const TOOL_BTN = "h-11 w-11 shrink-0 text-muted-foreground hover:text-primary";
+const SEND_BTN = "h-11 w-11 shrink-0 bg-primary hover:bg-primary/90 disabled:opacity-50";
 
 export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMedia, templates, disabled, initialMessage, consultantId, customerId, customerJid, customerName, hideFlowQuickBar = false }: MessageComposerProps) {
   const [text, setText] = useState("");
@@ -209,7 +209,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
           disabled={disabled || !onSendAudio}
           size="icon"
           variant="ghost"
-          className={`${TOOL_BTN} lg:h-8 lg:w-8`}
+          className={TOOL_BTN}
           title="Gravar áudio"
         >
           <Mic className="h-4 w-4" />
@@ -222,7 +222,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
     return (
       <div className="relative border-t border-border bg-card p-2.5 lg:p-2" style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom, 0px))" }}>
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="h-10 w-10 lg:h-8 lg:w-8 text-destructive" onClick={audio.cancelRecording}><MicOff className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon" className="h-11 w-11 text-destructive" onClick={audio.cancelRecording}><MicOff className="h-4 w-4" /></Button>
           <div className="flex-1 flex items-center gap-2">
             <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
             <span className="text-sm text-foreground font-mono">{audio.formatTime(audio.recordingTime)}</span>
@@ -282,7 +282,7 @@ export function MessageComposer({ onSend, onSendAudio, onSendAudioUrl, onSendMed
           enterKeyHint="send"
           inputMode="text"
           autoCapitalize="sentences"
-          className="flex-1 min-w-0 resize-none bg-secondary rounded-xl lg:rounded-lg px-3.5 py-2.5 lg:py-1.5 text-base lg:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/60 min-h-[44px] lg:min-h-[34px] max-h-[120px] lg:max-h-[88px]"
+          className="flex-1 min-w-0 resize-none bg-secondary rounded-xl lg:rounded-lg px-3.5 py-2.5 lg:py-1.5 text-base lg:text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/60 min-h-[44px] max-h-[120px] lg:max-h-[88px]"
           style={{
             overflow: "auto",
             fontFamily: 'Figtree, system-ui, "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif',

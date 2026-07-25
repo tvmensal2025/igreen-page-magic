@@ -185,8 +185,8 @@ export async function getFlowEngineV3(
 // própria, ligar o Cérebro para todos NÃO aciona o engine v3.
 //
 // Valores: 'off' (não responde) | 'on' (Cérebro é fonte de verdade do
-// consultor). Default seguro: 'off'. Cache in-process de 30s, igual às demais.
-// Rollback: `UPDATE consultants SET cerebro_ativo='off'` (vale em ~30s).
+// consultor). Default no banco: 'off' (opt-in no modal Mensagens automáticas).
+// Cache in-process de 30s. Rollback: `UPDATE consultants SET cerebro_ativo='off'`.
 
 const cerebroAtivoCache = new Map<string, { value: boolean; expiresAt: number }>();
 

@@ -5,6 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
 import { ConsultantAutomationPrefsModal } from "@/components/admin/ConsultantAutomationPrefsModal";
+import { CEREBRO_OPT_IN } from "@/lib/consultantAutomationPrefs";
 import { toast } from "sonner";
 
 type Props = {
@@ -18,8 +19,18 @@ type Props = {
 
 export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
-  const { draft, setPack, loading, saving, save, packs, hasOff, error } =
-    useConsultantAutomationPrefs(consultantId);
+  const {
+    draft,
+    setPack,
+    cerebroEnabled,
+    setCerebroEnabled,
+    loading,
+    saving,
+    save,
+    packs,
+    hasOff,
+    error,
+  } = useConsultantAutomationPrefs(consultantId);
 
   const onSave = async () => {
     const ok = await save();
@@ -29,9 +40,10 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
 
   const visiblePacks =
     variant === "offOnly" ? packs.filter((p) => !draft[p.field]) : packs;
+  const showCerebroRow = variant === "full" || !cerebroEnabled;
 
-  // Dashboard limpo: se tudo ligado, não mostra o card.
-  if (variant === "offOnly" && !loading && visiblePacks.length === 0) {
+  // Dashboard limpo: se tudo ligado (incl. Cérebro), não mostra o card.
+  if (variant === "offOnly" && !loading && visiblePacks.length === 0 && cerebroEnabled) {
     return null;
   }
 
@@ -47,7 +59,7 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
               <CardDescription>
                 {variant === "offOnly"
                   ? "Só o que está desligado. Ligue o que quiser voltar a mandar sozinho. O restante já está ligado."
-                  : "Só vale para o seu painel. Padrão: tudo ligado. Se desligar, o sistema não manda nada sozinho para os seus clientes."}
+                  : "Só vale para o seu painel. Cérebro (IA) é opt-in. Se desligar um pack, o sistema não manda aquilo sozinho."}
               </CardDescription>
             </div>
             {hasOff && variant === "full" && (
@@ -61,29 +73,51 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
           {loading ? (
             <p className="text-sm text-muted-foreground">Carregando…</p>
           ) : (
-            visiblePacks.map((p) => {
-              const on = !!draft[p.field];
-              return (
-                <div key={p.pack} className="flex items-center justify-between gap-3">
+            <>
+              {showCerebroRow && (
+                <div className="flex items-start justify-between gap-3 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium flex items-center gap-2">
-                      {p.title}
-                      {!on && (
+                    <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                      {CEREBRO_OPT_IN.title}
+                      {!cerebroEnabled && (
                         <Badge variant="outline" className="text-[10px] font-normal">
                           Desligado
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">{p.help}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{CEREBRO_OPT_IN.help}</p>
                   </div>
                   <Switch
-                    checked={on}
-                    onCheckedChange={(v) => setPack(p.field, v)}
-                    aria-label={p.title}
+                    checked={cerebroEnabled}
+                    onCheckedChange={setCerebroEnabled}
+                    aria-label={CEREBRO_OPT_IN.title}
                   />
                 </div>
-              );
-            })
+              )}
+              {visiblePacks.map((p) => {
+                const on = !!draft[p.field];
+                return (
+                  <div key={p.pack} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        {p.title}
+                        {!on && (
+                          <Badge variant="outline" className="text-[10px] font-normal">
+                            Desligado
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground truncate">{p.help}</p>
+                    </div>
+                    <Switch
+                      checked={on}
+                      onCheckedChange={(v) => setPack(p.field, v)}
+                      aria-label={p.title}
+                    />
+                  </div>
+                );
+              })}
+            </>
           )}
           <div className="flex flex-wrap gap-2 pt-1">
             <Button size="sm" disabled={saving || loading} onClick={() => void onSave()}>

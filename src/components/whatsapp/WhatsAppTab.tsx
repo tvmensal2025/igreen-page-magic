@@ -254,7 +254,9 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
       {/* Sub-abas: mobile (<lg) condensadas + "Mais"; desktop todas visíveis */}
       {!immersiveChat && (() => {
         const tabBtnClass = (isActive: boolean) =>
-          `relative flex items-center gap-1 px-2 lg:px-3 py-1.5 text-[10px] lg:text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 min-h-[44px] lg:min-h-0 ${
+          // min-h 44px sempre: viewport lg no celular ("site para computador")
+          // ainda é touch — lg:min-h-0 derrubava o alvo para ~27px.
+          `relative flex items-center gap-1 px-2 lg:px-3 py-1.5 text-[10px] lg:text-[11px] font-medium whitespace-nowrap transition-all duration-200 rounded-lg my-1 min-h-[44px] ${
             isActive
               ? "text-primary bg-primary/8"
               : "text-muted-foreground hover:text-foreground hover:bg-muted/40"

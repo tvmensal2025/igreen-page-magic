@@ -6,7 +6,27 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (comando Opus design+velocidade + audit Sync/alerta/cliente).
+Última atualização: **2026-07-25** (Cérebro × Grupo A na memória always da IA).
+
+## 2026-07-25 — Cérebro na memória always da IA
+Garantir que qualquer chat saiba sem `#` manual:
+- `#cerebro-fluxo-b` → **`inclusion: always`**
+- Cursor rule `cerebro-vs-grupo-a.mdc` → **`alwaysApply: true`** (texto completo)
+- Espelhos: `#product`, `#regras-duras`, `#armadilhas` #36, `AGENTS.md` invioláveis + árvore, `_shared/cerebro/AGENTS.md`
+Conteúdo: 3 peças (cadência ≠ funil A ≠ Cérebro), tabela webhook, opt-in `cerebro_ativo` default off, modal, piloto Rafael, NÃO FAÇA.
+
+## 2026-07-25 — Cérebro × Grupo A (como deve funcionar)
+Regra de produto documentada: **Grupo A manda no funil de cadastro**; Cérebro é voz nas laterais (freeform / fora do cadastro / carteira), não substitui OCR/portal. Evidência: `fluxo-a-bypass` + `classifyCadastroInput` em `whapi-webhook`. Ativação: `cerebro_ativo` default **off**, opt-in no modal (`CEREBRO_OPT_IN`). Piloto Rafael `on`. Arquivos: `#cerebro-fluxo-b` · `#wa-webhook` item 10 · armadilha **#36** · `#glossario` Cérebro.
+
+## 2026-07-25 — Pacote aplicado: design + velocidade (front)
+Read-only audit Opus → código (sem deploy ainda):
+- **P0 preload:** `vite.config.ts` — `manualChunks` função + `modulePreload.resolveDependencies`; build confirma preload só `react-vendor|radix|icons|supabase` (three/jspdf/charts/xyflow **fora** do `/auth`).
+- **Touch desktop-no-mobile:** removido shrink `lg:min-h-0` / `lg:h-8` em WhatsApp (tabs, composer, send, mic, FlowQuickBar, VoiceTemplate, AiSuggest), Captação, Pós-venda, Produtos; `.nav-link` `min-h-11`.
+- **Contraste:** `.painel-elite` / Ads light `--primary` → `152 100% 28%`; badges `--pe-*-ink`; `--pe-info` no dark.
+- **Fontes:** Google Fonts via `<link>` no `index.html` (sem `@import` no CSS).
+- **Scroll:** `min-h-0` em `/assistente` chat list.
+- Gold Disparo PRO → `var(--pe-accent-warm)` (BulkPro/MessageEditor).
+Não feito de propósito: caça total hex, dark-only `/assistente`, mudar `overflow-x: clip`.
 
 ## 2026-07-25 — Comando Opus: auditoria design + velocidade
 Prompt read-only para Kiro/Opus 5 Max varrer UI (tokens, tema dual, botões, páginas) e performance (bundle, lazy, Web Vitals, fontes, FOUC). Regra de certeza: P0/P1 só com `path:linha` / screenshot / métrica. **Prioridade mobile:** celular + desktop-no-mobile; FASE 2B scroll/arrastar — cortar/travar/área morta = P0. Arquivos: `.cursor/commands/auditoria-design-velocidade.md` · `docs/PROMPT-AUDITORIA-DESIGN-VELOCIDADE-OPUS.md` · `#auditoria-design-velocidade`. Índice em `AGENTS.md` + `#mapa-tarefas`.

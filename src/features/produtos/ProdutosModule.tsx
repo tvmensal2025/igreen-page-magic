@@ -82,7 +82,7 @@ export function ProdutosModule({
                   onClick={() => change(id)}
                   aria-label={label}
                   aria-current={active ? "page" : undefined}
-                  className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 min-h-[44px] md:min-h-0 ${
+                  className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 min-h-[44px] ${
                     active
                       ? "text-pv-ink border-b-2 border-pv-accent"
                       : "hover:text-pv-ink"
