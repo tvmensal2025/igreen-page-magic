@@ -46,10 +46,15 @@ export type AdsActionKind =
   | "budget_scale"
   /** Trocar/rotacionar criativo. */
   | "creative_rotate"
+  /**
+   * Semear 1 exploradora MG-ROT nova (cidade sem campanha).
+   * Só em `full` — não abre `create_object` genérico (wizard/humano).
+   */
+  | "seed_explorer"
   // ── Human-only: nunca automáticas. ──
   /** Reescrever segmentação/idade "por garantia" (reinicia aprendizado). */
   | "targeting_patch"
-  /** Criar campanha/adset/ad novo. */
+  /** Criar campanha/adset/ad novo (wizard / clique humano). */
   | "create_object"
   /** Subir telefone/email para Custom Audience. */
   | "audience_sync";
@@ -83,10 +88,11 @@ const LIMITED_ACTIONS: ReadonlySet<AdsActionKind> = new Set([
   "budget_scale",
 ]);
 
-/** `full` adiciona rotação de criativo às de `limited`. */
+/** `full` adiciona criativo + seed controlado às de `limited`. */
 const FULL_ACTIONS: ReadonlySet<AdsActionKind> = new Set([
   ...LIMITED_ACTIONS,
   "creative_rotate",
+  "seed_explorer",
 ]);
 
 export function normalizeAutomationMode(raw: unknown): AdsAutomationMode {

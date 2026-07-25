@@ -4,11 +4,10 @@ Branch: `hardening/cerebro-meta-ads` · base: `56a86aa1270197d7f41db220c91bac767
 
 Este documento é a ordem de execução quando você decidir subir.
 
-> **Status 2026-07-25 (go-live hardening + Cérebro):** migrations aplicadas;
-> edges Ads/cadência deployadas; smokes OK. **Já ligado:** `ENFORCE_CRON_AUTH=true`,
-> `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`,
-> Cérebro piloto Rafael em **`full`** (`kill_switch=false`, `autopilot=true`).
-> Seed / targeting / create_object continuam **human-only** (de propósito).
+> **Status 2026-07-25 (Cérebro que aprende):** piloto Rafael em **`full`** com loop
+> fechado: rank→slots, seed_explorer (1/tick + runway), creative_rotate (pausa ad
+> loser), winner→`winner_photo_url`. `targeting_patch` e `create_object` genérico
+> continuam human-only. `ENFORCE_CRON_AUTH` + CAPI dispatch ligados.
 
 ## Estado alvo
 
@@ -120,8 +119,8 @@ As tabelas novas podem ficar: são aditivas e ninguém legado depende delas.
 
 ## Pendências conhecidas
 
-- Seed automático de exploradoras permanece **human-only** (`automatic_seed_disabled`).
 - `targeting_patch` automático permanece **human-only** (incidente aprendizado Meta).
+- Multi-consultor: cada um precisa de `anchor_campaign_id` + `winner_photo_url`.
 - Types regenerados em `src/integrations/supabase/types.ts` (commit pós-SQL).
 - **Tabelas novas com RLS ligada e sem policy.** `service_role` acessa (é o que
   as edges usam); `anon`/`authenticated` não. Se a UI precisar ler sagas ou

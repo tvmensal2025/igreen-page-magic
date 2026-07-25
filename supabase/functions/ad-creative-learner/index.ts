@@ -7,6 +7,10 @@ import {
 } from "../_shared/cron-auth.ts";
 import { buildCors } from "../_shared/cors.ts";
 import { geminiGenerate } from "../_shared/gemini.ts";
+import {
+  assertSafeAssetUrl,
+  resolveAllowedAssetHosts,
+} from "../_shared/safe-image-fetch.ts";
 
 interface AdRow {
   id: string;
@@ -333,7 +337,7 @@ async function processConsultant(
         type: "losers_detected",
         title,
         message:
-          `${losers.length} anúncios têm amostra robusta de gasto e entrega sem conversão. Revise-os antes de decidir pausar; nada será alterado automaticamente.`,
+          `${losers.length} anúncios têm amostra robusta de gasto e entrega sem conversão. O creative-rotator pode pausar losers elegíveis; revise o painel.`,
         severity: "warning",
         action_label: "Revisar criativos",
         action_payload: {
@@ -344,7 +348,78 @@ async function processConsultant(
     }
   }
 
-  return { updated: rows.length };
+  // Fecha o loop: promove foto do winner para brain_config (sem POST em ad vivo).
+  let winnerPromoted: string | null = null;
+  if (winners.length > 0) {
+    const top = winners[0];
+    const { data: camp } = await supabase
+      .from("facebook_campaigns")
+      .select("id, thumbnail_url, creative_pack_id")
+      .eq("id", top.campaign_id)
+      .maybeSingle();
+    let candidate: string | null = null;
+    const thumb = String(camp?.thumbnail_url || "").trim();
+    if (thumb.startsWith("https://")) candidate = thumb;
+    if (!candidate && camp?.creative_pack_id) {
+      const { data: pack } = await supabase
+        .from("facebook_creative_packs")
+        .select("photos")
+        .eq("id", camp.creative_pack_id)
+        .maybeSingle();
+      const photos = pack?.photos;
+      if (Array.isArray(photos)) {
+        for (const p of photos) {
+          const url = typeof p === "string"
+            ? p
+            : (p && typeof p === "object"
+              ? String((p as { url?: string }).url || "")
+              : "");
+          if (url.startsWith("https://")) {
+            candidate = url;
+            break;
+          }
+        }
+      }
+    }
+    if (candidate) {
+      try {
+        const safe = assertSafeAssetUrl(
+          candidate,
+          resolveAllowedAssetHosts(),
+        ).toString();
+        const { data: settings } = await supabase
+          .from("consultant_ad_settings")
+          .select("brain_config")
+          .eq("consultant_id", consultantId)
+          .maybeSingle();
+        const prev = (settings?.brain_config &&
+            typeof settings.brain_config === "object")
+          ? settings.brain_config as Record<string, unknown>
+          : {};
+        if (String(prev.winner_photo_url || "") !== safe) {
+          await supabase.from("consultant_ad_settings").upsert({
+            consultant_id: consultantId,
+            brain_config: { ...prev, winner_photo_url: safe },
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "consultant_id" });
+          winnerPromoted = safe;
+          console.log(JSON.stringify({
+            action: "winner_promote",
+            consultant_id: consultantId,
+            campaign_id: top.campaign_id,
+            fb_ad_id: top.fb_ad_id,
+          }));
+        }
+      } catch (e) {
+        console.warn(
+          "[ad-creative-learner] winner_promote skipped",
+          (e as Error).message,
+        );
+      }
+    }
+  }
+
+  return { updated: rows.length, winner_promoted: winnerPromoted };
 }
 
 Deno.serve(async (req) => {

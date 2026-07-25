@@ -1,33 +1,20 @@
 ---
-description: Hardening Ads — SQL JÁ APLICADO em produção (2026-07-25); edge functions deployadas
+description: Hardening Ads + Cérebro que aprende (piloto full) — SQL aplicado
 alwaysApply: true
 ---
-# Hardening Ads: SQL aplicado
+# Hardening Ads: SQL aplicado + Cérebro que aprende
 
-As migrations do hardening Ads **já foram aplicadas em produção** em 2026-07-25
-(via MCP `apply_migration`), nesta ordem:
+Migrations do hardening Ads **aplicadas** em 2026-07-25 (+ seed cron MG).
 
-```
-20260725170000_ads_orphan_crons_auth_headers.sql   (#0 órfãos)
-20260724180000_ads_cron_auth_headers.sql
-20260724190000_ads_spend_idempotent_billing.sql
-20260724200000_ad_publish_saga.sql
-20260724210000_facebook_capi_outbox.sql
-```
+## Já ligado (piloto Rafael)
 
-Cadência P0/P1 também aplicada:
-`20260724160000_cadence_inbound_preserve_bc` e
-`20260724161000_crm_auto_progress_cron_auth`.
-
-## Já ligado em produção (2026-07-25)
-
-- `ENFORCE_CRON_AUTH=true` (secrets)
-- `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
-- **Cérebro piloto (Rafael) ON em `full`:** `kill_switch=false`, `autopilot=true`,
-  âncora Uberlândia (`a0189d12-…`), foto legada HTTPS, preferred sem waste-pause.
-  Proteções (pause) sempre on; seed/targeting/create continuam human-only.
+- `ENFORCE_CRON_AUTH=true`, `facebook_capi_dispatch=true`
+- Cérebro `full`: rank→preferred_slugs, slots, seed_explorer (1/tick),
+  creative_rotate (pausa ad loser), winner→`winner_photo_url`
+- Proteções (waste/saldo) sempre on; `AUTO_PERF` só Play
 
 ## Ainda NÃO ligar sem pedido explícito
 
-- `automation_mode=full` (rotação de criativo automática)
-- expansão para outros consultores sem `anchor` + `winner_photo_url`
+- `targeting_patch` automático
+- `create_object` genérico no cron (use `seed_explorer`)
+- expansão multi-consultor sem anchor + foto HTTPS

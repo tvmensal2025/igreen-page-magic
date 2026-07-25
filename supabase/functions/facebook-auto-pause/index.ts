@@ -399,6 +399,21 @@ Deno.serve(async (req) => {
           const bc = (row as any).brain_config;
           // Slots/escala são EXPANSIVOS: seguem fail-closed no gate.
           if (!isAdsExpansiveMutationAllowed(bc)) continue;
+          // Rank primeiro: preferred_slugs aprendido → rotator aplica.
+          try {
+            await fetch(`${base}/functions/v1/campaign-brain-rank`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${sr}`,
+                apikey: sr,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                consultant_id: row.consultant_id,
+                action: "rank",
+              }),
+            });
+          } catch (_) { /* rank best-effort */ }
           const r = await fetch(
             `${base}/functions/v1/facebook-mg-city-rotator`,
             {
@@ -416,11 +431,39 @@ Deno.serve(async (req) => {
             },
           );
           const resp = await r.json().catch(() => ({}));
+          // Seed controlado (1/tick) — separado do ensure para não misturar timeout.
+          let seedResp: Record<string, unknown> = {};
+          try {
+            const sr2 = await fetch(
+              `${base}/functions/v1/facebook-mg-city-rotator`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${sr}`,
+                  apikey: sr,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  consultant_id: row.consultant_id,
+                  seed: true,
+                  activate_next: true,
+                  ensure_active_slots: false,
+                }),
+              },
+            );
+            seedResp = await sr2.json().catch(() => ({}));
+          } catch (e) {
+            seedResp = { error: (e as Error).message };
+          }
           brainTicks.push({
             consultant_id: row.consultant_id,
             status: r.status,
             ok: r.ok,
             ensured: (resp as any)?.ensured,
+            seed_created: (seedResp as any)?.created,
+            seed_log: ((seedResp as any)?.log || []).filter((x: any) =>
+              String(x?.action || "").startsWith("seed") || x?.would_seed
+            ).slice(0, 5),
           });
         }
       } catch (e) {

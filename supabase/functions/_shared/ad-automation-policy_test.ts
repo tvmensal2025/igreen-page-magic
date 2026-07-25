@@ -27,6 +27,7 @@ const EXPANSIVE: AdsActionKind[] = [
   "activate",
   "budget_scale",
   "creative_rotate",
+  "seed_explorer",
 ];
 const HUMAN_ONLY: AdsActionKind[] = [
   "targeting_patch",
@@ -78,7 +79,7 @@ Deno.test("shadow observa, não muta — mas não desliga a proteção", () => {
   assertEquals(isAdsActionAllowed(shadow, "pause_balance"), true);
 });
 
-Deno.test("limited libera defesa e custo; rotação de criativo só em full", () => {
+Deno.test("limited libera defesa e custo; criativo+seed só em full", () => {
   const limited: AdsPolicyInput = {
     autopilot: true,
     automation_mode: "limited",
@@ -87,9 +88,13 @@ Deno.test("limited libera defesa e custo; rotação de criativo só em full", ()
   assertEquals(isAdsActionAllowed(limited, "activate"), true);
   assertEquals(isAdsActionAllowed(limited, "budget_scale"), true);
   assertFalse(isAdsActionAllowed(limited, "creative_rotate"));
+  assertFalse(isAdsActionAllowed(limited, "seed_explorer"));
 
   const full: AdsPolicyInput = { ...limited, automation_mode: "full" };
   assertEquals(isAdsActionAllowed(full, "creative_rotate"), true);
+  assertEquals(isAdsActionAllowed(full, "seed_explorer"), true);
+  // create_object genérico continua human-only mesmo em full
+  assertFalse(isAdsActionAllowed(full, "create_object"));
 });
 
 Deno.test("autopilot legado sozinho não libera expansão", () => {

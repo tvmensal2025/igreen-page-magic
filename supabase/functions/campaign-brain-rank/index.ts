@@ -273,7 +273,93 @@ Deno.serve(async (req) => {
     health = clamp(health, 0, 100);
 
     // Rotation board — o que está no ar / entra / sai
-    const preferred = cfg.preferred_slugs.slice(0, cfg.max_explorers);
+    // Em limited|full: ranking vira preferred_slugs (não só card).
+    let preferred = cfg.preferred_slugs.slice(0, cfg.max_explorers);
+    let preferredApplied: {
+      from: string[];
+      to: string[];
+      swapped: boolean;
+      reason: string;
+    } | null = null;
+
+    if (isAdsExpansiveMutationAllowed(cfg)) {
+      const prevPreferred = [...preferred];
+      const pool = cities.filter((c) =>
+        c.slug &&
+        c.role !== "ancora" &&
+        c.role !== "duplicata" &&
+        c.role !== "morta_waste"
+      );
+      const hasSample = (c: typeof pool[number]) =>
+        c.conv_48h >= 2 || c.spend_48h_cents >= 800;
+      // Mantém preferred atual se ainda saudável; completa com top score amostrado.
+      const next: string[] = [];
+      for (const slug of prevPreferred) {
+        if (next.length >= cfg.max_explorers) break;
+        const hit = pool.find((c) => c.slug === slug);
+        if (!hit) continue;
+        if (hit.score < 40 && hasSample(hit)) continue; // sai se amostra ruim
+        next.push(slug);
+      }
+      const ranked = [...pool]
+        .filter((c) => hasSample(c) || prevPreferred.includes(c.slug))
+        .sort((a, b) => b.score - a.score);
+      for (const c of ranked) {
+        if (next.length >= cfg.max_explorers) break;
+        if (next.includes(c.slug)) continue;
+        // Não promove praça sem amostra mínima (evita swap com 1 lead).
+        if (!hasSample(c) && !prevPreferred.includes(c.slug)) continue;
+        next.push(c.slug);
+      }
+      // Se ainda faltam slots e não há amostra, preenche com top score da fila
+      // (sem expulsar quem já estava preferred saudável).
+      if (next.length < cfg.max_explorers) {
+        for (const c of [...pool].sort((a, b) => b.score - a.score)) {
+          if (next.length >= cfg.max_explorers) break;
+          if (next.includes(c.slug)) continue;
+          next.push(c.slug);
+        }
+      }
+
+      const changed = next.length === prevPreferred.length &&
+          next.every((s, i) => s === prevPreferred[i])
+        ? false
+        : JSON.stringify(next) !== JSON.stringify(prevPreferred);
+
+      if (changed && next.length > 0) {
+        const nextCfg = {
+          ...cfg,
+          preferred_slugs: next.slice(0, cfg.max_explorers),
+        };
+        await admin.from("consultant_ad_settings").upsert({
+          consultant_id: consultantId,
+          brain_config: nextCfg,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "consultant_id" });
+        preferred = nextCfg.preferred_slugs;
+        cfg.preferred_slugs = preferred;
+        preferredApplied = {
+          from: prevPreferred,
+          to: preferred,
+          swapped: true,
+          reason: "brain_slot_swap",
+        };
+        console.log(JSON.stringify({
+          action: "brain_slot_swap",
+          consultant_id: consultantId,
+          from: prevPreferred,
+          to: preferred,
+        }));
+      } else {
+        preferredApplied = {
+          from: prevPreferred,
+          to: preferred,
+          swapped: false,
+          reason: "preferred_unchanged",
+        };
+      }
+    }
+
     const preferredSet = new Set(preferred);
     const explorers = cities.filter((c) =>
       c.role === "exploradora" ||
@@ -408,6 +494,7 @@ Deno.serve(async (req) => {
       rotation: {
         total_slots: 1 + cfg.max_explorers,
         preferred,
+        preferred_applied: preferredApplied,
         on_air: active.map((c) => ({
           id: c.id,
           name: c.name,

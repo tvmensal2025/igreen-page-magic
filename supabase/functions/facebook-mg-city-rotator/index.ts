@@ -32,6 +32,7 @@ import {
 } from "../_shared/campaign-pause.ts";
 import {
   type BrainConfig,
+  isAdsActionAllowedForConfig,
   isAdsExpansiveMutationAllowed,
   normalizeBrainConfig,
 } from "../_shared/brain-config.ts";
@@ -428,13 +429,49 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Seed = criar campanha nova (`create_object`), que é human-only na policy.
-    // O criativo também vem da configuração; sem ele, não se inventa anúncio.
+    // Seed = criar campanha nova. `create_object` genérico continua human-only;
+    // cron só usa `seed_explorer` (full) com teto 1/tick + runway.
     const winnerPhotoUrl = resolveWinnerPhotoUrl(consultantId, cfg);
+    let autoSeedAllowed = false;
     if (seed && !dryRun && !humanDecision) {
-      return j(req, { ok: true, skipped: "automatic_seed_disabled" });
+      if (!isAdsActionAllowedForConfig(cfg, "seed_explorer")) {
+        log.push({
+          action: "seed_skipped",
+          reason: "seed_explorer_not_allowed",
+          automation_mode: cfg.automation_mode,
+          kill_switch: cfg.kill_switch,
+        });
+      } else if (!winnerPhotoUrl) {
+        log.push({
+          action: "seed_skipped",
+          reason: "winner_photo_not_configured",
+        });
+      } else {
+        // Runway: precisa sobrar saldo pra (ativas+1) exploradoras + âncora + piso.
+        const { count: activeCount } = await admin
+          .from("facebook_campaigns")
+          .select("id", { count: "exact", head: true })
+          .eq("consultant_id", consultantId)
+          .ilike("name", "MG-ROT-%")
+          .in("status", ["active", "pending_review"]);
+        const activeN = Number(activeCount || 0);
+        const plannedDaily =
+          explorerBudget * (activeN + 1) + anchorBudget;
+        const minLiquid = plannedDaily * Math.max(1, cfg.min_runway_days) +
+          autoPauseAt;
+        if (liquid < minLiquid) {
+          log.push({
+            action: "seed_skipped",
+            reason: "runway_or_saldo",
+            liquid_cents: liquid,
+            need_cents: minLiquid,
+          });
+        } else {
+          autoSeedAllowed = true;
+        }
+      }
     }
-    if (seed && !dryRun && !winnerPhotoUrl) {
+    if (seed && !dryRun && !winnerPhotoUrl && humanDecision) {
       return j(req, {
         ok: true,
         skipped: "winner_photo_not_configured",
@@ -442,8 +479,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    const doSeed = seed && (humanDecision || autoSeedAllowed || dryRun);
     // Seed (só faltantes; em ensure_slots default off pra não estourar timeout)
-    if (seed) {
+    if (doSeed) {
       const { data: existing } = await admin
         .from("facebook_campaigns")
         .select("id, name, status, cities, rejection_reason, initial_message")
@@ -459,7 +497,18 @@ Deno.serve(async (req) => {
         .map((c: any) => String(c.initial_message || "").trim())
         .filter(Boolean);
 
+      let seededThisTick = 0;
+      const maxSeedsThisTick = humanDecision ? 99 : 1;
+
       for (const city of cityQueue) {
+        if (seededThisTick >= maxSeedsThisTick) {
+          log.push({
+            action: "seed_cap",
+            detail: "max_1_auto_seed_per_tick",
+            city_stopped_at: city.name,
+          });
+          break;
+        }
         if (have.has(city.name.toLowerCase())) {
           log.push({ city: city.name, skipped: "already_seeded" });
           continue;
@@ -479,6 +528,7 @@ Deno.serve(async (req) => {
         if (dryRun) {
           log.push({
             city: city.name,
+            would_seed: true,
             key,
             would: "create_queue_only",
             copy: {
@@ -488,6 +538,7 @@ Deno.serve(async (req) => {
               msg: copy.initial_message.slice(0, 60),
             },
           });
+          seededThisTick++;
           continue;
         }
         const createUrl = `${
@@ -545,14 +596,20 @@ Deno.serve(async (req) => {
             c: copy.ctwa_idx,
           },
         };
-        if (createdId) created.push(entry);
-        else notCreated.push(entry);
+        if (createdId) {
+          created.push(entry);
+          seededThisTick++;
+          have.add(city.name.toLowerCase());
+        } else {
+          notCreated.push(entry);
+        }
         log.push({
           city: city.name,
           create_status: r.status,
           ok: r.ok && Boolean(createdId),
           skipped: skippedReason,
           copy_fp: copy.fingerprint.slice(0, 80),
+          action: createdId ? "seed_created" : "seed_failed",
         });
         await new Promise((res) => setTimeout(res, 3500));
       }
