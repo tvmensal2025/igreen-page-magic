@@ -566,7 +566,7 @@ export function AgendamentosZeroLeadPanel({
   async function rodarAgora() {
     setBusy(true);
     try {
-      const { error } = await supabase.functions.invoke("cadence-tick", { body: { manual: true } });
+      const { error } = await supabase.functions.invoke("cadence-tick-manual");
       if (error) throw error;
       toast.success("Fila processada");
       await load();

@@ -18,6 +18,11 @@ export type DeliveryAck =
   | "failed"
   | "unknown";
 
+/** Somente mensagens atribuídas explicitamente ao provider Whapi podem usar o poll Whapi. */
+export function isWhapiDeliveryReconcileEligible(originChannel: unknown): boolean {
+  return originChannel === "whapi";
+}
+
 const ACK_RANK: Record<string, number> = {
   failed: 0,
   pending: 1,

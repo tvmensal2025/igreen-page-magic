@@ -17,6 +17,8 @@ import {
 } from "../_shared/voice-dialer/velip.ts";
 import { resolvePersonalizedCallAudio, firstNameFrom, normalizeCallName, ensureBodyClipOnVelip } from "../_shared/voice-dialer/call-stitch.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
+import { customerIdFromCadenceVoiceLog } from "../_shared/voice-dialer/cadence-log.ts";
 
 const MAX_CAMPAIGNS = 5;
 /** Por tick do cron (~5 min). Velip campanha aceita até 100/min; no modo 1-a-1
@@ -168,11 +170,23 @@ Deno.serve(async (req) => {
         patch.velip_time_sec = s.time_sec;
         patch.duration_sec = s.time_sec;
       }
-      await admin
+      const { data: reconciledLog, error: reconcileError } = await admin
         .from("voice_call_logs")
         .update(patch)
         .eq("id", log.id)
-        .is("velip_status", null);
+        .is("velip_status", null)
+        .select("id, raw")
+        .maybeSingle();
+      if (reconcileError) {
+        console.warn("reconcile_call_log_update_failed:", reconcileError.message);
+        continue;
+      }
+      if (reconciledLog?.id && outcome === "answered") {
+        const customerId = customerIdFromCadenceVoiceLog(reconciledLog.raw);
+        if (customerId) {
+          await onCallAnsweredPauseCadence(admin, customerId);
+        }
+      }
     }
   } catch (e) {
     console.warn("reconcile_call_logs_failed:", (e as Error).message);

@@ -122,6 +122,18 @@ Deno.test("isCadenceReturnContext: paused_reason lead_responded B/C", () => {
   );
 });
 
+Deno.test("isCadenceReturnContext: ponte Meta continua sendo retorno da cadência", () => {
+  for (const stage of ["CLOSE_LOST", "RETARGET_META", "RETARGET_ADS_15D"]) {
+    assertEquals(
+      isCadenceReturnContext({
+        customer: {},
+        cadenceStage: stage,
+      }),
+      true,
+    );
+  }
+});
+
 Deno.test("isCadenceReturnContext: GREETED/NEW/AI_QUALIFYING NÃO é retorno B/C", () => {
   assertEquals(
     isCadenceReturnContext({

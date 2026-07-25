@@ -2,10 +2,22 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isAckOk,
   isPendingStale,
+  isWhapiDeliveryReconcileEligible,
   mapWhapiDeliveryStatus,
   shouldUpgradeDelivery,
   RECONCILE_PENDING_STALE_MS,
 } from "./outbound-delivery-reconcile.ts";
+
+Deno.test("isWhapiDeliveryReconcileEligible exige provider Whapi explícito", () => {
+  assertEquals(isWhapiDeliveryReconcileEligible("whapi"), true);
+  assertEquals(isWhapiDeliveryReconcileEligible("WHAPI"), false);
+  assertEquals(isWhapiDeliveryReconcileEligible(" whapi "), false);
+  assertEquals(isWhapiDeliveryReconcileEligible("evolution"), false);
+  assertEquals(isWhapiDeliveryReconcileEligible("human_app"), false);
+  assertEquals(isWhapiDeliveryReconcileEligible(null), false);
+  assertEquals(isWhapiDeliveryReconcileEligible(undefined), false);
+  assertEquals(isWhapiDeliveryReconcileEligible(""), false);
+});
 
 Deno.test("mapWhapiDeliveryStatus covers string and numeric codes", () => {
   assertEquals(mapWhapiDeliveryStatus("pending"), "pending");

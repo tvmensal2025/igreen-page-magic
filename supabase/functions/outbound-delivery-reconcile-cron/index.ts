@@ -12,6 +12,7 @@ import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import {
   fetchWhapiMessageAck,
   isPendingStale,
+  isWhapiDeliveryReconcileEligible,
   shouldUpgradeDelivery,
   RECONCILE_MAX_AGE_MS,
   RECONCILE_MIN_AGE_MS,
@@ -74,12 +75,54 @@ Deno.serve(async (req) => {
     });
   }
 
+  const customerIds = [...new Set(
+    (rows || [])
+      .map((row: any) => String(row.customer_id || "").trim())
+      .filter(Boolean),
+  )];
+  const originChannelByCustomerId = new Map<string, string | null>();
+  if (customerIds.length > 0) {
+    const { data: customers, error: customersError } = await supabase
+      .from("customers")
+      .select("id, origin_channel")
+      .in("id", customerIds);
+    if (customersError) {
+      return new Response(JSON.stringify({ ok: false, error: customersError.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    for (const customer of customers || []) {
+      originChannelByCustomerId.set(
+        String((customer as any).id),
+        (customer as any).origin_channel == null
+          ? null
+          : String((customer as any).origin_channel),
+      );
+    }
+  }
+
   let updated = 0;
   let staleFailed = 0;
   let checked = 0;
+  let skippedNonWhapi = 0;
   let errors = 0;
 
   for (const row of rows || []) {
+    const customerId = String((row as any).customer_id || "").trim();
+    const originChannel = customerId
+      ? originChannelByCustomerId.get(customerId) ?? null
+      : null;
+    if (!isWhapiDeliveryReconcileEligible(originChannel)) {
+      skippedNonWhapi++;
+      logReconcile("outbound_ack_skipped_non_whapi", {
+        conversation_id: (row as any).id,
+        customer_id: customerId || null,
+        origin_channel: originChannel,
+      });
+      continue;
+    }
+
     const mid = String((row as any).external_message_id || "").trim();
     if (!mid) continue;
     checked++;
@@ -148,6 +191,7 @@ Deno.serve(async (req) => {
   const body = {
     ok: true,
     checked,
+    skipped_non_whapi: skippedNonWhapi,
     updated,
     stale_failed: staleFailed,
     errors,

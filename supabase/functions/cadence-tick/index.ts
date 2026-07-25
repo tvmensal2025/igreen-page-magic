@@ -951,6 +951,7 @@ Deno.serve(async (req) => {
   } catch { /* migration pendente */ }
 
   // Claim atômico (RPC). Fallback: SELECT + CAS em next_action_at (anti-duplicidade).
+  const legacyLeaseById = new Map<string, string>();
   let due: any[] | null = null;
   const { data: claimedRows, error: claimErr } = await supabase.rpc("claim_due_cadence", {
     p_limit: 100,
@@ -983,6 +984,7 @@ Deno.serve(async (req) => {
         ? await q.eq("next_action_at", row.next_action_at).select("id, claim_token").maybeSingle()
         : await q.select("id, claim_token").maybeSingle();
       if (cas.data?.id) {
+        legacyLeaseById.set(String(row.id), leaseUntil);
         due.push({ ...row, next_action_at: leaseUntil, claim_token: cas.data.claim_token ?? row.claim_token });
       }
     }
@@ -1011,22 +1013,75 @@ Deno.serve(async (req) => {
 
   let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0, audienceBlocked = 0;
 
-  /** Update que só aplica se ainda formos donos do claim (quando há token). */
-  async function finishRow(id: string, claimToken: string | null | undefined, patch: Record<string, unknown>) {
-    const body = claimToken
-      ? {
-        ...patch,
-        claim_token: null,
-        claimed_at: null,
-        lease_expires_at: null,
+  /** Update que só aplica se ainda formos donos do claim. */
+  async function finishRow(
+    id: string,
+    claimToken: string | null | undefined,
+    patch: Record<string, unknown>,
+  ): Promise<boolean> {
+    if (!claimToken) {
+      // Compatibilidade conservadora para o fallback legado: exige tanto
+      // claim_token nulo quanto o lease exato reservado no CAS inicial.
+      const legacyLeaseAt = legacyLeaseById.get(id);
+      if (!legacyLeaseAt) {
+        console.warn("[cadence-tick] legacy_finish_missing_lease", {
+          cadence_state_id: id,
+        });
+        return false;
       }
-      : patch;
-    let q = supabase.from("lead_cadence_state").update(body).eq("id", id);
-    if (claimToken) q = q.eq("claim_token", claimToken);
-    const { data } = await q.select("id").maybeSingle();
-    if (data?.id) return;
-    // Token ausente/mismatch ou colunas ainda não migradas — não deixa o lead preso.
-    await supabase.from("lead_cadence_state").update(patch).eq("id", id);
+      const { data, error } = await supabase
+        .from("lead_cadence_state")
+        .update(patch)
+        .eq("id", id)
+        .is("claim_token", null)
+        .eq("next_action_at", legacyLeaseAt)
+        .select("id")
+        .maybeSingle();
+      if (error) {
+        console.warn("[cadence-tick] legacy_finish_failed", {
+          cadence_state_id: id,
+          error: error.message,
+        });
+        return false;
+      }
+      if (!data?.id) {
+        console.warn("[cadence-tick] legacy_finish_skipped_stale", {
+          cadence_state_id: id,
+        });
+        return false;
+      }
+      legacyLeaseById.delete(id);
+      return true;
+    }
+
+    const body = {
+      ...patch,
+      claim_token: null,
+      claimed_at: null,
+      lease_expires_at: null,
+    };
+    const { data, error } = await supabase
+      .from("lead_cadence_state")
+      .update(body)
+      .eq("id", id)
+      .eq("claim_token", claimToken)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.warn("[cadence-tick] claim_finish_failed", {
+        cadence_state_id: id,
+        error: error.message,
+      });
+      return false;
+    }
+    if (!data?.id) {
+      // Inbound/worker mais novo invalidou o token: estado atual sempre vence.
+      console.warn("[cadence-tick] claim_loststale_worker", {
+        cadence_state_id: id,
+      });
+      return false;
+    }
+    return true;
   }
 
   for (const row of due) {
@@ -1259,12 +1314,14 @@ Deno.serve(async (req) => {
           deferred++; continue;
         } else if (cfg.max_per_lead && cfg.max_per_lead > 0
                    && (await countChannelSends(supabase, row.customer_id, def.channel)) >= cfg.max_per_lead) {
-          await finishRow(row.id, claimToken, {
+          const finished = await finishRow(row.id, claimToken, {
             stage: "CLOSE_LOST",
             next_action_at: computeNextActionAt("CLOSE_LOST", now)?.toISOString() ?? null,
             paused_reason: "channel_limit_reached",
           });
-          await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
+          if (finished) {
+            await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
+          }
           skipped++; continue;
         } else {
           // 1) Orquestrador atômico: reserva o direito de tocar o cliente.
@@ -1468,7 +1525,7 @@ Deno.serve(async (req) => {
     const attempts = (row.attempts_by_channel as Record<string, number>) ?? {};
     attempts[def.channel] = (attempts[def.channel] ?? 0) + 1;
 
-    await finishRow(row.id, claimToken, {
+    const finished = await finishRow(row.id, claimToken, {
       stage: def.next,
       last_action_at: now.toISOString(),
       next_action_at: nextAt?.toISOString() ?? null,
@@ -1477,7 +1534,7 @@ Deno.serve(async (req) => {
       ...(typeof detail.effect_id === "string" ? { last_effect_id: detail.effect_id } : {}),
     });
 
-    if (def.next === "CLOSE_LOST") {
+    if (finished && def.next === "CLOSE_LOST") {
       await notifyPartnerOfLoss(supabase, row.customer_id, row.consultant_id);
     }
 

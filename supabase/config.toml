@@ -269,6 +269,10 @@ verify_jwt = false
 [functions.cadence-tick]
 verify_jwt = false
 
+# UI administrativa: JWT de usuário + role admin/super_admin dentro da edge.
+[functions.cadence-tick-manual]
+verify_jwt = true
+
 [functions.send-scheduled-messages]
 verify_jwt = false
 

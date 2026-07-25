@@ -18,6 +18,7 @@ import {
 } from "../_shared/voice-dialer/velip.ts";
 import { isAutomationEnabled } from "../_shared/automation-gate.ts";
 import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
+import { customerIdFromCadenceVoiceLog } from "../_shared/voice-dialer/cadence-log.ts";
 import {
   finishOutboundEffect,
   markEffectSending,
@@ -361,7 +362,8 @@ Deno.serve(async (req) => {
         velip_saldo_after: Number.isFinite(saldo) ? saldo : null,
         velip_dtmf: Object.keys(dtmf).length ? dtmf : null,
         velip_raw: params,
-        raw: params,
+        // `raw` guarda o vínculo confiável criado pelo cadence-tick.
+        // O payload externo fica em velip_raw e não pode sobrescrever customer_id.
         error: null,
       };
       if (dest) patch.to_phone = dest;
@@ -370,13 +372,18 @@ Deno.serve(async (req) => {
         .update(patch)
         .eq("velip_call_id", cd_id)
         .is("velip_status", null)
-        .select("id, consultant_id, to_phone");
+        .select("id, consultant_id, to_phone, raw");
       if (updated && updated.length > 0) {
+        const logRow = updated[0] as {
+          consultant_id?: string | null;
+          to_phone?: string | null;
+          raw?: unknown;
+        };
+
         // Auto-DNC também para chamadas do motor de cadência (sem campaign_id).
         // Antes: DNC só era gravado quando havia target/campaign — cadence-tick ficava
         // dependendo do guard in-memory, e voice_dnc_list nascia vazio.
         if (outcome === "do_not_disturb" || outcome === "invalid_number" || outcome === "nonexistent") {
-          const logRow = updated[0] as { consultant_id?: string | null; to_phone?: string | null };
           const consultantId = logRow.consultant_id ?? null;
           const phoneDigits = String(logRow.to_phone || dest || "").replace(/\D/g, "");
           if (consultantId && phoneDigits) {
@@ -390,6 +397,22 @@ Deno.serve(async (req) => {
             } catch (_e) { /* ignore */ }
           }
         }
+
+        if (outcome === "answered") {
+          const customerId = customerIdFromCadenceVoiceLog(logRow.raw);
+          if (!customerId) {
+            console.warn("[voice-webhook] cadence answered sem customer_id confiável", {
+              call_log_id: (updated[0] as { id?: string }).id ?? null,
+            });
+          } else {
+            try {
+              await onCallAnsweredPauseCadence(admin, customerId);
+            } catch (e) {
+              console.warn("[voice-webhook] cadence answered pause failed", (e as Error).message);
+            }
+          }
+        }
+
         return json(200, { ok: true, matched: true, cadence_log: true, updated: updated.length });
       }
     }

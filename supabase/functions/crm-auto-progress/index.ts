@@ -3,12 +3,13 @@
 // pos-venda-auto-progress + customers.pos_venda_stage (jun/2026).
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret, x-cron-secret",
 };
 
 function normalizePhone(raw: string): string {
@@ -24,17 +25,21 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  if (isQuietHourBRT()) {
-    logQuietSkip("crm-auto-progress");
-    return new Response(JSON.stringify({ skipped: "quiet_hours" }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // deno-lint-ignore no-explicit-any
+    const cronAuth = await assertCronAuth(req, supabase as any);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+
+    if (isQuietHourBRT()) {
+      logQuietSkip("crm-auto-progress");
+      return new Response(JSON.stringify({ skipped: "quiet_hours" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data: unlinkedDeals } = await supabase
       .from("crm_deals")
