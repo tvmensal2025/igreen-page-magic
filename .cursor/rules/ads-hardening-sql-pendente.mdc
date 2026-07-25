@@ -1,40 +1,35 @@
 ---
-description: Hardening Ads — migrations no repo AINDA NÃO aplicadas; aplicar antes de deployar as edges
+description: Hardening Ads — SQL JÁ APLICADO em produção (2026-07-25); edge functions deployadas
 alwaysApply: true
 ---
-# ⚠️ Hardening Ads: SQL pendente de aplicação
+# Hardening Ads: SQL aplicado
 
-As migrations abaixo estão **commitadas mas NÃO aplicadas** em nenhum banco.
-Foram validadas apenas de forma estática (não havia Postgres no ambiente onde
-o código foi escrito).
+As migrations do hardening Ads **já foram aplicadas em produção** em 2026-07-25
+(via MCP `apply_migration`), nesta ordem:
 
 ```
-supabase/migrations/20260725170000_ads_orphan_crons_auth_headers.sql  (#0 — crons órfãos)
-supabase/migrations/20260724180000_ads_cron_auth_headers.sql
-supabase/migrations/20260724190000_ads_spend_idempotent_billing.sql
-supabase/migrations/20260724200000_ad_publish_saga.sql
-supabase/migrations/20260724210000_facebook_capi_outbox.sql
+20260725170000_ads_orphan_crons_auth_headers.sql   (#0 órfãos)
+20260724180000_ads_cron_auth_headers.sql
+20260724190000_ads_spend_idempotent_billing.sql
+20260724200000_ad_publish_saga.sql
+20260724210000_facebook_capi_outbox.sql
 ```
 
-A #0 cobre `fb-cbo-to-abo`, `fb-mg-city-rotator` e `facebook-retarget-sync-3x-day`,
-que usam `assertCronAuthStrict` e ficaram de fora da #1. Aplicar #0 + #1 antes
-de qualquer deploy Ads.
+Cadência P0/P1 também aplicada:
+`20260724160000_cadence_inbound_preserve_bc` e
+`20260724161000_crm_auto_progress_cron_auth`.
 
-## Regras
+## Ainda NÃO ligar sem pedido explícito
 
-- **Aplicar via MCP Supabase `apply_migration`**, na ordem #0 → #1 → #2 → #3 → #4
-  (migrations não passam pelo GitHub Actions — ver `deploy.md`).
-- **Migrations ANTES do deploy das edge functions.** As functions de Ads já
-  chamam `debit_campaign_spend_observation`, `claim_ad_publish_saga` e
-  `enqueue_facebook_capi_event`; deployar antes quebra essas chamadas.
-- **Pré-requisito da migration 1:** `settings.embed_internal_token` preenchido.
-  Ela aborta com erro explícito se estiver vazio — de propósito, porque sem o
-  segredo os crons de Ads passariam a tomar 401.
-- **Não ligar** o toggle `facebook_capi_dispatch` (nasce `false`) sem pedido
-  explícito do usuário.
-- **Não ligar** `ENFORCE_CRON_AUTH` antes de confirmar nos logs que os crons
-  de Ads autenticaram.
+- toggle `facebook_capi_dispatch` (está `false`)
+- `ENFORCE_CRON_AUTH`
+- expansão do Cérebro (`kill_switch=false` / `automation_mode` ≠ `disabled`)
 
-Passo a passo, consultas de verificação e riscos:
-`docs/ads-hardening-SQL-PENDENTE.md`.
-Deploy das functions e config por consultor: `docs/ads-hardening-rollout.md`.
+## Pendência operacional restante
+
+- `winner_photo_url` no `brain_config` do consultor piloto (Rafael): anchor já
+  preenchido, mas sem foto estável HTTPS o rotator continua inerte
+  (`anchor_campaign_not_configured` / foto ausente).
+- Regenerar types: já feito em `src/integrations/supabase/types.ts`.
+
+Detalhe: `docs/ads-hardening-rollout.md`.

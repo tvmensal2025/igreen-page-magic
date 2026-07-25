@@ -1,11 +1,11 @@
-# ⚠️ SQL DO HARDENING ADS — NÃO APLICADA
+# SQL DO HARDENING ADS — APLICADO EM PRODUÇÃO (2026-07-25)
 
-**Status: PENDENTE.** As 4 migrations abaixo estão no repositório mas **nunca foram
-executadas** — nem em produção, nem em teste. Não havia Postgres/psql no ambiente
-onde o código foi escrito, então elas só passaram por validação estática.
+**Status: APLICADO.** Migrations executadas via MCP `apply_migration` em
+produção, na ordem abaixo (incluindo a #0 dos crons órfãos). Este arquivo
+permanece como registro histórico + checklist de verificação.
 
-Quem aplica: **Cursor** (via MCP Supabase `apply_migration`), conforme
-`.kiro/steering/deploy.md` — migrations de banco não passam pelo GitHub Actions.
+Quem aplicou: Cursor via MCP Supabase. Migrations de banco **não** passam pelo
+GitHub Actions (ver `.kiro/steering/deploy.md`).
 
 ---
 

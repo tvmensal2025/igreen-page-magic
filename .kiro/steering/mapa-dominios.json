@@ -687,7 +687,7 @@
   "god_files_lines": [
     {
       "path": "src/integrations/supabase/types.ts",
-      "lines": 14263
+      "lines": 14580
     },
     {
       "path": "supabase/functions/whapi-webhook/handlers/bot-flow.ts",

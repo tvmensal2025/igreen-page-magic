@@ -4,10 +4,11 @@ Branch: `hardening/cerebro-meta-ads` · base: `56a86aa1270197d7f41db220c91bac767
 
 Este documento é a ordem de execução quando você decidir subir.
 
-> **⚠️ As 4 migrations NÃO foram aplicadas.** Elas ficam para o Cursor aplicar via
-> MCP `apply_migration`. O passo a passo, o pré-requisito bloqueante e as consultas
-> de verificação estão em **`docs/ads-hardening-SQL-PENDENTE.md`**.
-> Nenhuma edge function foi deployada.
+> **Status 2026-07-25:** as migrations (#0 órfãos + #1–#4) **já foram aplicadas**
+> em produção via MCP. As edge functions de Ads + cadência foram deployadas via
+> CLI (`supabase functions deploy`) no SHA `0d58597bb`. O toggle
+> `facebook_capi_dispatch` permanece **desligado**. `ENFORCE_CRON_AUTH` **não**
+> foi ligado.
 
 ## Estado alvo
 

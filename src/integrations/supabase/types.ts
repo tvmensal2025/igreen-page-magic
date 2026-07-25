@@ -508,6 +508,69 @@ export type Database = {
         }
         Relationships: []
       }
+      ad_publish_sagas: {
+        Row: {
+          attempts: number
+          campaign_row_id: string | null
+          client_request_id: string
+          completed_at: string | null
+          consultant_id: string
+          created_at: string
+          fb_ad_ids: string[]
+          fb_adset_ids: string[]
+          fb_campaign_id: string | null
+          id: string
+          last_error: string | null
+          locked_until: string | null
+          request_hash: string | null
+          requires_reconciliation: boolean
+          result: Json | null
+          stage: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          campaign_row_id?: string | null
+          client_request_id: string
+          completed_at?: string | null
+          consultant_id: string
+          created_at?: string
+          fb_ad_ids?: string[]
+          fb_adset_ids?: string[]
+          fb_campaign_id?: string | null
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          request_hash?: string | null
+          requires_reconciliation?: boolean
+          result?: Json | null
+          stage?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          campaign_row_id?: string | null
+          client_request_id?: string
+          completed_at?: string | null
+          consultant_id?: string
+          created_at?: string
+          fb_ad_ids?: string[]
+          fb_adset_ids?: string[]
+          fb_campaign_id?: string | null
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          request_hash?: string | null
+          requires_reconciliation?: boolean
+          result?: Json | null
+          stage?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ad_recommendations: {
         Row: {
           action_label: string | null
@@ -859,6 +922,42 @@ export type Database = {
           item_key?: string
           note?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      ads_spend_reconciliation_log: {
+        Row: {
+          created_at: string
+          currency: string
+          delta_cents: number
+          id: string
+          meta_lifetime_cents: number
+          reconciled_date: string
+          requires_review: boolean
+          reviewed_at: string | null
+          system_lifetime_cents: number
+        }
+        Insert: {
+          created_at?: string
+          currency?: string
+          delta_cents?: number
+          id?: string
+          meta_lifetime_cents?: number
+          reconciled_date: string
+          requires_review?: boolean
+          reviewed_at?: string | null
+          system_lifetime_cents?: number
+        }
+        Update: {
+          created_at?: string
+          currency?: string
+          delta_cents?: number
+          id?: string
+          meta_lifetime_cents?: number
+          reconciled_date?: string
+          requires_review?: boolean
+          reviewed_at?: string | null
+          system_lifetime_cents?: number
         }
         Relationships: []
       }
@@ -2790,6 +2889,62 @@ export type Database = {
           year?: number
         }
         Relationships: []
+      }
+      campaign_spend_observations: {
+        Row: {
+          balance_after_cents: number | null
+          campaign_id: string
+          charged_at: string | null
+          charged_cents: number
+          consultant_id: string
+          created_at: string
+          delta_spend_cents: number
+          fee_cents: number
+          id: string
+          metadata: Json
+          metric_date: string
+          observed_spend_cents: number
+          previous_synced_cents: number
+        }
+        Insert: {
+          balance_after_cents?: number | null
+          campaign_id: string
+          charged_at?: string | null
+          charged_cents: number
+          consultant_id: string
+          created_at?: string
+          delta_spend_cents: number
+          fee_cents?: number
+          id?: string
+          metadata?: Json
+          metric_date: string
+          observed_spend_cents: number
+          previous_synced_cents?: number
+        }
+        Update: {
+          balance_after_cents?: number | null
+          campaign_id?: string
+          charged_at?: string | null
+          charged_cents?: number
+          consultant_id?: string
+          created_at?: string
+          delta_spend_cents?: number
+          fee_cents?: number
+          id?: string
+          metadata?: Json
+          metric_date?: string
+          observed_spend_cents?: number
+          previous_synced_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_spend_observations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "facebook_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       capture_achievements: {
         Row: {
@@ -5755,6 +5910,69 @@ export type Database = {
           fb_response?: Json | null
           id?: string
           status?: string
+        }
+        Relationships: []
+      }
+      facebook_capi_outbox: {
+        Row: {
+          attempts: number
+          consultant_id: string
+          context: Json
+          created_at: string
+          currency: string
+          customer_id: string | null
+          event_key: string
+          event_name: string
+          fb_response: Json | null
+          hashed_user_data: Json | null
+          id: string
+          last_error: string | null
+          locked_until: string | null
+          next_attempt_at: string
+          sent_at: string | null
+          status: string
+          updated_at: string
+          value_numeric: number | null
+        }
+        Insert: {
+          attempts?: number
+          consultant_id: string
+          context?: Json
+          created_at?: string
+          currency?: string
+          customer_id?: string | null
+          event_key: string
+          event_name: string
+          fb_response?: Json | null
+          hashed_user_data?: Json | null
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          value_numeric?: number | null
+        }
+        Update: {
+          attempts?: number
+          consultant_id?: string
+          context?: Json
+          created_at?: string
+          currency?: string
+          customer_id?: string | null
+          event_key?: string
+          event_name?: string
+          fb_response?: Json | null
+          hashed_user_data?: Json | null
+          id?: string
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+          value_numeric?: number | null
         }
         Relationships: []
       }
@@ -12858,6 +13076,15 @@ export type Database = {
         }[]
       }
       check_send_quota: { Args: { p_instance: string }; Returns: Json }
+      claim_ad_publish_saga: {
+        Args: {
+          _client_request_id: string
+          _consultant_id: string
+          _lease_seconds?: number
+          _request_hash?: string
+        }
+        Returns: Json
+      }
       claim_due_cadence: {
         Args: { p_limit?: number }
         Returns: {
@@ -13195,6 +13422,21 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_facebook_capi_events: {
+        Args: { _lease_seconds?: number; _limit?: number }
+        Returns: {
+          attempts: number
+          consultant_id: string
+          context: Json
+          currency: string
+          customer_id: string
+          event_key: string
+          event_name: string
+          hashed_user_data: Json
+          id: string
+          value_numeric: number
+        }[]
+      }
       claim_recon_job: {
         Args: never
         Returns: {
@@ -13260,8 +13502,12 @@ export type Database = {
         Args: { _target_flow_id: string }
         Returns: number
       }
+      complete_ad_publish_saga: {
+        Args: { _result: Json; _saga_id: string }
+        Returns: Json
+      }
       compute_pos_venda_stage: {
-        Args: { _andamento: string; _approved_at: string; _status: string }
+        Args: { _andamento: string; _reference_at: string; _status: string }
         Returns: string
       }
       configure_rodizio_pool: {
@@ -13328,6 +13574,17 @@ export type Database = {
             }
             Returns: number
           }
+      debit_campaign_spend_observation: {
+        Args: {
+          _activity_label?: string
+          _campaign_id: string
+          _fee_percent?: number
+          _metadata?: Json
+          _metric_date: string
+          _observed_spend_cents: number
+        }
+        Returns: Json
+      }
       debit_consultant_wallet:
         | {
             Args: {
@@ -13350,6 +13607,19 @@ export type Database = {
             }
             Returns: number
           }
+      enqueue_facebook_capi_event: {
+        Args: {
+          _consultant_id: string
+          _context?: Json
+          _currency?: string
+          _customer_id?: string
+          _event_key: string
+          _event_name: string
+          _hashed_user_data?: Json
+          _value?: number
+        }
+        Returns: Json
+      }
       enqueue_pending_inbound: {
         Args: { _customer_id: string; _message_id: string }
         Returns: undefined
@@ -13388,6 +13658,14 @@ export type Database = {
         Returns: undefined
       }
       expire_overdue_proposals: { Args: never; Returns: number }
+      fail_ad_publish_saga: {
+        Args: {
+          _error: string
+          _requires_reconciliation?: boolean
+          _saga_id: string
+        }
+        Returns: Json
+      }
       fb_emit_capi: {
         Args: {
           _consultant_id: string
@@ -13609,6 +13887,23 @@ export type Database = {
         }
         Returns: undefined
       }
+      mark_facebook_capi_failed: {
+        Args: {
+          _error: string
+          _id: string
+          _max_attempts?: number
+          _response?: Json
+        }
+        Returns: Json
+      }
+      mark_facebook_capi_sent: {
+        Args: { _id: string; _response?: Json }
+        Returns: Json
+      }
+      mark_facebook_capi_sent_by_key: {
+        Args: { _event_key: string; _response?: Json }
+        Returns: Json
+      }
       mark_journey_won: {
         Args: { p_customer_id: string; p_source?: string }
         Returns: boolean
@@ -13705,6 +14000,28 @@ export type Database = {
       reconcile_stuck_cadence_claims: { Args: never; Returns: number }
       reconcile_stuck_daily_reheat_claims: { Args: never; Returns: number }
       reconcile_stuck_scheduled_messages: { Args: never; Returns: number }
+      record_ad_publish_stage: {
+        Args: {
+          _campaign_row_id?: string
+          _fb_ad_ids?: string[]
+          _fb_adset_ids?: string[]
+          _fb_campaign_id?: string
+          _lease_seconds?: number
+          _saga_id: string
+          _stage: string
+        }
+        Returns: Json
+      }
+      record_ads_spend_reconciliation: {
+        Args: {
+          _currency?: string
+          _meta_lifetime_cents: number
+          _reconciled_date: string
+          _review_threshold_cents?: number
+          _system_lifetime_cents: number
+        }
+        Returns: Json
+      }
       record_risk_signal: {
         Args: {
           p_instance: string
