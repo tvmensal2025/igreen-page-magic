@@ -19,12 +19,16 @@ Cadência P0/P1 também aplicada:
 `20260724160000_cadence_inbound_preserve_bc` e
 `20260724161000_crm_auto_progress_cron_auth`.
 
-## Ainda NÃO ligar sem pedido explícito
-
-- expansão do Cérebro (`kill_switch=false` / `automation_mode` ≠ `disabled`)
-
 ## Já ligado em produção (2026-07-25)
 
 - `ENFORCE_CRON_AUTH=true` (secrets)
 - `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
-- brain piloto: `anchor` + `winner_photo_url` preenchidos; `kill_switch=true`
+- **Cérebro piloto (Rafael) ON em `limited`:** `kill_switch=false`, `autopilot=true`,
+  âncora Uberlândia (`a0189d12-…`), foto legada HTTPS, preferred sem waste-pause.
+  Proteções (pause) sempre on; seed/targeting/create continuam human-only.
+  Modo `full` (creative_rotate) **não** ligado.
+
+## Ainda NÃO ligar sem pedido explícito
+
+- `automation_mode=full` (rotação de criativo automática)
+- expansão para outros consultores sem `anchor` + `winner_photo_url`

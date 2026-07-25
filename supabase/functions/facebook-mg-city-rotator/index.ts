@@ -26,6 +26,7 @@ import {
 } from "../_shared/cron-auth.ts";
 import {
   isAutoPerfPause,
+  isConsultantLocked,
   isManualPause,
   isManualStop,
 } from "../_shared/campaign-pause.ts";
@@ -746,6 +747,17 @@ Deno.serve(async (req) => {
     );
 
     async function activateCampaign(c: any, reason: string) {
+      // Regra de ouro: MANUAL / STOP / AUTO_PERF_PAUSE só reativam no Play.
+      if (isConsultantLocked(c.rejection_reason)) {
+        log.push({
+          action: "activate_skipped_locked",
+          id: c.id,
+          city: c.cities?.[0]?.name,
+          reason: String(c.rejection_reason || "").slice(0, 120),
+          wanted: reason,
+        });
+        return false;
+      }
       if (!c.fb_campaign_id) throw new Error("sem fb_campaign_id");
       await postBudget(c.fb_campaign_id, explorerBudget, token);
       for (
@@ -770,6 +782,7 @@ Deno.serve(async (req) => {
         reason,
         budget: explorerBudget,
       });
+      return true;
     }
 
     async function pauseToQueue(c: any, reason: string) {
@@ -823,7 +836,8 @@ Deno.serve(async (req) => {
           continue;
         }
         if (c.status !== "active") {
-          await activateCampaign(c, "ensure_preferred");
+          const activated = await activateCampaign(c, "ensure_preferred");
+          if (!activated) continue;
         } else if (Number(c.daily_budget_cents) !== explorerBudget) {
           await postBudget(c.fb_campaign_id, explorerBudget, token);
           await admin.from("facebook_campaigns").update({

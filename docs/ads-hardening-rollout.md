@@ -4,10 +4,11 @@ Branch: `hardening/cerebro-meta-ads` · base: `56a86aa1270197d7f41db220c91bac767
 
 Este documento é a ordem de execução quando você decidir subir.
 
-> **Status 2026-07-25 (go-live hardening):** migrations (#0 órfãos + #1–#4) aplicadas;
+> **Status 2026-07-25 (go-live hardening + Cérebro):** migrations aplicadas;
 > edges Ads/cadência deployadas; smokes OK. **Já ligado:** `ENFORCE_CRON_AUTH=true`,
-> `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`.
-> **Ainda inerte:** expansão do Cérebro (`kill_switch=true`, `automation_mode=disabled`).
+> `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`,
+> Cérebro piloto Rafael em **`limited`** (`kill_switch=false`, `autopilot=true`).
+> **Ainda off:** `full` / creative_rotate automático; seed e targeting continuam human-only.
 
 ## Estado alvo
 
@@ -119,8 +120,8 @@ As tabelas novas podem ficar: são aditivas e ninguém legado depende delas.
 
 ## Pendências conhecidas
 
-- **Expansão do Cérebro** permanece desligada no piloto (Rafael: anchor + foto OK,
-  `kill_switch=true`). Não ligar sem pedido explícito.
+- **`automation_mode=full`** (creative_rotate) ainda off no piloto.
+- Seed automático de exploradoras permanece **human-only** (`automatic_seed_disabled`).
 - Types regenerados em `src/integrations/supabase/types.ts` (commit pós-SQL).
 - **Tabelas novas com RLS ligada e sem policy.** `service_role` acessa (é o que
   as edges usam); `anon`/`authenticated` não. Se a UI precisar ler sagas ou
