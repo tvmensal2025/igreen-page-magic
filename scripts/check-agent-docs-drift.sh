@@ -9,6 +9,12 @@ fail=0
 say() { printf '%s\n' "$*"; }
 err() { printf 'ERROR: %s\n' "$*" >&2; fail=1; }
 
+# Falta de rg viraria "símbolo canônico ausente" em código que existe.
+if ! command -v rg >/dev/null 2>&1; then
+  printf 'ERROR: ripgrep (rg) não encontrado — instale antes de rodar o drift check.\n' >&2
+  exit 1
+fi
+
 # Pares obrigatórios: .cursor/rules/<file>.mdc → trecho/arquivo em .kiro/steering
 declare -A REQUIRED=(
   [whatsapp-whapi-primario.mdc]="regras-duras.md|wa-webhook.md"

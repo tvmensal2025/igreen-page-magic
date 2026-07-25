@@ -75,7 +75,7 @@ export function InvalidPhonesPanel() {
       if (error) throw error;
       const filtered = (dnc || []).filter((d) => looksAutoInvalid(d.reason));
       const phones = filtered.map((d) => d.phone);
-      let custMap = new Map<string, CustomerLite>();
+      const custMap = new Map<string, CustomerLite>();
       if (phones.length > 0) {
         const { data: custs } = await supabase
           .from("customers")
