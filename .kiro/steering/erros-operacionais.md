@@ -19,6 +19,27 @@ Domínios detalhados: `#voz-sms` `#wa-webhook` `#cerebro-fluxo-b` `#portal2-flux
 
 ---
 
+## 0b) Alerta ativo no WhatsApp do dono (você não precisa lembrar)
+
+Cron `super-admin-alerts` (~15 min) + `minio-quota-check` mandam **WhatsApp via Whapi** para `app_settings.super_admin_phone` (fallback: telefone do `superadmin_consultant_id`).
+
+Helper: `_shared/superadmin-alert.ts` (`notifySuperAdminOpsAlert`). Dedup em `infra_metrics` (`ops_alert` / `minio_alert`).
+
+| Dispara alerta | O que checa |
+|---|---|
+| 🚨 Bot global OFF | `bot_global_enabled=false` |
+| ⚠️ Cadência OFF | `cadence_engine_enabled=false` |
+| 🚨 Worker offline | `/health` Portal2 / Sync / Club |
+| 🚨 Velip crédito | erros credit/saldo ou `balance_after=0` failed |
+| ⚠️ Pico Procon | ≥5 `BK_PROCON` /24h (não é crédito) |
+| ⚠️ SMS undeliv | ≥5 UNDELIV/REJECTD/EXPIRED e ≥ DELIVRD /6h |
+| 🚨 Leads `worker_offline` | ≥3 em 24h |
+| ⚠️ Cap outreach | ≥20 skips de cap /6h |
+| 🚨 Whapi sem AUTH | `/users/profile` falhou |
+| 🚨/⚠️ MinIO | offline ou % ≥ limiar |
+
+**NÃO** alerta Evolution `needs_reconnect` (Whapi é primário). Sem `super_admin_phone` / `whapi_token` → grava métrica `sent:false` e silencia.
+
 ## 0) Triagem em 60 segundos
 
 | Usuário diz | Primeiro olhar |
@@ -30,6 +51,7 @@ Domínios detalhados: `#voz-sms` `#wa-webhook` `#cerebro-fluxo-b` `#portal2-flux
 | Site não abre | Cache/Chunk → CORS/401 → Supabase status → workers |
 | Pizza não manda | toggles + prefs consultor + caps + janela + DNC |
 | Ads / CPL estranho | `#armadilhas` #26 (nunca somar action_types Meta) |
+| “Por que ninguém me avisou?” | `infra_metrics` `ops_alert` + cron `super-admin-alerts` |
 
 ```sql
 -- Skips recentes

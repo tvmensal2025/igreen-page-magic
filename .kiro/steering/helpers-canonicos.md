@@ -11,6 +11,7 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | Path | Exports | Quando |
 |---|---|---|
 | `bot/global-flag.ts` | `isBotGloballyEnabled` | Kill switch antes de automação |
+| `cliente-cadence-guard.ts` | `isClienteProibidoCadenciaABC`, `clienteCadenceBlockReason` | Cliente ≠ lead A/B/C (só PV + agenda) |
 | `customer-display-name.ts` | `safeFirstNameForAddress`, `isAddressableNameSource`… | Saudação/TTS com nome |
 | `consultant-public-label.ts` | `resolvePublicConsultantLabel` | Nome consultor ao lead |
 | `automation-gate.ts` | `isAutomationEnabled`, `logSkipped` | Toggle + skip log |
@@ -42,6 +43,7 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | Path | Quando |
 |---|---|
 | `crmVsLeadAnalysis.ts` | Separar pizza A / CRM / Meta / bloqueado |
+| `clienteCadenceGuard.ts` | Cliente fora do A/B/C (espelho edge) |
 | `customerDisplayName.ts` | Nome lead na UI (espelho edge) |
 | `consultantPublicLabel.ts` | Label consultor na UI |
 | `consultantAutomationPrefs.ts` | Opt-in automações do painel (espelho edge) |

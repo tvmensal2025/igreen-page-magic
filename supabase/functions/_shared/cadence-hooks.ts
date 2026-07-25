@@ -13,19 +13,63 @@ import { nextBusinessMorning } from "./cadence-engine.ts";
 import { isAutomationEnabled } from "./automation-gate.ts";
 import { loadRetentionSettings } from "./retention-orchestrator.ts";
 import { isCadenceBcStage } from "./cadence-inbound-router.ts";
+import { isClienteProibidoCadenciaABC } from "./cliente-cadence-guard.ts";
 
 export async function ensureCadenceState(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   customer_id: string,
   consultant_id: string | null,
+  opts: { forceReopen?: boolean } = {},
 ): Promise<void> {
   try {
     // Só entra na máquina de estados se o motor estiver autorizado.
     if (!(await isAutomationEnabled(supabase, "cadence_engine"))) return;
 
+    // Cliente (carteira / pós-venda / aprovado) nunca entra em A/B/C.
+    if (!opts.forceReopen) {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select(
+          "customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
+        )
+        .eq("id", customer_id)
+        .maybeSingle();
+      if (cust && isClienteProibidoCadenciaABC(cust)) {
+        return;
+      }
+    }
+
     // D+1 manhã útil: GREETED fica aguardando até o próximo dia comercial.
     const nextAt = nextBusinessMorning(new Date());
+
+    if (opts.forceReopen) {
+      // Retentativa / recadastro: reabre mesmo se estava WON.
+      const { data: cur } = await supabase
+        .from("lead_cadence_state")
+        .select("journey_version")
+        .eq("customer_id", customer_id)
+        .maybeSingle();
+      const ver = Number((cur as { journey_version?: number } | null)?.journey_version || 1);
+      await supabase.from("lead_cadence_state").upsert(
+        {
+          customer_id,
+          consultant_id,
+          stage: "GREETED",
+          next_action_at: nextAt.toISOString(),
+          paused_until: null,
+          paused_reason: null,
+          won_at: null,
+          claim_token: null,
+          claimed_at: null,
+          lease_expires_at: null,
+          journey_version: ver + (cur ? 1 : 0),
+        },
+        { onConflict: "customer_id" },
+      );
+      return;
+    }
+
     await supabase
       .from("lead_cadence_state")
       .upsert(
@@ -62,6 +106,26 @@ export async function onLeadInboundResponse(
       .eq("customer_id", customer_id)
       .maybeSingle();
     const prevStage = String((cur as { stage?: string } | null)?.stage || "");
+
+    // WON / cliente: não reabrir A/B/C por inbound (pós-venda e agenda ficam).
+    if (prevStage === "WON") return;
+    const { data: cust } = await supabase
+      .from("customers")
+      .select(
+        "customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
+      )
+      .eq("id", customer_id)
+      .maybeSingle();
+    if (cust && isClienteProibidoCadenciaABC(cust)) {
+      try {
+        await supabase.rpc("mark_journey_won", {
+          p_customer_id: customer_id,
+          p_source: "cliente_inbound_guard",
+        });
+      } catch { /* RPC opcional */ }
+      return;
+    }
+
     const reason =
       prevStage && prevStage !== "PAUSED"
         ? `lead_responded:${prevStage}`

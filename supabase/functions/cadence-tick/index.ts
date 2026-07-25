@@ -69,6 +69,10 @@ import {
   preloadConsultantAutomationPrefs,
   stageGroupToPack,
 } from "../_shared/consultant-automation-prefs.ts";
+import {
+  clienteCadenceBlockReason,
+  isClienteProibidoCadenciaABC,
+} from "../_shared/cliente-cadence-guard.ts";
 
 type AvailLoader = (consultantId: string | null | undefined) => Promise<AvailabilityOverrides>;
 
@@ -1010,7 +1014,9 @@ Deno.serve(async (req) => {
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
   const { data: custRows } = await supabase
     .from("customers")
-    .select("id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact")
+    .select(
+      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
+    )
     .in("id", customerIds);
   const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
   const blockedCustomers = new Set(
@@ -1029,7 +1035,7 @@ Deno.serve(async (req) => {
   );
 
   let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0, audienceBlocked = 0;
-  let consultantPrefOff = 0;
+  let consultantPrefOff = 0, clienteBlocked = 0;
 
   /** Update que só aplica se ainda formos donos do claim. */
   async function finishRow(
@@ -1106,8 +1112,44 @@ Deno.serve(async (req) => {
     let stage = row.stage as Stage;
     const claimToken = row.claim_token as string | null | undefined;
 
-    // Público piloto (DDD): fora do DDD não envia; adia sem apagar.
     const cust = custById.get(row.customer_id);
+
+    // Trava: CLIENTE (carteira / aprovado / pós-venda) NUNCA recebe A/B/C como lead.
+    // Só pós-venda + agendamento humano. Encerra jornada em WON.
+    if (cust && isClienteProibidoCadenciaABC(cust)) {
+      const reason = clienteCadenceBlockReason(cust);
+      try {
+        // mark_journey_won já zera claim/next_action_at e suprime efeitos reserved.
+        await supabase.rpc("mark_journey_won", {
+          p_customer_id: row.customer_id,
+          p_source: reason,
+        });
+      } catch (e) {
+        console.warn("[cadence-tick] mark_journey_won cliente falhou", {
+          customer_id: row.customer_id,
+          error: (e as Error)?.message,
+        });
+        // Fallback sem RPC: encerra claim localmente.
+        await finishRow(row.id, claimToken, {
+          stage: "WON",
+          next_action_at: null,
+          paused_until: null,
+          paused_reason: `won:${reason}`,
+        });
+      }
+      await logSkipped(supabase, "cadence_engine", {
+        reason: "cliente_proibido_abc",
+        block_reason: reason,
+        customer_id: row.customer_id,
+        consultant_id: row.consultant_id,
+        stage,
+      });
+      clienteBlocked++;
+      skipped++;
+      continue;
+    }
+
+    // Público piloto (DDD): fora do DDD não envia; adia sem apagar.
     const aud = decideAudienceDdd(cust?.phone_whatsapp, audienceCfg);
     if (aud.reason === "shadow_observe") {
       console.log("[cadence-tick] audience_shadow", { customer_id: row.customer_id, ddd: aud.ddd, mode: aud.mode });
@@ -1598,6 +1640,7 @@ Deno.serve(async (req) => {
     processed: due.length, dispatched, deferred, skipped, sent, failed, resumed,
     audience_blocked: audienceBlocked,
     consultant_pref_off: consultantPrefOff,
+    cliente_blocked: clienteBlocked,
   });
 
   const summary = {
@@ -1610,6 +1653,7 @@ Deno.serve(async (req) => {
     resumed,
     audience_blocked: audienceBlocked,
     consultant_pref_off: consultantPrefOff,
+    cliente_blocked: clienteBlocked,
     caps,
     touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
     ms: Date.now() - bootTs,

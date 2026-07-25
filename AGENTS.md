@@ -35,6 +35,7 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 | “por que o lead não recebeu / recebeu errado?” | `#erros-operacionais` `#fluxos` `#armadilhas` `#banco` `#evidencia-prod` |
 | “Velip sem crédito / SMS não chegou / ligação falhou” | `#erros-operacionais` `#voz-sms` |
 | “IA parou / OCR / Easy Panel / Supabase não abre” | `#erros-operacionais` (+ `#wa-webhook` / `#portal2-fluxo-canonico` / `#deploy`) |
+| “me avisa quando falhar / alerta WhatsApp” | `#erros-operacionais` §0b · edge `super-admin-alerts` · `_shared/superadmin-alert.ts` |
 | “mude texto/áudio da cadência B ou C” | `#fluxos` `#helpers-canonicos` + `src/lib/multichannelCadenceTexts.ts` |
 | “webhook Whapi / Evolution / dedupe / ACK” | `#wa-webhook` |
 | “Sofia / Cérebro / Fluxo B / simulador” | `#cerebro-fluxo-b` |

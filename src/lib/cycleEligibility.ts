@@ -11,6 +11,7 @@
  */
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 import { isCrmCadastroEmAnalise, isNuncaMaisContatar } from "@/lib/crmVsLeadAnalysis";
+import { isClienteProibidoCadenciaABC } from "@/lib/clienteCadenceGuard";
 
 /**
  * Motivos de pausa que tiram o lead do ciclo vivo (não aparecem na pizza
@@ -58,6 +59,10 @@ export interface CycleEligibilityInput {
   do_not_contact?: boolean | null;
   paused_reason?: string | null;
   active_cadence?: boolean | null;
+  is_converted?: boolean | null;
+  pos_venda_stage?: string | null;
+  andamento_igreen?: string | null;
+  pos_venda_recadastro_at?: string | null;
 }
 
 /**
@@ -66,8 +71,10 @@ export interface CycleEligibilityInput {
  * congelado / fora do radar operacional.
  */
 export function isCycleLeadEligible(c: CycleEligibilityInput): boolean {
+  // Cliente = só pós-venda + agenda (nunca A/B/C como lead).
+  if (isClienteProibidoCadenciaABC(c)) return false;
   if (isIgreenWalletOrigin(c.customer_origin)) return false;
-  const st = String(c.status || "").toLowerCase();
+  const st = String(c.status || "").trim().toLowerCase();
   if (EXCLUDED_CYCLE_STATUSES.has(st)) return false;
   if (isNuncaMaisContatar(c)) return false;
   if (isCrmCadastroEmAnalise(c)) return false;

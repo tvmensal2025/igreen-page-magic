@@ -22,6 +22,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | IA parou / OCR falhou / handoff | `#erros-operacionais` §2–3 + `#wa-webhook` · `ai_decisions` · `bot_paused_reason` |
 | Easy Panel / worker offline / Sync WAF | `#erros-operacionais` §3 · health Portal2/Club/Sync (URLs separadas) |
 | Site não abre / cron 401 / edge 500 | `#erros-operacionais` §4 + `#security-auth` `#deploy` |
+| Quero alerta WA quando falhar (sem eu lembrar) | edge `super-admin-alerts` + `_shared/superadmin-alert.ts` · `#erros-operacionais` §0b · `app_settings.super_admin_phone` |
 
 ## WhatsApp (Whapi primário, Evolution legado)
 

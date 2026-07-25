@@ -6,6 +6,7 @@
 // nos últimos 30 min para a mesma severidade.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { notifySuperAdminOpsAlert } from "../_shared/superadmin-alert.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,8 +18,6 @@ const MINIO_USER = Deno.env.get("MINIO_ROOT_USER") || "";
 const MINIO_PASS = Deno.env.get("MINIO_ROOT_PASSWORD") || "";
 const MINIO_BUCKET = Deno.env.get("MINIO_BUCKET") || "igreen";
 const MINIO_TOTAL_BYTES = Number(Deno.env.get("MINIO_TOTAL_BYTES") || "0"); // opcional: capacidade total para pct
-const EVOLUTION_API_URL = (Deno.env.get("EVOLUTION_API_URL") || "").replace(/\/$/, "");
-const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
 
 const enc = new TextEncoder();
 function toHex(buf: ArrayBuffer | Uint8Array): string {
@@ -114,50 +113,17 @@ async function pingMinio(): Promise<boolean> {
 }
 
 async function sendAlert(supabase: any, severity: "warn" | "critical", text: string): Promise<boolean> {
-  // Dedup: já alertou na mesma severidade nos últimos 30 min?
-  const dedupCutoff = new Date(Date.now() - 30 * 60_000).toISOString();
-  const { data: recent } = await supabase
-    .from("infra_metrics")
-    .select("id")
-    .eq("metric_key", "minio_alert")
-    .gte("created_at", dedupCutoff)
-    .contains("meta", { severity })
-    .limit(1);
-  if (recent && recent.length > 0) {
+  const status = await notifySuperAdminOpsAlert(supabase, {
+    key: `minio:${severity}`,
+    severity,
+    text,
+    dedupMinutes: 30,
+    metricKey: "minio_alert",
+  });
+  if (status === "skipped_dedup") {
     console.log(`[minio-quota-check] dedup: alerta ${severity} já enviado nos últimos 30min`);
-    return false;
   }
-
-  const { data: settings } = await supabase
-    .from("app_settings")
-    .select("super_admin_phone, super_admin_instance_name")
-    .eq("id", "global")
-    .maybeSingle();
-  const phone = (settings as any)?.super_admin_phone;
-  const inst = (settings as any)?.super_admin_instance_name;
-  if (!phone || !inst || !EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
-    console.warn("[minio-quota-check] alerta não enviado: super_admin_phone/instance_name ou EVOLUTION_* não configurados");
-    return false;
-  }
-  try {
-    const jid = `${String(phone).replace(/\D/g, "")}@s.whatsapp.net`;
-    // INTENTIONAL: staff alert — bypasses anti-ban guard (alerta de quota ao super-admin)
-    const r = await fetch(`${EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(inst)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: EVOLUTION_API_KEY },
-      body: JSON.stringify({ number: jid, text }),
-    });
-    const ok = r.ok;
-    await supabase.from("infra_metrics").insert({
-      metric_key: "minio_alert",
-      value_num: null,
-      meta: { severity, text, sent: ok },
-    });
-    return ok;
-  } catch (e) {
-    console.error("[minio-quota-check] envio falhou:", (e as Error).message);
-    return false;
-  }
+  return status === "sent";
 }
 
 Deno.serve(async (req) => {

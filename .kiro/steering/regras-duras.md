@@ -55,6 +55,7 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - Classificação: `stageGroup(stage)` em `_shared/cadence-engine.ts`.
 - Alertas 60 / 85 / 100 % em `automation_skip_log` (`outreach_cap_{b|c|g}_{60|85|100}pct`); UI: `ColdCadenceCapCard` (3 barras).
 - `daily_whapi_cap` = legado, mantido só para retrocompat do reheat clássico.
+- **CLIENTE ≠ lead:** carteira (`igreen_sync`/`igreen_extension`), `is_converted`, status aprovado/registered/complete, `pos_venda_stage` ou andamento ativo → **proibido A/B/C**. Só pós-venda + agendamento. Helper: `_shared/cliente-cadence-guard.ts` / `src/lib/clienteCadenceGuard.ts`.
 
 ## Janelas horárias BRT (duas, distintas)
 - **Clamp geral** (`clamp_to_business_window_brt`, aplicado pelo motor a todo agendamento): Seg–Sex 08:00–20:00, **Sáb 08:00–14:00**, **Dom fechado** (empurra p/ 2ª-feira 08:05).

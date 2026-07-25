@@ -41,3 +41,5 @@ Sintoma → correção canônica. Se for fazer o lado esquerdo, pare.
 31. **Easy Panel “o worker”** → são **3**: Portal2 ≠ Club ≠ Sync (`d9v63q`, nunca typo `d9v83a`). Health de cada URL.
 32. **Plataforma não abre = Zap/Evolution** → checklist `#erros-operacionais` §4 (cache → JWT → CORS → Whapi AUTH → workers → cron auth).
 33. **Qualquer falha operacional sem playbook** → comece por `#erros-operacionais` (Velip/IA/OCR/EasyPanel/Supabase/caps).
+34. **Cliente recebendo A/B/C como lead** → trava `isClienteProibidoCadenciaABC` + DB `tg_lead_cadence_block_cliente` + `cadence_ensure_state_from_customer` (sync não cria GREETED). Cliente = carteira/aprovado/`pos_venda_stage`/andamento ativo → só pós-venda + agenda. Os N do KPI “Total de cadastros” são carteira sync, não pizza A/B/C.
+35. **“Falha operacional e ninguém avisa”** → cron `super-admin-alerts` (Whapi → `super_admin_phone`) + MinIO via `_shared/superadmin-alert.ts`. Não depende de Evolution. Dedup `infra_metrics` (`ops_alert` / `minio_alert`). Playbook: `#erros-operacionais` §0b.

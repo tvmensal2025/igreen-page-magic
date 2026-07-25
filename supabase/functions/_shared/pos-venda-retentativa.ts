@@ -111,7 +111,10 @@ export async function activatePosVendaRecadastro(
   try {
     const { ensureCadenceState } = await import("./cadence-hooks.ts");
     if (customer.consultant_id) {
-      await ensureCadenceState(supabase, customer.id, customer.consultant_id);
+      // forceReopen: sai de WON e volta ao Grupo A (cadastro).
+      await ensureCadenceState(supabase, customer.id, customer.consultant_id, {
+        forceReopen: true,
+      });
     }
   } catch (e) {
     console.warn(

@@ -3,7 +3,7 @@
  *
  * Regra de ouro do sistema iGreen:
  *
- *   "Cliente da carteira iGreen NUNCA recebe mensagem automática.
+ *   "Cliente da carteira iGreen NUNCA recebe mensagem automática de lead.
  *    Só leads (vindos de anúncio/WhatsApp) e cadastros manuais recebem
  *    follow-up, reaquecimento, nudge e resgate da IA.
  *    Cliente da carteira só entra em pós-venda quando o consultor (ou admin)
@@ -13,9 +13,10 @@
  * Este módulo centraliza o filtro de `customer_origin` para que todos os
  * crons proativos (process-followups, bot-followup-checker, reactivation-cron,
  * bot-stuck-recovery, faq-reengagement-nudge, bot-loop-watchdog) usem
- * exatamente a mesma definição. Antes existiam 3 cópias divergentes da
- * regra e 3 motores sem filtro nenhum — clientes da carteira vinham sendo
- * varridos por engano.
+ * exatamente a mesma definição.
+ *
+ * Cadência A/B/C: use também `cliente-cadence-guard.ts` (`isClienteProibidoCadenciaABC`)
+ * — cobre carteira + status aprovado/registered + pos_venda + andamento ativo.
  */
 
 /** Origens consideradas "lead" — elegíveis para automação proativa. */

@@ -6,7 +6,14 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (playbook `#erros-operacionais` + opt-in prefs + incidente CPL).
+Última atualização: **2026-07-25** (alerta WA ativo + trava cliente≠A/B/C + playbook erros + opt-in prefs).
+
+## 2026-07-25 — Alerta ativo no WhatsApp do dono
+Cron `super-admin-alerts` passou a checar falhas reais (kill, workers, Velip crédito, SMS undeliv, Whapi AUTH, caps, portal offline) e avisar via **Whapi** (`_shared/superadmin-alert.ts` → `super_admin_phone`). MinIO também. Dedup `infra_metrics`. Armadilha #35; `#erros-operacionais` §0b. **Não** alerta Evolution `needs_reconnect`.
+
+## 2026-07-25 — Cliente proibido A/B/C
+Helper `cliente-cadence-guard.ts` / `clienteCadenceGuard.ts`. Cadence-tick + trigger `tg_customer_journey_sync` + backfill 22 WON. Cliente (carteira/aprovado/pos_venda/andamento) só pós-venda + agenda. Armadilha #34; regras-duras caps.
+**v2 hard lock:** `cadence_ensure_state_from_customer` não cria GREETED p/ sync; `tg_lead_cadence_block_cliente` força WON se alguém tentar abrir A/B/C p/ cliente. Os 974 do dashboard = carteira sync — nunca pizza A/B/C.
 
 ## 2026-07-25 — Playbook erros operacionais (memória da IA)
 Novo `.kiro/steering/erros-operacionais.md` (`inclusion: auto`) + armadilhas **#28–#33**.
