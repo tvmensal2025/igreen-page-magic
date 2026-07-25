@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-24-r8",
+  "updated_at": "2026-07-25",
   "purpose": "Fonte de verdade máquina-legível: domínio → código → steering → regras Cursor. Agentes (Kiro/Cursor/outros) devem consultar isto antes de editar.",
   "how_to_use": [
     "Classifique o pedido em um id de domains[].id",
@@ -682,6 +682,63 @@
       "risk": "medium",
       "doc_status": "ok",
       "notes": "Steering auto: minio-storage"
+    },
+    {
+      "id": "erros-operacionais",
+      "labels": [
+        "falha",
+        "erro",
+        "Velip crédito",
+        "SMS não chegou",
+        "IA parou",
+        "OCR",
+        "Easy Panel",
+        "Supabase não abre",
+        "cron 401"
+      ],
+      "steering": [
+        "erros-operacionais.md",
+        "armadilhas.md",
+        "voz-sms.md",
+        "mapa-tarefas.md"
+      ],
+      "cursor_rules": [
+        "whatsapp-whapi-primario.mdc",
+        "producao-sem-envio-automatico.mdc"
+      ],
+      "code_anchors": [
+        "supabase/functions/_shared/voice-dialer/velip.ts",
+        "supabase/functions/_shared/cron-auth.ts",
+        "supabase/functions/cadence-tick/index.ts"
+      ],
+      "tables": [
+        "voice_sms_log",
+        "voice_call_logs",
+        "voice_dnc_list",
+        "automation_skip_log",
+        "ai_decisions"
+      ],
+      "edges": [
+        "voice-dialer-webhook",
+        "voice-dialer-cron",
+        "cadence-tick",
+        "bot-stuck-recovery",
+        "admin-cron-status"
+      ],
+      "helpers": [
+        "_shared/voice-dialer/velip.ts",
+        "_shared/cron-auth.ts",
+        "_shared/consultant-automation-prefs.ts"
+      ],
+      "ai_donts": [
+        "não assumir pause automática por saldo Velip",
+        "não tratar sms_sent como DELIVRD",
+        "não misturar URLs Portal/Club/Sync Easy Panel",
+        "não usar Evolution needs_reconnect como Zap offline"
+      ],
+      "risk": "high",
+      "doc_status": "ok",
+      "notes": "Playbook 2026-07-25: crédito Velip + SMS entrega + IA/OCR + infra"
     }
   ],
   "god_files_lines": [
@@ -727,7 +784,7 @@
     }
   ],
   "pack_stats": {
-    "steering_files": 38,
+    "steering_files": 41,
     "steering_lines": 2169,
     "cursor_rules": 15,
     "kiro_specs_folders": 23,

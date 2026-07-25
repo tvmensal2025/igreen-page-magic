@@ -40,8 +40,15 @@ Cadência reusa o dialer em stages `A_CALL*`, `CALL_*`, `*_SMS` via `cadence-tic
 
 TTS: `call-stitch.ts` + `safeFirstNameForAddress`; guard também em `cadence-tick:799`.
 
+## Crédito Velip (não esquecer)
+- `GetUserID` **não** retorna saldo (API v2). UI mostra “—” / oriente painel.
+- **Não existe** pause automática por crédito zerado no código.
+- Erros vistos em prod: `Blocked text#270`, `BK_PROCON#250`, `number invalid#203`, delivery `UNDELIV`/`REJECTD`/`EXPIRED`.
+- Aceito (`sms_sent` / `status=sent`) ≠ entregue (`DELIVRD`). Playbook completo: `#erros-operacionais`.
+
 ## NÃO FAÇA
 - Discagem em massa nova sem pedido + cadeados
 - Personalizar TTS com `whatsapp_profile` / slug
 - Ignorar `voice_dnc_list` ou cross-channel IK/UNDELIV
 - Assumir que kill `bot_global` é o único cadeado (cadence + toggles + DNC)
+- Assumir que saldo Velip está no banco / que o motor pausa sem crédito

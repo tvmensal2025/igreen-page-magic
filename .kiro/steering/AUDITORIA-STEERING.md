@@ -6,7 +6,13 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (consultant_automation_prefs opt-in + incidente CPL).
+Última atualização: **2026-07-25** (playbook `#erros-operacionais` + opt-in prefs + incidente CPL).
+
+## 2026-07-25 — Playbook erros operacionais (memória da IA)
+Novo `.kiro/steering/erros-operacionais.md` (`inclusion: auto`) + armadilhas **#28–#33**.
+Fontes: 5 subagentes (Velip, bot/OCR, infra EasyPanel/Supabase, automação skips, wallet/portal/ads) + MCP SQL prod (IK/UNDELIV/Blocked text#270/BK_PROCON) + Context7 Supabase 401.
+Cobre: crédito Velip (API sem saldo / sem gate), SMS aceito≠entregue, IA muda, OCR, 3 workers Easy Panel, checklist “não abre”, caps/prefs/DNC.
+Índice: `AGENTS.md` árvore + `#mapa-tarefas` + reforço `#voz-sms`.
 
 ## 2026-07-25 — Opt-in automação por consultor
 Tabela `consultant_automation_prefs` + modal/atalho “Minhas automações”. Gates em cadence-tick, daily-reheat, pos-venda, process-followups, faq-nudge, bot-followup. Seed ON quem já tinha pizza/outbound 14d. Armadilha #27: global ON ≠ consultor ON.

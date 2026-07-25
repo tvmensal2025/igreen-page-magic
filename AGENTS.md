@@ -32,7 +32,9 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 
 | Pergunta que o usuário está fazendo | Ative primeiro |
 |---|---|
-| “por que o lead não recebeu / recebeu errado?” | `#fluxos` `#armadilhas` `#banco` `#evidencia-prod` |
+| “por que o lead não recebeu / recebeu errado?” | `#erros-operacionais` `#fluxos` `#armadilhas` `#banco` `#evidencia-prod` |
+| “Velip sem crédito / SMS não chegou / ligação falhou” | `#erros-operacionais` `#voz-sms` |
+| “IA parou / OCR / Easy Panel / Supabase não abre” | `#erros-operacionais` (+ `#wa-webhook` / `#portal2-fluxo-canonico` / `#deploy`) |
 | “mude texto/áudio da cadência B ou C” | `#fluxos` `#helpers-canonicos` + `src/lib/multichannelCadenceTexts.ts` |
 | “webhook Whapi / Evolution / dedupe / ACK” | `#wa-webhook` |
 | “Sofia / Cérebro / Fluxo B / simulador” | `#cerebro-fluxo-b` |
@@ -105,6 +107,7 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `pos-venda` | fileMatch pos-venda | Pós-venda WA D30–D210 + retentativa |
 | `wa-webhook` | fileMatch whapi/evolution webhook | Contrato inbound Whapi + paridade Evolution |
 | `cerebro-fluxo-b` | fileMatch cerebro / fluxo-b | Produção vs simulador Sofia |
+| `erros-operacionais` | auto | Playbook falhas: Velip crédito/SMS/voz, IA muda, OCR, Easy Panel, Supabase, caps |
 | `voz-sms` | fileMatch voice-* / voz UI | Velip, DNC, cross-channel IK/UNDELIV |
 | `agendamentos-hub` | fileMatch AgendamentosHub / send-scheduled | Timeline multi-motor; agenda sem quiet hours |
 | `cross-sell` | fileMatch crossSell* | Card manual + sombra Cérebro — NÃO massa |

@@ -35,3 +35,9 @@ Sintoma → correção canônica. Se for fazer o lado esquerdo, pare.
 25. **Assumir que o V3 já decide o turno** → `flow_engine_v3` ainda é sombra/canário conforme rollout; preserve a ordem real de roteamento documentada em `#wa-webhook`.
 26. **Somar action_types de conversa Meta** (`started`+`first_reply`+`total_connection`) → triplica conversas e CPL cai ~3×; Cérebro sobe budget à toa. Use `pickMetaConversations` / `pickMetaLeads` em `_shared/meta-insight-actions.ts` (prioridade, nunca soma).
 27. **Motor global ON = consultor ON** → falso. Cadeado 2: `consultant_automation_prefs` (A/B/C, pós-venda, lembretes). Sem row / pack OFF = skip só daquele `consultant_id`. UI: modal + “Minhas automações”. Helper: `consultant-automation-prefs.ts` / `src/lib/consultantAutomationPrefs.ts`.
+28. **“Velip sem crédito → sistema pausa sozinho”** → API v2 **não expõe saldo**; **não há gate** de crédito no código. Consultar **painel Velip**; recarregar lá. Playbook: `#erros-operacionais`.
+29. **`sms_sent` = chegou no celular** → falso. Aceito Velip ≠ `DELIVRD`. Rajada = operadora engole. Ver `voice_sms_log.delivery_status` (`UNDELIV`/`Blocked text#270`/null).
+30. **IK/EK/BK/CK ou UNDELIV×2 e “tenta de novo”** → canal morto / DNC; `checkPhoneDeadForChannel`. Não gastar saldo.
+31. **Easy Panel “o worker”** → são **3**: Portal2 ≠ Club ≠ Sync (`d9v63q`, nunca typo `d9v83a`). Health de cada URL.
+32. **Plataforma não abre = Zap/Evolution** → checklist `#erros-operacionais` §4 (cache → JWT → CORS → Whapi AUTH → workers → cron auth).
+33. **Qualquer falha operacional sem playbook** → comece por `#erros-operacionais` (Velip/IA/OCR/EasyPanel/Supabase/caps).

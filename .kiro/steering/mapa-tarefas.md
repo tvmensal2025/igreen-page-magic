@@ -17,7 +17,11 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Adicionar novo stage | `_shared/cadence-engine.ts` (`STAGE_MAP` + `stageGroup`) + migration em `cadence_stage_config` + revisar `cadence-inbound-router.ts` |
 | Mudar janela horária de envio | Trava `clamp_to_business_window_brt` em migration. **Duas janelas distintas:** (1) clamp geral = Seg–Sex 08:00–20:00, Sáb 08:00–14:00, Dom fechado (empurra p/ 2ª 08:05); (2) `daily_reheat_settings.window_start_brt/end_brt` (default 09:00–18:30) usada só pelo reheat clássico. |
 | Pausar/despausar cadência | `app_settings.cadence_engine_enabled` + `automation_toggles(key='cadence_engine')` |
-| Investigar “por que não enviou” | `automation_skip_log` (motivos: cap, DNC, quiet, nome inseguro, canal morto) + logs `cadence-tick` (`boot`/`guards_ok`/`done`/`fatal`) |
+| Investigar “por que não enviou” | **`#erros-operacionais`** + `automation_skip_log` (cap, DNC, quiet, prefs, canal morto) + logs `cadence-tick` (`boot`/`guards_ok`/`done`/`fatal`) |
+| Velip sem crédito / SMS não chega / ligação IK | `#erros-operacionais` §1 + `#voz-sms` · painel Velip · `voice_sms_log` / `voice_call_logs` |
+| IA parou / OCR falhou / handoff | `#erros-operacionais` §2–3 + `#wa-webhook` · `ai_decisions` · `bot_paused_reason` |
+| Easy Panel / worker offline / Sync WAF | `#erros-operacionais` §3 · health Portal2/Club/Sync (URLs separadas) |
+| Site não abre / cron 401 / edge 500 | `#erros-operacionais` §4 + `#security-auth` `#deploy` |
 
 ## WhatsApp (Whapi primário, Evolution legado)
 
