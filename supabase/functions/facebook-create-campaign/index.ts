@@ -29,7 +29,10 @@ import {
   resolveRetargetDdds,
 } from "../_shared/city-to-ddd.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
-import { isAdsActionAllowedForConfig } from "../_shared/brain-config.ts";
+import {
+  isAdsActionAllowedForConfig,
+  normalizeBrainConfig,
+} from "../_shared/brain-config.ts";
 import { buildCors } from "../_shared/cors.ts";
 import {
   canProceedWithPublish,
@@ -281,6 +284,22 @@ Deno.serve(async (req) => {
           },
         );
       }
+      {
+        const brainCfg = normalizeBrainConfig(settings?.brain_config);
+        if (brainCfg.geo_mode === "radius_sede" || brainCfg.max_explorers <= 0) {
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              skipped: "seed_disabled_radius_sede",
+              geo_mode: brainCfg.geo_mode,
+              max_explorers: brainCfg.max_explorers,
+            }),
+            {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            },
+          );
+        }
+      }
       auth = { id: cid, supabase: adminGate };
     }
     if (!auth) {
@@ -498,6 +517,35 @@ Deno.serve(async (req) => {
     const trackedInitialMessage = stripTrackingProtocol(
       buildInitialMessage(body.initial_message, body.distribuidora),
     ).trim().slice(0, 280);
+    // Lembrete obrigatório: toda campanha CTWA precisa de mensagem inicial explícita.
+    // Sem silent-fallback quando brain_config.require_initial_message=true (default).
+    {
+      const adminMsg = adminClient();
+      const { data: adSettingsRow } = await adminMsg
+        .from("consultant_ad_settings")
+        .select("brain_config")
+        .eq("consultant_id", auth.id)
+        .maybeSingle();
+      const brainCfg = normalizeBrainConfig(adSettingsRow?.brain_config);
+      const explicit = String(body.initial_message || "").replace(/[\r\n]+/g, " ")
+        .trim();
+      if (
+        brainCfg.require_initial_message !== false && explicit.length < 5
+      ) {
+        return new Response(
+          JSON.stringify({
+            error:
+              "Toda campanha precisa da mensagem inicial do WhatsApp (a frase que o lead envia ao clicar no anúncio). Escreva uma frase única antes de publicar.",
+            code: "MISSING_INITIAL_MESSAGE",
+            hint: "Campo initial_message obrigatório — use o wizard/Express ou varie a frase com IA.",
+          }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+    }
     if (trackedInitialMessage.length < 5) {
       return new Response(
         JSON.stringify({

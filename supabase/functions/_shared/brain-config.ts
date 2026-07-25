@@ -20,6 +20,8 @@ export type BrainExtraCity = {
 
 export type AdsAutomationMode = "disabled" | "shadow" | "limited" | "full";
 
+export type BrainGeoMode = "cities_mg_rot" | "radius_sede";
+
 export type BrainConfig = {
   /** Compatibilidade legada. Nunca autoriza mutação sem automation_mode explícito. */
   autopilot: boolean;
@@ -39,7 +41,11 @@ export type BrainConfig = {
   scale_step_pct: number;
   /** Budget diário de cada exploradora (centavos). */
   explorer_budget_cents: number;
-  /** Quantas exploradoras ativas além da âncora. Total no ar = 1 + max_explorers. */
+  /**
+   * Quantas exploradoras ativas além da âncora.
+   * 0 = só âncora (formato oficial Meta 2026: concentrar).
+   * Total no ar = 1 + max_explorers.
+   */
   max_explorers: number;
   /** Preferência de idade (Meta Advantage+: hard age_min fica 25; sugestão = este valor). */
   age_min: number;
@@ -56,6 +62,19 @@ export type BrainConfig = {
   anchor_campaign_id?: string | null;
   /** Criativo vencedor usado nas exploradoras (HTTPS). */
   winner_photo_url?: string | null;
+  /**
+   * Geo oficial: `radius_sede` = 1 raio na sede (Meta-aligned);
+   * `cities_mg_rot` = legado slots por cidade.
+   */
+  geo_mode?: BrainGeoMode;
+  sede_name?: string | null;
+  sede_latitude?: number | null;
+  sede_longitude?: number | null;
+  /** 1–50 km (teto do publisher; Meta API permite até 80). */
+  sede_radius_km?: number | null;
+  sede_address?: string | null;
+  /** Toda campanha criada precisa de mensagem inicial WhatsApp (CTWA). */
+  require_initial_message?: boolean;
 };
 
 export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
@@ -65,15 +84,24 @@ export const DEFAULT_BRAIN_CONFIG: BrainConfig = {
   kill_switch: true,
   anchor_budget_cents: 1000,
   max_anchor_budget_cents: 50000,
-  target_cpl_cents: 200,
+  /** Default realista (R$ 7,50). R$ 2 trava escala no piso Meta. */
+  target_cpl_cents: 750,
   scale_step_pct: 10,
   explorer_budget_cents: 517,
-  max_explorers: 4,
+  /** Default 0 = concentrar na âncora (Help Center Meta: consolidar). */
+  max_explorers: 0,
   age_min: 30,
   age_max: 65,
   min_runway_days: 2,
-  preferred_slugs: ["uberaba", "contagem", "betim", "patos-de-minas"],
+  preferred_slugs: [],
   extra_cities: [],
+  geo_mode: "radius_sede",
+  sede_name: null,
+  sede_latitude: null,
+  sede_longitude: null,
+  sede_radius_km: 50,
+  sede_address: null,
+  require_initial_message: true,
 };
 
 export function resolveAdsAutomationMode(raw: unknown): AdsAutomationMode {
@@ -116,10 +144,19 @@ export function normalizeBrainConfig(raw: unknown): BrainConfig {
     ? o.mode
     : "conservative";
   const automationMode = resolveAdsAutomationMode(o);
-  const maxExplorers = Math.max(
+  const maxExplorersRaw = Number(o.max_explorers);
+  const maxExplorers = Number.isFinite(maxExplorersRaw)
+    ? Math.max(0, Math.min(8, Math.round(maxExplorersRaw)))
+    : DEFAULT_BRAIN_CONFIG.max_explorers;
+  const geoMode: BrainGeoMode = o.geo_mode === "cities_mg_rot"
+    ? "cities_mg_rot"
+    : "radius_sede";
+  const sedeRadius = Math.max(
     1,
-    Math.min(8, Number(o.max_explorers) || DEFAULT_BRAIN_CONFIG.max_explorers),
+    Math.min(50, Math.round(Number(o.sede_radius_km) || 50)),
   );
+  const sedeLat = Number(o.sede_latitude);
+  const sedeLng = Number(o.sede_longitude);
 
   return {
     autopilot: o.autopilot === true,
@@ -159,9 +196,10 @@ export function normalizeBrainConfig(raw: unknown): BrainConfig {
     age_min: Math.max(18, Math.min(65, Number(o.age_min) || 30)),
     age_max: Math.max(18, Math.min(65, Number(o.age_max) || 65)),
     min_runway_days: Math.max(1, Math.min(30, Number(o.min_runway_days) || 2)),
-    preferred_slugs: preferred.length
-      ? preferred.slice(0, maxExplorers)
-      : DEFAULT_BRAIN_CONFIG.preferred_slugs.slice(0, maxExplorers),
+    // Array vazio explícito = sem exploradoras (não cair no default legado).
+    preferred_slugs: Array.isArray(o.preferred_slugs)
+      ? preferred.slice(0, Math.max(0, maxExplorers))
+      : DEFAULT_BRAIN_CONFIG.preferred_slugs.slice(0, Math.max(0, maxExplorers)),
     extra_cities: extra,
     last_anchor_scale_at: o.last_anchor_scale_at
       ? String(o.last_anchor_scale_at)
@@ -174,6 +212,17 @@ export function normalizeBrainConfig(raw: unknown): BrainConfig {
         o.winner_photo_url.trim()
       ? o.winner_photo_url.trim()
       : null,
+    geo_mode: geoMode,
+    sede_name: typeof o.sede_name === "string" && o.sede_name.trim()
+      ? o.sede_name.trim()
+      : null,
+    sede_latitude: Number.isFinite(sedeLat) ? sedeLat : null,
+    sede_longitude: Number.isFinite(sedeLng) ? sedeLng : null,
+    sede_radius_km: sedeRadius,
+    sede_address: typeof o.sede_address === "string" && o.sede_address.trim()
+      ? o.sede_address.trim()
+      : null,
+    require_initial_message: o.require_initial_message !== false,
   };
 }
 

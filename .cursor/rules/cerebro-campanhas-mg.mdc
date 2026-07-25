@@ -6,13 +6,17 @@ alwaysApply: false
 
 # Cérebro de Campanhas MG
 
-Doc completa: `docs/cerebro-e-rodizio-avisos.md`
+**Doc oficial:** `docs/CEREBRO-ADS-OFICIAL.md`  
+Operacional: `docs/cerebro-e-rodizio-avisos.md`
 
 ## Modelo
 
-- **1 âncora** (Uberlândia) + **até N exploradoras** `MG-ROT-*` (default 4 → 5 no ar).
+- **Formato oficial 2026:** 1 campanha CTWA · raio **40–50 km** na **sede** · budget concentrado · Advantage+.
+- `brain_config.geo_mode = radius_sede` + `max_explorers = 0` → rotator **não** semeia `MG-ROT-*`.
+- Legado `cities_mg_rot`: 1 âncora + até N exploradoras (só com pedido explícito).
 - Config: `consultant_ad_settings.brain_config` (normalize em `_shared/brain-config.ts`).
-- Autopilot: `facebook-auto-pause` (waste) → tick `facebook-mg-city-rotator` (`ensure_active_slots`) **só com diff** (ver seção Idempotência).
+- **Toda campanha criada** exige `initial_message` (frase CTWA) — `require_initial_message=true`.
+- Autopilot: `facebook-auto-pause` (waste) → tick rotator só se `geo_mode` permitir slots.
 
 ## Escala da âncora (NÃO confundir)
 

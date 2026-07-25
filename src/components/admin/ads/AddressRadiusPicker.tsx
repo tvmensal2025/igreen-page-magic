@@ -20,6 +20,8 @@ export interface RadiusPoint {
 interface Props {
   value: RadiusPoint[];
   onChange: (next: RadiusPoint[]) => void;
+  /** Raio inicial do slider (km). Default 10; sede iGreen usa 50. */
+  defaultRadius?: number;
 }
 
 interface NominatimResult {
@@ -29,14 +31,18 @@ interface NominatimResult {
   place_id: number;
 }
 
-export function AddressRadiusPicker({ value, onChange }: Props) {
+export function AddressRadiusPicker({ value, onChange, defaultRadius = 10 }: Props) {
   const [query, setQuery] = useState("");
-  const [radius, setRadius] = useState(10);
+  const [radius, setRadius] = useState(defaultRadius);
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
   const [loadingSugg, setLoadingSugg] = useState(false);
   const [pending, setPending] = useState<RadiusPoint | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setRadius(Math.max(1, Math.min(50, Number(defaultRadius) || 10)));
+  }, [defaultRadius]);
 
   useEffect(() => {
     if (!query || query.length < 3) {

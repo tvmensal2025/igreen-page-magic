@@ -49,7 +49,7 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 | “Club deu erro” | `#club-api-oficial` |
 | “carteira/consumo iGreen não bateu” | `#igreen-sync-oficial` |
 | “rodízio / atribuição de campanha errada” | `#cerebro-mg-e-rodizio` `#rodizio-parceiros-campanha` `#fluxos` |
-| “anúncio Meta / métricas / waste” | `#ads-contraste` `#cerebro-mg-e-rodizio` |
+| “anúncio Meta / métricas / waste” | `#ads-contraste` `#cerebro-mg-e-rodizio` · `docs/CEREBRO-ADS-OFICIAL.md` |
 | “consultor sem saldo / Stripe” | `#wallet-stripe` |
 | “mídia (áudio/imagem/vídeo) não subiu” | `#minio-storage` |
 | “bot ignorou etapa / motor v3” | `#flow-engine-v3` `#armadilhas` |
@@ -104,7 +104,7 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `portal2-fluxo-canonico` | fileMatch portal | Cadastro iGreen oficial |
 | `club-api-oficial` | fileMatch club | Club worker |
 | `igreen-sync-oficial` | fileMatch sync | Sync carteira (Playwright) |
-| `cerebro-mg-e-rodizio` | auto | Escala Meta + waste + broadcast horário do rodízio |
+| `cerebro-mg-e-rodizio` | auto | Escala Meta + waste + rodízio · canônica `docs/CEREBRO-ADS-OFICIAL.md` |
 | `rodizio-parceiros-campanha` | fileMatch wizard ads / rodizio | Mecânica do rodízio de PARCEIROS por campanha (RPC `rodizio_assign_lead`) |
 | `parceiros-referral` | fileMatch parceiros / qr-phrase / keyword-matcher | Cadastro parceiro, keyword, `short_code`, matching webhook, `notifyPartnerNewLead` |
 | `ads-contraste` | auto | UI Ads, waste guard, métricas |

@@ -6,7 +6,9 @@ description: Cérebro MG Meta + waste + avisos rodízio. Use em Ads/escala/rodí
 
 # Cérebro MG + avisos de rodízio
 
-Doc: #[[file:docs/cerebro-e-rodizio-avisos.md]] · rule: #[[file:.cursor/rules/cerebro-campanhas-mg.mdc]]
+**Doc oficial (canônica):** #[[file:docs/CEREBRO-ADS-OFICIAL.md]]  
+Operacional/rodízio: #[[file:docs/cerebro-e-rodizio-avisos.md]] · rule: #[[file:.cursor/rules/cerebro-campanhas-mg.mdc]]  
+Política curta: #[[file:docs/CEREBRO-ADS-POLITICA-CONGELADA-2026.md]] · script `scripts/analysis/cerebro_ads_2026_analysis.py`
 
 ## Cérebro
 - 1 âncora (UDI) + até N `MG-ROT-*`; config `consultant_ad_settings.brain_config`

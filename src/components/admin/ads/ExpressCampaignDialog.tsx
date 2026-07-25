@@ -1,19 +1,23 @@
 // Modo Express — 1 tela, 5 escolhas. Tudo o mais é pré-marcado automático.
 // Cidade/rua • Imagem • Copy • Valor • Dias  →  Publicar.
+// Default geo = raio na sede (brain_config); mensagem inicial WhatsApp obrigatória.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Loader2, MapPin, Image as ImageIcon, Type, DollarSign, Calendar, Sparkles, Check, Upload, RotateCcw, ExternalLink } from "lucide-react";
+import { Loader2, MapPin, Image as ImageIcon, Type, DollarSign, Calendar, Sparkles, Check, Upload, RotateCcw, ExternalLink, MessageSquare } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { searchCities, type CityHit, createCampaign, preflightCampaign, uploadAdPhotos } from "@/services/facebookAds";
-import { fetchExpressSuggestions, type ExpressSuggestions, type ExpressImage, type ExpressCopy } from "@/services/expressCampaign";
+import { fetchExpressSuggestions, type ExpressSuggestions, type ExpressImage } from "@/services/expressCampaign";
 import { AddressRadiusPicker, type RadiusPoint } from "./AddressRadiusPicker";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { supabase } from "@/integrations/supabase/client";
+import { INITIAL_MSG_LIMIT } from "./campaign-wizard/wizardHelpers";
 
 interface Props {
   open: boolean;
@@ -30,16 +34,20 @@ const DAY_OPTIONS: Array<{ label: string; value: number | null }> = [
   { label: "Contínuo", value: null },
 ];
 
+const SEDE_DEFAULT_MSG = "Oi! Quero saber como economizar na conta de luz.";
+
 export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, onOpenAdvanced }: Props) {
   const { toast } = useToast();
 
-  // 1) ONDE
-  const [geoMode, setGeoMode] = useState<"cities" | "radius">("cities");
+  // 1) ONDE — default = raio na sede (política Meta 2026)
+  const [geoMode, setGeoMode] = useState<"cities" | "radius">("radius");
   const [cityQuery, setCityQuery] = useState("");
   const [cityHits, setCityHits] = useState<CityHit[]>([]);
   const [citySearching, setCitySearching] = useState(false);
   const [cities, setCities] = useState<CityHit[]>([]);
   const [radiusPoints, setRadiusPoints] = useState<RadiusPoint[]>([]);
+  const [sedeRadiusKm, setSedeRadiusKm] = useState(50);
+  const [sedeHint, setSedeHint] = useState<string | null>(null);
 
   // Sugestões
   const [suggestions, setSuggestions] = useState<ExpressSuggestions | null>(null);
@@ -53,20 +61,59 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
   // 3) COPY
   const [selectedCopyIdx, setSelectedCopyIdx] = useState(0);
 
+  // Mensagem inicial WhatsApp (obrigatória em toda campanha)
+  const [initialMessage, setInitialMessage] = useState(SEDE_DEFAULT_MSG);
+
   // 4-5) VALOR / DIAS
   const [budget, setBudget] = useState(15);
   const [days, setDays] = useState<number | null>(7);
 
   const [publishing, setPublishing] = useState(false);
 
-  // Reset on open
+  // Reset on open + pré-carrega sede do brain_config
   useEffect(() => {
     if (!open) return;
-    setGeoMode("cities");
+    setGeoMode("radius");
     setCityQuery(""); setCityHits([]); setCities([]); setRadiusPoints([]);
     setSuggestions(null); setSelectedImage(null); setSelectedCopyIdx(0);
     setBudget(15); setDays(7);
-  }, [open]);
+    setInitialMessage(SEDE_DEFAULT_MSG);
+    setSedeHint(null);
+    setSedeRadiusKm(50);
+
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("consultant_ad_settings")
+        .select("brain_config")
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      if (cancelled || !data?.brain_config) return;
+      const bc = data.brain_config as Record<string, unknown>;
+      const lat = Number(bc.sede_latitude);
+      const lng = Number(bc.sede_longitude);
+      const radius = Math.max(1, Math.min(50, Number(bc.sede_radius_km) || 50));
+      const address = typeof bc.sede_address === "string" && bc.sede_address.trim()
+        ? bc.sede_address.trim()
+        : "Sede iGreen";
+      const name = typeof bc.sede_name === "string" && bc.sede_name.trim()
+        ? bc.sede_name.trim()
+        : "Sede";
+      setSedeRadiusKm(radius);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        setRadiusPoints([{
+          latitude: lat,
+          longitude: lng,
+          radius,
+          address_string: address,
+          name,
+        }]);
+        setSedeHint(`${name} · ${radius} km`);
+        setGeoMode("radius");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, consultantId]);
 
   // Autocomplete cidades (debounce)
   useEffect(() => {
@@ -89,7 +136,6 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
   }
   function removeCity(key: string) { setCities((prev) => prev.filter((x) => x.key !== key)); }
 
-  // Quando muda cidades/raio → recarrega sugestões
   const cityNames = useMemo(() => {
     if (geoMode === "cities") return cities.map((c) => c.name);
     return radiusPoints.map((p) => p.address_string.split(",")[0]);
@@ -103,6 +149,11 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
       if (!selectedImage && s.images.length) setSelectedImage(s.images[0]);
       setBudget(Math.max(5.17, Math.round((s.defaults.budget_cents / 100) * 100) / 100));
       setDays(s.defaults.duration_days ?? 7);
+      if (s.defaults.initial_message?.trim()) {
+        setInitialMessage((prev) =>
+          prev === SEDE_DEFAULT_MSG ? s.defaults.initial_message : prev
+        );
+      }
     } catch (e: any) {
       toast({ title: "Falha ao carregar sugestões", description: e.message, variant: "destructive" });
     } finally { setLoadingSugg(false); }
@@ -139,6 +190,9 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
     if (!selectedImage) return "Selecione uma imagem.";
     if (!suggestions?.copies[selectedCopyIdx]) return "Aguardando geração da copy...";
     if (budget < 5.17) return "Orçamento mínimo R$ 5,17/dia.";
+    if (initialMessage.trim().length < 5) {
+      return "Escreva a mensagem inicial do WhatsApp (obrigatória em toda campanha).";
+    }
     return null;
   }
 
@@ -185,7 +239,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
         age_max: defaults.age_max,
         distribuidora: defaults.distribuidora?.nome,
         placement_mode: "auto",
-        initial_message: defaults.initial_message,
+        initial_message: initialMessage.trim(),
       });
       toast({ title: "Campanha publicada!", description: "Em análise pelo Facebook (~15min)." });
       onCreated?.();
@@ -196,7 +250,6 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
   }
 
   const blocker = canPublish();
-  const copy = suggestions?.copies[selectedCopyIdx] || null;
   const defaults = suggestions?.defaults || null;
 
   return (
@@ -216,15 +269,19 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
         </div>
         <div className="px-6 pb-6 pt-2">
 
-
         <div className="space-y-5 mt-2">
           {/* 1) ONDE */}
           <section className="space-y-2">
             <Label className="flex items-center gap-1.5 text-sm"><MapPin className="w-4 h-4 text-primary" /> 1. Onde anunciar</Label>
+            {sedeHint && geoMode === "radius" && (
+              <p className="text-[11px] text-muted-foreground">
+                Pré-preenchido com a sede: {sedeHint}. Próximas campanhas devem seguir raio amplo na sede (política Meta).
+              </p>
+            )}
             <Tabs value={geoMode} onValueChange={(v) => setGeoMode(v as any)}>
               <TabsList className="h-8">
-                <TabsTrigger value="cities" className="text-xs h-7">Cidade(s)</TabsTrigger>
                 <TabsTrigger value="radius" className="text-xs h-7">Rua + raio</TabsTrigger>
+                <TabsTrigger value="cities" className="text-xs h-7">Cidade(s)</TabsTrigger>
               </TabsList>
               <TabsContent value="cities" className="mt-2 space-y-2">
                 <Popover open={cityHits.length > 0}>
@@ -263,7 +320,11 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
                 )}
               </TabsContent>
               <TabsContent value="radius" className="mt-2">
-                <AddressRadiusPicker value={radiusPoints} onChange={setRadiusPoints} />
+                <AddressRadiusPicker
+                  value={radiusPoints}
+                  onChange={setRadiusPoints}
+                  defaultRadius={sedeRadiusKm}
+                />
               </TabsContent>
             </Tabs>
           </section>
@@ -279,24 +340,22 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
                 onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
             </div>
             {loadingSugg && !suggestions ? (
-              <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Buscando suas top imagens...</div>
-            ) : suggestions && suggestions.images.length === 0 ? (
-              <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">
-                Nenhuma imagem no histórico. Clique em <strong>Subir nova</strong> para começar.
-              </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="w-4 h-4 animate-spin" /> Carregando imagens…</div>
             ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {suggestions?.images.slice(0, 8).map((img) => {
-                  const selected = selectedImage?.id === img.id;
-                  return (
-                    <button key={img.id} onClick={() => setSelectedImage(img)}
-                      className={`relative aspect-square rounded-md overflow-hidden border-2 transition ${selected ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/40"}`}>
-                      <img src={img.url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                      {img.is_top && <Badge className="absolute top-1 left-1 text-[10px] h-4 px-1.5 bg-primary">★ Top</Badge>}
-                      {selected && <div className="absolute inset-0 bg-primary/10 flex items-center justify-center"><Check className="w-6 h-6 text-primary" /></div>}
-                    </button>
-                  );
-                })}
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {(suggestions?.images || []).slice(0, 8).map((img) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => setSelectedImage(img)}
+                    className={`relative aspect-square rounded-md overflow-hidden border-2 ${selectedImage?.id === img.id ? "border-primary" : "border-transparent"}`}
+                  >
+                    <img src={img.url} alt="" className="w-full h-full object-cover" />
+                    {selectedImage?.id === img.id && (
+                      <span className="absolute top-1 right-1 bg-primary text-primary-foreground rounded-full p-0.5"><Check className="w-3 h-3" /></span>
+                    )}
+                  </button>
+                ))}
               </div>
             )}
           </section>
@@ -304,33 +363,52 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
           {/* 3) COPY */}
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="flex items-center gap-1.5 text-sm"><Type className="w-4 h-4 text-primary" /> 3. Copy (escolha 1)</Label>
-              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={regenerateCopies} disabled={loadingSugg}>
-                {loadingSugg ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />} Gerar outras
+              <Label className="flex items-center gap-1.5 text-sm"><Type className="w-4 h-4 text-primary" /> 3. Texto do anúncio</Label>
+              <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={regenerateCopies} disabled={loadingSugg || cityNames.length === 0}>
+                <RotateCcw className="w-3.5 h-3.5" /> Gerar de novo
               </Button>
             </div>
-            {loadingSugg && !suggestions ? (
-              <div className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Gerando 3 variações com IA...</div>
-            ) : suggestions && suggestions.copies.length === 0 ? (
-              <div className="text-xs text-muted-foreground border border-dashed rounded-md p-3">Aguardando cidade pra gerar a copy.</div>
-            ) : (
-              <div className="grid sm:grid-cols-3 gap-2">
-                {suggestions?.copies.map((c, i) => {
-                  const selected = selectedCopyIdx === i;
-                  return (
-                    <button key={i} onClick={() => setSelectedCopyIdx(i)}
-                      className={`text-left p-3 rounded-md border-2 transition ${selected ? "border-primary bg-primary/5" : "border-border hover:border-primary/40"}`}>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <Badge variant="outline" className="text-[10px] h-4 px-1.5">{c.framework}</Badge>
-                        {selected && <Check className="w-4 h-4 text-primary" />}
-                      </div>
-                      <div className="text-sm font-semibold line-clamp-2 mb-1">{c.headline}</div>
-                      <div className="text-xs text-muted-foreground line-clamp-4">{c.primary_text}</div>
-                    </button>
-                  );
-                })}
+            {suggestions?.copies?.length ? (
+              <div className="grid gap-2">
+                {suggestions.copies.map((c, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setSelectedCopyIdx(i)}
+                    className={`text-left rounded-md border p-3 text-sm transition-colors ${selectedCopyIdx === i ? "border-primary bg-primary/5" : "border-border hover:bg-muted/40"}`}
+                  >
+                    <div className="font-medium text-xs text-muted-foreground mb-1">{c.framework}</div>
+                    <div className="font-semibold leading-snug">{c.headline}</div>
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.primary_text}</div>
+                  </button>
+                ))}
               </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Escolha a região para gerar as copies.</p>
             )}
+          </section>
+
+          {/* Mensagem inicial WhatsApp — obrigatória */}
+          <section className="space-y-2">
+            <Label className="flex items-center gap-1.5 text-sm">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              Mensagem inicial do WhatsApp
+              <Badge variant="secondary" className="text-[10px] font-normal">obrigatória</Badge>
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              Frase que o lead envia ao clicar no anúncio. Toda campanha precisa ter uma — e deve ser única entre as suas campanhas ativas.
+            </p>
+            <Textarea
+              rows={2}
+              maxLength={INITIAL_MSG_LIMIT}
+              value={initialMessage}
+              onChange={(e) => setInitialMessage(e.target.value)}
+              placeholder="Ex.: Oi! Quero saber como economizar na conta de luz."
+              className="text-sm"
+            />
+            <div className="text-[10px] text-muted-foreground text-right">
+              {initialMessage.length}/{INITIAL_MSG_LIMIT}
+            </div>
           </section>
 
           {/* 4-5) VALOR + DIAS */}
@@ -355,7 +433,6 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
             </div>
           </section>
 
-          {/* Pré-marcado automático */}
           <Accordion type="single" collapsible>
             <AccordionItem value="auto" className="border rounded-md">
               <AccordionTrigger className="px-3 py-2 text-xs hover:no-underline">
@@ -365,7 +442,7 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
                 <div>• <strong>Distribuidora:</strong> {defaults?.distribuidora?.nome || "será deduzida da cidade"}</div>
                 <div>• <strong>Idade:</strong> {defaults?.age_min || 30}–{defaults?.age_max || 60} anos · todos os gêneros</div>
                 <div>• <strong>Posicionamentos:</strong> Advantage+ (Meta otimiza)</div>
-                <div>• <strong>Mensagem inicial WhatsApp:</strong> "{defaults?.initial_message || "Olá! Quero economizar."}"</div>
+                <div>• <strong>Mensagem inicial WhatsApp:</strong> "{initialMessage.trim() || "—"}"</div>
                 <div>• <strong>Headline e descrição:</strong> vêm com a copy escolhida</div>
                 {onOpenAdvanced && (
                   <button onClick={() => { onClose(); setTimeout(onOpenAdvanced, 100); }}

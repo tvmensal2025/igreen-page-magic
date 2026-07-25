@@ -130,7 +130,7 @@ export function StepCopy({ state, derived, patch, copyLogic }: Props) {
           <span className={`text-[10px] ${state.initialMessage.length > INITIAL_MSG_LIMIT ? "text-destructive" : "text-[hsl(var(--ads-muted))]"}`}>{state.initialMessage.length}/{INITIAL_MSG_LIMIT}</span>
         </Label>
         <p className="text-[11px] text-[hsl(var(--ads-muted))] leading-snug">
-          É o que aparece escrito quando o cliente clicar no anúncio. Curto, em 1ª pessoa, como se fosse o cliente falando.
+          <strong>Obrigatória em toda campanha.</strong> É o que aparece escrito quando o cliente clicar no anúncio. Curto, em 1ª pessoa, como se fosse o cliente falando — e única entre as suas campanhas ativas.
         </p>
         <Textarea rows={2} maxLength={INITIAL_MSG_LIMIT} value={state.initialMessage}
           onChange={(e) => patch({ initialMessage: e.target.value, initialMessageTouched: true })}

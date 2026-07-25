@@ -2,7 +2,9 @@
 
 Documentação operacional para IAs e humanos. **Não apagar** guards/migrations. **Não mexer em campanhas Meta ativas** só para trocar copy.
 
-Atualizado: 2026-07-23.
+**Canônica de produto/Cérebro Ads:** [`docs/CEREBRO-ADS-OFICIAL.md`](./CEREBRO-ADS-OFICIAL.md)
+
+Atualizado: 2026-07-25.
 
 ## Visão geral
 

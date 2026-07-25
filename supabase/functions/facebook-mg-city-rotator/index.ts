@@ -361,9 +361,13 @@ Deno.serve(async (req) => {
         kill_switch: cfg.kill_switch,
       });
     }
-    // (o gate de seed foi movido para baixo, junto da resolução do criativo,
-    //  porque agora distingue clique humano de execução automática)
-    const MAX_EXPLORERS = cfg.max_explorers || FALLBACK_MAX_EXPLORERS;
+    // Importante: max_explorers=0 é válido (só âncora). `0 || fallback` reativava 4 slots.
+    const MAX_EXPLORERS = Number.isFinite(cfg.max_explorers)
+      ? Math.max(0, Math.min(8, Math.round(Number(cfg.max_explorers))))
+      : FALLBACK_MAX_EXPLORERS;
+    // Modo oficial Meta: 1 campanha raio na sede — sem semear/ativar MG-ROT no cron.
+    // Escala da âncora abaixo continua.
+    const radiusSedeMode = cfg.geo_mode === "radius_sede" || MAX_EXPLORERS === 0;
     const explorerBudget = Math.max(
       517,
       Number(
@@ -377,12 +381,15 @@ Deno.serve(async (req) => {
         body?.anchor_budget_cents || cfg.anchor_budget_cents || explorerBudget,
       ),
     );
-    const preferred: string[] =
-      Array.isArray(body?.preferred_slugs) && body.preferred_slugs.length
-        ? body.preferred_slugs.map((s: string) => String(s).toLowerCase())
-        : (cfg.preferred_slugs?.length
-          ? cfg.preferred_slugs
-          : DEFAULT_PREFERRED).slice(0, MAX_EXPLORERS);
+    const preferred: string[] = radiusSedeMode
+      ? []
+      : (
+        Array.isArray(body?.preferred_slugs) && body.preferred_slugs.length
+          ? body.preferred_slugs.map((s: string) => String(s).toLowerCase())
+          : (cfg.preferred_slugs?.length
+            ? cfg.preferred_slugs
+            : DEFAULT_PREFERRED).slice(0, MAX_EXPLORERS)
+      );
     const cityQueue = buildQueue(cfg);
     const ageMinPref = cfg.age_min || 30;
     const ageMaxPref = cfg.age_max || 65;
@@ -408,6 +415,14 @@ Deno.serve(async (req) => {
     // Tentativas que NÃO resultaram em campanha (recusa, erro, skipped).
     // Separado de `created` para o painel não celebrar no-op.
     const notCreated: Array<Record<string, unknown>> = [];
+    if (radiusSedeMode) {
+      log.push({
+        action: "radius_sede_mode",
+        geo_mode: cfg.geo_mode || "radius_sede",
+        max_explorers: MAX_EXPLORERS,
+        detail: "sem seed/slots MG-ROT — só escala âncora + pausa extras",
+      });
+    }
 
     // Marca duplicatas Ipatinga (mantém o mais antigo)
     {
@@ -488,7 +503,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const doSeed = seed && (humanDecision || autoSeedAllowed || dryRun);
+    const doSeed = !radiusSedeMode && seed &&
+      (humanDecision || autoSeedAllowed || dryRun);
     // Seed (só faltantes; em ensure_slots default off pra não estourar timeout)
     if (doSeed) {
       const { data: existing } = await admin

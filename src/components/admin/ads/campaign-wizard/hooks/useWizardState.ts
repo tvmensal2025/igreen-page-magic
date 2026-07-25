@@ -122,7 +122,7 @@ const INITIAL_STATE: WizardState = {
   submitting: false,
   issues: null,
   ctwaReady: false,
-  geoMode: "cities",
+  geoMode: "radius",
   search: "",
   searchLoading: false,
   hits: [],
