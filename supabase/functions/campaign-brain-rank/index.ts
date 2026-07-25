@@ -5,22 +5,27 @@
  * Body:
  *  { action?: "rank" | "save" | "apply", consultant_id?, brain?: BrainConfigPartial }
  */
-import { adminClient, authConsultant, corsHeaders } from "../_shared/fb-graph.ts";
+import { adminClient, authConsultant } from "../_shared/fb-graph.ts";
+import { buildCors } from "../_shared/cors.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 import { AUTO_PERF_PAUSE_PREFIX } from "../_shared/campaign-waste-guard.ts";
 import {
+  type BrainConfig,
   DEFAULT_BRAIN_CONFIG,
+  isAdsExpansiveMutationAllowed,
   normalizeBrainConfig,
   slugifyCityName,
-  type BrainConfig,
 } from "../_shared/brain-config.ts";
+import { LEGACY_ANCHOR_CAMPAIGN_ID } from "../_shared/ads-anchor.ts";
 
-const ANCHOR_ID = "a0189d12-413a-477d-b903-1bca7a61f44a";
+// Fonte única do id legado (ver `_shared/ads-anchor.ts`).
+const ANCHOR_ID = LEGACY_ANCHOR_CAMPAIGN_ID;
 
-function j(body: unknown, status = 200) {
+function j(req: Request, body: unknown, status = 200) {
+  const cors = buildCors(req, "x-service-secret");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
@@ -43,7 +48,9 @@ function cityScore(input: {
     score -= 40;
   }
   score += Math.min(15, input.conv48 * 3);
-  const ctrBps = input.impressions48 > 0 ? Math.round(input.clicks48 * 10000 / input.impressions48) : 0;
+  const ctrBps = input.impressions48 > 0
+    ? Math.round(input.clicks48 * 10000 / input.impressions48)
+    : 0;
   score += Math.min(10, ctrBps / 20);
   if (input.spend48 >= 800 && ctrBps < 60) score -= 20;
   return clamp(Math.round(score), 0, 100);
@@ -55,7 +62,10 @@ function slugOf(c: { name?: string; cities?: any[] }): string {
   return slugifyCityName(String(c.cities?.[0]?.name || ""));
 }
 
-async function loadCfg(admin: ReturnType<typeof adminClient>, consultantId: string): Promise<BrainConfig> {
+async function loadCfg(
+  admin: ReturnType<typeof adminClient>,
+  consultantId: string,
+): Promise<BrainConfig> {
   const { data } = await admin
     .from("consultant_ad_settings")
     .select("brain_config, age_min, age_max")
@@ -68,17 +78,22 @@ async function loadCfg(admin: ReturnType<typeof adminClient>, consultantId: stri
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const cors = buildCors(req, "x-service-secret");
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const body = await req.json().catch(() => ({}));
-    let consultantId = typeof body?.consultant_id === "string" ? body.consultant_id : "";
+    let consultantId = typeof body?.consultant_id === "string"
+      ? body.consultant_id
+      : "";
     const action = String(body?.action || "rank");
 
     if (isServiceRoleAuth(req)) {
-      if (!consultantId) return j({ error: "consultant_id obrigatório" }, 400);
+      if (!consultantId) {
+        return j(req, { error: "consultant_id obrigatório" }, 400);
+      }
     } else {
       const auth = await authConsultant(req);
-      if (!auth) return j({ error: "Unauthorized" }, 401);
+      if (!auth) return j(req, { error: "Unauthorized" }, 401);
       consultantId = auth.id;
     }
 
@@ -90,8 +105,28 @@ Deno.serve(async (req) => {
         ...(await loadCfg(admin, consultantId)),
         ...(body?.brain && typeof body.brain === "object" ? body.brain : {}),
       });
-      // preferred_slugs capped to max_explorers
+      // Contenção: a UI salva estratégia (budget, cidades, idade, CPL alvo),
+      // mas NÃO decide autonomia por aqui.
+      //
+      // Os três campos de autonomia são PRESERVADOS como estão no banco, e não
+      // forçados a inerte: forçar apagaria em silêncio uma habilitação feita
+      // deliberadamente por um operador via SQL. A tela não promove nem
+      // rebaixa — quem manda é o valor persistido (default = inerte).
       next.preferred_slugs = next.preferred_slugs.slice(0, next.max_explorers);
+      const stored = normalizeBrainConfig(await loadCfg(admin, consultantId));
+      const requestedAutonomy = {
+        autopilot: next.autopilot,
+        automation_mode: next.automation_mode,
+        kill_switch: next.kill_switch,
+      };
+      next.autopilot = stored.autopilot;
+      next.automation_mode = stored.automation_mode;
+      next.kill_switch = stored.kill_switch;
+      // Devolvido à UI para ela não mentir dizendo "salvo" sobre o que foi
+      // ignorado por não ser decisão desta tela.
+      const autonomyForced = requestedAutonomy.autopilot !== stored.autopilot ||
+        requestedAutonomy.automation_mode !== stored.automation_mode ||
+        requestedAutonomy.kill_switch !== stored.kill_switch;
 
       await admin.from("consultant_ad_settings").upsert({
         consultant_id: consultantId,
@@ -103,52 +138,55 @@ Deno.serve(async (req) => {
 
       let applyResult: unknown = null;
       if (action === "apply") {
-        const sr = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-        const url = `${Deno.env.get("SUPABASE_URL")}/functions/v1/facebook-mg-city-rotator`;
-        const r = await fetch(url, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${sr}`,
-            apikey: sr,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            consultant_id: consultantId,
-            ensure_active_slots: true,
-            seed: false,
-            target_budget_cents: next.explorer_budget_cents,
-            anchor_budget_cents: next.anchor_budget_cents,
-            preferred_slugs: next.preferred_slugs,
-          }),
-        });
-        applyResult = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        // `apply` NÃO dispara o rotator daqui. Fazer isso service-to-service
+        // apagaria o sinal de "decisão humana" que a policy usa para liberar
+        // criação/targeting — o clique do consultor deve ir direto ao rotator.
+        applyResult = {
+          skipped: isAdsExpansiveMutationAllowed(next)
+            ? "apply_requires_direct_rotator_call"
+            : "ads_automation_disabled",
+          hint: "chame facebook-mg-city-rotator com o JWT do consultor",
+        };
       }
 
       // fall through to rank with saved cfg
       body._saved = next;
       body._apply = applyResult;
+      body._autonomy_forced_inert = autonomyForced;
     }
 
     const cfg = await loadCfg(admin, consultantId);
-    const since48 = new Date(Date.now() - 2 * 86400_000).toISOString().slice(0, 10);
+    const since48 = new Date(Date.now() - 2 * 86400_000).toISOString().slice(
+      0,
+      10,
+    );
 
-    const [{ data: camps }, { data: wallet }, { data: metrics }] = await Promise.all([
-      admin.from("facebook_campaigns")
-        .select("id, name, status, cities, daily_budget_cents, rejection_reason, tracking_protocol, created_at, age_min, age_max, age_min_preferred")
-        .eq("consultant_id", consultantId)
-        .or(`id.eq.${ANCHOR_ID},name.ilike.MG-ROT-%`),
-      admin.from("consultant_wallet")
-        .select("balance_cents,debt_cents")
-        .eq("consultant_id", consultantId)
-        .maybeSingle(),
-      admin.from("facebook_metrics_daily")
-        .select("campaign_id, spend_cents, messaging_conversations_started, clicks, impressions")
-        .gte("date", since48),
-    ]);
+    const [{ data: camps }, { data: wallet }, { data: metrics }] = await Promise
+      .all([
+        admin.from("facebook_campaigns")
+          .select(
+            "id, name, status, cities, daily_budget_cents, rejection_reason, tracking_protocol, created_at, age_min, age_max, age_min_preferred",
+          )
+          .eq("consultant_id", consultantId)
+          .or(`id.eq.${ANCHOR_ID},name.ilike.MG-ROT-%`),
+        admin.from("consultant_wallet")
+          .select("balance_cents,debt_cents")
+          .eq("consultant_id", consultantId)
+          .maybeSingle(),
+        admin.from("facebook_metrics_daily")
+          .select(
+            "campaign_id, spend_cents, messaging_conversations_started, clicks, impressions",
+          )
+          .gte("date", since48),
+      ]);
 
-    const mBy = new Map<string, { spend: number; conv: number; clicks: number; impressions: number }>();
+    const mBy = new Map<
+      string,
+      { spend: number; conv: number; clicks: number; impressions: number }
+    >();
     for (const row of (metrics || []) as any[]) {
-      const cur = mBy.get(row.campaign_id) || { spend: 0, conv: 0, clicks: 0, impressions: 0 };
+      const cur = mBy.get(row.campaign_id) ||
+        { spend: 0, conv: 0, clicks: 0, impressions: 0 };
       cur.spend += Number(row.spend_cents || 0);
       cur.conv += Number(row.messaging_conversations_started || 0);
       cur.clicks += Number(row.clicks || 0);
@@ -156,20 +194,27 @@ Deno.serve(async (req) => {
       mBy.set(row.campaign_id, cur);
     }
 
-    const anchorM = mBy.get(ANCHOR_ID) || { spend: 0, conv: 0, clicks: 0, impressions: 0 };
-    const anchorCpl = anchorM.conv > 0 ? Math.round(anchorM.spend / anchorM.conv) : null;
+    const anchorM = mBy.get(ANCHOR_ID) ||
+      { spend: 0, conv: 0, clicks: 0, impressions: 0 };
+    const anchorCpl = anchorM.conv > 0
+      ? Math.round(anchorM.spend / anchorM.conv)
+      : null;
 
     const cities = ((camps || []) as any[]).map((c) => {
-      const m = mBy.get(c.id) || { spend: 0, conv: 0, clicks: 0, impressions: 0 };
+      const m = mBy.get(c.id) ||
+        { spend: 0, conv: 0, clicks: 0, impressions: 0 };
       const cpl = m.conv > 0 ? Math.round(m.spend / m.conv) : null;
       const isAnchor = c.id === ANCHOR_ID;
       const reason = String(c.rejection_reason || "");
       let role = "fila";
       if (isAnchor) role = "ancora";
-      else if (c.status === "active" || c.status === "pending_review") role = "exploradora";
-      else if (reason.startsWith("ROTATION_QUEUE: duplicata")) role = "duplicata";
-      else if (reason.startsWith(AUTO_PERF_PAUSE_PREFIX)) role = "morta_waste";
-      else if (reason.startsWith("ROTATION_QUEUE:")) role = "fila";
+      else if (c.status === "active" || c.status === "pending_review") {
+        role = "exploradora";
+      } else if (reason.startsWith("ROTATION_QUEUE: duplicata")) {
+        role = "duplicata";
+      } else if (reason.startsWith(AUTO_PERF_PAUSE_PREFIX)) {
+        role = "morta_waste";
+      } else if (reason.startsWith("ROTATION_QUEUE:")) role = "fila";
 
       return {
         id: c.id,
@@ -185,8 +230,11 @@ Deno.serve(async (req) => {
         cpl_cents: cpl,
         age_min_hard: Number(c.age_min || 25),
         age_max_hard: Number(c.age_max || 65),
-        age_min_preferred: c.age_min_preferred != null ? Number(c.age_min_preferred) : cfg.age_min,
-        age_range_ok: c.age_min_preferred != null && Number(c.age_min_preferred) >= cfg.age_min,
+        age_min_preferred: c.age_min_preferred != null
+          ? Number(c.age_min_preferred)
+          : cfg.age_min,
+        age_range_ok: c.age_min_preferred != null &&
+          Number(c.age_min_preferred) >= cfg.age_min,
         score: cityScore({
           spend48: m.spend,
           conv48: m.conv,
@@ -198,13 +246,21 @@ Deno.serve(async (req) => {
       };
     }).sort((a, b) => b.score - a.score);
 
-    const active = cities.filter((c) => c.status === "active" || c.status === "pending_review");
+    const active = cities.filter((c) =>
+      c.status === "active" || c.status === "pending_review"
+    );
     const dailyBurn = active.reduce((s, c) => s + c.budget_cents, 0);
     const feeBurn = Math.round(dailyBurn * 1.2);
-    const liquid = Math.max(0, Number(wallet?.balance_cents || 0) - Number(wallet?.debt_cents || 0));
+    const liquid = Math.max(
+      0,
+      Number(wallet?.balance_cents || 0) - Number(wallet?.debt_cents || 0),
+    );
     const runwayDays = feeBurn > 0 ? Number((liquid / feeBurn).toFixed(1)) : 99;
     const moneyAtRisk = cities
-      .filter((c) => (c.status === "active" || c.status === "pending_review") && c.conv_48h === 0 && c.spend_48h_cents > 0)
+      .filter((c) =>
+        (c.status === "active" || c.status === "pending_review") &&
+        c.conv_48h === 0 && c.spend_48h_cents > 0
+      )
       .reduce((s, c) => s + c.spend_48h_cents, 0);
 
     const greenShare = active.length
@@ -219,15 +275,25 @@ Deno.serve(async (req) => {
     // Rotation board — o que está no ar / entra / sai
     const preferred = cfg.preferred_slugs.slice(0, cfg.max_explorers);
     const preferredSet = new Set(preferred);
-    const explorers = cities.filter((c) => c.role === "exploradora" || (c.role === "fila" || c.role === "morta_waste"));
+    const explorers = cities.filter((c) =>
+      c.role === "exploradora" ||
+      (c.role === "fila" || c.role === "morta_waste")
+    );
     const activeExplorers = cities.filter((c) => c.role === "exploradora");
     const queueCities = cities.filter((c) => c.role === "fila");
-    const willPause = activeExplorers.filter((c) => c.slug && !preferredSet.has(c.slug));
+    const willPause = activeExplorers.filter((c) =>
+      c.slug && !preferredSet.has(c.slug)
+    );
     const willOpen = preferred
       .filter((slug) => !activeExplorers.some((c) => c.slug === slug))
       .map((slug) => {
         const found = cities.find((c) => c.slug === slug);
-        return { slug, name: found?.name || slug, id: found?.id || null, status: found?.status || "missing" };
+        return {
+          slug,
+          name: found?.name || slug,
+          id: found?.id || null,
+          status: found?.status || "missing",
+        };
       });
 
     type Dec = {
@@ -247,7 +313,9 @@ Deno.serve(async (req) => {
         decisions.push({
           type: "brain_pause_waste",
           title: `Pausar ${c.name} — gasto sem conversa`,
-          message: `R$ ${(c.spend_48h_cents / 100).toFixed(2)} em 48h com 0 conversas. Waste guard recomenda pausa.`,
+          message: `R$ ${
+            (c.spend_48h_cents / 100).toFixed(2)
+          } em 48h com 0 conversas. Waste guard recomenda pausa.`,
           severity: "critical",
           impact_cents_per_day: c.budget_cents,
           action_label: "Pausar agora",
@@ -263,7 +331,8 @@ Deno.serve(async (req) => {
         decisions.push({
           type: "brain_swap_explorer",
           title: `Trocar ${worst.name} → ${next.name}`,
-          message: `${worst.name} score ${worst.score}. Próxima na fila: ${next.name}.`,
+          message:
+            `${worst.name} score ${worst.score}. Próxima na fila: ${next.name}.`,
           severity: "warning",
           impact_cents_per_day: 0,
           action_label: "Trocar exploradora",
@@ -280,7 +349,9 @@ Deno.serve(async (req) => {
       decisions.push({
         type: "brain_refill_warning",
         title: "Recarregue a carteira",
-        message: `Runway ~${runwayDays} dia(s) no ritmo atual (R$ ${(feeBurn / 100).toFixed(0)}/dia c/ taxa). Mínimo configurado: ${cfg.min_runway_days}d.`,
+        message: `Runway ~${runwayDays} dia(s) no ritmo atual (R$ ${
+          (feeBurn / 100).toFixed(0)
+        }/dia c/ taxa). Mínimo configurado: ${cfg.min_runway_days}d.`,
         severity: "warning",
         impact_cents_per_day: 0,
         action_label: "Ver carteira",
@@ -309,10 +380,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const plannedDaily =
-      cfg.anchor_budget_cents + cfg.explorer_budget_cents * cfg.max_explorers;
+    const plannedDaily = cfg.anchor_budget_cents +
+      cfg.explorer_budget_cents * cfg.max_explorers;
 
-    return j({
+    return j(req, {
       ok: true,
       health_score: health,
       runway_days: runwayDays,
@@ -329,7 +400,8 @@ Deno.serve(async (req) => {
         hard_max: 65,
         preference_min: cfg.age_min,
         preference_max: cfg.age_max,
-        note: "Meta Advantage+: hard 25–65. Preferência vai em age_range na API.",
+        note:
+          "Meta Advantage+: hard 25–65. Preferência vai em age_range na API.",
         live_with_preference: active.filter((c) => c.age_range_ok).length,
         live_total: active.length,
       },
@@ -345,7 +417,11 @@ Deno.serve(async (req) => {
           score: c.score,
         })),
         will_open: willOpen,
-        will_pause: willPause.map((c) => ({ id: c.id, name: c.name, slug: c.slug })),
+        will_pause: willPause.map((c) => ({
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+        })),
         queue: queueCities.slice(0, 20).map((c) => ({
           id: c.id,
           name: c.name,
@@ -358,17 +434,22 @@ Deno.serve(async (req) => {
       insight_udi: {
         first_multi: {
           protocol: "FB-77735",
-          note: "Campanha 08/07 multi-cidade (UDI+Uberaba+BH). Gasto ~R$22, 3 conversas, CPL ~R$7,33. Não é a âncora atual.",
+          note:
+            "Campanha 08/07 multi-cidade (UDI+Uberaba+BH). Gasto ~R$22, 3 conversas, CPL ~R$7,33. Não é a âncora atual.",
         },
         anchor_winner: {
           protocol: "2026-0014",
-          note: "Remarketing Uberlândia 19/07 — CPL ~R$1,91 (37 conversas). Esta é a âncora que não mexemos no criativo.",
+          note:
+            "Remarketing Uberlândia 19/07 — CPL ~R$1,91 (37 conversas). Esta é a âncora que não mexemos no criativo.",
         },
       },
       apply_result: body._apply ?? null,
+      // Avisa a UI quando os campos de autonomia foram forçados ao estado
+      // inerte, para a tela não exibir "salvo" sobre algo que não valeu.
+      autonomy_forced_inert: body._autonomy_forced_inert ?? false,
       generated_at: new Date().toISOString(),
     });
   } catch (e) {
-    return j({ error: (e as Error).message }, 500);
+    return j(req, { error: (e as Error).message }, 500);
   }
 });

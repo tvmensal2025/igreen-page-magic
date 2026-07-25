@@ -1,8 +1,13 @@
 // QA visual de criativo gerado via Google Gemini 2.5 Pro (vision direct).
-// Devolve flags objetivas pra decidir se a imagem é aprovada ou se regenera.
+// Fail-closed: qualquer erro reprova e nenhuma URL fora da allowlist é buscada.
 
-import { corsHeaders } from "../_shared/fb-graph.ts";
+import { authConsultant } from "../_shared/fb-graph.ts";
+import { buildCors } from "../_shared/cors.ts";
 import { geminiMultimodal } from "../_shared/gemini.ts";
+import {
+  bytesToBase64,
+  fetchImageSafely,
+} from "../_shared/safe-image-fetch.ts";
 
 type QaReport = {
   approved: boolean;
@@ -22,7 +27,12 @@ const QA_SCHEMA = {
     has_deformed_face_or_hand: { type: "boolean" },
     notes: { type: "string" },
   },
-  required: ["has_text", "has_panel", "looks_stock", "has_deformed_face_or_hand"],
+  required: [
+    "has_text",
+    "has_panel",
+    "looks_stock",
+    "has_deformed_face_or_hand",
+  ],
 };
 
 const SYSTEM = `Você é auditor visual de anúncios iGreen Energy no Meta Ads.
@@ -34,55 +44,102 @@ const SYSTEM = `Você é auditor visual de anúncios iGreen Energy no Meta Ads.
 Responda APENAS com JSON estrito conforme o schema.`;
 
 async function analyze(imageUrl: string): Promise<QaReport> {
-  // Baixa para inline (Gemini direto não aceita URL externa diretamente em todos os modos)
-  const r = await fetch(imageUrl);
-  if (!r.ok) throw new Error(`fetch image ${r.status}`);
-  const buf = new Uint8Array(await r.arrayBuffer());
-  let bin = "";
-  for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
-  const base64 = btoa(bin);
-  const mimeType = r.headers.get("content-type") || "image/jpeg";
+  // Download com allowlist, bloqueio de rede interna, sem redirect e com corte
+  // por streaming — ver `_shared/safe-image-fetch.ts`.
+  const image = await fetchImageSafely(imageUrl);
 
   const result = await geminiMultimodal({
     model: "gemini-2.5-pro",
     fallbackModel: "gemini-2.5-flash",
     system: SYSTEM,
-    prompt: "Audite esta imagem destinada a anúncio iGreen Energy. Responda só o JSON.",
-    base64,
-    mimeType,
+    prompt:
+      "Audite esta imagem destinada a anúncio iGreen Energy. Responda só o JSON.",
+    base64: bytesToBase64(image.bytes),
+    mimeType: image.mimeType,
     temperature: 0.1,
     responseMimeType: "application/json",
     responseSchema: QA_SCHEMA,
     functionName: "ad-creative-qa",
   });
 
-  let parsed: any = {};
-  try { parsed = JSON.parse(result.text || "{}"); } catch { parsed = {}; }
-  const approved = !parsed.has_text && !parsed.has_panel && !parsed.has_deformed_face_or_hand;
+  const parsed = JSON.parse(result.text || "");
+  const booleanKeys = [
+    "has_text",
+    "has_panel",
+    "looks_stock",
+    "has_deformed_face_or_hand",
+  ] as const;
+  if (booleanKeys.some((key) => typeof parsed?.[key] !== "boolean")) {
+    throw new Error("resposta de QA inválida");
+  }
   return {
-    approved,
-    has_text: !!parsed.has_text,
-    has_panel: !!parsed.has_panel,
-    looks_stock: !!parsed.looks_stock,
-    has_deformed_face_or_hand: !!parsed.has_deformed_face_or_hand,
-    notes: parsed.notes || "",
+    approved: !parsed.has_text && !parsed.has_panel &&
+      !parsed.has_deformed_face_or_hand,
+    has_text: parsed.has_text,
+    has_panel: parsed.has_panel,
+    looks_stock: parsed.looks_stock,
+    has_deformed_face_or_hand: parsed.has_deformed_face_or_hand,
+    notes: typeof parsed.notes === "string" ? parsed.notes : "",
   };
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const cors = buildCors(req);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") {
+    return new Response(
+      JSON.stringify({ error: "method_not_allowed", approved: false }),
+      {
+        status: 405,
+        headers: { ...cors, "Content-Type": "application/json" },
+      },
+    );
+  }
+
+  const auth = await authConsultant(req);
+  if (!auth) {
+    return new Response(
+      JSON.stringify({ error: "unauthorized", approved: false }),
+      {
+        status: 401,
+        headers: { ...cors, "Content-Type": "application/json" },
+      },
+    );
+  }
+
   try {
-    const { image_url } = await req.json();
-    if (!image_url) throw new Error("image_url ausente");
-    const report = await analyze(image_url);
+    const body = await req.json();
+    const imageUrl = typeof body?.image_url === "string"
+      ? body.image_url.trim()
+      : "";
+    if (!imageUrl) {
+      return new Response(
+        JSON.stringify({ error: "image_url ausente", approved: false }),
+        {
+          status: 400,
+          headers: { ...cors, "Content-Type": "application/json" },
+        },
+      );
+    }
+    const report = await analyze(imageUrl);
     return new Response(JSON.stringify(report), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...cors, "Content-Type": "application/json" },
     });
-  } catch (err) {
-    console.error("[ad-creative-qa] error", err);
-    return new Response(JSON.stringify({ error: (err as Error).message, approved: true }), {
-      status: 200, // fail-open
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  } catch (error) {
+    console.error("[ad-creative-qa] error", error);
+    return new Response(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+        approved: false,
+        has_text: false,
+        has_panel: false,
+        looks_stock: false,
+        has_deformed_face_or_hand: false,
+      }),
+      {
+        status: 502,
+        headers: { ...cors, "Content-Type": "application/json" },
+      },
+    );
   }
 });

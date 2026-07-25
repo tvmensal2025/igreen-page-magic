@@ -1,142 +1,217 @@
 name: Deploy Edge Functions
 
-# Deploy manual de Supabase Edge Functions.
-# Push em main não inicia este workflow, evitando consumo automático de
-# minutos do GitHub Actions enquanto a conta está com bloqueio de billing.
-#
-# Triggers:
-#   - workflow_dispatch                            → deploy manual de função específica
-#
-# Requer secret: SUPABASE_ACCESS_TOKEN no repositório.
+# Deploy exclusivamente manual. A requisição precisa apontar para o SHA exato
+# da main, ter CI verde no mesmo SHA e confirmar explicitamente produção.
 
 on:
   workflow_dispatch:
     inputs:
-      function_name:
-        description: 'Nome da função a deployar (ou "all" para todas)'
+      expected_sha:
+        description: "SHA completo (40 caracteres) que será implantado"
         required: true
-        default: 'all'
+        type: string
+      function_names:
+        description: "Slugs separados por vírgula; use all somente com confirmação adicional"
+        required: true
+        type: string
+      confirm_production:
+        description: "Confirmo que este deploy é para produção"
+        required: true
+        default: false
+        type: boolean
+      confirm_all:
+        description: 'Para function_names=all, digite exatamente DEPLOY_ALL'
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
-  group: deploy-edge-functions
-  cancel-in-progress: false  # NÃO cancelar deploy em progresso — risco de estado parcial
+  group: deploy-edge-functions-production
+  cancel-in-progress: false
 
 env:
   SUPABASE_PROJECT_REF: zlzasfhcxcznaprrragl
+  SUPABASE_CLI_VERSION: 2.109.1
 
 jobs:
-  detect-changes:
-    name: Detectar funções modificadas
+  validate-request:
+    name: Validar escopo e SHA
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
-      functions: ${{ steps.changed.outputs.functions }}
-      deploy_all: ${{ steps.changed.outputs.deploy_all }}
+      functions: ${{ steps.request.outputs.functions }}
+      deploy_all: ${{ steps.request.outputs.deploy_all }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 50
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
 
-      - id: changed
-        name: Compute changed function list
+      - id: request
+        name: Validar requisição contra allowlist do SHA
         shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          REQUESTED_FUNCTIONS: ${{ inputs.function_names }}
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+          CONFIRM_ALL: ${{ inputs.confirm_all }}
         run: |
           set -euo pipefail
 
-          # Manual dispatch: usa input.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            INPUT="${{ github.event.inputs.function_name }}"
-            if [ "$INPUT" = "all" ]; then
-              echo "deploy_all=true" >> "$GITHUB_OUTPUT"
-              echo "functions=[]" >> "$GITHUB_OUTPUT"
-            else
-              echo "deploy_all=false" >> "$GITHUB_OUTPUT"
-              echo "functions=[\"$INPUT\"]" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Deploy permitido somente a partir de refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_sha deve ser um SHA completo em hexadecimal minúsculo." >&2
+            exit 1
+          fi
+          if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]; then
+            echo "SHA informado não corresponde ao SHA selecionado no dispatch." >&2
+            exit 1
+          fi
+          if [[ "$CONFIRM_PRODUCTION" != "true" ]]; then
+            echo "Produção não foi confirmada explicitamente." >&2
+            exit 1
+          fi
+
+          INPUT="$(printf '%s' "$REQUESTED_FUNCTIONS" | tr -d '[:space:]')"
+          if [[ -z "$INPUT" ]]; then
+            echo "Informe ao menos uma função; entrada vazia nunca significa all." >&2
+            exit 1
+          fi
+
+          if [[ "$INPUT" == "all" ]]; then
+            if [[ "$CONFIRM_ALL" != "DEPLOY_ALL" ]]; then
+              echo "Deploy total exige confirm_all=DEPLOY_ALL." >&2
+              exit 1
             fi
-            exit 0
-          fi
-
-          # Push: lista os arquivos que mudaram entre o commit anterior e HEAD.
-          BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE=$(git rev-parse HEAD~1 || echo "")
-          fi
-          if [ -z "$BEFORE" ]; then
-            echo "Sem commit anterior — deployando tudo."
             echo "deploy_all=true" >> "$GITHUB_OUTPUT"
             echo "functions=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          CHANGED=$(git diff --name-only "$BEFORE" HEAD -- 'supabase/functions/**' 'supabase/config.toml' || true)
-          echo "Arquivos alterados:"
-          echo "$CHANGED"
-
-          # Se _shared/ mudou OU config.toml mudou OU este workflow mudou, deploy total.
-          if echo "$CHANGED" | grep -qE '^supabase/(functions/_shared/|config\.toml)' \
-             || echo "$CHANGED" | grep -q '\.github/workflows/deploy-edge-functions\.yml$'; then
-            echo "deploy_all=true (_shared/ ou config.toml afetado)"
-            echo "deploy_all=true" >> "$GITHUB_OUTPUT"
-            echo "functions=[]" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [[ "$INPUT" == *"all"* ]]; then
+            echo "all não pode ser combinado com nomes de funções." >&2
+            exit 1
           fi
 
-          # Caso contrário, lista os nomes únicos de função afetados.
-          FNS=$(echo "$CHANGED" | grep -oE '^supabase/functions/[^/]+' | sed 's|supabase/functions/||' | sort -u | grep -v '^_shared$' || true)
-          if [ -z "$FNS" ]; then
-            echo "Nenhuma função afetada — pulando."
-            echo "deploy_all=false" >> "$GITHUB_OUTPUT"
-            echo "functions=[]" >> "$GITHUB_OUTPUT"
-            exit 0
+          mapfile -t ALLOWLIST < <(
+            find supabase/functions -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
+              | grep -E '^[a-z0-9][a-z0-9-]*$' \
+              | sort -u
+          )
+          declare -A ALLOWED=()
+          for function_name in "${ALLOWLIST[@]}"; do
+            ALLOWED["$function_name"]=1
+          done
+
+          IFS=',' read -r -a REQUESTED <<< "$INPUT"
+          declare -A SEEN=()
+          VALIDATED=()
+          for function_name in "${REQUESTED[@]}"; do
+            if [[ ! "$function_name" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+              echo "Slug inválido: $function_name" >&2
+              exit 1
+            fi
+            if [[ -z "${ALLOWED[$function_name]:-}" ]]; then
+              echo "Função fora da allowlist deste SHA: $function_name" >&2
+              exit 1
+            fi
+            if [[ -z "${SEEN[$function_name]:-}" ]]; then
+              VALIDATED+=("$function_name")
+              SEEN["$function_name"]=1
+            fi
+          done
+
+          if [[ "${#VALIDATED[@]}" -eq 0 ]]; then
+            echo "Nenhuma função válida foi informada." >&2
+            exit 1
           fi
 
-          # Converte newline-separated para JSON array
-          JSON=$(echo "$FNS" | python3 -c 'import sys,json; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
-          echo "Funções a deployar: $JSON"
+          JSON="$(printf '%s\n' "${VALIDATED[@]}" | python3 -c \
+            'import json,sys; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))')"
           echo "deploy_all=false" >> "$GITHUB_OUTPUT"
           echo "functions=$JSON" >> "$GITHUB_OUTPUT"
 
-  deploy-all:
-    name: Deploy todas as funções
-    needs: detect-changes
-    if: needs.detect-changes.outputs.deploy_all == 'true'
+  require-green-ci:
+    name: Exigir CI verde no mesmo SHA
+    needs: validate-request
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Verificar workflow CI concluído com sucesso
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESPONSE="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=completed&per_page=20")"
+          printf '%s' "$RESPONSE" | python3 -c '
+          import json, sys
+          payload = json.load(sys.stdin)
+          sha = "${{ github.sha }}"
+          runs = [run for run in payload.get("workflow_runs", []) if run.get("head_sha") == sha]
+          if not any(run.get("conclusion") == "success" for run in runs):
+              raise SystemExit(f"Nenhum CI verde e concluído encontrado para o SHA {sha}")
+          '
+
+  deploy-all:
+    name: Deploy total confirmado
+    needs: [validate-request, require-green-ci]
+    if: needs.validate-request.outputs.deploy_all == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
         with:
-          version: latest
-      - name: Deploy all functions
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: supabase/setup-cli@v2
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
+      - name: Deploy de todas as funções
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          # `supabase functions deploy` sem nome deploya todas as funções de
-          # supabase/functions/* respeitando supabase/config.toml. Isso garante
-          # que verify_jwt vem do config (não default true).
           supabase functions deploy --project-ref "$SUPABASE_PROJECT_REF"
 
-  deploy-changed:
+  deploy-selected:
     name: Deploy ${{ matrix.function }}
-    needs: detect-changes
-    if: needs.detect-changes.outputs.deploy_all == 'false' && needs.detect-changes.outputs.functions != '[]'
+    needs: [validate-request, require-green-ci]
+    if: needs.validate-request.outputs.deploy_all == 'false' && needs.validate-request.outputs.functions != '[]'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
     strategy:
-      fail-fast: false
+      fail-fast: true
+      max-parallel: 1
       matrix:
-        function: ${{ fromJSON(needs.detect-changes.outputs.functions) }}
+        function: ${{ fromJSON(needs.validate-request.outputs.functions) }}
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: supabase/setup-cli@v2
+        with:
+          version: ${{ env.SUPABASE_CLI_VERSION }}
       - name: Deploy ${{ matrix.function }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           set -euo pipefail
-          if [ ! -d "supabase/functions/${{ matrix.function }}" ]; then
-            echo "Função ${{ matrix.function }} não existe (foi deletada?). Pulando."
-            exit 0
-          fi
+          test -d "supabase/functions/${{ matrix.function }}"
           supabase functions deploy "${{ matrix.function }}" \
             --project-ref "$SUPABASE_PROJECT_REF"

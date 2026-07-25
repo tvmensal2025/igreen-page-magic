@@ -3,13 +3,18 @@
 // Auth: service_role apenas.
 import {
   adminClient,
-  corsHeaders,
   FB_GRAPH,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
+import { buildCors } from "../_shared/cors.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
-const CONSULTANT_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
-const UBERLANDIA_CAMPAIGN_ID = "a0189d12-413a-477d-b903-1bca7a61f44a";
+import {
+  LEGACY_ANCHOR_CAMPAIGN_ID,
+  LEGACY_MG_CONSULTANT_ID,
+} from "../_shared/ads-anchor.ts";
+// Fonte única dos ids legados (ver `_shared/ads-anchor.ts`).
+const CONSULTANT_ID = LEGACY_MG_CONSULTANT_ID;
+const UBERLANDIA_CAMPAIGN_ID = LEGACY_ANCHOR_CAMPAIGN_ID;
 /** Ad vencedor (~R$ 1,11/conversa). */
 const KEEP_AD_ID = "120246485792970645";
 /** Budget alvo: R$ 18/dia (faixa 15–18 da estratégia). */
@@ -22,10 +27,11 @@ const PAUSE_CAMPAIGN_IDS = [
   "c2530550-8281-468f-bb6b-16127ff2420d", // Horacio Brasilândia
 ];
 
-function j(body: unknown, status = 200) {
+function j(req: Request, body: unknown, status = 200) {
+  const cors = buildCors(req);
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
@@ -43,21 +49,39 @@ async function postMeta(
   return { ok: r.ok, body: body.slice(0, 500) };
 }
 
-async function getMeta(id: string, fields: string, token: string): Promise<any> {
+async function getMeta(
+  id: string,
+  fields: string,
+  token: string,
+): Promise<any> {
   const r = await fetch(
-    `${FB_GRAPH}/${id}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`,
+    `${FB_GRAPH}/${id}?fields=${encodeURIComponent(fields)}&access_token=${
+      encodeURIComponent(token)
+    }`,
   );
-  if (!r.ok) throw new Error(`GET ${id}: ${r.status} ${(await r.text()).slice(0, 300)}`);
+  if (!r.ok) {
+    throw new Error(`GET ${id}: ${r.status} ${(await r.text()).slice(0, 300)}`);
+  }
   return r.json();
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (!isServiceRoleAuth(req)) return j({ error: "unauthorized" }, 401);
+  const cors = buildCors(req);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!isServiceRoleAuth(req)) return j(req, { error: "unauthorized" }, 401);
+
+  // Mutador pontual legado: preservado para auditoria, mas permanentemente
+  // inerte até ser parametrizado e passar pela policy central.
+  const legacyMutatorEnabled = false;
+  if (!legacyMutatorEnabled) {
+    return j(req, { ok: true, skipped: "legacy_mutator_disabled" });
+  }
 
   const admin = adminClient();
   const platform = await loadPlatformAccount();
-  if (!platform?.token) return j({ error: "Sem token Meta da plataforma" }, 502);
+  if (!platform?.token) {
+    return j(req, { error: "Sem token Meta da plataforma" }, 502);
+  }
   const token = platform.token;
 
   const log: Array<Record<string, unknown>> = [];
@@ -69,15 +93,26 @@ Deno.serve(async (req) => {
     for (const campaignId of PAUSE_CAMPAIGN_IDS) {
       const { data: c } = await admin
         .from("facebook_campaigns")
-        .select("id, name, status, fb_campaign_id, fb_adset_ids, fb_ad_ids, consultant_id")
+        .select(
+          "id, name, status, fb_campaign_id, fb_adset_ids, fb_ad_ids, consultant_id",
+        )
         .eq("id", campaignId)
         .maybeSingle();
       if (!c || c.consultant_id !== CONSULTANT_ID) {
-        log.push({ step: "pause_campaign", campaignId, skipped: "not_found_or_wrong_consultant" });
+        log.push({
+          step: "pause_campaign",
+          campaignId,
+          skipped: "not_found_or_wrong_consultant",
+        });
         continue;
       }
       if (c.status === "paused" || c.status === "completed") {
-        log.push({ step: "pause_campaign", campaignId, skipped: "already_paused", status: c.status });
+        log.push({
+          step: "pause_campaign",
+          campaignId,
+          skipped: "already_paused",
+          status: c.status,
+        });
         continue;
       }
       const metaErrors: string[] = [];
@@ -88,7 +123,11 @@ Deno.serve(async (req) => {
           ...((c.fb_ad_ids || []) as string[]),
         ];
         // Campanha primeiro
-        const campRes = await postMeta(c.fb_campaign_id, { status: "PAUSED" }, token);
+        const campRes = await postMeta(
+          c.fb_campaign_id,
+          { status: "PAUSED" },
+          token,
+        );
         if (!campRes.ok) metaErrors.push(`campaign:${campRes.body}`);
         for (const adsetId of (c.fb_adset_ids || []) as string[]) {
           const r = await postMeta(adsetId, { status: "PAUSED" }, token);
@@ -101,7 +140,12 @@ Deno.serve(async (req) => {
         void ids;
       }
       if (metaErrors.length) {
-        log.push({ step: "pause_campaign", campaignId, name: c.name, error: metaErrors });
+        log.push({
+          step: "pause_campaign",
+          campaignId,
+          name: c.name,
+          error: metaErrors,
+        });
         continue;
       }
       const { error: updErr } = await admin.from("facebook_campaigns").update({
@@ -121,18 +165,25 @@ Deno.serve(async (req) => {
     // 2) Uberlândia: pausar ads que não são o vencedor; garantir vencedor ACTIVE
     const { data: udi } = await admin
       .from("facebook_campaigns")
-      .select("id, fb_campaign_id, fb_adset_ids, fb_ad_ids, daily_budget_cents, status")
+      .select(
+        "id, fb_campaign_id, fb_adset_ids, fb_ad_ids, daily_budget_cents, status",
+      )
       .eq("id", UBERLANDIA_CAMPAIGN_ID)
       .maybeSingle();
     if (!udi?.fb_campaign_id) {
-      return j({ error: "Campanha Uberlândia não encontrada", log }, 404);
+      return j(req, { error: "Campanha Uberlândia não encontrada", log }, 404);
     }
 
     const adIds = (udi.fb_ad_ids || []) as string[];
     const pauseAds = adIds.filter((id) => id !== KEEP_AD_ID);
     for (const adId of pauseAds) {
       const r = await postMeta(adId, { status: "PAUSED" }, token);
-      log.push({ step: "pause_ad", adId, ok: r.ok, body: r.ok ? null : r.body });
+      log.push({
+        step: "pause_ad",
+        adId,
+        ok: r.ok,
+        body: r.ok ? null : r.body,
+      });
       if (r.ok) {
         await admin.from("ad_creative_performance").update({
           paused_by_ai_at: new Date().toISOString(),
@@ -141,15 +192,33 @@ Deno.serve(async (req) => {
       }
     }
     const keepRes = await postMeta(KEEP_AD_ID, { status: "ACTIVE" }, token);
-    log.push({ step: "keep_ad_active", adId: KEEP_AD_ID, ok: keepRes.ok, body: keepRes.ok ? null : keepRes.body });
+    log.push({
+      step: "keep_ad_active",
+      adId: KEEP_AD_ID,
+      ok: keepRes.ok,
+      body: keepRes.ok ? null : keepRes.body,
+    });
 
     // Garantir campanha + adset ACTIVE
     for (const adsetId of (udi.fb_adset_ids || []) as string[]) {
       const r = await postMeta(adsetId, { status: "ACTIVE" }, token);
-      log.push({ step: "activate_adset", adsetId, ok: r.ok, body: r.ok ? null : r.body });
+      log.push({
+        step: "activate_adset",
+        adsetId,
+        ok: r.ok,
+        body: r.ok ? null : r.body,
+      });
     }
-    const campAct = await postMeta(udi.fb_campaign_id, { status: "ACTIVE" }, token);
-    log.push({ step: "activate_campaign", ok: campAct.ok, body: campAct.ok ? null : campAct.body });
+    const campAct = await postMeta(
+      udi.fb_campaign_id,
+      { status: "ACTIVE" },
+      token,
+    );
+    log.push({
+      step: "activate_campaign",
+      ok: campAct.ok,
+      body: campAct.ok ? null : campAct.body,
+    });
 
     // 3) Budget R$ 18/dia
     const budgetRes = await postMeta(
@@ -181,7 +250,12 @@ Deno.serve(async (req) => {
         const targeting = { ...(current.targeting || {}) };
         targeting.publisher_platforms = ["facebook", "instagram"];
         // Sem Facebook Reels (waste observado). Mantém Feed/Stories/Marketplace/Search + IG.
-        targeting.facebook_positions = ["feed", "story", "marketplace", "search"];
+        targeting.facebook_positions = [
+          "feed",
+          "story",
+          "marketplace",
+          "search",
+        ];
         targeting.instagram_positions = ["stream", "story", "reels", "explore"];
         const r = await postMeta(adsetId, {
           targeting: JSON.stringify(targeting),
@@ -208,15 +282,20 @@ Deno.serve(async (req) => {
       type: "cpl_correction_applied",
       title: "Correção CPL aplicada: só Uberlândia vencedor",
       message:
-        `Pausadas BH/Uberaba/Brasilândia. Em Uberlândia ficou só o ad ${KEEP_AD_ID}. Budget R$ ${(TARGET_DAILY_BUDGET_CENTS / 100).toFixed(2)}/dia. FB Reels removido.`,
+        `Pausadas BH/Uberaba/Brasilândia. Em Uberlândia ficou só o ad ${KEEP_AD_ID}. Budget R$ ${
+          (TARGET_DAILY_BUDGET_CENTS / 100).toFixed(2)
+        }/dia. FB Reels removido.`,
       severity: "success",
       action_label: "Ver campanha",
-      action_payload: { kind: "review_campaign", campaign_id: UBERLANDIA_CAMPAIGN_ID },
+      action_payload: {
+        kind: "review_campaign",
+        campaign_id: UBERLANDIA_CAMPAIGN_ID,
+      },
       applied_at: new Date().toISOString(),
     });
 
     const failed = log.filter((x) => x.ok === false);
-    return j({
+    return j(req, {
       ok: failed.length === 0,
       keep_ad: KEEP_AD_ID,
       budget_cents: TARGET_DAILY_BUDGET_CENTS,
@@ -225,6 +304,6 @@ Deno.serve(async (req) => {
       log,
     }, failed.length ? 207 : 200);
   } catch (e) {
-    return j({ error: (e as Error).message, log }, 500);
+    return j(req, { error: (e as Error).message, log }, 500);
   }
 });

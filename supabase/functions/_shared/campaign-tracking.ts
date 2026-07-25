@@ -1,11 +1,16 @@
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+type CampaignTrackingClient = {
+  from: (...args: any[]) => any;
+  rpc: (...args: any[]) => any;
+};
 
 // Formato NOVO (profissional): YYYY-#### opcionalmente com sufixo de instância -A/-B/-C
 // Ex.: 2026-0042, 2026-0042-A
-export const TRACKING_PROTOCOL_V2_RE = /\b(20\d{2})[-–—](\d{4})(?:[-–—]([A-Z]))?\b/;
+export const TRACKING_PROTOCOL_V2_RE =
+  /\b(20\d{2})[-–—](\d{4})(?:[-–—]([A-Z]))?\b/;
 
 // Formato LEGADO mantido para retrocompatibilidade: FB-87321 / IG-87321 ...
-export const TRACKING_PROTOCOL_LEGACY_RE = /\b(FB|IG|GG|TT|WA)\s*[-–—]?\s*(\d{4,8})\b/i;
+export const TRACKING_PROTOCOL_LEGACY_RE =
+  /\b(FB|IG|GG|TT|WA)\s*[-–—]?\s*(\d{4,8})\b/i;
 
 // Ticket de atendimento (NÃO usado pra matching de campanha).
 // Formato: IGR-XXX-#### (ex.: IGR-RFF-0042). É gerado do NOSSO lado, o cliente não digita.
@@ -16,7 +21,9 @@ export const TRACKING_PROTOCOL_RE = TRACKING_PROTOCOL_V2_RE;
 
 const MAX_INITIAL_MESSAGE_LEN = 280; // aumentado p/ acomodar o bloco visual
 
-export function normalizeTrackingProtocol(value: string | null | undefined): string | null {
+export function normalizeTrackingProtocol(
+  value: string | null | undefined,
+): string | null {
   if (!value) return null;
   const s = String(value);
   const m2 = s.match(TRACKING_PROTOCOL_V2_RE);
@@ -30,7 +37,9 @@ export function normalizeTrackingProtocol(value: string | null | undefined): str
 }
 
 /** Retorna apenas o "protocolo-base" (sem sufixo de instância) para lookup de campanha. */
-export function protocolBase(protocol: string | null | undefined): string | null {
+export function protocolBase(
+  protocol: string | null | undefined,
+): string | null {
   const n = normalizeTrackingProtocol(protocol);
   if (!n) return null;
   const m2 = n.match(TRACKING_PROTOCOL_V2_RE);
@@ -38,7 +47,9 @@ export function protocolBase(protocol: string | null | undefined): string | null
   return n; // legado não tem sufixo
 }
 
-export function protocolSuffix(protocol: string | null | undefined): string | null {
+export function protocolSuffix(
+  protocol: string | null | undefined,
+): string | null {
   const n = normalizeTrackingProtocol(protocol);
   if (!n) return null;
   const m2 = n.match(TRACKING_PROTOCOL_V2_RE);
@@ -47,7 +58,9 @@ export function protocolSuffix(protocol: string | null | undefined): string | nu
 
 const BLOCK_LINE = "━━━━━━━━━━━━━━━━━━";
 
-export function stripTrackingProtocol(value: string | null | undefined): string {
+export function stripTrackingProtocol(
+  value: string | null | undefined,
+): string {
   return String(value || "")
     // remove bloco visual completo (formato antigo com ━━━)
     .replace(new RegExp(`${BLOCK_LINE}[\\s\\S]*?${BLOCK_LINE}`, "g"), "")
@@ -66,7 +79,20 @@ export function formatProtocolBlock(protocol: string): string {
   return `\n\n📋 Protocolo: *${protocol}*`;
 }
 
-export function appendTrackingProtocol(baseMessage: string, protocol: string | null | undefined): string {
+/**
+ * @deprecated NÃO usar em nada que chegue ao lead.
+ *
+ * O protocolo `2026-####` é chave interna de relatório/admin e não pode
+ * aparecer na mensagem do WhatsApp. Mantido apenas porque a atribuição legada
+ * ainda sabe LER protocolo em mensagens antigas que já foram para o ar
+ * (`resolveCampaignByTrackingProtocol`); nada novo deve escrever com ele.
+ *
+ * Para limpar mensagem existente use `stripTrackingProtocol`.
+ */
+export function appendTrackingProtocol(
+  baseMessage: string,
+  protocol: string | null | undefined,
+): string {
   const normalized = normalizeTrackingProtocol(protocol);
   const cleanBase = stripTrackingProtocol(baseMessage);
   if (!normalized) return cleanBase.slice(0, MAX_INITIAL_MESSAGE_LEN);
@@ -83,8 +109,13 @@ export function appendTrackingProtocol(baseMessage: string, protocol: string | n
  * Sem isso, o clique mostra o default "Hello! Can I get more info on this?"
  * (em PT costuma virar algo tipo "saber mais") e ignora o ?text= do wa.me.
  */
-export function buildCtwaPageWelcomeMessage(autofillContent: string): Record<string, unknown> {
-  const content = String(autofillContent || "").trim().slice(0, MAX_INITIAL_MESSAGE_LEN);
+export function buildCtwaPageWelcomeMessage(
+  autofillContent: string,
+): Record<string, unknown> {
+  const content = String(autofillContent || "").trim().slice(
+    0,
+    MAX_INITIAL_MESSAGE_LEN,
+  );
   return {
     type: "VISUAL_EDITOR",
     version: 2,
@@ -94,7 +125,10 @@ export function buildCtwaPageWelcomeMessage(autofillContent: string): Record<str
       customer_action_type: "autofill_message",
       message: {
         text: "Oi! Toque em Enviar pra falar com a gente sobre a conta de luz.",
-        autofill_message: { content: content || "Oi! Quero saber mais sobre a redução na conta de luz." },
+        autofill_message: {
+          content: content ||
+            "Oi! Quero saber mais sobre a redução na conta de luz.",
+        },
       },
     },
   };
@@ -114,21 +148,28 @@ export function detectTrackingChannel(input: {
 }
 
 export async function ensureCampaignTrackingProtocol(
-  supabase: SupabaseClient,
+  supabase: CampaignTrackingClient,
   channel: string = "FB",
 ): Promise<string> {
-  const normalizedChannel = ["FB", "IG", "GG", "TT", "WA"].includes(String(channel).toUpperCase())
-    ? String(channel).toUpperCase()
-    : "FB";
+  const normalizedChannel =
+    ["FB", "IG", "GG", "TT", "WA"].includes(String(channel).toUpperCase())
+      ? String(channel).toUpperCase()
+      : "FB";
   try {
-    const { data, error } = await supabase.rpc("generate_campaign_tracking_protocol", {
-      _channel: normalizedChannel,
-    });
+    const { data, error } = await supabase.rpc(
+      "generate_campaign_tracking_protocol",
+      {
+        _channel: normalizedChannel,
+      },
+    );
     if (!error && typeof data === "string" && normalizeTrackingProtocol(data)) {
       return normalizeTrackingProtocol(data)!;
     }
   } catch (e) {
-    console.warn("[campaign-tracking] protocol RPC falhou:", (e as Error)?.message);
+    console.warn(
+      "[campaign-tracking] protocol RPC falhou:",
+      (e as Error)?.message,
+    );
   }
   // Fallback local com formato novo
   const year = new Date().getFullYear();
@@ -137,7 +178,7 @@ export async function ensureCampaignTrackingProtocol(
 }
 
 export async function resolveCampaignByTrackingProtocol(
-  supabase: SupabaseClient,
+  supabase: CampaignTrackingClient,
   consultantId: string,
   text: string | null | undefined,
 ): Promise<string | null> {
@@ -178,7 +219,7 @@ function normInitialMessage(s: string): string {
  * Exige mensagem com ≥ 12 chars normalizados (evita "oi" / "saber mais").
  */
 export async function resolveCampaignByExactInitialMessage(
-  supabase: SupabaseClient,
+  supabase: CampaignTrackingClient,
   consultantId: string,
   text: string | null | undefined,
 ): Promise<string | null> {
@@ -193,7 +234,10 @@ export async function resolveCampaignByExactInitialMessage(
       .not("initial_message", "is", null)
       .limit(300);
     if (error) {
-      console.warn("[campaign-tracking] exact initial lookup falhou:", error.message);
+      console.warn(
+        "[campaign-tracking] exact initial lookup falhou:",
+        error.message,
+      );
       return null;
     }
     const matches = ((data || []) as any[]).filter((c) =>
@@ -202,7 +246,10 @@ export async function resolveCampaignByExactInitialMessage(
     if (matches.length === 1) return String(matches[0].id);
     return null;
   } catch (e) {
-    console.warn("[campaign-tracking] exact initial exceção:", (e as Error)?.message);
+    console.warn(
+      "[campaign-tracking] exact initial exceção:",
+      (e as Error)?.message,
+    );
     return null;
   }
 }
@@ -216,7 +263,10 @@ function normalizeWords(s: string): string[] {
     .replace(/\s+/g, " ")
     .trim()
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !["protocolo", "facebook", "instagram", "atendimento"].includes(w));
+    .filter((w) =>
+      w.length > 2 &&
+      !["protocolo", "facebook", "instagram", "atendimento"].includes(w)
+    );
 }
 
 export function jaccardSimilarity(a: string, b: string): number {
@@ -224,6 +274,8 @@ export function jaccardSimilarity(a: string, b: string): number {
   const wb = new Set(normalizeWords(stripTrackingProtocol(b)));
   if (!wa.size || !wb.size) return 0;
   let inter = 0;
-  wa.forEach((w) => { if (wb.has(w)) inter++; });
+  wa.forEach((w) => {
+    if (wb.has(w)) inter++;
+  });
   return inter / (wa.size + wb.size - inter);
 }

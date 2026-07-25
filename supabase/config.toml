@@ -48,6 +48,11 @@ verify_jwt = false
 [functions.facebook-capi]
 verify_jwt = false
 
+# Despachante da fila CAPI: chamado por cron com segredo interno, autentica
+# sozinho via assertCronAuthStrict. Nasce com o toggle desligado.
+[functions.facebook-capi-dispatch]
+verify_jwt = false
+
 [functions.facebook-balance-reconcile]
 verify_jwt = false
 
@@ -80,6 +85,29 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.facebook-cbo-to-abo]
+verify_jwt = false
+
+# Crons de Ads: o gateway não pode exigir JWT porque o pg_cron manda apenas
+# apikey + segredo interno. A autenticação real é feita dentro da função por
+# `assertCronAuthStrict` (e `authConsultant` quando o clique vem da UI).
+# Sem estas entradas, verify_jwt herda `true` e o cron morre com 401 ANTES de
+# executar — foi o caso de ad-creative-learner / ad-competitor-scraper /
+# facebook-creative-rotator, que estavam agendados e nunca rodavam.
+[functions.ad-creative-learner]
+verify_jwt = false
+
+[functions.ad-competitor-scraper]
+verify_jwt = false
+
+[functions.facebook-creative-rotator]
+verify_jwt = false
+
+[functions.facebook-balance-check]
+verify_jwt = false
+
+# Também tem cron (fb-sync-ad-creatives-daily) e faltava aqui: sem esta entrada
+# o gateway exige JWT e o job morre com 401 antes de executar.
+[functions.facebook-sync-ad-creatives]
 verify_jwt = false
 
 [functions.ai-agent-router]

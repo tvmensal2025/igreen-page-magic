@@ -1,23 +1,42 @@
-// Repara campanhas CTWA já existentes para incluir o protocolo rastreável
-// na mensagem do WhatsApp sem o consultor precisar recriar campanha.
-import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+// Protocolo de rastreio: LIMPEZA, não injeção.
+//
+// O que esta função fazia antes (e não faz mais):
+//   * appendava "📋 Protocolo: *2026-####*" na `initial_message` e no `?text=`
+//     do wa.me — o lead via um código interno na primeira mensagem;
+//   * para "consertar" campanhas já no ar, CRIAVA adcreative + ad novos e
+//     pausava os antigos. Isso é criação de objeto na Meta (human-only na
+//     policy), custa aprendizado do anúncio e mexe em campanha ativa.
+//
+// O que faz agora:
+//   * garante que a campanha TEM um `tracking_protocol` no banco (o protocolo
+//     é legítimo lá — é a chave de relatório/admin);
+//   * REMOVE o protocolo da `initial_message` armazenada;
+//   * apenas RELATA quais anúncios ainda carregam o protocolo no link, para
+//     decisão humana. Não recria nem pausa nada.
+//
+// Atribuição preservada: a ordem forte continua AD ID → `fb_campaign_id` →
+// `ctwa_clid` → UUID, e o fallback por frase exata já aplica
+// `stripTrackingProtocol` nos DOIS lados (`resolveCampaignByExactInitialMessage`),
+// então limpar o banco não quebra o casamento da frase.
 import {
   adminClient,
   authConsultant,
-  fbFetch,
+  fbRead,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
+import { buildCors } from "../_shared/cors.ts";
 import {
-  appendTrackingProtocol,
   ensureCampaignTrackingProtocol,
   normalizeTrackingProtocol,
+  stripTrackingProtocol,
+  TRACKING_PROTOCOL_LEGACY_RE,
+  TRACKING_PROTOCOL_V2_RE,
 } from "../_shared/campaign-tracking.ts";
 
 type CampaignRow = {
   id: string;
   consultant_id: string;
   fb_campaign_id: string | null;
-  fb_adset_ids: string[] | null;
   fb_ad_ids: string[] | null;
   name: string;
   status: string;
@@ -26,42 +45,10 @@ type CampaignRow = {
   tracking_protocol_channel: string | null;
 };
 
-function json(data: unknown, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
-
-function replaceLinksDeep(value: unknown, protocol: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => replaceLinksDeep(item, protocol));
-  if (!value || typeof value !== "object") return value;
-  const out: Record<string, unknown> = {};
-  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof raw === "string" && /api\.whatsapp\.com\/send|wa\.me\//i.test(raw)) {
-      try {
-        const url = new URL(raw);
-        const oldText = url.searchParams.get("text") || "Olá! Quero saber mais.";
-        url.searchParams.set("text", appendTrackingProtocol(oldText, protocol));
-        out[key] = url.toString();
-      } catch {
-        out[key] = raw;
-      }
-    } else {
-      out[key] = replaceLinksDeep(raw, protocol);
-    }
-  }
-  // A API da Meta pode devolver video_data com image_url e image_hash juntos,
-  // mas ao recriar o criativo aceita somente um. Mantemos image_url, que é o
-  // mais estável para thumbnail de vídeo, e removemos image_hash.
-  if (out.video_data && typeof out.video_data === "object" && !Array.isArray(out.video_data)) {
-    const vd = out.video_data as Record<string, unknown>;
-    if (vd.image_url && vd.image_hash) delete vd.image_hash;
-  }
-  return out;
-}
-
-async function isAdminUser(admin: ReturnType<typeof adminClient>, userId: string): Promise<boolean> {
+async function isAdminUser(
+  admin: ReturnType<typeof adminClient>,
+  userId: string,
+): Promise<boolean> {
   const { data } = await admin
     .from("user_roles")
     .select("role")
@@ -71,13 +58,45 @@ async function isAdminUser(admin: ReturnType<typeof adminClient>, userId: string
   return !!data;
 }
 
+/** Procura protocolo em qualquer link wa.me/api.whatsapp dentro do criativo. */
+function findProtocolInCreative(value: unknown): string[] {
+  const found: string[] = [];
+  const walk = (node: unknown) => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node && typeof node === "object") {
+      Object.values(node as Record<string, unknown>).forEach(walk);
+      return;
+    }
+    if (typeof node !== "string") return;
+    const v2 = node.match(TRACKING_PROTOCOL_V2_RE);
+    if (v2) found.push(v2[0]);
+    const legacy = node.match(TRACKING_PROTOCOL_LEGACY_RE);
+    if (legacy) found.push(legacy[0]);
+  };
+  walk(value);
+  return Array.from(new Set(found));
+}
+
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const corsHeaders = buildCors(req, "x-service-secret");
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
   const admin = adminClient();
   const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") || "";
-  const isService = !!serviceSecret && req.headers.get("x-service-secret") === serviceSecret;
+  const isService = !!serviceSecret &&
+    req.headers.get("x-service-secret") === serviceSecret;
   if (!isService) {
     const auth = await authConsultant(req);
     if (!auth) return json({ error: "Unauthorized" }, 401);
@@ -91,107 +110,92 @@ Deno.serve(async (req) => {
     dry_run?: boolean;
   };
   const dryRun = body.dry_run === true;
-  const platform = await loadPlatformAccount();
-  if (!platform?.token) return json({ error: "Conta Meta da plataforma não configurada." }, 400);
 
   let query = admin
     .from("facebook_campaigns")
-    .select("id, consultant_id, fb_campaign_id, fb_adset_ids, fb_ad_ids, name, status, initial_message, tracking_protocol, tracking_protocol_channel")
+    .select(
+      "id, consultant_id, fb_campaign_id, fb_ad_ids, name, status, initial_message, tracking_protocol, tracking_protocol_channel",
+    )
     .in("status", ["active", "pending_review"])
     .not("fb_campaign_id", "is", null)
     .limit(50);
   if (body.consultant_id) query = query.eq("consultant_id", body.consultant_id);
-  if (Array.isArray(body.campaign_ids) && body.campaign_ids.length) query = query.in("id", body.campaign_ids);
+  if (Array.isArray(body.campaign_ids) && body.campaign_ids.length) {
+    query = query.in("id", body.campaign_ids);
+  }
 
   const { data: campaigns, error } = await query;
   if (error) return json({ error: error.message }, 500);
 
+  // Inspeção do criativo é só leitura e depende do token da plataforma. Sem
+  // token seguimos com a limpeza do banco e reportamos a inspeção como
+  // indisponível — não é motivo para abortar.
+  const platform = await loadPlatformAccount();
+
   const results: Array<Record<string, unknown>> = [];
   for (const c of ((campaigns || []) as CampaignRow[])) {
     const channel = c.tracking_protocol_channel || "FB";
-    const protocol = normalizeTrackingProtocol(c.tracking_protocol) || await ensureCampaignTrackingProtocol(admin, channel);
-    const trackedMessage = appendTrackingProtocol(c.initial_message || "Olá! Quero saber mais.", protocol);
-    const oldAdIds = Array.isArray(c.fb_ad_ids) ? c.fb_ad_ids.filter(Boolean) : [];
-    const createdAdIds: string[] = [];
-    const errors: string[] = [];
+    const protocol = normalizeTrackingProtocol(c.tracking_protocol) ||
+      (dryRun ? null : await ensureCampaignTrackingProtocol(admin, channel));
 
-    if (dryRun) {
-      results.push({ campaign_id: c.id, protocol, tracked_message: trackedMessage, old_ads: oldAdIds.length, dry_run: true });
-      continue;
-    }
+    const currentMessage = c.initial_message || "";
+    const cleanedMessage = stripTrackingProtocol(currentMessage);
+    const messageHadProtocol = cleanedMessage !== currentMessage.trim();
 
-    await admin.from("facebook_campaigns").update({
-      tracking_protocol: protocol,
-      tracking_protocol_channel: channel,
-      initial_message: trackedMessage,
-      updated_at: new Date().toISOString(),
-    }).eq("id", c.id);
-
-    for (const oldAdId of oldAdIds) {
-      try {
-        const ad = await fbFetch(`/${oldAdId}?fields=id,name,adset_id,status,creative{id,name,object_story_spec,asset_feed_spec,url_tags,degrees_of_freedom_spec}&access_token=${encodeURIComponent(platform.token)}`);
-        const creative = ad?.creative || {};
-        const params = new URLSearchParams({
-          name: `${String(creative.name || ad.name || c.name).slice(0, 80)} · ${protocol}`,
-          access_token: platform.token,
-        });
-        if (creative.object_story_spec) {
-          params.set("object_story_spec", JSON.stringify(replaceLinksDeep(creative.object_story_spec, protocol)));
+    // Anúncios que ainda mandam o protocolo no link — só diagnóstico.
+    const adsWithProtocol: Array<{ ad_id: string; protocols: string[] }> = [];
+    if (platform?.token) {
+      for (const adId of (c.fb_ad_ids || []).filter(Boolean)) {
+        try {
+          const ad = await fbRead(
+            `/${adId}?fields=id,creative{object_story_spec,asset_feed_spec}&access_token=${
+              encodeURIComponent(platform.token)
+            }`,
+          );
+          const protocols = findProtocolInCreative(ad?.creative ?? {});
+          if (protocols.length) {
+            adsWithProtocol.push({ ad_id: adId, protocols });
+          }
+        } catch (e) {
+          adsWithProtocol.push({
+            ad_id: adId,
+            protocols: [`erro_inspecao: ${(e as Error).message}`],
+          });
         }
-        if (creative.asset_feed_spec) {
-          params.set("asset_feed_spec", JSON.stringify(replaceLinksDeep(creative.asset_feed_spec, protocol)));
-        }
-        if (creative.url_tags) params.set("url_tags", String(creative.url_tags));
-        if (creative.degrees_of_freedom_spec) {
-          params.set("degrees_of_freedom_spec", JSON.stringify(creative.degrees_of_freedom_spec));
-        }
-        if (!params.has("object_story_spec") && !params.has("asset_feed_spec")) {
-          errors.push(`${oldAdId}: criativo sem estrutura clonável`);
-          continue;
-        }
-        const newCreative = await fbFetch(`/${platform.ad_account_id}/adcreatives`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: params,
-        });
-        const newAd = await fbFetch(`/${platform.ad_account_id}/ads`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            name: `${String(ad.name || c.name).slice(0, 80)} · ${protocol}`,
-            adset_id: ad.adset_id,
-            creative: JSON.stringify({ creative_id: newCreative.id }),
-            status: ad.status === "ACTIVE" ? "ACTIVE" : "PAUSED",
-            access_token: platform.token,
-          }),
-        });
-        if (newAd?.id) createdAdIds.push(newAd.id);
-        await fbFetch(`/${oldAdId}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ status: "PAUSED", access_token: platform.token }),
-        }).catch((e) => errors.push(`${oldAdId}: não pausou antigo (${(e as Error).message})`));
-      } catch (e) {
-        errors.push(`${oldAdId}: ${(e as Error).message}`);
       }
     }
 
-    if (createdAdIds.length) {
-      await admin.from("facebook_campaigns").update({
-        fb_ad_ids: createdAdIds,
+    if (!dryRun) {
+      const patch: Record<string, unknown> = {
+        tracking_protocol: protocol,
+        tracking_protocol_channel: channel,
         updated_at: new Date().toISOString(),
-      }).eq("id", c.id);
+      };
+      // Só grava a mensagem quando havia protocolo para remover.
+      if (messageHadProtocol) patch.initial_message = cleanedMessage;
+      await admin.from("facebook_campaigns").update(patch).eq("id", c.id);
     }
 
     results.push({
       campaign_id: c.id,
       campaign_name: c.name,
       protocol,
-      old_ads: oldAdIds,
-      new_ads: createdAdIds,
-      errors,
+      message_cleaned: messageHadProtocol,
+      initial_message: cleanedMessage,
+      // Requer republicação MANUAL do criativo se o consultor quiser tirar o
+      // protocolo do link. Esta função não recria anúncio.
+      ads_still_carrying_protocol: adsWithProtocol,
+      creative_inspection: platform?.token ? "ok" : "sem_token_plataforma",
+      dry_run: dryRun,
     });
   }
 
-  return json({ ok: true, repaired: results.length, results });
+  return json({
+    ok: true,
+    mode: "strip_only",
+    note:
+      "Protocolo permanece apenas no banco. Anúncios com protocolo no link exigem republicação manual.",
+    processed: results.length,
+    results,
+  });
 });

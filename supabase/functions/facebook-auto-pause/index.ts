@@ -10,12 +10,17 @@
  */
 import {
   adminClient,
-  corsHeaders,
   FB_GRAPH,
   loadCampaignConnection,
 } from "../_shared/fb-graph.ts";
+import { buildCors } from "../_shared/cors.ts";
+import {
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import { isAdsExpansiveMutationAllowed } from "../_shared/brain-config.ts";
+import { LEGACY_ANCHOR_CAMPAIGN_ID } from "../_shared/ads-anchor.ts";
 import { isConsultantLocked } from "../_shared/campaign-pause.ts";
-import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
 import {
@@ -32,9 +37,14 @@ import {
 import { notifyAnchorBudgetScale } from "../_shared/notify-consultant.ts";
 
 /** Âncora MG — escala fica no rotator, não no Cérebro por campanha. */
-const ANCHOR_CAMPAIGN_ID = "a0189d12-413a-477d-b903-1bca7a61f44a";
+// Fonte única do id legado (ver `_shared/ads-anchor.ts`).
+const ANCHOR_CAMPAIGN_ID = LEGACY_ANCHOR_CAMPAIGN_ID;
 
-async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token: string) {
+async function postBudget(
+  fbCampaignId: string,
+  dailyBudgetCents: number,
+  token: string,
+) {
   const r = await fetch(`${FB_GRAPH}/${fbCampaignId}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -44,11 +54,18 @@ async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token:
     }),
   });
   const body = await r.text();
-  if (!r.ok) throw new Error(`budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`);
+  if (!r.ok) {
+    throw new Error(
+      `budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`,
+    );
+  }
 }
 
 function campaignCityLabel(name: string, cities: unknown): string {
-  if (Array.isArray(cities) && cities[0] && typeof (cities[0] as any).name === "string") {
+  if (
+    Array.isArray(cities) && cities[0] &&
+    typeof (cities[0] as any).name === "string"
+  ) {
     return String((cities[0] as any).name);
   }
   const raw = String(name || "Campanha")
@@ -64,7 +81,11 @@ function isMgRotOrAnchor(id: string, name: string): boolean {
   return /^MG-ROT-/i.test(String(name || ""));
 }
 
-async function postStatus(id: string, status: "PAUSED" | "ACTIVE", token: string) {
+async function postStatus(
+  id: string,
+  status: "PAUSED" | "ACTIVE",
+  token: string,
+) {
   const r = await fetch(`${FB_GRAPH}/${id}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -75,26 +96,23 @@ async function postStatus(id: string, status: "PAUSED" | "ACTIVE", token: string
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const corsHeaders = buildCors(req, "x-service-secret, x-internal-secret");
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   try {
-    const authHeader = req.headers.get("Authorization") || "";
-    const isCron =
-      isServiceRoleAuth(req) ||
-      (!authHeader && !!req.headers.get("apikey"));
-    if (!isCron) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const admin = adminClient();
+    const cronAuth = await assertCronAuthStrict(req, admin);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     const body = await req.json().catch(() => ({}));
     const dryRun = Boolean(body?.dry_run);
     const forceIds = Array.isArray(body?.force_campaign_ids)
-      ? (body.force_campaign_ids as string[]).filter((x) => typeof x === "string")
+      ? (body.force_campaign_ids as string[]).filter((x) =>
+        typeof x === "string"
+      )
       : [];
 
-    const admin = adminClient();
     const since = new Date(Date.now() - WASTE_LOOKBACK_DAYS * 86400_000)
       .toISOString()
       .slice(0, 10);
@@ -120,16 +138,36 @@ Deno.serve(async (req) => {
       created_at: string;
     }>;
 
+    const automationConfigByConsultant = new Map<string, unknown>();
+    const consultantIds = Array.from(
+      new Set(campList.map((campaign) => campaign.consultant_id)),
+    );
+    if (consultantIds.length > 0) {
+      const { data: automationSettings } = await admin
+        .from("consultant_ad_settings")
+        .select("consultant_id, brain_config")
+        .in("consultant_id", consultantIds);
+      for (const row of automationSettings || []) {
+        automationConfigByConsultant.set(row.consultant_id, row.brain_config);
+      }
+    }
+
     const ids = campList.map((c) => c.id);
-    const metricsByCamp = new Map<string, { spend: number; conv: number; clicks: number }>();
+    const metricsByCamp = new Map<
+      string,
+      { spend: number; conv: number; clicks: number }
+    >();
     if (ids.length) {
       const { data: rows } = await admin
         .from("facebook_metrics_daily")
-        .select("campaign_id, spend_cents, messaging_conversations_started, clicks")
+        .select(
+          "campaign_id, spend_cents, messaging_conversations_started, clicks",
+        )
         .in("campaign_id", ids)
         .gte("date", since);
       for (const row of (rows || []) as any[]) {
-        const cur = metricsByCamp.get(row.campaign_id) || { spend: 0, conv: 0, clicks: 0 };
+        const cur = metricsByCamp.get(row.campaign_id) ||
+          { spend: 0, conv: 0, clicks: 0 };
         cur.spend += Number(row.spend_cents || 0);
         cur.conv += Number(row.messaging_conversations_started || 0);
         cur.clicks += Number(row.clicks || 0);
@@ -137,12 +175,20 @@ Deno.serve(async (req) => {
       }
     }
 
-    const adMetrics = new Map<string, { campaignId: string; spend: number; conv: number }>();
+    const adMetrics = new Map<
+      string,
+      { campaignId: string; spend: number; conv: number }
+    >();
     {
       const { data: adRows } = await admin
         .from("facebook_ad_metrics_daily")
-        .select("campaign_id, fb_ad_id, spend_cents, messaging_conversations_started")
-        .in("campaign_id", ids.length ? ids : ["00000000-0000-0000-0000-000000000000"])
+        .select(
+          "campaign_id, fb_ad_id, spend_cents, messaging_conversations_started",
+        )
+        .in(
+          "campaign_id",
+          ids.length ? ids : ["00000000-0000-0000-0000-000000000000"],
+        )
         .gte("date", since);
       for (const row of (adRows || []) as any[]) {
         const key = String(row.fb_ad_id);
@@ -172,15 +218,23 @@ Deno.serve(async (req) => {
 
     for (const c of campList) {
       if (!c.fb_campaign_id) continue;
+      // Waste guard é PROTETIVO: só pausa, nunca amplia gasto. Por isso NÃO
+      // passa pelo gate de automação — desligá-lo deixaria a campanha
+      // queimando verba sem lead, que é justamente o que ele existe pra evitar.
       if (isConsultantLocked(c.rejection_reason)) {
         actions.push({ campaign_id: c.id, skipped: "locked" });
         continue;
       }
 
       const forced = forceIds.includes(c.id);
-      const ageMs = Date.now() - new Date(c.started_at || c.created_at).getTime();
+      const ageMs = Date.now() -
+        new Date(c.started_at || c.created_at).getTime();
       if (!forced && ageMs < WASTE_MIN_AGE_MS) {
-        actions.push({ campaign_id: c.id, skipped: "too_new", age_h: +(ageMs / 3600000).toFixed(2) });
+        actions.push({
+          campaign_id: c.id,
+          skipped: "too_new",
+          age_h: +(ageMs / 3600000).toFixed(2),
+        });
         continue;
       }
 
@@ -209,10 +263,14 @@ Deno.serve(async (req) => {
         if (!dryRun) {
           await postStatus(c.fb_campaign_id, "PAUSED", token);
           for (const adsetId of c.fb_adset_ids || []) {
-            try { await postStatus(adsetId, "PAUSED", token); } catch (_) { /* best effort */ }
+            try {
+              await postStatus(adsetId, "PAUSED", token);
+            } catch (_) { /* best effort */ }
           }
           for (const adId of c.fb_ad_ids || []) {
-            try { await postStatus(adId, "PAUSED", token); } catch (_) { /* best effort */ }
+            try {
+              await postStatus(adId, "PAUSED", token);
+            } catch (_) { /* best effort */ }
           }
           await admin.from("facebook_campaigns").update({
             status: "paused",
@@ -227,7 +285,11 @@ Deno.serve(async (req) => {
             message: verdict.reason,
             severity: "critical",
             action_label: "Revisar campanha",
-            action_payload: { kind: "review_campaign", campaign_id: c.id, rule: verdict.rule },
+            action_payload: {
+              kind: "review_campaign",
+              campaign_id: c.id,
+              rule: verdict.rule,
+            },
             applied_at: new Date().toISOString(),
           });
 
@@ -240,7 +302,11 @@ Deno.serve(async (req) => {
             );
           } catch (_) { /* ignore */ }
           try {
-            await notifyRodizioOnCampaignPaused(admin, c.id, "auto_performance");
+            await notifyRodizioOnCampaignPaused(
+              admin,
+              c.id,
+              "auto_performance",
+            );
           } catch (_) { /* ignore */ }
         }
         pausedCampaigns++;
@@ -267,7 +333,9 @@ Deno.serve(async (req) => {
           .select("fb_ad_id")
           .in("fb_ad_id", adIds)
           .not("paused_by_ai_at", "is", null);
-        alreadyPausedAds = new Set((pausedRows || []).map((r: any) => String(r.fb_ad_id)));
+        alreadyPausedAds = new Set(
+          (pausedRows || []).map((r: any) => String(r.fb_ad_id)),
+        );
       }
       for (const adId of adIds) {
         if (alreadyPausedAds.has(String(adId))) continue;
@@ -297,7 +365,11 @@ Deno.serve(async (req) => {
             message: adVerdict.reason,
             severity: "warning",
             action_label: "Revisar criativo",
-            action_payload: { kind: "review_creative", campaign_id: c.id, fb_ad_id: adId },
+            action_payload: {
+              kind: "review_creative",
+              campaign_id: c.id,
+              fb_ad_id: adId,
+            },
             applied_at: new Date().toISOString(),
           });
         }
@@ -325,20 +397,24 @@ Deno.serve(async (req) => {
         const base = Deno.env.get("SUPABASE_URL") || "";
         for (const row of settings || []) {
           const bc = (row as any).brain_config;
-          if (!bc || bc.autopilot !== true) continue;
-          const r = await fetch(`${base}/functions/v1/facebook-mg-city-rotator`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${sr}`,
-              apikey: sr,
-              "Content-Type": "application/json",
+          // Slots/escala são EXPANSIVOS: seguem fail-closed no gate.
+          if (!isAdsExpansiveMutationAllowed(bc)) continue;
+          const r = await fetch(
+            `${base}/functions/v1/facebook-mg-city-rotator`,
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${sr}`,
+                apikey: sr,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                consultant_id: row.consultant_id,
+                ensure_active_slots: true,
+                seed: false,
+              }),
             },
-            body: JSON.stringify({
-              consultant_id: row.consultant_id,
-              ensure_active_slots: true,
-              seed: false,
-            }),
-          });
+          );
           const resp = await r.json().catch(() => ({}));
           brainTicks.push({
             consultant_id: row.consultant_id,
@@ -365,7 +441,9 @@ Deno.serve(async (req) => {
 
       const walletCache = new Map<string, number>();
       async function liquidFor(consultantId: string): Promise<number> {
-        if (walletCache.has(consultantId)) return walletCache.get(consultantId)!;
+        if (walletCache.has(consultantId)) {
+          return walletCache.get(consultantId)!;
+        }
         const { data: wallet } = await admin
           .from("consultant_wallet")
           .select("balance_cents, debt_cents")
@@ -380,6 +458,18 @@ Deno.serve(async (req) => {
       }
 
       for (const c of (scaleCamps || []) as any[]) {
+        if (
+          !dryRun &&
+          !isAdsExpansiveMutationAllowed(
+            automationConfigByConsultant.get(c.consultant_id),
+          )
+        ) {
+          campaignScaleTicks.push({
+            id: c.id,
+            skipped: "ads_automation_disabled",
+          });
+          continue;
+        }
         if (isMgRotOrAnchor(String(c.id), String(c.name || ""))) {
           campaignScaleTicks.push({ id: c.id, skipped: "mg_rot_or_anchor" });
           continue;
@@ -389,20 +479,28 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const sinceScale = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        const sinceScale = new Date(Date.now() - 2 * 24 * 3600 * 1000)
+          .toISOString().slice(0, 10);
         const { data: metrics } = await admin
           .from("facebook_metrics_daily")
           .select("spend_cents, messaging_conversations_started")
           .eq("campaign_id", c.id)
           .gte("date", sinceScale);
-        const spend = (metrics || []).reduce((s: number, r: any) => s + Number(r.spend_cents || 0), 0);
+        const spend = (metrics || []).reduce(
+          (s: number, r: any) => s + Number(r.spend_cents || 0),
+          0,
+        );
         const conv = (metrics || []).reduce(
-          (s: number, r: any) => s + Number(r.messaging_conversations_started || 0),
+          (s: number, r: any) =>
+            s + Number(r.messaging_conversations_started || 0),
           0,
         );
         const cpl = conv > 0 ? Math.round(spend / conv) : null;
         const fromBudget = Number(c.daily_budget_cents) || 517;
-        const stepPct = Math.max(15, Math.min(30, Number(c.brain_scale_step_pct) || 15));
+        const stepPct = Math.max(
+          15,
+          Math.min(30, Number(c.brain_scale_step_pct) || 15),
+        );
         let decision = decideAnchorBudgetScale({
           currentBudgetCents: fromBudget,
           maxBudgetCents: Number(c.brain_scale_max_budget_cents) || 50000,
@@ -420,7 +518,11 @@ Deno.serve(async (req) => {
           decision = {
             action: "hold",
             budgetCents: fromBudget,
-            reason: `CPL ok, mas saldo R$ ${(liquid / 100).toFixed(2)} < orçamento R$ ${(decision.budgetCents / 100).toFixed(2)} — não sobe`,
+            reason: `CPL ok, mas saldo R$ ${
+              (liquid / 100).toFixed(2)
+            } < orçamento R$ ${
+              (decision.budgetCents / 100).toFixed(2)
+            } — não sobe`,
           };
         }
 

@@ -14,39 +14,60 @@
  */
 import {
   adminClient,
-  corsHeaders,
+  authConsultant,
   FB_GRAPH,
   fbFetch,
   loadPlatformAccount,
 } from "../_shared/fb-graph.ts";
-import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
-import { isAutoPerfPause, isManualPause, isManualStop } from "../_shared/campaign-pause.ts";
+import { buildCors } from "../_shared/cors.ts";
 import {
-  normalizeBrainConfig,
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import {
+  isAutoPerfPause,
+  isManualPause,
+  isManualStop,
+} from "../_shared/campaign-pause.ts";
+import {
   type BrainConfig,
+  isAdsExpansiveMutationAllowed,
+  normalizeBrainConfig,
 } from "../_shared/brain-config.ts";
 import { pickAdCopyForCity } from "../_shared/ad-copy-bank.ts";
+import {
+  resolveAnchorCampaignId,
+  resolveWinnerPhotoUrl,
+} from "../_shared/ads-anchor.ts";
 import {
   decideAnchorBudgetScale,
   formatAnchorScaleDownWhatsApp,
   formatAnchorScaleUpWhatsApp,
 } from "../_shared/brain-budget-scale.ts";
-import { notifyConsultant, notifyAnchorBudgetScale } from "../_shared/notify-consultant.ts";
+import {
+  notifyAnchorBudgetScale,
+  notifyConsultant,
+} from "../_shared/notify-consultant.ts";
 
-const CONSULTANT_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
-const ANCHOR_CAMPAIGN_ID = "a0189d12-413a-477d-b903-1bca7a61f44a";
 /** Fallback se brain_config vazio — UI sobrescreve via consultant_ad_settings. */
 const FALLBACK_MAX_EXPLORERS = 4;
 const DEFAULT_BUDGET_CENTS = 1000; // R$ 10
 const ROTATION_PREFIX = "ROTATION_QUEUE:";
 const DUP_PREFIX = "ROTATION_QUEUE: duplicata";
-/** Imagem vencedora fixa — diferenciação no leilão é só texto (banco 100×3). */
-const WINNER_PHOTO =
-  "https://zlzasfhcxcznaprrragl.supabase.co/storage/v1/object/public/consultant-photos/0c2711ad-4836-41e6-afba-edd94f698ae3/ads/1783509775658-1000668870.png";
-const PLACEMENTS = ["fb:feed", "fb:story", "fb:marketplace", "fb:search", "ig:stream", "ig:story", "ig:reels"];
+const PLACEMENTS = [
+  "fb:feed",
+  "fb:story",
+  "fb:marketplace",
+  "fb:search",
+  "ig:stream",
+  "ig:story",
+  "ig:reels",
+];
 
 /** MG inteira — prioridade Triângulo → RMBH → eixos. BH por último. Uberlândia = âncora. */
-const MG_QUEUE: Array<{ name: string; key?: string; ddd: number; slug: string }> = [
+const MG_QUEUE: Array<
+  { name: string; key?: string; ddd: number; slug: string }
+> = [
   { name: "Uberaba", key: "273168", ddd: 34, slug: "uberaba" },
   { name: "Contagem", ddd: 31, slug: "contagem" },
   { name: "Patos de Minas", ddd: 34, slug: "patos-de-minas" },
@@ -71,7 +92,10 @@ const MG_QUEUE: Array<{ name: string; key?: string; ddd: number; slug: string }>
 
 const DEFAULT_PREFERRED = ["uberaba", "contagem", "betim", "patos-de-minas"];
 
-async function loadBrain(admin: ReturnType<typeof adminClient>, consultantId: string): Promise<BrainConfig> {
+async function loadBrain(
+  admin: ReturnType<typeof adminClient>,
+  consultantId: string,
+): Promise<BrainConfig> {
   const { data } = await admin
     .from("consultant_ad_settings")
     .select("brain_config, age_min, age_max")
@@ -99,10 +123,11 @@ function buildQueue(cfg: BrainConfig) {
   return base;
 }
 
-function j(body: unknown, status = 200) {
+function j(req: Request, body: unknown, status = 200) {
+  const cors = buildCors(req, "x-service-secret, x-internal-secret");
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
@@ -128,16 +153,23 @@ async function resolveCityKey(
     .eq("uf", "MG")
     .eq("name", name)
     .maybeSingle();
-  if (cached?.fb_key && /minas/i.test(String(cached.region || ""))) return cached.fb_key;
+  if (cached?.fb_key && /minas/i.test(String(cached.region || ""))) {
+    return cached.fb_key;
+  }
 
   const url =
     `${FB_GRAPH}/search?location_types=["city"]&type=adgeolocation&country_code=BR` +
-    `&q=${encodeURIComponent(name)}&limit=15&access_token=${encodeURIComponent(token)}`;
+    `&q=${encodeURIComponent(name)}&limit=15&access_token=${
+      encodeURIComponent(token)
+    }`;
   const json = await fbFetch(url);
-  const hit = (json?.data || []).find((h: any) =>
-    String(h.region || "").toLowerCase().includes("minas") &&
-    String(h.name || "").toLowerCase() === name.toLowerCase()
-  ) || (json?.data || []).find((h: any) => String(h.region || "").toLowerCase().includes("minas"));
+  const hit =
+    (json?.data || []).find((h: any) =>
+      String(h.region || "").toLowerCase().includes("minas") &&
+      String(h.name || "").toLowerCase() === name.toLowerCase()
+    ) || (json?.data || []).find((h: any) =>
+      String(h.region || "").toLowerCase().includes("minas")
+    );
   if (!hit?.key) return null;
   await admin.from("fb_city_cache").upsert({
     name,
@@ -150,7 +182,11 @@ async function resolveCityKey(
   return String(hit.key);
 }
 
-async function postStatus(id: string, status: "PAUSED" | "ACTIVE", token: string) {
+async function postStatus(
+  id: string,
+  status: "PAUSED" | "ACTIVE",
+  token: string,
+) {
   const r = await fetch(`${FB_GRAPH}/${id}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -160,7 +196,11 @@ async function postStatus(id: string, status: "PAUSED" | "ACTIVE", token: string
   if (!r.ok) throw new Error(`Meta ${id}: ${r.status} ${body.slice(0, 240)}`);
 }
 
-async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token: string) {
+async function postBudget(
+  fbCampaignId: string,
+  dailyBudgetCents: number,
+  token: string,
+) {
   const r = await fetch(`${FB_GRAPH}/${fbCampaignId}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -170,7 +210,11 @@ async function postBudget(fbCampaignId: string, dailyBudgetCents: number, token:
     }),
   });
   const body = await r.text();
-  if (!r.ok) throw new Error(`budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`);
+  if (!r.ok) {
+    throw new Error(
+      `budget ${fbCampaignId}: ${r.status} ${body.slice(0, 240)}`,
+    );
+  }
 }
 
 /** Aplica age_range preferido nos AdSets (Advantage+). Hard age_min fica ≤25.
@@ -180,25 +224,35 @@ async function patchAdsetAgeRange(
   agePref: number,
   token: string,
 ): Promise<{ ok: boolean; detail: string; skipped?: boolean }> {
-  const getUrl = `${FB_GRAPH}/${adsetId}?fields=targeting&access_token=${encodeURIComponent(token)}`;
+  const getUrl = `${FB_GRAPH}/${adsetId}?fields=targeting&access_token=${
+    encodeURIComponent(token)
+  }`;
   const getRes = await fetch(getUrl);
   const getJson = await getRes.json().catch(() => ({}));
   if (!getRes.ok) {
-    return { ok: false, detail: `GET ${adsetId}: ${JSON.stringify(getJson).slice(0, 180)}` };
+    return {
+      ok: false,
+      detail: `GET ${adsetId}: ${JSON.stringify(getJson).slice(0, 180)}`,
+    };
   }
   const current = getJson.targeting || {};
   const hardMin = Math.min(25, agePref);
   const curRange = Array.isArray(current.age_range) ? current.age_range : null;
-  const curAuto = Number(current?.targeting_automation?.advantage_audience ?? 0);
-  const alreadyOk =
-    Number(current.age_min) === hardMin &&
+  const curAuto = Number(
+    current?.targeting_automation?.advantage_audience ?? 0,
+  );
+  const alreadyOk = Number(current.age_min) === hardMin &&
     Number(current.age_max) === 65 &&
     curRange != null &&
     Number(curRange[0]) === agePref &&
     Number(curRange[1]) === 65 &&
     curAuto === 1;
   if (alreadyOk) {
-    return { ok: true, skipped: true, detail: `noop age_range=[${agePref},65]` };
+    return {
+      ok: true,
+      skipped: true,
+      detail: `noop age_range=[${agePref},65]`,
+    };
   }
 
   const targeting = { ...current };
@@ -218,48 +272,114 @@ async function patchAdsetAgeRange(
     }),
   });
   const body = await r.text();
-  if (!r.ok) return { ok: false, detail: `PATCH ${adsetId}: ${r.status} ${body.slice(0, 200)}` };
+  if (!r.ok) {
+    return {
+      ok: false,
+      detail: `PATCH ${adsetId}: ${r.status} ${body.slice(0, 200)}`,
+    };
+  }
   return { ok: true, detail: `age_range=[${agePref},65]` };
 }
 
 function isQueued(reason: string | null | undefined): boolean {
   if (!reason) return false;
   if (String(reason).startsWith(DUP_PREFIX)) return false;
-  if (isManualPause(reason) || isManualStop(reason) || isAutoPerfPause(reason)) return false;
+  if (
+    isManualPause(reason) || isManualStop(reason) || isAutoPerfPause(reason)
+  ) return false;
   return String(reason).startsWith(ROTATION_PREFIX);
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const cors = buildCors(req, "x-service-secret, x-internal-secret");
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
-    const authHeader = req.headers.get("Authorization") || "";
-    const isCron = isServiceRoleAuth(req) || (!authHeader && !!req.headers.get("apikey"));
-    if (!isCron) return j({ error: "Unauthorized" }, 401);
+    const admin = adminClient();
+    // Dois chamadores legítimos: cron/auto-pause (credencial de serviço) e o
+    // botão do consultor no CampaignBrainPanel (JWT). Anônimo é bloqueado.
+    const cronAuth = await assertCronAuthStrict(req, admin);
+    const caller = cronAuth.ok ? null : await authConsultant(req);
+    if (!cronAuth.ok && !caller) {
+      return cronAuthUnauthorized(cronAuth.reason, cors);
+    }
 
     const body = await req.json().catch(() => ({}));
     const ensureSlots = Boolean(body?.ensure_active_slots);
     const seed = ensureSlots ? Boolean(body?.seed) : body?.seed !== false;
     const activateNext = ensureSlots ? false : body?.activate_next !== false;
     const dryRun = Boolean(body?.dry_run);
-    const consultantId = String(body?.consultant_id || CONSULTANT_ID);
+    const requestedConsultantId = typeof body?.consultant_id === "string"
+      ? body.consultant_id.trim()
+      : "";
+    // Com JWT o dono é sempre o próprio caller — nunca aceita id de terceiro.
+    const consultantId = caller ? caller.id : requestedConsultantId;
+    if (!consultantId) {
+      return j(req, { error: "consultant_id obrigatório" }, 400);
+    }
+    if (
+      caller && requestedConsultantId && requestedConsultantId !== caller.id
+    ) {
+      return j(req, { error: "forbidden_consultant_scope" }, 403);
+    }
 
-    const admin = adminClient();
     const cfg = await loadBrain(admin, consultantId);
+    // Âncora vem da configuração do consultor; o UUID legado só cobre o piloto.
+    // Sem âncora resolvida, o motor não age — melhor nada do que mexer na
+    // campanha de outra pessoa.
+    const anchorCampaignId = resolveAnchorCampaignId(
+      consultantId,
+      cfg,
+      body?.anchor_campaign_id,
+    );
+    if (!anchorCampaignId) {
+      return j(req, {
+        ok: true,
+        skipped: "anchor_campaign_not_configured",
+        hint: "defina brain_config.anchor_campaign_id para este consultor",
+      });
+    }
+    // `create_object` e `targeting_patch` são human-only na policy central.
+    const humanDecision = Boolean(caller);
+    // Ação humana (JWT) é sempre permitida: o consultor está no comando.
+    // Chamada automática exige modo explícito — rotação/slot é EXPANSIVO.
+    if (!dryRun && !caller && !isAdsExpansiveMutationAllowed(cfg)) {
+      return j(req, {
+        ok: true,
+        skipped: "ads_automation_disabled",
+        automation_mode: cfg.automation_mode,
+        kill_switch: cfg.kill_switch,
+      });
+    }
+    // (o gate de seed foi movido para baixo, junto da resolução do criativo,
+    //  porque agora distingue clique humano de execução automática)
     const MAX_EXPLORERS = cfg.max_explorers || FALLBACK_MAX_EXPLORERS;
     const explorerBudget = Math.max(
       517,
-      Number(body?.target_budget_cents || cfg.explorer_budget_cents || DEFAULT_BUDGET_CENTS),
+      Number(
+        body?.target_budget_cents || cfg.explorer_budget_cents ||
+          DEFAULT_BUDGET_CENTS,
+      ),
     );
-    const anchorBudget = Math.max(517, Number(body?.anchor_budget_cents || cfg.anchor_budget_cents || explorerBudget));
-    const preferred: string[] = Array.isArray(body?.preferred_slugs) && body.preferred_slugs.length
-      ? body.preferred_slugs.map((s: string) => String(s).toLowerCase())
-      : (cfg.preferred_slugs?.length ? cfg.preferred_slugs : DEFAULT_PREFERRED).slice(0, MAX_EXPLORERS);
+    const anchorBudget = Math.max(
+      517,
+      Number(
+        body?.anchor_budget_cents || cfg.anchor_budget_cents || explorerBudget,
+      ),
+    );
+    const preferred: string[] =
+      Array.isArray(body?.preferred_slugs) && body.preferred_slugs.length
+        ? body.preferred_slugs.map((s: string) => String(s).toLowerCase())
+        : (cfg.preferred_slugs?.length
+          ? cfg.preferred_slugs
+          : DEFAULT_PREFERRED).slice(0, MAX_EXPLORERS);
     const cityQueue = buildQueue(cfg);
     const ageMinPref = cfg.age_min || 30;
     const ageMaxPref = cfg.age_max || 65;
 
     const platform = await loadPlatformAccount();
-    if (!platform?.token) return j({ error: "Sem token Meta plataforma" }, 502);
+    if (!platform?.token) {
+      return j(req, { error: "Sem token Meta plataforma" }, 502);
+    }
     const token = platform.token;
 
     const { data: wallet } = await admin
@@ -274,6 +394,9 @@ Deno.serve(async (req) => {
 
     const log: Array<Record<string, unknown>> = [];
     const created: Array<Record<string, unknown>> = [];
+    // Tentativas que NÃO resultaram em campanha (recusa, erro, skipped).
+    // Separado de `created` para o painel não celebrar no-op.
+    const notCreated: Array<Record<string, unknown>> = [];
 
     // Marca duplicatas Ipatinga (mantém o mais antigo)
     {
@@ -285,7 +408,9 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: true });
       if ((ipas || []).length > 1) {
         for (const dup of (ipas || []).slice(1)) {
-          if (String(dup.rejection_reason || "").startsWith(DUP_PREFIX)) continue;
+          if (String(dup.rejection_reason || "").startsWith(DUP_PREFIX)) {
+            continue;
+          }
           if (!dryRun) {
             await admin.from("facebook_campaigns").update({
               rejection_reason: `${DUP_PREFIX} — não rotacionar`,
@@ -293,9 +418,27 @@ Deno.serve(async (req) => {
               updated_at: new Date().toISOString(),
             }).eq("id", dup.id);
           }
-          log.push({ action: "mark_duplicate", id: dup.id, protocol: dup.tracking_protocol });
+          log.push({
+            action: "mark_duplicate",
+            id: dup.id,
+            protocol: dup.tracking_protocol,
+          });
         }
       }
+    }
+
+    // Seed = criar campanha nova (`create_object`), que é human-only na policy.
+    // O criativo também vem da configuração; sem ele, não se inventa anúncio.
+    const winnerPhotoUrl = resolveWinnerPhotoUrl(consultantId, cfg);
+    if (seed && !dryRun && !humanDecision) {
+      return j(req, { ok: true, skipped: "automatic_seed_disabled" });
+    }
+    if (seed && !dryRun && !winnerPhotoUrl) {
+      return j(req, {
+        ok: true,
+        skipped: "winner_photo_not_configured",
+        hint: "defina brain_config.winner_photo_url para semear exploradoras",
+      });
     }
 
     // Seed (só faltantes; em ensure_slots default off pra não estourar timeout)
@@ -307,7 +450,9 @@ Deno.serve(async (req) => {
         .ilike("name", "MG-ROT-%");
 
       const have = new Set(
-        (existing || []).map((c: any) => String(c.cities?.[0]?.name || "").toLowerCase()),
+        (existing || []).map((c: any) =>
+          String(c.cities?.[0]?.name || "").toLowerCase()
+        ),
       );
       const usedInitial = (existing || [])
         .map((c: any) => String(c.initial_message || "").trim())
@@ -344,7 +489,9 @@ Deno.serve(async (req) => {
           });
           continue;
         }
-        const createUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/facebook-create-campaign`;
+        const createUrl = `${
+          Deno.env.get("SUPABASE_URL")
+        }/functions/v1/facebook-create-campaign`;
         const sr = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
         const payload = {
           consultant_id: consultantId,
@@ -359,7 +506,7 @@ Deno.serve(async (req) => {
           age_min: ageMinPref,
           age_max: ageMaxPref,
           creative_mode: "photo",
-          photos: [{ url: WINNER_PHOTO, format: "vertical" }],
+          photos: [{ url: winnerPhotoUrl, format: "vertical" }],
           headline: copy.headline,
           description: copy.description,
           primary_text: copy.primary_text,
@@ -378,8 +525,34 @@ Deno.serve(async (req) => {
           body: JSON.stringify(payload),
         });
         const resp = await r.json().catch(() => ({}));
-        created.push({ city: city.name, status: r.status, resp, copy_idx: { h: copy.headline_idx, p: copy.primary_idx, c: copy.ctwa_idx } });
-        log.push({ city: city.name, create_status: r.status, ok: r.ok, copy_fp: copy.fingerprint.slice(0, 80) });
+        // A campanha só existe se veio `campaign_id`. `facebook-create-campaign`
+        // responde 200 com `skipped` quando recusa a criação via service_role —
+        // contar isso como criada fazia o painel dizer "cidade no ar" sobre nada.
+        const createdId = (resp as { campaign_id?: string })?.campaign_id ??
+          null;
+        const skippedReason = (resp as { skipped?: string })?.skipped ?? null;
+        const entry = {
+          city: city.name,
+          status: r.status,
+          created: Boolean(createdId),
+          campaign_id: createdId,
+          skipped: skippedReason,
+          resp,
+          copy_idx: {
+            h: copy.headline_idx,
+            p: copy.primary_idx,
+            c: copy.ctwa_idx,
+          },
+        };
+        if (createdId) created.push(entry);
+        else notCreated.push(entry);
+        log.push({
+          city: city.name,
+          create_status: r.status,
+          ok: r.ok && Boolean(createdId),
+          skipped: skippedReason,
+          copy_fp: copy.fingerprint.slice(0, 80),
+        });
         await new Promise((res) => setTimeout(res, 3500));
       }
     }
@@ -390,7 +563,7 @@ Deno.serve(async (req) => {
       const { data: anchor } = await admin
         .from("facebook_campaigns")
         .select("id, fb_campaign_id, daily_budget_cents, status")
-        .eq("id", ANCHOR_CAMPAIGN_ID)
+        .eq("id", anchorCampaignId)
         .maybeSingle();
 
       let desiredAnchorBudget = anchorBudget;
@@ -404,15 +577,20 @@ Deno.serve(async (req) => {
       } | null = null;
 
       if (cfg.autopilot && anchor?.id) {
-        const since = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+        const since = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString()
+          .slice(0, 10);
         const { data: metrics } = await admin
           .from("facebook_metrics_daily")
           .select("spend_cents, messaging_conversations_started")
           .eq("campaign_id", anchor.id)
           .gte("date", since);
-        const spend = (metrics || []).reduce((s: number, r: any) => s + Number(r.spend_cents || 0), 0);
+        const spend = (metrics || []).reduce(
+          (s: number, r: any) => s + Number(r.spend_cents || 0),
+          0,
+        );
         const conv = (metrics || []).reduce(
-          (s: number, r: any) => s + Number(r.messaging_conversations_started || 0),
+          (s: number, r: any) =>
+            s + Number(r.messaging_conversations_started || 0),
           0,
         );
         const cpl = conv > 0 ? Math.round(spend / conv) : null;
@@ -432,7 +610,11 @@ Deno.serve(async (req) => {
           desiredAnchorBudget = fromBudget;
           scaleMeta = {
             action: "hold",
-            reason: `CPL ok, mas saldo R$ ${(liquid / 100).toFixed(2)} < orçamento R$ ${(decision.budgetCents / 100).toFixed(2)} — não sobe`,
+            reason: `CPL ok, mas saldo R$ ${
+              (liquid / 100).toFixed(2)
+            } < orçamento R$ ${
+              (decision.budgetCents / 100).toFixed(2)
+            } — não sobe`,
             cpl,
             conv,
             spend,
@@ -478,7 +660,10 @@ Deno.serve(async (req) => {
         }
       }
 
-      if (anchor?.fb_campaign_id && Number(anchor.daily_budget_cents) !== desiredAnchorBudget) {
+      if (
+        anchor?.fb_campaign_id &&
+        Number(anchor.daily_budget_cents) !== desiredAnchorBudget
+      ) {
         if (!dryRun) {
           await postBudget(anchor.fb_campaign_id, desiredAnchorBudget, token);
           await admin.from("facebook_campaigns").update({
@@ -495,7 +680,10 @@ Deno.serve(async (req) => {
         });
 
         // WhatsApp do consultor: mensagem formatada (sobe / desce)
-        if (!dryRun && scaleMeta && (scaleMeta.action === "scale_up" || scaleMeta.action === "scale_down")) {
+        if (
+          !dryRun && scaleMeta &&
+          (scaleMeta.action === "scale_up" || scaleMeta.action === "scale_down")
+        ) {
           const stepPct = cfg.scale_step_pct || 15;
           const targetCpl = cfg.target_cpl_cents || 200;
           const text = scaleMeta.action === "scale_up"
@@ -525,9 +713,16 @@ Deno.serve(async (req) => {
             });
           try {
             const ok = await notifyAnchorBudgetScale(consultantId, text);
-            log.push({ action: "anchor_scale_notify", ok, kind: scaleMeta.action });
+            log.push({
+              action: "anchor_scale_notify",
+              ok,
+              kind: scaleMeta.action,
+            });
           } catch (e) {
-            log.push({ action: "anchor_scale_notify_error", error: (e as Error).message });
+            log.push({
+              action: "anchor_scale_notify_error",
+              error: (e as Error).message,
+            });
           }
         }
       }
@@ -535,19 +730,31 @@ Deno.serve(async (req) => {
 
     const { data: explorers } = await admin
       .from("facebook_campaigns")
-      .select("id, name, status, fb_campaign_id, fb_adset_ids, fb_ad_ids, rejection_reason, cities, daily_budget_cents, created_at, tracking_protocol")
+      .select(
+        "id, name, status, fb_campaign_id, fb_adset_ids, fb_ad_ids, rejection_reason, cities, daily_budget_cents, created_at, tracking_protocol",
+      )
       .eq("consultant_id", consultantId)
       .ilike("name", "MG-ROT-%")
       .order("created_at", { ascending: true });
 
     const all = (explorers || []) as any[];
-    const activeExplorers = all.filter((c) => c.status === "active" || c.status === "pending_review");
-    const queued = all.filter((c) => c.status === "paused" && isQueued(c.rejection_reason));
+    const activeExplorers = all.filter((c) =>
+      c.status === "active" || c.status === "pending_review"
+    );
+    const queued = all.filter((c) =>
+      c.status === "paused" && isQueued(c.rejection_reason)
+    );
 
     async function activateCampaign(c: any, reason: string) {
       if (!c.fb_campaign_id) throw new Error("sem fb_campaign_id");
       await postBudget(c.fb_campaign_id, explorerBudget, token);
-      for (const id of [...(c.fb_adset_ids || []), ...(c.fb_ad_ids || []), c.fb_campaign_id]) {
+      for (
+        const id of [
+          ...(c.fb_adset_ids || []),
+          ...(c.fb_ad_ids || []),
+          c.fb_campaign_id,
+        ]
+      ) {
         await postStatus(id, "ACTIVE", token);
       }
       await admin.from("facebook_campaigns").update({
@@ -556,14 +763,22 @@ Deno.serve(async (req) => {
         rejection_reason: null,
         updated_at: new Date().toISOString(),
       }).eq("id", c.id);
-      log.push({ action: "activate", id: c.id, city: c.cities?.[0]?.name, reason, budget: explorerBudget });
+      log.push({
+        action: "activate",
+        id: c.id,
+        city: c.cities?.[0]?.name,
+        reason,
+        budget: explorerBudget,
+      });
     }
 
     async function pauseToQueue(c: any, reason: string) {
       if (!c.fb_campaign_id) return;
       await postStatus(c.fb_campaign_id, "PAUSED", token);
       for (const id of [...(c.fb_adset_ids || []), ...(c.fb_ad_ids || [])]) {
-        try { await postStatus(id, "PAUSED", token); } catch (_) { /* */ }
+        try {
+          await postStatus(id, "PAUSED", token);
+        } catch (_) { /* */ }
       }
       await admin.from("facebook_campaigns").update({
         status: "paused",
@@ -583,14 +798,21 @@ Deno.serve(async (req) => {
       for (const c of activeExplorers) {
         const s = slugOf(c);
         if (!wantSet.has(s)) {
-          if (!dryRun) await pauseToQueue(c, `${ROTATION_PREFIX} fora do slot preferido — voltou pra fila`);
+          if (!dryRun) {
+            await pauseToQueue(
+              c,
+              `${ROTATION_PREFIX} fora do slot preferido — voltou pra fila`,
+            );
+          }
         }
       }
 
       for (const slug of want) {
         let c = bySlug.get(slug);
         if (!c) {
-          c = all.find((x) => slugOf(x) === slug || slugOf(x).includes(slug.replace(/-/g, "")));
+          c = all.find((x) =>
+            slugOf(x) === slug || slugOf(x).includes(slug.replace(/-/g, ""))
+          );
         }
         if (!c) {
           log.push({ action: "missing_preferred", slug });
@@ -615,7 +837,8 @@ Deno.serve(async (req) => {
 
       // Notifica só se houve mudança real (ativa/pausa/budget) — evita spam a cada 30 min
       const slotChanged = log.some((e: any) =>
-        e?.action === "activate" || e?.action === "pause_queue" || e?.action === "budget_align"
+        e?.action === "activate" || e?.action === "pause_queue" ||
+        e?.action === "budget_align"
       );
       if (slotChanged) {
         try {
@@ -623,7 +846,11 @@ Deno.serve(async (req) => {
             consultantId,
             "info",
             `Cérebro MG — ${1 + ensured.length} praças no ar`,
-            `Uberlândia (R$ ${(anchorBudget / 100).toFixed(0)}) + ${ensured.join(", ")} a R$ ${(explorerBudget / 100).toFixed(0)}/dia. Idade preferida ${ageMinPref}+.`,
+            `Uberlândia (R$ ${(anchorBudget / 100).toFixed(0)}) + ${
+              ensured.join(", ")
+            } a R$ ${
+              (explorerBudget / 100).toFixed(0)
+            }/dia. Idade preferida ${ageMinPref}+.`,
           );
         } catch (_) { /* */ }
       }
@@ -636,9 +863,21 @@ Deno.serve(async (req) => {
           .select("id, fb_adset_ids, cities, name, age_min_preferred")
           .eq("consultant_id", consultantId)
           .in("status", ["active", "pending_review"])
-          .or(`id.eq.${ANCHOR_CAMPAIGN_ID},name.ilike.MG-ROT-%`);
+          .or(`id.eq.${anchorCampaignId},name.ilike.MG-ROT-%`);
         for (const camp of liveForAge || []) {
-          const dbAligned = Number((camp as any).age_min_preferred) === ageMinPref;
+          // `targeting_patch` é human-only: reescrever idade/segmentação em
+          // campanha ativa reinicia o aprendizado da Meta (incidente 2026-07-23).
+          // O cron nunca faz isso; só o clique do consultor.
+          if (!humanDecision) {
+            log.push({
+              action: "age_range_skipped",
+              campaign_id: camp.id,
+              detail: "targeting_patch_requires_human",
+            });
+            continue;
+          }
+          const dbAligned =
+            Number((camp as any).age_min_preferred) === ageMinPref;
           // DB já alinhado → não chama Graph (evita “reinício” / aprendizado a cada 30 min)
           if (dbAligned) {
             log.push({
@@ -664,7 +903,9 @@ Deno.serve(async (req) => {
                   age_min_preferred: ageMinPref,
                   age_min: Math.min(25, ageMinPref),
                   age_max: 65,
-                  ...(res.skipped ? {} : { updated_at: new Date().toISOString() }),
+                  ...(res.skipped
+                    ? {}
+                    : { updated_at: new Date().toISOString() }),
                 }).eq("id", camp.id);
               }
             } catch (e) {
@@ -680,27 +921,47 @@ Deno.serve(async (req) => {
     } else {
       if (activeExplorers.length > MAX_EXPLORERS && !dryRun) {
         for (const c of activeExplorers.slice(MAX_EXPLORERS)) {
-          await pauseToQueue(c, `${ROTATION_PREFIX} slot liberado — voltou pra fila`);
+          await pauseToQueue(
+            c,
+            `${ROTATION_PREFIX} slot liberado — voltou pra fila`,
+          );
         }
       }
-      const slotsFree = Math.max(0, MAX_EXPLORERS - Math.min(activeExplorers.length, MAX_EXPLORERS));
+      const slotsFree = Math.max(
+        0,
+        MAX_EXPLORERS - Math.min(activeExplorers.length, MAX_EXPLORERS),
+      );
       const minToActivate = explorerBudget * 2 + autoPauseAt;
-      if (activateNext && slotsFree > 0 && queued.length && liquid >= minToActivate && !dryRun) {
+      if (
+        activateNext && slotsFree > 0 && queued.length &&
+        liquid >= minToActivate && !dryRun
+      ) {
         await activateCampaign(queued[0], "activate_next");
         try {
           await notifyConsultant(
             consultantId,
             "info",
             "Rotação MG — nova cidade",
-            `${queued[0].cities?.[0]?.name || queued[0].name} entrou no slot (R$ ${(explorerBudget / 100).toFixed(2)}/dia).`,
+            `${
+              queued[0].cities?.[0]?.name || queued[0].name
+            } entrou no slot (R$ ${(explorerBudget / 100).toFixed(2)}/dia).`,
           );
         } catch (_) { /* */ }
-      } else if (activateNext && slotsFree > 0 && queued.length && liquid < minToActivate) {
-        log.push({ action: "skip_activate", reason: "saldo_baixo", liquid, need: minToActivate });
+      } else if (
+        activateNext && slotsFree > 0 && queued.length && liquid < minToActivate
+      ) {
+        log.push({
+          action: "skip_activate",
+          reason: "saldo_baixo",
+          liquid,
+          need: minToActivate,
+        });
       }
 
       for (const c of activeExplorers.slice(0, MAX_EXPLORERS)) {
-        if (Number(c.daily_budget_cents) === explorerBudget || !c.fb_campaign_id) continue;
+        if (
+          Number(c.daily_budget_cents) === explorerBudget || !c.fb_campaign_id
+        ) continue;
         if (!dryRun) {
           await postBudget(c.fb_campaign_id, explorerBudget, token);
           await admin.from("facebook_campaigns").update({
@@ -708,14 +969,18 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }).eq("id", c.id);
         }
-        log.push({ action: "budget_align_active", id: c.id, to: explorerBudget });
+        log.push({
+          action: "budget_align_active",
+          id: c.id,
+          to: explorerBudget,
+        });
       }
     }
 
     const { data: anchor } = await admin
       .from("facebook_campaigns")
       .select("id, status, daily_budget_cents")
-      .eq("id", ANCHOR_CAMPAIGN_ID)
+      .eq("id", anchorCampaignId)
       .maybeSingle();
 
     const { data: explorersAfter } = await admin
@@ -724,10 +989,14 @@ Deno.serve(async (req) => {
       .eq("consultant_id", consultantId)
       .ilike("name", "MG-ROT-%");
 
-    const activeAfter = (explorersAfter || []).filter((c: any) => c.status === "active" || c.status === "pending_review");
-    const queuedAfter = (explorersAfter || []).filter((c: any) => c.status === "paused");
+    const activeAfter = (explorersAfter || []).filter((c: any) =>
+      c.status === "active" || c.status === "pending_review"
+    );
+    const queuedAfter = (explorersAfter || []).filter((c: any) =>
+      c.status === "paused"
+    );
 
-    return j({
+    return j(req, {
       ok: true,
       dry_run: dryRun,
       brain: cfg,
@@ -750,9 +1019,13 @@ Deno.serve(async (req) => {
       },
       ensured,
       created,
+      // Vazio no caminho normal. Preenchido quando a criação foi recusada —
+      // hoje é o caso do seed, porque `facebook-create-campaign` bloqueia
+      // criação via service_role (publicação é ação humana pela UI).
+      not_created: notCreated,
       log,
     });
   } catch (e) {
-    return j({ error: (e as Error).message }, 500);
+    return j(req, { error: (e as Error).message }, 500);
   }
 });

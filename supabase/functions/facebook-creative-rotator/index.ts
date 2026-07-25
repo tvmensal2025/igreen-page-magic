@@ -1,15 +1,27 @@
 // Cron 12h: transforma sinais robustos de criativos fracos em recomendações.
 // Não pausa anúncios, não altera orçamento e não afirma gerar variações sozinho.
-import { adminClient, corsHeaders } from "../_shared/fb-graph.ts";
+import { adminClient } from "../_shared/fb-graph.ts";
+import {
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import { buildCors } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const corsHeaders = buildCors(req, "x-service-secret, x-internal-secret");
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   try {
     const supabase = adminClient();
+    const auth = await assertCronAuthStrict(req, supabase);
+    if (!auth.ok) return cronAuthUnauthorized(auth.reason, corsHeaders);
     // Pega apenas sinais classificados com amostra robusta pelo learner.
     const { data: losers } = await supabase
       .from("ad_creative_performance")
-      .select("id, consultant_id, fb_ad_id, impressions, spend_cents, leads, registrations")
+      .select(
+        "id, consultant_id, fb_ad_id, impressions, spend_cents, leads, registrations",
+      )
       .eq("is_loser", true)
       .is("paused_by_ai_at", null)
       .gte("impressions", 1500)
@@ -24,7 +36,9 @@ Deno.serve(async (req) => {
     });
 
     for (const [consultantId, items] of byConsultant) {
-      const title = `${items!.length} criativo${items!.length > 1 ? "s" : ""} precisa${items!.length > 1 ? "m" : ""} de revisão`;
+      const title = `${items!.length} criativo${
+        items!.length > 1 ? "s" : ""
+      } precisa${items!.length > 1 ? "m" : ""} de revisão`;
       const { data: existing } = await supabase
         .from("ad_recommendations")
         .select("id")
@@ -39,7 +53,8 @@ Deno.serve(async (req) => {
         consultant_id: consultantId,
         type: "creative_review",
         title,
-        message: "Há gasto e entrega suficientes sem conversão. Revise copy, público e criativo antes de decidir pausar; nada foi alterado automaticamente.",
+        message:
+          "Há gasto e entrega suficientes sem conversão. Revise copy, público e criativo antes de decidir pausar; nada foi alterado automaticamente.",
         severity: "warning",
         action_label: "Revisar no Gerenciador de Anúncios",
         action_payload: {
@@ -55,7 +70,8 @@ Deno.serve(async (req) => {
     });
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });

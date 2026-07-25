@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -62,6 +65,58 @@ jobs:
         run: |
           deno check supabase/functions/evolution-webhook/index.ts \
                      supabase/functions/whapi-webhook/index.ts
+      - name: Typecheck Meta Ads hardening surface
+        run: |
+          deno check \
+            supabase/functions/_shared/ad-automation-policy.ts \
+            supabase/functions/_shared/ad-publish-saga.ts \
+            supabase/functions/_shared/ads-anchor.ts \
+            supabase/functions/_shared/ads-spend-billing.ts \
+            supabase/functions/_shared/brain-config.ts \
+            supabase/functions/_shared/campaign-tracking.ts \
+            supabase/functions/_shared/canonical-json.ts \
+            supabase/functions/_shared/capi-event.ts \
+            supabase/functions/facebook-capi/index.ts \
+            supabase/functions/facebook-capi-dispatch/index.ts \
+            supabase/functions/facebook-repair-campaign-tracking/index.ts \
+            supabase/functions/_shared/cbo-abo.ts \
+            supabase/functions/_shared/safe-image-fetch.ts \
+            supabase/functions/_shared/cron-auth.ts \
+            supabase/functions/_shared/fb-graph.ts \
+            supabase/functions/ad-competitor-scraper/index.ts \
+            supabase/functions/ad-creative-learner/index.ts \
+            supabase/functions/ad-creative-qa/index.ts \
+            supabase/functions/ad-image-validator/index.ts \
+            supabase/functions/campaign-brain-rank/index.ts \
+            supabase/functions/facebook-auto-pause/index.ts \
+            supabase/functions/facebook-balance-check/index.ts \
+            supabase/functions/facebook-balance-reconcile/index.ts \
+            supabase/functions/facebook-campaign-healthcheck/index.ts \
+            supabase/functions/facebook-cbo-to-abo/index.ts \
+            supabase/functions/facebook-cpl-correction/index.ts \
+            supabase/functions/facebook-create-campaign/index.ts \
+            supabase/functions/facebook-creative-rotator/index.ts \
+            supabase/functions/facebook-mg-city-rotator/index.ts \
+            supabase/functions/facebook-realign-lifetime/index.ts \
+            supabase/functions/facebook-retarget-sync/index.ts \
+            supabase/functions/facebook-sync-ad-creatives/index.ts \
+            supabase/functions/facebook-sync-metrics/index.ts \
+            supabase/functions/facebook-token-refresh/index.ts
+      - name: Test Meta Ads hardening guards
+        run: |
+          deno test --allow-env \
+            supabase/functions/_shared/cron-auth_test.ts \
+            supabase/functions/_shared/brain-config_test.ts \
+            supabase/functions/_shared/fb-graph_test.ts \
+            supabase/functions/_shared/ad-automation-policy_test.ts \
+            supabase/functions/_shared/canonical-json_test.ts \
+            supabase/functions/_shared/cbo-abo_test.ts \
+            supabase/functions/_shared/safe-image-fetch_test.ts \
+            supabase/functions/_shared/ads-spend-billing_test.ts \
+            supabase/functions/_shared/ad-publish-saga_test.ts \
+            supabase/functions/_shared/capi-event_test.ts \
+            supabase/functions/_shared/ads-anchor_test.ts \
+            supabase/functions/_shared/campaign-tracking_protocol_test.ts
 
   deno-test:
     name: Deno tests (PBT + unit)

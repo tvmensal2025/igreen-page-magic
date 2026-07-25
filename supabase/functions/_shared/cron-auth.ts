@@ -11,8 +11,11 @@
  *  permite com warn — evita 401 em ambientes sem secrets ainda.
  *  Com ENFORCE_CRON_AUTH=true, nunca permite legacy.
  */
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { timingSafeEqualStr } from "./webhook-auth.ts";
+
+type CronAuthClient = {
+  from: (relation: string) => any;
+};
 
 export type CronAuthReason =
   | "service_secret"
@@ -35,14 +38,17 @@ function bearerToken(req: Request): string {
 
 export async function assertCronAuth(
   req: Request,
-  supabase?: SupabaseClient | null,
+  supabase?: CronAuthClient | null,
 ): Promise<CronAuthResult> {
   const enforce =
     (Deno.env.get("ENFORCE_CRON_AUTH") || "").trim().toLowerCase() === "true";
 
   const serviceSecret = (Deno.env.get("SERVICE_SHARED_SECRET") || "").trim();
   const headerService = (req.headers.get("x-service-secret") || "").trim();
-  if (serviceSecret && headerService && timingSafeEqualStr(headerService, serviceSecret)) {
+  if (
+    serviceSecret && headerService &&
+    timingSafeEqualStr(headerService, serviceSecret)
+  ) {
     return { ok: true, reason: "service_secret" };
   }
 
@@ -54,7 +60,9 @@ export async function assertCronAuth(
         .select("value")
         .eq("key", "embed_internal_token")
         .maybeSingle();
-      expectedInternal = String((data as { value?: string } | null)?.value || "")
+      expectedInternal = String(
+        (data as { value?: string } | null)?.value || "",
+      )
         .replace(/^"|"$/g, "")
         .trim();
     } catch (_) {
@@ -62,7 +70,10 @@ export async function assertCronAuth(
     }
   }
   const headerInternal = (req.headers.get("x-internal-secret") || "").trim();
-  if (expectedInternal && headerInternal && timingSafeEqualStr(headerInternal, expectedInternal)) {
+  if (
+    expectedInternal && headerInternal &&
+    timingSafeEqualStr(headerInternal, expectedInternal)
+  ) {
     return { ok: true, reason: "internal_secret" };
   }
 
@@ -75,7 +86,9 @@ export async function assertCronAuth(
   const anySecretConfigured = !!(serviceSecret || expectedInternal);
   if (!anySecretConfigured && !enforce) {
     // Não citar nomes de env de segredo em console.* (higiene REQ 5.8).
-    console.warn("[cron-auth] nenhum segredo de serviço/interno configurado — allow legacy");
+    console.warn(
+      "[cron-auth] nenhum segredo de serviço/interno configurado — allow legacy",
+    );
     return { ok: true, reason: "legacy_unconfigured" };
   }
 
@@ -84,7 +97,11 @@ export async function assertCronAuth(
   if (!enforce) {
     console.warn(
       "[cron-auth] header ausente/errado — grace/log-only (ative enforce após migration dos headers)",
-      { has_service_header: !!headerService, has_internal_header: !!headerInternal, has_bearer: !!bearer },
+      {
+        has_service_header: !!headerService,
+        has_internal_header: !!headerInternal,
+        has_bearer: !!bearer,
+      },
     );
     return { ok: true, reason: "legacy_unconfigured" };
   }
@@ -95,9 +112,37 @@ export async function assertCronAuth(
   return { ok: false, reason: "missing" };
 }
 
-export function cronAuthUnauthorized(reason: CronAuthReason, cors: Record<string, string> = {}): Response {
-  return new Response(JSON.stringify({ ok: false, error: "unauthorized", reason }), {
-    status: 401,
-    headers: { ...cors, "Content-Type": "application/json" },
-  });
+export function cronAuthUnauthorized(
+  reason: CronAuthReason,
+  cors: Record<string, string> = {},
+): Response {
+  return new Response(
+    JSON.stringify({ ok: false, error: "unauthorized", reason }),
+    {
+      status: 401,
+      headers: { ...cors, "Content-Type": "application/json" },
+    },
+  );
+}
+
+/**
+ * Variante fail-closed para superfícies sensíveis (ex.: Ads/financeiro).
+ * Reutiliza as credenciais canônicas, mas nunca aceita os ramos de grace/legacy.
+ */
+export async function assertCronAuthStrict(
+  req: Request,
+  supabase?: CronAuthClient | null,
+): Promise<CronAuthResult> {
+  const result = await assertCronAuth(req, supabase);
+  if (result.ok && result.reason !== "legacy_unconfigured") return result;
+
+  const suppliedCredential = Boolean(
+    req.headers.get("x-service-secret") ||
+      req.headers.get("x-internal-secret") ||
+      bearerToken(req),
+  );
+  return {
+    ok: false,
+    reason: suppliedCredential ? "mismatch" : "missing",
+  };
 }

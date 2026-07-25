@@ -1,81 +1,126 @@
-// Reconciliação diária: compara gasto da Meta (lifetime_amount_spent) com total debitado em wallet_transactions.
-// Se divergir > 50 centavos, registra transação 'adjustment' para alinhar e dispara log.
-// Pode ser chamado manualmente (admin) ou via cron pg_cron.
-import { adminClient, corsHeaders, fbFetch, loadPlatformAccount } from "../_shared/fb-graph.ts";
+// Reconciliação diária: compara gasto da Meta com o total debitado e REGISTRA
+// a divergência para revisão humana (`ads_spend_reconciliation_log`, 1 linha por
+// dia). Nunca ajusta carteira: a cobrança correta é feita por
+// `debit_campaign_spend_observation` no facebook-sync-metrics.
+import {
+  adminClient,
+  authConsultant,
+  fbRead,
+  loadPlatformAccount,
+} from "../_shared/fb-graph.ts";
+import {
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import { buildCors } from "../_shared/cors.ts";
 
-function json(body: unknown, status = 200) {
+function json(cors: Record<string, string>, body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { ...cors, "Content-Type": "application/json" },
   });
 }
 
-function toCents(v: unknown) {
-  const n = typeof v === "string" ? parseInt(v, 10) : typeof v === "number" ? v : 0;
-  return Number.isFinite(n) ? n : 0;
+function toCents(value: unknown) {
+  const parsed = typeof value === "string"
+    ? parseInt(value, 10)
+    : typeof value === "number"
+    ? value
+    : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const cors = buildCors(req, "x-service-secret, x-internal-secret");
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const admin = adminClient();
+    const cronAuth = await assertCronAuthStrict(req, admin);
+    if (!cronAuth.ok) {
+      const caller = await authConsultant(req);
+      if (!caller) return cronAuthUnauthorized(cronAuth.reason, cors);
+      const { data: superAdmin } = await admin
+        .from("user_roles")
+        .select("user_id")
+        .eq("user_id", caller.id)
+        .eq("role", "super_admin")
+        .maybeSingle();
+      if (!superAdmin) {
+        return json(cors, { ok: false, error: "forbidden" }, 403);
+      }
+    }
+
     const platform = await loadPlatformAccount();
-    if (!platform) return json({ ok: false, reason: "no_platform_account" });
+    if (!platform) {
+      return json(cors, { ok: false, reason: "no_platform_account" });
+    }
 
-    const acc = await fbFetch(
+    const acc = await fbRead(
       `/${platform.ad_account_id}?fields=amount_spent,currency&access_token=${platform.token}`,
-    ).catch((e) => ({ error: (e as Error).message }));
+    ).catch((error) => ({
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    if ((acc as any).error) {
+      return json(cors, { ok: false, error: (acc as any).error });
+    }
 
-    if ((acc as any).error) return json({ ok: false, error: (acc as any).error });
-
-    const meta_lifetime_cents = toCents((acc as any).amount_spent);
-
+    const metaLifetimeCents = toCents((acc as any).amount_spent);
     const { data: rows } = await admin
       .from("wallet_transactions")
       .select("amount_cents,gross_spend_cents")
       .eq("type", "spend");
+    const systemLifetimeCents = ((rows as any[]) || [])
+      .reduce(
+        (sum, row) =>
+          sum + Number(row.gross_spend_cents ?? row.amount_cents ?? 0),
+        0,
+      );
 
-    const system_lifetime_cents = ((rows as any[]) || [])
-      .reduce((sum, r) => sum + Number(r.gross_spend_cents ?? r.amount_cents ?? 0), 0);
-
-    const delta = meta_lifetime_cents - system_lifetime_cents;
+    const delta = metaLifetimeCents - systemLifetimeCents;
     const result: Record<string, unknown> = {
       ok: true,
-      meta_lifetime_cents,
-      system_lifetime_cents,
+      meta_lifetime_cents: metaLifetimeCents,
+      system_lifetime_cents: systemLifetimeCents,
       delta_cents: delta,
       currency: (acc as any).currency ?? "BRL",
+      // Mantido em `false` por compatibilidade de contrato: esta função nunca
+      // ajusta carteira automaticamente.
       adjusted: false,
     };
 
-    if (Math.abs(delta) >= 50) {
-      // Procura wallet da plataforma (consultor admin) — usa o primeiro consultant_id com role super_admin
-      const { data: superAdmin } = await admin
-        .from("user_roles")
-        .select("user_id")
-        .eq("role", "super_admin")
-        .limit(1)
-        .maybeSingle();
-
-      const consultantId = (superAdmin as any)?.user_id;
-
-      if (consultantId && delta > 0) {
-        // Meta gastou mais do que o sistema sabe → registra adjustment como spend extra
-        await admin.from("wallet_transactions").insert({
-          consultant_id: consultantId,
-          type: "spend",
-          amount_cents: delta,
-          gross_spend_cents: delta,
-          description: "Reconciliação automática: Meta gastou além do sincronizado",
-          metadata: { kind: "balance_reconcile", meta_lifetime_cents, system_lifetime_cents },
-        });
-        result.adjusted = true;
-      }
+    // O fluxo anterior inseria uma transação `type='spend'` no ledger de um
+    // super admin qualquer, sem debitar carteira nenhuma: criava dívida
+    // fantasma no extrato e distorcia o próprio total do sistema. Agora a
+    // divergência é apenas REGISTRADA (1 linha por dia, idempotente) para
+    // revisão humana. Ajuste de carteira nunca é automático.
+    const reconciledDate = new Date().toLocaleDateString("en-CA", {
+      timeZone: "America/Sao_Paulo",
+    });
+    const { data: recordRaw, error: recordError } = await admin.rpc(
+      "record_ads_spend_reconciliation",
+      {
+        _reconciled_date: reconciledDate,
+        _meta_lifetime_cents: metaLifetimeCents,
+        _system_lifetime_cents: systemLifetimeCents,
+        _currency: String((acc as any).currency ?? "BRL"),
+      },
+    );
+    if (recordError) {
+      console.error("[fb-balance-reconcile] record", recordError.message);
+      result.recorded = false;
+    } else {
+      const record = (recordRaw ?? {}) as Record<string, unknown>;
+      result.recorded = record.recorded === true;
+      result.requires_review = record.requires_review === true;
     }
+    result.reconciled_date = reconciledDate;
 
-    return json(result);
-  } catch (err) {
-    console.error("[fb-balance-reconcile]", err);
-    return json({ ok: false, error: (err as Error).message }, 500);
+    return json(cors, result);
+  } catch (error) {
+    console.error("[fb-balance-reconcile]", error);
+    return json(cors, {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    }, 500);
   }
 });

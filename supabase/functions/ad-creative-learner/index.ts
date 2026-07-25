@@ -1,6 +1,11 @@
 // Cron diário: analisa últimos 30 dias de criativos por consultor,
 // identifica padrões vencedores/perdedores e gera recomendações.
-import { adminClient, corsHeaders } from "../_shared/fb-graph.ts";
+import { adminClient, authConsultant } from "../_shared/fb-graph.ts";
+import {
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import { buildCors } from "../_shared/cors.ts";
 import { geminiGenerate } from "../_shared/gemini.ts";
 
 interface AdRow {
@@ -21,18 +26,37 @@ interface AdRow {
   score: number;
 }
 
-function scoreOf(m: { spend_cents: number; leads: number; registrations: number }): number {
+function scoreOf(
+  m: { spend_cents: number; leads: number; registrations: number },
+): number {
   return m.registrations * 100 + m.leads * 10 - m.spend_cents / 100;
 }
 
-async function summarizeWithAI(samples: { winners: AdRow[]; losers: AdRow[] }): Promise<{
-  winning_patterns: string[];
-  losing_patterns: string[];
-  summary: string;
-} | null> {
-  const w = samples.winners.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
-  const l = samples.losers.slice(0, 5).map(s => `[${s.framework || "?"}] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${(s.spend_cents/100).toFixed(2)}`).join("\n");
-  const prompt = `Você é analista sênior de copy de Facebook Ads em pt-BR. Analise somente a copy dos anúncios abaixo e extraia padrões acionáveis. Não infira características de imagem.
+async function summarizeWithAI(
+  samples: { winners: AdRow[]; losers: AdRow[] },
+): Promise<
+  {
+    winning_patterns: string[];
+    losing_patterns: string[];
+    summary: string;
+  } | null
+> {
+  const w = samples.winners.slice(0, 5).map((s) =>
+    `[${
+      s.framework || "?"
+    }] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${
+      (s.spend_cents / 100).toFixed(2)
+    }`
+  ).join("\n");
+  const l = samples.losers.slice(0, 5).map((s) =>
+    `[${
+      s.framework || "?"
+    }] "${s.headline}" — ${s.primary_text} | leads diretos:${s.leads} cad:${s.registrations} R$:${
+      (s.spend_cents / 100).toFixed(2)
+    }`
+  ).join("\n");
+  const prompt =
+    `Você é analista sênior de copy de Facebook Ads em pt-BR. Analise somente a copy dos anúncios abaixo e extraia padrões acionáveis. Não infira características de imagem.
 
 VENCEDORES (geraram leads diretos/cadastros):
 ${w || "(nenhum)"}
@@ -63,9 +87,15 @@ Retorne JSON ESTRITO:
   }
 }
 
-async function processConsultant(supabase: ReturnType<typeof adminClient>, consultantId: string) {
+async function processConsultant(
+  supabase: ReturnType<typeof adminClient>,
+  consultantId: string,
+) {
   // Junta métricas dos últimos 30 dias por ad
-  const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(
+    0,
+    10,
+  );
   const { data: campaigns } = await supabase
     .from("facebook_campaigns")
     .select("id, distribuidora, fb_ad_ids, creative_pack_id")
@@ -75,7 +105,9 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
 
   const rows: AdRow[] = [];
   for (const camp of campaigns) {
-    const adIds: string[] = Array.isArray(camp.fb_ad_ids) ? camp.fb_ad_ids as string[] : [];
+    const adIds: string[] = Array.isArray(camp.fb_ad_ids)
+      ? camp.fb_ad_ids as string[]
+      : [];
     if (adIds.length === 0) continue;
 
     // Pega copy do creative_pack. Métricas de campanha não entram aqui:
@@ -103,19 +135,31 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
     }> = {};
     const { data: adMsAll } = await supabase
       .from("facebook_ad_metrics_daily")
-      .select("fb_ad_id, spend_cents, impressions, clicks, leads, messaging_conversations_started, complete_registrations")
+      .select(
+        "fb_ad_id, spend_cents, impressions, clicks, leads, messaging_conversations_started, complete_registrations",
+      )
       .in("fb_ad_id", adIds)
       .gte("date", since);
     for (const row of adMsAll || []) {
       const k = row.fb_ad_id;
-      const prev = perAdMetrics[k] || { spend_cents: 0, impressions: 0, clicks: 0, leads: 0, conversations: 0, registrations: 0 };
+      const prev = perAdMetrics[k] ||
+        {
+          spend_cents: 0,
+          impressions: 0,
+          clicks: 0,
+          leads: 0,
+          conversations: 0,
+          registrations: 0,
+        };
       perAdMetrics[k] = {
         spend_cents: prev.spend_cents + Number(row.spend_cents || 0),
         impressions: prev.impressions + Number(row.impressions || 0),
         clicks: prev.clicks + Number(row.clicks || 0),
         leads: prev.leads + Number(row.leads || 0),
-        conversations: prev.conversations + Number(row.messaging_conversations_started || 0),
-        registrations: prev.registrations + Number(row.complete_registrations || 0),
+        conversations: prev.conversations +
+          Number(row.messaging_conversations_started || 0),
+        registrations: prev.registrations +
+          Number(row.complete_registrations || 0),
       };
     }
 
@@ -146,20 +190,33 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
     }
   }
 
-  rows.forEach(r => { r.score = scoreOf(r); });
+  rows.forEach((r) => {
+    r.score = scoreOf(r);
+  });
   rows.sort((a, b) => b.score - a.score);
 
   // Pré-busca copy real (vinda do facebook-sync-ad-creatives) antes de formar
   // vencedores/perdedores e enviar amostras à IA.
-  const allAdIds = rows.map(r => r.fb_ad_id);
-  const realCopyMap: Record<string, { headline: string | null; primary_text: string | null; creative_format: string | null }> = {};
+  const allAdIds = rows.map((r) => r.fb_ad_id);
+  const realCopyMap: Record<
+    string,
+    {
+      headline: string | null;
+      primary_text: string | null;
+      creative_format: string | null;
+    }
+  > = {};
   if (allAdIds.length) {
     const { data: existing } = await supabase
       .from("ad_creative_performance")
       .select("fb_ad_id, headline, primary_text, creative_format")
       .in("fb_ad_id", allAdIds);
     for (const e of existing || []) {
-      realCopyMap[e.fb_ad_id] = { headline: e.headline, primary_text: e.primary_text, creative_format: e.creative_format };
+      realCopyMap[e.fb_ad_id] = {
+        headline: e.headline,
+        primary_text: e.primary_text,
+        creative_format: e.creative_format,
+      };
     }
   }
   for (const row of rows) {
@@ -170,11 +227,13 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
 
   // Não chama clique isolado de vencedor nem condena criativo cedo. As faixas
   // dão tempo para a fase de aprendizado da Meta produzir uma amostra útil.
-  const winners = rows.filter(r =>
-    r.impressions >= 1000 && r.spend_cents >= 1500 && (r.leads >= 5 || r.registrations >= 2)
+  const winners = rows.filter((r) =>
+    r.impressions >= 1000 && r.spend_cents >= 1500 &&
+    (r.leads >= 5 || r.registrations >= 2)
   ).slice(0, 5);
-  const losers = rows.filter(r =>
-    r.impressions >= 1500 && r.spend_cents >= 3000 && r.leads === 0 && r.registrations === 0
+  const losers = rows.filter((r) =>
+    r.impressions >= 1500 && r.spend_cents >= 3000 && r.leads === 0 &&
+    r.registrations === 0
   ).slice(0, 5);
 
   // Upsert performance per ad — preserva copy real do Meta quando existir
@@ -194,24 +253,33 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       registrations: r.registrations,
       spend_cents: r.spend_cents,
       score: r.score,
-      is_winner: winners.some(w => w.fb_ad_id === r.fb_ad_id),
-      is_loser: losers.some(l => l.fb_ad_id === r.fb_ad_id),
+      is_winner: winners.some((w) => w.fb_ad_id === r.fb_ad_id),
+      is_loser: losers.some((l) => l.fb_ad_id === r.fb_ad_id),
       evaluated_at: new Date().toISOString(),
     }, { onConflict: "fb_ad_id" });
   }
 
   // Padrões via IA
   const insights = await summarizeWithAI({ winners, losers }) || {
-    winning_patterns: winners.map(w => w.framework).filter(Boolean) as string[],
+    winning_patterns: winners.map((w) => w.framework).filter(
+      Boolean,
+    ) as string[],
     losing_patterns: [],
     summary: "Aprendizado em construção. Roda mais alguns dias.",
   };
 
-  const bestCtr = rows.length ? Math.max(...rows.map(r => r.impressions > 0 ? Math.round(r.clicks * 10000 / r.impressions) : 0)) : 0;
-  const bestCpa = winners.find(w => w.registrations > 0);
+  const bestCtr = rows.length
+    ? Math.max(
+      ...rows.map((r) =>
+        r.impressions > 0 ? Math.round(r.clicks * 10000 / r.impressions) : 0
+      ),
+    )
+    : 0;
+  const bestCpa = winners.find((w) => w.registrations > 0);
 
   // Por distribuidora (agrupa)
-  const distribs = Array.from(new Set(rows.map(r => r.distribuidora || ""))).filter(Boolean);
+  const distribs = Array.from(new Set(rows.map((r) => r.distribuidora || "")))
+    .filter(Boolean);
   for (const d of distribs.length ? distribs : [null]) {
     await supabase.from("ad_creative_insights").upsert({
       consultant_id: consultantId,
@@ -220,7 +288,9 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
       losing_patterns: insights.losing_patterns,
       best_image_traits: [],
       best_ctr_bps: bestCtr,
-      best_cpa_cents: bestCpa ? Math.round(bestCpa.spend_cents / bestCpa.registrations) : null,
+      best_cpa_cents: bestCpa
+        ? Math.round(bestCpa.spend_cents / bestCpa.registrations)
+        : null,
       sample_size: rows.length,
       summary: insights.summary,
       updated_at: new Date().toISOString(),
@@ -262,10 +332,14 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
         consultant_id: consultantId,
         type: "losers_detected",
         title,
-        message: `${losers.length} anúncios têm amostra robusta de gasto e entrega sem conversão. Revise-os antes de decidir pausar; nada será alterado automaticamente.`,
+        message:
+          `${losers.length} anúncios têm amostra robusta de gasto e entrega sem conversão. Revise-os antes de decidir pausar; nada será alterado automaticamente.`,
         severity: "warning",
         action_label: "Revisar criativos",
-        action_payload: { kind: "review_creatives", fb_ad_ids: losers.map((item) => item.fb_ad_id) },
+        action_payload: {
+          kind: "review_creatives",
+          fb_ad_ids: losers.map((item) => item.fb_ad_id),
+        },
       });
     }
   }
@@ -274,15 +348,26 @@ async function processConsultant(supabase: ReturnType<typeof adminClient>, consu
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const corsHeaders = buildCors(req, "x-service-secret, x-internal-secret");
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   try {
     const supabase = adminClient();
+    // Cron usa credencial de serviço; o botão do consultor na UI (InsightsPanel)
+    // chega com JWT — os dois caminhos são válidos, anônimo não.
+    const cronAuth = await assertCronAuthStrict(req, supabase);
+    if (!cronAuth.ok && !(await authConsultant(req))) {
+      return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+    }
     // Lista consultores ativos com campanhas
     const { data: consultants } = await supabase
       .from("facebook_campaigns")
       .select("consultant_id")
       .neq("status", "draft");
-    const ids = Array.from(new Set((consultants || []).map((c: any) => c.consultant_id))).filter(Boolean);
+    const ids = Array.from(
+      new Set((consultants || []).map((c: any) => c.consultant_id)),
+    ).filter(Boolean);
 
     let totalUpdated = 0;
     for (const id of ids) {
@@ -310,7 +395,8 @@ Deno.serve(async (req) => {
             if (k) m.set(k, (m.get(k) || 0) + ((r as any).sample_size || 1));
           }
         }
-        return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([pattern, weight]) => ({ pattern, weight }));
+        return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10)
+          .map(([pattern, weight]) => ({ pattern, weight }));
       };
       const payload = {
         winning_patterns: tally("winning_patterns"),
@@ -329,12 +415,20 @@ Deno.serve(async (req) => {
       console.warn("global playbook falhou:", (e as Error).message);
     }
 
-    return new Response(JSON.stringify({ ok: true, consultants: ids.length, ads_evaluated: totalUpdated }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        ok: true,
+        consultants: ids.length,
+        ads_evaluated: totalUpdated,
+      }),
+      {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (e) {
     return new Response(JSON.stringify({ error: (e as Error).message }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 });
