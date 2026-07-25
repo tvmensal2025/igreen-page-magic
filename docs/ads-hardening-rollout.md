@@ -4,11 +4,10 @@ Branch: `hardening/cerebro-meta-ads` · base: `56a86aa1270197d7f41db220c91bac767
 
 Este documento é a ordem de execução quando você decidir subir.
 
-> **Status 2026-07-25:** as migrations (#0 órfãos + #1–#4) **já foram aplicadas**
-> em produção via MCP. As edge functions de Ads + cadência foram deployadas via
-> CLI (`supabase functions deploy`) no SHA `0d58597bb`. O toggle
-> `facebook_capi_dispatch` permanece **desligado**. `ENFORCE_CRON_AUTH` **não**
-> foi ligado.
+> **Status 2026-07-25 (go-live hardening):** migrations (#0 órfãos + #1–#4) aplicadas;
+> edges Ads/cadência deployadas; smokes OK. **Já ligado:** `ENFORCE_CRON_AUTH=true`,
+> `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`.
+> **Ainda inerte:** expansão do Cérebro (`kill_switch=true`, `automation_mode=disabled`).
 
 ## Estado alvo
 
@@ -57,8 +56,8 @@ cadências que já existem em produção** (`fb-auto-pause` `*/30`,
 `facebook-creative-rotator-daily` `0 8`). Nada de cadência muda. Aliases
 legados também são desagendados por segurança.
 
-`ENFORCE_CRON_AUTH` continua **desligado**. Só ligue depois de confirmar, nos
-logs, que os 7 jobs passaram a autenticar.
+`ENFORCE_CRON_AUTH` foi ligado em 2026-07-25 após smokes (401 sem secret / 200
+com secret) nos crons Ads e `cadence-tick`.
 
 ### 2. Edge functions
 
@@ -111,22 +110,18 @@ consultor piloto continua funcionando por fallback legado.
 
 Ordem estreito → largo, sem desfazer migration:
 
-1. `automation_toggles.facebook_capi_dispatch = false` (já é o default)
+1. `automation_toggles.facebook_capi_dispatch = false`
 2. `brain_config.kill_switch = true` no consultor afetado
-3. `ENFORCE_CRON_AUTH` desligado (se tiver sido ligado)
+3. `ENFORCE_CRON_AUTH` desligado (só se auth estiver quebrando crons)
 4. Redeploy da function específica no SHA anterior
 
 As tabelas novas podem ficar: são aditivas e ninguém legado depende delas.
 
 ## Pendências conhecidas
 
-- **Types do front não foram regenerados.** `src/` não foi tocado por este
-  hardening e `src/integrations/supabase/types.ts` está sendo alterado em
-  paralelo por outro trabalho (referral/WA). Regenerar exige as migrations já
-  aplicadas no remoto. Faça depois do passo 1, num commit separado.
-- **SQL validado apenas estaticamente.** Não há Postgres/psql no ambiente de
-  desenvolvimento; as 4 migrations não foram executadas. Aplique primeiro num
-  ambiente de teste se possível.
+- **Expansão do Cérebro** permanece desligada no piloto (Rafael: anchor + foto OK,
+  `kill_switch=true`). Não ligar sem pedido explícito.
+- Types regenerados em `src/integrations/supabase/types.ts` (commit pós-SQL).
 - **Tabelas novas com RLS ligada e sem policy.** `service_role` acessa (é o que
   as edges usam); `anon`/`authenticated` não. Se a UI precisar ler sagas ou
   observações, crie a policy de admin no momento dessa tela.

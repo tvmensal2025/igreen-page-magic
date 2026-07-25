@@ -1,10 +1,10 @@
 ---
 inclusion: always
 name: ads-sql-pendente
-description: Hardening Ads — SQL já aplicado em produção (2026-07-25). Não ligar CAPI/ENFORCE sem pedido.
+description: Hardening Ads — SQL aplicado; ENFORCE/CAPI ligados; expansão Cérebro ainda off.
 ---
 
-# Hardening Ads: SQL aplicado
+# Hardening Ads: SQL aplicado + go-live parcial
 
 Espelho de `.cursor/rules/ads-hardening-sql-pendente.mdc`.
 Detalhe: `docs/ads-hardening-rollout.md`.
@@ -17,14 +17,15 @@ Migrations aplicadas em produção (2026-07-25):
 20260724190000_ads_spend_idempotent_billing.sql
 20260724200000_ad_publish_saga.sql
 20260724210000_facebook_capi_outbox.sql
+20260725180000_facebook_capi_dispatch_cron.sql
 ```
 
 + cadência: `cadence_inbound_preserve_bc`, `crm_auto_progress_cron_auth`.
 
-## NÃO FAÇA sem pedido explícito
-- Ligar `facebook_capi_dispatch`
-- Ligar `ENFORCE_CRON_AUTH`
-- Tirar `kill_switch` / ativar `automation_mode` expansivo
+## Já ligado (2026-07-25)
+- `ENFORCE_CRON_AUTH=true`
+- `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
+- brain piloto: `anchor` + `winner_photo_url`; `kill_switch=true`
 
-## Pendência
-- `winner_photo_url` HTTPS estável no brain do piloto (anchor já setado).
+## NÃO FAÇA sem pedido explícito
+- Tirar `kill_switch` / ativar `automation_mode` expansivo

@@ -79,9 +79,9 @@ where n.nspname='public'
                   'mark_facebook_capi_failed','fb_emit_capi');
 -- esperado: 12 linhas
 
--- 3) despachante CAPI nasce DESLIGADO (não ligar sem pedido)
+-- 3) despachante CAPI (ligado em 2026-07-25 após smokes)
 select key, enabled from public.automation_toggles where key='facebook_capi_dispatch';
--- esperado: enabled = false
+-- produção atual: enabled = true
 ```
 
 ## Riscos a observar na primeira execução
@@ -92,12 +92,10 @@ select key, enabled from public.automation_toggles where key='facebook_capi_disp
 - **Migration 2** cria uma cadeia de locks nova por transação:
   advisory lock (campanha+dia) → `facebook_metrics_daily` → `consultant_wallet`.
   Não há ciclo conhecido, mas é o ponto a olhar se aparecer contenção.
-- **`ENFORCE_CRON_AUTH` continua desligado.** Só ligue depois de ver nos logs que
-  os 7 jobs autenticaram.
+- **`ENFORCE_CRON_AUTH=true` desde 2026-07-25** (após smokes 401/200). Crons
+  sem header que usam `assertCronAuth` passam a falhar de propósito.
 
 ## Depois das migrations
 
-- Regenerar `src/integrations/supabase/types.ts` (não foi feito: exige as migrations
-  aplicadas, e o arquivo está sendo alterado em paralelo pelo trabalho de referral/WA).
-- Deploy das edge functions e configuração por consultor: ver
+- Types regenerados; deploy das edges feito. Go-live parcial documentado em
   `docs/ads-hardening-rollout.md`.
