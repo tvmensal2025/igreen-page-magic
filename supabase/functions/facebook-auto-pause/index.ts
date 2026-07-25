@@ -35,7 +35,6 @@ import {
   formatAnchorScaleDownWhatsApp,
   formatAnchorScaleUpWhatsApp,
 } from "../_shared/brain-budget-scale.ts";
-import { notifyAnchorBudgetScale } from "../_shared/notify-consultant.ts";
 
 /** Âncora MG — escala fica no rotator, não no Cérebro por campanha. */
 // Fonte única do id legado (ver `_shared/ads-anchor.ts`).
