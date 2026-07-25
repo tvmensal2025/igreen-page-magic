@@ -354,6 +354,7 @@ UI do painel pode mostrar defaults “otimistas”; o backend é fail-closed (`d
 
 | Data | Mudança |
 |------|---------|
+| 2026-07-25 | v1.2 — UI Controles: sede/raio/`geo_mode`/`require_initial_message` editáveis por consultor |
 | 2026-07-25 | v1.1 — sede 50 km + `geo_mode=radius_sede` + `max_explorers=0` + `require_initial_message` |
 | 2026-07-25 | v1.0 — documentação oficial: Meta Help/API + arquitetura + política congelada |
 | 2026-07-25 | v1.1 — pesquisa com agentes: Help Center CTWA + inventário código (create já CONVERSATIONS/Advantage+; lacuna = N campanhas ativas) |
