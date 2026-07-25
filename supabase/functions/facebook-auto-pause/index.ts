@@ -462,8 +462,14 @@ Deno.serve(async (req) => {
             ensured: (resp as any)?.ensured,
             seed_created: (seedResp as any)?.created,
             seed_log: ((seedResp as any)?.log || []).filter((x: any) =>
-              String(x?.action || "").startsWith("seed") || x?.would_seed
-            ).slice(0, 5),
+              String(x?.action || "").startsWith("seed") ||
+              x?.would_seed ||
+              x?.skipped === "already_seeded" ||
+              x?.action === "seed_failed" ||
+              x?.action === "seed_skipped"
+            ).slice(0, 8),
+            seed_ok: (seedResp as any)?.ok === true,
+            seed_error: (seedResp as any)?.error || null,
           });
         }
       } catch (e) {

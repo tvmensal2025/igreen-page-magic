@@ -110,11 +110,14 @@ async function loadBrain(
 }
 
 function buildQueue(cfg: BrainConfig) {
-  const base = [...MG_QUEUE];
-  const have = new Set(base.map((c) => c.slug));
-  for (const extra of cfg.extra_cities) {
-    if (have.has(extra.slug)) continue;
-    base.push({
+  // Extra cities primeiro: seed automático prioriza praça nova sem varrer
+  // as 20+ já semeadas a cada tick.
+  const extras: Array<{ name: string; slug: string; ddd: number; key?: string }> =
+    [];
+  const have = new Set<string>();
+  for (const extra of cfg.extra_cities || []) {
+    if (!extra?.slug || have.has(extra.slug)) continue;
+    extras.push({
       name: extra.name,
       slug: extra.slug,
       ddd: extra.ddd,
@@ -122,7 +125,8 @@ function buildQueue(cfg: BrainConfig) {
     });
     have.add(extra.slug);
   }
-  return base;
+  const base = MG_QUEUE.filter((c) => !have.has(c.slug));
+  return [...extras, ...base];
 }
 
 function j(req: Request, body: unknown, status = 200) {
