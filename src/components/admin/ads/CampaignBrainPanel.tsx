@@ -81,7 +81,76 @@ type BrainConfig = {
   min_runway_days: number;
   preferred_slugs: string[];
   extra_cities: Array<{ name: string; slug: string; ddd: number }>;
+  /** Oficial Meta 2026: raio na sede. Legado: slots MG-ROT por cidade. */
+  geo_mode: "radius_sede" | "cities_mg_rot";
+  sede_name: string;
+  sede_latitude: string;
+  sede_longitude: string;
+  sede_radius_km: number;
+  sede_address: string;
+  require_initial_message: boolean;
 };
+
+/** Defaults alinhados à política sede (editáveis por consultor no painel). */
+const DEFAULT_CFG: BrainConfig = {
+  autopilot: true,
+  mode: "conservative",
+  anchor_budget_cents: 1500,
+  max_anchor_budget_cents: 50000,
+  target_cpl_cents: 750,
+  scale_step_pct: 15,
+  explorer_budget_cents: 517,
+  max_explorers: 0,
+  age_min: 30,
+  age_max: 65,
+  min_runway_days: 2,
+  preferred_slugs: [],
+  extra_cities: [],
+  geo_mode: "radius_sede",
+  sede_name: "",
+  sede_latitude: "",
+  sede_longitude: "",
+  sede_radius_km: 50,
+  sede_address: "",
+  require_initial_message: true,
+};
+
+function brainFromApi(raw: Partial<BrainConfig> & Record<string, unknown>): BrainConfig {
+  const lat = raw.sede_latitude;
+  const lng = raw.sede_longitude;
+  return {
+    ...DEFAULT_CFG,
+    ...raw,
+    preferred_slugs: Array.isArray(raw.preferred_slugs) ? raw.preferred_slugs.map(String) : [],
+    extra_cities: Array.isArray(raw.extra_cities) ? raw.extra_cities as BrainConfig["extra_cities"] : [],
+    geo_mode: raw.geo_mode === "cities_mg_rot" ? "cities_mg_rot" : "radius_sede",
+    sede_name: typeof raw.sede_name === "string" ? raw.sede_name : "",
+    sede_latitude: lat == null || lat === "" ? "" : String(lat),
+    sede_longitude: lng == null || lng === "" ? "" : String(lng),
+    sede_radius_km: Math.max(1, Math.min(50, Number(raw.sede_radius_km) || 50)),
+    sede_address: typeof raw.sede_address === "string" ? raw.sede_address : "",
+    require_initial_message: raw.require_initial_message !== false,
+    max_explorers: Number.isFinite(Number(raw.max_explorers))
+      ? Math.max(0, Math.min(8, Math.round(Number(raw.max_explorers))))
+      : DEFAULT_CFG.max_explorers,
+  };
+}
+
+function brainToSavePayload(cfg: BrainConfig) {
+  const lat = Number(cfg.sede_latitude);
+  const lng = Number(cfg.sede_longitude);
+  return {
+    ...cfg,
+    preferred_slugs: cfg.geo_mode === "radius_sede"
+      ? []
+      : cfg.preferred_slugs.slice(0, cfg.max_explorers),
+    max_explorers: cfg.geo_mode === "radius_sede" ? 0 : cfg.max_explorers,
+    sede_latitude: Number.isFinite(lat) ? lat : null,
+    sede_longitude: Number.isFinite(lng) ? lng : null,
+    sede_name: cfg.sede_name.trim() || null,
+    sede_address: cfg.sede_address.trim() || null,
+  };
+}
 
 type RotationBoard = {
   total_slots: number;
@@ -119,23 +188,6 @@ type BrainPayload = {
   age?: AgeMeta;
   insight_udi?: { first_multi: { note: string }; anchor_winner: { note: string } };
   generated_at: string;
-};
-
-/** Total no ar = 1 âncora + max_explorers (meta: 5 = UDI + 4 cidades MG). */
-const DEFAULT_CFG: BrainConfig = {
-  autopilot: true,
-  mode: "conservative",
-  anchor_budget_cents: 1000,
-  max_anchor_budget_cents: 50000,
-  target_cpl_cents: 200,
-  scale_step_pct: 15,
-  explorer_budget_cents: 517,
-  max_explorers: 4,
-  age_min: 30,
-  age_max: 65,
-  min_runway_days: 2,
-  preferred_slugs: ["uberaba", "contagem", "betim", "patos-de-minas"],
-  extra_cities: [],
 };
 
 function brl(cents: number) {
@@ -197,7 +249,7 @@ export function CampaignBrainPanel({
       if (error) throw error;
       if (res?.error) throw new Error(res.error);
       setData(res as BrainPayload);
-      if (res?.brain) setCfg({ ...DEFAULT_CFG, ...res.brain });
+      if (res?.brain) setCfg(brainFromApi(res.brain));
     } catch (e) {
       toast({
         title: "Cérebro indisponível",
@@ -214,8 +266,7 @@ export function CampaignBrainPanel({
   async function saveAndApply(apply: boolean) {
     setSaving(true);
     try {
-      const preferred = cfg.preferred_slugs.slice(0, cfg.max_explorers);
-      const brain = { ...cfg, preferred_slugs: preferred };
+      const brain = brainToSavePayload(cfg);
       const { data: session } = await supabase.auth.getSession();
       const token = session.session?.access_token;
       const { data: res, error } = await supabase.functions.invoke("campaign-brain-rank", {
@@ -230,12 +281,13 @@ export function CampaignBrainPanel({
       if (res?.error) throw new Error(res.error);
       if (res?.apply_result?.error) throw new Error(String(res.apply_result.error));
       setData(res as BrainPayload);
-      if (res?.brain) setCfg({ ...DEFAULT_CFG, ...res.brain });
+      if (res?.brain) setCfg(brainFromApi(res.brain));
+      const explorers = Number(brain.max_explorers) || 0;
       toast({
         title: apply ? "Cérebro aplicado na Meta" : "Configuração salva",
-        description: apply
-          ? `${1 + preferred.length} praças · R$ ${(brain.explorer_budget_cents / 100).toFixed(0)}/cidade · idade ${brain.age_min}+`
-          : "Próximo apply / cron usará estes valores.",
+        description: brain.geo_mode === "radius_sede"
+          ? `Modo sede · raio ${brain.sede_radius_km} km · CPL alvo R$ ${(Number(brain.target_cpl_cents) / 100).toFixed(2)}`
+          : `${1 + explorers} praças · R$ ${(Number(brain.explorer_budget_cents) / 100).toFixed(0)}/cidade · idade ${brain.age_min}+`,
       });
     } catch (e) {
       toast({ title: "Falha ao salvar", description: (e as Error).message, variant: "destructive" });
@@ -521,27 +573,46 @@ export function CampaignBrainPanel({
           <ScrollArea className="max-h-[min(70vh,560px)]">
             <div className="px-5 py-4 space-y-4 text-sm text-muted-foreground leading-relaxed">
               <section className="space-y-1.5">
-                <h4 className="text-foreground font-semibold text-[13px]">Objetivo</h4>
+                <h4 className="text-foreground font-semibold text-[13px]">Onde as regras ficam</h4>
                 <p>
-                  Escalar com segurança a praça que já funciona (âncora Uberlândia) e, ao mesmo tempo,
-                  testar outras cidades de Minas com budget baixo — sem queimar a carteira.
+                  Cada consultor tem o próprio <strong className="text-foreground font-medium">brain_config</strong>{" "}
+                  (banco). Você edita no ícone de engrenagem → <strong className="text-foreground font-medium">Controles do Cérebro</strong>.
+                  Não precisa mexer em código: salva aqui e o motor + Express leem no próximo ciclo.
                 </p>
               </section>
 
               <section className="space-y-1.5">
-                <h4 className="text-foreground font-semibold text-[13px]">Modelo no ar</h4>
+                <h4 className="text-foreground font-semibold text-[13px]">Por quê personalizado</h4>
+                <p>
+                  Sede, raio, CPL alvo e quantas cidades no ar mudam por consultor e por momento.
+                  Hardcoded no código travaria todo mundo no mesmo formato. Por isso a regra vive no config do consultor.
+                </p>
+              </section>
+
+              <section className="space-y-1.5">
+                <h4 className="text-foreground font-semibold text-[13px]">Objetivo</h4>
+                <p>
+                  Proteger a carteira e escalar a campanha que funciona. A Meta barateia conversa com{" "}
+                  <strong className="text-foreground font-medium">1 CTWA ampla + budget concentrado</strong> —
+                  o Cérebro serve a esse formato, não fragmenta em dezenas de cidades miúdas.
+                </p>
+              </section>
+
+              <section className="space-y-1.5">
+                <h4 className="text-foreground font-semibold text-[13px]">Modelo no ar (oficial)</h4>
                 <ul className="list-disc pl-4 space-y-1">
                   <li>
-                    <strong className="text-foreground font-medium">1 âncora</strong> (Uberlândia) com budget maior.
+                    <strong className="text-foreground font-medium">Raio na sede</strong> (recomendado): 1 âncora,
+                    raio 40–50 km, <code className="text-[11px]">max_explorers = 0</code>, sem MG-ROT automático.
                   </li>
                   <li>
-                    <strong className="text-foreground font-medium">Até N exploradoras</strong> (padrão 4) com budget
-                    mínimo da Meta (~R$&nbsp;5,17/dia).
+                    <strong className="text-foreground font-medium">Cidades MG-ROT</strong> (legado): âncora + N
+                    exploradoras — só se você ligar de propósito neste painel.
                   </li>
                   <li>
-                    Meta típica: <strong className="text-foreground font-medium">5 no ar</strong> = âncora + 4 cidades.
+                    Toda campanha criada precisa de <strong className="text-foreground font-medium">mensagem inicial WhatsApp</strong>{" "}
+                    (frase CTWA única).
                   </li>
-                  <li>O resto fica na fila e entra quando um slot abre.</li>
                 </ul>
               </section>
 
@@ -552,15 +623,14 @@ export function CampaignBrainPanel({
                     Mede custo por conversa (CPL) na janela de <strong className="text-foreground font-medium">48h</strong>.
                   </li>
                   <li>
-                    Se CPL ≤ alvo (padrão R$&nbsp;2): sobe o budget em degraus (padrão{" "}
-                    <strong className="text-foreground font-medium">+15%</strong>), até o teto configurado.
+                    Se CPL ≤ alvo (configurável; oficial R$&nbsp;7,50): sobe o budget em degraus, até o teto.
                   </li>
                   <li>Se CPL ruim: desce no mesmo passo percentual.</li>
                   <li>
                     Não espera 48h entre subidas — só usa 48h para medir. Intervalo anti-spam de ~{" "}
                     <strong className="text-foreground font-medium">4h</strong> entre degraus.
                   </li>
-                  <li>Quando sobe ou desce, avisa no WhatsApp do consultor (carteira, CPL, conversas, motivo).</li>
+                  <li>Quando sobe ou desce, avisa no WhatsApp do consultor.</li>
                 </ul>
               </section>
 
@@ -568,7 +638,6 @@ export function CampaignBrainPanel({
                 <h4 className="text-foreground font-semibold text-[13px]">Waste (pausa automática)</h4>
                 <ul className="list-disc pl-4 space-y-1">
                   <li>Em ~48h, se gasta sem conversa (ou sem clique), a campanha/ad pode ser pausada.</li>
-                  <li>Depois do waste, o autopilot realinha os slots preferidos e a escala da âncora.</li>
                   <li>Campanha pausada por waste só volta no Play manual do consultor.</li>
                 </ul>
               </section>
@@ -576,27 +645,19 @@ export function CampaignBrainPanel({
               <section className="space-y-1.5">
                 <h4 className="text-foreground font-semibold text-[13px]">Criativos e WhatsApp (CTWA)</h4>
                 <ul className="list-disc pl-4 space-y-1">
-                  <li>Imagem fixa (vencedora); o que muda na criação são título, descrição, texto e frase do Zap.</li>
-                  <li>
-                    Frase do WhatsApp <strong className="text-foreground font-medium">sem nome de cidade</strong> —
-                    cidade no texto confunde o lead.
-                  </li>
-                  <li>
-                    Quem decide a campanha/parceiro é o sinal da Meta (AD ID), não a palavra “Uberlândia” na mensagem.
-                  </li>
-                  <li>
-                    Campanhas já no ar <strong className="text-foreground font-medium">não são reescritas</strong> só
-                    para trocar copy — só entram novas criações ou correção se waste/CPL pedir.
-                  </li>
+                  <li>Frase do WhatsApp <strong className="text-foreground font-medium">sem nome de cidade</strong>.</li>
+                  <li>Quem decide campanha/parceiro é o sinal da Meta (AD ID), não a palavra da mensagem.</li>
+                  <li>Campanhas já no ar não são reescritas só para trocar copy.</li>
                 </ul>
               </section>
 
               <section className="space-y-1.5">
                 <h4 className="text-foreground font-semibold text-[13px]">O que você controla</h4>
                 <p>
-                  No ícone de engrenagem (quase invisível ao lado de Atualizar): budget da âncora, teto, CPL alvo,
-                  degrau %, budget das outras cidades, quantas no ar, idade preferida e ordem das praças. Salve e
-                  aplique na Meta.
+                  Engrenagem → Controles: estratégia (sede × cidades), sede/raio, mensagem obrigatória,
+                  budget da âncora, teto, CPL alvo, degrau %, exploradoras (se legado), idade e ordem das praças.
+                  <strong className="text-foreground font-medium"> Salvar só config</strong> grava;
+                  <strong className="text-foreground font-medium"> Salvar e aplicar</strong> prepara o próximo ciclo na Meta.
                 </p>
               </section>
 
@@ -606,7 +667,7 @@ export function CampaignBrainPanel({
                   <li><strong className="text-foreground font-medium">Saúde</strong> — resumo de risco e performance.</li>
                   <li><strong className="text-foreground font-medium">Runway</strong> — dias de saldo com a queima atual.</li>
                   <li><strong className="text-foreground font-medium">Em risco (48h)</strong> — gasto em praças fracas.</li>
-                  <li><strong className="text-foreground font-medium">Rotação</strong> — o que está no ar, o que abre e o que pausa no próximo apply.</li>
+                  <li><strong className="text-foreground font-medium">Rotação</strong> — o que está no ar (no modo sede: só âncora).</li>
                 </ul>
               </section>
             </div>
@@ -632,12 +693,128 @@ export function CampaignBrainPanel({
               </button>
             </DialogTitle>
             <DialogDescription>
-              Ajuste budget, slots e cidades. Salve e aplique na Meta — sem editar código.
-              Cidades são todas de Minas; só o vídeo cita Uberlândia; a imagem serve MG.
+              Regras personalizadas deste consultor (salvas em brain_config). Sem editar código —
+              mude aqui, salve, e o motor/Express usam no próximo ciclo.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
+              <div>
+                <Label className="text-[11px] font-semibold">Estratégia geográfica</Label>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Por quê: a Meta barateia com 1 campanha ampla. Fragmentar em N cidades com budget miúdo
+                  reinicia learning e encarece. Cada consultor define a sede dele.
+                </p>
+              </div>
+              <div className="grid sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCfg({
+                    ...cfg,
+                    geo_mode: "radius_sede",
+                    max_explorers: 0,
+                    preferred_slugs: [],
+                  })}
+                  className={`text-left rounded-md border p-3 text-sm transition-colors ${
+                    cfg.geo_mode === "radius_sede"
+                      ? "border-primary bg-background shadow-sm"
+                      : "border-border hover:bg-muted/40"
+                  }`}
+                >
+                  <div className="font-medium text-[13px]">Raio na sede (recomendado)</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    1 âncora · sem MG-ROT automático · Express pré-preenche o raio
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCfg({
+                    ...cfg,
+                    geo_mode: "cities_mg_rot",
+                    max_explorers: Math.max(1, cfg.max_explorers),
+                  })}
+                  className={`text-left rounded-md border p-3 text-sm transition-colors ${
+                    cfg.geo_mode === "cities_mg_rot"
+                      ? "border-primary bg-background shadow-sm"
+                      : "border-border hover:bg-muted/40"
+                  }`}
+                >
+                  <div className="font-medium text-[13px]">Cidades MG-ROT (legado)</div>
+                  <div className="text-[10px] text-muted-foreground mt-1">
+                    Âncora + slots por cidade — só com pedido / teste controlado
+                  </div>
+                </button>
+              </div>
+
+              {cfg.geo_mode === "radius_sede" && (
+                <div className="grid sm:grid-cols-2 gap-3 pt-1">
+                  <div className="sm:col-span-2">
+                    <Label className="text-[11px]">Nome da sede</Label>
+                    <Input
+                      value={cfg.sede_name}
+                      onChange={(e) => setCfg({ ...cfg, sede_name: e.target.value })}
+                      placeholder="Ex.: Sede iGreen Uberlândia (Jaraguá)"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <Label className="text-[11px]">Endereço (texto)</Label>
+                    <Input
+                      value={cfg.sede_address}
+                      onChange={(e) => setCfg({ ...cfg, sede_address: e.target.value })}
+                      placeholder="Bairro, cidade, UF"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Latitude</Label>
+                    <Input
+                      value={cfg.sede_latitude}
+                      onChange={(e) => setCfg({ ...cfg, sede_latitude: e.target.value })}
+                      placeholder="-18.92417"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Longitude</Label>
+                    <Input
+                      value={cfg.sede_longitude}
+                      onChange={(e) => setCfg({ ...cfg, sede_longitude: e.target.value })}
+                      placeholder="-48.30179"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Raio (km) — 1 a 50</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={cfg.sede_radius_km}
+                      onChange={(e) => setCfg({
+                        ...cfg,
+                        sede_radius_km: Math.max(1, Math.min(50, Number(e.target.value) || 50)),
+                      })}
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Publisher corta em 50 km. Express usa este valor ao abrir.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <label className="flex items-start gap-2 text-[11px] cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={cfg.require_initial_message}
+                  onChange={(e) => setCfg({ ...cfg, require_initial_message: e.target.checked })}
+                />
+                <span>
+                  <strong>Exigir mensagem inicial</strong> em toda campanha criada
+                  (frase CTWA única — sem isso o create bloqueia).
+                </span>
+              </label>
+            </div>
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div>
               <Label className="text-[11px]">Budget Uberlândia (R$/dia)</Label>
               <Input
@@ -677,15 +854,17 @@ export function CampaignBrainPanel({
                 type="number" min={5.17} step={1}
                 value={(cfg.explorer_budget_cents / 100).toFixed(0)}
                 onChange={(e) => setCfg({ ...cfg, explorer_budget_cents: Math.round(Number(e.target.value || 0) * 100) })}
+                disabled={cfg.geo_mode === "radius_sede"}
               />
             </div>
             <div>
               <Label className="text-[11px]">Qtd. outras cidades no ar</Label>
               <Input
-                type="number" min={1} max={8}
+                type="number" min={0} max={8}
                 value={cfg.max_explorers}
+                disabled={cfg.geo_mode === "radius_sede"}
                 onChange={(e) => {
-                  const n = Math.max(1, Math.min(8, Number(e.target.value) || 1));
+                  const n = Math.max(0, Math.min(8, Number(e.target.value) || 0));
                   setCfg({
                     ...cfg,
                     max_explorers: n,
@@ -693,7 +872,11 @@ export function CampaignBrainPanel({
                   });
                 }}
               />
-              <p className="text-[10px] text-muted-foreground mt-1">Total no ar = 1 + isso (= {1 + cfg.max_explorers})</p>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {cfg.geo_mode === "radius_sede"
+                  ? "Modo sede: 0 exploradoras (só a âncora)."
+                  : `Total no ar = 1 + isso (= ${1 + cfg.max_explorers})`}
+              </p>
             </div>
             <div>
               <Label className="text-[11px]">Idade mínima preferida (sugestão Meta)</Label>
@@ -719,8 +902,13 @@ export function CampaignBrainPanel({
             </div>
           )}
 
-          <div>
-            <Label className="text-[11px]">Ordem das cidades no ar (1ª = prioridade)</Label>
+          <div className={cfg.geo_mode === "radius_sede" ? "opacity-50 pointer-events-none" : ""}>
+            <Label className="text-[11px]">
+              Ordem das cidades no ar (1ª = prioridade)
+              {cfg.geo_mode === "radius_sede" && (
+                <span className="text-muted-foreground font-normal"> — desligado no modo sede</span>
+              )}
+            </Label>
             <div className="flex flex-wrap gap-1.5 mt-1.5">
               {cfg.preferred_slugs.map((slug, idx) => (
                 <Badge key={slug} variant="secondary" className="gap-1 text-[11px]">
@@ -734,6 +922,9 @@ export function CampaignBrainPanel({
                   </button>
                 </Badge>
               ))}
+              {cfg.preferred_slugs.length === 0 && (
+                <span className="text-[11px] text-muted-foreground">Nenhuma exploradora na lista.</span>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 mt-2 items-end">
               <div className="flex-1 min-w-[140px]">
@@ -778,6 +969,7 @@ export function CampaignBrainPanel({
               Plano: {brl(cfg.anchor_budget_cents + cfg.explorer_budget_cents * cfg.max_explorers)}/dia
               {" "}(+taxa ≈ {brl(Math.round((cfg.anchor_budget_cents + cfg.explorer_budget_cents * cfg.max_explorers) * 1.2))})
             </span>
+          </div>
           </div>
         </DialogContent>
       </Dialog>

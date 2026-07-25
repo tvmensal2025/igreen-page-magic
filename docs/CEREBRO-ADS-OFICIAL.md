@@ -126,6 +126,12 @@ Campanha Meta ↔ `facebook_campaigns.id` (UUID). Rodízio **só** por UUID.
 
 Persistência: `consultant_ad_settings.brain_config` (JSONB).
 
+### 3.0 Onde editar (sem código)
+
+**Central de Anúncios → Cérebro → engrenagem → Controles do Cérebro.**  
+Salva estratégia geográfica (sede × cidades), raio, CPL, budgets, mensagem obrigatória.  
+**Salvar config não cria campanha** — criar = Express/wizard → Publicar.
+
 ### 3.1 Modos de autonomia (`automation_mode`)
 
 | Modo | Expansivo | Notas |

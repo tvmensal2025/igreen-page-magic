@@ -11,14 +11,18 @@ Operacional/rodízio: #[[file:docs/cerebro-e-rodizio-avisos.md]] · rule: #[[fil
 Política curta: #[[file:docs/CEREBRO-ADS-POLITICA-CONGELADA-2026.md]] · script `scripts/analysis/cerebro_ads_2026_analysis.py`
 
 ## Cérebro
-- 1 âncora (UDI) + até N `MG-ROT-*`; config `consultant_ad_settings.brain_config`
-- Autopilot: `facebook-auto-pause` (waste) → `facebook-mg-city-rotator` **só com diff**
+- **Oficial 2026:** `geo_mode=radius_sede` + `max_explorers=0` (1 CTWA raio na sede). Editável na UI: Central Anúncios → Cérebro → engrenagem → Controles.
+- Legado: 1 âncora + até N `MG-ROT-*` só se `geo_mode=cities_mg_rot`
+- Config por consultor: `consultant_ad_settings.brain_config` (não hardcode)
+- `require_initial_message=true` → create bloqueia sem frase CTWA
+- Autopilot: `facebook-auto-pause` (waste) → `facebook-mg-city-rotator` **só com diff**; em `radius_sede` não semeia MG-ROT
 - Autopilot só se `brain_config.autopilot === true` (null ≠ ligado)
 - Escala âncora: 48h mede CPL; degrau ~15% / ~4h — **sem** trava 48h entre subidas
 - Conversas Meta = `pickMetaConversations` (1 action_type canônico). **Nunca** somar `started`+`first_reply`+`total_connection` (incidente 2026-07-24: CPL R$6,50 aparecia R$2 e budget subia)
 - `brain_scale_*` **proibido** em `MG-ROT-*` e âncora UDI
 - Waste: `AUTO_PERF_PAUSE:`; se `paused_by_ai_at` já setado → **não** re-pausar
 - Health/rotator **não** reativam waste — só Play do consultor
+- Salvar config **não** cria campanha; criar = Express/wizard Publicar
 
 ## Idempotência Meta (incidente 2026-07-23)
 POST cego de targeting/age a cada 30 min **resetava aprendizado** (“anúncio reiniciando”).
