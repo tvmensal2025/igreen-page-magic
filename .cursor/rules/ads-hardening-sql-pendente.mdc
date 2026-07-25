@@ -1,23 +1,28 @@
 ---
-description: Hardening Ads — 4 migrations no repo AINDA NÃO aplicadas; aplicar antes de deployar as edges
+description: Hardening Ads — migrations no repo AINDA NÃO aplicadas; aplicar antes de deployar as edges
 alwaysApply: true
 ---
 # ⚠️ Hardening Ads: SQL pendente de aplicação
 
-As 4 migrations abaixo estão **commitadas mas NÃO aplicadas** em nenhum banco.
+As migrations abaixo estão **commitadas mas NÃO aplicadas** em nenhum banco.
 Foram validadas apenas de forma estática (não havia Postgres no ambiente onde
 o código foi escrito).
 
 ```
+supabase/migrations/20260725170000_ads_orphan_crons_auth_headers.sql  (#0 — crons órfãos)
 supabase/migrations/20260724180000_ads_cron_auth_headers.sql
 supabase/migrations/20260724190000_ads_spend_idempotent_billing.sql
 supabase/migrations/20260724200000_ad_publish_saga.sql
 supabase/migrations/20260724210000_facebook_capi_outbox.sql
 ```
 
+A #0 cobre `fb-cbo-to-abo`, `fb-mg-city-rotator` e `facebook-retarget-sync-3x-day`,
+que usam `assertCronAuthStrict` e ficaram de fora da #1. Aplicar #0 + #1 antes
+de qualquer deploy Ads.
+
 ## Regras
 
-- **Aplicar via MCP Supabase `apply_migration`**, na ordem numérica acima
+- **Aplicar via MCP Supabase `apply_migration`**, na ordem #0 → #1 → #2 → #3 → #4
   (migrations não passam pelo GitHub Actions — ver `deploy.md`).
 - **Migrations ANTES do deploy das edge functions.** As functions de Ads já
   chamam `debit_campaign_spend_observation`, `claim_ad_publish_saga` e
@@ -27,7 +32,7 @@ supabase/migrations/20260724210000_facebook_capi_outbox.sql
   segredo os crons de Ads passariam a tomar 401.
 - **Não ligar** o toggle `facebook_capi_dispatch` (nasce `false`) sem pedido
   explícito do usuário.
-- **Não ligar** `ENFORCE_CRON_AUTH` antes de confirmar nos logs que os 7 crons
+- **Não ligar** `ENFORCE_CRON_AUTH` antes de confirmar nos logs que os crons
   de Ads autenticaram.
 
 Passo a passo, consultas de verificação e riscos:

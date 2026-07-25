@@ -20,10 +20,15 @@ forem deployadas antes destas migrations, as chamadas falham. A ordem é:
 
 | # | Arquivo | Cria |
 |---|---|---|
+| 0 | `supabase/migrations/20260725170000_ads_orphan_crons_auth_headers.sql` | headers nos 3 crons órfãos (`fb-cbo-to-abo`, `fb-mg-city-rotator`, `facebook-retarget-sync-3x-day`) que usam `assertCronAuthStrict` e ficaram de fora da #1 |
 | 1 | `supabase/migrations/20260724180000_ads_cron_auth_headers.sql` | reagenda 7 crons de Ads com `x-internal-secret` / `x-service-secret` |
 | 2 | `supabase/migrations/20260724190000_ads_spend_idempotent_billing.sql` | `campaign_spend_observations`, `ads_spend_reconciliation_log`, `debit_campaign_spend_observation`, `record_ads_spend_reconciliation` |
 | 3 | `supabase/migrations/20260724200000_ad_publish_saga.sql` | `ad_publish_sagas` + `claim_ad_publish_saga`, `record_ad_publish_stage`, `complete_ad_publish_saga`, `fail_ad_publish_saga` |
 | 4 | `supabase/migrations/20260724210000_facebook_capi_outbox.sql` | `facebook_capi_outbox` + 5 RPCs de fila e o `fb_emit_capi` reescrito (só enfileira) |
+
+A #0 pode (e deve) ser aplicada **antes** do deploy das edges; a ordem numérica
+do filename é posterior à #1, mas o conteúdo é independente e só altera command
+via `cron.alter_job`. Aplicar #0 + #1 antes de qualquer deploy Ads.
 
 Todas são **aditivas**: nenhum `DROP`, `TRUNCATE` ou `DELETE`; tabelas e índices com
 `IF NOT EXISTS`; funções com `CREATE OR REPLACE`. Podem ser reaplicadas.
