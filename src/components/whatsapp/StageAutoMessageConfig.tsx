@@ -562,8 +562,8 @@ export function StageAutoMessageConfig({
             <div className="rounded-lg border border-orange-500/30 bg-orange-500/5 px-3 py-2 text-xs text-orange-700 dark:text-orange-300">
               <p className="font-semibold mb-0.5">Escolha automática no envio</p>
               <p className="text-[11px] opacity-90">
-                Whapi: botão <span className="font-medium">Quero tentar de novo</span>.
-                {" "}Evolution (sem botão): texto <span className="font-medium">*1.* Quero tentar de novo</span> — cliente digita 1.
+                WhatsApp com botões: botão <span className="font-medium">Quero tentar de novo</span>.
+                {" "}WhatsApp sem botões: texto <span className="font-medium">*1.* Quero tentar de novo</span> — cliente digita 1.
               </p>
             </div>
           )}

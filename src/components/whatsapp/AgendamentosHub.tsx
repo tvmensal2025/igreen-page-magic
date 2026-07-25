@@ -319,9 +319,7 @@ export function AgendamentosHub({
       if (error) throw error;
       toast({
         title: "Mensagem agendada com sucesso!",
-        description: channelReady.channel === "whapi"
-          ? "Saída via iGreen Chat (canal conectado)."
-          : "Saída via iGreen Link (canal conectado).",
+        description: "Saída via WhatsApp (canal conectado).",
       });
       setPhone("");
       setText("");
@@ -1047,7 +1045,7 @@ export function AgendamentosHub({
             )}
             {channelReady.ok && (
               <p className="text-[11px] text-muted-foreground">
-                Canal do consultor: <span className="font-semibold text-foreground">{channelReady.channel === "whapi" ? "iGreen Chat" : "iGreen Link"}</span>
+                Canal do consultor: <span className="font-semibold text-foreground">WhatsApp</span>
                 {" · "}instância <code className="text-[10px]">{channelReady.instanceName}</code>
               </p>
             )}

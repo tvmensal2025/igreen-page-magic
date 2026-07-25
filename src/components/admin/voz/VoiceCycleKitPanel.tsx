@@ -657,7 +657,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
                 ? "Ligado — cron pode enviar"
                 : "Ligado — falta conteúdo no checklist"
               : "Desligado (padrão seguro)"}
-            {savingGates ? " · salvando…" : ""} · teto iGreen Chat {gates?.cap}/dia
+            {savingGates ? " · salvando…" : ""} · teto WhatsApp {gates?.cap}/dia
           </p>
           <label className="flex items-center justify-between gap-3 text-sm">
             <span>Toggle Central <code className="text-xs">daily_reheat</code></span>

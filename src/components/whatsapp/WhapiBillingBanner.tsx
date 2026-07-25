@@ -36,8 +36,8 @@ export function WhapiBillingBanner({ enabled }: Props) {
       <div className="flex-1 min-w-0">
         <b>
           {isUnpaid
-            ? "Canal WhatsApp (iGreen Chat) bloqueado por falta de pagamento."
-            : "Canal iGreen Chat foi removido no painel."}
+            ? "Canal WhatsApp bloqueado por falta de pagamento."
+            : "Canal WhatsApp foi removido no painel."}
         </b>{" "}
         <span className="opacity-80">
           {isUnpaid

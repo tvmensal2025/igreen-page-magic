@@ -106,7 +106,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
   const handleSaveToken = async () => {
     const t = tokenInput.trim();
     if (t.length < 16) {
-      toast.error("Token iGreen Chat inválido");
+      toast.error("Token WhatsApp inválido");
       return;
     }
     setBusy("save");
@@ -115,7 +115,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
         body: { action: "update_token", token: t },
       });
       if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
-      toast.success("Token iGreen Chat atualizado");
+      toast.success("Token WhatsApp atualizado");
       setTokenInput("");
       await health.refresh();
     } catch (e: any) {
@@ -149,14 +149,14 @@ export function WhapiConnectionPanel({ visible }: Props) {
   };
 
   const handleLogout = async () => {
-    if (!confirm("Desconectar canal iGreen Chat? Você precisará escanear o QR de novo.")) return;
+    if (!confirm("Desconectar canal WhatsApp? Você precisará escanear o QR de novo.")) return;
     setBusy("logout");
     try {
       const { data, error } = await supabase.functions.invoke("whapi-proxy", {
         body: { action: "logout", payload: {} },
       });
       if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
-      toast.success("Canal iGreen Chat desconectado");
+      toast.success("Canal WhatsApp desconectado");
       await health.refresh();
     } catch (e: any) {
       toast.error(e?.message || "Erro ao desconectar");
@@ -201,7 +201,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
         body: { action: "refresh_webhook", payload: {} },
       });
       if (error || data?.error) throw new Error(error?.message || data?.error || "Falha");
-      toast.success("Webhook reaplicado no iGreen Chat.");
+      toast.success("Webhook reaplicado no WhatsApp.");
       await health.refresh();
     } catch (e: any) {
       toast.error(e?.message || "Erro ao aplicar webhook");
@@ -214,7 +214,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
     <Card className="border-border">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm flex items-center gap-2">
-          <span>Conexão iGreen Chat (Super Admin)</span>
+          <span>Conexão WhatsApp (Super Admin)</span>
           <Badge variant={meta.tone} className="gap-1">
             {meta.icon}
             {meta.label}
@@ -228,7 +228,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
         {/* Diagnóstico ao vivo do canal Whapi */}
         <div className="rounded-md border bg-muted/30 p-3 text-[11px] font-mono space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">iGreen Chat · saúde (ao vivo)</span>
+            <span className="text-muted-foreground">WhatsApp · saúde (ao vivo)</span>
             <span className="text-muted-foreground">
               {health.lastCheckedAt
                 ? new Date(health.lastCheckedAt).toLocaleTimeString()
@@ -329,7 +329,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
               <div className="flex-1">
                 <div className="font-semibold mb-1">Celular do super admin está offline</div>
                 <div>
-                  O canal iGreen Chat está autenticado (token OK), mas{" "}
+                  O canal WhatsApp está autenticado (token OK), mas{" "}
                   <b>{health.outboundPendingCount} das últimas {health.outboundRecentCount} mensagens</b>{" "}
                   enviadas ficaram travadas em <b>pending</b> — o celular físico
                   {health.phone ? ` (${health.phone})` : ""} perdeu conexão com o WhatsApp.
@@ -351,7 +351,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
             <div className="flex items-start gap-2">
               <CreditCard className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <div className="font-semibold mb-1">Canal iGreen Chat bloqueado por falta de pagamento</div>
+                <div className="font-semibold mb-1">Canal WhatsApp bloqueado por falta de pagamento</div>
                 <div>
                   O canal foi suspenso. Trocar token ou escanear QR <b>não resolve</b> —
                   regularize o pagamento no painel de cobrança.
@@ -375,7 +375,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
             <div className="flex items-start gap-2">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <div className="font-semibold mb-1">Canal iGreen Chat não existe mais</div>
+                <div className="font-semibold mb-1">Canal WhatsApp não existe mais</div>
                 <div>O canal foi removido no painel. Crie um canal novo e cole o token abaixo.</div>
               </div>
             </div>
@@ -420,7 +420,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
 
         {health.webhookOk === false && (
           <div className="rounded-md border border-orange-500/50 bg-orange-500/10 p-3 text-xs text-orange-700 dark:text-orange-300 flex items-center justify-between gap-2">
-            <span>Webhook não está configurado no iGreen Chat.</span>
+            <span>Webhook não está configurado no WhatsApp.</span>
             <Button
               size="sm"
               variant="outline"
@@ -434,12 +434,12 @@ export function WhapiConnectionPanel({ visible }: Props) {
 
         <div className="space-y-2">
           <label className="text-xs font-medium flex items-center gap-1">
-            <KeyRound className="h-3.5 w-3.5" /> Atualizar token iGreen Chat
+            <KeyRound className="h-3.5 w-3.5" /> Atualizar token WhatsApp
           </label>
           <div className="flex gap-2">
             <Input
               type="password"
-              placeholder="Cole o token do painel iGreen Chat"
+              placeholder="Cole o token do painel WhatsApp"
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
               className="font-mono text-xs"
@@ -449,7 +449,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            Pegue no painel iGreen Chat → seu canal → Settings → Token.
+            Pegue no painel WhatsApp → seu canal → Settings → Token.
           </p>
         </div>
 
@@ -478,7 +478,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
         {qrImage && (
           <div className="border rounded-md p-3 flex flex-col items-center gap-2">
             <span className="text-xs text-muted-foreground">Escaneie no WhatsApp do super admin</span>
-            <img src={qrImage} alt="QR iGreen Chat" className="w-56 h-56 object-contain" />
+            <img src={qrImage} alt="QR WhatsApp" className="w-56 h-56 object-contain" />
           </div>
         )}
 
@@ -505,7 +505,7 @@ export function WhapiConnectionPanel({ visible }: Props) {
             )}
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Puxa todos os chats e mensagens da instância iGreen Chat para a aba <b>Conversas</b>.
+            Puxa todos os chats e mensagens da instância WhatsApp para a aba <b>Conversas</b>.
             Leads novos entram com o bot pausado (contato manual). Clientes já vindos
             do iGreen são ignorados. Rodar mais de uma vez não duplica.
           </p>

@@ -39,7 +39,7 @@ function shortcutFor(
     case "toggle":
       return { label: "Ativar automação", href: "/admin?tab=agendamentos&section=automacoes&flag=start_customer_attendance" };
     case "whapi_token":
-      return { label: "Configurar iGreen Chat", href: "/admin?tab=whatsapp&section=config" };
+      return { label: "Configurar WhatsApp", href: "/admin?tab=whatsapp&section=config" };
     case "evolution_instance":
       return { label: "Conectar WhatsApp", href: "/admin?tab=whatsapp&section=config" };
     case "instance_offline":

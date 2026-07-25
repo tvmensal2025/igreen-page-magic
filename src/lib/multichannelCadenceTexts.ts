@@ -728,7 +728,7 @@ export function validateWhapiButtons(buttons: CadenceButton[] | undefined): {
   const errors: string[] = [];
   if (!buttons || buttons.length === 0) return { ok: true, errors };
   if (buttons.length > WHAPI_MAX_BUTTONS) {
-    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões iGreen Chat (recebeu ${buttons.length})`);
+    errors.push(`Máximo ${WHAPI_MAX_BUTTONS} botões WhatsApp (recebeu ${buttons.length})`);
   }
   for (const b of buttons) {
     if (!b.id?.trim()) errors.push("Botão sem id");

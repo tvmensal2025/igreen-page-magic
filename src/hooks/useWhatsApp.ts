@@ -721,7 +721,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             setError(null);
             setIsLoading(false);
             setHealth("healthy");
-            addLog("✅ Conectado via iGreen Chat (Super Admin — bypass)");
+            addLog("✅ Conectado via WhatsApp (Super Admin — bypass)");
             return;
           }
         }
@@ -767,7 +767,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           setStatus("connected");
           setError(null);
           setIsLoading(false);
-          addLog("✅ Conectado via iGreen Chat (Super Admin)");
+          addLog("✅ Conectado via WhatsApp (Super Admin)");
           setHealth("healthy");
           return;
         }
@@ -786,7 +786,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
               setPhoneNumber("+55 11 99009-2401");
               setError(null);
               setIsLoading(false);
-              addLog("✅ Conectado via iGreen Chat (Super Admin, fallback por papel)");
+              addLog("✅ Conectado via WhatsApp (Super Admin, fallback por papel)");
               setHealth("healthy");
               return;
             }

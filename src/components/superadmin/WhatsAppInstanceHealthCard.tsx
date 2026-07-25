@@ -56,7 +56,7 @@ export function WhatsAppInstanceHealthCard() {
   };
 
   const recreate = async (instance: string) => {
-    if (!confirm(`Deletar a instância ${instance} no iGreen Link e criar uma NOVA (mesmo consultor)? O usuário precisará escanear um novo QR.`)) return;
+    if (!confirm(`Deletar a instância ${instance} no WhatsApp e criar uma NOVA (mesmo consultor)? O usuário precisará escanear um novo QR.`)) return;
     setBusy(instance);
     const { data, error } = await supabase.functions.invoke("evolution-instance-reconnect", {
       body: { instanceName: instance, recreate: true },
@@ -125,7 +125,7 @@ export function WhatsAppInstanceHealthCard() {
                   variant="outline"
                   onClick={() => recreate(r.instance_name)}
                   disabled={busy === r.instance_name}
-                  title="Deleta esta instância no iGreen Link e cria uma nova (mesmo consultor). Usar quando o QR não autentica mais."
+                  title="Deleta esta instância no WhatsApp e cria uma nova (mesmo consultor). Usar quando o QR não autentica mais."
                 >
                   <RotateCcw className="w-3.5 h-3.5 mr-1" />
                   Recriar

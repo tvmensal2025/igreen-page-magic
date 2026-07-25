@@ -62,7 +62,7 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
 
 
       if (isSuper) {
-        setBot({ status: "ok", label: "WhatsApp do bot conectado", detail: "iGreen Chat (super admin)" });
+        setBot({ status: "ok", label: "WhatsApp do bot conectado", detail: "WhatsApp (super admin)" });
       } else {
         const { data: inst } = await supabase
           .from("whatsapp_instances")

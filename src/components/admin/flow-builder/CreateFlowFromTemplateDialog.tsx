@@ -195,7 +195,7 @@ export default function CreateFlowFromTemplateDialog({
       w.push("Bloco 'Finalizar cadastro' será adicionado automaticamente — sem ele o lead não chega ao portal.");
     }
     if (renderStyle === "list-interactive" && variant !== "D") {
-      w.push("Lista interativa só funciona em fluxos via iGreen Chat (fluxo D). Em outros cai em texto numerado.");
+      w.push("Lista interativa só funciona em fluxos via WhatsApp (fluxo D). Em outros cai em texto numerado.");
     }
     if (aiProvider !== "none" && enabledBlockIds.includes("duvidas_ia") === false) {
       w.push("Você ativou IA mas não incluiu o bloco de dúvidas — a IA não vai ser usada.");
@@ -373,12 +373,12 @@ export default function CreateFlowFromTemplateDialog({
                     {
                       v: "buttons" as const,
                       label: "🔘 Botões interativos (até 3)",
-                      sub: "Cliente vê botões clicáveis. Funciona em iGreen Link e iGreen Chat.",
+                      sub: "Cliente vê botões clicáveis. Funciona no WhatsApp.",
                     },
                     {
                       v: "list-interactive" as const,
                       label: "📋 Lista interativa (até 10)",
-                      sub: "Menu suspenso com várias opções. Só funciona via iGreen Chat (fluxo D).",
+                      sub: "Menu suspenso com várias opções. Só funciona via WhatsApp (fluxo D).",
                     },
                     {
                       v: "text-numbered" as const,

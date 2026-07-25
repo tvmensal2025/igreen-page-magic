@@ -358,26 +358,26 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
 
   const sendText = async (text: string) => {
     if (!phone) { sonnerToast.error("Cliente interessado sem telefone"); return; }
-    if (!instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    if (!instanceName) { sonnerToast.error("WhatsApp indisponível — verifique a conexão"); return; }
     void takeoverWithUndo(phone, "humano_assumiu");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "text", text, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar"); return; }
     if (r.status === "pending" || r.status === "timeout") { sonnerToast.warning(r.error || "Mensagem na fila — aguardando confirmação."); return; }
   };
   const sendAudioB64 = async (b64: string) => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp indisponível — verifique a conexão"); return; }
     void takeoverWithUndo(phone, "humano_assumiu_audio");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "audio", mediaUrl: `data:audio/ogg;base64,${b64}`, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar áudio"); return; }
   };
   const sendAudioUrl = async (url: string) => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp indisponível — verifique a conexão"); return; }
     void takeoverWithUndo(phone, "humano_assumiu_audio");
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: "audio", mediaUrl: url, isWhapi, customerId: selectedId });
     if (r.status === "failed") { sonnerToast.error(r.error || "Falha ao enviar áudio"); return; }
   };
   const sendMedia = async (url: string, caption: string, mediaType: "image" | "video" | "document" | "sticker") => {
-    if (!phone || !instanceName) { sonnerToast.error("WhatsApp (Whapi) indisponível — verifique a conexão"); return; }
+    if (!phone || !instanceName) { sonnerToast.error("WhatsApp indisponível — verifique a conexão"); return; }
     void takeoverWithUndo(phone, "humano_assumiu_midia");
     const fileName = mediaType === "document" ? (url.split("/").pop()?.split("?")[0] || "documento") : undefined;
     const r = await sendWhatsAppMessage({ instanceName, phone, mediaCategory: mediaType, mediaUrl: url, text: caption, fileName, isWhapi, customerId: selectedId });

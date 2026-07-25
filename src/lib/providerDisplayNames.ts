@@ -4,9 +4,9 @@
  */
 export const PROVIDER_UI = {
   /** Canal WhatsApp principal (Whapi). */
-  chat: "iGreen Chat",
+  chat: "WhatsApp",
   /** Canal WhatsApp legado (Evolution). */
-  link: "iGreen Link",
+  link: "WhatsApp",
   /** Ligação / SMS / discador (Velip). */
   fone: "iGreen Fone",
 } as const;

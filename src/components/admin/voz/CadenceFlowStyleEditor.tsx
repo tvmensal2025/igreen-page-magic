@@ -108,7 +108,7 @@ export function CadenceFlowStyleEditor({
           {(
             [
               ["conteudo", "Texto", "Texto da mensagem. Áudio na aba Mídia."],
-              ["botoes", "Botões", "Até 3 botões iGreen Chat (título ≤ 25)."],
+              ["botoes", "Botões", "Até 3 botões WhatsApp (título ≤ 25)."],
               ["midias", "Mídia", "Cortes TTS, gerar MP3 e teste WA."],
               ["avancado", "Mais", "Runtime, aprovação e metadados."],
             ] as const

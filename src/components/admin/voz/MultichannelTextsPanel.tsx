@@ -826,7 +826,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const addButton = (preset?: { id: string; title: string; emoji?: string }) => {
     if (draftButtons.length >= WHAPI_MAX_BUTTONS) {
       toast({
-        title: "Limite iGreen Chat",
+        title: "Limite WhatsApp",
         description: `No máximo ${WHAPI_MAX_BUTTONS} botões por mensagem.`,
         variant: "destructive",
       });
@@ -912,7 +912,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
   const handleCopy = async () => {
     const lines = [preview];
     if (draftButtons.length) {
-      lines.push("", "Botões iGreen Chat:");
+      lines.push("", "Botões WhatsApp:");
       draftButtons.forEach((b, i) => lines.push(`${i + 1}. [${b.id}] ${b.title}`));
     }
     await navigator.clipboard.writeText(lines.join("\n"));
@@ -1574,7 +1574,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
               </p>
               <p className="text-foreground/90">
                 O Zap de cada recall sai pelo <span className="font-medium">mesmo canal de origem</span> do
-                lead (Whapi ou Evolution em que ele entrou) — não por outro número. Conta no teto diário
+                lead (WhatsApp em que ele entrou) — não por outro número. Conta no teto diário
                 de frio. Ao publicar: textos/botões sincronizam no motor (ContentContract). Executor:
                 cadence-tick.
               </p>

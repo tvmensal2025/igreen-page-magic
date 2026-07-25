@@ -168,7 +168,7 @@ export function SystemHealthPanel() {
           <div className="flex items-center gap-2 font-medium text-destructive">
             <WifiOff className="w-4 h-4 text-destructive" />
             <span>
-              {data.instancesNeedReconnect} instância(s) iGreen Link caída(s) — reabrir QR no painel iGreen Link:
+              {data.instancesNeedReconnect} instância(s) WhatsApp caída(s) — reabrir QR no painel WhatsApp:
             </span>
           </div>
           <ul className="space-y-1.5 pl-1">

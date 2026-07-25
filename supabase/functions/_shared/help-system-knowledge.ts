@@ -26,7 +26,7 @@ Clientes e CRM
 - Conversão: /admin?tab=conversao. Localiza oportunidades paradas, mostra contexto e ajuda a retomar o contato.
 
 WhatsApp e assistência de IA
-- Conectar ou reconectar: /admin?tab=whatsapp&section=config. Leia o QR Code com o WhatsApp desejado e aguarde o estado conectado antes de testar. O canal em uso é Whapi; não peça reconectar Evolution só por status antigo.
+- Conectar ou reconectar: /admin?tab=whatsapp&section=config. Leia o QR Code com o WhatsApp desejado e aguarde o estado conectado antes de testar.
 - Conversas: /admin?tab=whatsapp. Permite ler histórico e responder manualmente. Uma intervenção manual pode pausar a automação; reative-a quando quiser devolver o atendimento.
 - Base de conhecimento: /admin/conhecimento. Cadastre conteúdo correto, palavras usadas pelos clientes e teste perguntas reais. Atualize o índice quando a tela solicitar.
 - Fluxos de atendimento: /admin/fluxos. Edite mensagens, perguntas e caminhos. Salve e simule antes de ativar.
@@ -112,7 +112,7 @@ Abra: /admin?tab=whatsapp
 5. Se o QR expirar, clique em Gerar novo QR ou Atualizar agora e tente de novo.
 6. Espere o status mudar para conectado antes de testar envio de mensagem.
 7. Para trocar de chip: clique em Desconectar / trocar chip → confirme em Sim, desconectar → conecte o novo número.
-8. Se travar: use Resetar Conexão (com cuidado) e depois Conectar WhatsApp novamente. Não peça “reconectar Evolution” — o canal em uso é este WhatsApp da plataforma.
+8. Se travar: use Resetar Conexão (com cuidado) e depois Conectar WhatsApp novamente.
 
 [WhatsApp e IA] Atenda pelo WhatsApp
 Abra: /admin?tab=whatsapp

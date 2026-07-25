@@ -333,7 +333,7 @@ export default function PosVendaKanban({
 
         if (!channelReady.ok) {
           toast.warning(
-            "Reprovado, mas falta WhatsApp conectado (iGreen Chat ou iGreen Link) para agendar o lembrete. Conecte e reagende.",
+            "Reprovado, mas falta WhatsApp conectado para agendar o lembrete. Conecte e reagende.",
           );
         } else {
           const when = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -349,7 +349,7 @@ export default function PosVendaKanban({
             toast.error("Reprovado, mas falhou ao agendar lembrete: " + schedErr.message);
           } else {
             toast.success(
-              `Lembrete agendado para daqui a ${days} dias (${channelReady.channel === "whapi" ? "iGreen Chat" : "iGreen Link"}).`,
+              `Lembrete agendado para daqui a ${days} dias (WhatsApp).`,
             );
           }
         }

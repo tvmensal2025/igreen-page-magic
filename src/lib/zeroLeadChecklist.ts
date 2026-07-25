@@ -147,7 +147,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   },
   {
     key: "m4_dual_channel",
-    title: "Failover Evolution ↔ Whapi",
+    title: "Failover WhatsApp (canais)",
     desc: "WhatsApp frio tenta canal do lead; se offline, failover do consultor. Instância precisa estar saudável.",
     link: "/admin/whatsapp-clients",
     group: "motor",
@@ -383,7 +383,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   {
     key: "sms3_rafael_chip",
     title: "Rafael: chip conectado (ou fallback phone)",
-    desc: "Se Evolution `needs_reconnect` / connected_phone null, SMS usa `consultants.phone` — validar número.",
+    desc: "Se WhatsApp `needs_reconnect` / connected_phone null, SMS usa `consultants.phone` — validar número.",
     link: "/admin/whatsapp-clients",
     group: "sms",
   },
