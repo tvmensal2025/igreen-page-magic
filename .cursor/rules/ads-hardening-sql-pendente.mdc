@@ -18,3 +18,11 @@ Migrations do hardening Ads **aplicadas** em 2026-07-25 (+ seed cron MG).
 - `targeting_patch` automático
 - `create_object` genérico no cron (use `seed_explorer`)
 - expansão multi-consultor sem anchor + foto HTTPS
+
+## Crons satélite (2026-07-25)
+
+`assertCronAuth` + headers em lead-research / inbound-media-retry /
+production-health / speed-to-lead / recover-stuck-otp (+ portal-offline,
+flow-d-stuck, v3-rollout métricas). Jobs JWT-only desativados (não apagados):
+classifier daily, meta-ads-metrics-3h, voice-dialer-health-30min.
+Smoke: sem secret → 401; com `x-internal-secret` (settings) → 200.
