@@ -23,6 +23,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Easy Panel / worker offline / Sync WAF | `#erros-operacionais` §3 · health Portal2/Club/Sync (URLs separadas) |
 | Site não abre / cron 401 / edge 500 | `#erros-operacionais` §4 + `#security-auth` `#deploy` |
 | Quero alerta WA quando falhar (sem eu lembrar) | edge `super-admin-alerts` + `_shared/superadmin-alert.ts` · `#erros-operacionais` §0b · `app_settings.super_admin_phone` |
+| Auditoria final completa (Opus/Kiro) | `#auditoria-final-opus` · `.cursor/commands/auditoria-final-plataforma.md` · `docs/PROMPT-AUDITORIA-FINAL-OPUS.md` |
 
 ## WhatsApp (Whapi primário, Evolution legado)
 
