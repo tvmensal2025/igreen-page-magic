@@ -7,8 +7,8 @@ Este documento é a ordem de execução quando você decidir subir.
 > **Status 2026-07-25 (go-live hardening + Cérebro):** migrations aplicadas;
 > edges Ads/cadência deployadas; smokes OK. **Já ligado:** `ENFORCE_CRON_AUTH=true`,
 > `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`,
-> Cérebro piloto Rafael em **`limited`** (`kill_switch=false`, `autopilot=true`).
-> **Ainda off:** `full` / creative_rotate automático; seed e targeting continuam human-only.
+> Cérebro piloto Rafael em **`full`** (`kill_switch=false`, `autopilot=true`).
+> Seed / targeting / create_object continuam **human-only** (de propósito).
 
 ## Estado alvo
 

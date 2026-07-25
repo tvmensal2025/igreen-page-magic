@@ -12,10 +12,11 @@ Detalhe: `docs/ads-hardening-rollout.md`.
 ## Já ligado (2026-07-25)
 - `ENFORCE_CRON_AUTH=true`
 - `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
-- Cérebro piloto Rafael: `kill_switch=false`, `automation_mode=limited`,
+- Cérebro piloto Rafael: `kill_switch=false`, `automation_mode=full`,
   `autopilot=true`, âncora Uberlândia ativa, preferred saudáveis
 
 ## NÃO FAÇA sem pedido explícito
-- Subir para `automation_mode=full` (creative_rotate)
+- Liberar seed automático de exploradoras no cron (hoje `automatic_seed_disabled`)
+- Liberar `targeting_patch` automático (incidente aprendizado Meta)
 - Ligar Cérebro em outros consultores sem anchor + foto HTTPS
 - Reativar campanhas `AUTO_PERF_PAUSE` / MANUAL / STOP via cron

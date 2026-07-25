@@ -23,10 +23,9 @@ Cadência P0/P1 também aplicada:
 
 - `ENFORCE_CRON_AUTH=true` (secrets)
 - `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
-- **Cérebro piloto (Rafael) ON em `limited`:** `kill_switch=false`, `autopilot=true`,
+- **Cérebro piloto (Rafael) ON em `full`:** `kill_switch=false`, `autopilot=true`,
   âncora Uberlândia (`a0189d12-…`), foto legada HTTPS, preferred sem waste-pause.
   Proteções (pause) sempre on; seed/targeting/create continuam human-only.
-  Modo `full` (creative_rotate) **não** ligado.
 
 ## Ainda NÃO ligar sem pedido explícito
 
