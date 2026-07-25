@@ -73,6 +73,7 @@ import {
   clienteCadenceBlockReason,
   isClienteProibidoCadenciaABC,
 } from "../_shared/cliente-cadence-guard.ts";
+import { isCrmCadastroEmAnalise } from "../_shared/crm-vs-lead-analysis.ts";
 
 type AvailLoader = (consultantId: string | null | undefined) => Promise<AvailabilityOverrides>;
 
@@ -1015,7 +1016,7 @@ Deno.serve(async (req) => {
   const { data: custRows } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
+      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at",
     )
     .in("id", customerIds);
   const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
@@ -1143,6 +1144,27 @@ Deno.serve(async (req) => {
         customer_id: row.customer_id,
         consultant_id: row.consultant_id,
         stage,
+      });
+      clienteBlocked++;
+      skipped++;
+      continue;
+    }
+
+    // Já cadastrou / CRM em análise (OTP, facial, assinatura): sem A/B/C.
+    // Pós-venda e watchdogs de portal seguem em caminhos separados.
+    if (cust && isCrmCadastroEmAnalise(cust)) {
+      await finishRow(row.id, claimToken, {
+        next_action_at: null,
+        paused_until: null,
+        paused_reason: "crm_cadastro_em_analise",
+      });
+      await logSkipped(supabase, "cadence_engine", {
+        reason: "crm_cadastro_em_analise",
+        customer_id: row.customer_id,
+        consultant_id: row.consultant_id,
+        stage,
+        conversation_step: cust.conversation_step ?? null,
+        portal_submitted_at: cust.portal_submitted_at ?? null,
       });
       clienteBlocked++;
       skipped++;

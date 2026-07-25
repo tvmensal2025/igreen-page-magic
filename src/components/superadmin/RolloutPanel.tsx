@@ -196,7 +196,8 @@ export function RolloutPanel() {
           <div>
             <h2 className="text-lg font-bold">Automação de atendimento</h2>
             <p className="text-sm text-muted-foreground">
-              Avalia gates a cada 6h e avança/recua flags por consultor automaticamente.
+              Nunca sobe sozinho por cron. Só avalia e avança flags quando um admin
+              logado clica em &quot;Rodar agora&quot; (com o interruptor ligado).
             </p>
           </div>
           <div className="flex items-center gap-3">

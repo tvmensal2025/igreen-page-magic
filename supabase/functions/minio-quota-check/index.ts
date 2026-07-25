@@ -7,10 +7,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { notifySuperAdminOpsAlert } from "../_shared/superadmin-alert.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const MINIO_URL = (Deno.env.get("MINIO_SERVER_URL") || "").replace(/\/$/, "");
@@ -133,6 +135,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
   const { data: settings } = await supabase
     .from("app_settings").select("minio_alert_threshold_pct").eq("id", "global").maybeSingle();

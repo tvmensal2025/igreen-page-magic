@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (audit Sync Gemini + alerta WA ativo + trava cliente≠A/B/C).
+Última atualização: **2026-07-25** (comando Opus design+velocidade + audit Sync/alerta/cliente).
+
+## 2026-07-25 — Comando Opus: auditoria design + velocidade
+Prompt read-only para Kiro/Opus 5 Max varrer UI (tokens, tema dual, botões, páginas) e performance (bundle, lazy, Web Vitals, fontes, FOUC). Regra de certeza: P0/P1 só com `path:linha` / screenshot / métrica. **Prioridade mobile:** celular + desktop-no-mobile; FASE 2B scroll/arrastar — cortar/travar/área morta = P0. Arquivos: `.cursor/commands/auditoria-design-velocidade.md` · `docs/PROMPT-AUDITORIA-DESIGN-VELOCIDADE-OPUS.md` · `#auditoria-design-velocidade`. Índice em `AGENTS.md` + `#mapa-tarefas`.
 
 ## 2026-07-25 — Auditoria IA no Sync (Gemini Flash)
 Edge `sync-ai-audit` + tabela `sync_audit_traces` + `worker-igreen-sync/ai-audit.mjs`.

@@ -243,6 +243,24 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Club: HTTP 200 mas sem Redis (queue=sync) — POST ao vivo sem fila.
+    if (w.key === "worker:club" && h.body) {
+      const queueMode = String(h.body.queue || "");
+      if (queueMode && queueMode !== "redis-bullmq") {
+        await fire(
+          "worker:club:redis",
+          "warn",
+          `⚠️ *Club: fila sem Redis*\n\n` +
+            `Health ok, mas queue=\`${queueMode}\` (esperado \`redis-bullmq\`).\n` +
+            `Cadastros Club podem ir síncronos / sem buffer.\n\n` +
+            `Easy Panel → Redis do worker Club → Start/Rebuild.`,
+          120,
+        );
+      } else {
+        results.push({ key: "worker:club:redis", fired: false, detail: queueMode || "ok" });
+      }
+    }
+
     results.push({ key: w.key, fired: false, detail: "healthy" });
   }
 

@@ -2835,51 +2835,80 @@ Deno.serve(async (req) => {
         || (!_emCadastro && !(_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F"))
         || (_emCadastro && _cadKind === "freeform_question" && _fbVarCerebro !== "A");
 
+      // Um único call-site do Cérebro (paridade Whapi): principal + drain
+      // da rajada reutilizam a mesma função com envio idempotente.
+      const runConversacionalTurn = async (inb: {
+        text: string | null;
+        isButton: boolean;
+        buttonId: string | null;
+        hasImage: boolean;
+        hasDocument: boolean;
+        hasAudio: boolean;
+        messageId: string | null;
+      }): Promise<boolean> => {
+        try {
+          if (_isAtivoOrigin) {
+            console.log(`[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (pula cadastro/portal)`);
+          } else if (_emCadastro) {
+            console.log(`[cerebro] freeform no cadastro step=${stepBefore} customer=${customer.id} → Cérebro readOnly`);
+          }
+          const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
+          const enviarTexto = makeIdempotentEnviarTexto(
+            (jid, text, opts) => sender.sendText(jid, text, opts as any),
+            remoteJid,
+            {
+              supabase,
+              customerId: customer.id,
+              consultantId: instanceData.consultant_id,
+              step: stepBefore || "",
+            },
+          );
+          const inboundKind = inb.isButton
+            ? "button_click"
+            : (inb.hasImage || inb.hasDocument || inb.hasAudio ? "media" : "text");
+          const inboundMediaKind = inb.hasAudio
+            ? "audio"
+            : inb.hasImage
+            ? "image"
+            : inb.hasDocument
+            ? "document"
+            : null;
+          const r = await responderComCerebro({
+            supabase,
+            customerId: customer.id,
+            consultantId: instanceData.consultant_id,
+            inboundKind,
+            inboundText: inb.text ?? null,
+            inboundButtonId: inb.buttonId ?? null,
+            inboundMediaKind,
+            inboundMessageId: inb.messageId ?? null,
+            channel: "evolution",
+            telefone: phone ?? null,
+            enviarTexto,
+          });
+          return r.respondeu;
+        } catch (e: any) {
+          console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
+          return false;
+        }
+      };
+
       if (!_rodarCerebro) {
         if (_emCadastro) {
           console.log(`[cerebro] cadastro em andamento (midia=${_midiaOcr} step=${stepBefore} kind=${_cadKind ?? "media"}) → determinístico customer=${customer.id}`);
         } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F") {
           console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo do construtor)`);
         }
-      } else try {
-        if (_isAtivoOrigin) {
-          console.log(`[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (pula cadastro/portal)`);
-        } else if (_emCadastro) {
-          console.log(`[cerebro] freeform no cadastro step=${stepBefore} customer=${customer.id} → Cérebro readOnly`);
-        }
-        const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
-        // Envio idempotente: rajadas idênticas no mesmo minuto não disparam
-        // múltiplas respostas. Ver _shared/bot/conversational-send-idempotency.ts.
-        const enviarTexto = makeIdempotentEnviarTexto(
-          (jid, text, opts) => sender.sendText(jid, text, opts as any),
-          remoteJid,
-          {
-            supabase,
-            customerId: customer.id,
-            consultantId: instanceData.consultant_id,
-            step: stepBefore || "",
-          },
-        );
-        const r = await responderComCerebro({
-          supabase,
-          customerId: customer.id,
-          consultantId: instanceData.consultant_id,
-          inboundKind: isButton ? "button_click" : (hasImage || hasDocument || hasAudio ? "media" : "text"),
-          inboundText: messageText ?? null,
-          inboundButtonId: buttonId ?? null,
-          inboundMediaKind: hasAudio ? "audio" : hasImage ? "image" : hasDocument ? "document" : null,
-          inboundMessageId: messageId ?? null,
-          channel: "evolution",
-          telefone: phone ?? null,
-          // Sender REAL do canal já protegido (anti-ban + dedup + lock + rate
-          // limit). Retorna false quando o guard bloqueou o envio.
-          enviarTexto,
+      } else {
+        _cerebroRespondeu = await runConversacionalTurn({
+          text: messageText ?? null,
+          isButton,
+          buttonId: buttonId ?? null,
+          hasImage,
+          hasDocument,
+          hasAudio,
+          messageId: messageId ?? null,
         });
-        _cerebroRespondeu = r.respondeu;
-      } catch (e: any) {
-        // Fail-open: erro ao ligar o Cérebro nunca bloqueia o atendimento.
-        console.warn("[cerebro-resposta-hook] erro não-bloqueante:", e?.message);
-        _cerebroRespondeu = false;
       }
       // GATE (Property 1 — um caminho conversacional só): quando o Cérebro é a
       // fonte de verdade do turno (canary/on), a vendedora legada NÃO responde o
@@ -2890,23 +2919,19 @@ Deno.serve(async (req) => {
         // sem isso o segundo inbound ficava permanentemente pendente.
         try {
           const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
-          const { responderComCerebro } = await import("../_shared/cerebro/resposta-hook.ts");
           const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
             const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
             if (fresh) customer = fresh;
             const replayIsMedia = replay.isFile && !replay.isButton;
-            await responderComCerebro({
-              supabase,
-              customerId: customer.id,
-              consultantId: instanceData.consultant_id,
-              inboundKind: replay.isButton ? "button_click" : (replayIsMedia ? "media" : "text"),
-              inboundText: replay.messageText || null,
-              inboundButtonId: replay.buttonId || null,
-              inboundMediaKind: replayIsMedia ? "image" : null,
-              inboundMessageId: replay.messageId || null,
-              channel: "evolution",
-              telefone: phone ?? null,
-              enviarTexto: (text: string) => sender.sendText(remoteJid, text),
+            // Reusa o mesmo caminho idempotente (NÃO sender.sendText cru).
+            await runConversacionalTurn({
+              text: replay.messageText || null,
+              isButton: replay.isButton,
+              buttonId: replay.buttonId,
+              hasImage: replayIsMedia,
+              hasDocument: false,
+              hasAudio: false,
+              messageId: replay.messageId,
             });
           });
           if (drained > 0) console.log(`[pending-drain/cerebro] ${drained} turn(s) customer=${customer.id}`);

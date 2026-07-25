@@ -73,7 +73,7 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
         .from("lead_cadence_state")
         .select("id", { count: "exact", head: true })
         .not("stage", "in", "(WON,PAUSED,RETARGET_META)"),
-      supabase.from("daily_reheat_settings").select("daily_whapi_cap").eq("id", "global").maybeSingle(),
+      supabase.from("daily_reheat_settings").select("cap_b, cap_c, cap_global_outreach, daily_whapi_cap").eq("id", "global").maybeSingle(),
     ]);
     const tm = new Map((toggles || []).map((t) => [t.key, !!t.enabled]));
     const eng = !!settings?.cadence_engine_enabled && !!tm.get("cadence_engine");
@@ -84,7 +84,8 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
     setReheatOn(!!tm.get("daily_reheat"));
     setReactivationOn(!!tm.get("reactivation_cron"));
     setLeadsNoMotor(count ?? 0);
-    setCapToday(capRes.data?.daily_whapi_cap ?? 60);
+    const capB = Number(capRes.data?.cap_b ?? capRes.data?.daily_whapi_cap ?? 150);
+    setCapToday(Number.isFinite(capB) ? capB : 150);
     setLoading(false);
   }, []);
 

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CONSULTANT_AUTO_PACKS,
-  UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+  DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+  SUGGESTED_FIRST_ACK_PREFS,
   anyPackOff,
   needsAutomationPrefsAck,
   type ConsultantAutomationPrefs,
@@ -11,8 +12,19 @@ import {
 export type PrefsDraft = Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;
 
 function toDraft(prefs: ConsultantAutomationPrefs | null): PrefsDraft {
-  // Sem row ainda → UI começa tudo ligado (padrão saudável).
-  const src = prefs ?? { consultant_id: "", ...UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS };
+  // Sem row → espelha o motor (tudo OFF). Modal de 1º ack usa suggestedOnFirstAck.
+  const src = prefs ?? { consultant_id: "", ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
+  return {
+    group_a_enabled: !!src.group_a_enabled,
+    group_b_enabled: !!src.group_b_enabled,
+    group_c_enabled: !!src.group_c_enabled,
+    pos_venda_auto_enabled: !!src.pos_venda_auto_enabled,
+    reminders_auto_enabled: !!src.reminders_auto_enabled,
+  };
+}
+
+function toSuggestedDraft(): PrefsDraft {
+  const src = SUGGESTED_FIRST_ACK_PREFS;
   return {
     group_a_enabled: !!src.group_a_enabled,
     group_b_enabled: !!src.group_b_enabled,
@@ -49,6 +61,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     if (err) {
       setError(err.message);
       setPrefs(null);
+      // Erro de leitura → fail-closed (igual ao motor), não "tudo ligado".
       setDraft(toDraft(null));
       setLoading(false);
       return;
@@ -66,11 +79,12 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         } satisfies ConsultantAutomationPrefs)
       : {
           consultant_id: consultantId,
-          ...UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+          ...DEFAULT_CONSULTANT_AUTOMATION_PREFS,
         };
 
     setPrefs(row);
-    setDraft(toDraft(row));
+    // Sem row / sem ack: modal sugere tudo ligado; estado real continua OFF até save.
+    setDraft(!data || !row.acked_at ? toSuggestedDraft() : toDraft(row));
     setLoading(false);
   }, [consultantId]);
 

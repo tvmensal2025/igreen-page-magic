@@ -11,6 +11,7 @@ import fc from "https://esm.sh/fast-check@3.23.2";
 
 import { createEvolutionSender } from "./evolution-api.ts";
 import { computeIdempotencyKey } from "./idempotency.ts";
+import { _clearWhatsAppChatIdMemoryCacheForTests } from "./resolve-whatsapp-chat-id.ts";
 
 // ─── Fake supabase ────────────────────────────────────────────────────────
 
@@ -92,6 +93,22 @@ interface FetchInvocation {
   init?: RequestInit;
 }
 
+const okResponse = () =>
+  new Response(JSON.stringify({ key: { id: "evo-1" } }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+
+/** Evolution check de número (resolveDestination) — resposta válida. */
+function evolutionNumbersOk(phoneHint = "5511999999999") {
+  return new Response(
+    JSON.stringify([
+      { exists: true, jid: `${phoneHint}@s.whatsapp.net`, number: phoneHint },
+    ]),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 function installFetchSpy(handler: (call: FetchInvocation) => Response) {
   const calls: FetchInvocation[] = [];
   const original = globalThis.fetch;
@@ -99,6 +116,10 @@ function installFetchSpy(handler: (call: FetchInvocation) => Response) {
   (globalThis as any).fetch = (url: any, init?: RequestInit) => {
     const call = { url: String(url), init };
     calls.push(call);
+    // Resolve de destino (BR 9º dígito) — obrigatório antes do sendText.
+    if (String(url).includes("/chat/whatsappNumbers/")) {
+      return Promise.resolve(evolutionNumbersOk());
+    }
     try {
       return Promise.resolve(handler(call));
     } catch (e) {
@@ -112,16 +133,10 @@ function installFetchSpy(handler: (call: FetchInvocation) => Response) {
     },
   };
 }
-
-const okResponse = () =>
-  new Response(JSON.stringify({ key: { id: "evo-1" } }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-
 // ─── Unit tests ──────────────────────────────────────────────────────────
 
 Deno.test("sendText short-circuits second call with same idempotencyKey", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   const fake = makeFakeSupabase();
   const sendCalls: FetchInvocation[] = [];
   // Only count Evolution send endpoints — the helper may issue a PATCH
@@ -144,8 +159,9 @@ Deno.test("sendText short-circuits second call with same idempotencyKey", async 
       payloadHash: "p-1",
       supabase: fake.client,
     };
-    const r1 = await sender.sendText("+5511@s.whatsapp.net", "oii", idem);
-    const r2 = await sender.sendText("+5511@s.whatsapp.net", "oii", idem);
+    const jid = "5511999887766@s.whatsapp.net";
+    const r1 = await sender.sendText(jid, "oii", idem);
+    const r2 = await sender.sendText(jid, "oii", idem);
 
     assertEquals(r1, true);
     assertEquals(r2, true);
@@ -157,6 +173,7 @@ Deno.test("sendText short-circuits second call with same idempotencyKey", async 
 });
 
 Deno.test("sendText without idempotencyKey behaves identically to legacy", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   const sendCalls: FetchInvocation[] = [];
   // First fetch fails with 500; second succeeds. Backoff path exercised.
   let nth = 0;
@@ -175,7 +192,7 @@ Deno.test("sendText without idempotencyKey behaves identically to legacy", async
       "key-x",
       "inst-1",
     );
-    const r = await sender.sendText("+5511@s.whatsapp.net", "oii");
+    const r = await sender.sendText("5511999887766@s.whatsapp.net", "oii");
     assertEquals(r, true);
     // Retry happened — at least 2 invocations.
     assertEquals(sendCalls.length >= 2, true);
@@ -185,6 +202,7 @@ Deno.test("sendText without idempotencyKey behaves identically to legacy", async
 });
 
 Deno.test("sendText replays prior failed result without re-sending", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   const fake = makeFakeSupabase();
   // Pre-seed with a prior failed outcome.
   fake.rows.set("k-prev-fail", {
@@ -208,7 +226,7 @@ Deno.test("sendText replays prior failed result without re-sending", async () =>
       "key-x",
       "inst-1",
     );
-    const r = await sender.sendText("+5511@s.whatsapp.net", "oii", {
+    const r = await sender.sendText("5511999887766@s.whatsapp.net", "oii", {
       idempotencyKey: "k-prev-fail",
       customerId: "c-1",
       consultantId: "k-1",
@@ -224,6 +242,7 @@ Deno.test("sendText replays prior failed result without re-sending", async () =>
 });
 
 Deno.test("sendText replays prior 'sent' result without re-sending", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   const fake = makeFakeSupabase();
   fake.rows.set("k-prev-ok", {
     idempotency_key: "k-prev-ok",
@@ -246,7 +265,7 @@ Deno.test("sendText replays prior 'sent' result without re-sending", async () =>
       "key-x",
       "inst-1",
     );
-    const r = await sender.sendText("+5511@s.whatsapp.net", "oii", {
+    const r = await sender.sendText("5511999887766@s.whatsapp.net", "oii", {
       idempotencyKey: "k-prev-ok",
       customerId: "c-1",
       consultantId: "k-1",
@@ -261,6 +280,7 @@ Deno.test("sendText replays prior 'sent' result without re-sending", async () =>
 });
 
 Deno.test("sendText with idempotency missing supabase still sends (fail-open)", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   const sendCalls: FetchInvocation[] = [];
   const spy = installFetchSpy((call) => {
     if (call.url.includes("/message/sendText/")) sendCalls.push(call);
@@ -273,14 +293,14 @@ Deno.test("sendText with idempotency missing supabase still sends (fail-open)", 
       "key-x",
       "inst-1",
     );
-    const r1 = await sender.sendText("+5511@s.whatsapp.net", "oii", {
+    const r1 = await sender.sendText("5511999887766@s.whatsapp.net", "oii", {
       idempotencyKey: "k1",
       customerId: "c-1",
       consultantId: "k-1",
       payloadHash: "p-1",
       // supabase omitted → idempotency disabled
     });
-    const r2 = await sender.sendText("+5511@s.whatsapp.net", "oii", {
+    const r2 = await sender.sendText("5511999887766@s.whatsapp.net", "oii", {
       idempotencyKey: "k1",
       customerId: "c-1",
       consultantId: "k-1",
@@ -308,11 +328,13 @@ Deno.test("sendText with idempotency missing supabase still sends (fail-open)", 
  * these writes so the property holds.
  */
 Deno.test("PBT: N concurrent sendText calls with same key → one fetch", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   await fc.assert(
     fc.asyncProperty(
       fc.string({ minLength: 1, maxLength: 32 }),
       fc.integer({ min: 2, max: 8 }),
       async (key, n) => {
+        _clearWhatsAppChatIdMemoryCacheForTests();
         const fake = makeFakeSupabase();
         const sendCalls: FetchInvocation[] = [];
         const spy = installFetchSpy((call) => {
@@ -335,7 +357,7 @@ Deno.test("PBT: N concurrent sendText calls with same key → one fetch", async 
           };
           const promises = Array.from(
             { length: n },
-            () => sender.sendText("+5511@s.whatsapp.net", "oii", idem),
+            () => sender.sendText("5511999887766@s.whatsapp.net", "oii", idem),
           );
           const results = await Promise.all(promises);
           // All should report success (one truly sent, the rest replayed).
@@ -360,11 +382,13 @@ Deno.test("PBT: N concurrent sendText calls with same key → one fetch", async 
  * generate distinct keys and both reach Evolution.
  */
 Deno.test("PBT: distinct logical turns generate distinct keys → both reach fetch", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
   await fc.assert(
     fc.asyncProperty(
       fc.string({ minLength: 1, maxLength: 40 }),
       fc.string({ minLength: 1, maxLength: 40 }),
       async (textA, textB) => {
+        _clearWhatsAppChatIdMemoryCacheForTests();
         if (textA === textB) return true; // not a real diff
 
         const fake = makeFakeSupabase();
@@ -398,11 +422,11 @@ Deno.test("PBT: distinct logical turns generate distinct keys → both reach fet
             content: textB,
             minuteBucket: 1,
           });
-          await sender.sendText("+5511@s.whatsapp.net", textA, {
+          await sender.sendText("5511999887766@s.whatsapp.net", textA, {
             ...baseCtx,
             idempotencyKey: keyA,
           });
-          await sender.sendText("+5511@s.whatsapp.net", textB, {
+          await sender.sendText("5511999887766@s.whatsapp.net", textB, {
             ...baseCtx,
             idempotencyKey: keyB,
           });

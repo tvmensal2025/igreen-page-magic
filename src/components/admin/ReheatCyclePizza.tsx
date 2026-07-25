@@ -1345,7 +1345,8 @@ type ToggleRow = { key: string; enabled: boolean };
 type Settings = {
   enabled: boolean;
   live_dispatch_enabled: boolean;
-  daily_whapi_cap: number;
+  /** Cap canônico do Grupo B (espelha em daily_whapi_cap no save). */
+  cap_b: number;
   priority_queue: "A_then_B" | "B_then_A" | "A_only" | "B_only";
 };
 
@@ -1665,11 +1666,17 @@ export function ReheatCyclePizza({
     if (!admin) return;
     const { data: s } = await (supabase as any)
       .from("daily_reheat_settings")
-      .select("enabled, live_dispatch_enabled, daily_whapi_cap, priority_queue")
+      .select("enabled, live_dispatch_enabled, cap_b, daily_whapi_cap, priority_queue")
       .eq("id", "global")
       .maybeSingle();
     if (s) {
-      setSettings(s as Settings);
+      const capB = Number(s.cap_b ?? s.daily_whapi_cap ?? 150);
+      setSettings({
+        enabled: !!s.enabled,
+        live_dispatch_enabled: !!s.live_dispatch_enabled,
+        cap_b: Number.isFinite(capB) ? capB : 150,
+        priority_queue: (s.priority_queue as Settings["priority_queue"]) || "A_then_B",
+      });
       setToggleReheat(!!s.enabled);
       setToggleLive(!!s.live_dispatch_enabled);
     }
@@ -1739,9 +1746,18 @@ export function ReheatCyclePizza({
   const saveSettings = async (patch: Partial<Settings>) => {
     setSavingKey("settings");
     try {
+      const dbPatch: Record<string, unknown> = {
+        ...patch,
+        updated_at: new Date().toISOString(),
+      };
+      // Cap canônico B + espelho legado (daily-reheat ainda lê daily_whapi_cap).
+      if (patch.cap_b != null) {
+        dbPatch.cap_b = patch.cap_b;
+        dbPatch.daily_whapi_cap = patch.cap_b;
+      }
       await (supabase as any)
         .from("daily_reheat_settings")
-        .update({ ...patch, updated_at: new Date().toISOString() })
+        .update(dbPatch)
         .eq("id", "global");
       setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
       if (patch.live_dispatch_enabled != null) setToggleLive(!!patch.live_dispatch_enabled);
@@ -1877,14 +1893,14 @@ export function ReheatCyclePizza({
           </label>
           <div className="flex items-center gap-2 text-xs">
             <div className="flex flex-col gap-1">
-              <Label className="text-[10px] text-muted-foreground">Cap frio (B)/dia</Label>
+              <Label className="text-[10px] text-muted-foreground">Cap B (frio)/dia</Label>
               <Input
                 type="number"
                 min={10}
-                max={200}
-                value={settings.daily_whapi_cap}
-                onChange={(e) => setSettings((prev) => prev ? { ...prev, daily_whapi_cap: Number(e.target.value) || 60 } : prev)}
-                onBlur={() => void saveSettings({ daily_whapi_cap: Math.min(200, Math.max(10, settings.daily_whapi_cap || 60)) })}
+                max={500}
+                value={settings.cap_b}
+                onChange={(e) => setSettings((prev) => prev ? { ...prev, cap_b: Number(e.target.value) || 150 } : prev)}
+                onBlur={() => void saveSettings({ cap_b: Math.min(500, Math.max(10, settings.cap_b || 150)) })}
                 className="h-8 w-24"
               />
             </div>

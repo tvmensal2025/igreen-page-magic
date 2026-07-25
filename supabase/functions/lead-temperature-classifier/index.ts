@@ -15,10 +15,12 @@ import {
   VALID_SHORTCUTS,
 } from "../_shared/conversion/phrase-catalog.ts";
 import { isLeadClassifiable } from "./origin-guard.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -320,21 +322,80 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
     const sb = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+    // Temperatura só com consultor/admin logado na plataforma (Sync / Central).
+    // Sem JWT → 401. Cron anônimo / global público → bloqueado.
+    const caller = await resolveCaller(req, sb);
+    if (caller instanceof Response) return caller;
+    if (caller.mode !== "jwt") {
+      return new Response(JSON.stringify({ error: "forbidden", reason: "session_required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: me } = await sb
+      .from("consultants")
+      .select("id, approved")
+      .eq("id", caller.consultantId)
+      .maybeSingle();
+    if (!me || me.approved !== true) {
+      return new Response(JSON.stringify({ error: "forbidden", reason: "consultant_inactive" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const body = await req.json().catch(() => ({}));
     const forceAi = body.force_ai === true;
 
     let ids: string[] = [];
-    if (body.customer_id) ids = [body.customer_id];
-    else if (Array.isArray(body.customer_ids)) ids = body.customer_ids.slice(0, 25);
-    else if (body.consultant_id && (body.scope === "stale_24h" || body.scope === "all_unclassified")) {
+    if (body.customer_id) {
+      const deny = await assertOwnership(caller, { customerId: String(body.customer_id) }, sb);
+      if (deny) return deny;
+      ids = [body.customer_id];
+    } else if (Array.isArray(body.customer_ids)) {
+      const limited = body.customer_ids.slice(0, 25).map(String);
+      for (const cid of limited) {
+        const deny = await assertOwnership(caller, { customerId: cid }, sb);
+        if (deny) return deny;
+      }
+      ids = limited;
+    } else if (body.scope === "needs_reclassify_global") {
+      // Global só admin/super_admin logado (nunca cron anônimo).
+      if (!caller.isAdmin) {
+        return new Response(JSON.stringify({ error: "forbidden", reason: "admin_required" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const limit = Math.min(Number(body.limit) || 100, 200);
+      const { data } = await sb
+        .from("lead_insights")
+        .select("customer_id, customers!inner(customer_origin)")
+        .eq("needs_reclassify", true)
+        .neq("customers.customer_origin", "igreen_sync")
+        .order("updated_at", { ascending: true })
+        .limit(limit);
+      ids = (data ?? []).map((r: any) => r.customer_id);
+    } else {
+      // Sync / Central sem body: classifica a carteira do consultor logado.
+      const scope = body.scope === "all_unclassified" ? "all_unclassified" : "stale_24h";
+      let consultantId = String(body.consultant_id || caller.consultantId);
+      if (!caller.isAdmin) consultantId = caller.consultantId;
+      else {
+        const deny = await assertOwnership(caller, { consultantId }, sb);
+        if (deny) return deny;
+      }
+
       const { data } = await sb
         .from("customers")
         .select("id, lead_insights(classified_at, needs_reclassify)")
-        .eq("consultant_id", body.consultant_id)
+        .eq("consultant_id", consultantId)
         .neq("customer_origin", "igreen_sync")
         .limit(1000);
       const cutoff = Date.now() - 24 * 3600 * 1000;
-      const onlyUnclassified = body.scope === "all_unclassified";
+      const onlyUnclassified = scope === "all_unclassified";
       ids = (data ?? [])
         .filter((c: any) => {
           const li = c.lead_insights;
@@ -347,22 +408,6 @@ Deno.serve(async (req) => {
         })
         .map((c: any) => c.id)
         .slice(0, 25);
-    } else if (body.scope === "needs_reclassify_global") {
-      // Cron diário leve: varre leads marcados needs_reclassify=true em TODOS os
-      // consultores. Seguro porque o caminho rules custa 0 tokens; AI lite só
-      // entra em casos ambíguos. Rede de segurança — o uso real é coberto pela
-      // classificação sob demanda (abertura da Central + envio).
-      // Inner join com customers excluindo igreen_sync: carteira validada não
-      // entra em temperatura, e isso evita repescar resíduo em loop ocioso.
-      const limit = Math.min(Number(body.limit) || 100, 200);
-      const { data } = await sb
-        .from("lead_insights")
-        .select("customer_id, customers!inner(customer_origin)")
-        .eq("needs_reclassify", true)
-        .neq("customers.customer_origin", "igreen_sync")
-        .order("updated_at", { ascending: true })
-        .limit(limit);
-      ids = (data ?? []).map((r: any) => r.customer_id);
     }
 
     if (ids.length === 0) {

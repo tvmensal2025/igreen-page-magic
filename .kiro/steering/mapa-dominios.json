@@ -780,7 +780,7 @@
     },
     {
       "path": "supabase/functions/cadence-tick/index.ts",
-      "lines": 1518
+      "lines": 1696
     }
   ],
   "pack_stats": {

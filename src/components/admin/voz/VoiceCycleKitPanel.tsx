@@ -183,7 +183,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
       supabase.from("automation_toggles").select("enabled").eq("key", "daily_reheat").maybeSingle(),
       (supabase as any)
         .from("daily_reheat_settings")
-        .select("enabled, live_dispatch_enabled, daily_whapi_cap")
+        .select("enabled, live_dispatch_enabled, cap_b, daily_whapi_cap")
         .eq("id", "global")
         .maybeSingle(),
     ]);
@@ -211,13 +211,14 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
     const s = settingsRes.data as {
       enabled?: boolean;
       live_dispatch_enabled?: boolean;
+      cap_b?: number;
       daily_whapi_cap?: number;
     } | null;
     setGates({
       toggle: !!(toggleRes.data as { enabled?: boolean } | null)?.enabled,
       enabled: !!s?.enabled,
       live: !!s?.live_dispatch_enabled,
-      cap: Number(s?.daily_whapi_cap ?? 60),
+      cap: Number(s?.cap_b ?? s?.daily_whapi_cap ?? 150),
     });
     setLoading(false);
   }, [consultantId]);

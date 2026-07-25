@@ -1,13 +1,15 @@
-// Auto-rollout do Flow Engine V3
-// Roda a cada 6h via pg_cron. Avalia gates por consultor e avança
-// off → dark → canary → on (ou rollback) automaticamente.
+// Rollout do Flow Engine V3 — SOMENTE MANUAL (humano logado na plataforma).
+// Nunca promove flags por pg_cron / chamada anônima. SuperAdmin clica
+// "Rodar agora" no RolloutPanel; a sessão JWT + source=manual autoriza.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { notifyConsultant } from "../_shared/notify-consultant.ts";
 import { captureError } from "../_shared/audit.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 type Flag = "off" | "dark" | "canary" | "on";
@@ -44,6 +46,33 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     { auth: { persistSession: false } },
   );
+
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const source = String(body?.source || "").trim().toLowerCase();
+
+  // Freio duro: cron/anônimo nunca promove. Só clique manual na UI.
+  if (source !== "manual" && source !== "ui" && source !== "sync") {
+    return new Response(
+      JSON.stringify({
+        skipped: "manual_only",
+        reason: "V3 só avança com humano logado (Rodar agora / Sync). Cron ignorado.",
+        source: source || null,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  const caller = await resolveCaller(req, admin);
+  if (caller instanceof Response) return caller;
+  if (caller.mode !== "jwt" || !caller.isAdmin) {
+    return new Response(
+      JSON.stringify({
+        error: "forbidden",
+        reason: "rollout_requires_admin_session",
+      }),
+      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
 
   // ─── carrega config ─────────────────────────────────────────
   const { data: cfgRow } = await admin
@@ -134,6 +163,8 @@ Deno.serve(async (req) => {
       total_approved: totalApproved,
       canary_cap: canaryCap,
       decisions,
+      triggered_by: caller.consultantId,
+      source,
     }),
     { headers: { ...corsHeaders, "Content-Type": "application/json" } },
   );

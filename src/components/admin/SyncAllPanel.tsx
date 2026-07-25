@@ -28,7 +28,7 @@ const TASKS: Task[] = [
   { key: "cpl-watchdog", label: "Analisar variação de CPL", fn: "ai-cpl-watchdog" },
   { key: "ad-learner", label: "Aprender com criativos (30 dias)", fn: "ad-creative-learner" },
   { key: "ai-feedback", label: "Consolidar feedbacks da IA", fn: "ai-learn-feedback" },
-  { key: "classifier", label: "Classificar temperatura dos leads", fn: "lead-temperature-classifier" },
+  { key: "classifier", label: "Classificar temperatura dos leads", fn: "lead-temperature-classifier", body: { scope: "stale_24h", source: "sync" } },
   { key: "followup", label: "Processar follow-ups pendentes", fn: "bot-followup-checker" },
   { key: "stuck", label: "Resgatar leads parados", fn: "bot-stuck-recovery" },
   { key: "instance", label: "Checar saúde das instâncias WhatsApp", fn: "instance-health-cron" },

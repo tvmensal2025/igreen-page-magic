@@ -81,7 +81,8 @@ const EVOLUTION: MarcadoresWebhook = {
   cerebroCall: "await responderComCerebro({",
   cerebroGate: "if (_cerebroRespondeu) {",
   cerebroReturn: 'mode: "cerebro"',
-  vendedoraExec: 'const result = engine === "flow"',
+  // Paridade Whapi: dispatch legado via runEngine() após o early-return do Cérebro.
+  vendedoraExec: "const result = await runEngine()",
 };
 
 const WHAPI: MarcadoresWebhook = {

@@ -14,7 +14,13 @@
 // Roda a cada 1 minuto.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
+};
 
 const TIMEOUT_MS = 60 * 1000;
 
@@ -26,6 +32,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    const cronAuth = await assertCronAuth(req, supabase as any);
+    if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     const cutoff = new Date(Date.now() - TIMEOUT_MS).toISOString();
 

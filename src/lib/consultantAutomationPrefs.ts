@@ -24,8 +24,13 @@ export const DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs
   acked_at: null,
 };
 
-/** Padrão da UI (Configurações / modal): tudo ligado. Engines sem row continuam fail-closed. */
+/** Padrão da UI e do motor: sem row = tudo OFF (fail-closed). */
 export const UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs, "consultant_id"> = {
+  ...DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+};
+
+/** Sugestão só no 1º ack do modal (usuário escolhe antes de gravar). */
+export const SUGGESTED_FIRST_ACK_PREFS: Omit<ConsultantAutomationPrefs, "consultant_id"> = {
   group_a_enabled: true,
   group_b_enabled: true,
   group_c_enabled: true,

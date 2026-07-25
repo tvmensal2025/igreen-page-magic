@@ -5,6 +5,7 @@
 
 import { firstStep, stepDef, type CycleQueue } from "./cycle.ts";
 import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
+import { isCrmCadastroEmAnalise } from "../crm-vs-lead-analysis.ts";
 import {
   isConsultantAutoAllowed,
   preloadConsultantAutomationPrefs,
@@ -124,7 +125,10 @@ export async function loadDailyReheatSettings(supabase: SB): Promise<DailyReheat
     id: "global",
     enabled: !!(data as any)?.enabled,
     live_dispatch_enabled: !!(data as any)?.live_dispatch_enabled,
-    daily_whapi_cap: Number((data as any)?.daily_whapi_cap ?? 60),
+    // Caps canônicos: cap_b (B) manda; daily_whapi_cap é legado espelhado.
+    daily_whapi_cap: Number(
+      (data as any)?.cap_b ?? (data as any)?.daily_whapi_cap ?? 150,
+    ),
     queue_a_wait_minutes: Number((data as any)?.queue_a_wait_minutes ?? 5),
     queue_a_silence_hours: Number((data as any)?.queue_a_silence_hours ?? 2),
     cooldown_hours: Number((data as any)?.cooldown_hours ?? 72),
@@ -150,6 +154,7 @@ function baseGuards(c: any): string[] {
   if (c.bot_paused) g.push("bot_paused");
   if (c.assigned_human_id) g.push("assigned_human");
   if (c.do_not_contact) g.push("do_not_contact");
+  if (isCrmCadastroEmAnalise(c)) g.push("crm_cadastro_em_analise");
   if (TERMINAL_STEPS.has(c.conversation_step || "")) g.push("terminal_step");
   if (c.capture_mode === "manual") g.push("capture_manual");
   // Já no A1–A11 / flow:* — não abrir protocolo nem ciclar ligação/SMS por cima.
@@ -190,7 +195,7 @@ export async function planDailyReheat(
   let qA = supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
+      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
     )
     .lte("created_at", novoCutoff)
     .gte("created_at", novoLookback)
@@ -204,7 +209,7 @@ export async function planDailyReheat(
   let qB = supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
+      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
     )
     .lte("created_at", coldBefore)
     .eq("bot_paused", false)

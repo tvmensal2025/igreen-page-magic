@@ -334,3 +334,29 @@ verify_jwt = false
 [functions.super-admin-alerts]
 verify_jwt = false
 
+# Crons “laranja” (antes herdavam verify_jwt=true e morriam no gateway).
+# Auth real: assertCronAuth + headers x-internal/x-service no pg_cron.
+[functions.minio-quota-check]
+verify_jwt = false
+
+[functions.instance-health-cron]
+verify_jwt = false
+
+[functions.ocr-review-timeout]
+verify_jwt = false
+
+[functions.pos-venda-bucket-cron]
+verify_jwt = false
+
+[functions.flow-d-health-cron]
+verify_jwt = false
+
+[functions.ai-cpl-watchdog]
+verify_jwt = false
+
+[functions.ai-daily-digest]
+verify_jwt = false
+
+[functions.crm-auto-progress]
+verify_jwt = false
+

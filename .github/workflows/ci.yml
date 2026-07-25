@@ -139,7 +139,12 @@ jobs:
             supabase/functions/_shared/whapi-api_inbound_meta_test.ts \
             supabase/functions/_shared/channels/idempotency-from-ctx_test.ts \
             supabase/functions/_shared/channels/adapter-idempotency_test.ts \
-            supabase/functions/_shared/__tests__/config-toml-webhook-guard_test.ts
+            supabase/functions/_shared/__tests__/config-toml-webhook-guard_test.ts \
+            supabase/functions/_shared/cerebro/__tests__/um-caminho-conversacional.property1.test.ts \
+            supabase/functions/_shared/evolution-api_idempotency_test.ts \
+            supabase/functions/_shared/cadence-hooks_test.ts \
+            supabase/functions/_shared/__tests__/cliente-cadence-guard_test.ts \
+            supabase/functions/_shared/__tests__/crm-vs-lead-analysis_test.ts
 
   engine-purity-check:
     name: Engine purity lint (v3-runner.ts)

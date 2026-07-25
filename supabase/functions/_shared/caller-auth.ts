@@ -122,6 +122,16 @@ export async function resolveCaller(
         } catch {
           isAdmin = false;
         }
+        if (!isAdmin) {
+          try {
+            const { data: sa } = await admin.rpc("is_super_admin", {
+              _user_id: user.id,
+            });
+            isAdmin = sa === true;
+          } catch {
+            /* keep false */
+          }
+        }
         return { mode: "jwt", consultantId: user.id, isAdmin };
       }
     }

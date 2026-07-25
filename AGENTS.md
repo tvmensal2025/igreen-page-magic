@@ -37,6 +37,7 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 | “IA parou / OCR / Easy Panel / Supabase não abre” | `#erros-operacionais` (+ `#wa-webhook` / `#portal2-fluxo-canonico` / `#deploy`) |
 | “me avisa quando falhar / alerta WhatsApp” | `#erros-operacionais` §0b · edge `super-admin-alerts` · `_shared/superadmin-alert.ts` |
 | “auditoria final Opus / varredura completa plataforma” | `#auditoria-final-opus` · `.cursor/commands/auditoria-final-plataforma.md` · `docs/PROMPT-AUDITORIA-FINAL-OPUS.md` |
+| “auditoria design / cores / botões / velocidade / Web Vitals” | `#auditoria-design-velocidade` · `.cursor/commands/auditoria-design-velocidade.md` · `docs/PROMPT-AUDITORIA-DESIGN-VELOCIDADE-OPUS.md` |
 | “mude texto/áudio da cadência B ou C” | `#fluxos` `#helpers-canonicos` + `src/lib/multichannelCadenceTexts.ts` |
 | “webhook Whapi / Evolution / dedupe / ACK” | `#wa-webhook` |
 | “Sofia / Cérebro / Fluxo B / simulador” | `#cerebro-fluxo-b` |
@@ -119,6 +120,8 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 | `mapa-dominios.json` | manual | Inventário máquina-legível domínio→código→steering |
 | `EVIDENCIA-PROD` | manual | Snapshot prod + advisors (números auditados) |
 | `AUDITORIA-STEERING` | manual | Histórico de rounds do pack |
+| `auditoria-final-opus` | manual | Prompt auditoria final completa (Opus/Kiro) — `#auditoria-final-opus` |
+| `auditoria-design-velocidade` | manual | Prompt design+velocidade UI (Opus/Kiro) — `#auditoria-design-velocidade` |
 | `nomes-e-tema` | auto | Naming e tema dual light/dark |
 | `convencoes` | auto | TS strict, erros, auth, CORS, UI |
 | `rotas-ui` | auto | Rotas React Router e páginas |

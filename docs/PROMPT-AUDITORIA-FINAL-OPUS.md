@@ -12,8 +12,9 @@ Texto opcional após o comando = foco extra (ex.: `/auditoria-final-plataforma s
 1. Abra o workspace `igreen-official-portal` (repo `igreen-page-magic`).
 2. Cole o bloco **PROMPT** abaixo inteiro.
 3. Modelo: **Opus 5 Max** (ou equivalente high/max thinking).
-4. Peça subagentes em paralelo por domínio se o Kiro permitir.
-5. Entrega obrigatória: relatório único com GO/NO-GO e evidências.
+4. **MCPs obrigatórios** (ligar/auth se `needsAuth`): Supabase · Context7 · Analyzer · Playwright/Browser · Velip (só read/health, sem envio).
+5. Peça subagentes em paralelo por domínio se o Kiro permitir.
+6. Entrega obrigatória: relatório único com GO/NO-GO + evidências MCP.
 
 Arquivo canônico (mesma cópia): `docs/PROMPT-AUDITORIA-FINAL-OPUS.md`
 
@@ -49,6 +50,125 @@ A) MODO E RESTRIÇÕES (INVIOLÁVEIS)
 - Prefs consultor: sem row / pack OFF = skip daquele consultor (`consultant_automation_prefs`).
 
 ═══════════════════════════════════════════════════════════════════════════════
+A2) TOOLKIT MCP OBRIGATÓRIO (NÃO AUDITAR SÓ COM CÓDIGO)
+═══════════════════════════════════════════════════════════════════════════════
+
+Antes de concluir qualquer FASE, use os MCPs abaixo. Se um server estiver
+`needsAuth` / `error` / `loading`: chame `mcp_auth` (quando existir), re-inspete,
+e se continuar indisponível declare **LIMITAÇÃO MCP: <server>** no relatório —
+não invente números.
+
+### 1) Supabase MCP (fonte da verdade de PROD)
+Server típico: `project-0-igreen-official-portal-supabase`
+
+Ferramentas READ (usar):
+- `execute_sql` — contagens, flags, skips, crons, métricas, samples
+- `get_advisors` — security + performance (não “consertar” DEFINER intencional)
+- `get_logs` — `edge-function` / `postgres` / `auth` / `api` nas últimas 24h
+- `list_edge_functions` · `get_edge_function` — existência/versão de edges críticas
+- `list_tables` · `list_migrations` · `list_extensions` — schema drift
+- `get_project_url` — sanity do projeto
+
+PROIBIDO neste audit: `apply_migration`, `deploy_edge_function`, `create_branch`,
+`merge_branch`, `delete_branch`, `reset_branch`, mutações DML via SQL
+(UPDATE/DELETE/INSERT), qualquer alteração de secrets.
+
+SQL mínimo obrigatório (rodar e colar números no relatório):
+1. app_settings (bot_global, cadence_engine, super_admin_phone preenchido?)
+2. daily_reheat_settings (enabled, live_dispatch, caps)
+3. Contagens: customers; lead_cadence_state GROUP BY stage; do_not_contact; pos_venda
+4. automation_skip_log top 20 keys / 7d
+5. voice_call_logs + voice_sms_log por status / 7d
+6. cron.job WHERE active (jobname, schedule) — destacar * / */5 / */15
+7. infra_metrics ops_alert/minio_alert últimas 48h
+8. sync_audit_traces + portal2_audit_traces counts
+9. customers status worker_offline / portal_submitting últimas 24h
+10. Advisors: listar ERROR + WARN relevantes (segurança)
+
+### 2) Context7 MCP (docs oficiais, não memória de modelo)
+Servers: `project-0-igreen-official-portal-context7` e/ou `plugin-context7-plugin-context7`
+
+Fluxo: `resolve-library-id` → `query-docs`.
+
+Consultar obrigatoriamente quando o finding tocar nestes temas:
+- Supabase Edge Functions / JWT / verify_jwt / CORS / pg_cron / RLS / SECURITY DEFINER
+- Meta Marketing API (insights action_types, CAPI)
+- Whapi / WhatsApp Cloud patterns (se lib documentada)
+- Stripe webhooks idempotência
+- Playwright / Deno deploy nuances
+- BullMQ / Redis connection pitfalls
+
+NÃO use Context7 para inventar regra de negócio iGreen — negócio = steering + código.
+
+### 3) Analyzer MCP (qualidade estática)
+Server: `project-0-igreen-official-portal-analyzer`
+
+Usar (read/lint only):
+- `biome-check` em hotspots TS: `src/App.tsx`, `src/pages/Admin.tsx`,
+  `src/lib/crmVsLeadAnalysis.ts`, `src/lib/clienteCadenceGuard.ts`,
+  pastas `src/components/whatsapp/`, `src/components/captacao/`
+- `analyze-code` / `biome-check` em samples de edges se o analyzer aceitar path Deno
+- NÃO rodar formatadores que escrevem disco (`biome-format`, `ruff-format`) nesta auditoria
+
+Reportar: erros reais P0/P1; ignorar noise de estilo P3.
+
+### 4) Browser / Playwright MCP (UI de fora a dentro)
+Servers: `cursor-ide-browser` e/ou `project-0-igreen-official-portal-playwright`
+
+Objetivo: smoke visual READ-ONLY das superfícies do consultor (se houver URL/login
+de staging ou sessão já autenticada pelo humano).
+
+Ordem sugerida de páginas (snapshot, sem preencher lead real):
+1. `/auth` (só carrega?)
+2. `/admin` Dashboard
+3. Aba WhatsApp / CRM Lead / CRM ou Clientes iGreen / Pós-venda
+4. Motor cadência / Reaquecimento / Agendamentos
+5. Meta Ads / Voz
+6. `/super-admin` (kill switch visível?) se role permitir
+
+Regras:
+- Sem enviar mensagem, sem criar campanha, sem clicar “disparar”.
+- Se pedir login e não houver credencial: LIMITAÇÃO UI — continue por código.
+- Preferir `browser_snapshot` a screenshot para estrutura; screenshot só se bug visual.
+
+### 5) Velip MCP (voz/SMS) — SÓ DIAGNÓSTICO
+Server: `project-0-igreen-official-portal-velip`
+
+PERMITIDO: `get_call_status`, `get_tts_voices`, `get_wa_lines`, `get_wa_templates`,
+`get_campaigns_list` (leitura).
+
+PROIBIDO nesta auditoria: `send_sms`, `make_tts_call`, `send_whatsapp`,
+`create_campaign`, `clone_campaign`, `change_campaign`, `create_destination_base`,
+qualquer envio real.
+
+Cruzar com SQL `voice_*` + `#voz-sms` + `#erros-operacionais` §1 (crédito sem saldo na API).
+
+### 6) Shell / health HTTP (complemento)
+Além de MCP, curl READ-ONLY:
+- Portal2: `…/health` → ok, queue=redis-bullmq, ai_audit
+- Sync: `…/health` → ok, egress, ai_audit.healthy
+- NÃO bater POST /sync-all, /submit-lead, webhooks.
+
+### Matriz MCP × FASE (mínimo)
+| FASE | MCP mínimo |
+|---|---|
+| 0 Auth/SuperAdmin | Supabase advisors + logs auth; Browser /super-admin |
+| 1 Dashboard | Browser snapshot; SQL contagens pizza |
+| 2 WhatsApp | Supabase logs whapi-webhook; SQL dedup/outbound |
+| 3 CRM Lead / Portal | SQL portal steps; curl Portal2 health; Context7 se JWT |
+| 4 Sync / Pós-venda | curl Sync health; SQL sync_audit / pos_venda |
+| 5 Cadência | SQL skips + cadence stages; logs cadence-tick |
+| 6 Agenda | SQL scheduled; logs send-scheduled |
+| 7 Voz/SMS | SQL voice_*; Velip get_* read-only |
+| 8 Ads/Cérebro | SQL campaigns; Context7 Meta insights; NÃO mutar |
+| 9 Wallet | SQL wallet; Context7 Stripe se dúvida webhook |
+| 12 Infra/Crons | SQL cron.job; infra_metrics; advisors perf |
+| 13 Segurança | get_advisors; Analyzer biome hotspots |
+| 14 Frontend | Browser + Analyzer biome-check |
+
+Se pular um MCP obrigatório da matriz sem declarar LIMITAÇÃO → auditoria incompleta.
+
+═══════════════════════════════════════════════════════════════════════════════
 B) FONTES OBRIGATÓRIAS (LER ANTES DE CONCLUIR QUALQUER DOMÍNIO)
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -58,8 +178,11 @@ Ordem de carga (não pular):
 3. `.kiro/steering/regras-duras.md` + `armadilhas.md` + `erros-operacionais.md`
 4. `.kiro/steering/product.md` + `tech.md` + `structure.md` + `EVIDENCIA-PROD.md` (se existir)
 5. Por domínio: steering da tabela abaixo + nested `AGENTS.md` se houver
-6. Evidência prod: Supabase MCP (`execute_sql`, `get_advisors`, `list_edge_functions`, logs) quando disponível
+6. Evidência prod: **Supabase MCP obrigatório** (ver seção A2) — não confiar só em EVIDENCIA-PROD.md
 7. Specs antigas: `.kiro/specs/STATUS.md` — várias são Evolution-first / archived; NÃO seguir como verdade
+8. Docs de lib/API: **Context7** (não treino do modelo)
+9. Lint/hotspots: **Analyzer biome-check**
+10. UI: **Browser/Playwright** smoke read-only se login disponível
 
 Helpers canônicos (NÃO reimplementar na análise — cite se forem violados):
 - `src/lib/crmVsLeadAnalysis.ts` / `_shared` equivalentes
@@ -199,10 +322,10 @@ Para cada sintoma: causa canônica + onde olhar + se ainda existe no código/pro
 20. Club misturado com Portal2
 
 ═══════════════════════════════════════════════════════════════════════════════
-E) EVIDÊNCIA PROD (OBRIGATÓRIA SE MCP/SQL DISPONÍVEL)
+E) EVIDÊNCIA PROD (OBRIGATÓRIA — VIA MCP SUPABASE + HEALTH)
 ═══════════════════════════════════════════════════════════════════════════════
 
-Rodar / reportar (números reais, não memória):
+Rodar / reportar (números reais via `execute_sql` / `get_advisors` / curl health):
 - `app_settings`: bot_global, cadence_engine, super_admin_phone
 - `daily_reheat_settings`: enabled, live_dispatch, caps
 - Contagens: customers, lead_cadence_state por stage, pos_venda, do_not_contact
@@ -213,19 +336,27 @@ Rodar / reportar (números reais, não memória):
 - `sync_audit_traces` / `portal2_audit_traces` counts
 - Health HTTP: portal2 `/health`, sync `/health` (ai_audit, queue, egress)
 - `get_advisors` security ERROR/WARN (não “consertar” DEFINER intencional)
-- Edges críticas: updated_at / existência (whapi-webhook, cadence-tick, super-admin-alerts, sync-ai-audit)
+- Edges críticas: `list_edge_functions` / logs (whapi-webhook, cadence-tick, super-admin-alerts, sync-ai-audit)
+- Analyzer: resumo biome-check hotspots
+- Context7: lista das libs consultadas (id + pergunta)
+- Browser: páginas visitadas ou LIMITAÇÃO login
+- Velip: só se usou get_* read-only (nunca send_*)
 
-Se MCP indisponível: declare LIMITAÇÃO e continue só com código.
+Se algum MCP indisponível: declare LIMITAÇÃO MCP e continue — mas marque o veredito
+como incompleto se Supabase MCP falhar (sem prod = sem GO pleno).
 
 ═══════════════════════════════════════════════════════════════════════════════
-F) MÉTODO DE TRABALHO (OPUS MAX)
+F) MÉTODO DE TRABALHO (OPUS MAX + MCP)
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. Explore com subagentes em paralelo por FASE (UI, WA, CRM, Sync/PV, Cadência, Ads, Voz, Infra/Sec).
-2. Cada finding: severidade · domínio · sintoma · evidência (path:linha ou SQL) · impacto prod · recomendação (sem implementar).
-3. Severidades: P0 (perda dinheiro/envio errado/segurança) · P1 (quebra jornada) · P2 (risco/ops) · P3 (dívida/doc).
-4. Não proponha “ligar autonomia Ads / massa / novo motor” sem pedido explícito do humano.
-5. Se doc e código divergem: marque DOC_DRIFT e diga qual dos dois parece verdade (com âncora).
+1. Boot: listar MCP servers disponíveis/status; auth se needsAuth; falhas → LIMITAÇÃO.
+2. Parallel: subagentes por FASE + MCP Supabase (SQL batch) + Analyzer (biome) + Context7 (libs).
+3. UI: Browser/Playwright smoke read-only (se possível) cruzando com SQL.
+4. Cada finding: severidade · domínio · sintoma · evidência (path:linha **ou** SQL/MCP) · impacto · ação (sem implementar).
+5. Severidades: P0 (dinheiro/envio/segurança) · P1 (jornada) · P2 (ops) · P3 (dívida/doc).
+6. Não propor ligar autonomia Ads / massa / novo motor sem pedido explícito.
+7. DOC_DRIFT: doc vs código vs **prod MCP** — qual dos três manda (com âncora).
+8. Antes do relatório: checklist da matriz MCP×FASE — o que faltou = incompleto.
 
 ═══════════════════════════════════════════════════════════════════════════════
 G) FORMATO DO RELATÓRIO FINAL (ÚNICO ARTEFATO)
@@ -246,22 +377,27 @@ Para cada: ID · título · domínio · evidência · impacto · ação sugerida
 
 ## 3. Checklist sintomas (20 itens) — status
 
-## 4. Evidência prod (números)
+## 4. Evidência prod (números) + MCPs usados
+Tabela: MCP server → tools usadas → ok/LIMITAÇÃO
+Números SQL + advisors + health workers + biome resumo + Context7 libs
 
 ## 5. Crons e carga
 Comentar se algum cron é perigoso/redundante; NÃO pedir remoção em massa sem critério
 
-## 6. Segurança / advisors
+## 6. Segurança / advisors (get_advisors)
 
 ## 7. Workers Easy Panel
 Portal2 · Sync · Club · Redis · MinIO · alertas WA
 
-## 8. DOC_DRIFT
+## 8. DOC_DRIFT (doc × código × prod MCP)
 
 ## 9. O que NÃO precisa mexer (lista explícita)
 
 ## 10. Próximos 7 dias (só se P0/P1)
 Máximo 5 itens, ordenados, sem scope creep
+
+## 11. Lacunas desta auditoria
+MCPs/UI/login que faltaram — impede GO pleno se Supabase MCP falhou
 
 Fim. Sem implementação nesta sessão.
 ```

@@ -534,16 +534,20 @@ export async function runZeroLeadAutoAudit(supabase: {
 
   const { data: reheat } = await supabase
     .from("daily_reheat_settings")
-    .select("daily_whapi_cap, live_dispatch_enabled")
+    .select("cap_b, cap_c, cap_global_outreach, daily_whapi_cap, live_dispatch_enabled")
     .limit(1)
     .maybeSingle();
 
-  const cap = Number(reheat?.daily_whapi_cap);
+  const capB = Number(reheat?.cap_b ?? reheat?.daily_whapi_cap);
+  const capC = Number(reheat?.cap_c);
+  const capG = Number(reheat?.cap_global_outreach);
   results.push({
-    key: "cap_60",
-    ok: cap === 60,
-    label: "Cap diário = 60",
-    detail: Number.isFinite(cap) ? `Atual: ${cap}` : "Sem daily_reheat_settings",
+    key: "caps_abc",
+    ok: Number.isFinite(capB) && capB > 0 && Number.isFinite(capC) && Number.isFinite(capG),
+    label: "Caps B/C/Global definidos",
+    detail: Number.isFinite(capB)
+      ? `B:${capB} · C:${capC || "?"} · Global:${capG || "?"}`
+      : "Sem daily_reheat_settings",
   });
 
   results.push({

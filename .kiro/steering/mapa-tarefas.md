@@ -24,6 +24,7 @@ Este arquivo existe para eliminar dúvida "onde mexo?". Se a tarefa está aqui, 
 | Site não abre / cron 401 / edge 500 | `#erros-operacionais` §4 + `#security-auth` `#deploy` |
 | Quero alerta WA quando falhar (sem eu lembrar) | edge `super-admin-alerts` + `_shared/superadmin-alert.ts` · `#erros-operacionais` §0b · `app_settings.super_admin_phone` |
 | Auditoria final completa (Opus/Kiro) | `#auditoria-final-opus` · `.cursor/commands/auditoria-final-plataforma.md` · `docs/PROMPT-AUDITORIA-FINAL-OPUS.md` |
+| Auditoria design + velocidade (cores, botões, páginas, Web Vitals) | `#auditoria-design-velocidade` · `.cursor/commands/auditoria-design-velocidade.md` · `docs/PROMPT-AUDITORIA-DESIGN-VELOCIDADE-OPUS.md` |
 
 ## WhatsApp (Whapi primário, Evolution legado)
 

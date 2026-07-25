@@ -123,7 +123,7 @@ opt_out 12 · requested 6 · auto_nonexistent 4 · auto_velip_ik 2 · complaint 
 7. multichannelCadenceTexts 2993
 8. sync-igreen-customers 2591
 9. AgendamentosHub 1912
-10. cadence-tick 1518
+10. cadence-tick 1696
 
 ## Fatos operacionais que a doc genérica erra se ignorar
 1. Pós-venda **não** usa `bot_global_enabled` — só `pos_venda_auto_messages` + `pos_venda_manual`
