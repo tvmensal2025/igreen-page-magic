@@ -2,8 +2,12 @@
 
 Branch: `hardening/cerebro-meta-ads` · base: `56a86aa1270197d7f41db220c91bac76706b47f2`
 
-Nada aqui foi aplicado. Sem deploy, sem migration remota, sem commit, sem push.
 Este documento é a ordem de execução quando você decidir subir.
+
+> **⚠️ As 4 migrations NÃO foram aplicadas.** Elas ficam para o Cursor aplicar via
+> MCP `apply_migration`. O passo a passo, o pré-requisito bloqueante e as consultas
+> de verificação estão em **`docs/ads-hardening-SQL-PENDENTE.md`**.
+> Nenhuma edge function foi deployada.
 
 ## Estado alvo
 

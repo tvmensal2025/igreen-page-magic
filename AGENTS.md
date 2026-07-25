@@ -81,6 +81,7 @@ Todos ficam em `.kiro/steering/`. `always` já vem carregado; `auto` é ativado 
 
 | Arquivo | Modo | Quando usar |
 |---|---|---|
+| `ads-sql-pendente` | always | **Temporário:** 4 migrations do hardening Ads commitadas e não aplicadas |
 | `regras-duras` | always | Regras invioláveis com sinônimos “FAÇA/NÃO FAÇA” |
 | `armadilhas` | always | Sintoma → correção; leia antes de “consertar” algo |
 | `product` | always | Personas, jornadas, o que o produto **não** é |

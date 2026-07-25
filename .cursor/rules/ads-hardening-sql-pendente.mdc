@@ -1,0 +1,35 @@
+---
+description: Hardening Ads — 4 migrations no repo AINDA NÃO aplicadas; aplicar antes de deployar as edges
+alwaysApply: true
+---
+# ⚠️ Hardening Ads: SQL pendente de aplicação
+
+As 4 migrations abaixo estão **commitadas mas NÃO aplicadas** em nenhum banco.
+Foram validadas apenas de forma estática (não havia Postgres no ambiente onde
+o código foi escrito).
+
+```
+supabase/migrations/20260724180000_ads_cron_auth_headers.sql
+supabase/migrations/20260724190000_ads_spend_idempotent_billing.sql
+supabase/migrations/20260724200000_ad_publish_saga.sql
+supabase/migrations/20260724210000_facebook_capi_outbox.sql
+```
+
+## Regras
+
+- **Aplicar via MCP Supabase `apply_migration`**, na ordem numérica acima
+  (migrations não passam pelo GitHub Actions — ver `deploy.md`).
+- **Migrations ANTES do deploy das edge functions.** As functions de Ads já
+  chamam `debit_campaign_spend_observation`, `claim_ad_publish_saga` e
+  `enqueue_facebook_capi_event`; deployar antes quebra essas chamadas.
+- **Pré-requisito da migration 1:** `settings.embed_internal_token` preenchido.
+  Ela aborta com erro explícito se estiver vazio — de propósito, porque sem o
+  segredo os crons de Ads passariam a tomar 401.
+- **Não ligar** o toggle `facebook_capi_dispatch` (nasce `false`) sem pedido
+  explícito do usuário.
+- **Não ligar** `ENFORCE_CRON_AUTH` antes de confirmar nos logs que os 7 crons
+  de Ads autenticaram.
+
+Passo a passo, consultas de verificação e riscos:
+`docs/ads-hardening-SQL-PENDENTE.md`.
+Deploy das functions e config por consultor: `docs/ads-hardening-rollout.md`.
