@@ -5,6 +5,11 @@
 
 import { firstStep, stepDef, type CycleQueue } from "./cycle.ts";
 import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
+import {
+  isConsultantAutoAllowed,
+  preloadConsultantAutomationPrefs,
+} from "../consultant-automation-prefs.ts";
+import { logSkipped } from "../automation-gate.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -273,6 +278,13 @@ export async function planDailyReheat(
   let skippedGuards = 0;
   const rawPlans: CandidatePlan[] = [];
 
+  const prefsByConsultant = await preloadConsultantAutomationPrefs(
+    supabase,
+    [...(rowsA || []), ...(rowsB || [])]
+      .map((r: any) => String(r.consultant_id || ""))
+      .filter(Boolean),
+  );
+
   const consider = (c: any, queue: "A" | "B") => {
     if (already.has(c.id)) {
       skippedGuards++;
@@ -281,6 +293,19 @@ export async function planDailyReheat(
     // Fila B: quem já está na onda/cadência longa fica só com o motor unitário.
     if (queue === "B" && inCadence.has(c.id)) {
       skippedGuards++;
+      return;
+    }
+    const pack = queue === "A" ? "a" : "b";
+    const prefs = prefsByConsultant.get(String(c.consultant_id || ""));
+    if (!isConsultantAutoAllowed(prefs, pack)) {
+      skippedGuards++;
+      void logSkipped(supabase, "daily_reheat", {
+        reason: "consultant_pref_off",
+        pack,
+        consultant_id: c.consultant_id,
+        customer_id: c.id,
+        queue,
+      });
       return;
     }
     const guards = baseGuards(c);
@@ -421,6 +446,11 @@ export async function loadDueQueuePlans(
     .in("id", ids);
   const byId = new Map((custs || []).map((c: any) => [c.id, c]));
 
+  const prefsByConsultant = await preloadConsultantAutomationPrefs(
+    supabase,
+    rows.map((r: any) => String(r.consultant_id || "")).filter(Boolean),
+  );
+
   const plans: CandidatePlan[] = [];
   for (const r of rows as any[]) {
     const c = byId.get(r.customer_id);
@@ -450,6 +480,28 @@ export async function loadDueQueuePlans(
     }
 
     const queue = (r.queue === "B" ? "B" : "A") as CycleQueue;
+    const pack = queue === "A" ? "a" : "b";
+    const prefs = prefsByConsultant.get(String(r.consultant_id || ""));
+    if (!isConsultantAutoAllowed(prefs, pack)) {
+      await supabase
+        .from("daily_reheat_queue")
+        .update({
+          status: "skipped",
+          skip_reason: "consultant_pref_off",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("customer_id", r.customer_id)
+        .eq("cycle_date", opts.cycleDate);
+      await logSkipped(supabase, "daily_reheat", {
+        reason: "consultant_pref_off",
+        pack,
+        consultant_id: r.consultant_id,
+        customer_id: r.customer_id,
+        queue,
+      });
+      continue;
+    }
+
     const def = stepDef(queue, String(r.step || "")) || firstStep(queue);
     const actions =
       Array.isArray(r.planned_actions) && r.planned_actions.length > 0

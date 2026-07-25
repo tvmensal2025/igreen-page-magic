@@ -34,3 +34,4 @@ Sintoma → correção canônica. Se for fazer o lado esquerdo, pare.
 24. **Cron sem `assertCronAuth`** → sempre gate; preferir 200 `{ skipped }` a 5xx barulhento.
 25. **Assumir que o V3 já decide o turno** → `flow_engine_v3` ainda é sombra/canário conforme rollout; preserve a ordem real de roteamento documentada em `#wa-webhook`.
 26. **Somar action_types de conversa Meta** (`started`+`first_reply`+`total_connection`) → triplica conversas e CPL cai ~3×; Cérebro sobe budget à toa. Use `pickMetaConversations` / `pickMetaLeads` em `_shared/meta-insight-actions.ts` (prioridade, nunca soma).
+27. **Motor global ON = consultor ON** → falso. Cadeado 2: `consultant_automation_prefs` (A/B/C, pós-venda, lembretes). Sem row / pack OFF = skip só daquele `consultant_id`. UI: modal + “Minhas automações”. Helper: `consultant-automation-prefs.ts` / `src/lib/consultantAutomationPrefs.ts`.

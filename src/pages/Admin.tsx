@@ -6,6 +6,8 @@ import { useToast } from "@/hooks/use-toast";
 import { LogOut, Copy, Download, X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { OnboardingGate } from "@/components/admin/OnboardingGate";
+import { ConsultantAutomationPrefsModal } from "@/components/admin/ConsultantAutomationPrefsModal";
+import { ConsultantAutomationPrefsCard } from "@/components/admin/ConsultantAutomationPrefsCard";
 import { PrivacyModeProvider, usePrivacyMode } from "@/contexts/PrivacyModeContext";
 import { useQueryClient } from "@tanstack/react-query";
 import { WhatsAppErrorBoundary } from "@/components/whatsapp/WhatsAppErrorBoundary";
@@ -480,6 +482,10 @@ const AdminContent = () => {
 
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
+      {userId && (
+        <ConsultantAutomationPrefsModal consultantId={userId} autoPrompt />
+      )}
+
       {/* Content */}
       <main className={activeTab === "captacao" || activeTab === "whatsapp" || activeTab === "crm" || activeTab === "crm-clientes"
         ? "w-full flex-1 min-h-0 px-2 sm:px-3 py-2 overflow-hidden flex flex-col gap-2"
@@ -673,6 +679,7 @@ const AdminContent = () => {
           <div className="mt-6 space-y-6">
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
+              {userId && <ConsultantAutomationPrefsCard consultantId={userId} />}
               {userId && <IGreenConnectionCard userId={userId} />}
               {userId && <IGreenSyncStatusBar consultantId={userId} />}
               <BonusTiersAdminCard />

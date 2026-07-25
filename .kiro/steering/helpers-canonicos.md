@@ -14,6 +14,7 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | `customer-display-name.ts` | `safeFirstNameForAddress`, `isAddressableNameSource`… | Saudação/TTS com nome |
 | `consultant-public-label.ts` | `resolvePublicConsultantLabel` | Nome consultor ao lead |
 | `automation-gate.ts` | `isAutomationEnabled`, `logSkipped` | Toggle + skip log |
+| `consultant-automation-prefs.ts` | `getConsultantAutomationPrefs`, `isConsultantAutoAllowed`, `stageGroupToPack` | Opt-in por painel (A/B/C, PV, lembretes) |
 | `cadence-engine.ts` | `STAGE_MAP`, `computeNextActionAt`, `stageGroup` (A/B/C) | Estágios A/B/C |
 | `cadence-inbound-router.ts` | `resolveCadenceInboundRoute`, `applyCadenceInboundRoute` | Inbound na cadência |
 | `cron-auth.ts` | `assertCronAuth` | Crons |
@@ -43,6 +44,7 @@ description: Helpers canônicos _shared e src/lib para reusar. Use antes de rein
 | `crmVsLeadAnalysis.ts` | Separar pizza A / CRM / Meta / bloqueado |
 | `customerDisplayName.ts` | Nome lead na UI (espelho edge) |
 | `consultantPublicLabel.ts` | Label consultor na UI |
+| `consultantAutomationPrefs.ts` | Opt-in automações do painel (espelho edge) |
 | `phone.ts` | Normalizar/validar telefone BR |
 | `cycleEligibility.ts` | Elegibilidade ciclo/pizza |
 

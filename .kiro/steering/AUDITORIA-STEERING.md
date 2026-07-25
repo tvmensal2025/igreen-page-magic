@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-24** (incidente CPL Meta triplicado + round 10).
+Última atualização: **2026-07-25** (consultant_automation_prefs opt-in + incidente CPL).
+
+## 2026-07-25 — Opt-in automação por consultor
+Tabela `consultant_automation_prefs` + modal/atalho “Minhas automações”. Gates em cadence-tick, daily-reheat, pos-venda, process-followups, faq-nudge, bot-followup. Seed ON quem já tinha pizza/outbound 14d. Armadilha #27: global ON ≠ consultor ON.
 
 ## Incidente 2026-07-24 — CPL Cérebro ~1/3 do real
 Sintoma: aviso WA “CPL R$2 / sobe 15%” na âncora Uberlândia; Ads Manager ~R$90 / 14 conv = **R$6,50**.

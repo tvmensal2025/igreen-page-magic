@@ -21,6 +21,10 @@ import {
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import {
+  getConsultantAutomationPrefs,
+  isConsultantAutoAllowed,
+} from "../_shared/consultant-automation-prefs.ts";
+import {
   PV_RETENTATIVA_BUTTON_ID,
   PV_RETENTATIVA_BUTTON_TITLE,
   PV_RETENTATIVA_CHOICE_PROMPT,
@@ -75,6 +79,18 @@ async function processCustomer(
 ): Promise<{ moved: boolean; sent: boolean }> {
   const stageKey = STAGE_TO_KEY[targetStage];
   if (!stageKey) return { moved: false, sent: false };
+
+  const prefs = await getConsultantAutomationPrefs(supabase, customer.consultant_id);
+  if (!isConsultantAutoAllowed(prefs, "pos_venda")) {
+    await logSkipped(supabase, "pos_venda_auto_messages", {
+      reason: "consultant_pref_off",
+      pack: "pos_venda",
+      consultant_id: customer.consultant_id,
+      customer_id: customer.id,
+      stage: targetStage,
+    });
+    return { moved: false, sent: false };
+  }
 
   // Mover o customer para o bucket alvo (apenas se mudou)
   if (customer.pos_venda_stage !== targetStage) {

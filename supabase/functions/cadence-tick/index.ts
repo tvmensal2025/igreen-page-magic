@@ -64,6 +64,11 @@ import {
   decideAudienceDdd,
   loadCadenceAudienceConfig,
 } from "../_shared/audience-ddd.ts";
+import {
+  isConsultantAutoAllowed,
+  preloadConsultantAutomationPrefs,
+  stageGroupToPack,
+} from "../_shared/consultant-automation-prefs.ts";
 
 type AvailLoader = (consultantId: string | null | undefined) => Promise<AvailabilityOverrides>;
 
@@ -1018,7 +1023,13 @@ Deno.serve(async (req) => {
       .map((c: any) => c.id),
   );
 
+  const prefsByConsultant = await preloadConsultantAutomationPrefs(
+    supabase,
+    due.map((r) => String(r.consultant_id || "")).filter(Boolean),
+  );
+
   let dispatched = 0, deferred = 0, skipped = 0, sent = 0, failed = 0, resumed = 0, audienceBlocked = 0;
+  let consultantPrefOff = 0;
 
   /** Update que só aplica se ainda formos donos do claim. */
   async function finishRow(
@@ -1128,6 +1139,21 @@ Deno.serve(async (req) => {
         saved.startsWith("RETARGET_") ||
         saved.startsWith("RECALL_");
       const resumeStage = (savedIsC && STAGE_MAP[saved as Stage] ? saved : "COLD_1") as Stage;
+      const resumePack = stageGroupToPack(stageGroup(resumeStage));
+      const resumePrefs = prefsByConsultant.get(String(row.consultant_id || ""));
+      if (!isConsultantAutoAllowed(resumePrefs, resumePack)) {
+        await logSkipped(supabase, "cadence_engine", {
+          reason: "consultant_pref_off",
+          pack: resumePack,
+          consultant_id: row.consultant_id,
+          customer_id: row.customer_id,
+          stage: resumeStage,
+        });
+        await finishRow(row.id, claimToken, { next_action_at: tomorrowMorningBRT() });
+        consultantPrefOff++;
+        deferred++;
+        continue;
+      }
       // COLD_1: delay de GREETED (D+1). Grupo C: retoma já no próximo slot útil
       // (não reaplica o delay longo do marco — senão espera mais 14d+ à toa).
       const resumeAtIso =
@@ -1161,6 +1187,26 @@ Deno.serve(async (req) => {
 
     const def = STAGE_MAP[stage];
     if (!def) { skipped++; continue; }
+
+    // Cadeado 2: opt-in do consultor (A/B/C). Sem row = OFF.
+    {
+      const grp = stageGroup(stage);
+      const pack = stageGroupToPack(grp);
+      const prefs = prefsByConsultant.get(String(row.consultant_id || ""));
+      if (!isConsultantAutoAllowed(prefs, pack)) {
+        await logSkipped(supabase, "cadence_engine", {
+          reason: "consultant_pref_off",
+          pack,
+          consultant_id: row.consultant_id,
+          customer_id: row.customer_id,
+          stage,
+        });
+        await finishRow(row.id, claimToken, { next_action_at: tomorrowMorningBRT() });
+        consultantPrefOff++;
+        deferred++;
+        continue;
+      }
+    }
 
     // Cap 60 pessoas/dia — adia, nunca descarta.
     // Cap por grupo (A=∞, B=capB, C=capC, Global outreach=B+C ≤ capGlobal). Adia, nunca descarta.
@@ -1551,6 +1597,7 @@ Deno.serve(async (req) => {
   await finishAutomationRun(supabase, runId, failed > 0 ? "partial" : "completed", {
     processed: due.length, dispatched, deferred, skipped, sent, failed, resumed,
     audience_blocked: audienceBlocked,
+    consultant_pref_off: consultantPrefOff,
   });
 
   const summary = {
@@ -1562,6 +1609,7 @@ Deno.serve(async (req) => {
     failed,
     resumed,
     audience_blocked: audienceBlocked,
+    consultant_pref_off: consultantPrefOff,
     caps,
     touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
     ms: Date.now() - bootTs,

@@ -25,6 +25,10 @@ import { isAttendanceTerminalStep } from "../_shared/attendance-flow.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import {
+  getConsultantAutomationPrefs,
+  isConsultantAutoAllowed,
+} from "../_shared/consultant-automation-prefs.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import {
   finishOutboundEffect,
@@ -111,6 +115,17 @@ serve(async (req: Request) => {
       // Nunca nudge durante pesquisa de atendimento ou após finalização.
       if (isAttendanceTerminalStep((lead as { conversation_step?: string | null }).conversation_step)) {
         console.log(`[faq-nudge] skip attendance step lead=${lead.id} step=${lead.conversation_step}`);
+        continue;
+      }
+
+      const prefs = await getConsultantAutomationPrefs(supabase, lead.consultant_id);
+      if (!isConsultantAutoAllowed(prefs, "reminders")) {
+        await logSkipped(supabase, "faq_reengagement_nudge", {
+          reason: "consultant_pref_off",
+          pack: "reminders",
+          consultant_id: lead.consultant_id,
+          customer_id: lead.id,
+        });
         continue;
       }
 

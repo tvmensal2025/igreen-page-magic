@@ -45,7 +45,7 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - NÃO FAÇA: ligar massa/motor novo sem pedido; E2E → `dryRun`.
 - Kill: `app_settings.bot_global_enabled` + `isBotGloballyEnabled`; UI `BotGlobalKillSwitch`.
 - Rollback: `live_dispatch_enabled` → `daily_reheat.enabled` → `cadence_engine` → `bot_global_enabled`.
-
+- FAÇA: segundo cadeado por painel `consultant_automation_prefs` (A/B/C, pós-venda, lembretes). **Global ON ≠ consultor ON.**
 ## Caps outreach A/B/C (cadence-tick)
 - **A = ilimitado** (inbound/em conversa; bypass total, não conta no global).
 - **B = `daily_reheat_settings.cap_b`** (default 150, **cap fixo configurável — NÃO é ramp**) — reengajamento (COLD/SMS/CALL/TEMA).

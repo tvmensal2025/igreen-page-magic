@@ -3285,6 +3285,50 @@ export type Database = {
           },
         ]
       }
+      consultant_automation_prefs: {
+        Row: {
+          acked_at: string | null
+          consultant_id: string
+          group_a_enabled: boolean
+          group_b_enabled: boolean
+          group_c_enabled: boolean
+          pos_venda_auto_enabled: boolean
+          reminders_auto_enabled: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          acked_at?: string | null
+          consultant_id: string
+          group_a_enabled?: boolean
+          group_b_enabled?: boolean
+          group_c_enabled?: boolean
+          pos_venda_auto_enabled?: boolean
+          reminders_auto_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          acked_at?: string | null
+          consultant_id?: string
+          group_a_enabled?: boolean
+          group_b_enabled?: boolean
+          group_c_enabled?: boolean
+          pos_venda_auto_enabled?: boolean
+          reminders_auto_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       consultant_ad_settings: {
         Row: {
           age_max: number

@@ -27,6 +27,7 @@ import { TeamRankingTab } from "./TeamRankingTab";
 import { PhoneResetButton } from "@/components/superadmin/PhoneResetButton";
 import { CustomerCharts } from "./CustomerCharts";
 import { useTheme } from "@/contexts/ThemeContext";
+import { ConsultantAutomationPrefsCard } from "@/components/admin/ConsultantAutomationPrefsCard";
 
 const TeamDashboard = lazy(() =>
   import("./team-dashboard/TeamDashboard").then((m) => {
@@ -579,7 +580,7 @@ export function DashboardTab({
         </div>
       </div>
 
-
+      <ConsultantAutomationPrefsCard consultantId={userId} />
 
 
 

@@ -21,6 +21,10 @@ import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
 import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
+import {
+  getConsultantAutomationPrefs,
+  isConsultantAutoAllowed,
+} from "../_shared/consultant-automation-prefs.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import {
   finishOutboundEffect,
@@ -110,6 +114,17 @@ Deno.serve(async (req) => {
     for (const c of (candidates || []).filter((c: any) => candidateAllowed.has(c.id))) {
       if (TERMINAL_STEPS.has(c.conversation_step || "")) continue;
       if (!c.phone_whatsapp) continue;
+
+      const prefs = await getConsultantAutomationPrefs(supabase, c.consultant_id);
+      if (!isConsultantAutoAllowed(prefs, "reminders")) {
+        await logSkipped(supabase, "bot_followup_checker", {
+          reason: "consultant_pref_off",
+          pack: "reminders",
+          consultant_id: c.consultant_id,
+          customer_id: c.id,
+        });
+        continue;
+      }
 
       // Orquestrador atômico (fail-closed) no lugar do check-then-act legado.
       const touch = await reserveProactiveTouch(supabase, c.id, "bot_followup_checker", {
