@@ -16,10 +16,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { jsonLog, captureError } from "../_shared/audit.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const BATCH_SIZE = 200;
@@ -56,6 +58,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
   const stuckBoundary = new Date(Date.now() - MIN_STUCK_SECONDS * 1000).toISOString();
 

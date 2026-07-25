@@ -4,10 +4,12 @@
  * com o estado atual de cada consultor ativo.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 Deno.serve(async (req) => {
@@ -17,6 +19,9 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
   const startedAt = Date.now();
   let written = 0;

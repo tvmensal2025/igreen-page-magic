@@ -6,6 +6,7 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { ingestLead } from "../_shared/captation/lead-ingest.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -45,7 +46,8 @@ const CATEGORY_MAP: Record<string, string[]> = {
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const json = (b: unknown, s = 200) =>
@@ -388,6 +390,9 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  const cronAuth = await assertCronAuth(req, admin as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, cors);
+
   const results: unknown[] = [];
   const started = Date.now();
 

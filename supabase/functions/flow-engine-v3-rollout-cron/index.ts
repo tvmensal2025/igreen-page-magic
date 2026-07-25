@@ -69,11 +69,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { captureError } from "../_shared/audit.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 
@@ -197,6 +198,9 @@ Deno.serve(async (req) => {
     auth: { persistSession: false },
   });
 
+
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
   console.log(
     `[flow-engine-v3-rollout-cron] start (date=${reportDate}, dryRun=${dryRun})`,
   );

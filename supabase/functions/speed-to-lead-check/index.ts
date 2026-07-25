@@ -13,10 +13,11 @@ import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { loadRetentionSettings } from "../_shared/retention-orchestrator.ts";
 import { loadAutomationTemplate } from "../_shared/automation-templates.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const MAX_PER_RUN = 40;
@@ -31,6 +32,9 @@ Deno.serve(async (_req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
+
+  const cronAuth = await assertCronAuth(_req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
   if (!(await isAutomationEnabled(supabase, "speed_to_lead_sla"))) {
     await logSkipped(supabase, "speed_to_lead_sla");
     return json({ skipped: "automation_disabled", key: "speed_to_lead_sla" });

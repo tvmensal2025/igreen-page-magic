@@ -15,6 +15,13 @@ description: Inventário RPCs DEFINER+anon — P0 revogado; P1–P3 residual (20
 Migration local: `supabase/migrations/20260724140000_revoke_p0_anon_definer_rpcs.sql`  
 Verificação: 6/6 com `anon=false`, `authenticated=false`, `service_role=true`. Advisor residual anon DEFINER: **21** (antes 27).
 
+**Status P1 writes + P2 admin (2026-07-25):** ✅ **APLICADO**  
+Migration: `supabase/migrations/20260725211000_revoke_p1_anon_definer_writes.sql`  
+Revogados de `anon`/`PUBLIC` (mantém `authenticated`/`service_role`):
+`sync_objection_shortcut_all`, `ensure_qa_media_slots`, `lead_research_sweep_bump`,
+`admin_clear_ban`, `admin_mark_instance_banned`, `publish_flow_as_public`, `sync_bot_flow_c_from_a`.  
+**Ainda com anon (proposital):** `refresh_objection_shortcut`, `generate_partner_protocol(_v2)`,
+`has_role`, `count_captured_leads_by_channel`, `filter_dispatched_phones` — front autenticado.
 
 > DEFINER bypassa RLS das tabelas base. Se `anon` pode chamar via `/rest/v1/rpc/...` sem JWT, o risco é real mesmo com “ninguém usa no front”.
 

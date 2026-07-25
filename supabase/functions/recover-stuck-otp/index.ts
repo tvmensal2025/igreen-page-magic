@@ -3,10 +3,11 @@
 // enviando uma mensagem de follow-up via Evolution API.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret",
 };
 
 const EVOLUTION_API_URL = Deno.env.get("EVOLUTION_API_URL") || "";
@@ -79,21 +80,13 @@ async function sendWhatsAppText(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  // ─── Auth: only the cron job (with shared secret) can trigger this ─────
-  const expectedSecret = Deno.env.get("CRON_SECRET") || Deno.env.get("WORKER_SECRET");
-  const providedSecret = req.headers.get("x-cron-secret") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  if (expectedSecret && providedSecret !== expectedSecret) {
-    console.warn("[recover-stuck-otp] Unauthorized attempt");
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
+
+  const cronAuth = await assertCronAuth(req, supabase as any);
+  if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
   const cutoff = new Date(Date.now() - STUCK_HOURS * 3600_000).toISOString();
 
