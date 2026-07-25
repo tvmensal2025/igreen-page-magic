@@ -21,8 +21,9 @@ import {
 import { isAdsExpansiveMutationAllowed } from "../_shared/brain-config.ts";
 import { LEGACY_ANCHOR_CAMPAIGN_ID } from "../_shared/ads-anchor.ts";
 import { isConsultantLocked } from "../_shared/campaign-pause.ts";
-import { notifyConsultant } from "../_shared/notify-consultant.ts";
+import { notifyAnchorBudgetScale, notifyCerebroWhatsApp } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
+import { formatCerebroWastePauseWhatsApp } from "../_shared/cerebro-notify-format.ts";
 import {
   evaluateAdWaste,
   evaluateCampaignWaste,
@@ -294,11 +295,16 @@ Deno.serve(async (req) => {
           });
 
           try {
-            await notifyConsultant(
+            await notifyCerebroWhatsApp(
               c.consultant_id,
-              "warning",
-              "Campanha pausada — waste guard 🛡️",
-              verdict.reason,
+              formatCerebroWastePauseWhatsApp({
+                campaignName: c.name || c.fb_campaign_id || "Campanha",
+                reason: verdict.reason,
+                spendCents: m.spend,
+                conversations: m.conv,
+                clicks: m.clicks,
+                rule: verdict.rule,
+              }),
             );
           } catch (_) { /* ignore */ }
           try {

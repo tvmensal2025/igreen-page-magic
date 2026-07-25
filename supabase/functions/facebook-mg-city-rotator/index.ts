@@ -48,8 +48,13 @@ import {
 } from "../_shared/brain-budget-scale.ts";
 import {
   notifyAnchorBudgetScale,
-  notifyConsultant,
+  notifyCerebroWhatsApp,
 } from "../_shared/notify-consultant.ts";
+import {
+  formatCerebroActivateWhatsApp,
+  formatCerebroSeedWhatsApp,
+  formatCerebroSlotsWhatsApp,
+} from "../_shared/cerebro-notify-format.ts";
 
 /** Fallback se brain_config vazio — UI sobrescreve via consultant_ad_settings. */
 const FALLBACK_MAX_EXPLORERS = 4;
@@ -604,6 +609,20 @@ Deno.serve(async (req) => {
           created.push(entry);
           seededThisTick++;
           have.add(city.name.toLowerCase());
+          try {
+            const protocol =
+              (resp as { tracking_protocol?: string })?.tracking_protocol ??
+                null;
+            await notifyCerebroWhatsApp(
+              consultantId,
+              formatCerebroSeedWhatsApp({
+                cityName: city.name,
+                budgetCents: explorerBudget,
+                protocol,
+                campaignId: createdId,
+              }),
+            );
+          } catch (_) { /* */ }
         } else {
           notCreated.push(entry);
         }
@@ -917,15 +936,22 @@ Deno.serve(async (req) => {
       );
       if (slotChanged) {
         try {
-          await notifyConsultant(
+          const activated = log
+            .filter((e: any) => e?.action === "activate" && e?.city)
+            .map((e: any) => String(e.city));
+          const paused = log
+            .filter((e: any) => e?.action === "pause_queue" && e?.city)
+            .map((e: any) => String(e.city));
+          await notifyCerebroWhatsApp(
             consultantId,
-            "info",
-            `Cérebro MG — ${1 + ensured.length} praças no ar`,
-            `Uberlândia (R$ ${(anchorBudget / 100).toFixed(0)}) + ${
-              ensured.join(", ")
-            } a R$ ${
-              (explorerBudget / 100).toFixed(0)
-            }/dia. Idade preferida ${ageMinPref}+.`,
+            formatCerebroSlotsWhatsApp({
+              explorers: ensured,
+              anchorBudgetCents: anchorBudget,
+              explorerBudgetCents: explorerBudget,
+              ageMin: ageMinPref,
+              activated,
+              paused,
+            }),
           );
         } catch (_) { /* */ }
       }
@@ -1013,13 +1039,13 @@ Deno.serve(async (req) => {
       ) {
         await activateCampaign(queued[0], "activate_next");
         try {
-          await notifyConsultant(
+          await notifyCerebroWhatsApp(
             consultantId,
-            "info",
-            "Rotação MG — nova cidade",
-            `${
-              queued[0].cities?.[0]?.name || queued[0].name
-            } entrou no slot (R$ ${(explorerBudget / 100).toFixed(2)}/dia).`,
+            formatCerebroActivateWhatsApp({
+              cityName: queued[0].cities?.[0]?.name || queued[0].name ||
+                "Praça",
+              budgetCents: explorerBudget,
+            }),
           );
         } catch (_) { /* */ }
       } else if (

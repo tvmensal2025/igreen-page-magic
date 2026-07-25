@@ -1,7 +1,5 @@
-// Envia alerta WhatsApp para o próprio consultor quando algo dá errado
-// (campanha, automação, validação de imagem, etc).
-// Usa a instância Evolution do próprio consultor para mandar a mensagem
-// para o número pessoal dele (consultants.phone).
+// Envia alerta WhatsApp para o próprio consultor (campanha, automação, etc).
+// Canal: Whapi primeiro; Evolution só como fallback (sendRawToAlertNumber).
 import { adminClient } from "./fb-graph.ts";
 
 export type AlertLevel = "info" | "warning" | "error";
@@ -19,54 +17,25 @@ export async function notifyConsultant(
   body: string,
 ): Promise<boolean> {
   try {
-    const evolutionUrl = Deno.env.get("EVOLUTION_API_URL");
-    const evolutionKey = Deno.env.get("EVOLUTION_API_KEY");
-    if (!evolutionUrl || !evolutionKey) {
-      console.warn("[notify] Evolution não configurada — skip");
-      return false;
-    }
-
-    const admin = adminClient();
-    const { data: consultant } = await admin
-      .from("consultants")
-      .select("phone, notification_phone, name")
-      .eq("id", consultantId)
-      .maybeSingle();
-    const targetPhone = (consultant as any)?.notification_phone || consultant?.phone;
-    if (!targetPhone) {
-      console.warn("[notify] consultor sem phone:", consultantId);
-      return false;
-    }
-
-    const { data: inst } = await admin
-      .from("whatsapp_instances")
-      .select("instance_name, connected_phone")
-      .eq("consultant_id", consultantId)
-      .maybeSingle();
-    if (!inst?.instance_name) {
-      console.warn("[notify] consultor sem instance Evolution:", consultantId);
-      return false;
-    }
-
-    // Normaliza número: só dígitos, garante DDI 55
-    const digits = String(targetPhone).replace(/\D/g, "");
-    const number = digits.startsWith("55") ? digits : `55${digits}`;
-
+    // Whapi primeiro (canal ativo); Evolution só como fallback em sendRawToAlertNumber.
     const text = `${ICON[level]} *${title}*\n\n${body}\n\n_Mensagem automática iGreen_`;
-
-    // INTENTIONAL: staff alert — bypasses anti-ban guard (notifica consultor sobre eventos críticos)
-    const res = await fetch(`${evolutionUrl.replace(/\/+$/, "")}/message/sendText/${inst.instance_name}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", apikey: evolutionKey },
-      body: JSON.stringify({ number, text }),
-    });
-    if (!res.ok) {
-      console.warn("[notify] Evolution falhou:", res.status, await res.text());
-      return false;
-    }
-    return true;
+    return await sendRawToAlertNumber(consultantId, text);
   } catch (e) {
     console.error("[notify] erro:", (e as Error).message);
+    return false;
+  }
+}
+
+/** Texto já formatado (Cérebro / escala) — Whapi-first. */
+export async function notifyCerebroWhatsApp(
+  consultantId: string,
+  text: string,
+): Promise<boolean> {
+  try {
+    if (!consultantId || !text?.trim()) return false;
+    return await sendRawToAlertNumber(consultantId, text);
+  } catch (e) {
+    console.warn("[notify-cerebro] erro:", (e as Error).message);
     return false;
   }
 }
