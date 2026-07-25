@@ -21,15 +21,10 @@ Cadência P0/P1 também aplicada:
 
 ## Ainda NÃO ligar sem pedido explícito
 
-- toggle `facebook_capi_dispatch` (está `false`)
-- `ENFORCE_CRON_AUTH`
 - expansão do Cérebro (`kill_switch=false` / `automation_mode` ≠ `disabled`)
 
-## Pendência operacional restante
+## Já ligado em produção (2026-07-25)
 
-- `winner_photo_url` no `brain_config` do consultor piloto (Rafael): anchor já
-  preenchido, mas sem foto estável HTTPS o rotator continua inerte
-  (`anchor_campaign_not_configured` / foto ausente).
-- Regenerar types: já feito em `src/integrations/supabase/types.ts`.
-
-Detalhe: `docs/ads-hardening-rollout.md`.
+- `ENFORCE_CRON_AUTH=true` (secrets)
+- `facebook_capi_dispatch=true` + cron `facebook-capi-dispatch-5min`
+- brain piloto: `anchor` + `winner_photo_url` preenchidos; `kill_switch=true`
