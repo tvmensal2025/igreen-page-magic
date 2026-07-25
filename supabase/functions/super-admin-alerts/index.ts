@@ -2,15 +2,21 @@
  * Alertas operacionais para o super-admin (WhatsApp via Whapi).
  * Cron ~15min. Detecta falhas reais e avisa — você não precisa lembrar de perguntar.
  *
+ * Regras de produto:
+ *  - Portal 1 morto: NÃO checar / NÃO mencionar.
+ *  - OK do dia: no máximo 1 mensagem/dia, português claro (não spam a cada cron).
+ *  - Fora do ar: só avisa após confirmação (retry), texto humano.
+ *
  * Checks:
  *  1) Kill switch (bot_global) desligado
  *  2) Cadência global desligada
- *  3) Workers Easy Panel (Portal2 / Sync / Club se URL existir) /health
+ *  3) Workers Easy Panel (Portal 2 / Sync / Club se URL existir) /health
  *  4) Velip: erros de crédito/saldo + pico BK_PROCON
  *  5) SMS: pico UNDELIV/REJECTD/EXPIRED
- *  6) Portal: muitos leads em worker_offline
+ *  6) Portal 2: muitos leads em worker_offline
  *  7) Caps outreach no limite (automation_skip_log)
  *  8) Whapi health (AUTH) — NÃO alerta Evolution needs_reconnect
+ *  9) Resumo diário “tudo ok” (1×/24h)
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
@@ -31,7 +37,7 @@ type HealthPing = {
   body?: Record<string, unknown> | null;
 };
 
-async function pingHealth(url: string, timeoutMs = 8_000): Promise<HealthPing> {
+async function pingHealthOnce(url: string, timeoutMs = 12_000): Promise<HealthPing> {
   const base = url.replace(/\/+$/, "");
   try {
     const ctrl = new AbortController();
@@ -50,7 +56,33 @@ async function pingHealth(url: string, timeoutMs = 8_000): Promise<HealthPing> {
     }
     return { ok: true, detail: "ok", body };
   } catch (e) {
-    return { ok: false, detail: (e as Error).message || "fetch_failed", body: null };
+    const msg = (e as Error).message || "fetch_failed";
+    // Abort transitório ≠ “worker morto” — rotula de forma humana.
+    if (/abort/i.test(msg)) return { ok: false, detail: "tempo esgotado (rede lenta)", body: null };
+    return { ok: false, detail: msg, body: null };
+  }
+}
+
+/** Confirma queda real: 1 falha + retry após 2s (evita 502/blip do Easy Panel). */
+async function pingHealth(url: string, timeoutMs = 12_000): Promise<HealthPing> {
+  const first = await pingHealthOnce(url, timeoutMs);
+  if (first.ok) return first;
+  await new Promise((r) => setTimeout(r, 2_000));
+  return pingHealthOnce(url, timeoutMs);
+}
+
+function brNowLabel(): string {
+  try {
+    return new Intl.DateTimeFormat("pt-BR", {
+      timeZone: "America/Sao_Paulo",
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString();
   }
 }
 
@@ -162,11 +194,12 @@ Deno.serve(async (req) => {
   ]);
 
   const workers: Array<{ key: string; label: string; url: string }> = [];
+  // Portal 1 morto — nunca checar portal_worker_url legado.
   if (settings.portal2_worker_url) {
-    workers.push({ key: "worker:portal2", label: "Portal 2 (cadastro)", url: settings.portal2_worker_url });
+    workers.push({ key: "worker:portal2", label: "Cadastro (Portal 2)", url: settings.portal2_worker_url });
   }
   if (settings.igreen_sync_worker_url) {
-    workers.push({ key: "worker:sync", label: "Sync carteira", url: settings.igreen_sync_worker_url });
+    workers.push({ key: "worker:sync", label: "Sync da carteira", url: settings.igreen_sync_worker_url });
   }
   const clubUrl =
     settings.club_worker_url ||
@@ -177,21 +210,26 @@ Deno.serve(async (req) => {
     workers.push({ key: "worker:club", label: "Club", url: clubUrl });
   }
 
+  const digestLines: string[] = [];
+  let anyWorkerDown = false;
+
   const workerHealth = await Promise.all(
     workers.map(async (w) => ({ w, h: await pingHealth(w.url) })),
   );
   for (const { w, h } of workerHealth) {
     if (!h.ok) {
+      anyWorkerDown = true;
       await fire(
         w.key,
         "critical",
-        `🚨 *Worker offline: ${w.label}*\n\n` +
-          `URL: ${w.url}\n` +
+        `🚨 *${w.label} fora do ar*\n\n` +
+          `O sistema confirmou (2 tentativas) que o serviço não responde.\n` +
           `Detalhe: ${h.detail}\n\n` +
-          `Abra o Easy Panel → rebuild / logs do worker.\n` +
-          `(Redis ENOTFOUND / 502 / SIGTERM em loop também caem aqui.)`,
-        45,
+          `Abra o Easy Panel → esse worker → Start/Rebuild e veja os logs.\n` +
+          `_Só aviso de novo se continuar fora._`,
+        90,
       );
+      digestLines.push(`• ${w.label} — ❌ fora`);
       continue;
     }
 
@@ -202,8 +240,8 @@ Deno.serve(async (req) => {
           "worker:sync:ai_audit",
           "warn",
           `⚠️ *Sync: auditoria IA indisponível*\n\n` +
-            `Detalhe: ${audit.last_error || "healthy=false"}\n` +
-            `Confira SUPABASE_URL + WORKER_TOKEN no Easy Panel do Sync.`,
+            `${audit.last_error || "A checagem de IA falhou."}\n` +
+            `A sync em si pode continuar — confira token/URL no Easy Panel do Sync.`,
           180,
         );
       } else {
@@ -211,21 +249,25 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Portal 2: HTTP 200 mas Redis caiu → queue="sync" (ainda avisa).
+    // Portal 2: HTTP 200 mas Redis caiu → queue ≠ redis-bullmq (problema real).
     if (w.key === "worker:portal2" && h.body) {
       const queueMode = String(h.body.queue || "");
       if (queueMode && queueMode !== "redis-bullmq") {
+        anyWorkerDown = true;
         await fire(
           "worker:portal2:redis",
           "critical",
-          `🚨 *Portal 2: Redis/fila fora*\n\n` +
-            `Health respondeu, mas queue=\`${queueMode}\` (esperado \`redis-bullmq\`).\n` +
-            `Cadastros podem ir em modo síncrono ou falhar.\n\n` +
-            `Easy Panel → serviço Redis \`igreen_evolution-api-redis\` → Start/Rebuild.`,
-          45,
+          `🚨 *Cadastro (Portal 2): fila Redis fora*\n\n` +
+            `O worker respondeu, mas a fila está em modo \`${queueMode}\` ` +
+            `(o normal é Redis).\n` +
+            `Cadastros podem travar ou ir mais lento.\n\n` +
+            `Easy Panel → Redis do Portal 2 → Start/Rebuild.`,
+          90,
         );
+        digestLines.push(`• Cadastro (Portal 2) — ⚠️ Redis/fila`);
       } else {
         results.push({ key: "worker:portal2:redis", fired: false, detail: queueMode || "ok" });
+        digestLines.push(`• Cadastro (Portal 2) — ✅ no ar`);
       }
 
       const audit = h.body.ai_audit as { healthy?: boolean; last_error?: string } | undefined;
@@ -233,32 +275,50 @@ Deno.serve(async (req) => {
         await fire(
           "worker:portal2:ai_audit",
           "warn",
-          `⚠️ *Portal 2: auditoria IA indisponível*\n\n` +
-            `Detalhe: ${audit.last_error || "healthy=false"}\n` +
-            `Cadastro pode seguir, mas sem análise Gemini.`,
+          `⚠️ *Cadastro: auditoria IA indisponível*\n\n` +
+            `${audit.last_error || "healthy=false"}\n` +
+            `O cadastro pode seguir; só a análise Gemini está falhando.`,
           180,
         );
       } else {
         results.push({ key: "worker:portal2:ai_audit", fired: false, detail: "ok" });
       }
+    } else if (w.key === "worker:portal2") {
+      digestLines.push(`• Cadastro (Portal 2) — ✅ no ar`);
     }
 
-    // Club: HTTP 200 mas sem Redis (queue=sync) — POST ao vivo sem fila.
+    // Club: queue=sync com health OK e allow_live_post é modo válido (não assusta).
     if (w.key === "worker:club" && h.body) {
       const queueMode = String(h.body.queue || "");
-      if (queueMode && queueMode !== "redis-bullmq") {
+      const allowLive = h.body.allow_live_post === true;
+      if (queueMode && queueMode !== "redis-bullmq" && !allowLive) {
         await fire(
           "worker:club:redis",
           "warn",
-          `⚠️ *Club: fila sem Redis*\n\n` +
-            `Health ok, mas queue=\`${queueMode}\` (esperado \`redis-bullmq\`).\n` +
-            `Cadastros Club podem ir síncronos / sem buffer.\n\n` +
-            `Easy Panel → Redis do worker Club → Start/Rebuild.`,
-          120,
+          `⚠️ *Club: fila sem Redis e sem envio ao vivo*\n\n` +
+            `Modo atual: \`${queueMode}\`.\n` +
+            `Easy Panel → Redis do Club → Start/Rebuild.`,
+          180,
         );
+        digestLines.push(`• Club — ⚠️ fila`);
       } else {
-        results.push({ key: "worker:club:redis", fired: false, detail: queueMode || "ok" });
+        results.push({
+          key: "worker:club:redis",
+          fired: false,
+          detail: `${queueMode || "ok"}${allowLive ? "+live" : ""}`,
+        });
+        digestLines.push(
+          queueMode === "redis-bullmq"
+            ? `• Club — ✅ no ar`
+            : `• Club — ✅ no ar (modo direto)`,
+        );
       }
+    } else if (w.key === "worker:club") {
+      digestLines.push(`• Club — ✅ no ar`);
+    }
+
+    if (w.key === "worker:sync") {
+      digestLines.push(`• Sync da carteira — ✅ no ar`);
     }
 
     results.push({ key: w.key, fired: false, detail: "healthy" });
@@ -374,10 +434,11 @@ Deno.serve(async (req) => {
     await fire(
       "portal_worker_offline_leads",
       "critical",
-      `🚨 *Leads parados em worker offline*\n\n` +
-        `${offlineLeads} lead(s) com status \`worker_offline\` (24h).\n` +
-        `Cadastro iGreen não está saindo — confira Easy Panel Portal 2.`,
-      60,
+      `🚨 *Cadastros parados no Portal 2*\n\n` +
+        `${offlineLeads} lead(s) com status “worker offline” nas últimas 24h.\n` +
+        `O cliente já finalizou, mas o envio ao iGreen não saiu.\n\n` +
+        `Confira o Easy Panel do *Cadastro (Portal 2)*.`,
+      90,
     );
   } else {
     results.push({
@@ -435,32 +496,52 @@ Deno.serve(async (req) => {
       }).then((x) => ({ ok: x.ok, status: x.status })).catch(() => ({ ok: false, status: 0 }));
 
       if (!profile.ok) {
+        anyWorkerDown = true;
         await fire(
           "whapi_down",
           "critical",
-          `🚨 *WhatsApp (Whapi) sem AUTH*\n\n` +
-            `Perfil Whapi falhou (HTTP ${profile.status}).\n` +
-            `Health HTTP ${r.status}.\n\n` +
+          `🚨 *WhatsApp (Whapi) desconectado*\n\n` +
+            `Não consegui ler o perfil do canal (HTTP ${profile.status}).\n` +
             `Envios e alertas podem falhar — reconecte no painel Whapi.`,
-          45,
+          90,
         );
+        digestLines.push(`• WhatsApp (Whapi) — ❌ fora`);
       } else {
         results.push({
           key: "whapi_down",
           fired: false,
           detail: `profile_ok health=${r.status} code=${body?.code ?? "?"}`,
         });
+        digestLines.push(`• WhatsApp (Whapi) — ✅ conectado`);
       }
     } catch (e) {
+      anyWorkerDown = true;
       await fire(
         "whapi_down",
         "critical",
         `🚨 *WhatsApp (Whapi) inacessível*\n\n${(e as Error).message}`,
-        45,
+        90,
       );
+      digestLines.push(`• WhatsApp (Whapi) — ❌ fora`);
     }
   } else {
     results.push({ key: "whapi_down", fired: false, detail: "token_missing_skip" });
+  }
+
+  // ── 9) Resumo diário (1×/24h) — só se nada crítico estiver fora agora ──
+  if (!anyWorkerDown && digestLines.length > 0) {
+    const text =
+      `☀️ *Resumo do dia — iGreen*\n` +
+      `_${brNowLabel()}_\n\n` +
+      `Tudo certo por aqui:\n` +
+      `${digestLines.join("\n")}\n\n` +
+      `Não vou ficar repetindo “ok” o dia todo.\n` +
+      `Se algo cair de verdade, eu te aviso na hora.`;
+    await fire("ops_daily_ok", "warn", text, 24 * 60);
+  } else if (anyWorkerDown) {
+    results.push({ key: "ops_daily_ok", fired: false, detail: "skipped_while_down" });
+  } else {
+    results.push({ key: "ops_daily_ok", fired: false, detail: "no_workers_configured" });
   }
 
   return new Response(
