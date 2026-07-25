@@ -45,7 +45,7 @@ import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
-import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
+import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
 import {
   loadCadenceThemes,
   loadLastThemeId,
@@ -363,8 +363,11 @@ function renderTemplate(tpl: string, vars: Record<string, string>): string {
 }
 
 /**
- * Fail-closed de identidade (PLANO §10): se o template exige {{consultor}} /
- * {{consultor_phone}} e não temos valor real, NÃO enviar — nunca inventar nome.
+ * Identidade (PLANO §10 + parity reheat):
+ * - {{consultor}} sempre tem label seguro via resolvePublicConsultantLabel
+ *   (slug → "seu consultor"; nunca vazamos login).
+ * - {{consultor_phone}} / {{link_wa}}: fail-closed se não há chip/phone real
+ *   (nunca inventar wa.me nem usar notification_phone).
  */
 function missingIdentityVar(tpl: string, consultantName: string, consultantPhone: string): string | null {
   if (/\{\{\s*consultor\s*\}\}/i.test(tpl) && !consultantName.trim()) return "consultor";
@@ -577,9 +580,13 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .from("consultants")
       .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId).maybeSingle();
-    consultantName = resolvePublicConsultantFirstName(
+    // Paridade daily-reheat: label completo seguro (não FirstName com fallback "").
+    // Slug sem display → "seu consultor" — permite A_NUDGE/COLD_* em vez de
+    // identity_missing:consultor eterno.
+    consultantName = resolvePublicConsultantLabel(
       (c as { name?: string | null })?.name,
       (c as { display_name?: string | null })?.display_name,
+      "seu consultor",
     );
     assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
     const g = String((c as { gender?: string | null })?.gender || "").trim();
