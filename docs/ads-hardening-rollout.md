@@ -120,8 +120,8 @@ As tabelas novas podem ficar: são aditivas e ninguém legado depende delas.
 
 ## Pendências conhecidas
 
-- **`automation_mode=full`** (creative_rotate) ainda off no piloto.
 - Seed automático de exploradoras permanece **human-only** (`automatic_seed_disabled`).
+- `targeting_patch` automático permanece **human-only** (incidente aprendizado Meta).
 - Types regenerados em `src/integrations/supabase/types.ts` (commit pós-SQL).
 - **Tabelas novas com RLS ligada e sem policy.** `service_role` acessa (é o que
   as edges usam); `anon`/`authenticated` não. Se a UI precisar ler sagas ou
