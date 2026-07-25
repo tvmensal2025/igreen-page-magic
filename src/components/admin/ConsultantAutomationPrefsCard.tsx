@@ -9,18 +9,31 @@ import { toast } from "sonner";
 
 type Props = {
   consultantId: string;
+  /**
+   * full = Configurações (todos os switches, padrão ligado).
+   * offOnly = Dashboard (só o que está desligado; some se tudo ligado).
+   */
+  variant?: "full" | "offOnly";
 };
 
-export function ConsultantAutomationPrefsCard({ consultantId }: Props) {
+export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }: Props) {
   const [modalOpen, setModalOpen] = useState(false);
   const { draft, setPack, loading, saving, save, packs, hasOff, error } =
     useConsultantAutomationPrefs(consultantId);
 
   const onSave = async () => {
     const ok = await save();
-    if (ok) toast.success("Automações atualizadas");
-    else toast.error(error || "Falha ao salvar");
+    if (ok) toast.success("Pronto — suas escolhas foram salvas");
+    else toast.error(error || "Não deu para salvar. Tente de novo.");
   };
+
+  const visiblePacks =
+    variant === "offOnly" ? packs.filter((p) => !draft[p.field]) : packs;
+
+  // Dashboard limpo: se tudo ligado, não mostra o card.
+  if (variant === "offOnly" && !loading && visiblePacks.length === 0) {
+    return null;
+  }
 
   return (
     <>
@@ -28,14 +41,18 @@ export function ConsultantAutomationPrefsCard({ consultantId }: Props) {
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle className="text-base">Minhas automações</CardTitle>
+              <CardTitle className="text-base">
+                {variant === "offOnly" ? "Mensagens automáticas desligadas" : "Mensagens automáticas"}
+              </CardTitle>
               <CardDescription>
-                Opt-in do seu painel. Desligado = zero envio automático aos seus leads.
+                {variant === "offOnly"
+                  ? "Só o que está desligado. Ligue o que quiser voltar a mandar sozinho. O restante já está ligado."
+                  : "Só vale para o seu painel. Padrão: tudo ligado. Se desligar, o sistema não manda nada sozinho para os seus clientes."}
               </CardDescription>
             </div>
-            {hasOff && (
+            {hasOff && variant === "full" && (
               <Badge variant="secondary" className="shrink-0">
-                Algo desativado
+                Tem coisa desligada
               </Badge>
             )}
           </div>
@@ -44,7 +61,7 @@ export function ConsultantAutomationPrefsCard({ consultantId }: Props) {
           {loading ? (
             <p className="text-sm text-muted-foreground">Carregando…</p>
           ) : (
-            packs.map((p) => {
+            visiblePacks.map((p) => {
               const on = !!draft[p.field];
               return (
                 <div key={p.pack} className="flex items-center justify-between gap-3">
@@ -53,7 +70,7 @@ export function ConsultantAutomationPrefsCard({ consultantId }: Props) {
                       {p.title}
                       {!on && (
                         <Badge variant="outline" className="text-[10px] font-normal">
-                          Desativado
+                          Desligado
                         </Badge>
                       )}
                     </div>
@@ -72,9 +89,16 @@ export function ConsultantAutomationPrefsCard({ consultantId }: Props) {
             <Button size="sm" disabled={saving || loading} onClick={() => void onSave()}>
               {saving ? "Salvando…" : "Salvar"}
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setModalOpen(true)}>
-              Abrir modal completo
-            </Button>
+            {variant === "full" && (
+              <Button size="sm" variant="ghost" onClick={() => setModalOpen(true)}>
+                Ver com mais detalhe
+              </Button>
+            )}
+            {variant === "offOnly" && (
+              <Button size="sm" variant="ghost" onClick={() => setModalOpen(true)}>
+                Ver todas
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

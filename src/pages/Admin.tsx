@@ -679,7 +679,7 @@ const AdminContent = () => {
           <div className="mt-6 space-y-6">
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
-              {userId && <ConsultantAutomationPrefsCard consultantId={userId} />}
+              {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}
               {userId && <IGreenConnectionCard userId={userId} />}
               {userId && <IGreenSyncStatusBar consultantId={userId} />}
               <BonusTiersAdminCard />

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
   CONSULTANT_AUTO_PACKS,
-  DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+  UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS,
   anyPackOff,
   needsAutomationPrefsAck,
   type ConsultantAutomationPrefs,
@@ -11,12 +11,14 @@ import {
 export type PrefsDraft = Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;
 
 function toDraft(prefs: ConsultantAutomationPrefs | null): PrefsDraft {
+  // Sem row ainda → UI começa tudo ligado (padrão saudável).
+  const src = prefs ?? { consultant_id: "", ...UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS };
   return {
-    group_a_enabled: prefs?.group_a_enabled ?? false,
-    group_b_enabled: prefs?.group_b_enabled ?? false,
-    group_c_enabled: prefs?.group_c_enabled ?? false,
-    pos_venda_auto_enabled: prefs?.pos_venda_auto_enabled ?? false,
-    reminders_auto_enabled: prefs?.reminders_auto_enabled ?? false,
+    group_a_enabled: !!src.group_a_enabled,
+    group_b_enabled: !!src.group_b_enabled,
+    group_c_enabled: !!src.group_c_enabled,
+    pos_venda_auto_enabled: !!src.pos_venda_auto_enabled,
+    reminders_auto_enabled: !!src.reminders_auto_enabled,
   };
 }
 
@@ -64,7 +66,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         } satisfies ConsultantAutomationPrefs)
       : {
           consultant_id: consultantId,
-          ...DEFAULT_CONSULTANT_AUTOMATION_PREFS,
+          ...UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS,
         };
 
     setPrefs(row);

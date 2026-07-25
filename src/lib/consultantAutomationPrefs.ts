@@ -24,6 +24,16 @@ export const DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs
   acked_at: null,
 };
 
+/** Padrão da UI (Configurações / modal): tudo ligado. Engines sem row continuam fail-closed. */
+export const UI_DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs, "consultant_id"> = {
+  group_a_enabled: true,
+  group_b_enabled: true,
+  group_c_enabled: true,
+  pos_venda_auto_enabled: true,
+  reminders_auto_enabled: true,
+  acked_at: null,
+};
+
 export const CONSULTANT_AUTO_PACKS: Array<{
   pack: ConsultantAutoPack;
   field: keyof Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;
@@ -33,32 +43,32 @@ export const CONSULTANT_AUTO_PACKS: Array<{
   {
     pack: "a",
     field: "group_a_enabled",
-    title: "Captação — Grupo A",
-    help: "Leads em conversa no WhatsApp (saudação, nudges e escada de silêncio).",
+    title: "Novos no WhatsApp",
+    help: "Quem acabou de falar com você: o sistema cumprimenta e cobra resposta se a pessoa sumir.",
   },
   {
     pack: "b",
     field: "group_b_enabled",
-    title: "Reengajamento — Grupo B",
-    help: "Leads frios (COLD) e reaquecimento diário por WhatsApp, SMS e ligação.",
+    title: "Quem esfriou",
+    help: "Quem parou de responder: o sistema tenta de novo por WhatsApp, SMS ou ligação.",
   },
   {
     pack: "c",
     field: "group_c_enabled",
-    title: "Recall — Grupo C",
-    help: "Retomada longa (60 dias em diante) para quem não converteu.",
+    title: "Quem sumiu há meses",
+    help: "Quem não fechou há bastante tempo: o sistema volta a chamar de tempos em tempos.",
   },
   {
     pack: "pos_venda",
     field: "pos_venda_auto_enabled",
-    title: "Pós-venda automático",
-    help: "Mensagens D30–D210 após você validar o cliente. Chat manual continua liberado.",
+    title: "Depois da venda",
+    help: "Avisos automáticos para clientes que você já validou. Você ainda pode falar no chat à mão.",
   },
   {
     pack: "reminders",
     field: "reminders_auto_enabled",
-    title: "Lembretes automáticos",
-    help: "Follow-ups, FAQ, retenção e mensagens automáticas do kanban CRM.",
+    title: "Lembretes e cobranças",
+    help: "Mensagens de “ainda está aí?” e textos que saem sozinhos ao mover o cliente no quadro.",
   },
 ];
 

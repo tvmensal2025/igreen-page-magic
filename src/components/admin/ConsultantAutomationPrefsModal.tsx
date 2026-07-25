@@ -48,20 +48,20 @@ export function ConsultantAutomationPrefsModal({
   const onSave = async () => {
     const ok = await save();
     if (ok) {
-      toast.success("Preferências de automação salvas");
+      toast.success("Pronto — suas escolhas foram salvas");
       handleOpenChange(false);
     } else {
-      toast.error(error || "Não foi possível salvar");
+      toast.error(error || "Não deu para salvar. Tente de novo.");
     }
   };
 
   const onLeaveOff = async () => {
     const ok = await save({ leaveAllOff: true });
     if (ok) {
-      toast.message("Automações permanecem desligadas neste painel");
+      toast.message("Tudo continua desligado. Nada vai sair sozinho.");
       handleOpenChange(false);
     } else {
-      toast.error(error || "Não foi possível salvar");
+      toast.error(error || "Não deu para salvar. Tente de novo.");
     }
   };
 
@@ -69,11 +69,10 @@ export function ConsultantAutomationPrefsModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Automações do seu painel</DialogTitle>
+          <DialogTitle>Mensagens automáticas</DialogTitle>
           <DialogDescription>
-            Cada consultor controla o próprio envio automático. O que estiver
-            desligado não dispara mensagem para os seus clientes — chat e agenda
-            manual continuam liberados.
+            Padrão: tudo ligado. Você pode desligar o que não quiser. Conversar no
+            chat e agendar mensagem à mão continuam liberados.
           </DialogDescription>
         </DialogHeader>
 
@@ -83,7 +82,7 @@ export function ConsultantAutomationPrefsModal({
           <div className="space-y-3 py-1">
             {hasOff && (
               <p className="text-sm text-amber-700 dark:text-amber-400">
-                Há funções desativadas. Ligue só o que você usa de verdade.
+                Tem coisa desligada. Ligue só o que você realmente quer usar.
               </p>
             )}
             {packs.map((p) => {
@@ -98,7 +97,7 @@ export function ConsultantAutomationPrefsModal({
                       <span className="text-sm font-medium">{p.title}</span>
                       {!on && (
                         <Badge variant="secondary" className="text-[10px] font-normal">
-                          Desativado
+                          Desligado
                         </Badge>
                       )}
                     </div>
@@ -123,7 +122,7 @@ export function ConsultantAutomationPrefsModal({
             onClick={() => void onLeaveOff()}
             className="w-full sm:w-auto"
           >
-            Deixar desligado e continuar
+            Deixar tudo desligado
           </Button>
           <Button
             type="button"
@@ -131,7 +130,7 @@ export function ConsultantAutomationPrefsModal({
             onClick={() => void onSave()}
             className="w-full sm:w-auto"
           >
-            {saving ? "Salvando…" : "Salvar preferências"}
+            {saving ? "Salvando…" : "Salvar e continuar"}
           </Button>
         </DialogFooter>
       </DialogContent>

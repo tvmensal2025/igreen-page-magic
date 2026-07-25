@@ -580,7 +580,7 @@ export function DashboardTab({
         </div>
       </div>
 
-      <ConsultantAutomationPrefsCard consultantId={userId} />
+      <ConsultantAutomationPrefsCard consultantId={userId} variant="offOnly" />
 
 
 

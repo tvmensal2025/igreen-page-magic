@@ -36,6 +36,8 @@ export type HandoffLead = {
   alertReason: string | null;
   alertMessage: string | null;
   alertAt: string | null;
+  /** Foto do lead se houver (mídia inbound recente). */
+  photoUrl: string | null;
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -103,37 +105,36 @@ export function formatSecurityReason(reason: string | null | undefined): string 
 }
 
 /**
- * Lista leads do consultor fora da pizza:
- *  - handoff humano (aguardando atendente)
- *  - bloqueados por segurança (invalid_phone / dnc / opt_out / backlog)
+ * Telefone útil para WA/voz (não placeholder `sem_celular_*` nem lixo).
+ * Sem isso não há ação possível neste painel — lead não entra na lista.
+ */
+export function hasUsableHandoffPhone(phone: string | null | undefined): boolean {
+  const raw = String(phone || "").trim();
+  if (!raw || /sem_celular/i.test(raw)) return false;
+  const d = onlyDigits(raw);
+  if (d.length === 10 || d.length === 11) return true;
+  if ((d.length === 12 || d.length === 13) && d.startsWith("55")) return true;
+  return false;
+}
+
+/**
+ * Lista leads do consultor fora da pizza que ainda precisam de ação:
+ * só handoff humano com telefone útil.
+ *
+ * Não lista: invalid_phone / sem_celular / DNC / opt-out — já estão
+ * resolvidos (bloqueados ou inúteis) e não há o que fazer no painel.
  */
 export async function loadHandoffLeads(consultantId: string): Promise<HandoffLead[]> {
-  const reasons: string[] = [HANDOFF_PAUSE_REASON, ...SECURITY_PAUSE_REASONS];
   const { data: cadenceRows, error } = await supabase
     .from("lead_cadence_state")
     .select("id, customer_id, stage, paused_until, paused_reason, next_action_at, updated_at")
     .eq("consultant_id", consultantId)
-    .in("paused_reason", reasons)
+    .eq("paused_reason", HANDOFF_PAUSE_REASON)
     .order("updated_at", { ascending: false })
     .limit(300);
 
   if (error) throw new Error(error.message);
-  // Também aceita paused_reason com prefixos (dnc:*, not_lead_outside_ddd*)
-  const { data: prefixRows } = await supabase
-    .from("lead_cadence_state")
-    .select("id, customer_id, stage, paused_until, paused_reason, next_action_at, updated_at")
-    .eq("consultant_id", consultantId)
-    .or("paused_reason.ilike.dnc:%,paused_reason.ilike.not_lead_outside_ddd%")
-    .order("updated_at", { ascending: false })
-    .limit(200);
-
-  const allRows = [...(cadenceRows || []), ...(prefixRows || [])];
-  const seen = new Set<string>();
-  const rows = allRows.filter((r) => {
-    if (!r?.id || seen.has(r.id)) return false;
-    seen.add(r.id);
-    return true;
-  });
+  const rows = cadenceRows || [];
   if (!rows.length) return [];
 
   const customerIds = rows.map((r) => r.customer_id).filter(Boolean) as string[];
@@ -141,7 +142,9 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
   const [{ data: customers }, { data: alerts }] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, name_source")
+      .select(
+        "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
+      )
       .in("id", customerIds),
     supabase
       .from("bot_handoff_alerts")
@@ -162,10 +165,15 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
     if (!alertByCustomer.has(a.customer_id)) alertByCustomer.set(a.customer_id, a);
   }
 
-  return rows.map((row) => {
+  const out: HandoffLead[] = [];
+  for (const row of rows) {
     const c = custById.get(row.customer_id);
-    const alert = alertByCustomer.get(row.customer_id);
     const phone = c?.phone_whatsapp || "";
+    // Sem número útil ou já bloqueado → não aparece (nada a fazer aqui).
+    if (!hasUsableHandoffPhone(phone)) continue;
+    if ((c as { do_not_contact?: boolean | null } | undefined)?.do_not_contact) continue;
+
+    const alert = alertByCustomer.get(row.customer_id);
     const name = String(c?.name || "").trim();
     const display = resolveLeadPanelDisplayName({
       name: c?.name,
@@ -173,7 +181,11 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
     });
     const grupo = cadenceStageGroup(String(row.stage));
     const category = classifyPauseReason(row.paused_reason);
-    return {
+    const mediaKind = String((c as { last_inbound_media_kind?: string | null } | undefined)?.last_inbound_media_kind || "");
+    const mediaUrl = String((c as { last_inbound_media_url?: string | null } | undefined)?.last_inbound_media_url || "").trim();
+    const photoUrl =
+      mediaUrl && /image|photo|picture|sticker/i.test(mediaKind) ? mediaUrl : null;
+    out.push({
       cadenceId: row.id,
       customerId: row.customer_id,
       stage: String(row.stage),
@@ -194,8 +206,10 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
       alertReason: alert?.reason ?? null,
       alertMessage: alert?.user_message ?? null,
       alertAt: alert?.created_at ?? null,
-    };
-  });
+      photoUrl,
+    });
+  }
+  return out;
 }
 
 export type ReturnHandoffResult = {
@@ -292,5 +306,56 @@ export async function returnHandoffsToPizza(opts: {
       lastError = r.error;
     }
   }
+  return { ok, failed, lastError };
+}
+
+/**
+ * Esquecer lead: marca WON / já cliente — sai do ciclo automático,
+ * WhatsApp manual continua ok (não é bloqueio).
+ */
+export async function forgetHandoffLeads(opts: {
+  items: Array<{ customerId: string; cadenceId: string }>;
+}): Promise<{ ok: number; failed: number; lastError?: string }> {
+  let ok = 0;
+  let failed = 0;
+  let lastError: string | undefined;
+  const now = new Date().toISOString();
+
+  for (const item of opts.items) {
+    const { error: cadErr } = await supabase
+      .from("lead_cadence_state")
+      .update({
+        stage: "WON",
+        paused_until: null,
+        paused_reason: "manual_won",
+        next_action_at: null,
+      } as never)
+      .eq("id", item.cadenceId);
+
+    if (cadErr) {
+      failed++;
+      lastError = cadErr.message;
+      continue;
+    }
+
+    // Despausa bot para não ficar “preso” no handoff visual, mas sem reativar ciclo.
+    await supabase
+      .from("customers")
+      .update({
+        bot_paused: false,
+        bot_paused_reason: null,
+        bot_paused_at: null,
+      })
+      .eq("id", item.customerId);
+
+    await supabase
+      .from("bot_handoff_alerts")
+      .update({ resolved_at: now, resolved_by: null })
+      .eq("customer_id", item.customerId)
+      .is("resolved_at", null);
+
+    ok++;
+  }
+
   return { ok, failed, lastError };
 }
