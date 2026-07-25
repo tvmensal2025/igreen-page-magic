@@ -29,6 +29,7 @@ import {
   resolveRetargetDdds,
 } from "../_shared/city-to-ddd.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { isAdsActionAllowedForConfig } from "../_shared/brain-config.ts";
 import { buildCors } from "../_shared/cors.ts";
 import {
   canProceedWithPublish,
@@ -243,15 +244,44 @@ Deno.serve(async (req) => {
     const body = await req.json() as Body;
     let auth = await authConsultant(req);
     if (!auth && isServiceRoleAuth(req)) {
-      return new Response(
-        JSON.stringify({
-          ok: true,
-          skipped: "automatic_campaign_creation_disabled",
-        }),
-        {
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
+      // Seed do Cérebro (queue_only): service_role pode criar 1 exploradora
+      // pausada na fila. Qualquer outro create automático continua bloqueado.
+      const queueOnly = Boolean(body.queue_only);
+      const cid = typeof body.consultant_id === "string"
+        ? body.consultant_id.trim()
+        : "";
+      const uuidOk =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          .test(cid);
+      if (!queueOnly || !uuidOk) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            skipped: "automatic_campaign_creation_disabled",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      const adminGate = adminClient();
+      const { data: settings } = await adminGate
+        .from("consultant_ad_settings")
+        .select("brain_config")
+        .eq("consultant_id", cid)
+        .maybeSingle();
+      if (!isAdsActionAllowedForConfig(settings?.brain_config, "seed_explorer")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            skipped: "seed_explorer_not_allowed",
+          }),
+          {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
+      auth = { id: cid, supabase: adminGate };
     }
     if (!auth) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
