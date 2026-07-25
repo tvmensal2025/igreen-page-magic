@@ -56,7 +56,8 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a1?.buttons ?? []).toHaveLength(0);
     expect(a1?.timing.toLowerCase()).toContain("aguarda");
     expect(a1?.body).toMatch(/iGreen \| Conta de Luz Mais Barata 🌱/);
-    expect(a1?.body).toMatch(/\*Gestor\* da \*iGreen\*/);
+    expect(a1?.body).toMatch(/\*\{\{representante\}\}\* da \*iGreen\*/);
+    expect(a1?.body).not.toMatch(/gestor/i);
     expect(a1?.body).toMatch(/📋 \*Protocolo:\* \{\{protocolo\}\}/);
     expect(a1?.body).toMatch(/agilizar seu atendimento/i);
     expect(a1?.body).toMatch(/primeiro nome/i);

@@ -297,12 +297,14 @@ describe("cliente já cadastrado (already_registered)", () => {
   });
 
   it("portal_submitting travado → botões Já cadastrado e Dispensar", async () => {
+    // Sem finalized_at/igreen_code: isPortalDone trataria como concluído e
+    // esconderia o spinner + botões de destravar.
     renderTracker(
       baseRow({
         status: "portal_submitting",
         conversation_step: "portal_submitting",
         portal2_status: "submitting",
-        finalized_at: "2026-07-15T12:00:00Z",
+        finalized_at: null,
       }),
     );
     expect(await screen.findByText(/Abrindo portal no navegador da VPS/)).toBeInTheDocument();

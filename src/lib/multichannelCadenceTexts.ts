@@ -962,7 +962,10 @@ export function spokenSegmentText(
   seg: AudioSegment,
   opts: CadenceBodyRenderOpts = {},
 ): string {
-  const first = firstNameOnly(opts.nome || "");
+  // firstNameOnly("") retorna "Cliente" — checar o raw antes, senão o
+  // guarda abaixo nunca dispara e o TTS fala "Então, Cliente.".
+  const rawNome = (opts.nome ?? "").trim();
+  const first = rawNome ? firstNameOnly(rawNome) : "";
   if (seg.kind === "name") {
     // Sem nome confiável → corte vazio (painel/motor pulam; não TTS "Cliente").
     if (!first) return "";
