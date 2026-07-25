@@ -38,6 +38,14 @@ curl -sS https://igreen-worker-igreen.d9v63q.easypanel.host/health
 
 `mode` deve começar com `tor+playwright+api-vo-`.
 
+## Auditoria IA (Gemini)
+
+Após rebuild, no Easy Panel do Sync configure:
+- `SUPABASE_URL` = `https://zlzasfhcxcznaprrragl.supabase.co`
+- `WORKER_TOKEN` = mesmo valor de `igreen_sync_worker_secret` / secret da edge
+
+Health passa a exibir `ai_audit`. Falhas de sync → Gemini + alerta WA. Sucessos: até 20 (default).
+
 
 Worker dedicado à **leitura** dos dados do portal iGreen (clientes, rede e
 métricas de gestão), individual por consultor. Consumido pela edge function

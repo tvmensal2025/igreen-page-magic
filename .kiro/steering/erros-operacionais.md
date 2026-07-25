@@ -29,7 +29,9 @@ Helper: `_shared/superadmin-alert.ts` (`notifySuperAdminOpsAlert`). Dedup em `in
 |---|---|
 | 🚨 Bot global OFF | `bot_global_enabled=false` |
 | ⚠️ Cadência OFF | `cadence_engine_enabled=false` |
-| 🚨 Worker offline | `/health` Portal2 / Sync / Club |
+| 🚨 Worker offline | `/health` Portal2 / Sync / Club (502, timeout, Redis DNS) |
+| 🚨 Portal2 Redis/fila | health 200 mas `queue≠redis-bullmq` |
+| ⚠️ Portal2 AI audit | `ai_audit.healthy=false` |
 | 🚨 Velip crédito | erros credit/saldo ou `balance_after=0` failed |
 | ⚠️ Pico Procon | ≥5 `BK_PROCON` /24h (não é crédito) |
 | ⚠️ SMS undeliv | ≥5 UNDELIV/REJECTD/EXPIRED e ≥ DELIVRD /6h |

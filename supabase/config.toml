@@ -228,6 +228,9 @@ verify_jwt = false
 [functions.portal2-ai-audit]
 verify_jwt = false
 
+[functions.sync-ai-audit]
+verify_jwt = false
+
 # ── Captação de leads multicanal ──────────────────────────────────────────
 # Porta pública de entrada de leads (landing pages). Sem JWT: a landing não
 # tem sessão; a posse é resolvida pela licença do consultor no corpo.

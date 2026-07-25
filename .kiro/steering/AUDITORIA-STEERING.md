@@ -6,7 +6,11 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (alerta WA ativo + trava cliente≠A/B/C + playbook erros + opt-in prefs).
+Última atualização: **2026-07-25** (audit Sync Gemini + alerta WA ativo + trava cliente≠A/B/C).
+
+## 2026-07-25 — Auditoria IA no Sync (Gemini Flash)
+Edge `sync-ai-audit` + tabela `sync_audit_traces` + `worker-igreen-sync/ai-audit.mjs`.
+Mesmo modelo do Portal 2 (`gemini-2.5-flash`, ~$0.0002/run). Limite 20 sucessos; **falhas sempre**. WA em `sync_fail:*`. Env: `SUPABASE_URL` + `WORKER_TOKEN` no Easy Panel Sync.
 
 ## 2026-07-25 — Alerta ativo no WhatsApp do dono
 Cron `super-admin-alerts` passou a checar falhas reais (kill, workers, Velip crédito, SMS undeliv, Whapi AUTH, caps, portal offline) e avisar via **Whapi** (`_shared/superadmin-alert.ts` → `super_admin_phone`). MinIO também. Dedup `infra_metrics`. Armadilha #35; `#erros-operacionais` §0b. **Não** alerta Evolution `needs_reconnect`.

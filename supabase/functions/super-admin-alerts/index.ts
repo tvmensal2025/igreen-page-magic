@@ -24,17 +24,33 @@ const corsHeaders = {
 
 type CheckResult = { key: string; fired: boolean; detail?: string };
 
-async function pingHealth(url: string, timeoutMs = 8_000): Promise<{ ok: boolean; detail: string }> {
+type HealthPing = {
+  ok: boolean;
+  detail: string;
+  /** Corpo JSON do /health quando parseável. */
+  body?: Record<string, unknown> | null;
+};
+
+async function pingHealth(url: string, timeoutMs = 8_000): Promise<HealthPing> {
   const base = url.replace(/\/+$/, "");
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     const r = await fetch(`${base}/health`, { signal: ctrl.signal });
     clearTimeout(t);
-    if (!r.ok) return { ok: false, detail: `HTTP ${r.status}` };
-    return { ok: true, detail: "ok" };
+    let body: Record<string, unknown> | null = null;
+    try {
+      body = (await r.json()) as Record<string, unknown>;
+    } catch {
+      body = null;
+    }
+    if (!r.ok) return { ok: false, detail: `HTTP ${r.status}`, body };
+    if (body && body.ok === false) {
+      return { ok: false, detail: "health.ok=false", body };
+    }
+    return { ok: true, detail: "ok", body };
   } catch (e) {
-    return { ok: false, detail: (e as Error).message || "fetch_failed" };
+    return { ok: false, detail: (e as Error).message || "fetch_failed", body: null };
   }
 }
 
@@ -173,12 +189,61 @@ Deno.serve(async (req) => {
           `URL: ${w.url}\n` +
           `Detalhe: ${h.detail}\n\n` +
           `Abra o Easy Panel → rebuild / logs do worker.\n` +
-          `Cadastros/sync podem estar parados.`,
+          `(Redis ENOTFOUND / 502 / SIGTERM em loop também caem aqui.)`,
         45,
       );
-    } else {
-      results.push({ key: w.key, fired: false, detail: "healthy" });
+      continue;
     }
+
+    if (w.key === "worker:sync" && h.body) {
+      const audit = h.body.ai_audit as { healthy?: boolean; last_error?: string; enabled?: boolean } | undefined;
+      if (audit?.enabled && audit.healthy === false) {
+        await fire(
+          "worker:sync:ai_audit",
+          "warn",
+          `⚠️ *Sync: auditoria IA indisponível*\n\n` +
+            `Detalhe: ${audit.last_error || "healthy=false"}\n` +
+            `Confira SUPABASE_URL + WORKER_TOKEN no Easy Panel do Sync.`,
+          180,
+        );
+      } else {
+        results.push({ key: "worker:sync:ai_audit", fired: false, detail: "ok_or_off" });
+      }
+    }
+
+    // Portal 2: HTTP 200 mas Redis caiu → queue="sync" (ainda avisa).
+    if (w.key === "worker:portal2" && h.body) {
+      const queueMode = String(h.body.queue || "");
+      if (queueMode && queueMode !== "redis-bullmq") {
+        await fire(
+          "worker:portal2:redis",
+          "critical",
+          `🚨 *Portal 2: Redis/fila fora*\n\n` +
+            `Health respondeu, mas queue=\`${queueMode}\` (esperado \`redis-bullmq\`).\n` +
+            `Cadastros podem ir em modo síncrono ou falhar.\n\n` +
+            `Easy Panel → serviço Redis \`igreen_evolution-api-redis\` → Start/Rebuild.`,
+          45,
+        );
+      } else {
+        results.push({ key: "worker:portal2:redis", fired: false, detail: queueMode || "ok" });
+      }
+
+      const audit = h.body.ai_audit as { healthy?: boolean; last_error?: string } | undefined;
+      if (audit && audit.healthy === false) {
+        await fire(
+          "worker:portal2:ai_audit",
+          "warn",
+          `⚠️ *Portal 2: auditoria IA indisponível*\n\n` +
+            `Detalhe: ${audit.last_error || "healthy=false"}\n` +
+            `Cadastro pode seguir, mas sem análise Gemini.`,
+          180,
+        );
+      } else {
+        results.push({ key: "worker:portal2:ai_audit", fired: false, detail: "ok" });
+      }
+    }
+
+    results.push({ key: w.key, fired: false, detail: "healthy" });
   }
 
   // ── 4) Velip crédito / Procon ─────────────────────────────────────

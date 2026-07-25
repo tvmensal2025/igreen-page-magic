@@ -35,6 +35,12 @@ import http from 'node:http';
 import net from 'node:net';
 import fs from 'node:fs';
 import { chromium } from 'playwright-chromium';
+import {
+  checkSyncAuditHealth,
+  getSyncAuditHealth,
+  maybeAuditSync,
+  summarizeSyncAllResult,
+} from './ai-audit.mjs';
 
 const PORT = parseInt(process.env.PORT || '3102', 10);
 const WORKER_TOKEN = process.env.WORKER_TOKEN || '';
@@ -1871,6 +1877,7 @@ function authOk(req) {
 const bootAt = Date.now();
 
 const server = http.createServer(async (req, res) => {
+  let auditEmail = null;
   try {
     if (req.method === 'GET' && req.url === '/health') {
       const nowT = Date.now();
@@ -1898,6 +1905,7 @@ const server = http.createServer(async (req, res) => {
         operation_locks: locks,
         waf_cooldowns: cooldowns,
         last_tor_rotate_s: lastTorRotateAt ? Math.round((nowT - lastTorRotateAt) / 1000) : null,
+        ai_audit: getSyncAuditHealth(),
       });
     }
     if (req.method === 'GET' && req.url === '/last-debug') return sendJson(res, 200, lastDebug);
@@ -1931,6 +1939,7 @@ const server = http.createServer(async (req, res) => {
 
     const body = await readJsonBody(req);
     const email = String(body.portal_email || '').trim().toLowerCase();
+    auditEmail = email || null;
     const password = String(body.portal_password || '');
     if (!email || !password) return sendJson(res, 400, { ok: false, error: 'portal_email e portal_password obrigatórios' });
 
@@ -2029,7 +2038,7 @@ const server = http.createServer(async (req, res) => {
         details = await enrichMany(s, targets.slice(0, limit).map((t) => t.codigo));
         dbg(`[sync-all] enrich: ${details.length}/${limit} fichas`);
       }
-      return sendJson(res, 200, {
+      const payload = {
         ok: true,
         consultor_id: s.consultorId,
         customers,
@@ -2052,7 +2061,19 @@ const server = http.createServer(async (req, res) => {
           devolutivas_count: Array.isArray(devolutivas) ? devolutivas.length : 0,
           portal_extras_ok: !!portalExtras,
         },
+      };
+      // Shadow review Gemini (não bloqueia resposta se falhar).
+      void maybeAuditSync({
+        route: '/sync-all',
+        status: 'ok',
+        consultant_email: email,
+        consultor_id: s.consultorId,
+        duration_ms: null,
+        input: { only: only ? Array.from(only) : null, full_history: fullHistory, enrich: body.enrich === true },
+        result: summarizeSyncAllResult(payload),
+        trace: lastDebug.steps.slice(-80),
       });
+      return sendJson(res, 200, payload);
     }
     // /debug-customer-scan: dump completo do Kanban /crm/green +
     // varredura em endpoints alternativos de listagem, procurando por
@@ -2942,6 +2963,19 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     const status = e?.status || 500;
     console.error(`[err] ${req.method} ${req.url} → ${status}: ${e?.message}`);
+    // Auditoria IA em falha (sempre tenta — limite não aplica a errors).
+    try {
+      void maybeAuditSync({
+        route: String(req.url || '').split('?')[0] || 'unknown',
+        status: 'error',
+        consultant_email: auditEmail,
+        error: e?.message || 'erro interno',
+        result: { http_status: status, error_code: e?.code || null },
+        trace: lastDebug.steps.slice(-80),
+      });
+    } catch {
+      /* ignore */
+    }
     return sendJson(res, status, { ok: false, error: e?.message || 'erro interno', error_code: e?.code || null });
   }
 });
@@ -2951,6 +2985,10 @@ server.listen(PORT, () => {
   const netState = bootProxy.kind === 'external' ? `proxy-externo(${bootProxy.label}${bootProxy.sticky ? ',sticky' : ''})`
     : bootProxy.kind === 'tor' ? `tor(${bootProxy.label})` : 'direto(sem-proxy)';
   console.log(`[boot] igreen-sync-worker v28 (${netState}+playwright+api-vo, login-api-first + rotas-limpas + cadastros-by-day + recon-one-route) porta ${PORT}`);
+  checkSyncAuditHealth().then((h) => {
+    if (h.healthy) console.log(`[boot] ✅ AI audit Sync OK (gemini edge)`);
+    else console.warn(`[boot] ⚠️ AI audit Sync: ${h.error}`);
+  }).catch(() => {});
 });
 
 
