@@ -52,9 +52,18 @@ const Auth = () => {
   const [forgotMode, setForgotMode] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [resettingApp, setResettingApp] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Escuta o evento global disparado pelo version gate em src/main.tsx.
+  // Quando dispara, o botão "Atualizar app" começa a piscar para chamar atenção.
+  useEffect(() => {
+    const onUpdate = () => setUpdateAvailable(true);
+    window.addEventListener("igreen:update-available", onUpdate);
+    return () => window.removeEventListener("igreen:update-available", onUpdate);
+  }, []);
 
   const handleHardResetApp = async () => {
     if (resettingApp) return;
@@ -255,7 +264,9 @@ const Auth = () => {
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-md space-y-8 relative z-10">
+      <div className="w-full max-w-5xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 lg:gap-6 relative z-10">
+      <div className="w-full max-w-md space-y-8">
+
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <div className="relative">
@@ -366,26 +377,7 @@ const Auth = () => {
           </p>
         ) : null}
 
-        <div className="pt-1 space-y-3">
-          <button
-            type="button"
-            onClick={handleHardResetApp}
-            disabled={resettingApp}
-            className="group w-full flex items-center justify-between gap-3 rounded-2xl border border-border/70 bg-secondary/30 backdrop-blur-sm px-4 py-3.5 text-left transition-all duration-300 hover:border-primary/35 hover:bg-secondary/55 hover:shadow-md disabled:opacity-60"
-          >
-            <div className="min-w-0 space-y-0.5">
-              <p className="text-sm font-semibold text-foreground tracking-tight">
-                {resettingApp ? "Atualizando o app…" : "Atualizar app"}
-              </p>
-              <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug">
-                Limpa o cache e carrega a versão mais recente. Use se a tela travar ou ficar desatualizada.
-              </p>
-            </div>
-            <span className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-              <RefreshCw className={`h-4 w-4 ${resettingApp ? "animate-spin" : ""}`} />
-            </span>
-          </button>
-
+        <div className="pt-1">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1">
             <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground/60">
               <Zap className="w-3 h-3 shrink-0" /><span>PLATAFORMA PARA O CONSULTOR</span>
@@ -395,8 +387,47 @@ const Auth = () => {
           </div>
         </div>
       </div>
+
+      {/* Botão "Atualizar app" bem do lado do modal de login.
+          Pisca (animate-pulse + ring) quando o version gate detecta nova versão. */}
+      <aside className="w-full max-w-md lg:w-56 lg:flex-shrink-0 lg:pt-[168px]">
+        <button
+          type="button"
+          onClick={handleHardResetApp}
+          disabled={resettingApp}
+          aria-label={updateAvailable ? "Nova versão disponível — clique para atualizar" : "Atualizar app"}
+          className={[
+            "group w-full flex lg:flex-col items-center lg:items-stretch justify-between gap-3 rounded-2xl border px-4 py-3.5 text-left transition-all duration-300 disabled:opacity-60",
+            updateAvailable
+              ? "border-primary bg-primary/10 shadow-[0_0_0_4px_hsl(var(--primary)/0.15)] animate-pulse ring-2 ring-primary/60"
+              : "border-border/70 bg-secondary/30 backdrop-blur-sm hover:border-primary/35 hover:bg-secondary/55 hover:shadow-md",
+          ].join(" ")}
+        >
+          <div className="min-w-0 space-y-0.5 lg:order-2">
+            <p className={`text-sm font-semibold tracking-tight ${updateAvailable ? "text-primary" : "text-foreground"}`}>
+              {resettingApp
+                ? "Atualizando o app…"
+                : updateAvailable
+                  ? "Nova versão! Clique aqui"
+                  : "Atualizar app"}
+            </p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug">
+              {updateAvailable
+                ? "Uma atualização está pronta. Clique para carregar a versão mais recente."
+                : "Limpa o cache e carrega a versão mais recente. Use se a tela travar ou ficar desatualizada."}
+            </p>
+          </div>
+          <span className={`shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl transition-colors lg:order-1 lg:self-start ${
+            updateAvailable ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary group-hover:bg-primary/15"
+          }`}>
+            <RefreshCw className={`h-4 w-4 ${resettingApp || updateAvailable ? "animate-spin" : ""}`} />
+          </span>
+        </button>
+      </aside>
+      </div>
     </div>
   );
+
 };
 
 export default Auth;
