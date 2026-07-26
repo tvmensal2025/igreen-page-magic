@@ -425,8 +425,9 @@ const Auth = () => {
         </button>
       </aside>
       </div>
-
+    </div>
   );
+
 };
 
 export default Auth;
