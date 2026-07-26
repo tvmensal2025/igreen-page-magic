@@ -3364,7 +3364,7 @@ Deno.serve(async (req) => {
             consultantId: String(
               (customer as any).assigned_consultant_id ||
                 (customer as any).consultant_id ||
-                instanceData.consultant_id ||
+                superAdminConsultantId ||
                 "",
             ),
             sendText: async (text) => {
@@ -3464,7 +3464,7 @@ Deno.serve(async (req) => {
                   consultantId: String(
                     (customer as any).assigned_consultant_id ||
                       (customer as any).consultant_id ||
-                      instanceData.consultant_id ||
+                      superAdminConsultantId ||
                       "",
                   ),
                   sendText: async (text) => {
