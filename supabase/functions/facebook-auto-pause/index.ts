@@ -19,7 +19,10 @@ import {
   cronAuthUnauthorized,
 } from "../_shared/cron-auth.ts";
 import { isAdsExpansiveMutationAllowed } from "../_shared/brain-config.ts";
-import { LEGACY_ANCHOR_CAMPAIGN_ID } from "../_shared/ads-anchor.ts";
+import {
+  LEGACY_ANCHOR_CAMPAIGN_ID,
+  resolveAnchorCampaignId,
+} from "../_shared/ads-anchor.ts";
 import { isConsultantLocked } from "../_shared/campaign-pause.ts";
 import { notifyAnchorBudgetScale, notifyCerebroWhatsApp } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
@@ -35,10 +38,6 @@ import {
   formatAnchorScaleDownWhatsApp,
   formatAnchorScaleUpWhatsApp,
 } from "../_shared/brain-budget-scale.ts";
-
-/** Âncora MG — escala fica no rotator, não no Cérebro por campanha. */
-// Fonte única do id legado (ver `_shared/ads-anchor.ts`).
-const ANCHOR_CAMPAIGN_ID = LEGACY_ANCHOR_CAMPAIGN_ID;
 
 async function postBudget(
   fbCampaignId: string,
@@ -76,9 +75,26 @@ function campaignCityLabel(name: string, cities: unknown): string {
   return raw.slice(0, 40) || "Campanha";
 }
 
-function isMgRotOrAnchor(id: string, name: string): boolean {
-  if (id === ANCHOR_CAMPAIGN_ID) return true;
-  return /^MG-ROT-/i.test(String(name || ""));
+/**
+ * MG-ROT e âncora do Cérebro MG: escala de budget é do rotator, não do
+ * brain_scale por campanha. Âncora = brain_config.anchor_campaign_id do
+ * consultor (+ UUID legado). Não bloqueia campanha parceiro só por cidade/UDI.
+ */
+function isMgRotOrAnchor(
+  id: string,
+  name: string,
+  consultantId: string,
+  brainConfig: unknown,
+): boolean {
+  if (/^MG-ROT-/i.test(String(name || ""))) return true;
+  if (id === LEGACY_ANCHOR_CAMPAIGN_ID) return true;
+  const anchor = resolveAnchorCampaignId(
+    consultantId,
+    (brainConfig && typeof brainConfig === "object"
+      ? brainConfig as { anchor_campaign_id?: string | null }
+      : null),
+  );
+  return Boolean(anchor) && id === anchor;
 }
 
 async function postStatus(
@@ -524,7 +540,14 @@ Deno.serve(async (req) => {
           });
           continue;
         }
-        if (isMgRotOrAnchor(String(c.id), String(c.name || ""))) {
+        if (
+          isMgRotOrAnchor(
+            String(c.id),
+            String(c.name || ""),
+            String(c.consultant_id),
+            automationConfigByConsultant.get(c.consultant_id),
+          )
+        ) {
           campaignScaleTicks.push({ id: c.id, skipped: "mg_rot_or_anchor" });
           continue;
         }

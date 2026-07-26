@@ -59,7 +59,7 @@ A análise pode começar pelo *valor médio*. Como prefere?`,
   },
   {
     id: "security",
-    wa: `Olá, *{{nome}}*! Aqui é *{{consultor}}*.
+    wa: `Olá, *{{nome}}*! Aqui é {{o_a_consultor}} *{{consultor}}*.
 
 🔒 *Reforço importante:* não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
 

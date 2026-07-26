@@ -1,6 +1,8 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   displayNameMatchesOwner,
+  oAConsultor,
+  resolveConsultantPresentationLabel,
   resolvePublicConsultantLabel,
 } from "./consultant-public-label.ts";
 
@@ -62,4 +64,19 @@ Deno.test("outros slugs reais do banco também bloqueados", () => {
   ]) {
     assertEquals(resolvePublicConsultantLabel(slug, null), "seu consultor", slug);
   }
+});
+
+Deno.test("o/a + apresentação — nunca 'é consultor' sem artigo", () => {
+  assertEquals(oAConsultor("consultor"), "o");
+  assertEquals(oAConsultor("consultora"), "a");
+  assertEquals(resolveConsultantPresentationLabel("", "", "consultor"), "consultor");
+  assertEquals(resolveConsultantPresentationLabel("", "", "consultora"), "consultora");
+  assertEquals(
+    resolveConsultantPresentationLabel("silviaclaudiaalmeida", null, "consultora"),
+    "consultora",
+  );
+  assertEquals(
+    resolveConsultantPresentationLabel("Rafael Ferreira", null, "consultor"),
+    "Rafael Ferreira",
+  );
 });

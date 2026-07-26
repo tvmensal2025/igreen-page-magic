@@ -207,7 +207,9 @@ export async function resolveWabaPhone(
   const admin = adminClient();
   const { data: platformRow } = await admin
     .from("platform_facebook_account")
-    .select("page_id, access_token_encrypted")
+    .select(
+      "page_id, access_token_encrypted, whatsapp_phone_number_id, whatsapp_destination_number, whatsapp_phone_number_display, waba_id",
+    )
     .eq("id", true)
     .maybeSingle();
 
@@ -237,9 +239,21 @@ export async function resolveWabaPhone(
     .maybeSingle();
 
   const savedDigits = digitsOf(settings?.whatsapp_destination_number);
-  const savedDisplay = settings?.whatsapp_phone_number_display || (savedDigits ? `+${savedDigits}` : "");
   const savedPhoneId = String(settings?.whatsapp_phone_number_id || "");
   const savedPhoneIdIsReal = isRealPhoneId(savedPhoneId);
+
+  // Número oficial da plataforma (implantado pelo SuperAdmin) — fallback se o
+  // consultor não tiver override próprio.
+  const platformPhoneId = String(platformRow.whatsapp_phone_number_id || "");
+  const platformDigits = digitsOf(platformRow.whatsapp_destination_number);
+  const platformPhoneIdIsReal = isRealPhoneId(platformPhoneId);
+
+  const effectivePhoneId = savedPhoneIdIsReal
+    ? savedPhoneId
+    : (platformPhoneIdIsReal ? platformPhoneId : "");
+  const effectiveDigits = savedDigits || platformDigits;
+  const usingPlatformOfficial = !savedPhoneIdIsReal && !savedDigits &&
+    platformPhoneIdIsReal;
 
   const tried: string[] = [];
   const scopes = await tokenScopes(token, tried);
@@ -257,9 +271,10 @@ export async function resolveWabaPhone(
   // Se o admin/consultor salvou um phone_number_id real (numérico), valida direto
   // na Graph. Isso cobre casos em que a Página não expõe a WABA, mas o token tem
   // acesso ao número real. Se for inválido, não publicamos com fallback fake.
-  if (!wabaId && savedPhoneIdIsReal) {
+  // Também cobre o número oficial da plataforma (SuperAdmin).
+  if (!wabaId && isRealPhoneId(effectivePhoneId)) {
     try {
-      const probed = await probePhoneNumberId(savedPhoneId, token);
+      const probed = await probePhoneNumberId(effectivePhoneId, token);
       if (probed) {
         if (opts.persist) {
           await admin.from("consultant_ad_settings").upsert(
@@ -278,9 +293,13 @@ export async function resolveWabaPhone(
           page_id: pageId,
           numbers: [],
           chosen: probed,
-          hint: "phone_number_id real validado diretamente na Graph.",
+          hint: usingPlatformOfficial
+            ? "Usando número oficial da plataforma (implantado pelo SuperAdmin)."
+            : "phone_number_id real validado diretamente na Graph.",
           detected_paths_tried: tried,
-          discovered_via: "phone_number_id_probe",
+          discovered_via: usingPlatformOfficial
+            ? "platform_official_wa"
+            : "phone_number_id_probe",
         };
       }
     } catch { /* cai para descoberta WABA */ }
@@ -289,11 +308,11 @@ export async function resolveWabaPhone(
   if (!wabaId) {
     const businessNumbers = await scanBusinessWabaNumbers(token, tried);
     let businessMatch: WabaPhone | null = null;
-    if (savedPhoneIdIsReal) {
-      businessMatch = businessNumbers.find((n) => n.id === savedPhoneId) || null;
+    if (isRealPhoneId(effectivePhoneId)) {
+      businessMatch = businessNumbers.find((n) => n.id === effectivePhoneId) || null;
     }
-    if (!businessMatch && savedDigits) {
-      const savedVariants = brVariants(savedDigits);
+    if (!businessMatch && effectiveDigits) {
+      const savedVariants = brVariants(effectiveDigits);
       businessMatch = businessNumbers.find((n) => {
         const numberVariants = brVariants(n.digits);
         return [...numberVariants].some((v) => savedVariants.has(v));
@@ -320,9 +339,13 @@ export async function resolveWabaPhone(
         page_id: pageId,
         numbers: businessNumbers,
         chosen: businessMatch,
-        hint: "Número encontrado automaticamente nas WABAs acessíveis ao Business. A criação da campanha ainda valida se essa WABA está vinculada à Página.",
+        hint: usingPlatformOfficial
+          ? "Número oficial da plataforma encontrado nas WABAs do Business."
+          : "Número encontrado automaticamente nas WABAs acessíveis ao Business. A criação da campanha ainda valida se essa WABA está vinculada à Página.",
         detected_paths_tried: tried,
-        discovered_via: "business_waba_phone_scan",
+        discovered_via: usingPlatformOfficial
+          ? "platform_official_wa"
+          : "business_waba_phone_scan",
         next_steps: [
           `Se a Meta ainda recusar, vincule a WABA ${businessMatch.waba_id || "encontrada"} à Página ${pageId}`,
           "Depois clique em Validar e corrigir WhatsApp automaticamente",
@@ -334,20 +357,20 @@ export async function resolveWabaPhone(
     // nem phone_numbers. Antes tentávamos publicar com fallback de dígitos, mas
     // isso cria campanhas/adsets órfãos quando a Meta recusa o vínculo Página↔WABA.
     // Agora bloqueamos cedo até existir phone_number_id real ou WABA acessível.
-    if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
+    if (effectiveDigits && missingPermissions.includes("whatsapp_business_management")) {
       return {
         ok: false,
         reason: "no_waba",
         page_id: pageId,
         numbers: businessNumbers,
         chosen: null,
-        hint: `A conta Facebook da plataforma está conectada, mas sem a permissão whatsapp_business_management. Salve o phone_number_id numérico real do número ${savedDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
+        hint: `A conta Facebook da plataforma está conectada, mas sem a permissão whatsapp_business_management. Salve o phone_number_id numérico real do número ${effectiveDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
         detected_paths_tried: tried,
         discovered_via: null,
         next_steps: [
           "Reconecte a conta Facebook da plataforma aceitando WhatsApp Business Management.",
-          `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
-          "Ou copie o phone_number_id numérico real no WhatsApp Manager e salve em Dados.",
+          `Confirme no Meta Business Suite que o número ${effectiveDigits} está vinculado à Página ${pageId}.`,
+          "Ou use SuperAdmin → Implantar número WhatsApp CTWA.",
         ],
         missing_permissions: missingPermissions,
       };
@@ -358,10 +381,10 @@ export async function resolveWabaPhone(
       reason: "no_waba",
       page_id: pageId,
       numbers: businessNumbers,
-      hint: savedDigits
+      hint: effectiveDigits
         ? missingPermissions.length
-          ? `A conta Facebook da plataforma está conectada, mas sem a permissão ${missingPermissions.join(", ")}. Por isso a Meta não deixa o sistema enxergar a WABA/número ${savedDigits}.`
-          : `O número ${savedDigits} está salvo, mas não foi encontrado em nenhuma WABA acessível e a Página ${pageId} não expõe WABA vinculada.`
+          ? `A conta Facebook da plataforma está conectada, mas sem a permissão ${missingPermissions.join(", ")}. Por isso a Meta não deixa o sistema enxergar a WABA/número ${effectiveDigits}.`
+          : `O número ${effectiveDigits} está salvo, mas não foi encontrado em nenhuma WABA acessível e a Página ${pageId} não expõe WABA vinculada.`
         : `Página ${pageId} não expõe WABA via Graph e nenhuma WABA acessível trouxe um telefone selecionável.`,
       detected_paths_tried: tried,
       discovered_via: null,
@@ -377,9 +400,9 @@ export async function resolveWabaPhone(
 
   const numbers = await fetchWabaNumbers(wabaId, token);
   if (numbers.length === 0) {
-    if (savedPhoneIdIsReal) {
+    if (isRealPhoneId(effectivePhoneId)) {
       try {
-        const probed = await probePhoneNumberId(savedPhoneId, token);
+        const probed = await probePhoneNumberId(effectivePhoneId, token);
         if (probed) {
           if (opts.persist) {
             await admin.from("consultant_ad_settings").upsert(
@@ -399,14 +422,18 @@ export async function resolveWabaPhone(
             page_id: pageId,
             numbers: [],
             chosen: probed,
-            hint: "A WABA foi encontrada mas não listou telefones; phone_number_id real validado diretamente na Graph.",
+            hint: usingPlatformOfficial
+              ? "Número oficial da plataforma validado na Graph."
+              : "A WABA foi encontrada mas não listou telefones; phone_number_id real validado diretamente na Graph.",
             detected_paths_tried: tried,
-            discovered_via: discoveredVia || "phone_number_id_probe",
+            discovered_via: usingPlatformOfficial
+              ? "platform_official_wa"
+              : (discoveredVia || "phone_number_id_probe"),
           };
         }
       } catch { /* bloqueia no no_numbers */ }
     }
-    if (savedDigits && missingPermissions.includes("whatsapp_business_management")) {
+    if (effectiveDigits && missingPermissions.includes("whatsapp_business_management")) {
       return {
         ok: false,
         reason: "no_numbers",
@@ -414,13 +441,13 @@ export async function resolveWabaPhone(
         page_id: pageId,
         numbers: [],
         chosen: null,
-        hint: `A WABA foi detectada, mas o token não tem permissão para listar telefones. Salve o phone_number_id numérico real do número ${savedDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
+        hint: `A WABA foi detectada, mas o token não tem permissão para listar telefones. Salve o phone_number_id numérico real do número ${effectiveDigits} ou reconecte a Meta aceitando WhatsApp Business Management.`,
         detected_paths_tried: tried,
         discovered_via: discoveredVia,
         next_steps: [
           "Reconecte a conta Facebook da plataforma aceitando WhatsApp Business Management.",
-          `Confirme no Meta Business Suite que o número ${savedDigits} está vinculado à Página ${pageId}.`,
-          "Ou copie o phone_number_id numérico real no WhatsApp Manager e salve em Dados.",
+          `Confirme no Meta Business Suite que o número ${effectiveDigits} está vinculado à Página ${pageId}.`,
+          "Ou use SuperAdmin → Implantar número WhatsApp CTWA.",
         ],
         missing_permissions: missingPermissions,
       };
@@ -431,22 +458,22 @@ export async function resolveWabaPhone(
       waba_id: wabaId,
       page_id: pageId,
       numbers: [],
-      hint: savedDigits
-        ? `A WABA ${wabaId} foi encontrada, mas não retornou telefones. O número salvo ${savedDigits} não será usado sem phone_number_id real validado pela Meta.`
-        : "Nenhum telefone registrado na WABA. Registre um número em Meta Business Suite → WhatsApp Manager.",
+      hint: effectiveDigits
+        ? `A WABA ${wabaId} foi encontrada, mas não retornou telefones. O número salvo ${effectiveDigits} não será usado sem phone_number_id real validado pela Meta.`
+        : "Nenhum telefone registrado na WABA. Use SuperAdmin → Implantar número WhatsApp CTWA.",
       detected_paths_tried: tried,
       discovered_via: discoveredVia,
     };
   }
 
-  // 1) match por phone_number_id salvo (fonte imutável)
+  // 1) match por phone_number_id (consultor ou oficial plataforma)
   let chosen: WabaPhone | null = null;
-  if (settings?.whatsapp_phone_number_id) {
-    chosen = numbers.find((n) => n.id === settings.whatsapp_phone_number_id) || null;
+  if (effectivePhoneId) {
+    chosen = numbers.find((n) => n.id === effectivePhoneId) || null;
   }
   // 2) match por variantes do número digitado
-  if (!chosen && settings?.whatsapp_destination_number) {
-    const savedVariants = brVariants(settings.whatsapp_destination_number);
+  if (!chosen && effectiveDigits) {
+    const savedVariants = brVariants(effectiveDigits);
     for (const n of numbers) {
       const numberVariants = brVariants(n.digits);
       const hit = [...numberVariants].some((v) => savedVariants.has(v));
@@ -489,10 +516,14 @@ export async function resolveWabaPhone(
     numbers,
     chosen,
     hint: chosen
-      ? undefined
-      : `Seu número não bate com nenhum registrado na WABA. Escolha um dos ${numbers.length} disponíveis.`,
+      ? (usingPlatformOfficial
+        ? "Usando número oficial da plataforma (implantado pelo SuperAdmin)."
+        : undefined)
+      : `Seu número não bate com nenhum registrado na WABA. Escolha um dos ${numbers.length} disponíveis ou implante o oficial no SuperAdmin.`,
     detected_paths_tried: tried,
-    discovered_via: discoveredVia,
+    discovered_via: usingPlatformOfficial && chosen
+      ? "platform_official_wa"
+      : discoveredVia,
   };
   if (result.ok) RESOLVE_CACHE.set(consultantId, { at: Date.now(), value: result });
   return result;

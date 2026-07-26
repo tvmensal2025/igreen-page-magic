@@ -32,6 +32,8 @@ export type RenderVars = {
   representante_phone?: string | null;
   /** Nome da IA do consultor (`consultants.assistant_name`). Ex.: Sofia, Yasmin. */
   assistente?: string | null;
+  /** Gênero do consultor — resolve {{o_a_consultor}} / {{do_da_consultor}}. */
+  consultor_gender?: "consultor" | "consultora" | string | null;
   valor_conta?: number | string | null;
   /** Variante do fluxo (A/B/C/D/E/M). Muda as taxas de economia — Fluxo M usa 10-28%. */
   variant?: string | null;
@@ -131,15 +133,23 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   const legacyName = String(vars.representante || "").trim();
   let rep = resolvePublicConsultantLabel(legacyName, displayName, "");
   if (!rep) {
-    // slug-like legado sem display → genérico
+    // slug-like legado sem display → substantivo (artigo vem de {{o_a_consultor}})
     const isSlugLike =
       legacyName.length > 0 &&
       !/\s/.test(legacyName) &&
       legacyName === legacyName.toLowerCase() &&
       (/\d/.test(legacyName) || legacyName.length >= 9);
-    rep = isSlugLike ? "consultor" : legacyName;
+    const gender = String(vars.consultor_gender || "").trim();
+    rep = isSlugLike
+      ? (gender === "consultora" ? "consultora" : "consultor")
+      : legacyName;
   }
-  if (!rep) rep = "iGreen Energy";
+  if (!rep) {
+    const gender = String(vars.consultor_gender || "").trim();
+    rep = gender === "consultora" ? "consultora" : "consultor";
+  }
+  const oAConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "a" : "o";
+  const doDaConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "da" : "do";
   // IA do consultor — cada um cadastra em Dados (`assistant_name`).
   const assistente = String(vars.assistente || "").trim() || "assistente virtual";
   const billNum = typeof vars.valor_conta === "number"
@@ -176,6 +186,8 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
     }
     if (ASSISTANT_KEYS.has(key)) return assistente;
     if (REP_KEYS.has(key)) return rep;
+    if (key === "o_a_consultor") return oAConsultor;
+    if (key === "do_da_consultor") return doDaConsultor;
     if (BILL_KEYS.has(key)) return billStr;
     const rates = discountRates(vars.variant);
     if (key === "economia_mensal") return hasBill ? fmtBRL(billNum * rates.max) : "";

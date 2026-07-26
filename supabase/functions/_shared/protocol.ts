@@ -102,17 +102,22 @@ export function buildWelcomeHeaderGreeting(consultantName?: string | null): stri
 
 /**
  * Bloco profissional de abertura (marca + protocolo).
+ * Artigo o/a conforme gender do consultor (nunca "Aqui é consultor" sem artigo).
  */
 export function buildWelcomeHeaderProtocol(
   protocol: string,
   consultantName?: string | null,
+  opts?: { gender?: "consultor" | "consultora" | string | null },
 ): string {
-  const who = (consultantName || "").trim() || "seu consultor";
+  const who = (consultantName || "").trim() || (
+    String(opts?.gender || "").trim() === "consultora" ? "consultora" : "consultor"
+  );
+  const oa = String(opts?.gender || "").trim() === "consultora" ? "a" : "o";
   const proto = String(protocol || "").trim();
   return [
     "*iGreen | Conta de Luz Mais Barata 🌱*",
     "",
-    `Olá! Aqui é *${who}*, *Gestor* da *iGreen*.`,
+    `Olá! Aqui é ${oa} *${who}* da *iGreen*.`,
     "",
     "Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.",
     proto ? `\n📋 *Protocolo:* ${proto}` : null,
@@ -123,10 +128,12 @@ export function buildWelcomeHeaderProtocol(
 export function buildGrupoAOpenAttendanceText(opts: {
   consultantName?: string | null;
   protocol?: string | null;
+  gender?: "consultor" | "consultora" | string | null;
 }): string {
   const header = buildWelcomeHeaderProtocol(
     String(opts.protocol || "").trim(),
     opts.consultantName,
+    { gender: opts.gender },
   );
   return `${header}\n\nPara agilizar seu atendimento, por favor, informe seu *primeiro nome*.`;
 }

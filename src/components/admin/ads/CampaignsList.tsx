@@ -140,6 +140,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
   const [brainScaleCampaign, setBrainScaleCampaign] = useState<Campaign | null>(null);
   const [rodizioCampaign, setRodizioCampaign] = useState<Campaign | null>(null);
   const [rodizioSet, setRodizioSet] = useState<Set<string>>(new Set());
+  const [anchorCampaignId, setAnchorCampaignId] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
 
@@ -161,13 +162,17 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
           .order("created_at", { ascending: false }),
         supabase
           .from("consultant_ad_settings")
-          .select("whatsapp_destination_number")
+          .select("whatsapp_destination_number, brain_config")
           .eq("consultant_id", consultantId)
           .maybeSingle(),
       ]);
       const list = (campsRes.data || []) as Campaign[];
       setItems(list);
       setWaNumber((settingsRes.data as any)?.whatsapp_destination_number || null);
+      const cfgAnchor = (settingsRes.data as any)?.brain_config?.anchor_campaign_id;
+      setAnchorCampaignId(
+        typeof cfgAnchor === "string" && cfgAnchor.trim() ? cfgAnchor.trim() : null,
+      );
 
       if (list.length > 0) {
         // Janela dinâmica: começa no mais antigo entre (started_at | created_at) das campanhas
@@ -472,13 +477,15 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         const hasDayActivity = today.spend_cents > 0 || yesterday.spend_cents > 0
           || today.impressions > 0 || yesterday.impressions > 0;
         return (
-          <Card key={c.id} className="p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
+          <Card key={c.id} className="p-4 space-y-3 min-w-0 max-w-full overflow-hidden">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <div className="flex items-start gap-3 min-w-0 flex-1">
                 <CreativeThumb creative={creatives[c.id]} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="font-bold text-foreground truncate">{c.name}</h4>
+                    <h4 className="font-bold text-foreground break-words [overflow-wrap:anywhere] sm:truncate">
+                      {c.name}
+                    </h4>
                   <Badge className={STATUS_COLOR[c.status] || "bg-secondary"}>{STATUS_LABEL[c.status] || c.status}</Badge>
                   {(() => {
                     const h = healthOf(m);
@@ -608,7 +615,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 )}
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex flex-wrap items-center gap-1 w-full sm:w-auto sm:shrink-0 sm:justify-end pl-0 sm:pl-0 -ml-1 sm:ml-0">
                 {/* Pause: Ativa ou Em revisão. Play: só Pausada. Encerrar: Ativa/Pausada/Em revisão/Rejeitada. */}
                 {c.fb_campaign_id && (c.status === "active" || c.status === "pending_review") && (
                   <Button
@@ -665,7 +672,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     <CalendarClock className="w-4 h-4 text-primary" />
                   </Button>
                 )}
-                {c.fb_campaign_id && isBrainScaleEligible(c) && (
+                {c.fb_campaign_id && isBrainScaleEligible(c, { anchorCampaignId }) && (
                   <Button
                     size="icon"
                     variant="ghost"
@@ -862,11 +869,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
         open={!!brainScaleCampaign}
         onOpenChange={(o) => { if (!o) setBrainScaleCampaign(null); }}
         campaign={brainScaleCampaign}
+        anchorCampaignId={anchorCampaignId}
         onUpdated={(patch) => {
           setItems((prev) => prev.map((x) => x.id === patch.id ? { ...x, ...patch } : x));
         }}
       />
-
       <EditCampaignDialog
         open={!!editing}
         onClose={() => setEditing(null)}

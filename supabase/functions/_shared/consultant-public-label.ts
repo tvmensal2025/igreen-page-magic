@@ -6,14 +6,49 @@
  *     (bug 2026-07-20: Rafael com display_name="Abel Olympio").
  *  2) NUNCA vazar username/slug de login no WhatsApp
  *     (bug 2026-07-21: silviaclaudiaalmeida / tvmensal12 / elizavip4545…).
+ *  3) Artigo/gênero: "Aqui é o/a …" e fallback "o consultor" / "a consultora"
+ *     (nunca "Aqui é consultor" sem artigo).
  *
  * Prioridade segura:
  * 1) name + display da MESMA pessoa → display (apelido curto)
  * 2) name humano e display de outra pessoa → name (ignora display contaminado)
  * 3) só name humano → name
  * 4) só display humano → display
- * 5) slug/lixo/vazio → fallback ("seu consultor")
+ * 5) slug/lixo/vazio → fallback ("seu consultor" / "sua consultora")
  */
+
+export type ConsultantGender = "consultor" | "consultora";
+
+/** Artigo definido: o (consultor) | a (consultora). Default: o. */
+export function oAConsultor(gender?: ConsultantGender | string | null): "o" | "a" {
+  return String(gender || "").trim() === "consultora" ? "a" : "o";
+}
+
+/** do (consultor) | da (consultora). Default: do. */
+export function doDaConsultor(gender?: ConsultantGender | string | null): "do" | "da" {
+  return String(gender || "").trim() === "consultora" ? "da" : "do";
+}
+
+/** Fallback possessivo: "seu consultor" | "sua consultora". */
+export function possessiveConsultantFallback(
+  gender?: ConsultantGender | string | null,
+): string {
+  return String(gender || "").trim() === "consultora" ? "sua consultora" : "seu consultor";
+}
+
+/**
+ * Label pra "Aqui é o/a *X*": nome humano, senão substantivo "consultor"/"consultora"
+ * (o artigo {{o_a_consultor}} fica no template → "é o consultor" / "é a consultora").
+ */
+export function resolveConsultantPresentationLabel(
+  name: string | null | undefined,
+  displayName: string | null | undefined,
+  gender?: ConsultantGender | string | null,
+): string {
+  const label = resolvePublicConsultantLabel(name, displayName, "");
+  if (label) return label;
+  return String(gender || "").trim() === "consultora" ? "consultora" : "consultor";
+}
 
 function stripDiacritics(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");

@@ -367,7 +367,7 @@ Deno.serve(async (req) => {
 
     const { data: consultantData } = await supabase
       .from("consultants")
-      .select("id, name, display_name, assistant_name, igreen_id, conversational_flow_enabled")
+      .select("id, name, display_name, assistant_name, gender, igreen_id, conversational_flow_enabled")
       .eq("id", instanceData.consultant_id)
       .single();
 
@@ -381,6 +381,8 @@ Deno.serve(async (req) => {
     );
     const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
     const nomeAssistente = String(consultantData?.assistant_name || "").trim() || "Sofia";
+    const consultorGender: "consultor" | "consultora" =
+      String(consultantData?.gender || "").trim() === "consultora" ? "consultora" : "consultor";
     const consultorId = consultantData?.igreen_id || "124170";
 
     if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {
@@ -3034,14 +3036,14 @@ Deno.serve(async (req) => {
 
       runEngine = async () => engine === "flow"
         ? await runConversationalFlow({
-            supabase, sender, customer, consultorId, nomeRepresentante, nomeAssistente,
+            supabase, sender, customer, consultorId, nomeRepresentante, nomeAssistente, consultorGender,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
             hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName,
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           })
         : await runBotFlow({
-            supabase, sender, customer, consultorId, nomeRepresentante, nomeAssistente,
+            supabase, sender, customer, consultorId, nomeRepresentante, nomeAssistente, consultorGender,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
             hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName,

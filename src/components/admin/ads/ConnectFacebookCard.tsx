@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Facebook, CheckCircle2, AlertCircle, Loader2, RefreshCw, LogOut, Settings2, Users } from "lucide-react";
+import { Facebook, CheckCircle2, AlertCircle, Loader2, RefreshCw, LogOut, Settings2, Users, Smartphone } from "lucide-react";
+import { CtwaWaImplantDialog } from "@/components/admin/ads/CtwaWaImplantDialog";
 import {
   startFacebookOAuth,
   listFacebookAssets,
@@ -47,6 +48,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
   const [manualPage, setManualPage] = useState("");
   const [manualPixel, setManualPixel] = useState("");
   const [waNumber, setWaNumber] = useState("");
+  const [waImplantOpen, setWaImplantOpen] = useState(false);
   const { toast } = useToast();
 
   const handleConnect = async (mode: "connect" | "switch" = "connect") => {
@@ -226,7 +228,19 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
         <Field label="Conexão expira em" value={daysLeft !== null ? `${daysLeft} dias` : null} />
       </div>
 
+      <div className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-2">
+        <div className="text-sm font-medium text-foreground">WhatsApp dos anúncios (CTWA)</div>
+        <p className="text-xs text-muted-foreground">
+          WhatsApp Business · 1 número por conta (SMS uma vez). Para anunciar, fale com o Rafael e peça saldo.
+        </p>
+        <Button size="sm" variant="default" className="gap-1.5" onClick={() => setWaImplantOpen(true)}>
+          <Smartphone className="w-3.5 h-3.5" />
+          {connection.whatsapp_destination_number ? "Ver / gerenciar número CTWA" : "Cadastrar número WhatsApp (SMS)"}
+        </Button>
+      </div>
+
       <SwitchConfirmDialog open={switchOpen} setOpen={setSwitchOpen} onConfirm={handleLogoutAndSwitch} />
+      <CtwaWaImplantDialog open={waImplantOpen} onOpenChange={setWaImplantOpen} onDone={onReconnect} />
 
       <Dialog open={assetsOpen} onOpenChange={setAssetsOpen}>
         <DialogContent className="max-w-lg">
@@ -331,8 +345,18 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
                   inputMode="numeric"
                 />
                 <div className="text-[11px] text-muted-foreground">
-                  Formato 55 + DDD + número, só dígitos. Quando alguém clicar no anúncio, abre o WhatsApp neste número com mensagem pronta.
+                  Formato 55 + DDD + número. Para validar na Meta (SMS, uma vez), use o botão abaixo.
                 </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 h-8 text-[11px]"
+                  onClick={() => { setAssetsOpen(false); setWaImplantOpen(true); }}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  Cadastrar / validar na Meta (SMS)
+                </Button>
                 {waNumber.replace(/\D/g, "").length >= 12 && (
                   <a
                     href={`https://wa.me/${waNumber.replace(/\D/g, "")}?text=${encodeURIComponent("Teste de abertura do anúncio iGreen")}`}

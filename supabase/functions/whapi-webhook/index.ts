@@ -546,7 +546,7 @@ Deno.serve(async (req) => {
     // ─── Identificar consultor super admin (id já validado no topo) ────
     const { data: consultantData } = await supabase
       .from("consultants")
-      .select("id, name, display_name, assistant_name, igreen_id, conversational_flow_enabled")
+      .select("id, name, display_name, assistant_name, gender, igreen_id, conversational_flow_enabled")
       .eq("id", superAdminConsultantId)
       .single();
 
@@ -560,8 +560,10 @@ Deno.serve(async (req) => {
     );
     const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
     const nomeAssistente = String(consultantData?.assistant_name || "").trim() || "Sofia";
+    const consultorGender: "consultor" | "consultora" =
+      String(consultantData?.gender || "").trim() === "consultora" ? "consultora" : "consultor";
     const consultorId = consultantData?.igreen_id || "124170";
-    console.log(`✅ Whapi super admin: ${nomeRepresentante} (full: ${_fullName}, iGreen ID: ${consultorId}, IA: ${nomeAssistente})`);
+    console.log(`✅ Whapi super admin: ${nomeRepresentante} (full: ${_fullName}, iGreen ID: ${consultorId}, IA: ${nomeAssistente}, gender: ${consultorGender})`);
 
 
 
@@ -3204,14 +3206,14 @@ Deno.serve(async (req) => {
       // When `consultants.use_engine_v3 = true`, the v3 engine takes
       const runEngine = async () => engine === "flow"
         ? await runConversationalFlow({
-            supabase, sender: engineSender, customer, consultorId, nomeRepresentante, nomeAssistente,
+            supabase, sender: engineSender, customer, consultorId, nomeRepresentante, nomeAssistente, consultorGender,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
             hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName: "whapi-superadmin",
             fileUrl, fileBase64, geminiApiKey: GEMINI_API_KEY,
           })
         : await runBotFlow({
-            supabase, sender: engineSender, customer, consultorId, nomeRepresentante, nomeAssistente,
+            supabase, sender: engineSender, customer, consultorId, nomeRepresentante, nomeAssistente, consultorGender,
             remoteJid, phone, messageText, buttonId, isFile, isButton,
             hasImage, hasDocument, hasAudio, imageMessage, documentMessage, message, key, messageId,
             instanceName: "whapi-superadmin",

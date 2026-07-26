@@ -15,7 +15,7 @@ import { isActiveConversationalFunnelStep } from "../bot/cadastro-fixes.ts";
 import { assignProtocolToCustomer } from "../protocol.ts";
 import { resolveChannelForCustomerWithFailover } from "../channel-sender.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
-import { resolvePublicConsultantLabel } from "../consultant-public-label.ts";
+import { resolveConsultantPresentationLabel, oAConsultor } from "../consultant-public-label.ts";
 import {
   playAudioFile,
   makeSMS,
@@ -187,18 +187,23 @@ async function loadNames(supabase: SB, customerId: string, consultantId: string 
     .select("id, name, name_source, phone_whatsapp, tracking_protocol, flow_variant")
     .eq("id", customerId)
     .maybeSingle();
-  let consultor = "iGreen";
+  let consultor = "consultor";
+  let o_a_consultor = "o";
   if (consultantId) {
     const { data: c } = await supabase
       .from("consultants")
-      .select("name, display_name")
+      .select("name, display_name, gender")
       .eq("id", consultantId)
       .maybeSingle();
+    const gender = String((c as { gender?: string } | null)?.gender || "").trim() === "consultora"
+      ? "consultora"
+      : "consultor";
+    o_a_consultor = oAConsultor(gender);
     // Nunca vazar slug/login (ex.: silviaclaudiaalmeida) no WhatsApp.
-    consultor = resolvePublicConsultantLabel(
-      (c as any)?.name,
-      (c as any)?.display_name,
-      consultor,
+    consultor = resolveConsultantPresentationLabel(
+      (c as { name?: string } | null)?.name,
+      (c as { display_name?: string } | null)?.display_name,
+      gender,
     );
   }
   const nome = safeFirstNameForAddress((cust as any)?.name, (cust as any)?.name_source);
@@ -208,7 +213,8 @@ async function loadNames(supabase: SB, customerId: string, consultantId: string 
     rawName: (cust as any)?.name ?? null,
     nameSource: (cust as any)?.name_source ?? null,
     consultor,
-    protocolo: String((cust as any)?.tracking_protocol || ""),
+    o_a_consultor,
+    protocolo: String((cust as any)?.tracking_protocol || "").trim(),
   };
 }
 
@@ -229,7 +235,7 @@ async function runOpenAttendance(
     return { action: "open_attendance", ok: true, detail: "already_in_funnel" };
   }
 
-  const { nome, consultor, protocolo: existingProto } = await loadNames(
+  const { nome, consultor, o_a_consultor, protocolo: existingProto } = await loadNames(
     supabase,
     plan.customer_id,
     plan.consultant_id,
@@ -243,14 +249,14 @@ async function runOpenAttendance(
     kit?.wa_open_text?.trim() ||
     `*iGreen | Conta de Luz Mais Barata 🌱*
 
-Olá! Aqui é *{{consultor}}*, *Gestor* da *iGreen*.
+Olá! Aqui é {{o_a_consultor}} *{{consultor}}* da *iGreen*.
 
 Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
 
 📋 *Protocolo:* {{protocolo}}
 
 Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.`;
-  const text = renderVars(raw, { nome, consultor, protocolo });
+  const text = renderVars(raw, { nome, consultor, o_a_consultor, protocolo });
   const audio = kit ? weekdayWaAudioUrl(kit) : null;
 
   const r = await sendWelcomeHeader(supabase, {

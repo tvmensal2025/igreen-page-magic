@@ -8,11 +8,12 @@
 // O componente também exporta `ready` para o pai (wizard) bloquear o
 // botão Publicar caso esteja faltando alguma coisa.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, ExternalLink } from "lucide-react";
+import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, ExternalLink, Smartphone } from "lucide-react";
 import { useCtwaPreflight, type CtwaCheck } from "@/hooks/useCtwaPreflight";
+import { CtwaWaImplantDialog } from "@/components/admin/ads/CtwaWaImplantDialog";
 
 interface Props {
   consultantId: string | null;
@@ -44,6 +45,7 @@ function CheckRow({ check }: { check: CtwaCheck }) {
 
 export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Props) {
   const { loading, ready, bot, facebook, pixel, waba, refresh } = useCtwaPreflight(consultantId);
+  const [waImplantOpen, setWaImplantOpen] = useState(false);
 
   // Notifica o pai sempre que `ready` mudar de valor.
   // Guardamos o callback num ref para NÃO depender da sua referência no
@@ -54,6 +56,8 @@ export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Prop
   useEffect(() => {
     onReadyChangeRef.current?.(ready);
   }, [ready]);
+
+  const wabaNeedsNumber = waba.status !== "ok" && waba.status !== "loading";
 
   return (
     <Card className={`p-4 border-2 ${ready ? "border-primary/40 bg-primary/5" : "border-warning/40 bg-warning/5"}`}>
@@ -81,8 +85,19 @@ export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Prop
         <CheckRow check={waba} />
       </div>
 
-      {!ready && !loading && (
-        <div className="mt-3 pt-3 border-t border-border/40">
+      {(wabaNeedsNumber || !ready) && !loading && (
+        <div className="mt-3 pt-3 border-t border-border/40 space-y-2">
+          <Button
+            size="sm"
+            className="w-full gap-1.5"
+            onClick={() => setWaImplantOpen(true)}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            Cadastrar WhatsApp Business (SMS · uma vez)
+          </Button>
+          <p className="text-[11px] text-muted-foreground">
+            WhatsApp Business · 1 número por conta · para anunciar, fale com o Rafael e peça saldo na carteira.
+          </p>
           <a
             href="https://business.facebook.com/wa/manage/phone-numbers/"
             target="_blank"
@@ -94,6 +109,12 @@ export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Prop
           </a>
         </div>
       )}
+
+      <CtwaWaImplantDialog
+        open={waImplantOpen}
+        onOpenChange={setWaImplantOpen}
+        onDone={() => void refresh()}
+      />
     </Card>
   );
 }

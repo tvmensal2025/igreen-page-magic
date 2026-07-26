@@ -1256,6 +1256,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const _turnVars = {
     nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
+    consultor_gender: ctx.consultorGender || "consultor",
     valor_conta: (ctx.customer as any).electricity_bill_value,
     telefone: ctx.customer.phone_whatsapp,
     cpf: (ctx.customer as any).cpf,
@@ -2331,6 +2332,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const vars = {
     nome: captureUpdates.name || ctx.customer.name, nome_source: (captureUpdates as any).name_source || (ctx.customer as any).name_source,
     representante: ctx.nomeRepresentante,
+    consultor_gender: ctx.consultorGender || "consultor",
     protocolo,
     valor_conta: captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value,
     telefone: captureUpdates.phone_whatsapp || ctx.customer.phone_whatsapp,
@@ -3610,7 +3612,7 @@ async function runLegacyConversational(ctx: BotContext): Promise<BotResult> {
 
   const cls = await classifyIntent(ctx.messageText, step, ctx.geminiApiKey);
   const transition = decideTransition(step, cls.intent, ctx.customer);
-  const vars = { nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante };
+  const vars = { nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source, representante: ctx.nomeRepresentante, consultor_gender: ctx.consultorGender || "consultor" };
   let reply = "";
   if (transition.action.type === "send_template") {
     reply = await getTemplate(ctx.supabase, transition.action.step_key, transition.action.template_key, vars);

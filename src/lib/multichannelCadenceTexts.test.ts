@@ -417,6 +417,21 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     ).toBe("assistente virtual da Ana da iGreen.");
   });
 
+  it("apresentação WA: Aqui é o/a *consultor* conforme gender", () => {
+    expect(
+      renderCadenceBody("Aqui é {{o_a_consultor}} *{{consultor}}*", {
+        consultor: "Rafael",
+        consultorGender: "consultor",
+      }),
+    ).toBe("Aqui é o *Rafael*");
+    expect(
+      renderCadenceBody("Aqui é {{o_a_consultor}} *{{consultor}}*", {
+        consultor: "Ana",
+        consultorGender: "consultora",
+      }),
+    ).toBe("Aqui é a *Ana*");
+  });
+
   it("boas-vindas respeitam gênero M/F", () => {
     const m = renderCadenceBody("Seja muito {{bem_vindo}}.", {
       nome: "João",

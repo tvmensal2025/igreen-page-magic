@@ -19,7 +19,7 @@ import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
 import { filterSendableCustomers } from "../_shared/cron-pause-batch.ts";
 import { LEAD_ORIGIN_FILTER } from "../_shared/origin-guard.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
-import { resolvePublicConsultantFirstName } from "../_shared/consultant-public-label.ts";
+import { resolveConsultantPresentationLabel } from "../_shared/consultant-public-label.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import {
   getConsultantAutomationPrefs,
@@ -161,20 +161,24 @@ Deno.serve(async (req) => {
       // (nome, não gestor). Nunca interpolar antes do loader (cache contaminava o batch).
       const firstName = safeFirstNameForAddress(c.name, c.name_source);
       let consultorLabel = "";
+      let oA = "o";
       if (c.consultant_id) {
         const { data: cons } = await supabase
           .from("consultants")
-          .select("name, display_name")
+          .select("name, display_name, gender")
           .eq("id", c.consultant_id)
           .maybeSingle();
-        consultorLabel = resolvePublicConsultantFirstName(
+        const gender = String((cons as { gender?: string } | null)?.gender || "").trim();
+        oA = gender === "consultora" ? "a" : "o";
+        consultorLabel = resolveConsultantPresentationLabel(
           (cons as { name?: string } | null)?.name,
           (cons as { display_name?: string } | null)?.display_name,
+          gender === "consultora" ? "consultora" : "consultor",
         );
       }
-      // Neutro (sem "o/a"): serve consultor e consultora de qualquer nível.
+      // Artigo o/a via {{o_a_consultor}} — "é o consultor" / "é a consultora".
       const fallback =
-        `*Oi, {{nome}}*! Aqui é *{{consultor}}* da *iGreen* ⚡\n\n` +
+        `*Oi, {{nome}}*! Aqui é {{o_a_consultor}} *{{consultor}}* da *iGreen* ⚡\n\n` +
         `Todo mês a *conta de luz chega*… e muitas pessoas só descobrem depois que estavam *pagando mais* do que precisavam.\n\n` +
         `Você chegou a *iniciar sua simulação*, mas não finalizamos.\n` +
         `*Vamos continuar* de onde paramos?\n\n` +
@@ -183,7 +187,11 @@ Deno.serve(async (req) => {
         supabase,
         "bot_followup_sumiu",
         fallback,
-        { nome: firstName, consultor: consultorLabel || "iGreen" },
+        {
+          nome: firstName,
+          consultor: consultorLabel || "consultor",
+          o_a_consultor: oA,
+        },
         c.consultant_id,
       );
       if (!firstName) msg = scrubEmptyNameGreeting(msg);

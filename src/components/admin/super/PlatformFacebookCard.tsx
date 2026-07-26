@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Facebook, CheckCircle2, AlertCircle, Loader2, Wallet, RefreshCw, Settings2, ShieldCheck, KeyRound, Zap, Search, ArrowRightLeft } from "lucide-react";
+import { Facebook, CheckCircle2, AlertCircle, Loader2, Wallet, RefreshCw, Settings2, ShieldCheck, KeyRound, Zap, Search, ArrowRightLeft, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { getPlatformFacebookStatus, listFacebookAssets, selectFacebookAssets, startFacebookOAuth, type FbAssets, type PlatformFacebookStatus } from "@/services/facebookAds";
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { CtwaWaImplantDialog } from "@/components/admin/ads/CtwaWaImplantDialog";
 
 interface PlatformBalance {
   connected: boolean;
@@ -67,6 +68,7 @@ export function PlatformFacebookCard() {
   const [diagData, setDiagData] = useState<any>(null);
   const [migratingId, setMigratingId] = useState<string | null>(null);
   const [migratingAll, setMigratingAll] = useState(false);
+  const [waImplantOpen, setWaImplantOpen] = useState(false);
 
   async function loadDiagnose() {
     setDiagOpen(true);
@@ -342,6 +344,10 @@ export function PlatformFacebookCard() {
                 <Search className="w-3.5 h-3.5" />
                 Diagnosticar Pixels dos anúncios
               </Button>
+              <Button size="sm" variant="default" onClick={() => setWaImplantOpen(true)} className="gap-1.5">
+                <Smartphone className="w-3.5 h-3.5" />
+                Implantar número WhatsApp CTWA
+              </Button>
             </div>
           </div>
 
@@ -593,6 +599,8 @@ export function PlatformFacebookCard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <CtwaWaImplantDialog open={waImplantOpen} onOpenChange={setWaImplantOpen} />
     </div>
   );
 }

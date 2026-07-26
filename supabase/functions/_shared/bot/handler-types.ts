@@ -19,6 +19,8 @@ export interface BotContext {
   nomeRepresentante: string;
   /** Nome da IA cadastrado em Dados (`consultants.assistant_name`). */
   nomeAssistente?: string;
+  /** Gênero do consultor (Dados → gender) → {{o_a_consultor}}. */
+  consultorGender?: "consultor" | "consultora";
 
   remoteJid: string;
   phone: string;

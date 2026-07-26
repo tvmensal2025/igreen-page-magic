@@ -4,7 +4,7 @@ import { buildGrupoAOpenAttendanceText } from "../protocol.ts";
 
 const A1_TPL = `*iGreen | Conta de Luz Mais Barata 🌱*
 
-Olá! Aqui é *{{representante}}*, *Gestor* da *iGreen*.
+Olá! Aqui é {{o_a_consultor}} *{{representante}}* da *iGreen*.
 
 Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
 
@@ -16,9 +16,10 @@ Deno.test("renderTemplate: A1 marca + protocolo + nome", () => {
   const out = renderTemplate(A1_TPL, {
     representante: "Rafael Ferreira Dias",
     protocolo: "IGR-RFD-3555",
+    consultor_gender: "consultor",
   });
   assertStringIncludes(out, "*iGreen | Conta de Luz Mais Barata 🌱*");
-  assertStringIncludes(out, "Olá! Aqui é *Rafael Ferreira Dias*, *Gestor* da *iGreen*.");
+  assertStringIncludes(out, "Olá! Aqui é o *Rafael Ferreira Dias* da *iGreen*.");
   assertStringIncludes(out, "📋 *Protocolo:* IGR-RFD-3555");
   assertStringIncludes(out, "Para agilizar seu atendimento");
   assertEquals(out.includes("{{protocolo}}"), false);
@@ -28,6 +29,7 @@ Deno.test("renderTemplate: sem protocolo remove só a linha do protocolo", () =>
   const out = renderTemplate(A1_TPL, {
     representante: "Rafael Ferreira Dias",
     protocolo: "",
+    consultor_gender: "consultor",
   });
   assertEquals(out.includes("📋"), false);
   assertStringIncludes(out, "Rafael Ferreira Dias");
@@ -38,8 +40,19 @@ Deno.test("buildGrupoAOpenAttendanceText", () => {
   const full = buildGrupoAOpenAttendanceText({
     consultantName: "Rafael Ferreira Dias",
     protocol: "IGR-RFD-0001",
+    gender: "consultor",
   });
   assertStringIncludes(full, "*iGreen | Conta de Luz Mais Barata 🌱*");
+  assertStringIncludes(full, "Aqui é o *Rafael Ferreira Dias* da *iGreen*.");
   assertStringIncludes(full, "📋 *Protocolo:* IGR-RFD-0001");
   assertStringIncludes(full, "informe seu *primeiro nome*");
+});
+
+Deno.test("buildGrupoAOpenAttendanceText — consultora", () => {
+  const full = buildGrupoAOpenAttendanceText({
+    consultantName: "Ana Silva",
+    protocol: "IGR-ANA-0001",
+    gender: "consultora",
+  });
+  assertStringIncludes(full, "Aqui é a *Ana Silva* da *iGreen*.");
 });

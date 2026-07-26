@@ -45,7 +45,7 @@ import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
-import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
+import { resolveConsultantPresentationLabel, oAConsultor } from "../_shared/consultant-public-label.ts";
 import {
   loadCadenceThemes,
   loadLastThemeId,
@@ -509,6 +509,7 @@ async function dispatchWhatsApp(
     consultor_phone: consultantPhone,
     frase_disponibilidade: fraseDisponibilidade,
     do_da_consultor: consultantGender === "consultora" ? "da" : "do",
+    o_a_consultor: oAConsultor(consultantGender),
     // Legado: nunca rotular consultor como gestor
     gestor_a: "",
   });
@@ -590,17 +591,16 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .from("consultants")
       .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId).maybeSingle();
-    // Paridade daily-reheat: label completo seguro (não FirstName com fallback "").
-    // Slug sem display → "seu consultor" — permite A_NUDGE/COLD_* em vez de
-    // identity_missing:consultor eterno.
-    consultantName = resolvePublicConsultantLabel(
-      (c as { name?: string | null })?.name,
-      (c as { display_name?: string | null })?.display_name,
-      "seu consultor",
-    );
     assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
     const g = String((c as { gender?: string | null })?.gender || "").trim();
     consultantGender = g === "consultora" ? "consultora" : "consultor";
+    // Label de apresentação (nome ou "consultor"/"consultora") + {{o_a_consultor}} no template.
+    // Slug sem display → substantivo — "é o consultor" / "é a consultora".
+    consultantName = resolveConsultantPresentationLabel(
+      (c as { name?: string | null })?.name,
+      (c as { display_name?: string | null })?.display_name,
+      consultantGender,
+    );
     // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
     consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
   }
@@ -842,6 +842,7 @@ async function dispatchSMS(
     link_wa: consultantPhone ? `https://wa.me/${consultantPhone}` : "",
     frase_disponibilidade: fraseDisponibilidade,
     do_da_consultor: consultantGender === "consultora" ? "da" : "do",
+    o_a_consultor: oAConsultor(consultantGender),
     gestor_a: "",
   });
   text = ensureSmsWaLink(text, consultantPhone);

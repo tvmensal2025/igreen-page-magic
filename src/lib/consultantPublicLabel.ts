@@ -4,7 +4,41 @@
  *
  * NUNCA apresentar outra pessoa (bug Abel no cadastro do Rafael).
  * NUNCA vazar username/slug (bug silviaclaudiaalmeida).
+ * Artigo/gênero: o/a + fallback consultor/consultora (nunca "é consultor" cru).
  */
+
+export type ConsultantGender = "consultor" | "consultora";
+
+/** Artigo definido: o (consultor) | a (consultora). Default: o. */
+export function oAConsultor(gender?: ConsultantGender | string | null): "o" | "a" {
+  return String(gender || "").trim() === "consultora" ? "a" : "o";
+}
+
+/** do (consultor) | da (consultora). Default: do. */
+export function doDaConsultor(gender?: ConsultantGender | string | null): "do" | "da" {
+  return String(gender || "").trim() === "consultora" ? "da" : "do";
+}
+
+/** Fallback possessivo: "seu consultor" | "sua consultora". */
+export function possessiveConsultantFallback(
+  gender?: ConsultantGender | string | null,
+): string {
+  return String(gender || "").trim() === "consultora" ? "sua consultora" : "seu consultor";
+}
+
+/**
+ * Label pra "Aqui é o/a *X*": nome humano, senão "consultor"/"consultora"
+ * (artigo {{o_a_consultor}} no template).
+ */
+export function resolveConsultantPresentationLabel(
+  name: string | null | undefined,
+  displayName: string | null | undefined,
+  gender?: ConsultantGender | string | null,
+): string {
+  const label = resolvePublicConsultantLabel(name, displayName, "");
+  if (label) return label;
+  return String(gender || "").trim() === "consultora" ? "consultora" : "consultor";
+}
 
 function stripDiacritics(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -78,6 +112,7 @@ export function firstNameFromPublicConsultant(
   displayName: string | null | undefined,
 ): string {
   const label = resolvePublicConsultantLabel(name, displayName, "");
-  if (!label || label === "seu consultor") return "";
+  if (!label || label === "seu consultor" || label === "sua consultora") return "";
+  if (label === "consultor" || label === "consultora") return "";
   return label.split(/\s+/)[0] || label;
 }

@@ -116,7 +116,7 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
         title: "Boas-vindas",
         icon: "msg",
         message_text:
-          "Oi, {{nome}}! 😊\n\nAqui é o *{{representante}}*, da *iGreen Energy*. 🌱\n\nVocê pode economizar *até 20%* na sua conta de luz, *sem instalar nada*.\n\nQuer que eu te mostre *como funciona*? 👇",
+          "Oi, {{nome}}! 😊\n\nAqui é {{o_a_consultor}} *{{representante}}*, da *iGreen Energy*. 🌱\n\nVocê pode economizar *até 20%* na sua conta de luz, *sem instalar nada*.\n\nQuer que eu te mostre *como funciona*? 👇",
         slot_key: "welcome",
         captures: [{ field: "_buttons", enabled: true, value: [
           { id: "simular", title: "📸 Quero simular" },

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   firstNameFromPublicConsultant,
+  oAConsultor,
+  resolveConsultantPresentationLabel,
   resolvePublicConsultantLabel,
 } from "./consultantPublicLabel";
 
@@ -35,5 +37,27 @@ describe("resolvePublicConsultantLabel", () => {
     expect(resolvePublicConsultantLabel("silviaclaudiaalmeida", "Silvia Claudia")).toBe(
       "Silvia Claudia",
     );
+  });
+});
+
+describe("o/a consultor — apresentação", () => {
+  it("artigo o/a pelo gender", () => {
+    expect(oAConsultor("consultor")).toBe("o");
+    expect(oAConsultor("consultora")).toBe("a");
+    expect(oAConsultor(null)).toBe("o");
+  });
+
+  it("fallback sem nome → consultor/consultora (artigo no template)", () => {
+    expect(resolveConsultantPresentationLabel("silviaclaudiaalmeida", null, "consultor")).toBe(
+      "consultor",
+    );
+    expect(resolveConsultantPresentationLabel("", "", "consultora")).toBe("consultora");
+  });
+
+  it("com nome humano → nome (artigo o/a no template)", () => {
+    expect(resolveConsultantPresentationLabel("Rafael Ferreira", null, "consultor")).toBe(
+      "Rafael Ferreira",
+    );
+    expect(resolveConsultantPresentationLabel("Ana Silva", null, "consultora")).toBe("Ana Silva");
   });
 });

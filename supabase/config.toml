@@ -248,6 +248,9 @@ verify_jwt = false
 
 # Pesquisa B2B de empresas pelo consultor (Google Places / OSM / Receita).
 # Autenticada: é o consultor logado que pesquisa e vira dono dos resultados.
+[functions.facebook-platform-wa-register]
+verify_jwt = true
+
 [functions.lead-research]
 verify_jwt = true
 

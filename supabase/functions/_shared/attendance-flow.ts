@@ -31,7 +31,7 @@ import {
   isActiveConversationalFunnelStep,
   isSofiaMulticanalConversationStep,
 } from "./bot/cadastro-fixes.ts";
-import { resolvePublicConsultantLabel } from "./consultant-public-label.ts";
+import { resolveConsultantPresentationLabel } from "./consultant-public-label.ts";
 
 export const ATTENDANCE_RATING_STEP = "aguardando_avaliacao_atendimento";
 /** Step terminal após nota registrada — bots/crons devem ignorar. */
@@ -188,19 +188,22 @@ async function abandonAttendanceRatingWait(
 async function resolveConsultantDisplayName(
   supabase: SB,
   consultantId: string | null | undefined,
-): Promise<string | null> {
-  if (!consultantId) return null;
+): Promise<{ label: string | null; gender: "consultor" | "consultora" }> {
+  if (!consultantId) return { label: null, gender: "consultor" };
   const { data } = await supabase
     .from("consultants")
-    .select("name, display_name")
+    .select("name, display_name, gender")
     .eq("id", consultantId)
     .maybeSingle();
-  const label = resolvePublicConsultantLabel(
-    (data as any)?.name,
-    (data as any)?.display_name,
-    "",
+  const gender = String((data as { gender?: string } | null)?.gender || "").trim() === "consultora"
+    ? "consultora"
+    : "consultor";
+  const label = resolveConsultantPresentationLabel(
+    (data as { name?: string } | null)?.name,
+    (data as { display_name?: string } | null)?.display_name,
+    gender,
   );
-  return label || null;
+  return { label: label || null, gender };
 }
 
 /**
@@ -311,7 +314,7 @@ export async function sendWelcomeHeader(
   const prevStepEarly = String((customer as any).conversation_step || "");
   if (isActiveConversationalFunnelStep(prevStepEarly)) {
     const consultantId = customer.consultant_id || args.consultantId || null;
-    const consultantName = await resolveConsultantDisplayName(supabase, consultantId);
+    const { label: consultantName } = await resolveConsultantDisplayName(supabase, consultantId);
     let partnerName: string | null = null;
     if (customer.referral_partner_id) {
       const { data: p } = await supabase
@@ -360,7 +363,10 @@ export async function sendWelcomeHeader(
       `[welcome-header] caller=${args.consultantId} ≠ owner=${customer.consultant_id} — usando DONO do lead`,
     );
   }
-  const consultantName = await resolveConsultantDisplayName(supabase, consultantId);
+  const { label: consultantName, gender: consultantGender } = await resolveConsultantDisplayName(
+    supabase,
+    consultantId,
+  );
 
   let partnerName: string | null = null;
   if (customer.referral_partner_id) {
@@ -491,14 +497,18 @@ export async function sendWelcomeHeader(
     consultantId,
     "attendance_ask_name",
     NAME_ASK_TEXT,
-    { consultor: consultantName, protocolo: protocol },
+    { consultor: consultantName || "", protocolo: protocol },
   );
   const protocolTpl = await resolveAttendanceTpl(
     supabase,
     consultantId,
     "attendance_protocol_block",
-    buildWelcomeHeaderProtocol(protocol, consultantName),
-    { consultor: consultantName || "", protocolo: protocol },
+    buildWelcomeHeaderProtocol(protocol, consultantName, { gender: consultantGender }),
+    {
+      consultor: consultantName || "",
+      protocolo: protocol,
+      o_a_consultor: consultantGender === "consultora" ? "a" : "o",
+    },
   );
   const protoBlock = `${protocolTpl}\n\n${askName}`;
 

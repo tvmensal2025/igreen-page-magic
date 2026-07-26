@@ -228,9 +228,11 @@ export function EditCampaignDialog({ open, onClose, campaign, onSaved }: Props) 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !savingGeo && !savingRod && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100%-1rem)] max-w-2xl max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Editar campanha — {campaign?.name}</DialogTitle>
+          <DialogTitle className="break-words [overflow-wrap:anywhere] pr-6">
+            Editar campanha — {campaign?.name}
+          </DialogTitle>
         </DialogHeader>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)}>

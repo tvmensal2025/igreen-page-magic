@@ -21,6 +21,10 @@ import {
 import { Brain, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import {
+  isBrainScaleEligible as checkBrainScaleEligible,
+  type BrainScaleEligibilityOpts,
+} from "@/lib/brainScaleEligibility";
 
 export type BrainScaleCampaign = {
   id: string;
@@ -37,6 +41,8 @@ type Props = {
   onOpenChange: (o: boolean) => void;
   campaign: BrainScaleCampaign | null;
   onUpdated: (patch: Partial<BrainScaleCampaign> & { id: string }) => void;
+  /** Âncora do Cérebro MG (brain_config.anchor_campaign_id) — bloqueia ligar novo. */
+  anchorCampaignId?: string | null;
 };
 
 const STEP_OPTS = [15, 20, 25, 30];
@@ -45,7 +51,13 @@ const STEP_OPTS = [15, 20, 25, 30];
  * Liga o Cérebro de orçamento nesta campanha (qualquer cidade).
  * Não vale para MG-ROT / âncora — esses usam o Cérebro MG de slots.
  */
-export function CampaignBrainScaleDialog({ open, onOpenChange, campaign, onUpdated }: Props) {
+export function CampaignBrainScaleDialog({
+  open,
+  onOpenChange,
+  campaign,
+  onUpdated,
+  anchorCampaignId = null,
+}: Props) {
   const { toast } = useToast();
   const [enabled, setEnabled] = useState(false);
   const [stepPct, setStepPct] = useState(15);
@@ -65,6 +77,23 @@ export function CampaignBrainScaleDialog({ open, onOpenChange, campaign, onUpdat
 
   async function handleSave() {
     if (!campaign) return;
+    // Só impede LIGAR de novo em MG-ROT/âncora. Já ligado: pode ajustar % ou desligar.
+    if (
+      enabled &&
+      !campaign.brain_scale_enabled &&
+      !checkBrainScaleEligible(
+        { id: campaign.id, name: campaign.name, brain_scale_enabled: false },
+        { anchorCampaignId },
+      )
+    ) {
+      toast({
+        title: "Cérebro por campanha não se aplica",
+        description:
+          "Âncora e MG-ROT usam o Cérebro de Minas (slots/budget). Desligue aqui se já estava ligado por engano.",
+        variant: "destructive",
+      });
+      return;
+    }
     setSaving(true);
     try {
       const maxCents = Math.max(517, Math.min(50000, Math.round(Number(maxReais || "0") * 100)));
@@ -197,8 +226,14 @@ export function CampaignBrainScaleDialog({ open, onOpenChange, campaign, onUpdat
   );
 }
 
-/** Elegível para Cérebro por campanha (não MG-ROT, não âncora UDI). */
-export function isBrainScaleEligible(campaign: { id: string; name: string }): boolean {
-  if (campaign.id === "a0189d12-413a-477d-b903-1bca7a61f44a") return false;
-  return !/^MG-ROT-/i.test(campaign.name || "");
+/**
+ * Elegível para Cérebro por campanha (não MG-ROT, não âncora do Cérebro MG).
+ * Passe `anchorCampaignId` de brain_config — sem isso só bloqueia MG-ROT + UUID legado.
+ * Já ligado → sempre true (para poder desligar).
+ */
+export function isBrainScaleEligible(
+  campaign: { id: string; name: string; brain_scale_enabled?: boolean | null },
+  opts?: BrainScaleEligibilityOpts,
+): boolean {
+  return checkBrainScaleEligible(campaign, opts);
 }

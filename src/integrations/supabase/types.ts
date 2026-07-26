@@ -9336,6 +9336,11 @@ export type Database = {
           token_expires_at: string | null
           updated_at: string
           validation_errors: Json | null
+          waba_id: string | null
+          whatsapp_destination_number: string | null
+          whatsapp_phone_number_display: string | null
+          whatsapp_phone_number_id: string | null
+          whatsapp_registered_at: string | null
         }
         Insert: {
           access_token_encrypted: string
@@ -9364,6 +9369,11 @@ export type Database = {
           token_expires_at?: string | null
           updated_at?: string
           validation_errors?: Json | null
+          waba_id?: string | null
+          whatsapp_destination_number?: string | null
+          whatsapp_phone_number_display?: string | null
+          whatsapp_phone_number_id?: string | null
+          whatsapp_registered_at?: string | null
         }
         Update: {
           access_token_encrypted?: string
@@ -9392,6 +9402,11 @@ export type Database = {
           token_expires_at?: string | null
           updated_at?: string
           validation_errors?: Json | null
+          waba_id?: string | null
+          whatsapp_destination_number?: string | null
+          whatsapp_phone_number_display?: string | null
+          whatsapp_phone_number_id?: string | null
+          whatsapp_registered_at?: string | null
         }
         Relationships: []
       }

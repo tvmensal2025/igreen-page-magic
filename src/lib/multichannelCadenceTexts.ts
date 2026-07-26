@@ -865,7 +865,7 @@ export type CadenceBodyRenderOpts = {
   assistente?: string;
   /**
    * Gênero do representante (Dados → gender).
-   * Resolve {{do_da_consultor}}. Default: consultor (do).
+   * Resolve {{do_da_consultor}} e {{o_a_consultor}}. Default: consultor (do / o).
    * {{gestor_a}} legado → vazio (não rotular como gestor).
    */
   consultorGender?: "consultor" | "consultora";
@@ -916,6 +916,7 @@ export function renderCadenceBody(
   const assistente = String(opts.assistente || "").trim() || "Sofia";
   const isConsultora = opts.consultorGender === "consultora";
   const doDaConsultor = isConsultora ? "da" : "do";
+  const oAConsultor = isConsultora ? "a" : "o";
   // abertura_sofia primeiro (injeta {{assistente}}/{{consultor}}); depois resolve identidade.
   return [
     ["{{nome}}", nome],
@@ -936,6 +937,8 @@ export function renderCadenceBody(
     ["{{representante}}", consultor || "{{representante}}"],
     ["{{assistente}}", assistente],
     ["{{do_da_consultor}}", doDaConsultor],
+    // Artigo o/a na apresentação WA: "Aqui é o/a *Nome*" (nunca "é consultor" cru).
+    ["{{o_a_consultor}}", oAConsultor],
     // Legado: templates antigos com {{gestor_a}} — não chamar de gestor.
     ["{{gestor_a}}", ""],
     ["{{bem_vindo}}", g.bem_vindo],
@@ -1096,7 +1099,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
       "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação do consultor + protocolo + pedido do nome.",
     body: `*iGreen | Conta de Luz Mais Barata 🌱*
 
-Olá! Aqui é *{{representante}}* da *iGreen*.
+Olá! Aqui é {{o_a_consultor}} *{{representante}}* da *iGreen*.
 
 Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
 
@@ -1637,8 +1640,8 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     canGenerateAudio: false,
     notes:
       "Texto que o motor envia na fatia Retomada. Salva em cadence_stage_config (A_NUDGE). Não cria passo no construtor.",
-    // Neutro (sem "o/a"): serve consultor e consultora. Nome/IA vêm do consultor do lead.
-    body: `*Oi, {{nome}}*! Aqui é *{{consultor}}* da *iGreen* ⚡
+    // Artigo o/a via {{o_a_consultor}} (Dados → gender). Nome/IA vêm do consultor do lead.
+    body: `*Oi, {{nome}}*! Aqui é {{o_a_consultor}} *{{consultor}}* da *iGreen* ⚡
 
 Todo mês a *conta de luz chega*… e muitas pessoas só descobrem depois que estavam *pagando mais* do que precisavam.
 
@@ -1727,7 +1730,7 @@ Você chegou a *iniciar sua simulação*, mas não finalizamos.
     canGenerateAudio: false,
     notes:
       "O lead já está no CRM (já mandou mensagem). Se o nome já estiver certo, pula esta etapa e vai direto para a reabertura. Sem botões — o cliente digita o nome.",
-    body: `Olá! 👋 Aqui é *{{consultor}}*, da *iGreen Energia*.
+    body: `Olá! 👋 Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen Energia*.
 
 Estou reabrindo seu atendimento sobre *economia na conta de luz*. ⚡
 
@@ -1744,7 +1747,7 @@ Para agilizar, me diga *seu primeiro nome*, por favor.`,
       "WhatsApp com 3 botões de faixa. Usa o nome que já está no CRM. Se precisar de foto/ligar/encerrar, segue o passo seguinte.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Você já demonstrou interesse em *reduzir sua conta de luz* — e agora temos uma novidade:
 
@@ -1768,7 +1771,7 @@ _Para não receber mais contatos, responda SAIR._`,
       "Versão para quem pediu informação há bastante tempo. Não diga que há atendimento pendente se não houver histórico.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz um tempo que você pediu informações sobre *economia na conta de luz* — e agora ficou *muito mais simples* começar. ⚡
 
@@ -2075,7 +2078,7 @@ Toggle cadence_retarget_ads_15d (Central de Automações). O anúncio em si roda
     notes: "RECALL_60D (delay 336h ≈ 14d após Meta/ads). Em silêncio → SMS → ligação (toggle cadence_recall_60d).",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *1 mês* que falamos sobre *economia na conta de luz*.
 
@@ -2137,7 +2140,7 @@ _Para não receber mais contatos, responda SAIR._`,
     notes: "RECALL_90D. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *3 meses* desde nosso contato sobre *reduzir a conta de luz*.
 
@@ -2199,7 +2202,7 @@ _Para não receber mais contatos, responda SAIR._`,
     notes: "RECALL_5M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *5 meses* que falamos sobre *economia na conta de luz*.
 
@@ -2261,7 +2264,7 @@ _Para não receber mais contatos, responda SAIR._`,
     notes: "RECALL_8M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *8 meses* desde nosso contato sobre *economia na conta*.
 
@@ -2323,7 +2326,7 @@ _Para não receber mais contatos, responda SAIR._`,
     notes: "RECALL_12M. Em silêncio → SMS → ligação.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Faz cerca de *1 ano* desde nosso contato sobre economia na conta.
 
@@ -2385,7 +2388,7 @@ _Para não receber mais contatos, responda SAIR._`,
     notes: "RECALL_YEARLY. Em silêncio → SMS → ligação → loop anual.",
     body: `Olá, *{{nome}}*! 👋
 
-Aqui é *{{consultor}}*, da *iGreen*.
+Aqui é {{o_a_consultor}} *{{consultor}}*, da *iGreen*.
 
 Lembrete anual: sua *análise de economia na conta* continua disponível.
 
@@ -2610,7 +2613,7 @@ A análise pode começar pelo *valor médio*. Como prefere?`,
     timing: "Alternável",
     theme: "security",
     canGenerateAudio: false,
-    body: `Olá, *{{nome}}*! Aqui é *{{consultor}}*.
+    body: `Olá, *{{nome}}*! Aqui é {{o_a_consultor}} *{{consultor}}*.
 
 🔒 *Reforço importante:* não pedimos Pix, depósito ou pagamento ao consultor para iniciar a análise.
 

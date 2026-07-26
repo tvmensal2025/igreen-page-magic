@@ -5,7 +5,7 @@ import { parseMoneyBR } from "../parse-money.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
 
 const FALLBACK: Record<string, string> = {
-  "welcome:saudacao": "Oi! Aqui é o {{representante}} 👋",
+  "welcome:saudacao": "Oi! Aqui é {{o_a_consultor}} {{representante}} 👋",
   "menu_inicial:reforco": "{{nome}}, ainda quer entender como funciona o desconto?",
   "qualificacao:pergunta_conta": "Qual o valor médio da sua conta de luz hoje?",
   "pos_video:checkin": "E aí, {{nome}}, ficou alguma dúvida?",
@@ -25,6 +25,8 @@ export interface TemplateVars {
   representante?: string | null;
   /** Alias de representante em alguns templates do painel. */
   consultor?: string | null;
+  /** Gênero do consultor → {{o_a_consultor}}. */
+  consultor_gender?: "consultor" | "consultora" | string | null;
   /** Protocolo de atendimento (IGR-XXX-####). Nunca enviar placeholder vazio. */
   protocolo?: string | null;
   valor_conta?: number | string | null;
@@ -75,6 +77,7 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   const nome = safeFirstNameForAddress(vars.nome, vars.nome_source);
   const rep =
     (String(vars.representante || vars.consultor || "").trim()) || "iGreen Energy";
+  const oA = String(vars.consultor_gender || "").trim() === "consultora" ? "a" : "o";
   const protocolo = String(vars.protocolo || "").trim();
   const valor = fmtValor(vars.valor_conta);
   const econMensal = fmtEconomiaMensal(vars.valor_conta);
@@ -91,6 +94,7 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   out = replaceVar(out, "nome", nome);
   out = replaceVar(out, "representante", rep);
   out = replaceVar(out, "consultor", rep);
+  out = replaceVar(out, "o_a_consultor", oA);
   out = replaceVar(out, "protocolo", protocolo);
   out = replaceVar(out, "valor_conta", valor);
   out = replaceVar(out, "economia_mensal", econMensal);

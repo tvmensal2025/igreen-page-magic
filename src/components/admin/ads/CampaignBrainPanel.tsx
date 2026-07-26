@@ -282,13 +282,55 @@ export function CampaignBrainPanel({
       if (res?.apply_result?.error) throw new Error(String(res.apply_result.error));
       setData(res as BrainPayload);
       if (res?.brain) setCfg(brainFromApi(res.brain));
+
       const explorers = Number(brain.max_explorers) || 0;
-      toast({
-        title: apply ? "Cérebro aplicado na Meta" : "Configuração salva",
-        description: brain.geo_mode === "radius_sede"
-          ? `Modo sede · raio ${brain.sede_radius_km} km · CPL alvo R$ ${(Number(brain.target_cpl_cents) / 100).toFixed(2)}`
-          : `${1 + explorers} praças · R$ ${(Number(brain.explorer_budget_cents) / 100).toFixed(0)}/cidade · idade ${brain.age_min}+`,
-      });
+      const cfgSummary = brain.geo_mode === "radius_sede"
+        ? `Modo sede · raio ${brain.sede_radius_km} km · CPL alvo R$ ${(Number(brain.target_cpl_cents) / 100).toFixed(2)}`
+        : `${1 + explorers} praças · R$ ${(Number(brain.explorer_budget_cents) / 100).toFixed(0)}/cidade · idade ${brain.age_min}+`;
+
+      if (!apply) {
+        toast({ title: "Configuração salva", description: cfgSummary });
+        return;
+      }
+
+      const skip = res?.apply_result?.skipped as string | undefined;
+      if (skip === "ads_automation_disabled") {
+        toast({
+          title: "Configuração salva",
+          description:
+            "Automação expansiva desligada neste consultor. Regras gravadas; escala/slots não mudam sozinhos até liberar autonomia.",
+        });
+        return;
+      }
+
+      // apply_requires_direct_rotator_call (ou sem skip): clique humano → rotator com JWT
+      if (skip === "apply_requires_direct_rotator_call" || !skip) {
+        const { error: rotErr, data: rotData } = await supabase.functions.invoke(
+          "facebook-mg-city-rotator",
+          {
+            body: {
+              ensure_active_slots: true,
+              seed: false,
+              target_budget_cents: brain.explorer_budget_cents,
+              anchor_budget_cents: brain.anchor_budget_cents,
+              preferred_slugs: brain.preferred_slugs,
+            },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          },
+        );
+        if (rotErr) throw rotErr;
+        if ((rotData as { error?: string } | null)?.error) {
+          throw new Error(String((rotData as { error: string }).error));
+        }
+        toast({
+          title: "Config salva e ciclo alinhado",
+          description: cfgSummary,
+        });
+        await load();
+        return;
+      }
+
+      toast({ title: "Configuração salva", description: cfgSummary });
     } catch (e) {
       toast({ title: "Falha ao salvar", description: (e as Error).message, variant: "destructive" });
     } finally {
@@ -657,7 +699,8 @@ export function CampaignBrainPanel({
                   Engrenagem → Controles: estratégia (sede × cidades), sede/raio, mensagem obrigatória,
                   budget da âncora, teto, CPL alvo, degrau %, exploradoras (se legado), idade e ordem das praças.
                   <strong className="text-foreground font-medium"> Salvar só config</strong> grava;
-                  <strong className="text-foreground font-medium"> Salvar e aplicar</strong> prepara o próximo ciclo na Meta.
+                  <strong className="text-foreground font-medium"> Salvar e alinhar ciclo</strong> grava
+                  e chama o rotator com seu login (slots/budget conforme as regras — sem recriar anúncio).
                 </p>
               </section>
 
@@ -677,8 +720,8 @@ export function CampaignBrainPanel({
 
       {/* Controles do Cérebro — só no modal (botão escondido ao lado de Atualizar) */}
       <Dialog open={brainModalOpen} onOpenChange={setBrainModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <DialogContent className="w-[calc(100%-1rem)] max-w-3xl max-h-[min(92dvh,920px)] p-4 sm:p-6 gap-3 overflow-hidden flex flex-col">
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Settings2 className="w-4 h-4 text-primary" />
               Controles do Cérebro
@@ -698,7 +741,7 @@ export function CampaignBrainPanel({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="space-y-4 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
             <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
               <div>
                 <Label className="text-[11px] font-semibold">Estratégia geográfica</Label>
@@ -963,7 +1006,7 @@ export function CampaignBrainPanel({
               }}
             >
               <Play className="w-3.5 h-3.5 mr-1" />
-              {saving ? "Aplicando…" : "Salvar e aplicar na Meta"}
+              {saving ? "Aplicando…" : "Salvar e alinhar ciclo"}
             </Button>
             <span className="text-[11px] text-muted-foreground self-center">
               Plano: {brl(cfg.anchor_budget_cents + cfg.explorer_budget_cents * cfg.max_explorers)}/dia
