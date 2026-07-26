@@ -92,7 +92,8 @@ export default defineConfig({
       output: {
         // Evita o Rollup “puxar” deps implícitas para chunks manuais e
         // criar ciclo de init (TDZ) entre vendors.
-        onlyExplicitManualChunks: true,
+        // (opção `onlyExplicitManualChunks` não existe no tipo do Rollup;
+        // controlamos via `manualChunks` retornando undefined para o resto.)
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
           // Ordem importa: pacotes com "react" no path (radix, lucide-react,
