@@ -264,7 +264,9 @@ const Auth = () => {
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-md space-y-8 relative z-10">
+      <div className="w-full max-w-5xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 lg:gap-6 relative z-10">
+      <div className="w-full max-w-md space-y-8">
+
         <div className="text-center">
           <div className="flex justify-center mb-6">
             <div className="relative">
