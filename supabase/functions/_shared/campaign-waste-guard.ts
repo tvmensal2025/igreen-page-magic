@@ -2,7 +2,9 @@
  * Waste Guard — mata gasto sem conversa (estilo pacing/budget da Meta/Google).
  *
  * Regras (janela rolling 48h, conversa = messaging_conversations_started):
- *  1) ZERO_CONV: spend ≥ R$ 10 e 0 conversas → pausa campanha
+ *  1) ZERO_CONV: spend ≥ limiar e 0 conversas → pausa campanha
+ *     - exploradora / comum: R$ 10
+ *     - âncora (anchor_campaign_id): R$ 40 (pista para learning Meta)
  *  2) ZERO_CLICK: spend ≥ R$ 8 e 0 cliques → pausa campanha (CTR morto)
  *  3) ZOMBIE_AD: ad com spend ≥ R$ 12 e 0 conversas → pausa só o ad
  *
@@ -11,7 +13,9 @@
 
 export const AUTO_PERF_PAUSE_PREFIX = "AUTO_PERF_PAUSE:";
 
-export const WASTE_ZERO_CONV_SPEND_CENTS = 1000; // R$ 10
+export const WASTE_ZERO_CONV_SPEND_CENTS = 1000; // R$ 10 — exploradora / não-âncora
+/** Âncora precisa de pista (~learning); não matar com 3 cliques. */
+export const WASTE_ANCHOR_ZERO_CONV_SPEND_CENTS = 4000; // R$ 40
 export const WASTE_ZERO_CLICK_SPEND_CENTS = 800; // R$ 8
 export const WASTE_ZOMBIE_AD_SPEND_CENTS = 1200; // R$ 12
 export const WASTE_LOOKBACK_DAYS = 2;
@@ -32,18 +36,25 @@ export function formatAutoPerfReason(detail: string): string {
   return `${AUTO_PERF_PAUSE_PREFIX} ${detail} — só reativa no Play`;
 }
 
+export function zeroConvSpendThresholdCents(isAnchor: boolean): number {
+  return isAnchor ? WASTE_ANCHOR_ZERO_CONV_SPEND_CENTS : WASTE_ZERO_CONV_SPEND_CENTS;
+}
+
 export function evaluateCampaignWaste(input: {
   spendCents: number;
   conversations: number;
   clicks: number;
+  /** true = brain_config.anchor_campaign_id desta campanha */
+  isAnchor?: boolean;
 }): WasteVerdict {
-  const { spendCents, conversations, clicks } = input;
-  if (spendCents >= WASTE_ZERO_CONV_SPEND_CENTS && conversations <= 0) {
+  const { spendCents, conversations, clicks, isAnchor = false } = input;
+  const zeroConvThreshold = zeroConvSpendThresholdCents(isAnchor);
+  if (spendCents >= zeroConvThreshold && conversations <= 0) {
     return {
       action: "pause_campaign",
       rule: "zero_conv",
       reason: formatAutoPerfReason(
-        `Waste guard: R$ ${(spendCents / 100).toFixed(2)} sem conversa Meta (${WASTE_LOOKBACK_DAYS}d)`,
+        `Waste guard${isAnchor ? " âncora" : ""}: R$ ${(spendCents / 100).toFixed(2)} sem conversa Meta (${WASTE_LOOKBACK_DAYS}d)`,
       ),
     };
   }

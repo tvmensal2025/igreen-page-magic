@@ -134,6 +134,13 @@ interface Body {
    * (ainda exige saldo líquido > 0 e sem débito).
    */
   queue_only?: boolean;
+  /**
+   * Campanha Inteligente (1-clique): após publicar, marca esta campanha como
+   * âncora no brain_config (CPL 750, max_explorers 0, autopilot).
+   */
+  smart_anchor?: boolean;
+  /** Teto diário do Cérebro (centavos) — usado no bootstrap smart_anchor. */
+  max_anchor_budget_cents?: number;
 }
 
 function buildInitialMessage(
@@ -2387,6 +2394,62 @@ Deno.serve(async (req) => {
     // em vez de publicar outra campanha.
     await completePublishSaga(admin, publishSagaId, publishResult);
 
+    // Campanha Inteligente: bootstrap Cérebro (âncora + política de escala).
+    if (body.smart_anchor === true && campaignRowId) {
+      try {
+        const { data: adRow } = await admin
+          .from("consultant_ad_settings")
+          .select("brain_config")
+          .eq("consultant_id", auth.id)
+          .maybeSingle();
+        const prev = normalizeBrainConfig(adRow?.brain_config);
+        const wasFull = prev.automation_mode === "full" && !prev.kill_switch;
+        const startBud = Math.max(
+          517,
+          Math.min(50000, Number(body.daily_budget_cents) || 3000),
+        );
+        const maxBudRaw = Number(body.max_anchor_budget_cents);
+        const maxBud = Math.max(
+          startBud,
+          Math.min(
+            50000,
+            Number.isFinite(maxBudRaw) && maxBudRaw > 0
+              ? maxBudRaw
+              : Math.max(startBud * 3, prev.max_anchor_budget_cents || 15000),
+          ),
+        );
+        const nextBrain = {
+          ...prev,
+          anchor_campaign_id: campaignRowId,
+          target_cpl_cents: 750,
+          max_explorers: 0,
+          preferred_slugs: [],
+          geo_mode: "radius_sede" as const,
+          anchor_budget_cents: startBud,
+          max_anchor_budget_cents: maxBud,
+          scale_step_pct: prev.scale_step_pct >= 10 ? prev.scale_step_pct : 15,
+          autopilot: true,
+          kill_switch: false,
+          automation_mode: wasFull ? "full" as const : "limited" as const,
+          require_initial_message: true,
+        };
+        await admin.from("consultant_ad_settings").upsert(
+          {
+            consultant_id: auth.id,
+            brain_config: nextBrain,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "consultant_id" },
+        );
+        console.info("[fb-create] smart_anchor bootstrap", campaignRowId);
+      } catch (bootErr) {
+        console.warn(
+          "[fb-create] smart_anchor bootstrap falhou:",
+          (bootErr as Error)?.message || bootErr,
+        );
+      }
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -2406,6 +2469,7 @@ Deno.serve(async (req) => {
         rodizio_warning: rodizioWarning,
         is_remarketing: wantsRemarketing,
         retarget_ddds: retargetDddsMerged,
+        smart_anchor: body.smart_anchor === true,
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -40,16 +40,32 @@ Deno.test("formatCerebroActivateWhatsApp — ativa", () => {
   if (!msg.includes("no ar")) throw new Error("missing CTA tone");
 });
 
-Deno.test("formatCerebroWastePauseWhatsApp — trava AUTO_PERF", () => {
+Deno.test("formatCerebroWastePauseWhatsApp — trava e português", () => {
   const msg = formatCerebroWastePauseWhatsApp({
-    campaignName: "MG-ROT-betim",
-    reason: "AUTO_PERF_PAUSE: ≥R$10/0 conv",
-    spendCents: 1250,
+    campaignName: "SEDE-UDI-50km · [CONS-rafael-ferreira] CEMIG · iGreen — Sede",
+    reason: "AUTO_PERF_PAUSE: Waste guard: R$ 10.11 sem conversa Meta (2d) — só reativa no Play",
+    spendCents: 1011,
     conversations: 0,
     clicks: 3,
     rule: "zero_conv",
   });
   if (!msg.includes("Play")) throw new Error("missing play hint");
-  if (!msg.includes("zero_conv")) throw new Error("missing rule");
+  if (!msg.includes("proteger seu saldo")) throw new Error("missing pt-BR tone");
+  if (!msg.includes("Conversas no WhatsApp")) throw new Error("missing pt label");
+  if (msg.includes("AUTO_PERF")) throw new Error("should not expose AUTO_PERF");
+  if (msg.includes("`zero_conv`")) throw new Error("should not expose raw rule code");
   if (!msg.includes("R$")) throw new Error("missing spend");
+  if (!msg.includes("SEDE-UDI-50km")) throw new Error("missing campaign name");
+});
+
+Deno.test("formatCerebroWastePauseSms — curto e pt-BR", async () => {
+  const { formatCerebroWastePauseSms } = await import("./cerebro-notify-format.ts");
+  const sms = formatCerebroWastePauseSms({
+    campaignName: "SEDE-UDI-50km · [CONS-rafael] iGreen",
+    spendCents: 1011,
+  });
+  if (sms.length > 160) throw new Error(`sms too long: ${sms.length}`);
+  if (!sms.includes("pausei")) throw new Error("missing pt verb");
+  if (sms.toLowerCase().includes("ctwa")) throw new Error("no ctwa jargon in sms");
+  if (sms.includes("apos")) throw new Error("missing accent: após not apos");
 });

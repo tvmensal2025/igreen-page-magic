@@ -7,6 +7,8 @@ import { AdTemplatesGallery } from "./AdTemplatesGallery";
 import { CtwaConnectGuide } from "./CtwaConnectGuide";
 import { SyncMetricsButton } from "./SyncMetricsButton";
 import { DragResizer } from "@/components/layout/DragResizer";
+import { SmartAnchorCampaignDialog } from "./SmartAnchorCampaignDialog";
+import { AdsCreateHelpDialog } from "./AdsCreateHelpDialog";
 
 import { IntelligenceTab } from "./IntelligenceTab";
 import { ResultsDashboard } from "./ResultsDashboard";
@@ -24,6 +26,7 @@ import {
   LayoutDashboard,
   TrendingUp,
   BadgeDollarSign,
+  HelpCircle,
 } from "lucide-react";
 import { useManagedConsultants } from "@/hooks/useManagedConsultants";
 import { AdMetricsCards } from "../dashboard/AdMetricsCards";
@@ -47,6 +50,8 @@ type View = "dashboard" | "gallery" | "campaigns" | "performance" | "intel" | "c
 export function AdsCentralTab({ consultantId }: Props) {
   const { toast } = useToast();
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [smartOpen, setSmartOpen] = useState(false);
+  const [createHelpOpen, setCreateHelpOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState<View>("dashboard");
   const [periodDays, setPeriodDays] = useState<number>(30);
@@ -91,13 +96,39 @@ export function AdsCentralTab({ consultantId }: Props) {
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
           <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
-            Dashboard rico · Cérebro na aba própria.
+            Cérebro inteligente = rápido · Criar campanha = você monta tudo.
           </span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 w-full sm:w-auto">
           <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
-          <AdsButton variant="cta" size="sm" onClick={() => setWizardOpen(true)}>
+          <AdsButton
+            variant="ghost"
+            size="sm"
+            onClick={() => setCreateHelpOpen(true)}
+            title="Qual botão eu uso?"
+            aria-label="Qual botão eu uso?"
+            className="px-2"
+          >
+            <HelpCircle className="w-3.5 h-3.5" />
+            <span className="hidden md:inline text-[11px]">Qual usar?</span>
+          </AdsButton>
+          <AdsButton
+            variant="secondary"
+            size="sm"
+            onClick={() => setSmartOpen(true)}
+            title="Rápido: cidade da sede + Cérebro cuida do orçamento"
+          >
+            <Brain className="w-3.5 h-3.5" />
+            <span className="sm:hidden">Cérebro</span>
+            <span className="hidden sm:inline">Cérebro inteligente</span>
+          </AdsButton>
+          <AdsButton
+            variant="cta"
+            size="sm"
+            onClick={() => setWizardOpen(true)}
+            title="Completo: você escolhe cidade, textos e dias"
+          >
             <Plus className="w-3.5 h-3.5" />
             <span className="sm:hidden">Criar</span>
             <span className="hidden sm:inline">Criar campanha</span>
@@ -254,11 +285,18 @@ export function AdsCentralTab({ consultantId }: Props) {
 
         {view !== "dashboard" && view !== "performance" && view !== "commissions" && view !== "intel" && (
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">
-            <Sparkles className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
+            <Brain className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
             <div>
-              Recarregue sua carteira no botão acima e escolha um modelo pronto na{" "}
-              <strong className="text-[hsl(var(--ads-emerald-2))]">Galeria</strong>. A campanha sobe
-              pré-otimizada e os leads caem no WhatsApp já conectado.
+              Em dúvida? Use o <strong className="text-[hsl(var(--ads-emerald-2))]">Cérebro inteligente</strong>
+              {" "}(rápido, o sistema cuida do orçamento).{" "}
+              <button
+                type="button"
+                className="underline text-primary hover:opacity-80"
+                onClick={() => setCreateHelpOpen(true)}
+              >
+                Ver diferença dos botões
+              </button>
+              .
             </div>
           </div>
         )}
@@ -269,6 +307,18 @@ export function AdsCentralTab({ consultantId }: Props) {
         onClose={() => setWizardOpen(false)}
         consultantId={consultantId}
         onCreated={() => setRefreshKey((k) => k + 1)}
+      />
+      <SmartAnchorCampaignDialog
+        open={smartOpen}
+        onClose={() => setSmartOpen(false)}
+        consultantId={consultantId}
+        onCreated={() => setRefreshKey((k) => k + 1)}
+      />
+      <AdsCreateHelpDialog
+        open={createHelpOpen}
+        onClose={() => setCreateHelpOpen(false)}
+        onOpenSmart={() => setSmartOpen(true)}
+        onOpenWizard={() => setWizardOpen(true)}
       />
     </div>
   );

@@ -11,18 +11,21 @@ Operacional/rodízio: #[[file:docs/cerebro-e-rodizio-avisos.md]] · rule: #[[fil
 Política curta: #[[file:docs/CEREBRO-ADS-POLITICA-CONGELADA-2026.md]] · script `scripts/analysis/cerebro_ads_2026_analysis.py`
 
 ## Cérebro
-- **Oficial 2026:** `geo_mode=radius_sede` + `max_explorers=0` (1 CTWA raio na sede). Editável na UI: Central Anúncios → Cérebro → engrenagem → Controles.
+- **Oficial 2026:** `geo_mode=radius_sede` + `max_explorers=0` + **cidade Meta da sede** na campanha (molde UDI). Editável: Central Anúncios → Cérebro → Controles.
+- **Campanha Inteligente (1-clique):** ícone Sparkles → CTWA remarketing cidade sede + bootstrap âncora (`anchor_campaign_id`, `target_cpl=750`, budget ≥ R$30). Ver `docs/CEREBRO-ADS-OFICIAL.md` §5.7.
+- Escada: aprender → escala vertical (CPL ≤ R$7,50) → só então 1 exploradora/raio → multi-consultor. **Não** abrir N MG-ROT.
 - Legado: 1 âncora + até N `MG-ROT-*` só se `geo_mode=cities_mg_rot`
 - Config por consultor: `consultant_ad_settings.brain_config` (não hardcode)
 - `require_initial_message=true` → create bloqueia sem frase CTWA
 - Autopilot: `facebook-auto-pause` (waste) → `facebook-mg-city-rotator` **só com diff**; em `radius_sede` não semeia MG-ROT
 - Autopilot só se `brain_config.autopilot === true` (null ≠ ligado)
 - Escala âncora: 48h mede CPL; degrau ~15% / ~4h — **sem** trava 48h entre subidas
-- Conversas Meta = `pickMetaConversations` (1 action_type canônico). **Nunca** somar `started`+`first_reply`+`total_connection` (incidente 2026-07-24: CPL R$6,50 aparecia R$2 e budget subia)
+- Conversas Meta = `pickMetaConversations` (1 action_type canônico). **Nunca** somar `started`+`first_reply`+`total_connection`
 - `brain_scale_*` **proibido** em `MG-ROT-*` e âncora UDI
-- Waste: `AUTO_PERF_PAUSE:`; se `paused_by_ai_at` já setado → **não** re-pausar
+- Waste: exploradora R$10 / **âncora R$40** zero-conv (`AUTO_PERF_PAUSE:`); se `paused_by_ai_at` já setado → **não** re-pausar
 - Health/rotator **não** reativam waste — só Play do consultor
-- Salvar config **não** cria campanha; criar = Express/wizard Publicar
+- DDD: **só backend** (geo → allowlist); consultor não preenche DDD na criação
+- Salvar config **não** cria campanha; criar = Express / Campanha Inteligente / wizard
 
 ## Idempotência Meta (incidente 2026-07-23)
 POST cego de targeting/age a cada 30 min **resetava aprendizado** (“anúncio reiniciando”).

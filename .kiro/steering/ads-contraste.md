@@ -22,3 +22,9 @@ Nunca texto mid-tone sobre tint da mesma cor.
 | Corpo | `--ads-text` / `--ads-muted` |
 | Chips | `.ads-chip-ok\|warn\|danger\|info\|muted` |
 | Alerta | `.ads-alert-danger` + `.ads-alert-title` |
+
+## Campanha Inteligente / escala (produto)
+
+- Ícone 1-clique na Central: molde cidade sede + Cérebro âncora — ver `#cerebro-mg-e-rodizio` e `docs/CEREBRO-ADS-OFICIAL.md` §5.7.
+- Não mostrar chips DDD ao consultor no fluxo de criar; público automático.
+- Badge **Âncora** na lista quando `id === brain_config.anchor_campaign_id`.

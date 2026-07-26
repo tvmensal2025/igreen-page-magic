@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { primaryDddForCity } from "@/lib/cityToDdd";
 import {
   Brain,
   RefreshCw,
@@ -233,7 +234,6 @@ export function CampaignBrainPanel({
   const [busy, setBusy] = useState<string | null>(null);
   const [whatIfId, setWhatIfId] = useState<string | null>(null);
   const [newCity, setNewCity] = useState("");
-  const [newDdd, setNewDdd] = useState("31");
   const [brainModalOpen, setBrainModalOpen] = useState(false);
   const [brainHelpOpen, setBrainHelpOpen] = useState(false);
 
@@ -358,9 +358,10 @@ export function CampaignBrainPanel({
       toast({ title: "Cidade já na lista", variant: "destructive" });
       return;
     }
+    const ddd = primaryDddForCity({ name }) || 31;
     setCfg({
       ...cfg,
-      extra_cities: [...cfg.extra_cities, { name, slug, ddd: Number(newDdd) || 31 }],
+      extra_cities: [...cfg.extra_cities, { name, slug, ddd }],
       preferred_slugs: [...cfg.preferred_slugs, slug].slice(0, 8),
       max_explorers: Math.min(8, Math.max(cfg.max_explorers, cfg.preferred_slugs.length + 1)),
     });
@@ -973,10 +974,6 @@ export function CampaignBrainPanel({
               <div className="flex-1 min-w-[140px]">
                 <Label className="text-[11px]">Adicionar cidade à rotação</Label>
                 <Input placeholder="Ex: Araxá" value={newCity} onChange={(e) => setNewCity(e.target.value)} />
-              </div>
-              <div className="w-20">
-                <Label className="text-[11px]">DDD</Label>
-                <Input value={newDdd} onChange={(e) => setNewDdd(e.target.value)} />
               </div>
               <Button type="button" size="sm" variant="outline" onClick={addExtraCity}>Adicionar</Button>
             </div>

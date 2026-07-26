@@ -149,10 +149,12 @@ Salva estratégia geográfica (sede × cidades), raio, CPL, budgets, mensagem ob
 
 | Regra | Limiar | Janela |
 |-------|--------|--------|
-| Zero conversa | R$ 10 (`1000` cents) | 48h |
+| Zero conversa (exploradora) | R$ 10 (`1000` cents) | 48h |
+| Zero conversa (**âncora**) | R$ 40 (`4000` cents) | 48h |
 | Zero clique | R$ 8 | 48h |
 | Ad zumbi | R$ 12 | 48h |
 
+Âncora = `facebook_campaigns.id === brain_config.anchor_campaign_id`.  
 Prefixo `AUTO_PERF_PAUSE:` — health/rotator **não** reativam; só Play.
 
 ### 3.3 Escala da âncora
@@ -222,17 +224,16 @@ Formato Meta ouro (1 CTWA amplo + budget concentrado na sede)
 | `automation_mode` | `full` só com piloto explícito | — |
 | `mode` | `conservative` | — |
 
-### 5.2.1 Campanha sede (piloto Rafael — 2026-07-25)
+### 5.2.1 Campanha sede (piloto Rafael — histórico)
 
 | Campo | Valor |
 |-------|--------|
 | Portal UUID | `944c5bf7-1851-4961-97ad-f8c4c46c5a28` |
-| Nome | `SEDE-UDI-50km` |
-| Geo | Jaraguá/UDI `-18.92417, -48.30179` · **50 km** |
-| Budget | R$ 15/dia |
-| `initial_message` | `Oi! Quero saber como economizar na conta de luz.` |
+| Nome | `SEDE-UDI-50km` (raio frio — amostra curta / waste) |
+| Geo histórica | Jaraguá/UDI `-18.92417, -48.30179` · 50 km |
+| Molde vencedor | **Cidade** Uberlândia (key `273173`) — remarketing CPL ~R$6,74 |
 
-MG-ROT extras + remarketing antiga: **pausadas**. Próximas criações humanas: Express/wizard default **raio sede** + mensagem inicial obrigatória.
+MG-ROT extras pausadas. **Default 2026-07-26:** Express / Campanha Inteligente usam **cidade da sede**, não raio frio 50 km.
 
 ### 5.3 Checklist humano (Ads Manager / portal)
 
@@ -259,9 +260,44 @@ MG-ROT extras + remarketing antiga: **pausadas**. Próximas criações humanas: 
 - Patch semanal de código “para ver se melhora”.  
 - POST Meta sem diff (reset learning).
 
-### 5.6 Única constante de código candidata (se pedido explícito)
+### 5.6 Waste diferenciado (âncora vs exploradora)
 
-`WASTE_ZERO_CONV_SPEND_CENTS`: 1000 → 600. Nada mais sem pedido.
+- Exploradora / não-âncora: `WASTE_ZERO_CONV_SPEND_CENTS = 1000` (R$10).  
+- Âncora (`anchor_campaign_id`): `WASTE_ANCHOR_ZERO_CONV_SPEND_CENTS = 4000` (R$40).  
+Não matar âncora com 3 cliques.
+
+---
+
+## 5.7 Campanha Inteligente (1-clique) + escada de escala
+
+**Objetivo:** consultor clica ícone → 1 CTWA no molde que barateou lead → Cérebro Ads vira âncora → escala vertical até milhares de pessoas **sem** fragmentar learning.
+
+### Molde vencedor (evidência Rafael)
+
+| Peça | Valor |
+|------|--------|
+| Geo | **Cidade Meta da sede** (ex. Uberlândia `273173`) |
+| Objetivo | CTWA · `CONVERSATIONS` · Advantage+ audience/placements |
+| Criativo | Oferta clara (“28% mais barato” / “Simule no zap”) |
+| Frase WA | “pagar menos na conta de luz” (ou mensagem do `brain_config`) |
+| 1ª onda | `is_remarketing=true` (include CRM); DDD **só backend** |
+| Budget inicial | ≥ R$30/dia (`max(anchor_budget_cents, 3000)`) |
+| Nome | `IGREEN-ANCORA-{cidade}` |
+
+### Escada (não travar)
+
+| Fase | Ação | Evitar |
+|------|------|--------|
+| 0 Bootstrap | 1-clique + set `anchor_campaign_id` + `target_cpl=750` + `max_explorers=0` | Wizard com DDD manual |
+| 1 Aprender | Budget R$30–50; waste âncora R$40; ~50 conv/semana | Matar em R$10 |
+| 2 Vertical | `decideAnchorBudgetScale` +15% se CPL ≤ R$7,50 | Abrir 15 cidades |
+| 3 Expandir | Só âncora estável: 1 exploradora **ou** raio | Overlap / reset learning |
+| 4 Rede | Mesmo 1-clique por consultor (sede dele) | Cérebro Ads em massa sem piloto |
+
+**UI:** Central Anúncios → ícone Sparkles **Campanha inteligente** (não abre wizard).  
+**Proibido na jornada:** chips/campos DDD — público automático via geo + audience sync.
+
+Ranking real (gasto>0): Jaraguá ~R$1,96 · João Carlos ~R$2,44 · remarketing-UDI ~R$6,74 · SEDE/MG-ROT fracos 0 conv.
 
 ---
 
@@ -354,6 +390,7 @@ UI do painel pode mostrar defaults “otimistas”; o backend é fail-closed (`d
 
 | Data | Mudança |
 |------|---------|
+| 2026-07-26 | v1.3 — Campanha Inteligente 1-clique · molde cidade sede · waste âncora R$40 · escada de escala · DDD só backend |
 | 2026-07-25 | v1.2 — UI Controles: sede/raio/`geo_mode`/`require_initial_message` editáveis por consultor |
 | 2026-07-25 | v1.1 — sede 50 km + `geo_mode=radius_sede` + `max_explorers=0` + `require_initial_message` |
 | 2026-07-25 | v1.0 — documentação oficial: Meta Help/API + arquitetura + política congelada |

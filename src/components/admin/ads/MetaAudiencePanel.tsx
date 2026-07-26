@@ -161,7 +161,8 @@ export function MetaAudiencePanel({ consultantId }: Props) {
           <p className="text-[11px] text-muted-foreground mt-1 max-w-2xl leading-relaxed">
             O anúncio de <strong>cidade/km</strong> mostra o criativo para quem está naquela região.
             A <strong>Audience</strong> é outra coisa: sobe telefone/e-mail (hash) dos leads do CRM
-            para remarketing. Não mistura DDD 19 (longe) se você deixar só DDD 34 (Uberlândia).
+            para remarketing. Na criação de campanha o sistema escolhe a região sozinho;
+            ajuste abaixo só se precisar filtrar a base.
           </p>
         </div>
         <Button size="sm" onClick={() => void syncNow()} disabled={syncing} className="gap-1.5">

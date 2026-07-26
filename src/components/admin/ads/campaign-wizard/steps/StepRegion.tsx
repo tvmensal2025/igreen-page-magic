@@ -4,7 +4,7 @@
  * (e o bônus). NÃO existe mais "adicionar distribuidora inteira" — cada cidade
  * é adicionada individualmente, mantendo a lista limpa.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { MapPin, Target, Search, TrendingUp, X, Check, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,6 @@ import { Switch } from "@/components/ui/switch";
 import { ResponsiveContainer, BarChart, Bar, XAxis, Cell } from "recharts";
 import { AddressRadiusPicker } from "../../AddressRadiusPicker";
 import { findDistribuidoraForCity } from "@/data/distribuidoraPresets";
-import { dddsFromCampaignGeo } from "@/lib/cityToDdd";
 import { searchCitiesBulk, type CityHit } from "@/services/facebookAds";
 import { supabase } from "@/integrations/supabase/client";
 import type { WizardState } from "../hooks/useWizardState";
@@ -84,18 +83,6 @@ export function StepRegion({ state, patch, region, consultantId }: Props) {
       : "hsl(var(--primary))";
   const chartData = [{ name: "alcance", v: Math.max(4, reachPct) }];
 
-  const inferredDdds = useMemo(
-    () =>
-      dddsFromCampaignGeo({
-        cities: state.geoMode === "cities" ? state.cities : [],
-        addresses:
-          state.geoMode === "radius"
-            ? state.radiusPoints.map((p) => p.address_string || p.name || "")
-            : [],
-      }),
-    [state.geoMode, state.cities, state.radiusPoints],
-  );
-
   function setRemarketing(on: boolean) {
     const nextPrefix = on
       ? (state.namePrefix.trim() ? state.namePrefix : "remarketing")
@@ -116,8 +103,8 @@ export function StepRegion({ state, patch, region, consultantId }: Props) {
               Esta campanha é remarketing?
             </div>
             <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1 leading-relaxed">
-              Ligado: o sistema reconhece as cidades (e vizinhas) e sobe só os DDDs certos
-              na Custom Audience — sem misturar telefone de longe (ex.: 19).
+              Ligado: o sistema monta a Custom Audience da sua região automaticamente
+              (público certo, sem misturar telefone de longe).
             </p>
           </div>
           <Switch
@@ -126,20 +113,6 @@ export function StepRegion({ state, patch, region, consultantId }: Props) {
             aria-label="Marcar como remarketing"
           />
         </div>
-        {state.isRemarketing && (
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <span className="text-[10px] text-[hsl(var(--ads-muted))]">DDDs que entram automaticamente:</span>
-            {inferredDdds.length === 0 ? (
-              <span className="text-[10px] text-amber-600">Escolha a cidade abaixo para detectar o DDD</span>
-            ) : (
-              inferredDdds.map((d) => (
-                <Badge key={d} variant="secondary" className="text-[10px] px-1.5 py-0">
-                  {d}
-                </Badge>
-              ))
-            )}
-          </div>
-        )}
       </div>
 
       {mgSuggest && state.cities.length === 0 && state.geoMode === "cities" && (

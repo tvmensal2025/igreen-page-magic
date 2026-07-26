@@ -224,6 +224,13 @@ export interface CreateCampaignBody {
   is_remarketing?: boolean;
   /** DDDs já inferidos no front (cidade + vizinhos). Servidor valida/merge. */
   retarget_ddds?: number[];
+  /**
+   * Campanha Inteligente (1-clique): após publicar, marca âncora no brain_config
+   * (target_cpl 750, max_explorers 0, autopilot).
+   */
+  smart_anchor?: boolean;
+  /** Teto diário do Cérebro (centavos) — só com smart_anchor. */
+  max_anchor_budget_cents?: number;
   // Use cities OU custom_locations. Quando custom_locations vem preenchido,
   // ele substitui as cidades no targeting (segmentação por raio/endereço).
   cities: { key: string; name: string }[];

@@ -16,6 +16,26 @@ Deno.test("pausa campanha com gasto sem conversa", () => {
   assertEquals(v.action, "pause_campaign");
 });
 
+Deno.test("âncora não pausa em R$10 zero-conv", () => {
+  const v = evaluateCampaignWaste({
+    spendCents: WASTE_ZERO_CONV_SPEND_CENTS,
+    conversations: 0,
+    clicks: 5,
+    isAnchor: true,
+  });
+  assertEquals(v.action, "none");
+});
+
+Deno.test("âncora pausa em R$40 zero-conv", () => {
+  const v = evaluateCampaignWaste({
+    spendCents: 4000,
+    conversations: 0,
+    clicks: 5,
+    isAnchor: true,
+  });
+  assertEquals(v.action, "pause_campaign");
+});
+
 Deno.test("pausa campanha com gasto sem clique", () => {
   const v = evaluateCampaignWaste({
     spendCents: WASTE_ZERO_CLICK_SPEND_CENTS,

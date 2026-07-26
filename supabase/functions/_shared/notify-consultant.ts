@@ -40,6 +40,96 @@ export async function notifyCerebroWhatsApp(
   }
 }
 
+/**
+ * Alerta crítico (pausa de campanha etc.): Whapi → Evolution → SMS Velip.
+ * Nunca engole falha sem tentar canal alternativo. Retorna canais usados.
+ */
+export async function notifyCriticalAlert(
+  consultantId: string,
+  opts: {
+    whatsappText: string;
+    smsText: string;
+    dedupKey?: string;
+  },
+): Promise<{ ok: boolean; via: string[]; errors: string[] }> {
+  const via: string[] = [];
+  const errors: string[] = [];
+  if (!consultantId) return { ok: false, via, errors: ["no_consultant"] };
+
+  const waOk = await sendRawToAlertNumber(consultantId, opts.whatsappText).catch((e) => {
+    errors.push(`wa:${(e as Error).message}`);
+    return false;
+  });
+  if (waOk) via.push("whatsapp");
+
+  if (!waOk) {
+    // SMS independente do Whapi (Velip).
+    try {
+      const { makeSMS, toVelipSmsDest, velipConfigured } = await import("./voice-dialer/velip.ts");
+      if (!velipConfigured()) {
+        errors.push("sms:velip_not_configured");
+      } else {
+        const admin = adminClient();
+        const { data: consultant } = await admin
+          .from("consultants")
+          .select("phone, notification_phone")
+          .eq("id", consultantId)
+          .maybeSingle();
+        const rawPhone = (consultant as any)?.notification_phone || consultant?.phone;
+        const dest = toVelipSmsDest(String(rawPhone || ""));
+        if (!dest) {
+          errors.push("sms:no_phone");
+        } else {
+          const smsBody = String(opts.smsText || "").slice(0, 160);
+          const r = await makeSMS({
+            to: dest,
+            message: smsBody,
+            ctid: opts.dedupKey ? `alert_${opts.dedupKey}`.slice(0, 40) : undefined,
+            httpdup: 120,
+          });
+          if (r.ok) {
+            via.push("sms");
+            try {
+              await admin.from("voice_sms_log").insert({
+                consultant_id: consultantId,
+                phone: dest,
+                message: smsBody,
+                velip_sms_id: r.cdls_id != null ? String(r.cdls_id) : null,
+                status: "sent",
+                error: null,
+              });
+            } catch { /* ignore log */ }
+          } else {
+            errors.push(`sms:${r.error || "failed"}`);
+          }
+        }
+      }
+    } catch (e) {
+      errors.push(`sms:${(e as Error).message}`);
+    }
+  }
+
+  const ok = via.length > 0;
+  try {
+    const admin = adminClient();
+    await admin.from("automation_skip_log").insert({
+      key: `critical_alert:${opts.dedupKey || consultantId}`.slice(0, 120),
+      meta: {
+        consultant_id: consultantId,
+        ok,
+        via,
+        errors: errors.slice(0, 5),
+        at: new Date().toISOString(),
+      },
+    });
+  } catch { /* ignore */ }
+
+  if (!ok) {
+    console.error("[notify-critical] FALHOU todos os canais", { consultantId, errors });
+  }
+  return { ok, via, errors };
+}
+
 // ─── Envia texto bruto para o número de alertas ──
 // Tenta Whapi primeiro (canal ativo hoje); cai em Evolution só se Whapi falhar/não configurado.
 async function sendRawToAlertNumber(consultantId: string, text: string): Promise<boolean> {

@@ -147,36 +147,98 @@ export function formatCerebroWastePauseWhatsApp(input: {
   rule?: string | null;
 }): string {
   const when = nowBrLabel();
-  const name = String(input.campaignName || "Campanha").slice(0, 60);
+  const name = prettyCampaignName(input.campaignName);
+  const ruleLabel = humanizeWasteRule(input.rule);
+  const motivo = humanizeWasteReason(input.reason, input.rule, input.spendCents);
   const metrics: string[] = [];
   if (input.spendCents != null) {
-    metrics.push(`💸 Gasto 48h: *${brl(input.spendCents)}*`);
+    metrics.push(`💸 Gasto (48h): *${brl(input.spendCents)}*`);
   }
   if (input.conversations != null) {
-    metrics.push(`💬 Conversas: *${input.conversations}*`);
+    metrics.push(`💬 Conversas no WhatsApp: *${input.conversations}*`);
   }
   if (input.clicks != null) {
-    metrics.push(`👆 Cliques: *${input.clicks}*`);
+    metrics.push(`👆 Cliques no anúncio: *${input.clicks}*`);
   }
   return [
-    `🧠✨ *Cérebro iGreen · Autopilot*`,
+    `🛡️ *iGreen · Campanha pausada*`,
     `━━━━━━━━━━━━━━━━`,
-    `🛡️ *Pausa por performance*`,
+    ``,
+    `Olá! Pausei uma campanha para *proteger seu saldo*.`,
     ``,
     `🎯 *${name}*`,
     `🕐 ${when}`,
-    ...(input.rule ? [`📌 Regra: \`${input.rule}\``] : []),
+    ...(ruleLabel ? [`📌 Motivo técnico: *${ruleLabel}*`] : []),
     ``,
-    ...(metrics.length ? [`📊 *Janela 48h*`, ...metrics, ``] : []),
-    `📝 *Motivo*`,
-    input.reason,
+    ...(metrics.length ? [`📊 *Resumo da janela*`, ...metrics, ``] : []),
+    `📝 *O que aconteceu*`,
+    motivo,
     ``,
-    `🔒 *Importante*`,
-    `Fica *travada* (AUTO_PERF) — o Cérebro`,
-    `*não* reativa sozinho.`,
-    `Só volta com *Play* no painel, depois da sua revisão.`,
+    `🔒 *Próximo passo*`,
+    `Ela fica *travada* até você revisar.`,
+    `O sistema *não* liga sozinho de novo.`,
     ``,
-    `💚 Leads que já chegaram seguem no funil.`,
-    `✨ _iGreen Ads · Cérebro_`,
+    `👉 Abra a *Central de Anúncios*`,
+    `→ confira o WhatsApp de destino`,
+    `→ toque em *Play* quando estiver ok.`,
+    ``,
+    `💚 Quem já entrou no funil continua sendo atendido.`,
+    ...FOOTER,
   ].join("\n");
+}
+
+/** SMS curto (≤160) em português — fallback quando o WhatsApp de aviso falha. */
+export function formatCerebroWastePauseSms(input: {
+  campaignName: string;
+  spendCents?: number | null;
+}): string {
+  const name = prettyCampaignName(input.campaignName).slice(0, 32);
+  const spend = input.spendCents != null
+    ? brl(input.spendCents).replace(/\s/g, "")
+    : null;
+  const base = spend
+    ? `iGreen: pausei "${name}" (${spend} sem conversa no Zap). Protegendo saldo. Abra Anúncios, revise o WhatsApp e use Play.`
+    : `iGreen: pausei "${name}" sem conversa no Zap. Protegendo saldo. Abra Anúncios, revise o WhatsApp e use Play.`;
+  return base.slice(0, 160);
+}
+
+function prettyCampaignName(raw: string | null | undefined): string {
+  return String(raw || "Campanha")
+    .replace(/\[CONS-[^\]]+\]/gi, "")
+    .replace(/\s*[·—–]\s*iGreen.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60) || "Campanha";
+}
+
+function humanizeWasteRule(rule: string | null | undefined): string | null {
+  const r = String(rule || "").toLowerCase();
+  if (r === "zero_conv") return "gasto sem conversa no WhatsApp";
+  if (r === "zero_click") return "gasto sem clique no anúncio";
+  if (r === "zombie_ad") return "anúncio gastando sem conversa";
+  return null;
+}
+
+function humanizeWasteReason(
+  reason: string,
+  rule?: string | null,
+  spendCents?: number | null,
+): string {
+  const raw = String(reason || "").trim();
+  const lower = raw.toLowerCase();
+  if (lower.includes("sem conversa") || String(rule || "") === "zero_conv") {
+    const spend = spendCents != null ? brl(spendCents) : null;
+    return spend
+      ? `A campanha gastou *${spend}* e *ninguém iniciou conversa* no WhatsApp pelo anúncio. Pausei para não queimar verba à toa.`
+      : `A campanha gastou e *ninguém iniciou conversa* no WhatsApp pelo anúncio. Pausei para não queimar verba à toa.`;
+  }
+  if (lower.includes("sem clique") || String(rule || "") === "zero_click") {
+    return `A campanha gastou e *não teve clique*. Pausei para revisar o criativo e a segmentação.`;
+  }
+  // Remove prefixos técnicos em inglês / códigos internos
+  return raw
+    .replace(/^AUTO_PERF_PAUSE:\s*/i, "")
+    .replace(/\s*—\s*só reativa no Play\s*$/i, "")
+    .replace(/Waste guard:\s*/i, "")
+    .trim() || "Pausei por proteção de desempenho.";
 }

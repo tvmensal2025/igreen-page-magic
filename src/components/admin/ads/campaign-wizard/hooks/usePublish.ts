@@ -196,10 +196,10 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
             ? wantedRodizio
               ? "Rodízio e dados da campanha foram salvos. A Meta confirmou a campanha como ativa."
               : state.isRemarketing
-                ? `Remarketing: DDDs ${(result as any)?.retarget_ddds?.join(", ") || retargetDdds.join(", ") || "—"} gravados na Audience. A Meta confirmou ativa.`
+                ? "Remarketing ativo: público da região montado automaticamente. A Meta confirmou a campanha como ativa."
                 : "A Meta confirmou a campanha como ativa. A entrega pode levar alguns minutos para começar."
             : state.isRemarketing
-              ? `Campanha em análise. DDDs de remarketing ${(result as any)?.retarget_ddds?.join(", ") || retargetDdds.join(", ") || "—"} já foram mesclados na Audience.`
+              ? "Campanha em análise. Público de remarketing da região já foi mesclado na Audience."
               : "A campanha foi criada e está em análise ou processamento na Meta. O painel mostrará quando ela ficar ativa.",
         });
       }

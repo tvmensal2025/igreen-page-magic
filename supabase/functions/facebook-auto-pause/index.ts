@@ -24,9 +24,9 @@ import {
   resolveAnchorCampaignId,
 } from "../_shared/ads-anchor.ts";
 import { isConsultantLocked } from "../_shared/campaign-pause.ts";
-import { notifyAnchorBudgetScale, notifyCerebroWhatsApp } from "../_shared/notify-consultant.ts";
+import { notifyAnchorBudgetScale, notifyCriticalAlert } from "../_shared/notify-consultant.ts";
 import { notifyRodizioOnCampaignPaused } from "../_shared/rodizio-pause-notify.ts";
-import { formatCerebroWastePauseWhatsApp } from "../_shared/cerebro-notify-format.ts";
+import { formatCerebroWastePauseSms, formatCerebroWastePauseWhatsApp } from "../_shared/cerebro-notify-format.ts";
 import {
   evaluateAdWaste,
   evaluateCampaignWaste,
@@ -255,10 +255,18 @@ Deno.serve(async (req) => {
       }
 
       const m = metricsByCamp.get(c.id) || { spend: 0, conv: 0, clicks: 0 };
+      const brainCfg = automationConfigByConsultant.get(c.consultant_id);
+      const anchorId = resolveAnchorCampaignId(
+        c.consultant_id,
+        (brainCfg && typeof brainCfg === "object"
+          ? brainCfg as { anchor_campaign_id?: string | null }
+          : null),
+      );
       let verdict = evaluateCampaignWaste({
         spendCents: m.spend,
         conversations: m.conv,
         clicks: m.clicks,
+        isAnchor: Boolean(anchorId) && c.id === anchorId,
       });
 
       if (forced && verdict.action === "none") {
@@ -310,18 +318,31 @@ Deno.serve(async (req) => {
           });
 
           try {
-            await notifyCerebroWhatsApp(
-              c.consultant_id,
-              formatCerebroWastePauseWhatsApp({
-                campaignName: c.name || c.fb_campaign_id || "Campanha",
-                reason: verdict.reason,
-                spendCents: m.spend,
-                conversations: m.conv,
-                clicks: m.clicks,
-                rule: verdict.rule,
-              }),
-            );
-          } catch (_) { /* ignore */ }
+            const waText = formatCerebroWastePauseWhatsApp({
+              campaignName: c.name || c.fb_campaign_id || "Campanha",
+              reason: verdict.reason,
+              spendCents: m.spend,
+              conversations: m.conv,
+              clicks: m.clicks,
+              rule: verdict.rule,
+            });
+            const smsText = formatCerebroWastePauseSms({
+              campaignName: c.name || c.fb_campaign_id || "Campanha",
+              spendCents: m.spend,
+            });
+            const notified = await notifyCriticalAlert(c.consultant_id, {
+              whatsappText: waText,
+              smsText,
+              dedupKey: `waste_pause_${c.id}`,
+            });
+            if (!notified.ok) {
+              console.error("[facebook-auto-pause] aviso NAO entregue", c.id, notified.errors);
+            } else {
+              console.log("[facebook-auto-pause] aviso ok via", notified.via.join("+"), c.id);
+            }
+          } catch (e) {
+            console.error("[facebook-auto-pause] notify critical erro", (e as Error).message);
+          }
           try {
             await notifyRodizioOnCampaignPaused(
               admin,

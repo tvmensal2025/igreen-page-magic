@@ -11,11 +11,13 @@ Operacional: `docs/cerebro-e-rodizio-avisos.md`
 
 ## Modelo
 
-- **Formato oficial 2026:** 1 campanha CTWA · raio **40–50 km** na **sede** · budget concentrado · Advantage+.
+- **Formato oficial 2026:** 1 campanha CTWA · **cidade Meta da sede** (molde UDI) · budget concentrado · Advantage+.
+- **Campanha Inteligente:** ícone 1-clique na Central → cria âncora + bootstrap Cérebro (`docs/CEREBRO-ADS-OFICIAL.md` §5.7).
 - `brain_config.geo_mode = radius_sede` + `max_explorers = 0` → rotator **não** semeia `MG-ROT-*`.
 - Legado `cities_mg_rot`: 1 âncora + até N exploradoras (só com pedido explícito).
 - Config: `consultant_ad_settings.brain_config` (normalize em `_shared/brain-config.ts`).
 - **Toda campanha criada** exige `initial_message` (frase CTWA) — `require_initial_message=true`.
+- DDD: só backend; consultor não preenche na criação.
 - Autopilot: `facebook-auto-pause` (waste) → tick rotator só se `geo_mode` permitir slots.
 
 ## Escala da âncora (NÃO confundir)
@@ -43,6 +45,7 @@ Operacional: `docs/cerebro-e-rodizio-avisos.md`
 ## Waste
 
 - `_shared/campaign-waste-guard.ts` — lookback 48h; prefixo `AUTO_PERF_PAUSE:`.
+- Exploradora: R$10 zero-conv · **Âncora:** R$40 zero-conv (`WASTE_ANCHOR_ZERO_CONV_SPEND_CENTS`).
 - Health/rotator **não** reativam; só Play do consultor.
 
 ## Idempotência Meta — NUNCA “reiniciar” anúncio (incidente 2026-07-23)

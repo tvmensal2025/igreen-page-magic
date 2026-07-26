@@ -487,6 +487,11 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                       {c.name}
                     </h4>
                   <Badge className={STATUS_COLOR[c.status] || "bg-secondary"}>{STATUS_LABEL[c.status] || c.status}</Badge>
+                  {anchorCampaignId && c.id === anchorCampaignId && (
+                    <Badge className="bg-primary/20 text-primary gap-1" title="Âncora do Cérebro Ads">
+                      <Brain className="w-3 h-3" />Âncora
+                    </Badge>
+                  )}
                   {(() => {
                     const h = healthOf(m);
                     const cls = h.level === "green" ? "bg-primary/20 text-primary" : h.level === "yellow" ? "bg-warning/20 text-warning" : h.level === "red" ? "bg-destructive/20 text-destructive" : "bg-secondary text-muted-foreground";

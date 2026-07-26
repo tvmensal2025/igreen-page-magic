@@ -1,7 +1,7 @@
 """Análise profunda Cérebro Ads Rafael — 2026 (somente leitura/cálculo).
 
 Não altera motor. Consolida evidência prod + política Meta (Context7) +
-proposta congelada operacional.
+playbook Campanha Inteligente (cidade sede + escala vertical).
 """
 
 from __future__ import annotations
@@ -61,27 +61,37 @@ DAILY: list[tuple[str, int, int, int, int]] = [
     ("2026-07-25", 926, 1, 171, 3),
 ]
 
+# Ranking real (gasto total conhecido) — name, spend_cents, conv
+RANKING: list[tuple[str, int, int]] = [
+    ("Jaraguá (multi-raio)", 29665, 151),
+    ("Rua João Carlos 3km (vídeo)", 11700, 48),
+    ("remarketing-uberlandia (cidade)", 10104, 15),
+    ("Brasilândia / Horacio (vídeo)", 5800, 12),
+    ("SEDE-UDI-50km / CPL / MG-ROT fracos", 1011, 0),
+]
+
 # Campanhas-chave (era boa 08–13 vs era cara 19–25)
 CAMPAIGNS = [
     # name, spend_good, conv_good, spend_bad, conv_bad
     ("Jaraguá (raio multi-cidade) [PAUSADA]", 29665, 147, 0, 0),
     ("Horacio Brasilândia [PAUSADA]", 5139, 12, 0, 0),
-    ("remarketing-uberlandia ÂNCORA [ATIVA]", 0, 0, 10104, 15),
-    ("MG-ROT exploradoras (soma ativa/pausada)", 0, 0, 7015, 5),
-    ("Waste queimado (AUTO_PERF/UDI-CPL)", 0, 0, 5216, 0),
+    ("remarketing-uberlandia (cidade) [molde]", 0, 0, 10104, 15),
+    ("MG-ROT exploradoras (soma)", 0, 0, 7015, 5),
+    ("Waste queimado (AUTO_PERF/SEDE)", 0, 0, 5216, 0),
 ]
 
-# Config atual brain_config Rafael
+# Config política oficial (pós Campanha Inteligente)
 CURRENT = {
     "automation_mode": "full",
     "autopilot": True,
     "kill_switch": False,
-    "target_cpl_cents": 200,
-    "max_explorers": 4,
+    "target_cpl_cents": 750,
+    "max_explorers": 0,
     "explorer_budget_cents": 517,
-    "anchor_budget_cents_cfg": 1000,
-    "anchor_budget_live_cents": 517,
+    "anchor_budget_cents_cfg": 3000,
+    "anchor_budget_live_cents": 3000,
     "waste_zero_conv_cents": 1000,
+    "waste_anchor_zero_conv_cents": 4000,
 }
 
 # Funil 14d
@@ -89,10 +99,11 @@ FUNNEL = {"ads_leads": 40, "portal": 2, "portal_rate": 0.05}
 
 # Meta / Context7 principles (Marketing API)
 META_PRINCIPLES = [
-    "Advantage Campaign Budget / rebalance: deslocar verba para top performers, pausar high CPA",
-    "Learning stage: evitar editar ad set ativo sem necessidade (reset de aprendizado)",
-    "CAPI + ctwa_clid: otimizar com evento de valor pós-mensagem, não só conversa Meta",
-    "cost_per_action_type / cost_per_result: 1 action_type canônico (já corrigido no projeto)",
+    "CTWA: OUTCOME_ENGAGEMENT + destination WHATSAPP + optimize CONVERSATIONS",
+    "Advantage+ audience/placements + budget concentrado na âncora",
+    "Learning stage: ~50 resultados/semana; evitar editar ad set sem diff",
+    "CAPI + ctwa_clid: evento de valor pós-mensagem",
+    "1 action_type canônico (pickMetaConversations)",
 ]
 
 
@@ -109,21 +120,18 @@ def sum_window(start: str, end: str) -> Window:
 
 def simulate_policies() -> list[dict[str, object]]:
     """Simula custo diário teórico sob políticas (sem mudar motor)."""
-    anchor_cpl = 674  # 7d âncora
+    anchor_cpl = 674  # remarketing UDI
     explorer_cpl = 1403
     rows: list[dict[str, object]] = []
-    for name, explorers, waste_cents in [
-        ("Atual (4 exploradoras + waste R$10)", 4, 1000),
-        ("Remendo (2 exploradoras + waste R$10)", 2, 1000),
-        ("Defesa 2026 (0–1 exploradora + waste R$6)", 1, 600),
-        ("Âncora-only (0 exploradora)", 0, 600),
+    for name, explorers, waste_cents, anchor_budget in [
+        ("Fragmentado (4 exploradoras + waste R$10)", 4, 1000, 517),
+        ("Âncora-only R$30 + waste âncora R$40", 0, 4000, 3000),
+        ("Âncora R$50 escalada + 0 exploradora", 0, 4000, 5000),
+        ("Âncora estável + 1 exploradora (fase 3)", 1, 1000, 5000),
     ]:
-        # orçamento diário teórico
-        day_budget = 517 + explorers * 517
-        # queima esperada por exploradora morta até waste (aprox 1 ciclo)
-        explore_tax = explorers * (waste_cents * 0.35)  # nem toda exploradora morre
-        # leads/dia se âncora mantém CPL e exploradoras no CPL médio
-        anchor_leads = 517 / anchor_cpl
+        day_budget = anchor_budget + explorers * 517
+        explore_tax = explorers * (waste_cents * 0.35)
+        anchor_leads = anchor_budget / anchor_cpl
         explorer_leads = (explorers * 517) / explorer_cpl if explorers else 0
         total_leads = anchor_leads + explorer_leads
         blended = day_budget / total_leads if total_leads else None
@@ -140,41 +148,52 @@ def simulate_policies() -> list[dict[str, object]]:
 
 
 def frozen_policy_2026() -> dict[str, object]:
-    """Política congelada — só CONFIG / operação, sem redesenhar motor."""
+    """Política congelada — Campanha Inteligente + escala vertical."""
     return {
-        "principio": "Âncora primeiro → explorar 0–1 → matar rápido → escalar só com CPL ok",
+        "principio": (
+            "1-clique cidade sede → aprender → escala vertical → "
+            "só então 1 exploradora → multi-consultor"
+        ),
         "brain_config": {
-            "target_cpl_cents": 750,  # R$7,50 realista pós-queda
-            "max_explorers": 1,  # código atual não aceita 0 (clamp min=1)
+            "target_cpl_cents": 750,
+            "max_explorers": 0,
             "explorer_budget_cents": 517,
-            "anchor_budget_cents": 1500,  # concentrar, não espalhar
+            "anchor_budget_cents": 3000,
             "scale_step_pct": 15,
-            "automation_mode": "full",  # mantém; proteções waste/saldo sempre on
+            "automation_mode": "full",
             "kill_switch": False,
             "mode": "conservative",
+            "geo_mode": "radius_sede",
         },
-        "waste_guard_desejado": {
-            "WASTE_ZERO_CONV_SPEND_CENTS": 600,
-            "nota": "ÚNICA mudança de constante permitida se for tocar código; senão Play manual mais cedo",
+        "waste_guard": {
+            "WASTE_ZERO_CONV_SPEND_CENTS": 1000,
+            "WASTE_ANCHOR_ZERO_CONV_SPEND_CENTS": 4000,
+            "nota": "Âncora precisa de pista; exploradora corta cedo",
+        },
+        "smart_anchor": {
+            "geo": "cidade Meta da sede (não raio frio 50km)",
+            "is_remarketing": True,
+            "budget_min_cents": 3000,
+            "creative": "oferta 28% / Simule no zap",
+            "ddd": "só backend",
         },
         "operacao_sem_codigo": [
-            "Pausar MG-ROT Uberaba, Araguari e qualquer CPL>R$10",
-            "Manter só UDI + no máx 1 de Patos/Divinópolis",
-            "NÃO reativar Jaraguá cega — estudar criativo/ângulo que gerou 147 conv @ ~R$2",
-            "Não PATCH targeting/idade em ativas (learning reset — incidente 23/07)",
-            "Congelar preferred_slugs; rank só semanal, não a cada tick mental",
+            "Usar Campanha Inteligente (ícone) em vez de N MG-ROT",
+            "Trocar criativo se CPL sobe 2 dias (cansaço), não matar a praça",
+            "Não PATCH targeting/idade em ativas (learning reset)",
+            "Não pedir DDD ao consultor",
         ],
         "proibido_mexer_codigo": [
             "Não novo motor / targeting_patch automático / create_object genérico",
             "Não brain_scale em MG-ROT nem âncora",
             "Não baixar target de volta para R$2",
-            "Não subir max_explorers acima de 2 enquanto CPL âncora > R$8",
+            "Não subir max_explorers sem âncora estável 3 dias",
         ],
         "kpi_congelados": {
             "cpl_ancora_alerta_cents": 800,
             "cpl_ancora_critico_cents": 1200,
             "portal_rate_min": 0.10,
-            "revisao": "só se KPI quebrar 3 dias seguidos — não a cada conversa",
+            "revisao": "só se KPI quebrar 3 dias seguidos",
         },
     }
 
@@ -183,7 +202,7 @@ def main() -> None:
     era_boa = sum_window("2026-07-08", "2026-07-13")
     era_cara = sum_window("2026-07-19", "2026-07-25")
     print("=" * 72)
-    print("CÉREBRO FACEBOOK — ANÁLISE PROFUNDA 2026 (Rafael)")
+    print("CÉREBRO FACEBOOK — ANÁLISE + CAMPANHA INTELIGENTE 2026")
     print("=" * 72)
     print("\n## 1) Janelas")
     for w in (era_boa, era_cara):
@@ -196,7 +215,11 @@ def main() -> None:
             f"  Δ CPL: {era_cara.cpl_cents / era_boa.cpl_cents:.1f}x pior na era cara"
         )
 
-    print("\n## 2) O que realmente performou (causa raiz)")
+    print("\n## 2) Ranking real (gasto > 0)")
+    for name, spend, conv in RANKING:
+        print(f"  {name}: {brl(spend)} / {conv} → CPL {brl(cpl(spend, conv))}")
+
+    print("\n## 3) O que performou por era")
     for name, sg, cg, sb, cb in CAMPAIGNS:
         print(
             f"  {name}\n"
@@ -204,22 +227,22 @@ def main() -> None:
             f"    cara: {brl(sb)} / {cb} → CPL {brl(cpl(sb, cb))}"
         )
 
-    jaragua_cpl = cpl(29665, 147)
+    jaragua_cpl = cpl(29665, 151)
     udi_cpl = cpl(10104, 15)
     print(
-        f"\n  CONCLUSÃO: Jaraguá CPL {brl(jaragua_cpl)} vs âncora atual "
-        f"{brl(udi_cpl)} — o Cérebro MG NÃO é a máquina da era barata."
+        f"\n  CONCLUSÃO: Jaraguá CPL {brl(jaragua_cpl)} · UDI cidade "
+        f"{brl(udi_cpl)} — molde = cidade + budget + CONVERSATIONS."
     )
 
-    print("\n## 3) Config atual vs realidade")
-    print(f"  target_cpl configurado: {brl(CURRENT['target_cpl_cents'])}")
+    print("\n## 4) Config política oficial")
+    print(f"  target_cpl: {brl(CURRENT['target_cpl_cents'])}")
+    print(f"  anchor budget: {brl(CURRENT['anchor_budget_live_cents'])}")
+    print(f"  max_explorers: {CURRENT['max_explorers']}")
     print(
-        f"  âncora live budget: {brl(CURRENT['anchor_budget_live_cents'])} (piso Meta)"
+        f"  waste exploradora/âncora: "
+        f"{brl(CURRENT['waste_zero_conv_cents'])} / "
+        f"{brl(CURRENT['waste_anchor_zero_conv_cents'])}"
     )
-    print(
-        f"  max_explorers: {CURRENT['max_explorers']} × {brl(CURRENT['explorer_budget_cents'])}"
-    )
-    print(f"  waste zero-conv: {brl(CURRENT['waste_zero_conv_cents'])}")
     print(
         f"  Funil 14d Ads→portal: {FUNNEL['ads_leads']}→{FUNNEL['portal']} "
         f"({FUNNEL['portal_rate'] * 100:.0f}%)"
@@ -228,7 +251,7 @@ def main() -> None:
         custo_portal = udi_cpl / FUNNEL["portal_rate"]
         print(f"  Custo implícito por PORTAL (se taxa 5%): {brl(custo_portal)}")
 
-    print("\n## 4) Simulação de políticas (estimativa)")
+    print("\n## 5) Simulação de políticas (estimativa)")
     for row in simulate_policies():
         print(
             f"  {row['policy']}\n"
@@ -238,16 +261,17 @@ def main() -> None:
             f"taxa exploração≈{brl(row['explore_tax_est_cents'])}"
         )
 
-    print("\n## 5) Princípios Meta (Context7 Marketing API)")
+    print("\n## 6) Princípios Meta (Context7 Marketing API)")
     for p in META_PRINCIPLES:
         print(f"  - {p}")
 
-    print("\n## 6) POLÍTICA CONGELADA 2026 (não ficar remendando)")
+    print("\n## 7) POLÍTICA CONGELADA 2026")
     pol = frozen_policy_2026()
     print(f"  Princípio: {pol['principio']}")
     print(f"  brain_config: {pol['brain_config']}")
-    print(f"  waste desejado: {pol['waste_guard_desejado']}")
-    print("  Operação sem código:")
+    print(f"  waste: {pol['waste_guard']}")
+    print(f"  smart_anchor: {pol['smart_anchor']}")
+    print("  Operação:")
     for x in pol["operacao_sem_codigo"]:  # type: ignore[union-attr]
         print(f"    • {x}")
     print("  Proibido:")
@@ -255,12 +279,11 @@ def main() -> None:
         print(f"    • {x}")
     print(f"  KPIs: {pol['kpi_congelados']}")
 
-    print("\n## 7) Veredito")
+    print("\n## 8) Veredito")
     print(
-        "  O Cérebro ESTÁ ligado (waste/slots/rank), mas otimiza o arranjo ERRADO:\n"
-        "  espalha exploração pós-queda + alvo R$2 irreal + waste tarde.\n"
-        "  Melhor 2026 = CONGELAR política âncora-first + config única +\n"
-        "  operação Play/pausa — SEM novo motor e SEM patch semanal de código."
+        "  Mais lead mais barato = 1 CTWA cidade sede + Cérebro escala vertical.\n"
+        "  Campanha Inteligente (1-clique) bootstrapa âncora; waste R$40 na âncora;\n"
+        "  DDD só backend; não fragmentar com MG-ROT até fase 3."
     )
     print("=" * 72)
 

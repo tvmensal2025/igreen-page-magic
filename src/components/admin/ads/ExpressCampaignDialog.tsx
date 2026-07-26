@@ -34,7 +34,17 @@ const DAY_OPTIONS: Array<{ label: string; value: number | null }> = [
   { label: "Contínuo", value: null },
 ];
 
-const SEDE_DEFAULT_MSG = "Oi! Quero saber como economizar na conta de luz.";
+const SEDE_DEFAULT_MSG = "Oi! Quero saber como consigo pagar menos na conta de luz.";
+const EXPRESS_DEFAULT_BUDGET = 30;
+
+function cityQueryFromSede(bc: Record<string, unknown>): string {
+  const name = typeof bc.sede_name === "string" ? bc.sede_name.trim() : "";
+  const address = typeof bc.sede_address === "string" ? bc.sede_address.trim() : "";
+  const raw = name || address || "Uberlândia";
+  if (/uberl[aá]ndia|udi\b/i.test(raw)) return "Uberlândia";
+  const first = raw.split(/[,/·—–-]/)[0]?.trim() || raw;
+  return first.slice(0, 60) || "Uberlândia";
+}
 
 export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, onOpenAdvanced }: Props) {
   const { toast } = useToast();
@@ -70,13 +80,13 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
 
   const [publishing, setPublishing] = useState(false);
 
-  // Reset on open + pré-carrega sede do brain_config
+  // Reset on open + pré-carrega cidade da sede (molde vencedor — não raio frio)
   useEffect(() => {
     if (!open) return;
-    setGeoMode("radius");
+    setGeoMode("cities");
     setCityQuery(""); setCityHits([]); setCities([]); setRadiusPoints([]);
     setSuggestions(null); setSelectedImage(null); setSelectedCopyIdx(0);
-    setBudget(15); setDays(7);
+    setBudget(EXPRESS_DEFAULT_BUDGET); setDays(7);
     setInitialMessage(SEDE_DEFAULT_MSG);
     setSedeHint(null);
     setSedeRadiusKm(50);
@@ -90,8 +100,6 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
         .maybeSingle();
       if (cancelled || !data?.brain_config) return;
       const bc = data.brain_config as Record<string, unknown>;
-      const lat = Number(bc.sede_latitude);
-      const lng = Number(bc.sede_longitude);
       const radius = Math.max(1, Math.min(50, Number(bc.sede_radius_km) || 50));
       const address = typeof bc.sede_address === "string" && bc.sede_address.trim()
         ? bc.sede_address.trim()
@@ -100,6 +108,9 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
         ? bc.sede_name.trim()
         : "Sede";
       setSedeRadiusKm(radius);
+      const lat = Number(bc.sede_latitude);
+      const lng = Number(bc.sede_longitude);
+      // Raio fica disponível como opção avançada, mas default = cidade Meta da sede
       if (Number.isFinite(lat) && Number.isFinite(lng)) {
         setRadiusPoints([{
           latitude: lat,
@@ -108,7 +119,26 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
           address_string: address,
           name,
         }]);
-        setSedeHint(`${name} · ${radius} km`);
+      }
+      try {
+        const q = cityQueryFromSede(bc);
+        const r = await searchCities(q);
+        if (cancelled) return;
+        const hit = r.cities.find((c) => /uberl/i.test(c.name)) || r.cities[0];
+        if (hit?.key) {
+          setCities([hit]);
+          setGeoMode("cities");
+          setSedeHint(`${hit.name} · cidade da sede (molde vencedor)`);
+          const anchorBudget = Number(bc.anchor_budget_cents);
+          if (Number.isFinite(anchorBudget) && anchorBudget >= 3000) {
+            setBudget(Math.round(anchorBudget) / 100);
+          }
+          return;
+        }
+      } catch { /* fallback raio abaixo */ }
+      if (cancelled) return;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        setSedeHint(`${name} · ${radius} km (fallback raio)`);
         setGeoMode("radius");
       }
     })();
@@ -273,15 +303,15 @@ export function ExpressCampaignDialog({ open, onClose, consultantId, onCreated, 
           {/* 1) ONDE */}
           <section className="space-y-2">
             <Label className="flex items-center gap-1.5 text-sm"><MapPin className="w-4 h-4 text-primary" /> 1. Onde anunciar</Label>
-            {sedeHint && geoMode === "radius" && (
+            {sedeHint && (
               <p className="text-[11px] text-muted-foreground">
-                Pré-preenchido com a sede: {sedeHint}. Próximas campanhas devem seguir raio amplo na sede (política Meta).
+                Pré-preenchido: {sedeHint}. Preferência: cidade da sede (mais barato que raio frio).
               </p>
             )}
             <Tabs value={geoMode} onValueChange={(v) => setGeoMode(v as any)}>
               <TabsList className="h-8">
-                <TabsTrigger value="radius" className="text-xs h-7">Rua + raio</TabsTrigger>
                 <TabsTrigger value="cities" className="text-xs h-7">Cidade(s)</TabsTrigger>
+                <TabsTrigger value="radius" className="text-xs h-7">Rua + raio</TabsTrigger>
               </TabsList>
               <TabsContent value="cities" className="mt-2 space-y-2">
                 <Popover open={cityHits.length > 0}>
