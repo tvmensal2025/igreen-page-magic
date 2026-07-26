@@ -3285,50 +3285,6 @@ export type Database = {
           },
         ]
       }
-      consultant_automation_prefs: {
-        Row: {
-          acked_at: string | null
-          consultant_id: string
-          group_a_enabled: boolean
-          group_b_enabled: boolean
-          group_c_enabled: boolean
-          pos_venda_auto_enabled: boolean
-          reminders_auto_enabled: boolean
-          updated_at: string
-          updated_by: string | null
-        }
-        Insert: {
-          acked_at?: string | null
-          consultant_id: string
-          group_a_enabled?: boolean
-          group_b_enabled?: boolean
-          group_c_enabled?: boolean
-          pos_venda_auto_enabled?: boolean
-          reminders_auto_enabled?: boolean
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          acked_at?: string | null
-          consultant_id?: string
-          group_a_enabled?: boolean
-          group_b_enabled?: boolean
-          group_c_enabled?: boolean
-          pos_venda_auto_enabled?: boolean
-          reminders_auto_enabled?: boolean
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
-            columns: ["consultant_id"]
-            isOneToOne: true
-            referencedRelation: "consultants"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       consultant_ad_settings: {
         Row: {
           age_max: number
@@ -3376,6 +3332,71 @@ export type Database = {
           whatsapp_phone_number_id?: string | null
         }
         Relationships: []
+      }
+      consultant_automation_prefs: {
+        Row: {
+          acked_at: string | null
+          consultant_id: string
+          group_a_enabled: boolean
+          group_b_enabled: boolean
+          group_c_enabled: boolean
+          pos_venda_auto_enabled: boolean
+          reminders_auto_enabled: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          acked_at?: string | null
+          consultant_id: string
+          group_a_enabled?: boolean
+          group_b_enabled?: boolean
+          group_c_enabled?: boolean
+          pos_venda_auto_enabled?: boolean
+          reminders_auto_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          acked_at?: string | null
+          consultant_id?: string
+          group_a_enabled?: boolean
+          group_b_enabled?: boolean
+          group_c_enabled?: boolean
+          pos_venda_auto_enabled?: boolean
+          reminders_auto_enabled?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       consultant_commission_settings: {
         Row: {
@@ -11426,6 +11447,72 @@ export type Database = {
           id?: string
           role?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      sync_audit_traces: {
+        Row: {
+          ai_cost_usd: number | null
+          ai_findings: Json | null
+          ai_model: string | null
+          ai_summary: string | null
+          ai_tokens_in: number | null
+          ai_tokens_out: number | null
+          consultant_email: string | null
+          consultor_id: string | null
+          created_at: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          input_summary: Json | null
+          result: Json | null
+          route: string | null
+          skip_reason: string | null
+          skipped: boolean
+          status: string
+          trace: Json
+        }
+        Insert: {
+          ai_cost_usd?: number | null
+          ai_findings?: Json | null
+          ai_model?: string | null
+          ai_summary?: string | null
+          ai_tokens_in?: number | null
+          ai_tokens_out?: number | null
+          consultant_email?: string | null
+          consultor_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          input_summary?: Json | null
+          result?: Json | null
+          route?: string | null
+          skip_reason?: string | null
+          skipped?: boolean
+          status?: string
+          trace?: Json
+        }
+        Update: {
+          ai_cost_usd?: number | null
+          ai_findings?: Json | null
+          ai_model?: string | null
+          ai_summary?: string | null
+          ai_tokens_in?: number | null
+          ai_tokens_out?: number | null
+          consultant_email?: string | null
+          consultor_id?: string | null
+          created_at?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          input_summary?: Json | null
+          result?: Json | null
+          route?: string | null
+          skip_reason?: string | null
+          skipped?: boolean
+          status?: string
+          trace?: Json
         }
         Relationships: []
       }
