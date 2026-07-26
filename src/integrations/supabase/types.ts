@@ -3336,50 +3336,57 @@ export type Database = {
       consultant_automation_prefs: {
         Row: {
           acked_at: string | null
+          cliente_canal_flow_id: string | null
+          cliente_canal_reply_enabled: boolean
+          cliente_canal_reply_text: string | null
           consultant_id: string
           group_a_enabled: boolean
           group_b_enabled: boolean
           group_c_enabled: boolean
           pos_venda_auto_enabled: boolean
           pos_venda_auto_validate: boolean
-          cliente_canal_reply_enabled: boolean
-          cliente_canal_reply_text: string | null
-          cliente_canal_flow_id: string | null
           reminders_auto_enabled: boolean
           updated_at: string
           updated_by: string | null
         }
         Insert: {
           acked_at?: string | null
+          cliente_canal_flow_id?: string | null
+          cliente_canal_reply_enabled?: boolean
+          cliente_canal_reply_text?: string | null
           consultant_id: string
           group_a_enabled?: boolean
           group_b_enabled?: boolean
           group_c_enabled?: boolean
           pos_venda_auto_enabled?: boolean
           pos_venda_auto_validate?: boolean
-          cliente_canal_reply_enabled?: boolean
-          cliente_canal_reply_text?: string | null
-          cliente_canal_flow_id?: string | null
           reminders_auto_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
           acked_at?: string | null
+          cliente_canal_flow_id?: string | null
+          cliente_canal_reply_enabled?: boolean
+          cliente_canal_reply_text?: string | null
           consultant_id?: string
           group_a_enabled?: boolean
           group_b_enabled?: boolean
           group_c_enabled?: boolean
           pos_venda_auto_enabled?: boolean
           pos_venda_auto_validate?: boolean
-          cliente_canal_reply_enabled?: boolean
-          cliente_canal_reply_text?: string | null
-          cliente_canal_flow_id?: string | null
           reminders_auto_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "consultant_automation_prefs_cliente_canal_flow_id_fkey"
+            columns: ["cliente_canal_flow_id"]
+            isOneToOne: false
+            referencedRelation: "bot_flows"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "consultant_automation_prefs_consultant_id_fkey"
             columns: ["consultant_id"]
@@ -4535,6 +4542,7 @@ export type Database = {
           cashback_igreen: string | null
           cep: string | null
           chat_cleared_at: string | null
+          cliente_canal_last_reply_at: string | null
           club_created_at: string | null
           club_dry_run: boolean | null
           club_error: string | null
@@ -4799,6 +4807,7 @@ export type Database = {
           cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          cliente_canal_last_reply_at?: string | null
           club_created_at?: string | null
           club_dry_run?: boolean | null
           club_error?: string | null
@@ -5063,6 +5072,7 @@ export type Database = {
           cashback_igreen?: string | null
           cep?: string | null
           chat_cleared_at?: string | null
+          cliente_canal_last_reply_at?: string | null
           club_created_at?: string | null
           club_dry_run?: boolean | null
           club_error?: string | null
@@ -13182,6 +13192,10 @@ export type Database = {
           step_key: string
         }[]
       }
+      auto_confirm_pending_pos_venda: {
+        Args: { _consultant_id?: string }
+        Returns: Json
+      }
       bind_customer_campaign: {
         Args: { p_campaign_id: string; p_customer_id: string }
         Returns: {
@@ -13338,6 +13352,7 @@ export type Database = {
           cashback_igreen: string | null
           cep: string | null
           chat_cleared_at: string | null
+          cliente_canal_last_reply_at: string | null
           club_created_at: string | null
           club_dry_run: boolean | null
           club_error: string | null
@@ -13671,11 +13686,7 @@ export type Database = {
         Returns: undefined
       }
       confirm_pending_classification: {
-        Args: { _action: string; _customer_id: string; _force_stage?: string | null }
-        Returns: Json
-      }
-      auto_confirm_pending_pos_venda: {
-        Args: { _consultant_id?: string | null }
+        Args: { _action: string; _customer_id: string; _force_stage?: string }
         Returns: Json
       }
       consume_gemini_token: {
@@ -14108,6 +14119,14 @@ export type Database = {
         Args: { p_hours?: number; p_instance: string }
         Returns: string
       }
+      pos_venda_mark_prior_stages_skipped: {
+        Args: {
+          _consultant_id: string
+          _current_stage: string
+          _customer_id: string
+        }
+        Returns: undefined
+      }
       publish_flow_as_public: { Args: { _flow_id: string }; Returns: undefined }
       reactivation_outcome_by_step: {
         Args: { p_consultant_id?: string; p_since?: string }
@@ -14284,6 +14303,18 @@ export type Database = {
           _remote_jid?: string
         }
         Returns: Json
+      }
+      resolve_pos_venda_reference_at: {
+        Args: {
+          _data_ativo: string
+          _data_ativo_igreen: string
+          _data_cadastro: string
+          _data_cadastro_igreen: string
+          _data_validado: string
+          _data_validado_igreen: string
+          _portal_submitted_at: string
+        }
+        Returns: string
       }
       review_flow_template: {
         Args: { _approve: boolean; _note?: string; _submission_id: string }
