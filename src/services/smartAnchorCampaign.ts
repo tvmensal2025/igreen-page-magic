@@ -167,7 +167,7 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
   const videoThumbUrl = libraryVideos[0]?.thumbUrl || null;
   const creativeMode: SmartCreativeMode = photoUrl ? "photo" : videoUrl ? "video" : "photo";
 
-  let initialMessage = SMART_CREATIVE.initial_message;
+  let initialMessage: string = SMART_CREATIVE.initial_message;
   try {
     const check = await checkInitialMessage(initialMessage);
     if (check.duplicate && check.suggestion) {
