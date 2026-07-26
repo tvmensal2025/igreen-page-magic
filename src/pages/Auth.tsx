@@ -52,9 +52,18 @@ const Auth = () => {
   const [forgotMode, setForgotMode] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [resettingApp, setResettingApp] = useState(false);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Escuta o evento global disparado pelo version gate em src/main.tsx.
+  // Quando dispara, o botão "Atualizar app" começa a piscar para chamar atenção.
+  useEffect(() => {
+    const onUpdate = () => setUpdateAvailable(true);
+    window.addEventListener("igreen:update-available", onUpdate);
+    return () => window.removeEventListener("igreen:update-available", onUpdate);
+  }, []);
 
   const handleHardResetApp = async () => {
     if (resettingApp) return;
