@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { TablesUpdate } from "@/integrations/supabase/types";
 import type { Customer } from "./customerUtils";
 import { isValidBrNationalPhone, toWhatsappCanonical } from "@/lib/captacao/portalPhone";
+import { resolvePosVendaReferenceDate, suggestPosVendaStageFromDate } from "@/lib/posVendaReferenceDate";
 
 function SectionLabel({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
@@ -125,11 +126,14 @@ export function CustomerEditDialog({ customer, onClose, onSaved }: CustomerEditD
       //   se ainda não houver, e marca como classificação manual.
       // - Reprovado: move o pós-venda para reprovado e zera o marco.
       if (editForm.status === "approved") {
-        (updateData as any).pos_venda_stage = "aprovado";
+        const ref = resolvePosVendaReferenceDate(customer as any);
+        const approvedAt = (customer as any).pos_venda_approved_at
+          ?? (ref ? ref.toISOString() : new Date().toISOString());
+        (updateData as any).pos_venda_approved_at = approvedAt;
+        (updateData as any).pos_venda_stage = suggestPosVendaStageFromDate(
+          ref ?? (approvedAt ? new Date(approvedAt) : null),
+        );
         (updateData as any).pos_venda_manual = true;
-        if (!(customer as any).pos_venda_approved_at) {
-          (updateData as any).pos_venda_approved_at = new Date().toISOString();
-        }
       } else if (editForm.status === "rejected") {
         (updateData as any).pos_venda_stage = "reprovado";
         (updateData as any).pos_venda_manual = true;

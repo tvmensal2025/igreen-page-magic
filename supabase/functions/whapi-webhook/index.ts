@@ -3352,18 +3352,61 @@ Deno.serve(async (req) => {
       } else if (_fbVarCerebro === "A" && _emCadastro && !_isAtivoOrigin) {
         console.log(`[fluxo-a-bypass] customer=${customer.id} step=${stepBefore} — cadastro determinístico, Cérebro pulado`);
       } else if (_isAtivoOrigin) {
-        // Cliente já cadastrado (carteira/extensão) → Cérebro responde sempre,
-        // SEM tocar em estado de cadastro, SEM OCR, SEM Portal 2.
-        console.log(`[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (readOnly), pula cadastro/portal`);
-        _cerebroRespondeu = await runConversacionalTurn({
-          text: messageText ?? null,
-          isButton,
-          buttonId: buttonId ?? null,
-          hasImage,
-          hasDocument,
-          hasAudio,
-          messageId: messageId ?? null,
-        });
+        // Cliente carteira → canal de novidades/recados (NÃO Grupo A, NÃO cadastro).
+        // Fluxo opcional fica só reservado nas prefs até o consultor criar.
+        try {
+          const { tryReplyClienteCanalNovidades } = await import(
+            "../_shared/cliente-canal-novidades.ts"
+          );
+          const canal = await tryReplyClienteCanalNovidades({
+            supabase,
+            customer: customer as any,
+            consultantId: String(
+              (customer as any).assigned_consultant_id ||
+                (customer as any).consultant_id ||
+                instanceData.consultant_id ||
+                "",
+            ),
+            sendText: async (text) => {
+              try {
+                return !!(await sender.sendText(remoteJid, text));
+              } catch {
+                return false;
+              }
+            },
+          });
+          if (canal.handled) {
+            console.log(
+              `[origin-guard] customer=${customer.id} origin=${_origin} → canal novidades (${canal.reason})`,
+            );
+            _cerebroRespondeu = true;
+          } else {
+            // Toggle desligado → Cérebro readOnly (comportamento anterior).
+            console.log(
+              `[origin-guard] customer=${customer.id} origin=${_origin} → Cérebro (canal off)`,
+            );
+            _cerebroRespondeu = await runConversacionalTurn({
+              text: messageText ?? null,
+              isButton,
+              buttonId: buttonId ?? null,
+              hasImage,
+              hasDocument,
+              hasAudio,
+              messageId: messageId ?? null,
+            });
+          }
+        } catch (e: any) {
+          console.warn("[cliente-canal] falha, fallback Cérebro:", e?.message);
+          _cerebroRespondeu = await runConversacionalTurn({
+            text: messageText ?? null,
+            isButton,
+            buttonId: buttonId ?? null,
+            hasImage,
+            hasDocument,
+            hasAudio,
+            messageId: messageId ?? null,
+          });
+        }
       } else if (!_emCadastro) {
         _cerebroRespondeu = await runConversacionalTurn({
           text: messageText ?? null,
@@ -3408,9 +3451,33 @@ Deno.serve(async (req) => {
               if (fresh) customer = fresh;
             } catch (_) { /* mantém customer atual */ }
             console.log(`[pending-drain fluxo-b] replay customer=${customer.id} text="${String(replay.messageText).slice(0, 80)}"`);
-            // O claim só distingue mídia genérica (isFile) de botão/texto; tratamos
-            // mídia como imagem (foto da conta), o caso de longe mais comum.
             const replayIsMedia = replay.isFile && !replay.isButton;
+            if (_isAtivoOrigin) {
+              // Cliente carteira: canal de novidades (cooldown evita spam na rajada).
+              try {
+                const { tryReplyClienteCanalNovidades } = await import(
+                  "../_shared/cliente-canal-novidades.ts"
+                );
+                await tryReplyClienteCanalNovidades({
+                  supabase,
+                  customer: customer as any,
+                  consultantId: String(
+                    (customer as any).assigned_consultant_id ||
+                      (customer as any).consultant_id ||
+                      instanceData.consultant_id ||
+                      "",
+                  ),
+                  sendText: async (text) => {
+                    try {
+                      return !!(await sender.sendText(remoteJid, text));
+                    } catch {
+                      return false;
+                    }
+                  },
+                });
+              } catch (_) { /* noop */ }
+              return;
+            }
             await runConversacionalTurn({
               text: replay.messageText || null,
               isButton: replay.isButton,

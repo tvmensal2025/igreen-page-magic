@@ -19,6 +19,7 @@ export type ConsultantAutomationPrefs = {
   group_b_enabled: boolean;
   group_c_enabled: boolean;
   pos_venda_auto_enabled: boolean;
+  pos_venda_auto_validate: boolean;
   reminders_auto_enabled: boolean;
   acked_at: string | null;
 };
@@ -29,6 +30,7 @@ export const DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs
   group_b_enabled: false,
   group_c_enabled: false,
   pos_venda_auto_enabled: false,
+  pos_venda_auto_validate: false,
   reminders_auto_enabled: false,
   acked_at: null,
 };
@@ -80,6 +82,7 @@ function normalizeRow(
     group_b_enabled: !!row?.group_b_enabled,
     group_c_enabled: !!row?.group_c_enabled,
     pos_venda_auto_enabled: !!row?.pos_venda_auto_enabled,
+    pos_venda_auto_validate: !!row?.pos_venda_auto_validate,
     reminders_auto_enabled: !!row?.reminders_auto_enabled,
     acked_at: row?.acked_at ? String(row.acked_at) : null,
   };
@@ -97,7 +100,7 @@ export async function getConsultantAutomationPrefs(
   const { data, error } = await supabase
     .from("consultant_automation_prefs")
     .select(
-      "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
+      "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, pos_venda_auto_validate, reminders_auto_enabled, acked_at",
     )
     .eq("consultant_id", consultantId)
     .maybeSingle();
@@ -129,7 +132,7 @@ export async function preloadConsultantAutomationPrefs(
   const { data, error } = await supabase
     .from("consultant_automation_prefs")
     .select(
-      "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
+      "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, pos_venda_auto_validate, reminders_auto_enabled, acked_at",
     )
     .in("consultant_id", ids);
 

@@ -25,8 +25,23 @@ import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2
 
 import { toast } from "sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
+import {
+  resolvePosVendaReferenceDate,
+  suggestPosVendaStageFromDate,
+  formatPosVendaDateBR,
+  labelForSuggestedStage,
+  describePosVendaDateSource,
+} from "@/lib/posVendaReferenceDate";
+import {
+  isPosVendaSendWindow,
+  nextPosVendaSendSlot,
+  formatPosVendaSendSlotBR,
+} from "@/lib/posVendaSendWindow";
 import PosVendaSetupWizard from "./PosVendaSetupWizard";
 import ApproveBillValueDialog, { needsBillValueForApproval, type ApproveTargetStage } from "./ApproveBillValueDialog";
+import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 
 interface Pending {
@@ -40,6 +55,13 @@ interface Pending {
   assigned_consultant_id: string | null;
   registered_by_igreen_id: string | null;
   registered_by_name: string | null;
+  data_cadastro_igreen?: string | null;
+  data_ativo_igreen?: string | null;
+  data_validado_igreen?: string | null;
+  data_cadastro?: string | null;
+  data_ativo?: string | null;
+  data_validado?: string | null;
+  portal_submitted_at?: string | null;
 }
 
 interface Props {
@@ -75,6 +97,12 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   const [myIgreenReady, setMyIgreenReady] = useState(false);
   // Lista de licenciados da rede (para o seletor de filtro)
   const [registrants, setRegistrants] = useState<{ id: string; name: string }[]>([]);
+  const {
+    prefs: autoPrefs,
+    saving: autoSaving,
+    setPosVendaAutoValidate,
+  } = useConsultantAutomationPrefs(consultantId);
+  const autoValidate = !!autoPrefs?.pos_venda_auto_validate;
 
   async function load() {
     // "Meus clientes" NUNCA pode cair no fallback da rede inteira enquanto o
@@ -93,7 +121,7 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
     const nowIso = new Date().toISOString();
     let query = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,andamento_igreen,pos_venda_pending_stage,consultant_id,assigned_consultant_id,pending_snoozed_until,pos_venda_invalid,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,andamento_igreen,pos_venda_pending_stage,consultant_id,assigned_consultant_id,pending_snoozed_until,pos_venda_invalid,registered_by_igreen_id,registered_by_name,data_cadastro_igreen,data_ativo_igreen,data_validado_igreen,data_cadastro,data_ativo,data_validado,portal_submitted_at")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_invalid", false)
       .not("pos_venda_pending_stage", "is", null)
@@ -218,33 +246,35 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
   }, [filaItems]);
 
   async function act(customerId: string, action: ActionKind, targetStage?: ApproveTargetStage) {
-    const { data, error } = await supabase.rpc("confirm_pending_classification" as any, { _customer_id: customerId, _action: action });
+    // Data iGreen → approved_at + bucket D* automático no RPC (não precisa olhar/escolher).
+    const rpcArgs: Record<string, string | null> = {
+      _customer_id: customerId,
+      _action: action,
+    };
+    if (action === "approve" && targetStage) {
+      rpcArgs._force_stage = targetStage;
+    }
+    const { data, error } = await supabase.rpc("confirm_pending_classification" as any, rpcArgs);
     if (error) { toast.error(error.message); return; }
     const ok = (data as any)?.ok;
     if (!ok) { toast.error((data as any)?.error || "Erro"); return; }
 
-    // Se aprovado direto para 30/60/90/120 dias, sobrescreve o estágio e marca como manual
-    // (assim o cron de autoprogressão não vai reverter).
-    if (action === "approve" && targetStage && targetStage !== "aprovado") {
-      const { error: upErr } = await supabase
-        .from("customers")
-        .update({ pos_venda_stage: targetStage, pos_venda_manual: true })
-        .eq("id", customerId);
-      if (upErr) {
-        toast.error("Aprovado, mas falhou ao mover para " + targetStage + ": " + upErr.message);
-      }
-    }
-
     setItems((prev) => prev.filter((p) => p.id !== customerId));
-    const stageLabel = targetStage && targetStage !== "aprovado" ? ` (${targetStage.replace("d", "")} dias)` : "";
+    const resolvedStage = String((data as any)?.stage || targetStage || "");
+    const stageLabel = resolvedStage && resolvedStage !== "aprovado" && /^d\d+$/.test(resolvedStage)
+      ? ` → ${resolvedStage.replace("d", "")} dias`
+      : "";
+    const scheduleHint = !isPosVendaSendWindow()
+      ? ` Mensagem agendada para ${formatPosVendaSendSlotBR(nextPosVendaSendSlot())}.`
+      : "";
     const msg = {
-      approve: "Confirmado! Mensagem disparada." + stageLabel,
+      approve: "Validado com a data do iGreen." + stageLabel + scheduleHint,
       snooze: "Adiado 24h",
       review: "Mantido em Espera",
       invalidate: "Cliente marcado como inválido",
       missing_signature: "Marcado como falta assinatura — permanece em espera.",
       defer_devolutiva: "Devolutiva em aberto — guardado na lista para resolver depois.",
-      reject_pending: "Reclassificado como reprovado.",
+      reject_pending: "Reclassificado como reprovado." + scheduleHint,
     }[action];
     toast.success(msg);
     onResolved?.();
@@ -347,20 +377,53 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                   className="w-[min(280px,calc(100vw-3rem))] p-3 text-xs leading-relaxed"
                 >
                   <p>
-                    Revise os clientes sincronizados do iGreen. Use <strong>Falta assinatura</strong> quando o cliente ainda não assinou.
-                    Ao confirmar aprovados, eles entram na autoprogressão (30/60/90/120 dias).
+                    Revise os clientes sincronizados do iGreen. A data de cadastro/ativo já vem do iGreen —
+                    ao validar, o cliente entra no marco certo (30/60/90…) sem você precisar olhar.
+                    Use <strong>Falta assinatura</strong> quando ainda não assinou.
                   </p>
                 </PopoverContent>
               </Popover>
             </DialogTitle>
             <DialogDescription className="text-sm mt-1">
-              Clientes sincronizados que aguardam revisão para iniciar o fluxo pós-venda.
+              {autoValidate
+                ? "Validar sozinho ligado — aprovados/reprovados do sync entram no marco certo sem clicar. Falta assinatura e devolutiva continuam manuais."
+                : "Clientes sincronizados com a data do iGreen — valide e o robô entra no dia certo (áudio/imagem já prontos)."}
             </DialogDescription>
 
 
             {/* Filtro por licenciado — linha própria, sem competir com devolutivas */}
             <div className="flex flex-col gap-3 mt-4">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <div className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 bg-muted/40">
+                  <Switch
+                    id="pv-auto-validate-dialog"
+                    checked={autoValidate}
+                    disabled={autoSaving}
+                    onCheckedChange={async (on) => {
+                      const res = await setPosVendaAutoValidate(on);
+                      if (!res.ok) {
+                        toast.error(res.error || "Não foi possível salvar");
+                        return;
+                      }
+                      if (on) {
+                        const a = res.autoResult?.approved ?? 0;
+                        const r = res.autoResult?.rejected ?? 0;
+                        toast.success(
+                          a + r > 0
+                            ? `Validar sozinho ON — ${a} aprovado(s), ${r} reprovado(s)`
+                            : "Validar sozinho ON",
+                        );
+                        load();
+                        onResolved?.();
+                      } else {
+                        toast.message("Validar sozinho OFF");
+                      }
+                    }}
+                  />
+                  <Label htmlFor="pv-auto-validate-dialog" className="text-xs font-medium cursor-pointer">
+                    Validar sozinho
+                  </Label>
+                </div>
                 <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
                   <button
                     type="button"
@@ -552,6 +615,10 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                       {list.map((c) => {
                         const noPhone = isPlaceholderPhone(c.phone_whatsapp);
                         const tone = avatarTone(c.id);
+                        const refDate = resolvePosVendaReferenceDate(c);
+                        const dateBr = formatPosVendaDateBR(refDate);
+                        const suggested = suggestPosVendaStageFromDate(refDate);
+                        const dateSource = describePosVendaDateSource(c);
                         return (
                           <div key={c.id} className="px-3 py-2.5 hover:bg-muted/30 transition-colors space-y-2">
                             <div className="flex items-start gap-3 min-w-0">
@@ -572,6 +639,20 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                     {formatPhoneBR(c.phone_whatsapp)}
                                   </span>
                                 )}
+                                {dateBr ? (
+                                  <Badge variant="outline" className="text-[10px] gap-1 border-primary/30 text-primary">
+                                    <CalendarClock className="w-2.5 h-2.5" />
+                                    Desde {dateBr}
+                                    {(sec.key === "aprovado" || sec.key === "falta_assinatura") && suggested !== "aprovado"
+                                      ? ` · ${labelForSuggestedStage(suggested)}`
+                                      : ""}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-[10px] gap-1 border-muted text-muted-foreground">
+                                    <CalendarClock className="w-2.5 h-2.5" />
+                                    Sem data iGreen
+                                  </Badge>
+                                )}
                                 {c.electricity_bill_value != null && Number(c.electricity_bill_value) > 0 ? (
                                   <span className="text-xs text-muted-foreground">
                                     R$ {Number(c.electricity_bill_value).toFixed(2)}
@@ -586,6 +667,11 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                   <Badge variant="outline" className="text-[10px] py-0 max-w-full truncate">{c.andamento_igreen}</Badge>
                                 )}
                               </div>
+                              {dateBr && (sec.key === "aprovado" || sec.key === "falta_assinatura") && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">
+                                  Data {dateSource} — validar envia direto para {labelForSuggestedStage(suggested).toLowerCase()}
+                                </p>
+                              )}
                             </div>
                             </div>
                             <div className="flex gap-1 flex-wrap pl-12 sm:pl-0">
@@ -617,8 +703,13 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                           <DropdownMenuContent align="end" sideOffset={4} className="w-56">
                                             <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
                                               <CalendarClock className="w-3 h-3 inline mr-1" />
-                                              Validar e jogar direto em…
+                                              Forçar bucket (opcional)
                                             </DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c)}>
+                                              Automático: {labelForSuggestedStage(suggested)}
+                                              {dateBr ? ` (desde ${dateBr})` : ""}
+                                            </DropdownMenuItem>
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem onClick={() => handleApproveClick(c, "d30")}>
                                               30 dias
@@ -642,8 +733,8 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                               210 dias
                                             </DropdownMenuItem>
                                             <DropdownMenuSeparator />
-                                            <DropdownMenuItem onClick={() => handleApproveClick(c)}>
-                                              Recém aprovado (padrão)
+                                            <DropdownMenuItem onClick={() => handleApproveClick(c, "aprovado")}>
+                                              Forçar: recém aprovado
                                             </DropdownMenuItem>
                                           </DropdownMenuContent>
                                         </DropdownMenu>
@@ -656,9 +747,9 @@ export default function PendingApprovalDialog({ consultantId, onResolved, openSi
                                   </TooltipTrigger>
                                   <TooltipContent>
                                     {sec.key === "falta_assinatura"
-                                      ? "Cliente assinou — confirmar e iniciar fluxo (use a seta para jogar direto em 30/60/90/120 dias)"
+                                      ? "Cliente assinou — confirma com a data iGreen e joga no marco certo (seta = forçar bucket)"
                                       : sec.key === "aprovado"
-                                        ? "Confirmar e iniciar fluxo — use a seta para jogar direto em 30/60/90/120 dias se foi aprovado faz tempo"
+                                        ? "Confirma com a data iGreen e entra no marco certo sozinho (seta = forçar 30/60/90…)"
                                         : "Confirmar classificação do sync"}
                                   </TooltipContent>
                                 </Tooltip>

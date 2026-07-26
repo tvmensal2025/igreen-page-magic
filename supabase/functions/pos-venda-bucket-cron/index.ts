@@ -21,9 +21,24 @@ Deno.serve(async (req) => {
     if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
 
     const { data, error } = await supabase.rpc("recompute_pos_venda_stages" as any);
+    let autoConfirm: unknown = null;
+    if (!error) {
+      const auto = await supabase.rpc("auto_confirm_pending_pos_venda" as any, {
+        _consultant_id: null,
+      });
+      autoConfirm = auto.data ?? null;
+      if (auto.error) {
+        console.warn("[pos-venda-bucket-cron] auto_confirm falhou:", auto.error.message);
+      }
+    }
 
     return new Response(
-      JSON.stringify({ ok: !error, updated: data ?? 0, error: error?.message ?? null }),
+      JSON.stringify({
+        ok: !error,
+        updated: data ?? 0,
+        auto_confirm: autoConfirm,
+        error: error?.message ?? null,
+      }),
       { status: error ? 500 : 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (err: any) {

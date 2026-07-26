@@ -163,13 +163,26 @@ function buildRecord(c: Record<string, unknown>): Record<string, unknown> | null
   if (desc != null) record.desconto_cliente = desc;
 
   const dCad = safeStr(get(c, "dataCadastro", "data_cadastro", "Data Cadastro"));
-  if (dCad) record.data_cadastro = dCad;
+  if (dCad) {
+    record.data_cadastro = dCad;
+    if (/^\d{4}-\d{2}-\d{2}/.test(dCad)) record.data_cadastro_igreen = dCad.slice(0, 10);
+    else if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(dCad)) {
+      const [dd, mm, yyyy] = dCad.split("/");
+      record.data_cadastro_igreen = `${yyyy}-${mm.padStart(2, "0")}-${dd.padStart(2, "0")}`;
+    }
+  }
 
   const dAtivo = safeStr(get(c, "dataAtivo", "data_ativo", "Data Ativo"));
-  if (dAtivo) record.data_ativo = dAtivo;
+  if (dAtivo) {
+    record.data_ativo = dAtivo;
+    if (/^\d{4}-\d{2}-\d{2}/.test(dAtivo)) record.data_ativo_igreen = dAtivo.slice(0, 10);
+  }
 
   const dVal = safeStr(get(c, "dataValidado", "data_validado", "Data Validado"));
-  if (dVal) record.data_validado = dVal;
+  if (dVal) {
+    record.data_validado = dVal;
+    if (/^\d{4}-\d{2}-\d{2}/.test(dVal)) record.data_validado_igreen = dVal.slice(0, 10);
+  }
 
   const stFin = safeStr(get(c, "statusFinanceiro", "status_financeiro"));
   if (stFin) record.status_financeiro = stFin;
@@ -594,6 +607,16 @@ async function runSyncAllBackgroundPhase(
     try {
       const { error: rpcErr } = await supabase.rpc("recompute_pos_venda_stages");
       out.pos_venda_recompute = rpcErr ? { error: rpcErr.message } : { ok: true };
+      if (!rpcErr) {
+        // Consultores com "Validar sozinho" ON: confirma aprovado/reprovado
+        // com data iGreen sem esperar clique no popup.
+        const auto = await supabase.rpc("auto_confirm_pending_pos_venda", {
+          _consultant_id: consultantId || null,
+        });
+        out.pos_venda_auto_confirm = auto.error
+          ? { error: auto.error.message }
+          : auto.data;
+      }
     } catch (e) {
       out.pos_venda_recompute = { error: e instanceof Error ? e.message : String(e) };
     }
@@ -1505,6 +1528,16 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     const consumo = safeNum(d.consumomedio ?? d.consumo); if (consumo != null) patch.media_consumo = consumo;
     const desc = safeNum(d.desconto_cliente); if (desc != null) patch.desconto_cliente = desc;
     const dAtivo = safeStr(d.dataAtivo); if (dAtivo && /^\d{4}-\d{2}-\d{2}/.test(dAtivo)) patch.data_ativo_igreen = dAtivo.slice(0, 10);
+    const dCad = safeStr(d.dataCadastro || d.data_cadastro);
+    if (dCad && /^\d{4}-\d{2}-\d{2}/.test(dCad)) {
+      patch.data_cadastro_igreen = dCad.slice(0, 10);
+      patch.data_cadastro = dCad.slice(0, 10);
+    }
+    const dVal = safeStr(d.dataValidado || d.data_validado);
+    if (dVal && /^\d{4}-\d{2}-\d{2}/.test(dVal)) {
+      patch.data_validado_igreen = dVal.slice(0, 10);
+      patch.data_validado = dVal.slice(0, 10);
+    }
     const dInj = safeStr(d.dataInjecao); if (dInj && /^\d{4}-\d{2}-\d{2}/.test(dInj)) patch.data_injecao_igreen = dInj.slice(0, 10);
     // Pessoais
     const lic = safeStr(d.licenciado); if (lic) patch.registered_by_name = lic;

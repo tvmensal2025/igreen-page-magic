@@ -39,7 +39,7 @@ No webhook: V3 sombra ~`:3163–3174` → Cérebro/Fluxo B resposta ~`:3272–33
 | Em cadastro + input **esperado** (foto, valor, botão do passo) | **Determinístico** — Cérebro **não** interpreta | ~`:3377–3382` |
 | Em cadastro + pergunta **livre** / off-topic | Cérebro responde **sem mexer no step** | ~`:3384–3396` |
 | **Fora** do cadastro (ainda conversando) | Cérebro pode assumir o turno | ~`:3367–3376` |
-| Cliente carteira (`igreen_sync` / `igreen_extension`) | Cérebro dúvidas (read-only) — **sem** OCR/Portal 2 | ~`:3354–3366` |
+| Cliente carteira (`igreen_sync` / `igreen_extension`) | **Canal de novidades** (msg fixa) — sem OCR/Portal/Grupo A. Cérebro só se canal OFF | `cliente-canal-novidades.ts` + origin-guard |
 | Lead **parou de falar** | Cadência Grupo A (nudge/SMS/call) — **não** é Cérebro | `cadence-tick` + `lead_cadence_state` |
 
 Resumo de produto:

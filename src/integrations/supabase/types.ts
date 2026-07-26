@@ -3341,6 +3341,10 @@ export type Database = {
           group_b_enabled: boolean
           group_c_enabled: boolean
           pos_venda_auto_enabled: boolean
+          pos_venda_auto_validate: boolean
+          cliente_canal_reply_enabled: boolean
+          cliente_canal_reply_text: string | null
+          cliente_canal_flow_id: string | null
           reminders_auto_enabled: boolean
           updated_at: string
           updated_by: string | null
@@ -3352,6 +3356,10 @@ export type Database = {
           group_b_enabled?: boolean
           group_c_enabled?: boolean
           pos_venda_auto_enabled?: boolean
+          pos_venda_auto_validate?: boolean
+          cliente_canal_reply_enabled?: boolean
+          cliente_canal_reply_text?: string | null
+          cliente_canal_flow_id?: string | null
           reminders_auto_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
@@ -3363,6 +3371,10 @@ export type Database = {
           group_b_enabled?: boolean
           group_c_enabled?: boolean
           pos_venda_auto_enabled?: boolean
+          pos_venda_auto_validate?: boolean
+          cliente_canal_reply_enabled?: boolean
+          cliente_canal_reply_text?: string | null
+          cliente_canal_flow_id?: string | null
           reminders_auto_enabled?: boolean
           updated_at?: string
           updated_by?: string | null
@@ -13659,7 +13671,11 @@ export type Database = {
         Returns: undefined
       }
       confirm_pending_classification: {
-        Args: { _action: string; _customer_id: string }
+        Args: { _action: string; _customer_id: string; _force_stage?: string | null }
+        Returns: Json
+      }
+      auto_confirm_pending_pos_venda: {
+        Args: { _consultant_id?: string | null }
         Returns: Json
       }
       consume_gemini_token: {

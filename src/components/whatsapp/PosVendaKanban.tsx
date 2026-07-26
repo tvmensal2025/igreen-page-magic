@@ -21,8 +21,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import PendingApprovalDialog from "./PendingApprovalDialog";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
+import ClienteCanalNovidadesDialog from "./ClienteCanalNovidadesDialog";
 import ApproveBillValueDialog, { needsBillValueForApproval } from "./ApproveBillValueDialog";
 import { resolveScheduleChannel } from "@/lib/scheduleChannel";
+import { resolvePosVendaReferenceDate } from "@/lib/posVendaReferenceDate";
+import {
+  isPosVendaSendWindow,
+  nextPosVendaSendSlot,
+  formatPosVendaSendSlotBR,
+} from "@/lib/posVendaSendWindow";
+import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
+import { Label } from "@/components/ui/label";
 
 type Stage = "espera" | "aprovado" | "reprovado" | "retentativa" | "d30" | "d60" | "d90" | "d120" | "d150" | "d180" | "d210";
 
@@ -43,6 +52,12 @@ interface PosVendaCustomer {
   pos_venda_reason: string | null;
   pos_venda_pending_stage: string | null;
   pending_snoozed_until: string | null;
+  data_cadastro_igreen?: string | null;
+  data_ativo_igreen?: string | null;
+  data_validado_igreen?: string | null;
+  data_cadastro?: string | null;
+  data_ativo?: string | null;
+  data_validado?: string | null;
 }
 
 const STAGES: { key: Stage; label: string; badge: string; bar: string; dot: string }[] = [
@@ -118,6 +133,12 @@ export default function PosVendaKanban({
   const [loadingMore, setLoadingMore] = useState(false);
   const customersOffsetRef = useRef(0);
   const POS_VENDA_PAGE = 400;
+  const {
+    prefs: autoPrefs,
+    saving: autoSaving,
+    setPosVendaAutoValidate,
+  } = useConsultantAutomationPrefs(consultantId);
+  const autoValidate = !!autoPrefs?.pos_venda_auto_validate;
 
   async function load(opts?: { append?: boolean }) {
     const append = !!opts?.append;
@@ -129,7 +150,7 @@ export default function PosVendaKanban({
 
     let q = supabase
       .from("customers")
-      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,pos_venda_rejected_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name")
+      .select("id,name,phone_whatsapp,electricity_bill_value,portal_submitted_at,pos_venda_approved_at,pos_venda_rejected_at,andamento_igreen,status,consultant_id,assigned_consultant_id,pos_venda_stage,pos_venda_manual,pos_venda_reason,pos_venda_pending_stage,pending_snoozed_until,registered_by_igreen_id,registered_by_name,data_cadastro_igreen,data_ativo_igreen,data_validado_igreen,data_cadastro,data_ativo,data_validado")
       .eq("customer_origin", "igreen_sync")
       .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`);
 
@@ -228,11 +249,13 @@ export default function PosVendaKanban({
       pos_venda_manual: true,
       pos_venda_reason: target === "reprovado" ? (opts.reason ?? c.pos_venda_reason ?? null) : null,
     };
-    // Carimba a data de aprovação ao entrar em "aprovado" (marco da esteira
-    // 30/60/90/120). Em "reprovado" / "espera" o marco é zerado.
+    // Carimba a data de aprovação: prioriza data iGreen (ativo/validado/cadastro).
+    // Em "reprovado" / "espera" o marco é zerado.
     // Em "reprovado" carimba pos_venda_rejected_at (relógio da retentativa).
-    if (target === "aprovado") {
-      patch.pos_venda_approved_at = c.pos_venda_approved_at ?? new Date().toISOString();
+    if (target === "aprovado" || ["d30","d60","d90","d120","d150","d180","d210"].includes(target)) {
+      const ref = resolvePosVendaReferenceDate(c);
+      patch.pos_venda_approved_at = c.pos_venda_approved_at
+        ?? (ref ? ref.toISOString() : new Date().toISOString());
       patch.pos_venda_rejected_at = null;
     } else if (target === "reprovado") {
       patch.pos_venda_approved_at = null;
@@ -433,11 +456,44 @@ export default function PosVendaKanban({
             </SelectContent>
           </Select>
 
+          <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 min-h-[44px]">
+            <Switch
+              id="pv-auto-validate"
+              checked={autoValidate}
+              disabled={autoSaving}
+              onCheckedChange={async (on) => {
+                const res = await setPosVendaAutoValidate(on);
+                if (!res.ok) {
+                  toast.error(res.error || "Não foi possível salvar o toggle");
+                  return;
+                }
+                if (on) {
+                  const a = res.autoResult?.approved ?? 0;
+                  const r = res.autoResult?.rejected ?? 0;
+                  const scheduleHint = !isPosVendaSendWindow()
+                    ? ` Envios a partir de ${formatPosVendaSendSlotBR(nextPosVendaSendSlot())}.`
+                    : "";
+                  toast.success(
+                    a + r > 0
+                      ? `Validar sozinho ON — ${a} aprovado(s), ${r} reprovado(s) agora.${scheduleHint}`
+                      : `Validar sozinho ON — novos do sync entram sozinhos.${scheduleHint}`,
+                  );
+                  load();
+                } else {
+                  toast.message("Validar sozinho OFF — você continua clicando em Validar");
+                }
+              }}
+            />
+            <Label htmlFor="pv-auto-validate" className="text-xs font-medium cursor-pointer leading-tight">
+              Validar sozinho
+            </Label>
+          </div>
           <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] min-h-[44px]">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span className="lg:hidden">Validar</span>
             <span className="hidden lg:inline">Validar novos clientes</span>
           </Button>
+          <ClienteCanalNovidadesDialog consultantId={consultantId} />
           <PosVendaAutoConfigDialog consultantId={consultantId} />
           <Button variant="outline" size="sm" onClick={runRecompute} disabled={recomputing} className="gap-2 rounded-xl border-border/60 min-h-[44px]">
             <RefreshCw className={`w-4 h-4 shrink-0 ${recomputing ? "animate-spin" : ""}`} />

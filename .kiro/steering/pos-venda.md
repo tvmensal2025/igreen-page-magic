@@ -35,12 +35,26 @@ UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `Pendin
 
 ## Cadeados
 1. Toggle `pos_venda_auto_messages` — **não** usa `bot_global_enabled`
-2. Quiet hours BRT + `assertCronAuth`
+2. **Janela de envio** seg–sáb **08:00–20:00 BRT** (`pos-venda-send-window.ts`). Domingo fechado (após 20:00 dom → segunda 08:05). Fora da janela o cron não dispara; o hub agenda no próximo slot (`clampToPosVendaSendWindow`).
 3. Só envia se `pos_venda_manual=true` (consultor validou)
 4. Canal via `resolveChannelForCustomerWithFailover` (Whapi primeiro)
 
 ## Fluxo
 Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação → `espera` + `pos_venda_pending_stage`; consultor confirma → `pos_venda_manual=true`; auto-progress manda `pv_aprovado`/`pv_reprovado` e avança D30→D210 a partir de **`pos_venda_approved_at`**.
+
+### Validação (popup) — data iGreen obrigatória no marco
+- Ao **Validar**, `confirm_pending_classification` carimba `pos_venda_approved_at` com a data iGreen (`data_ativo` → `data_validado` → `data_cadastro`, nunca futura) e calcula o bucket D* sozinho.
+- Áudio/imagem já estão em `pos_venda_default_media`; o consultor não precisa “olhar” nem escolher 30/60/90.
+- Marcos anteriores ao bucket atual entram em `customer_auto_message_log` como `skipped_prior` (hub não lista backlog fantasma).
+- Helper UI: `src/lib/posVendaReferenceDate.ts`.
+- Cliente carteira (`igreen_sync` / `igreen_extension`) **nunca** fala com Grupo A — origin-guard no webhook → **canal de novidades** (`cliente-canal-novidades.ts`); Cérebro só se o toggle do canal estiver OFF.
+- UI: botão **Canal novidades** no Kanban (`ClienteCanalNovidadesDialog`) — edita texto, liga/desliga, reserva `cliente_canal_flow_id` (fluxo futuro, ainda não dispara).
+
+### Toggle “Validar sozinho” (`pos_venda_auto_validate`)
+- Coluna em `consultant_automation_prefs` — **default OFF**.
+- UI: switch no Kanban pós-venda + no popup de validação.
+- Ligado: RPC `auto_confirm_pending_pos_venda` confirma `aprovado`/`reprovado` pendentes (com data iGreen). `falta_assinatura` / `devolutiva` continuam manuais.
+- Roda no sync (após recompute) e no `pos-venda-bucket-cron`. Ao ligar o toggle, processa a fila atual na hora.
 
 ### Retentativa (qualquer consultor)
 1. Validar reprovado → carimba `pos_venda_rejected_at` + msg `pv_reprovado` (sem botão)

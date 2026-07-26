@@ -1,4 +1,5 @@
 import type { PosVendaStage } from "@/lib/posVenda/format";
+import { clampToPosVendaSendWindow, isPosVendaSendWindow } from "@/lib/posVendaSendWindow";
 
 /** Espelha PROGRESSION em pos-venda-auto-progress/index.ts */
 export const POS_VENDA_DAY_MILESTONES = [
@@ -28,6 +29,12 @@ export const PV_STAGE_KEY_LABELS: Record<string, string> = {
 const APPROVED_TRACK = new Set<string>([
   "aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210",
 ]);
+
+const STAGE_ORDER = ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"] as const;
+
+function stageIndex(stage: string): number {
+  return STAGE_ORDER.indexOf(stage as (typeof STAGE_ORDER)[number]);
+}
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -95,6 +102,7 @@ export function buildUpcomingPosVendaMessages(
 
     if (stage === "reprovado") {
       if (!sent.has("pv_reprovado")) {
+        const at = clampToPosVendaSendWindow(now, now);
         out.push({
           id: `${c.id}-pv_reprovado`,
           customerId: c.id,
@@ -102,8 +110,8 @@ export function buildUpcomingPosVendaMessages(
           phone,
           stageKey: "pv_reprovado",
           stageLabel: "Reprovado",
-          scheduledAt: now,
-          isOverdue: true,
+          scheduledAt: at,
+          isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
           messagePreview: defaultPreviews.reprovado?.slice(0, 120) ?? null,
           kind: "pos_venda_auto",
         });
@@ -112,7 +120,8 @@ export function buildUpcomingPosVendaMessages(
       if (!sent.has("pv_retentativa") && c.pos_venda_rejected_at) {
         const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
         if (Number.isFinite(rejectedMs)) {
-          const at = new Date(rejectedMs + RETENTATIVA_DAYS * MS_PER_DAY);
+          const raw = new Date(rejectedMs + RETENTATIVA_DAYS * MS_PER_DAY);
+          const at = clampToPosVendaSendWindow(raw, now);
           out.push({
             id: `${c.id}-pv_retentativa`,
             customerId: c.id,
@@ -121,7 +130,7 @@ export function buildUpcomingPosVendaMessages(
             stageKey: "pv_retentativa",
             stageLabel: "Retentativa",
             scheduledAt: at,
-            isOverdue: at.getTime() <= nowMs,
+            isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
             messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
             kind: "pos_venda_auto",
           });
@@ -132,6 +141,7 @@ export function buildUpcomingPosVendaMessages(
 
     if (stage === "retentativa") {
       if (!sent.has("pv_retentativa")) {
+        const at = clampToPosVendaSendWindow(now, now);
         out.push({
           id: `${c.id}-pv_retentativa`,
           customerId: c.id,
@@ -139,8 +149,8 @@ export function buildUpcomingPosVendaMessages(
           phone,
           stageKey: "pv_retentativa",
           stageLabel: "Retentativa",
-          scheduledAt: now,
-          isOverdue: true,
+          scheduledAt: at,
+          isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
           messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
           kind: "pos_venda_auto",
         });
@@ -153,8 +163,14 @@ export function buildUpcomingPosVendaMessages(
     const approvedMs = new Date(c.pos_venda_approved_at).getTime();
     if (!Number.isFinite(approvedMs)) continue;
 
-    if (!sent.has("pv_aprovado")) {
-      const at = new Date(approvedMs);
+    const currentIdx = stageIndex(stage);
+    const inWindow = isPosVendaSendWindow(now);
+
+    // Só agenda o marco atual (se ainda não enviado) + futuros.
+    // Marcos anteriores a um backfill por data iGreen ficam de fora do hub.
+    // Fora da janela seg–sáb 08–20 → clamp para o próximo slot (agendamento).
+    if (stage === "aprovado" && !sent.has("pv_aprovado")) {
+      const at = clampToPosVendaSendWindow(new Date(approvedMs), now);
       out.push({
         id: `${c.id}-pv_aprovado`,
         customerId: c.id,
@@ -163,16 +179,38 @@ export function buildUpcomingPosVendaMessages(
         stageKey: "pv_aprovado",
         stageLabel: "Aprovado",
         scheduledAt: at,
-        isOverdue: nowMs >= approvedMs,
+        isOverdue: at.getTime() <= nowMs && inWindow,
         messagePreview: defaultPreviews.aprovado?.slice(0, 120) ?? null,
         kind: "pos_venda_auto",
       });
+    } else if (currentIdx > 0 && !sent.has(`pv_${stage}`)) {
+      // Já está em d30+ e o envio do bucket atual ainda não saiu.
+      const milestone = POS_VENDA_DAY_MILESTONES.find((m) => m.stage === stage);
+      if (milestone) {
+        const raw = new Date(approvedMs + milestone.days * MS_PER_DAY);
+        const at = clampToPosVendaSendWindow(raw, now);
+        out.push({
+          id: `${c.id}-${milestone.stageKey}`,
+          customerId: c.id,
+          customerName: name,
+          phone,
+          stageKey: milestone.stageKey,
+          stageLabel: milestone.label,
+          scheduledAt: at,
+          isOverdue: at.getTime() <= nowMs && inWindow,
+          messagePreview: defaultPreviews[milestone.stage]?.slice(0, 120) ?? null,
+          kind: "pos_venda_auto",
+        });
+      }
     }
 
     for (const m of POS_VENDA_DAY_MILESTONES) {
       if (sent.has(m.stageKey)) continue;
-      const atMs = approvedMs + m.days * MS_PER_DAY;
-      const at = new Date(atMs);
+      const mIdx = stageIndex(m.stage);
+      // Só futuros em relação ao estágio atual (não reabre d30 se já está em d150).
+      if (mIdx <= currentIdx) continue;
+      const raw = new Date(approvedMs + m.days * MS_PER_DAY);
+      const at = clampToPosVendaSendWindow(raw, now);
       out.push({
         id: `${c.id}-${m.stageKey}`,
         customerId: c.id,
@@ -181,7 +219,7 @@ export function buildUpcomingPosVendaMessages(
         stageKey: m.stageKey,
         stageLabel: m.label,
         scheduledAt: at,
-        isOverdue: nowMs >= atMs,
+        isOverdue: at.getTime() <= nowMs && inWindow,
         messagePreview: defaultPreviews[m.stage]?.slice(0, 120) ?? null,
         kind: "pos_venda_auto",
       });

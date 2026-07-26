@@ -12,14 +12,17 @@ import {
 
 export type PrefsDraft = Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;
 
+const PREFS_SELECT =
+  "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, pos_venda_auto_validate, reminders_auto_enabled, acked_at";
+
 function toDraft(prefs: ConsultantAutomationPrefs | null): PrefsDraft {
-  // Sem row → espelha o motor (tudo OFF). Modal de 1º ack usa suggestedOnFirstAck.
   const src = prefs ?? { consultant_id: "", ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
   return {
     group_a_enabled: !!src.group_a_enabled,
     group_b_enabled: !!src.group_b_enabled,
     group_c_enabled: !!src.group_c_enabled,
     pos_venda_auto_enabled: !!src.pos_venda_auto_enabled,
+    pos_venda_auto_validate: !!src.pos_venda_auto_validate,
     reminders_auto_enabled: !!src.reminders_auto_enabled,
   };
 }
@@ -31,7 +34,24 @@ function toSuggestedDraft(): PrefsDraft {
     group_b_enabled: !!src.group_b_enabled,
     group_c_enabled: !!src.group_c_enabled,
     pos_venda_auto_enabled: !!src.pos_venda_auto_enabled,
+    pos_venda_auto_validate: !!src.pos_venda_auto_validate,
     reminders_auto_enabled: !!src.reminders_auto_enabled,
+  };
+}
+
+function rowFromData(
+  consultantId: string,
+  data: Partial<ConsultantAutomationPrefs> | null | undefined,
+): ConsultantAutomationPrefs {
+  return {
+    consultant_id: consultantId,
+    group_a_enabled: !!data?.group_a_enabled,
+    group_b_enabled: !!data?.group_b_enabled,
+    group_c_enabled: !!data?.group_c_enabled,
+    pos_venda_auto_enabled: !!data?.pos_venda_auto_enabled,
+    pos_venda_auto_validate: !!data?.pos_venda_auto_validate,
+    reminders_auto_enabled: !!data?.reminders_auto_enabled,
+    acked_at: data?.acked_at ?? null,
   };
 }
 
@@ -57,9 +77,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     const [prefsRes, consRes] = await Promise.all([
       supabase
         .from("consultant_automation_prefs")
-        .select(
-          "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
-        )
+        .select(PREFS_SELECT)
         .eq("consultant_id", consultantId)
         .maybeSingle(),
       supabase.from("consultants").select("cerebro_ativo").eq("id", consultantId).maybeSingle(),
@@ -76,23 +94,11 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
 
     const data = prefsRes.data;
     const row = data
-      ? ({
-          consultant_id: consultantId,
-          group_a_enabled: !!(data as ConsultantAutomationPrefs).group_a_enabled,
-          group_b_enabled: !!(data as ConsultantAutomationPrefs).group_b_enabled,
-          group_c_enabled: !!(data as ConsultantAutomationPrefs).group_c_enabled,
-          pos_venda_auto_enabled: !!(data as ConsultantAutomationPrefs).pos_venda_auto_enabled,
-          reminders_auto_enabled: !!(data as ConsultantAutomationPrefs).reminders_auto_enabled,
-          acked_at: (data as ConsultantAutomationPrefs).acked_at ?? null,
-        } satisfies ConsultantAutomationPrefs)
-      : {
-          consultant_id: consultantId,
-          ...DEFAULT_CONSULTANT_AUTOMATION_PREFS,
-        };
+      ? rowFromData(consultantId, data as ConsultantAutomationPrefs)
+      : { consultant_id: consultantId, ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
 
     const needsFirstAck = !data || !row.acked_at;
     const cerebroDbOn = String((consRes.data as { cerebro_ativo?: string } | null)?.cerebro_ativo || "") === "on";
-    // 1º ack: sugere OFF (opt-in). Depois: espelha o banco.
     setCerebroEnabled(needsFirstAck ? CEREBRO_OPT_IN.suggestedOnFirstAck : cerebroDbOn);
 
     setPrefs(row);
@@ -119,6 +125,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
             group_b_enabled: false,
             group_c_enabled: false,
             pos_venda_auto_enabled: false,
+            pos_venda_auto_validate: false,
             reminders_auto_enabled: false,
           }
         : (opts?.draftOverride ?? draft);
@@ -137,9 +144,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         supabase
           .from("consultant_automation_prefs")
           .upsert(payload, { onConflict: "consultant_id" })
-          .select(
-            "consultant_id, group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, reminders_auto_enabled, acked_at",
-          )
+          .select(PREFS_SELECT)
           .maybeSingle(),
         supabase
           .from("consultants")
@@ -157,15 +162,10 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         return false;
       }
 
-      const row = {
-        consultant_id: consultantId,
-        group_a_enabled: !!(data as ConsultantAutomationPrefs)?.group_a_enabled,
-        group_b_enabled: !!(data as ConsultantAutomationPrefs)?.group_b_enabled,
-        group_c_enabled: !!(data as ConsultantAutomationPrefs)?.group_c_enabled,
-        pos_venda_auto_enabled: !!(data as ConsultantAutomationPrefs)?.pos_venda_auto_enabled,
-        reminders_auto_enabled: !!(data as ConsultantAutomationPrefs)?.reminders_auto_enabled,
+      const row = rowFromData(consultantId, {
+        ...(data as ConsultantAutomationPrefs),
         acked_at: (data as ConsultantAutomationPrefs)?.acked_at ?? payload.acked_at,
-      } satisfies ConsultantAutomationPrefs;
+      });
 
       setPrefs(row);
       setDraft(toDraft(row));
@@ -173,6 +173,60 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       return true;
     },
     [consultantId, draft, cerebroEnabled],
+  );
+
+  /** Liga/desliga só o toggle de validar sozinho (sem mexer no resto do draft). */
+  const setPosVendaAutoValidate = useCallback(
+    async (enabled: boolean) => {
+      if (!consultantId) return { ok: false as const, error: "sem consultor" };
+      setSaving(true);
+      setError(null);
+
+      const base = prefs ?? { consultant_id: consultantId, ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
+      const payload = {
+        consultant_id: consultantId,
+        group_a_enabled: !!base.group_a_enabled,
+        group_b_enabled: !!base.group_b_enabled,
+        group_c_enabled: !!base.group_c_enabled,
+        pos_venda_auto_enabled: !!base.pos_venda_auto_enabled,
+        pos_venda_auto_validate: enabled,
+        reminders_auto_enabled: !!base.reminders_auto_enabled,
+        acked_at: base.acked_at ?? new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        updated_by: consultantId,
+      };
+
+      const { data, error: err } = await supabase
+        .from("consultant_automation_prefs")
+        .upsert(payload, { onConflict: "consultant_id" })
+        .select(PREFS_SELECT)
+        .maybeSingle();
+
+      if (err) {
+        setSaving(false);
+        setError(err.message);
+        return { ok: false as const, error: err.message };
+      }
+
+      const row = rowFromData(consultantId, data as ConsultantAutomationPrefs);
+      setPrefs(row);
+      setDraft(toDraft(row));
+
+      let autoResult: { approved?: number; rejected?: number } | null = null;
+      if (enabled) {
+        const { data: rpcData, error: rpcErr } = await supabase.rpc(
+          "auto_confirm_pending_pos_venda" as any,
+          { _consultant_id: consultantId },
+        );
+        if (!rpcErr && rpcData && typeof rpcData === "object") {
+          autoResult = rpcData as { approved?: number; rejected?: number };
+        }
+      }
+
+      setSaving(false);
+      return { ok: true as const, autoResult };
+    },
+    [consultantId, prefs],
   );
 
   return {
@@ -186,6 +240,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     error,
     reload,
     save,
+    setPosVendaAutoValidate,
     packs: CONSULTANT_AUTO_PACKS,
     needsAck: needsAutomationPrefsAck(prefs),
     hasOff: anyPackOff(prefs) || !cerebroEnabled,

@@ -11,6 +11,8 @@ export type ConsultantAutomationPrefs = {
   group_b_enabled: boolean;
   group_c_enabled: boolean;
   pos_venda_auto_enabled: boolean;
+  /** Confirma aprovado/reprovado do sync sem clicar Validar (data iGreen). */
+  pos_venda_auto_validate: boolean;
   reminders_auto_enabled: boolean;
   acked_at: string | null;
 };
@@ -20,6 +22,7 @@ export const DEFAULT_CONSULTANT_AUTOMATION_PREFS: Omit<ConsultantAutomationPrefs
   group_b_enabled: false,
   group_c_enabled: false,
   pos_venda_auto_enabled: false,
+  pos_venda_auto_validate: false,
   reminders_auto_enabled: false,
   acked_at: null,
 };
@@ -35,6 +38,8 @@ export const SUGGESTED_FIRST_ACK_PREFS: Omit<ConsultantAutomationPrefs, "consult
   group_b_enabled: true,
   group_c_enabled: true,
   pos_venda_auto_enabled: true,
+  /** Validar sozinho: sugerido OFF — tem que ligar de propósito. */
+  pos_venda_auto_validate: false,
   reminders_auto_enabled: true,
   acked_at: null,
 };

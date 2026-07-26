@@ -2899,6 +2899,57 @@ Deno.serve(async (req) => {
         } else if (_fbVarCerebro === "D" || _fbVarCerebro === "M" || _fbVarCerebro === "C" || _fbVarCerebro === "E" || _fbVarCerebro === "F") {
           console.log(`[fluxo-${_fbVarCerebro.toLowerCase()}-bypass] customer=${customer.id} — Cérebro pulado (fluxo do construtor)`);
         }
+      } else if (_isAtivoOrigin) {
+        // Cliente carteira → canal de novidades (paridade Whapi). Sem Grupo A.
+        try {
+          const { tryReplyClienteCanalNovidades } = await import(
+            "../_shared/cliente-canal-novidades.ts"
+          );
+          const canal = await tryReplyClienteCanalNovidades({
+            supabase,
+            customer: customer as any,
+            consultantId: String(
+              (customer as any).assigned_consultant_id ||
+                (customer as any).consultant_id ||
+                instanceData.consultant_id ||
+                "",
+            ),
+            sendText: async (text) => {
+              try {
+                return !!(await sender.sendText(remoteJid, text));
+              } catch {
+                return false;
+              }
+            },
+          });
+          if (canal.handled) {
+            console.log(
+              `[origin-guard] customer=${customer.id} origin=${_origin} → canal novidades (${canal.reason})`,
+            );
+            _cerebroRespondeu = true;
+          } else {
+            _cerebroRespondeu = await runConversacionalTurn({
+              text: messageText ?? null,
+              isButton,
+              buttonId: buttonId ?? null,
+              hasImage,
+              hasDocument,
+              hasAudio,
+              messageId: messageId ?? null,
+            });
+          }
+        } catch (e: any) {
+          console.warn("[cliente-canal] falha, fallback Cérebro:", e?.message);
+          _cerebroRespondeu = await runConversacionalTurn({
+            text: messageText ?? null,
+            isButton,
+            buttonId: buttonId ?? null,
+            hasImage,
+            hasDocument,
+            hasAudio,
+            messageId: messageId ?? null,
+          });
+        }
       } else {
         _cerebroRespondeu = await runConversacionalTurn({
           text: messageText ?? null,
@@ -2923,7 +2974,31 @@ Deno.serve(async (req) => {
             const { data: fresh } = await supabase.from("customers").select("*").eq("id", customer.id).maybeSingle();
             if (fresh) customer = fresh;
             const replayIsMedia = replay.isFile && !replay.isButton;
-            // Reusa o mesmo caminho idempotente (NÃO sender.sendText cru).
+            if (_isAtivoOrigin) {
+              try {
+                const { tryReplyClienteCanalNovidades } = await import(
+                  "../_shared/cliente-canal-novidades.ts"
+                );
+                await tryReplyClienteCanalNovidades({
+                  supabase,
+                  customer: customer as any,
+                  consultantId: String(
+                    (customer as any).assigned_consultant_id ||
+                      (customer as any).consultant_id ||
+                      instanceData.consultant_id ||
+                      "",
+                  ),
+                  sendText: async (text) => {
+                    try {
+                      return !!(await sender.sendText(remoteJid, text));
+                    } catch {
+                      return false;
+                    }
+                  },
+                });
+              } catch (_) { /* noop */ }
+              return;
+            }
             await runConversacionalTurn({
               text: replay.messageText || null,
               isButton: replay.isButton,

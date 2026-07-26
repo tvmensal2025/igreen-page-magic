@@ -2,10 +2,15 @@
 // - Move clientes entre pv_aprovado / pv_d30…pv_d210 / pv_reprovado / pv_retentativa.
 // - Dispara mídia via resolveChannelForCustomerWithFailover (Whapi primeiro; Evolution fallback).
 // - NÃO usa bot_global_enabled — só toggle pos_venda_auto_messages + pos_venda_manual.
+// - Janela seg–sáb 08:00–20:00 BRT (pos-venda-send-window); fora = skip até próximo slot.
 // - Idempotente via customer_auto_message_log (UNIQUE customer_id+stage_key).
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
-import { isQuietHourBRT, logQuietSkip } from "../_shared/quiet-hours.ts";
+import {
+  isPosVendaSendWindow,
+  logPosVendaWindowSkip,
+  nextPosVendaSendSlot,
+} from "../_shared/pos-venda-send-window.ts";
 import { isConsultantAIDisabled, isPausedByPhone } from "../_shared/bot/paused.ts";
 import {
   resolveChannelForCustomerWithFailover,
@@ -316,9 +321,16 @@ async function processCustomer(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
-  if (isQuietHourBRT()) {
-    logQuietSkip("pos-venda-auto-progress");
-    return new Response(JSON.stringify({ skipped: "quiet_hours" }), {
+  // Janela pós-venda: seg–sáb 08:00–20:00 BRT. Fora disso (ex.: domingo após
+  // 20:00 → segunda 08:00) o cron só volta a enviar no próximo slot — o hub
+  // já mostra o agendamento clampado.
+  if (!isPosVendaSendWindow()) {
+    const next = nextPosVendaSendSlot();
+    logPosVendaWindowSkip("pos-venda-auto-progress", { next_slot: next.toISOString() });
+    return new Response(JSON.stringify({
+      skipped: "outside_send_window",
+      next_slot: next.toISOString(),
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
