@@ -98,7 +98,9 @@ export default defineConfig({
           if (!id.includes("node_modules")) return;
           // Ordem importa: pacotes com "react" no path (radix, lucide-react,
           // @react-three) precisam casar ANTES do vendor React.
-          if (id.includes("@radix-ui/")) return "radix";
+          // NÃO forçar chunk "radix": causava TDZ (Cannot read properties of
+          // undefined 'forwardRef') porque o chunk radix inicializava antes
+          // do react-vendor no browser. Deixa o Rollup decidir.
           if (id.includes("@supabase/supabase-js")) return "supabase";
           // NÃO forçar chunk "charts" para recharts/d3: o manualChunks
           // gerava TDZ no browser (Cannot access 'S' before initialization)
