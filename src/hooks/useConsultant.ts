@@ -1,19 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
 import type { Consultant } from "@/types/consultant";
+import { resolvePublicConsultant } from "@/lib/resolvePublicConsultant";
 
+/**
+ * Resolve consultor público pela licença da URL.
+ * Todo consultor com `license` preenchida é público (não depende de approved).
+ */
 export function useConsultant(license: string) {
   return useQuery<Consultant | null>({
     queryKey: ["consultant", license],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("consultants_public" as any)
-        .select("*")
-        .eq("license", license)
-        .maybeSingle();
-
-      if (error) throw error;
-      return (data as unknown) as Consultant | null;
+      const resolved = await resolvePublicConsultant(license);
+      return resolved?.consultant ?? null;
     },
     enabled: !!license,
   });

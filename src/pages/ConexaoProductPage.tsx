@@ -9,6 +9,7 @@ import WhatsAppFloat from "@/components/WhatsAppFloat";
 import SEOHead from "@/components/SEOHead";
 import LoadingScreen from "@/components/LoadingScreen";
 import PageStatus from "@/components/common/PageStatus";
+import { CanonicalLicenseRedirect } from "@/components/common/CanonicalLicenseRedirect";
 import { useProduct, resolveLanding, type ResolvedLanding, type ProductSection } from "@/features/produtos/catalogo";
 import consultantDefault from "@/assets/consultant.jpg";
 import { trackClickEvent } from "@/hooks/useTrackEvent";
@@ -54,6 +55,12 @@ const ConexaoProductPage = () => {
         title="Consultor não encontrado"
         description="Verifique o link e tente novamente."
       />
+    );
+  }
+
+  if (licenca && consultant.license && licenca !== consultant.license) {
+    return (
+      <CanonicalLicenseRedirect paramLicense={licenca} canonicalLicense={consultant.license} />
     );
   }
 

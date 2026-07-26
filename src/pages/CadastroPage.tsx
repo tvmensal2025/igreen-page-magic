@@ -10,6 +10,7 @@ import SEOHead from "@/components/SEOHead";
 import PixelInjector from "@/components/PixelInjector";
 import PageStatus from "@/components/common/PageStatus";
 import BrandLogo from "@/components/common/BrandLogo";
+import { CanonicalLicenseRedirect } from "@/components/common/CanonicalLicenseRedirect";
 import { SolarPanelSVG, SunRaysSVG } from "@/components/SolarPanelDecoration";
 
 const G_LOGO_DATA_URI = `data:image/svg+xml,${encodeURIComponent(
@@ -58,6 +59,12 @@ const CadastroPage = () => {
         title="Consultor não encontrado"
         description="Verifique o link e tente novamente."
       />
+    );
+  }
+
+  if (licenca && consultant.license && licenca !== consultant.license) {
+    return (
+      <CanonicalLicenseRedirect paramLicense={licenca} canonicalLicense={consultant.license} />
     );
   }
 

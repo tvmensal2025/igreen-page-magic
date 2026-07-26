@@ -416,11 +416,36 @@ const AdminContent = () => {
   }
 
   if (!approved) {
+    const publicSlug = form.license || "";
+    const publicBase = "https://igreen.cloud";
     return (
       <PageStatus
         title="Aguardando Aprovação"
-        description="Sua conta está sendo analisada pelo administrador. Você receberá acesso assim que for aprovado."
+        description="Sua conta está sendo analisada pelo administrador. Você receberá acesso ao painel assim que for aprovado. Seus links públicos já funcionam."
       >
+        {publicSlug ? (
+          <div className="w-full max-w-md space-y-2 text-left rounded-xl border border-border bg-card/60 p-4">
+            <p className="text-xs font-medium text-muted-foreground">Seus links públicos</p>
+            <a className="block text-sm text-primary break-all hover:underline" href={`${publicBase}/${publicSlug}`} target="_blank" rel="noopener noreferrer">
+              {publicBase}/{publicSlug}
+            </a>
+            <a className="block text-sm text-primary break-all hover:underline" href={`${publicBase}/cadastro/${publicSlug}`} target="_blank" rel="noopener noreferrer">
+              {publicBase}/cadastro/{publicSlug}
+            </a>
+            <a className="block text-sm text-primary break-all hover:underline" href={`${publicBase}/licenciado/${publicSlug}`} target="_blank" rel="noopener noreferrer">
+              {publicBase}/licenciado/{publicSlug}
+            </a>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => copyLink(`${publicBase}/${publicSlug}`)}
+            >
+              <Copy className="w-4 h-4" /> Copiar link principal
+            </Button>
+          </div>
+        ) : null}
         <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground gap-2">
           <LogOut className="w-4 h-4" /> Sair
         </Button>

@@ -26,6 +26,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import SEOHead from "@/components/SEOHead";
 import PixelInjector from "@/components/PixelInjector";
 import PageStatus from "@/components/common/PageStatus";
+import { CanonicalLicenseRedirect } from "@/components/common/CanonicalLicenseRedirect";
 import { useEffect } from "react";
 import { captureLeadSource } from "@/lib/fbclid";
 
@@ -44,6 +45,12 @@ const LicenciadaPage = () => {
         title="Licenciado não encontrado"
         description="Verifique o link e tente novamente."
       />
+    );
+  }
+
+  if (licenca && consultant.license && licenca !== consultant.license) {
+    return (
+      <CanonicalLicenseRedirect paramLicense={licenca} canonicalLicense={consultant.license} />
     );
   }
 

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { Copy, QrCode, FileText, LinkIcon, ExternalLink, ChevronDown, ChevronUp, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { LinksDashboard } from "./LinksDashboard";
 import { useProducts } from "@/features/produtos/catalogo";
+import { resolvePublicConsultant } from "@/lib/resolvePublicConsultant";
 
 interface LinksTabProps {
   slug: string;
@@ -61,19 +61,21 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
   const { data: activeProducts } = useProducts();
 
   useEffect(() => {
-    supabase
-      .from("consultants_public" as any)
-      .select("id, club_cadastro_url, igreen_id")
-      .eq("license", slug)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (!data) return;
-        const row = data as { id?: string; club_cadastro_url?: string | null; igreen_id?: string | null };
-        if (row.id) setConsultantId(row.id);
+    let cancelled = false;
+    (async () => {
+      try {
+        const resolved = await resolvePublicConsultant(slug);
+        if (cancelled || !resolved) return;
+        setConsultantId(resolved.consultant.id);
+        const row = resolved.consultant;
         const club = (row.club_cadastro_url || "").trim()
           || (row.igreen_id ? `https://club.igreenenergy.com.br/?id=${String(row.igreen_id).replace(/\D/g, "")}` : "");
         setClubCadastroUrl(club);
-      });
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
   }, [slug]);
 
   const pages = useMemo(() => {
