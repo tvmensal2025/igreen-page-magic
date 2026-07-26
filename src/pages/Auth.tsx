@@ -432,7 +432,7 @@ const Auth = () => {
                     </span>
                   ) : (
                     <span className="rounded-full border border-border/80 bg-secondary/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Cache
+                      !
                     </span>
                   )}
                 </div>
@@ -448,18 +448,18 @@ const Auth = () => {
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     {updateAvailable
                       ? "Clique para limpar o cache e carregar a versão mais recente. Depois é só entrar de novo."
-                      : "Tela travou, login estranho ou parece desatualizado? Limpa o cache e recarrega a versão certa. Seus dados no servidor ficam intactos."}
+                      : "Nova versâo."}
                   </p>
                 </div>
 
                 <ul className="hidden space-y-1.5 text-[11px] text-muted-foreground lg:block">
                   <li className="flex items-start gap-2">
                     <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                    Limpa cache e service worker
+                    Ajustes semanais.
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
-                    Carrega o build mais recente
+                    Apenas para a equipe.
                   </li>
                   <li className="flex items-start gap-2">
                     <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
