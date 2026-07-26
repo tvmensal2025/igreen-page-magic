@@ -96,7 +96,16 @@ export default defineConfig({
           // @react-three) precisam casar ANTES do vendor React.
           if (id.includes("@radix-ui/")) return "radix";
           if (id.includes("@supabase/supabase-js")) return "supabase";
-          if (id.includes("recharts")) return "charts";
+          // recharts + d3-* no MESMO chunk: separar causa TDZ
+          // ("Cannot access 'S' before initialization") no browser.
+          if (
+            id.includes("recharts") ||
+            id.includes("react-smooth") ||
+            id.includes("/d3-") ||
+            id.includes("\\d3-")
+          ) {
+            return "charts";
+          }
           if (id.includes("lucide-react")) return "icons";
           if (id.includes("/xlsx/") || id.endsWith("/xlsx") || id.includes("node_modules/xlsx")) {
             return "xlsx";
