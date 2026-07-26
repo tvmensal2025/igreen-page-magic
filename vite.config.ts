@@ -90,22 +90,18 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
+        // Evita o Rollup “puxar” deps implícitas para chunks manuais e
+        // criar ciclo de init (TDZ) entre vendors.
+        onlyExplicitManualChunks: true,
         manualChunks(id) {
           if (!id.includes("node_modules")) return;
           // Ordem importa: pacotes com "react" no path (radix, lucide-react,
           // @react-three) precisam casar ANTES do vendor React.
           if (id.includes("@radix-ui/")) return "radix";
           if (id.includes("@supabase/supabase-js")) return "supabase";
-          // recharts + d3-* no MESMO chunk: separar causa TDZ
-          // ("Cannot access 'S' before initialization") no browser.
-          if (
-            id.includes("recharts") ||
-            id.includes("react-smooth") ||
-            id.includes("/d3-") ||
-            id.includes("\\d3-")
-          ) {
-            return "charts";
-          }
+          // NÃO forçar chunk "charts" para recharts/d3: o manualChunks
+          // gerava TDZ no browser (Cannot access 'S' before initialization)
+          // no preview Lovable/produção. Deixa o Rollup decidir o grafo.
           if (id.includes("lucide-react")) return "icons";
           if (id.includes("/xlsx/") || id.endsWith("/xlsx") || id.includes("node_modules/xlsx")) {
             return "xlsx";
