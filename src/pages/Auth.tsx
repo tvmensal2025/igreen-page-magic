@@ -264,120 +264,118 @@ const Auth = () => {
         <ThemeToggle />
       </div>
 
-      <div className="w-full max-w-5xl flex flex-col lg:flex-row items-center lg:items-start justify-center gap-4 lg:gap-6 relative z-10">
-      <div className="w-full max-w-md space-y-8">
-
-        <div className="text-center">
-          <div className="flex justify-center mb-6">
-            <div className="relative">
-              <BrandLogo className="w-44 drop-shadow-lg" alt="iGreen Energy" />
-              <div className="absolute -inset-4 bg-primary/10 rounded-3xl blur-2xl -z-10" />
-            </div>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-heading text-foreground tracking-tight">
-            {recoveryMode ? "Definir nova senha" : forgotMode ? "Recuperar senha" : isLogin ? "Bem-vindo de volta" : "Crie sua conta"}
-          </h1>
-          <p className="text-muted-foreground mt-2 text-sm">Painel do Consultor iGreen Energy</p>
-        </div>
-
-        <div className="relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
-          <form onSubmit={recoveryMode ? handleSetNewPassword : forgotMode ? handleForgotPassword : handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-5 sm:p-8 rounded-2xl border border-border shadow-xl w-full">
-            <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-
-            {!isLogin && !forgotMode && !recoveryMode && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="name" className="text-sm font-medium text-foreground">Nome completo</Label>
-                  <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex.: Maria Silva" required maxLength={120}
-                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone" className="text-sm font-medium text-foreground">WhatsApp</Label>
-                  <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(11) 99999-9999" required maxLength={20}
-                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
-                </div>
-              </>
-
-            )}
-
-            {!recoveryMode && (
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-foreground">Email</Label>
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com" required
-                  className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+      <div className="w-full max-w-5xl relative z-10 flex flex-col lg:flex-row lg:items-start lg:justify-center gap-5 lg:gap-6">
+        {/* Coluna principal — login */}
+        <div className="w-full max-w-md mx-auto lg:mx-0 space-y-8">
+          <div className="text-center">
+            <div className="flex justify-center mb-6">
+              <div className="relative">
+                <BrandLogo className="w-44 drop-shadow-lg" alt="iGreen Energy" />
+                <div className="absolute -inset-4 bg-primary/10 rounded-3xl blur-2xl -z-10" />
               </div>
-            )}
-            {forgotMode && (
-              <p className="text-xs text-muted-foreground">
-                Enviaremos um link para você criar uma nova senha.
-              </p>
-            )}
-            {!forgotMode && (
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-foreground">{recoveryMode ? "Nova senha" : "Senha"}</Label>
-                <div className="relative">
-                  <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••" required minLength={6}
-                    className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-md">
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-bold font-heading text-foreground tracking-tight">
+              {recoveryMode ? "Definir nova senha" : forgotMode ? "Recuperar senha" : isLogin ? "Bem-vindo de volta" : "Crie sua conta"}
+            </h1>
+            <p className="text-muted-foreground mt-2 text-sm">Painel do Consultor iGreen Energy</p>
+          </div>
+
+          <div className="relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
+            <form onSubmit={recoveryMode ? handleSetNewPassword : forgotMode ? handleForgotPassword : handleSubmit} className="relative space-y-5 bg-card/80 backdrop-blur-xl p-5 sm:p-8 rounded-2xl border border-border shadow-xl w-full">
+              <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+
+              {!isLogin && !forgotMode && !recoveryMode && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="text-sm font-medium text-foreground">Nome completo</Label>
+                    <Input id="name" type="text" value={name} onChange={(e) => setName(e.target.value)}
+                      placeholder="Ex.: Maria Silva" required maxLength={120}
+                      className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="phone" className="text-sm font-medium text-foreground">WhatsApp</Label>
+                    <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)}
+                      placeholder="(11) 99999-9999" required maxLength={20}
+                      className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
+                  </div>
+                </>
+              )}
+
+              {!recoveryMode && (
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-medium text-foreground">Email</Label>
+                  <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                    placeholder="seu@email.com" required
+                    className="h-12 rounded-xl bg-secondary/50 border-border text-base placeholder:text-muted-foreground/50" />
                 </div>
-                {isLogin && !recoveryMode && (
-                  <div className="text-right">
-                    <button type="button" onClick={() => setForgotMode(true)}
-                      className="text-sm text-primary font-medium hover:underline underline-offset-4 min-h-11 px-2 -mr-2 inline-flex items-center">
-                      Esqueci minha senha
+              )}
+              {forgotMode && (
+                <p className="text-xs text-muted-foreground">
+                  Enviaremos um link para você criar uma nova senha.
+                </p>
+              )}
+              {!forgotMode && (
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-medium text-foreground">{recoveryMode ? "Nova senha" : "Senha"}</Label>
+                  <div className="relative">
+                    <Input id="password" type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••" required minLength={6}
+                      className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-md">
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                )}
-              </div>
-            )}
-            {(!isLogin && !forgotMode || recoveryMode) && (
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">Confirmar Senha</Label>
-                <div className="relative">
-                  <Input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={6}
-                    className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
-                  <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-md">
-                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
+                  {isLogin && !recoveryMode && (
+                    <div className="text-right">
+                      <button type="button" onClick={() => setForgotMode(true)}
+                        className="text-sm text-primary font-medium hover:underline underline-offset-4 min-h-11 px-2 -mr-2 inline-flex items-center">
+                        Esqueci minha senha
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
-            <Button type="submit" className="w-full h-12 text-base font-bold rounded-xl gap-2 transition-all duration-300 hover:shadow-lg"
-              style={{ background: "var(--gradient-green)" }} disabled={loading}>
-              {loading ? <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" /> : (
-                <>{recoveryMode ? "Salvar nova senha" : forgotMode ? "Enviar link de recuperação" : isLogin ? "Entrar" : "Criar conta"}<ArrowRight className="w-4 h-4" /></>
               )}
-            </Button>
-          </form>
-        </div>
+              {((!isLogin && !forgotMode) || recoveryMode) && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword" className="text-sm font-medium text-foreground">Confirmar Senha</Label>
+                  <div className="relative">
+                    <Input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)} placeholder="••••••••" required minLength={6}
+                      className="h-12 rounded-xl bg-secondary/50 border-border text-base pr-12 placeholder:text-muted-foreground/50" />
+                    <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} aria-label={showConfirmPassword ? "Ocultar senha" : "Mostrar senha"}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-md">
+                      {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
+              <Button type="submit" className="w-full h-12 text-base font-bold rounded-xl gap-2 transition-all duration-300 hover:shadow-lg"
+                style={{ background: "var(--gradient-green)" }} disabled={loading}>
+                {loading ? <div className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" /> : (
+                  <>{recoveryMode ? "Salvar nova senha" : forgotMode ? "Enviar link de recuperação" : isLogin ? "Entrar" : "Criar conta"}<ArrowRight className="w-4 h-4" /></>
+                )}
+              </Button>
+            </form>
+          </div>
 
-        {forgotMode ? (
-          <p className="text-center text-sm text-muted-foreground">
-            Lembrou a senha?{" "}
-            <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
-              Voltar ao login
-            </button>
-          </p>
-        ) : !recoveryMode ? (
-          <p className="text-center text-sm text-muted-foreground">
-            {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
-            <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
-              {isLogin ? "Criar conta" : "Fazer login"}
-            </button>
-          </p>
-        ) : null}
+          {forgotMode ? (
+            <p className="text-center text-sm text-muted-foreground">
+              Lembrou a senha?{" "}
+              <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
+                Voltar ao login
+              </button>
+            </p>
+          ) : !recoveryMode ? (
+            <p className="text-center text-sm text-muted-foreground">
+              {isLogin ? "Não tem conta?" : "Já tem conta?"}{" "}
+              <button onClick={() => setIsLogin(!isLogin)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
+                {isLogin ? "Criar conta" : "Fazer login"}
+              </button>
+            </p>
+          ) : null}
 
-        <div className="pt-1">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-1">
             <div className="flex items-center gap-1.5 text-[10px] sm:text-xs text-muted-foreground/60">
               <Zap className="w-3 h-3 shrink-0" /><span>PLATAFORMA PARA O CONSULTOR</span>
@@ -386,48 +384,107 @@ const Auth = () => {
             <div className="text-[10px] sm:text-xs text-muted-foreground/60">SUPORTE-IGREEN</div>
           </div>
         </div>
-      </div>
 
-      {/* Botão "Atualizar app" bem do lado do modal de login.
-          Pisca (animate-pulse + ring) quando o version gate detecta nova versão. */}
-      <aside className="w-full max-w-md lg:w-56 lg:flex-shrink-0 lg:pt-[168px]">
-        <button
-          type="button"
-          onClick={handleHardResetApp}
-          disabled={resettingApp}
-          aria-label={updateAvailable ? "Nova versão disponível — clique para atualizar" : "Atualizar app"}
-          className={[
-            "group w-full flex lg:flex-col items-center lg:items-stretch justify-between gap-3 rounded-2xl border px-4 py-3.5 text-left transition-all duration-300 disabled:opacity-60",
-            updateAvailable
-              ? "border-primary bg-primary/10 shadow-[0_0_0_4px_hsl(var(--primary)/0.15)] animate-pulse ring-2 ring-primary/60"
-              : "border-border/70 bg-secondary/30 backdrop-blur-sm hover:border-primary/35 hover:bg-secondary/55 hover:shadow-md",
-          ].join(" ")}
-        >
-          <div className="min-w-0 space-y-0.5 lg:order-2">
-            <p className={`text-sm font-semibold tracking-tight ${updateAvailable ? "text-primary" : "text-foreground"}`}>
-              {resettingApp
-                ? "Atualizando o app…"
-                : updateAvailable
-                  ? "Nova versão! Clique aqui"
-                  : "Atualizar app"}
-            </p>
-            <p className="text-[11px] sm:text-xs text-muted-foreground leading-snug">
-              {updateAvailable
-                ? "Uma atualização está pronta. Clique para carregar a versão mais recente."
-                : "Limpa o cache e carrega a versão mais recente. Use se a tela travar ou ficar desatualizada."}
-            </p>
-          </div>
-          <span className={`shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl transition-colors lg:order-1 lg:self-start ${
-            updateAvailable ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary group-hover:bg-primary/15"
-          }`}>
-            <RefreshCw className={`h-4 w-4 ${resettingApp || updateAvailable ? "animate-spin" : ""}`} />
-          </span>
-        </button>
-      </aside>
+        {/* Coluna lateral — atualizar app (desktop ao lado; mobile embaixo) */}
+        <aside className="w-full max-w-md mx-auto lg:mx-0 lg:w-[280px] lg:flex-shrink-0 lg:sticky lg:top-10 lg:pt-[7.5rem]">
+          <button
+            type="button"
+            onClick={handleHardResetApp}
+            disabled={resettingApp}
+            aria-label={updateAvailable ? "Nova versão disponível — clique para atualizar" : "Atualizar app"}
+            className={[
+              "group relative w-full overflow-hidden rounded-2xl border text-left transition-all duration-300 disabled:opacity-70",
+              "lg:min-h-[280px] lg:flex lg:flex-col",
+              updateAvailable
+                ? "border-primary/45 bg-gradient-to-b from-primary/18 via-card to-card shadow-xl shadow-primary/15 ring-1 ring-primary/25"
+                : "border-border/70 bg-card/75 backdrop-blur-xl shadow-lg hover:border-primary/35 hover:shadow-xl",
+            ].join(" ")}
+          >
+            <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-3xl transition-opacity group-hover:bg-primary/15" aria-hidden />
+            {updateAvailable && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/20 to-transparent" aria-hidden />
+            )}
+
+            <div className="relative flex flex-col gap-4 p-5 sm:p-6 lg:flex-1 lg:justify-between">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span
+                    className={[
+                      "inline-flex h-12 w-12 items-center justify-center rounded-2xl transition-all",
+                      updateAvailable
+                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/30"
+                        : "bg-primary/10 text-primary group-hover:bg-primary/15 group-hover:scale-105",
+                    ].join(" ")}
+                  >
+                    <RefreshCw
+                      className={`h-5 w-5 ${
+                        resettingApp
+                          ? "animate-spin"
+                          : updateAvailable
+                            ? "animate-spin [animation-duration:2.2s]"
+                            : "transition-transform duration-300 group-hover:rotate-45"
+                      }`}
+                    />
+                  </span>
+                  {updateAvailable ? (
+                    <span className="rounded-full bg-primary px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-primary-foreground shadow-sm">
+                      Nova
+                    </span>
+                  ) : (
+                    <span className="rounded-full border border-border/80 bg-secondary/60 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Cache
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className={`font-heading text-base font-bold tracking-tight ${updateAvailable ? "text-primary" : "text-foreground"}`}>
+                    {resettingApp
+                      ? "Atualizando…"
+                      : updateAvailable
+                        ? "Versão nova pronta"
+                        : "Atualizar o app"}
+                  </p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {updateAvailable
+                      ? "Clique para limpar o cache e carregar a versão mais recente. Depois é só entrar de novo."
+                      : "Tela travou, login estranho ou parece desatualizado? Limpa o cache e recarrega a versão certa. Seus dados no servidor ficam intactos."}
+                  </p>
+                </div>
+
+                <ul className="hidden space-y-1.5 text-[11px] text-muted-foreground lg:block">
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
+                    Limpa cache e service worker
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
+                    Carrega o build mais recente
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary/70" />
+                    Não apaga clientes nem conversas
+                  </li>
+                </ul>
+              </div>
+
+              <span
+                className={[
+                  "inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition-all",
+                  updateAvailable
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/25 group-hover:brightness-110"
+                    : "bg-secondary text-foreground group-hover:bg-primary group-hover:text-primary-foreground",
+                ].join(" ")}
+              >
+                {resettingApp ? "Aguarde…" : updateAvailable ? "Atualizar agora" : "Atualizar app"}
+                {!resettingApp && <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}
+              </span>
+            </div>
+          </button>
+        </aside>
       </div>
     </div>
   );
-
 };
 
 export default Auth;
