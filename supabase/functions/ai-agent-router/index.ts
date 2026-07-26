@@ -97,7 +97,7 @@ const DECISION_SCHEMA = {
     next_step: { type: "string", enum: [...FUNNEL_STEPS] },
     reply_text: { type: "string", description: "Texto curto humanizado. Vazio se for só enviar mídia/áudio." },
     media_to_send_ids: { type: "array", items: { type: "string" } },
-    audio_slot_key: { type: "string", description: "slot_key do áudio do Rafael. Vazio se nenhum." },
+    audio_slot_key: { type: "string", description: "slot_key do áudio do consultor (biblioteca de slots). Vazio se nenhum." },
     handoff: { type: "boolean" },
     handoff_reason: { type: "string" },
     confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -450,7 +450,7 @@ ${JSON.stringify({
 BIBLIOTECA DE MÍDIAS DISPONÍVEIS PARA ESTA ETAPA (use o id em media_to_send_ids):
 ${relevantMedia.map((m: any) => `- id=${m.id} kind=${m.kind} label="${m.label}" intent_tags=${JSON.stringify(m.intent_tags || [])}${m.transcript ? ` transcript="${(m.transcript || "").slice(0, 120)}"` : ""}`).join("\n") || "(nenhuma)"}
 
-ÁUDIOS DO RAFAEL (slots fixos — preencha "audio_slot_key" com o slot_key apropriado quando o gatilho bater; deixe vazio se nenhum se aplica). Slots marcados com 🎬 enviam um vídeo automaticamente logo após o áudio:
+ÁUDIOS DO CONSULTOR (slots fixos da biblioteca — preencha "audio_slot_key" com o slot_key apropriado quando o gatilho bater; deixe vazio se nenhum se aplica). NUNCA cite o nome "Rafael" (ou qualquer outro nome de consultor) no reply_text — use apenas o nome do consultor atual quando ele estiver disponível no contexto. Slots marcados com 🎬 enviam um vídeo automaticamente logo após o áudio:
 ${slots.map((s: any) => `- slot_key=${s.slot_key} (${s.label})${s.video_url ? " 🎬+vídeo" : ""}: ${s.trigger_hint || ""}`).join("\n") || "(nenhum)"}
 
 RESPONDA APENAS com o JSON do schema. reply_text deve ser CURTO (1-3 frases). Se for enviar áudio/vídeo, geralmente reply_text fica vazio ou bem curto. Se houver um slot_key apropriado, prefira "audio_slot_key" em vez de "media_to_send_ids".`;
