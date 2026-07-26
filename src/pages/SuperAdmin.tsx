@@ -145,23 +145,35 @@ const SuperAdmin = () => {
     });
 
     const enriched = await Promise.all(rows.map(async (c) => {
-      const [custRes, cust7dRes, dealsRes, viewsRes, lastCustRes, lastViewRes, convRes] = await Promise.all([
+      const [custRes, cust7dRes, dealsRes, viewsRes, lastCustRes, lastViewRes, customerIdsRes] = await Promise.all([
         supabase.from("customers").select("id", { count: "exact", head: true }).eq("consultant_id", c.id),
         supabase.from("customers").select("id", { count: "exact", head: true }).eq("consultant_id", c.id).gte("created_at", new Date(Date.now() - 7 * 86400000).toISOString()),
         supabase.from("crm_deals").select("id", { count: "exact", head: true }).eq("consultant_id", c.id),
         supabase.from("page_views").select("id", { count: "exact", head: true }).eq("consultant_id", c.id).gte("created_at", new Date(Date.now() - 7 * 86400000).toISOString()),
         supabase.from("customers").select("created_at").eq("consultant_id", c.id).order("created_at", { ascending: false }).limit(1),
         supabase.from("page_views").select("created_at").eq("consultant_id", c.id).order("created_at", { ascending: false }).limit(1),
-        supabase.from("conversations").select("message_direction", { count: "exact" })
-          .in("customer_id", (await supabase.from("customers").select("id").eq("consultant_id", c.id)).data?.map((cu: any) => cu.id) || []),
+        supabase.from("customers").select("id").eq("consultant_id", c.id),
       ]);
+
+      const customerIds = (customerIdsRes.data || []).map((cu: { id: string }) => cu.id);
+      let outbound = 0;
+      let inbound = 0;
+      // PostgREST estoura 400 se `in.(uuid…)` passar de ~8–16KB na URL.
+      for (let i = 0; i < customerIds.length; i += 80) {
+        const batch = customerIds.slice(i, i + 80);
+        const { data: convData } = await supabase
+          .from("conversations")
+          .select("message_direction")
+          .in("customer_id", batch);
+        for (const m of (convData || []) as Array<{ message_direction: string }>) {
+          if (m.message_direction === "outbound") outbound++;
+          else if (m.message_direction === "inbound") inbound++;
+        }
+      }
 
       const lastCust = (lastCustRes.data as any)?.[0]?.created_at;
       const lastView = (lastViewRes.data as any)?.[0]?.created_at;
       const dates = [lastCust, lastView].filter(Boolean).sort().reverse();
-      const convData = (convRes.data || []) as any[];
-      const outbound = convData.filter((m: any) => m.message_direction === "outbound").length;
-      const inbound = convData.filter((m: any) => m.message_direction === "inbound").length;
       const sched = schedMap.get(c.id) || { sent: 0, failed: 0 };
 
       return {

@@ -51,11 +51,13 @@ export default function AdminProtocolsPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("consultants")
-        .select("id, name, city, state, whatsapp")
+        .select("id, name, phone")
         .in("id", consultantIds);
       if (error) throw error;
-      const map: Record<string, any> = {};
-      (data ?? []).forEach((r: any) => (map[r.id] = r));
+      const map: Record<string, { id: string; name: string | null; phone: string | null }> = {};
+      (data ?? []).forEach((r) => {
+        map[r.id] = r;
+      });
       return map;
     },
   });
@@ -70,7 +72,7 @@ export default function AdminProtocolsPage() {
         c.tracking_protocol?.toLowerCase().includes(q) ||
         c.name?.toLowerCase().includes(q) ||
         consultant?.name?.toLowerCase().includes(q) ||
-        consultant?.city?.toLowerCase().includes(q)
+        consultant?.phone?.toLowerCase().includes(q)
       );
     });
   }, [campaigns, consultants, search, statusFilter]);
@@ -82,13 +84,13 @@ export default function AdminProtocolsPage() {
 
   const exportCsv = () => {
     const rows = [
-      ["Protocolo", "Campanha", "Status", "Consultor", "Cidade", "Criada em"],
+      ["Protocolo", "Campanha", "Status", "Consultor", "Telefone", "Criada em"],
       ...filtered.map((c) => [
         c.tracking_protocol ?? "",
         c.name ?? "",
         c.status ?? "",
         consultants[c.consultant_id]?.name ?? "",
-        consultants[c.consultant_id]?.city ?? "",
+        consultants[c.consultant_id]?.phone ?? "",
         new Date(c.created_at).toLocaleString("pt-BR"),
       ]),
     ];
@@ -161,7 +163,7 @@ export default function AdminProtocolsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Protocolo (ex: 2026-0042), campanha, consultor ou cidade..."
+              placeholder="Protocolo (ex: 2026-0042), campanha, consultor ou telefone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -221,9 +223,9 @@ export default function AdminProtocolsPage() {
                       </td>
                       <td className="p-3">
                         {cons?.name ?? "—"}
-                        {cons?.city && (
+                        {cons?.phone && (
                           <span className="text-muted-foreground text-xs block">
-                            {cons.city}/{cons.state}
+                            {cons.phone}
                           </span>
                         )}
                       </td>
