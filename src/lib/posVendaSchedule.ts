@@ -80,8 +80,8 @@ const RETENTATIVA_DAYS = 60;
 
 /**
  * Calcula próximos envios automáticos do pós-venda (não vão para scheduled_messages).
- * Datas derivadas de pos_venda_approved_at + marcos 30/60/90/120/150/180/210
- * e retentativa (pos_venda_rejected_at + 60d).
+ * Datas derivadas apenas de pos_venda_approved_at + marcos 30/60/90/120/150/180/210.
+ * Reprovado/devolutiva/retentativa ficam mudos e não entram na agenda.
  */
 export function buildUpcomingPosVendaMessages(
   customers: PosVendaCustomerRow[],
@@ -100,61 +100,7 @@ export function buildUpcomingPosVendaMessages(
     const phone = c.phone_whatsapp || "";
     const name = (c.name || "").trim() || "Sem nome";
 
-    if (stage === "reprovado") {
-      if (!sent.has("pv_reprovado")) {
-        const at = clampToPosVendaSendWindow(now, now);
-        out.push({
-          id: `${c.id}-pv_reprovado`,
-          customerId: c.id,
-          customerName: name,
-          phone,
-          stageKey: "pv_reprovado",
-          stageLabel: "Reprovado",
-          scheduledAt: at,
-          isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
-          messagePreview: defaultPreviews.reprovado?.slice(0, 120) ?? null,
-          kind: "pos_venda_auto",
-        });
-      }
-      // Agenda retentativa ~60d após rejected_at
-      if (!sent.has("pv_retentativa") && c.pos_venda_rejected_at) {
-        const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
-        if (Number.isFinite(rejectedMs)) {
-          const raw = new Date(rejectedMs + RETENTATIVA_DAYS * MS_PER_DAY);
-          const at = clampToPosVendaSendWindow(raw, now);
-          out.push({
-            id: `${c.id}-pv_retentativa`,
-            customerId: c.id,
-            customerName: name,
-            phone,
-            stageKey: "pv_retentativa",
-            stageLabel: "Retentativa",
-            scheduledAt: at,
-            isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
-            messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
-            kind: "pos_venda_auto",
-          });
-        }
-      }
-      continue;
-    }
-
-    if (stage === "retentativa") {
-      if (!sent.has("pv_retentativa")) {
-        const at = clampToPosVendaSendWindow(now, now);
-        out.push({
-          id: `${c.id}-pv_retentativa`,
-          customerId: c.id,
-          customerName: name,
-          phone,
-          stageKey: "pv_retentativa",
-          stageLabel: "Retentativa",
-          scheduledAt: at,
-          isOverdue: at.getTime() <= nowMs && isPosVendaSendWindow(now),
-          messagePreview: defaultPreviews.retentativa?.slice(0, 120) ?? null,
-          kind: "pos_venda_auto",
-        });
-      }
+    if (stage === "reprovado" || stage === "retentativa") {
       continue;
     }
 

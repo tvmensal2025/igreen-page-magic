@@ -110,4 +110,31 @@ describe("buildUpcomingPosVendaMessages", () => {
     );
     expect(items).toHaveLength(0);
   });
+
+  it("não agenda nada para reprovado ou retentativa", () => {
+    const items = buildUpcomingPosVendaMessages(
+      [
+        {
+          id: "c5",
+          name: "Reprovado",
+          phone_whatsapp: "5511444444444",
+          pos_venda_stage: "reprovado",
+          pos_venda_approved_at: null,
+          pos_venda_rejected_at: "2026-05-01T10:00:00.000Z",
+        },
+        {
+          id: "c6",
+          name: "Retentativa",
+          phone_whatsapp: "5511333333333",
+          pos_venda_stage: "retentativa",
+          pos_venda_approved_at: null,
+          pos_venda_rejected_at: "2026-05-01T10:00:00.000Z",
+        },
+      ],
+      new Map(),
+      { reprovado: "Não enviar", retentativa: "Não enviar" },
+      now,
+    );
+    expect(items).toHaveLength(0);
+  });
 });
