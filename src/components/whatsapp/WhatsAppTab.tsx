@@ -10,6 +10,7 @@ import { DragResizer } from "@/components/layout/DragResizer";
 import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
 import { useWhapiHealth } from "@/hooks/useWhapiHealth";
+import { supabase } from "@/integrations/supabase/client";
 
 import { BarChart3, MessageSquare, Send, FileText, Clock, Bot, History, Workflow, MoreHorizontal, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -58,6 +59,9 @@ interface WhatsAppTabProps {
   initialSubTab?: SubTab;
   initialAgentSubTab?: string | null;
   onSubTabConsumed?: () => void;
+  /** Vindo de Configurações → conectar outro número. */
+  autoConnectOnMount?: boolean;
+  onAutoConnectConsumed?: () => void;
 }
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
@@ -75,7 +79,18 @@ const SUB_TABS: { key: SubTab; label: string; shortLabel: string; icon: React.El
 const MOBILE_PRIMARY_TABS: SubTab[] = ["dashboard", "conversas", "agente", "envio_massa"];
 const MOBILE_MORE_TABS: SubTab[] = ["templates", "agendamentos", "historico"];
 
-export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPendingChatConsumed, customers = [], initialSubTab, initialAgentSubTab, onSubTabConsumed }: WhatsAppTabProps) {
+export function WhatsAppTab({
+  userId,
+  pendingChatPhone,
+  pendingChatMessage,
+  onPendingChatConsumed,
+  customers = [],
+  initialSubTab,
+  initialAgentSubTab,
+  onSubTabConsumed,
+  autoConnectOnMount,
+  onAutoConnectConsumed,
+}: WhatsAppTabProps) {
   const isCompactLayout = useIsLgDown();
   const [sideCollapsed, setSideCollapsed] = useState<boolean>(() => {
     try { return localStorage.getItem("igreen:wa-side-collapsed") === "1"; } catch { return false; }
@@ -109,6 +124,9 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     safeReset,
   } = useWhatsApp(userId);
 
+  const whapiHealth = useWhapiHealth(!!isWhapi);
+  const [forceWhapiPanel, setForceWhapiPanel] = useState(false);
+
   const {
     templates,
     isLoading: templatesLoading,
@@ -137,6 +155,40 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
     onSubTabConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSubTab]);
+
+  // Configurações → "Conectar outro WhatsApp": abre QR sem precisar clicar de novo.
+  useEffect(() => {
+    if (!autoConnectOnMount || fatalLocked || isLoading) return;
+    if (isWhapi) {
+      setActiveSubTab("dashboard");
+      setForceWhapiPanel(true);
+      void (async () => {
+        try {
+          await supabase.functions.invoke("whapi-proxy", {
+            body: { action: "reauth", payload: {} },
+          });
+          await whapiHealth.refresh();
+        } catch {
+          /* painel Whapi ainda permite pedir QR manual */
+        } finally {
+          onAutoConnectConsumed?.();
+        }
+      })();
+      return;
+    }
+    if (connectionStatus === "connected") {
+      onAutoConnectConsumed?.();
+      return;
+    }
+    void createAndConnect().finally(() => onAutoConnectConsumed?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConnectOnMount]);
+
+  // Whapi reconectou → some o force do painel
+  useEffect(() => {
+    if (whapiHealth.status === "AUTH") setForceWhapiPanel(false);
+  }, [whapiHealth.status]);
+
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [pendingMessageKey, setPendingMessageKey] = useState(0);
@@ -219,8 +271,8 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
   const immersiveChat = isCompactLayout && activeSubTab === "conversas" && !!selectedChatJid;
 
   // Whapi: só exibir painel de reconexão no Dashboard quando o canal cair (não está AUTH).
-  const whapiHealth = useWhapiHealth(!!isWhapi);
   const whapiDown = !!isWhapi && whapiHealth.lastCheckedAt !== null && whapiHealth.status !== "AUTH";
+  const showWhapiPanel = !!isWhapi && (whapiDown || forceWhapiPanel);
 
   return (
     <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -353,7 +405,7 @@ export function WhatsAppTab({ userId, pendingChatPhone, pendingChatMessage, onPe
         <WhapiBillingBanner enabled={!!isWhapi} />
         {activeSubTab === "dashboard" && (
           <div className="p-3 space-y-3 overflow-y-auto h-full min-h-0 min-w-0">
-            {isWhapi && whapiDown && <WhapiConnectionPanel visible={true} />}
+            {showWhapiPanel && <WhapiConnectionPanel visible={true} />}
             <Suspense fallback={<LazyFallback />}>
               <WhatsAppDashboard consultantId={userId} />
             </Suspense>

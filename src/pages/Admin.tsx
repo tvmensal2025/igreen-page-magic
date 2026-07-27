@@ -37,6 +37,11 @@ const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m
   return { default: m.DashboardTab };
 }));
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
+const WhatsAppConnectionSettingsCard = lazy(() =>
+  import("@/components/admin/WhatsAppConnectionSettingsCard").then((m) => ({
+    default: m.WhatsAppConnectionSettingsCard,
+  })),
+);
 const IGreenConnectionCard = lazy(() => import("@/components/admin/IGreenConnectionCard").then(m => ({ default: m.IGreenConnectionCard })));
 const IGreenSyncStatusBar = lazy(() => import("@/components/admin/IGreenSyncStatusBar").then(m => ({ default: m.IGreenSyncStatusBar })));
 const ChangePasswordCard = lazy(() => import("@/components/admin/ChangePasswordCard").then(m => ({ default: m.ChangePasswordCard })));
@@ -130,6 +135,7 @@ const AdminContent = () => {
 
   const [pendingConversaoView, setPendingConversaoView] = useState<string | null>(null);
   const [pendingWhatsAppSub, setPendingWhatsAppSub] = useState<string | null>(null);
+  const [pendingWhatsAppAutoConnect, setPendingWhatsAppAutoConnect] = useState(false);
   const [pendingHubTab, setPendingHubTab] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("hubTab");
@@ -214,7 +220,15 @@ const AdminContent = () => {
   }, []);
   const [periodDays, setPeriodDays] = useState(30);
 
-  const { instanceName, isWhapi, connectionStatus } = useWhatsApp(userId || "");
+  const {
+    instanceName,
+    isWhapi,
+    connectionStatus,
+    phoneNumber: waPhoneNumber,
+    isLoading: waLoading,
+    disconnect: disconnectWhatsApp,
+    createAndConnect,
+  } = useWhatsApp(userId || "");
 
   // Ao entrar no painel com Zap já conectado: gera voz da IA (idempotente).
   useEffect(() => {
@@ -626,7 +640,7 @@ const AdminContent = () => {
           {userId && activeTab === "whatsapp" && (
             <WhatsAppErrorBoundary>
               <WhatsAppTab
-                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}`}
+                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}-${pendingWhatsAppAutoConnect ? "ac" : "n"}`}
                 userId={userId}
                 customers={customers as never[]}
                 pendingChatPhone={pendingChatPhone}
@@ -639,6 +653,8 @@ const AdminContent = () => {
                 }
                 initialAgentSubTab={pendingAiSubTab as any}
                 onSubTabConsumed={() => setPendingWhatsAppSub(null)}
+                autoConnectOnMount={pendingWhatsAppAutoConnect}
+                onAutoConnectConsumed={() => setPendingWhatsAppAutoConnect(false)}
               />
             </WhatsAppErrorBoundary>
           )}
@@ -733,6 +749,22 @@ const AdminContent = () => {
             <SheetTitle>Configurações</SheetTitle>
           </SheetHeader>
           <div className="mt-6 space-y-6">
+            {userId && (
+              <Suspense fallback={null}>
+                <WhatsAppConnectionSettingsCard
+                  isWhapi={!!isWhapi}
+                  connectionStatus={connectionStatus}
+                  phoneNumber={waPhoneNumber}
+                  isLoading={waLoading}
+                  onDisconnect={disconnectWhatsApp}
+                  onGoConnectAnother={() => {
+                    setSettingsOpen(false);
+                    setPendingWhatsAppAutoConnect(true);
+                    setActiveTab("whatsapp");
+                  }}
+                />
+              </Suspense>
+            )}
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
             <Suspense fallback={null}>
               {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}

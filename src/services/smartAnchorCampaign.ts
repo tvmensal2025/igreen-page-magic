@@ -135,24 +135,7 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
 
   const lat = Number(bc.sede_latitude);
   const lng = Number(bc.sede_longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    throw new Error("Configure a sede no Cérebro (lat/lng) antes de criar com o Cérebro Inteligente.");
-  }
-
-  const city = await resolveSedeCity(bc);
-  const savedBudget = Number(bc.anchor_budget_cents) || 0;
-  const savedMax = Number(bc.max_anchor_budget_cents) || 0;
-  const budgetCents = Math.max(
-    SMART_ANCHOR_MIN_BUDGET_CENTS,
-    Math.min(SMART_ANCHOR_HARD_MAX_CENTS, savedBudget || SMART_ANCHOR_MIN_BUDGET_CENTS),
-  );
-  const maxBudgetCents = Math.max(
-    budgetCents,
-    Math.min(
-      SMART_ANCHOR_HARD_MAX_CENTS,
-      savedMax >= budgetCents ? savedMax : Math.max(budgetCents * 3, 15000),
-    ),
-  );
+  const hasSede = Number.isFinite(lat) && Number.isFinite(lng);
 
   const [libraryPhotos, libraryVideos] = await Promise.all([
     loadPhotoLibrary(consultantId),
@@ -167,6 +150,20 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
   const videoThumbUrl = libraryVideos[0]?.thumbUrl || null;
   const creativeMode: SmartCreativeMode = photoUrl ? "photo" : videoUrl ? "video" : "photo";
 
+  const savedBudget = Number(bc.anchor_budget_cents) || 0;
+  const savedMax = Number(bc.max_anchor_budget_cents) || 0;
+  const budgetCents = Math.max(
+    SMART_ANCHOR_MIN_BUDGET_CENTS,
+    Math.min(SMART_ANCHOR_HARD_MAX_CENTS, savedBudget || SMART_ANCHOR_MIN_BUDGET_CENTS),
+  );
+  const maxBudgetCents = Math.max(
+    budgetCents,
+    Math.min(
+      SMART_ANCHOR_HARD_MAX_CENTS,
+      savedMax >= budgetCents ? savedMax : Math.max(budgetCents * 3, 15000),
+    ),
+  );
+
   let initialMessage: string = SMART_CREATIVE.initial_message;
   try {
     const check = await checkInitialMessage(initialMessage);
@@ -179,11 +176,6 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
     /* segue com default */
   }
 
-  const sedeLabel =
-    (typeof bc.sede_name === "string" && bc.sede_name.trim()) ||
-    (typeof bc.sede_address === "string" && bc.sede_address.trim()) ||
-    city.name;
-
   let walletLiquidCents: number | null = null;
   let walletHint: string | null = null;
   try {
@@ -195,6 +187,35 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
   } catch {
     walletHint = null;
   }
+
+  // Sem sede: devolve preview parcial (UI explica e deixa escolher a cidade).
+  if (!hasSede) {
+    return {
+      city: { key: "", name: "Sua cidade", region: "", country_code: "BR" },
+      budgetCents,
+      maxBudgetCents,
+      sedeLabel: "Ainda não informada",
+      photoUrl,
+      videoUrl,
+      videoThumbUrl,
+      creativeMode,
+      headline: SMART_CREATIVE.headline,
+      primaryText: SMART_CREATIVE.primary_text,
+      description: SMART_CREATIVE.description,
+      initialMessage,
+      libraryPhotos,
+      libraryVideos,
+      walletHint,
+      walletLiquidCents,
+      hasSede: false,
+    };
+  }
+
+  const city = await resolveSedeCity(bc);
+  const sedeLabel =
+    (typeof bc.sede_name === "string" && bc.sede_name.trim()) ||
+    (typeof bc.sede_address === "string" && bc.sede_address.trim()) ||
+    city.name;
 
   return {
     city,
@@ -215,6 +236,48 @@ export async function loadSmartAnchorPreview(consultantId: string): Promise<Smar
     walletLiquidCents,
     hasSede: true,
   };
+}
+
+/** Salva cidade/endereço da sede no Cérebro (usado pelo diálogo Inteligente). */
+export async function saveSmartSedeLocation(
+  consultantId: string,
+  opts: {
+    name: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    radiusKm?: number;
+  },
+): Promise<void> {
+  const lat = Number(opts.latitude);
+  const lng = Number(opts.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    throw new Error("Não encontramos esse endereço. Digite a cidade ou o bairro de novo.");
+  }
+  const { data: settings } = await supabase
+    .from("consultant_ad_settings")
+    .select("brain_config")
+    .eq("consultant_id", consultantId)
+    .maybeSingle();
+  const prev = ((settings as { brain_config?: Record<string, unknown> } | null)?.brain_config ||
+    {}) as Record<string, unknown>;
+  const radius = Math.max(1, Math.min(50, Number(opts.radiusKm) || Number(prev.sede_radius_km) || 50));
+  const next = {
+    ...prev,
+    geo_mode: "radius_sede",
+    sede_name: String(opts.name || "").trim().slice(0, 120) || "Minha sede",
+    sede_address: String(opts.address || "").trim().slice(0, 240),
+    sede_latitude: lat,
+    sede_longitude: lng,
+    sede_radius_km: radius,
+  };
+  const { error } = await supabase
+    .from("consultant_ad_settings")
+    .upsert(
+      { consultant_id: consultantId, brain_config: next, updated_at: new Date().toISOString() },
+      { onConflict: "consultant_id" },
+    );
+  if (error) throw error;
 }
 
 /** Persiste âncora + política de escala no brain_config do consultor. */
@@ -261,7 +324,9 @@ export async function bootstrapSmartAnchorBrain(
 /** Checklist do que falta para o consultor poder publicar. */
 export function smartPublishGaps(preview: SmartAnchorPreview): string[] {
   const gaps: string[] = [];
-  if (!preview.hasSede) gaps.push("Configure a sede no Cérebro (aba Cérebro → Controles).");
+  if (!preview.hasSede) {
+    gaps.push("Informe a cidade da sua sede (onde você atende) para o anúncio aparecer na região certa.");
+  }
   if (preview.headline.trim().length < 3) gaps.push("Digite o título do anúncio.");
   if (preview.creativeMode === "photo" && !preview.photoUrl) gaps.push("Escolha ou envie uma foto.");
   if (preview.creativeMode === "video" && !preview.videoUrl) gaps.push("Escolha ou envie um vídeo.");

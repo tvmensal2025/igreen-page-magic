@@ -539,6 +539,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
     try {
       try { await withTimeout(logoutInstance(name), 15000); } catch { /* ok */ }
+      try { await withTimeout(deleteInstance(name), 10000); } catch { /* ok */ }
       await deleteInstanceDb();
 
       setStatus("disconnected");

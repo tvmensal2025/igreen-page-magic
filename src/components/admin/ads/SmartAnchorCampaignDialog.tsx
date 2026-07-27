@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   loadSmartAnchorPreview,
   publishSmartAnchorCampaign,
+  saveSmartSedeLocation,
   smartPublishGaps,
   uploadSmartPhoto,
   uploadSmartVideo,
@@ -44,6 +45,13 @@ function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
+type SedeSuggestion = {
+  lat: string;
+  lon: string;
+  display_name: string;
+  place_id: number;
+};
+
 export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreated }: Props) {
   const { toast } = useToast();
   const [preview, setPreview] = useState<SmartAnchorPreview | null>(null);
@@ -54,12 +62,26 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
   const photoRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
 
+  const [sedeQuery, setSedeQuery] = useState("");
+  const [sedeSuggestions, setSedeSuggestions] = useState<SedeSuggestion[]>([]);
+  const [sedeSearching, setSedeSearching] = useState(false);
+  const [sedeSaving, setSedeSaving] = useState(false);
+  const sedeAbortRef = useRef<AbortController | null>(null);
+
+  async function reloadPreview() {
+    const p = await loadSmartAnchorPreview(consultantId);
+    setPreview(p);
+    setError(null);
+  }
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     setPreview(null);
+    setSedeQuery("");
+    setSedeSuggestions([]);
     (async () => {
       try {
         const p = await loadSmartAnchorPreview(consultantId);
@@ -72,6 +94,66 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
     })();
     return () => { cancelled = true; };
   }, [open, consultantId]);
+
+  useEffect(() => {
+    if (!preview || preview.hasSede) return;
+    if (sedeQuery.trim().length < 3) {
+      setSedeSuggestions([]);
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      setSedeSearching(true);
+      sedeAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      sedeAbortRef.current = ctrl;
+      try {
+        const url =
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&countrycodes=br&limit=6&q=${encodeURIComponent(sedeQuery.trim())}`;
+        const res = await fetch(url, {
+          headers: { Accept: "application/json" },
+          signal: ctrl.signal,
+        });
+        if (!res.ok) throw new Error("busca_falhou");
+        const data = (await res.json()) as SedeSuggestion[];
+        setSedeSuggestions(Array.isArray(data) ? data : []);
+      } catch (e: any) {
+        if (e?.name !== "AbortError") setSedeSuggestions([]);
+      } finally {
+        setSedeSearching(false);
+      }
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [sedeQuery, preview?.hasSede]);
+
+  async function handlePickSede(s: SedeSuggestion) {
+    setSedeSaving(true);
+    try {
+      const name = String(s.display_name || "").split(",")[0]?.trim() || "Minha sede";
+      await saveSmartSedeLocation(consultantId, {
+        name,
+        address: s.display_name,
+        latitude: Number(s.lat),
+        longitude: Number(s.lon),
+        radiusKm: 50,
+      });
+      setSedeQuery("");
+      setSedeSuggestions([]);
+      await reloadPreview();
+      toast({
+        title: "Sede salva",
+        description: `Vamos anunciar em torno de ${name}.`,
+        duration: 2500,
+      });
+    } catch (e: any) {
+      toast({
+        title: "Não deu para salvar a sede",
+        description: e?.message || "Tente outro endereço.",
+        variant: "destructive",
+      });
+    } finally {
+      setSedeSaving(false);
+    }
+  }
 
   function patchPreview(p: Partial<SmartAnchorPreview>) {
     setPreview((prev) => (prev ? { ...prev, ...p } : prev));
@@ -173,7 +255,58 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
           <p className="text-sm text-destructive py-4">{error}</p>
         )}
 
-        {preview && !loading && (
+        {preview && !loading && !preview.hasSede && (
+          <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-2">
+              <MapPin className="h-5 w-5 text-amber-700 dark:text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">
+                  Onde fica a sua sede?
+                </p>
+                <p className="text-[12px] text-muted-foreground leading-relaxed">
+                  O anúncio precisa saber a cidade em que você atende. Digite a cidade ou o bairro
+                  e escolha na lista — leva menos de 1 minuto.
+                </p>
+              </div>
+            </div>
+            <div className="relative">
+              <Input
+                value={sedeQuery}
+                onChange={(e) => setSedeQuery(e.target.value)}
+                placeholder="Ex.: Uberlândia, MG ou bairro Jaraguá"
+                className="h-10"
+                disabled={sedeSaving}
+                autoFocus
+              />
+              {(sedeSearching || sedeSaving) && (
+                <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+              {sedeSuggestions.length > 0 && !sedeSaving && (
+                <ul className="absolute z-20 mt-1 w-full rounded-md border bg-popover shadow-md max-h-48 overflow-y-auto">
+                  {sedeSuggestions.map((s) => (
+                    <li key={s.place_id}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-muted/80"
+                        onClick={() => void handlePickSede(s)}
+                      >
+                        {s.display_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Depois disso você escolhe foto, valor do dia e publica.
+            </p>
+            <Button variant="outline" className="w-full" disabled={sedeSaving} onClick={onClose}>
+              Cancelar
+            </Button>
+          </div>
+        )}
+
+        {preview && !loading && preview.hasSede && (
           <div className="space-y-4 text-sm">
             <div className="rounded-lg border border-[hsl(var(--ads-emerald)/.3)] bg-[hsl(var(--ads-emerald)/.08)] p-3 text-[12px] leading-relaxed text-[hsl(var(--ads-text))] space-y-2">
               <p>
@@ -402,7 +535,7 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
             <div className="rounded-lg border border-[hsl(var(--ads-border))] p-3 space-y-1.5">
               <div className="text-[11px] font-medium">Para publicar, confira:</div>
               {[
-                { ok: preview.hasSede, label: "Sede configurada" },
+                { ok: preview.hasSede, label: "Cidade da sede informada" },
                 { ok: preview.headline.trim().length >= 3, label: "Título do anúncio" },
                 {
                   ok: preview.creativeMode === "photo" ? !!preview.photoUrl : !!preview.videoUrl,
