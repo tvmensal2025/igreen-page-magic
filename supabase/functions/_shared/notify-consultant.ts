@@ -650,6 +650,17 @@ export async function notifyPartnerNewLead(
     const link = waMeLink(lead.phone_whatsapp);
     const title = manual ? "✅ *Lead atribuído a você!*" : "🎉 *Novo lead pra você!*";
 
+    let assistantName = "";
+    try {
+      const { data: owner } = await adminClient()
+        .from("consultants")
+        .select("assistant_name")
+        .eq("id", ownerConsultantId)
+        .maybeSingle();
+      assistantName = String((owner as { assistant_name?: string | null } | null)?.assistant_name || "").trim();
+    } catch { /* sem nome de IA */ }
+    const iaLabel = assistantName || "A assistente";
+
     const lines = [
       `${hi}${title}`,
       ``,
@@ -667,7 +678,7 @@ export async function notifyPartnerNewLead(
     if (manual) {
       lines.push(`📌 Atribuído pelo consultor — já é seu!`);
     } else {
-      lines.push(`🤖 A Sofia já iniciou o atendimento e está coletando os dados.`);
+      lines.push(`🤖 ${iaLabel} já iniciou o atendimento e está coletando os dados.`);
       lines.push(`📲 Você recebe um aviso a cada etapa importante do cadastro — não o chat completo.`);
     }
     lines.push(``);

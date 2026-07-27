@@ -7,8 +7,11 @@ import {
   SUGGESTED_FIRST_ACK_PREFS,
   anyPackOff,
   needsAutomationPrefsAck,
+  resolveCerebroOptInCopy,
+  type CerebroOptInCopy,
   type ConsultantAutomationPrefs,
 } from "@/lib/consultantAutomationPrefs";
+import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
 
 export type PrefsDraft = Omit<ConsultantAutomationPrefs, "consultant_id" | "acked_at">;
 
@@ -59,6 +62,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
   const [prefs, setPrefs] = useState<ConsultantAutomationPrefs | null>(null);
   const [draft, setDraft] = useState<PrefsDraft>(toDraft(null));
   const [cerebroEnabled, setCerebroEnabled] = useState(false);
+  const [cerebroCopy, setCerebroCopy] = useState<CerebroOptInCopy>(() => resolveCerebroOptInCopy());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +72,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       setPrefs(null);
       setDraft(toDraft(null));
       setCerebroEnabled(false);
+      setCerebroCopy(resolveCerebroOptInCopy());
       setLoading(false);
       return;
     }
@@ -80,7 +85,11 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
         .select(PREFS_SELECT)
         .eq("consultant_id", consultantId)
         .maybeSingle(),
-      supabase.from("consultants").select("cerebro_ativo").eq("id", consultantId).maybeSingle(),
+      supabase
+        .from("consultants")
+        .select("cerebro_ativo, name, display_name, assistant_name")
+        .eq("id", consultantId)
+        .maybeSingle(),
     ]);
 
     if (prefsRes.error) {
@@ -88,6 +97,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       setPrefs(null);
       setDraft(toDraft(null));
       setCerebroEnabled(false);
+      setCerebroCopy(resolveCerebroOptInCopy());
       setLoading(false);
       return;
     }
@@ -97,9 +107,21 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       ? rowFromData(consultantId, data as ConsultantAutomationPrefs)
       : { consultant_id: consultantId, ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
 
+    const cons = consRes.data as {
+      cerebro_ativo?: string;
+      name?: string | null;
+      display_name?: string | null;
+      assistant_name?: string | null;
+    } | null;
     const needsFirstAck = !data || !row.acked_at;
-    const cerebroDbOn = String((consRes.data as { cerebro_ativo?: string } | null)?.cerebro_ativo || "") === "on";
+    const cerebroDbOn = String(cons?.cerebro_ativo || "") === "on";
     setCerebroEnabled(needsFirstAck ? CEREBRO_OPT_IN.suggestedOnFirstAck : cerebroDbOn);
+    setCerebroCopy(
+      resolveCerebroOptInCopy({
+        assistantName: cons?.assistant_name,
+        consultantFirstName: firstNameFromPublicConsultant(cons?.name, cons?.display_name),
+      }),
+    );
 
     setPrefs(row);
     setDraft(needsFirstAck ? toSuggestedDraft() : toDraft(row));
@@ -235,6 +257,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
     setPack,
     cerebroEnabled,
     setCerebroEnabled,
+    cerebroCopy,
     loading,
     saving,
     error,

@@ -45,18 +45,52 @@ export const SUGGESTED_FIRST_ACK_PREFS: Omit<ConsultantAutomationPrefs, "consult
 };
 
 /**
- * Cérebro IA (consultants.cerebro_ativo) — separado dos packs A/B/C.
+ * IA no WhatsApp (consultants.cerebro_ativo) — separado dos packs de follow-up.
  * Novo consultor nasce OFF; só liga se marcar no modal.
+ * Copy: deixar claro que a IA é individual (nome da IA + nome do consultor).
  */
 export const CEREBRO_OPT_IN = {
-  title: "Cérebro (Sofia) no WhatsApp",
-  help:
-    "Quando o lead manda mensagem, a IA ajuda na conversa (dúvidas, abertura). " +
-    "O cadastro organizado do Grupo A continua mandando nos passos (conta, documento, portal) — a IA não fura essa ordem. " +
-    "Não é o disparo A/B/C (não procura quem sumiu sozinho). Você pode assumir o chat a qualquer momento.",
   /** 1º ack: sugerido desligado — tem que ligar de propósito. */
   suggestedOnFirstAck: false,
 } as const;
+
+export type CerebroOptInCopy = {
+  title: string;
+  help: string;
+};
+
+/** Textos do toggle — nome da IA + do consultor (cada conta é individual). */
+export function resolveCerebroOptInCopy(opts?: {
+  assistantName?: string | null;
+  consultantFirstName?: string | null;
+}): CerebroOptInCopy {
+  const ia = String(opts?.assistantName || "").trim();
+  const first = String(opts?.consultantFirstName || "").trim();
+
+  const title = ia
+    ? first
+      ? `${ia} · IA de ${first}`
+      : `${ia} · sua IA`
+    : first
+      ? `Assistente no WhatsApp · IA de ${first}`
+      : "Assistente no WhatsApp · sua IA";
+
+  const who = ia && first
+    ? `a ${ia}, assistente de ${first}`
+    : ia
+      ? `a ${ia} (sua assistente)`
+      : first
+        ? `a assistente de ${first}`
+        : "a sua assistente";
+
+  return {
+    title,
+    help:
+      `Cada conta tem a própria IA — só a sua: ${who}. ` +
+      "Não é a IA de outro consultor. Quando alguém te escrever, ela responde dúvidas por você. " +
+      "O cadastro (conta, documento, portal) continua em ordem. Você assume o chat quando quiser. Nasce desligada.",
+  };
+}
 
 export const CONSULTANT_AUTO_PACKS: Array<{
   pack: ConsultantAutoPack;

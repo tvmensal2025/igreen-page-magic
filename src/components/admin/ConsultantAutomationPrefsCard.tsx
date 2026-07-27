@@ -5,7 +5,6 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
 import { ConsultantAutomationPrefsModal } from "@/components/admin/ConsultantAutomationPrefsModal";
-import { CEREBRO_OPT_IN } from "@/lib/consultantAutomationPrefs";
 import { toast } from "sonner";
 
 type Props = {
@@ -24,6 +23,7 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
     setPack,
     cerebroEnabled,
     setCerebroEnabled,
+    cerebroCopy,
     loading,
     saving,
     save,
@@ -59,7 +59,7 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
               <CardDescription>
                 {variant === "offOnly"
                   ? "Só o que está desligado. Ligue o que quiser voltar a mandar sozinho. O restante já está ligado."
-                  : "Só vale para o seu painel. Cérebro (IA) é opt-in. Se desligar um pack, o sistema não manda aquilo sozinho."}
+                  : "Só a sua conta. Cada consultor tem a própria IA (nome da assistente + o seu nome). A IA nasce desligada."}
               </CardDescription>
             </div>
             {hasOff && variant === "full" && (
@@ -78,19 +78,19 @@ export function ConsultantAutomationPrefsCard({ consultantId, variant = "full" }
                 <div className="flex items-start justify-between gap-3 rounded-md border border-primary/20 bg-primary/5 px-2.5 py-2">
                   <div className="min-w-0">
                     <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
-                      {CEREBRO_OPT_IN.title}
+                      {cerebroCopy.title}
                       {!cerebroEnabled && (
                         <Badge variant="outline" className="text-[10px] font-normal">
                           Desligado
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2">{CEREBRO_OPT_IN.help}</p>
+                    <p className="text-xs text-muted-foreground line-clamp-2">{cerebroCopy.help}</p>
                   </div>
                   <Switch
                     checked={cerebroEnabled}
                     onCheckedChange={setCerebroEnabled}
-                    aria-label={CEREBRO_OPT_IN.title}
+                    aria-label={cerebroCopy.title}
                   />
                 </div>
               )}
