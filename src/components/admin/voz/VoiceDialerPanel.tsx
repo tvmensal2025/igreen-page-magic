@@ -28,7 +28,7 @@ import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import type { VozCustomer } from "./VozContactPickerDialog";
 import { VoiceCampaignWizardDialog } from "./VoiceCampaignWizardDialog";
 import { firstName, resolveCustomerByPhone, resolveNameByPhone } from "./voiceContactResolve";
-import { formatBrl, VOICE_PRICE_FULL, VOICE_PRICE_HALF } from "@/lib/voiceCallCost";
+import { formatBrl, PLATFORM_VOICE_BLOCK_PRICE, PLATFORM_VOICE_BLOCK_SEC } from "@/lib/voiceCallCost";
 import { crmClosingSummary } from "./voiceCrmContext";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
 
@@ -541,7 +541,8 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
               </Button>
             </div>
             <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
-              Custo aproximado por atendida: {formatBrl(VOICE_PRICE_HALF)} (1–30s, metade) a {formatBrl(VOICE_PRICE_FULL)} (30–60s, inteiro).
+              Custo iGreen Fone: {formatBrl(PLATFORM_VOICE_BLOCK_PRICE)} a cada {PLATFORM_VOICE_BLOCK_SEC}s
+              {" "}só se atender (31s = {formatBrl(0.2)}). Não atendeu = {formatBrl(0)}.
             </p>
           </div>
         </VozSection>

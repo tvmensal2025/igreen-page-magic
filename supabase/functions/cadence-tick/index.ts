@@ -22,6 +22,7 @@ import {
   playAudioFile, makeSMS,
   toVelipBRDest, toVelipSmsDest, isPermanentSmsFailure, isReprovedVelipCode, stripVelipNinthDigit, toCtid, velipConfigured,
 } from "../_shared/voice-dialer/velip.ts";
+import { debitSmsSent } from "../_shared/voice-sms-billing.ts";
 import { resolveCallDialAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch } from "../_shared/retention-orchestrator.ts";
@@ -857,7 +858,7 @@ async function dispatchSMS(
     // MakeSMSOpts espera `message` — com `text` o SMS sairia "undefined".
     const r = await makeSMS({ to: dest, message: text });
     // Schema real: sem colunas `raw` / `sent_at` — insert antigo falhava em silêncio.
-    const { error: smsLogErr } = await supabase.from("voice_sms_log").insert({
+    const { data: smsLogRow, error: smsLogErr } = await supabase.from("voice_sms_log").insert({
       consultant_id: row.consultant_id,
       phone: dest,
       message: text,
@@ -865,7 +866,7 @@ async function dispatchSMS(
       velip_ctid: (r.raw as { ctid?: string } | undefined)?.ctid ?? null,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
-    });
+    }).select("id").maybeSingle();
     if (smsLogErr) {
       console.warn("[cadence-tick] voice_sms_log insert failed", smsLogErr.message);
     }
@@ -879,6 +880,14 @@ async function dispatchSMS(
         with_name: !!firstName,
       };
     }
+    const smsRef = r.cdls_id != null
+      ? String(r.cdls_id)
+      : (smsLogRow as { id?: string } | null)?.id ?? `cadence_sms_${row.customer_id}_${Date.now()}`;
+    void debitSmsSent(supabase, {
+      consultantId: row.consultant_id,
+      providerRef: smsRef,
+      metadata: { source: "cadence_tick", stage: row.stage },
+    });
     const themeTag = themeId ? `:theme_${themeId}` : "";
     return {
       ok: true,

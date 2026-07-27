@@ -26,6 +26,7 @@ import {
   isReprovedVelipCode,
   stripVelipNinthDigit,
 } from "../voice-dialer/velip.ts";
+import { debitSmsSent } from "../voice-sms-billing.ts";
 import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
 import { finishProactiveTouch, reserveProactiveTouch } from "../journey-effects.ts";
 import { isAutomationEnabled } from "../automation-gate.ts";
@@ -452,18 +453,26 @@ async function runSms(
 
   try {
     const r = await makeSMS({ to: dest, message });
-    const { error: smsLogErr } = await supabase.from("voice_sms_log").insert({
+    const { data: smsLogRow, error: smsLogErr } = await supabase.from("voice_sms_log").insert({
       consultant_id: plan.consultant_id,
       phone: dest,
       message,
       velip_sms_id: r.cdls_id != null ? String(r.cdls_id) : null,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
-    });
+    }).select("id").maybeSingle();
     if (smsLogErr) {
       console.warn("[daily-reheat] voice_sms_log insert failed", smsLogErr.message);
     }
     if (!r.ok) return { action: "sms", ok: false, detail: `velip:${r.error}` };
+    const smsRef = r.cdls_id != null
+      ? String(r.cdls_id)
+      : (smsLogRow as { id?: string } | null)?.id ?? `reheat_sms_${plan.customer_id}_${Date.now()}`;
+    void debitSmsSent(supabase, {
+      consultantId: plan.consultant_id,
+      providerRef: smsRef,
+      metadata: { source: "daily_reheat" },
+    });
     return { action: "sms", ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
   } catch (e) {
     return { action: "sms", ok: false, detail: (e as Error).message };

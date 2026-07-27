@@ -219,6 +219,12 @@ export async function getOrCreateWallet(consultantId: string): Promise<{
   auto_pause_at_cents: number;
 }> {
   const admin = adminClient();
+  // Welcome R$1,00 só na 1ª criação (RPC ensure_consultant_wallet).
+  try {
+    await admin.rpc("ensure_consultant_wallet", { _consultant_id: consultantId });
+  } catch (_e) {
+    /* fallback abaixo */
+  }
   const { data } = await admin.from("consultant_wallet").select("*").eq(
     "consultant_id",
     consultantId,
@@ -231,9 +237,12 @@ export async function getOrCreateWallet(consultantId: string): Promise<{
       auto_pause_at_cents: Number(data.auto_pause_at_cents),
     };
   }
-  // Tenta inserir; se já existir (corrida), recarrega.
-  await admin.from("consultant_wallet").insert({ consultant_id: consultantId })
-    .select().maybeSingle();
+  // Fallback se RPC ainda não existir no ambiente.
+  await admin.from("consultant_wallet").insert({
+    consultant_id: consultantId,
+    balance_cents: 100,
+    total_topped_up_cents: 100,
+  }).select().maybeSingle();
   const { data: re } = await admin.from("consultant_wallet").select("*").eq(
     "consultant_id",
     consultantId,

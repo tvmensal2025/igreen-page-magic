@@ -40,14 +40,26 @@ Cadência reusa o dialer em stages `A_CALL*`, `CALL_*`, `*_SMS` via `cadence-tic
 
 TTS: `call-stitch.ts` + `safeFirstNameForAddress`; guard também em `cadence-tick:799`.
 
-## Crédito Velip (não esquecer)
+## Crédito Velip (conta da plataforma)
 - `GetUserID` **não** retorna saldo (API v2). UI mostra “—” / oriente painel.
-- **Não existe** pause automática por crédito zerado no código.
+- **Não existe** pause automática por crédito Velip zerado no código.
 - Erros vistos em prod: `Blocked text#270`, `BK_PROCON#250`, `number invalid#203`, delivery `UNDELIV`/`REJECTD`/`EXPIRED`.
 - Aceito (`sms_sent` / `status=sent`) ≠ entregue (`DELIVRD`). Playbook completo: `#erros-operacionais`.
 
+## Cobrança ao consultor (iGreen Fone — mesma carteira Ads)
+- SMS: R$ 0,10 por `status=sent` — `debitSmsSent` (`_shared/voice-sms-billing.ts`)
+- Ligação: R$ 0,10 a cada 30s **atendida** (ceil) — webhook `OK` → `debitVoiceAnswered`
+- Idempotente: `platform_usage_billing` + RPC `debit_platform_usage_observation`
+- Welcome: novo consultor R$ 1,00 via `ensure_consultant_wallet`
+- Saldo zerado → `notifyConsultant` (cooldown 24h) · recarga via admin
+- UI: botão `!` na pizza (`CadenceCostHelpModal`) — cada msg A/B/C + preços
+- Marca ao consultor: **iGreen Fone** (nunca “Velip” na copy)
+
 ## NÃO FAÇA
 - Discagem em massa nova sem pedido + cadeados
+- Cobrar ligação em `cadence_action_log sent` (é discagem, não atendimento)
+- Cobrar SMS de novo no DELIVRD (já cobrou no sent)
+- Expor nome Velip na UI do consultor
 - Personalizar TTS com `whatsapp_profile` / slug
 - Ignorar `voice_dnc_list` ou cross-channel IK/UNDELIV
 - Assumir que kill `bot_global` é o único cadeado (cadence + toggles + DNC)

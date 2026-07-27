@@ -55,8 +55,8 @@ import { BRASILIA_TZ, brasiliaWallToUtcIso, inBrasiliaCallWindow, nowBrasiliaHm 
 import {
   estimateCampaignCost,
   formatBrl,
-  VOICE_PRICE_FULL,
-  VOICE_PRICE_HALF,
+  PLATFORM_VOICE_BLOCK_PRICE,
+  PLATFORM_VOICE_BLOCK_SEC,
 } from "@/lib/voiceCallCost";
 import { VozContactPickerPanel, type VozCustomer } from "./VozContactPickerDialog";
 import { crmClosingSummary, resolveCrmByPhoneOrId, statusCrmLabel } from "./voiceCrmContext";
@@ -1396,8 +1396,8 @@ export function VoiceCampaignWizardDialog({
               <div
                 className="rounded-[var(--pe-radius)] border p-3 space-y-2"
                 style={{
-                  borderColor: costEstimate.band === "full" ? "var(--pe-border)" : "var(--pe-emerald-20)",
-                  background: costEstimate.band === "full" ? "var(--pe-surface-muted)" : "var(--pe-emerald-10)",
+                  borderColor: "var(--pe-emerald-20)",
+                  background: "var(--pe-emerald-10)",
                 }}
               >
                 <div className="flex items-center gap-2">
@@ -1407,7 +1407,7 @@ export function VoiceCampaignWizardDialog({
                   </p>
                 </div>
                 <p className="text-[11px] leading-relaxed" style={{ color: "var(--pe-text-muted)" }}>
-                  Cobrança só em <strong>atendidas</strong>. Faixa: 1–30s = {formatBrl(VOICE_PRICE_HALF)} (metade) · 30–60s = {formatBrl(VOICE_PRICE_FULL)} (inteiro).
+                  Cobrança só em <strong>atendidas</strong>. {formatBrl(PLATFORM_VOICE_BLOCK_PRICE)} a cada {PLATFORM_VOICE_BLOCK_SEC}s (31s = {formatBrl(0.2)}).
                   {personalizeName ? " Personalizar nome soma ~2,5s no áudio." : ""}
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
@@ -1418,9 +1418,9 @@ export function VoiceCampaignWizardDialog({
                     </p>
                   </div>
                   <div className="rounded-md border px-2 py-1.5" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}>
-                    <p className="text-[9px] uppercase" style={{ color: "var(--pe-text-muted)" }}>Faixa</p>
+                    <p className="text-[9px] uppercase" style={{ color: "var(--pe-text-muted)" }}>Blocos</p>
                     <p className="text-sm font-bold" style={{ color: "var(--pe-text)" }}>
-                      {costEstimate.band === "half" ? "Metade" : "Inteiro"}
+                      {costEstimate.blocks}×
                     </p>
                   </div>
                   <div className="rounded-md border px-2 py-1.5" style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}>
@@ -1439,9 +1439,7 @@ export function VoiceCampaignWizardDialog({
                 <p className="text-[11px]" style={{ color: "var(--pe-text-muted)" }}>
                   Cenário ~30% atendimento: <strong style={{ color: "var(--pe-text)" }}>{formatBrl(costEstimate.likelyTotal)}</strong>
                   {!costEstimate.durationKnown ? " · duração estimada (áudio sem metadado)" : ""}
-                  {costEstimate.band === "full"
-                    ? " · áudio passou de 30s → cobra valor inteiro"
-                    : " · áudio até 30s → metade do valor"}
+                  {` · ${costEstimate.bandLabel}`}
                 </p>
               </div>
             </div>
@@ -1638,7 +1636,7 @@ export function VoiceCampaignWizardDialog({
                       )}
                     </p>
                     <p className="text-[10px]" style={{ color: "var(--pe-text-muted)" }}>
-                      1–30s = {formatBrl(VOICE_PRICE_HALF)} · 30–60s = {formatBrl(VOICE_PRICE_FULL)} · só paga quem atendeu
+                      {formatBrl(PLATFORM_VOICE_BLOCK_PRICE)} / {PLATFORM_VOICE_BLOCK_SEC}s · só paga quem atendeu
                     </p>
                   </div>
 

@@ -1,37 +1,40 @@
 /**
- * Estimativa de custo iGreen Fone (Velip) por ligação atendida.
- *
- * Regra comercial usada no painel:
- * - 1–30s  → metade do valor
- * - 30–60s → valor inteiro
- *
+ * Espelho UI da cobrança iGreen Fone (SMS + ligação).
+ * Regra: SMS R$ 0,10 · voz R$ 0,10 a cada 30s atendida (ceil).
  * Cobrança só em atendidas (não atendeu = R$ 0).
  */
 
-/** Valor inteiro (faixa 30–60s), em R$. */
-export const VOICE_PRICE_FULL = 0.18;
-/** Metade (faixa 1–30s), em R$. */
-export const VOICE_PRICE_HALF = VOICE_PRICE_FULL / 2;
+export const PLATFORM_SMS_PRICE = 0.1;
+export const PLATFORM_VOICE_BLOCK_SEC = 30;
+export const PLATFORM_VOICE_BLOCK_PRICE = 0.1;
+/** @deprecated use PLATFORM_VOICE_BLOCK_PRICE — mantido p/ imports antigos */
+export const VOICE_PRICE_FULL = PLATFORM_VOICE_BLOCK_PRICE;
+/** @deprecated */
+export const VOICE_PRICE_HALF = PLATFORM_VOICE_BLOCK_PRICE;
 
 /** “Olá, Nome! Tudo bem?” costurado no início (~2–3s). */
 export const PERSONALIZE_GREETING_PAD_SEC = 2.5;
 
-export type VoiceCostBand = "half" | "full";
+export type VoiceCostBand = "block";
 
-export function voiceCostBand(durationSec: number): VoiceCostBand {
+export function voiceBillableBlocks(durationSec: number): number {
   const d = Math.max(0, Number(durationSec) || 0);
-  // Limite inclusivo: exatamente 30s ainda é metade.
-  return d <= 30 ? "half" : "full";
+  if (d <= 0) return 1;
+  return Math.max(1, Math.ceil(d / PLATFORM_VOICE_BLOCK_SEC));
+}
+
+export function voiceCostBand(_durationSec: number): VoiceCostBand {
+  return "block";
 }
 
 export function voicePricePerAnswered(durationSec: number): number {
-  return voiceCostBand(durationSec) === "half" ? VOICE_PRICE_HALF : VOICE_PRICE_FULL;
+  return voiceBillableBlocks(durationSec) * PLATFORM_VOICE_BLOCK_PRICE;
 }
 
 export function estimateBillableDurationSec(opts: {
   bodyDurationSec: number | null | undefined;
   personalizeName?: boolean;
-  /** Limite máximo da chamada (timelimit Velip). */
+  /** Limite máximo da chamada (timelimit). */
   timeLimitSec?: number | null;
 }): number {
   const body = Math.max(0, Number(opts.bodyDurationSec) || 0);
@@ -50,6 +53,7 @@ export type CampaignCostEstimate = {
   durationSec: number;
   band: VoiceCostBand;
   priceEach: number;
+  blocks: number;
   contacts: number;
   /** Se 100% atenderem. */
   maxTotal: number;
@@ -72,18 +76,34 @@ export function estimateCampaignCost(opts: {
     personalizeName: opts.personalizeName,
     timeLimitSec: opts.timeLimitSec,
   });
-  const band = voiceCostBand(durationSec);
-  const priceEach = voicePricePerAnswered(durationSec);
+  const blocks = voiceBillableBlocks(durationSec);
+  const priceEach = blocks * PLATFORM_VOICE_BLOCK_PRICE;
   const contacts = Math.max(0, Math.floor(opts.contacts) || 0);
   const rate = Math.min(1, Math.max(0, opts.answerRate ?? 0.3));
   return {
     durationSec,
-    band,
+    band: "block",
     priceEach,
+    blocks,
     contacts,
     maxTotal: Math.round(contacts * priceEach * 100) / 100,
     likelyTotal: Math.round(contacts * rate * priceEach * 100) / 100,
-    bandLabel: band === "half" ? "até 30s · metade" : "30–60s · valor inteiro",
+    bandLabel: `${blocks}× R$ 0,10 / 30s`,
     durationKnown,
   };
 }
+
+/** Contagens máx. do motor A/B/C (silêncio total) — card do consultor. */
+export const CADENCE_BILLING_SUMMARY = {
+  smsPrice: PLATFORM_SMS_PRICE,
+  voiceBlockPrice: PLATFORM_VOICE_BLOCK_PRICE,
+  voiceBlockSec: PLATFORM_VOICE_BLOCK_SEC,
+  groups: {
+    A: { sms: 1, calls: 2, smsCost: 0.1 },
+    B: { sms: 4, calls: 3, smsCost: 0.4 },
+    C: { sms: 6, calls: 6, smsCost: 0.6 },
+  },
+  maxSms: 11,
+  maxCalls: 11,
+  maxSmsCost: 1.1,
+} as const;

@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import { makeSMS, toCtid, toVelipSmsDest, velipConfigured } from "../_shared/voice-dialer/velip.ts";
+import { debitSmsSent } from "../_shared/voice-sms-billing.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { resolveConsultantConnectedWaPhone, buildConsultantSmsWaLink, normalizeWaPhoneDigits } from "../_shared/consultant-wa-phone.ts";
 import { safeFirstNameForAddress } from "../_shared/customer-display-name.ts";
@@ -202,15 +203,25 @@ Deno.serve(async (req) => {
       velip_ctid: ctid,
       status: r.ok ? "sent" : "failed",
       error: r.ok ? null : (r.error ?? "velip_error"),
-    });
+    }).select("id").maybeSingle();
 
     if (insert.error) {
       console.error("[voice-sms-send] log insert failed:", insert.error.message);
     }
 
-    if (r.ok) sent++;
-    else failed++;
-    results.push({
+    if (r.ok) {
+      sent++;
+      const smsRef = r.cdls_id != null
+        ? String(r.cdls_id)
+        : (insert.data as { id?: string } | null)?.id ?? `manual_sms_${consultantId}_${Date.now()}`;
+      void debitSmsSent(admin, {
+        consultantId,
+        providerRef: smsRef,
+        metadata: { source: "voice_sms_send" },
+      });
+    } else {
+      failed++;
+    }    results.push({
       dest: rec.phone,
       ok: r.ok,
       id: r.cdls_id ?? null,

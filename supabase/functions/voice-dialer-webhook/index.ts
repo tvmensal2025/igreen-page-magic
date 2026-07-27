@@ -25,6 +25,7 @@ import {
   reserveOutboundEffect,
   voiceFallbackSmsKey,
 } from "../_shared/journey-effects.ts";
+import { debitSmsSent, debitVoiceAnswered } from "../_shared/voice-sms-billing.ts";
 
 /** Hash estável do callback p/ dedup (sem timestamp — retries Velip idênticos). */
 async function eventHash(parts: (string | number)[]): Promise<string> {
@@ -411,6 +412,15 @@ Deno.serve(async (req) => {
               console.warn("[voice-webhook] cadence answered pause failed", (e as Error).message);
             }
           }
+          const consultantId = logRow.consultant_id ?? null;
+          if (consultantId && cd_id) {
+            void debitVoiceAnswered(admin, {
+              consultantId,
+              providerRef: cd_id,
+              durationSec: Number.isFinite(time_sec) ? time_sec : null,
+              metadata: { source: "cadence_voice" },
+            });
+          }
         }
 
         return json(200, { ok: true, matched: true, cadence_log: true, updated: updated.length });
@@ -533,6 +543,14 @@ Deno.serve(async (req) => {
     try {
       await onCallAnsweredPauseCadence(admin, target.customer_id ?? null);
     } catch (_e) { /* ignore */ }
+    if (consultantId && cd_id) {
+      void debitVoiceAnswered(admin, {
+        consultantId,
+        providerRef: cd_id,
+        durationSec: Number.isFinite(time_sec) ? time_sec : null,
+        metadata: { source: "voice_campaign", target_id: target.id },
+      });
+    }
   }
 
   // SMS de fallback para NA terminal — exige toggle call_outcome_sms_branch.
@@ -572,7 +590,7 @@ Deno.serve(async (req) => {
           message: smsText,
           ctid: toCtid(target.id),
         });
-        await admin.from("voice_sms_log").insert({
+        const { data: smsLogRow } = await admin.from("voice_sms_log").insert({
           consultant_id: consultantId,
           campaign_id: target.campaign_id,
           phone: smsDest,
@@ -581,11 +599,21 @@ Deno.serve(async (req) => {
           velip_sms_id: smsRes.cdls_id ?? null,
           velip_ctid: toCtid(target.id),
           error: smsRes.ok ? null : (smsRes.error ?? "unknown"),
-        });
+        }).select("id").maybeSingle();
         await finishOutboundEffect(admin, eff.effectId, smsRes.ok ? "sent" : "failed_final", {
           providerRequestId: smsRes.cdls_id ? String(smsRes.cdls_id) : null,
           errorCode: smsRes.ok ? null : String(smsRes.error ?? "sms_failed").slice(0, 120),
         });
+        if (smsRes.ok && consultantId) {
+          const smsRef = smsRes.cdls_id != null
+            ? String(smsRes.cdls_id)
+            : (smsLogRow as { id?: string } | null)?.id ?? `fallback_${target.id}_${attempts}`;
+          void debitSmsSent(admin, {
+            consultantId,
+            providerRef: smsRef,
+            metadata: { source: "voice_fallback_na" },
+          });
+        }
         if (smsRes.ok) {
           await admin.from("voice_campaign_targets").update({
             fallback_sms_at: new Date().toISOString(),

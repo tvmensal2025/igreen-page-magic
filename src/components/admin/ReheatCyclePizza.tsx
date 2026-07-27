@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { CadenceCostHelpModal } from "@/components/admin/CadenceCostHelpModal";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -1805,6 +1806,7 @@ export function ReheatCyclePizza({
           <h3 className="font-heading font-bold text-foreground flex items-center gap-2">
             <RefreshCw className="w-4 h-4 text-primary shrink-0" />
             Ciclo A · B · C
+            <CadenceCostHelpModal />
             {statusBadge && (
               <Badge className={cn("ml-1 text-[10px] font-semibold", statusBadge.cls)}>
                 {statusBadge.label}
