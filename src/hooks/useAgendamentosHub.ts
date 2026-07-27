@@ -70,7 +70,7 @@ export function useAgendamentosHub(consultantId: string) {
           .from("customers")
           .select("id, name, phone_whatsapp, pos_venda_stage, pos_venda_approved_at, pos_venda_rejected_at, customer_origin")
           .or(`consultant_id.eq.${consultantId},assigned_consultant_id.eq.${consultantId}`)
-          .in("pos_venda_stage", ["aprovado", "reprovado", "retentativa", "d30", "d60", "d90", "d120", "d150", "d180", "d210"]),
+          .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"]),
         supabase
           .from("customer_auto_message_log")
           .select("customer_id, stage_key")
