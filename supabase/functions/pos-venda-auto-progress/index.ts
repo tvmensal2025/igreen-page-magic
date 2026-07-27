@@ -374,6 +374,56 @@ Deno.serve(async (req) => {
     //    Auto-classificação nunca dispara mensagem — ela vai para
     //    pos_venda_pending_stage e o consultor confirma pelo popup
     //    "Validar novos clientes".
+    //
+    // ANTI-BAN: limita quantos envios acontecem POR EXECUÇÃO e POR DIA.
+    //   - BATCH_LIMIT: teto de envios reais numa rodada (o cron roda a cada
+    //     hora — o resto fica para a próxima).
+    //   - DAILY_CAP: teto global de envios em 24h (protege contra o "aprovei
+    //     500 de uma vez" disparar tudo junto).
+    //   - JITTER: espera 3–8s entre disparos para o WhatsApp não ver rajada.
+    //   - MOVIMENTAÇÕES DE ESTÁGIO (moved) continuam sem limite — são só
+    //     UPDATE no banco, não geram mensagem.
+    const BATCH_LIMIT = Number(Deno.env.get("POS_VENDA_BATCH_LIMIT") || 40);
+    const DAILY_CAP = Number(Deno.env.get("POS_VENDA_DAILY_CAP") || 200);
+    const JITTER_MIN_MS = 3000;
+    const JITTER_MAX_MS = 8000;
+
+    // Quantos já foram enviados nas últimas 24h (idempotência do log).
+    const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+    const { count: sentToday24h } = await supabase
+      .from("customer_auto_message_log")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", since)
+      .like("status", "sent%");
+    let sentCounter = sentToday24h || 0;
+    let batchCounter = 0;
+
+    const canSendMore = () => batchCounter < BATCH_LIMIT && sentCounter < DAILY_CAP;
+    const sleepJitter = () =>
+      new Promise((res) =>
+        setTimeout(res, JITTER_MIN_MS + Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS)),
+      );
+
+    const runOne = async (c: any, target: string) => {
+      // Estágio já foi enviado antes → só reconcilia sem consumir cota.
+      if (!canSendMore()) {
+        // Ainda deixa mover o estágio no banco (não gera mensagem), mas
+        // NÃO tenta enviar — evita bater no anti-ban.
+        return;
+      }
+      const before = sent;
+      const r = await processCustomer(supabase, env, c, target, defaults);
+      if (r.moved) moved++;
+      if (r.sent) {
+        sent++;
+        sentCounter++;
+        batchCounter++;
+        if (canSendMore()) await sleepJitter();
+      } else if (sent === before) {
+        // não enviou (idempotência / bloqueio) — sem jitter, sem consumir cota
+      }
+    };
+
     const { data: approvedCustomers } = await supabase
       .from("customers")
       .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
@@ -382,9 +432,7 @@ Deno.serve(async (req) => {
       .eq("pos_venda_manual", true);
 
     for (const c of approvedCustomers || []) {
-      const r = await processCustomer(supabase, env, c, "aprovado", defaults);
-      if (r.moved) moved++;
-      if (r.sent) sent++;
+      await runOne(c, "aprovado");
     }
 
     // 2. Clientes REPROVADOS PELO CONSULTOR (pos_venda_manual=true).
@@ -396,9 +444,7 @@ Deno.serve(async (req) => {
       .eq("pos_venda_manual", true);
 
     for (const c of rejectedCustomers || []) {
-      const r = await processCustomer(supabase, env, c, "reprovado", defaults);
-      if (r.moved) moved++;
-      if (r.sent) sent++;
+      await runOne(c, "reprovado");
     }
 
     // 3. Progressão aprovados → 30/60/90/120/150/180/210 (somente quem já passou por aprovado)
@@ -420,9 +466,7 @@ Deno.serve(async (req) => {
       // Ainda em "aprovado" e <30 dias: o bloco 1 já cuida do pv_aprovado.
       if (!targetKey) continue;
       const target = targetKey.replace("pv_", ""); // 'd30' etc.
-      const r = await processCustomer(supabase, env, c, target, defaults);
-      if (r.moved) moved++;
-      if (r.sent) sent++;
+      await runOne(c, target);
     }
 
     // 4. Retentativa: reprovado há >= 60 dias → coluna retentativa + msg com botão.
@@ -442,9 +486,7 @@ Deno.serve(async (req) => {
         const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
         if (!Number.isFinite(rejectedMs) || rejectedMs > retentativaCutoffMs) continue;
       }
-      const r = await processCustomer(supabase, env, c, "retentativa", defaults);
-      if (r.moved) moved++;
-      if (r.sent) sent++;
+      await runOne(c, "retentativa");
     }
 
     return new Response(
