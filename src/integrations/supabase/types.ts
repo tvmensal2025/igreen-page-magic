@@ -35,6 +35,27 @@ export type Database = {
         }
         Relationships: []
       }
+      _tmp_whapi_contacts_sync: {
+        Row: {
+          name: string | null
+          phone: string
+          phonebook: boolean | null
+          pushname: string | null
+        }
+        Insert: {
+          name?: string | null
+          phone: string
+          phonebook?: boolean | null
+          pushname?: string | null
+        }
+        Update: {
+          name?: string | null
+          phone?: string
+          phonebook?: boolean | null
+          pushname?: string | null
+        }
+        Relationships: []
+      }
       academy_notes: {
         Row: {
           consultant_id: string
@@ -9416,6 +9437,293 @@ export type Database = {
         }
         Relationships: []
       }
+      platform_low_balance_alerts: {
+        Row: {
+          consultant_id: string
+          last_balance_cents: number | null
+          last_debt_cents: number | null
+          last_notified_at: string
+          updated_at: string
+        }
+        Insert: {
+          consultant_id: string
+          last_balance_cents?: number | null
+          last_debt_cents?: number | null
+          last_notified_at?: string
+          updated_at?: string
+        }
+        Update: {
+          consultant_id?: string
+          last_balance_cents?: number | null
+          last_debt_cents?: number | null
+          last_notified_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_sales_campaigns: {
+        Row: {
+          channels: Json
+          created_at: string
+          created_by: string | null
+          dry_run: boolean
+          failed: number
+          id: string
+          name: string
+          schedule_d0_at: string | null
+          schedule_d1_at: string | null
+          sent: number
+          status: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          channels?: Json
+          created_at?: string
+          created_by?: string | null
+          dry_run?: boolean
+          failed?: number
+          id?: string
+          name?: string
+          schedule_d0_at?: string | null
+          schedule_d1_at?: string | null
+          sent?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          channels?: Json
+          created_at?: string
+          created_by?: string | null
+          dry_run?: boolean
+          failed?: number
+          id?: string
+          name?: string
+          schedule_d0_at?: string | null
+          schedule_d1_at?: string | null
+          sent?: number
+          status?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_sales_contacts: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          kind: string
+          name: string | null
+          name_source: string
+          notes: string | null
+          phone: string
+          pushname: string | null
+          source: string
+          updated_at: string
+          wa_group_id: string | null
+          wa_group_name: string | null
+          wa_rank: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string | null
+          name_source?: string
+          notes?: string | null
+          phone: string
+          pushname?: string | null
+          source?: string
+          updated_at?: string
+          wa_group_id?: string | null
+          wa_group_name?: string | null
+          wa_rank?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string | null
+          name_source?: string
+          notes?: string | null
+          phone?: string
+          pushname?: string | null
+          source?: string
+          updated_at?: string
+          wa_group_id?: string | null
+          wa_group_name?: string | null
+          wa_rank?: string | null
+        }
+        Relationships: []
+      }
+      platform_sales_dispatch_log: {
+        Row: {
+          campaign_id: string
+          channel: string
+          created_at: string
+          day_key: string
+          dry_run: boolean
+          error: string | null
+          id: string
+          provider_id: string | null
+          rendered_text: string | null
+          status: string
+          target_id: string
+        }
+        Insert: {
+          campaign_id: string
+          channel: string
+          created_at?: string
+          day_key: string
+          dry_run?: boolean
+          error?: string | null
+          id?: string
+          provider_id?: string | null
+          rendered_text?: string | null
+          status?: string
+          target_id: string
+        }
+        Update: {
+          campaign_id?: string
+          channel?: string
+          created_at?: string
+          day_key?: string
+          dry_run?: boolean
+          error?: string | null
+          id?: string
+          provider_id?: string | null
+          rendered_text?: string | null
+          status?: string
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_sales_dispatch_log_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sales_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sales_dispatch_log_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sales_targets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_sales_script_settings: {
+        Row: {
+          bloco_nome_com: string
+          bloco_nome_sem: string
+          corpo_call_d0: string
+          corpo_call_d1: string
+          corpo_sms_d0: string
+          corpo_sms_d1: string
+          corpo_wa_d0: string
+          corpo_wa_d1: string
+          id: string
+          saudacao_manha: string
+          saudacao_noite: string
+          saudacao_tarde: string
+          updated_at: string
+        }
+        Insert: {
+          bloco_nome_com?: string
+          bloco_nome_sem?: string
+          corpo_call_d0?: string
+          corpo_call_d1?: string
+          corpo_sms_d0?: string
+          corpo_sms_d1?: string
+          corpo_wa_d0?: string
+          corpo_wa_d1?: string
+          id?: string
+          saudacao_manha?: string
+          saudacao_noite?: string
+          saudacao_tarde?: string
+          updated_at?: string
+        }
+        Update: {
+          bloco_nome_com?: string
+          bloco_nome_sem?: string
+          corpo_call_d0?: string
+          corpo_call_d1?: string
+          corpo_sms_d0?: string
+          corpo_sms_d1?: string
+          corpo_wa_d0?: string
+          corpo_wa_d1?: string
+          id?: string
+          saudacao_manha?: string
+          saudacao_noite?: string
+          saudacao_tarde?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_sales_targets: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          crm_notes: string | null
+          crm_stage: string
+          crm_updated_at: string | null
+          d0_sent_at: string | null
+          d1_sent_at: string | null
+          id: string
+          last_error: string | null
+          name: string | null
+          name_source: string
+          phone: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          crm_notes?: string | null
+          crm_stage?: string
+          crm_updated_at?: string | null
+          d0_sent_at?: string | null
+          d1_sent_at?: string | null
+          id?: string
+          last_error?: string | null
+          name?: string | null
+          name_source?: string
+          phone: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          crm_notes?: string | null
+          crm_stage?: string
+          crm_updated_at?: string | null
+          d0_sent_at?: string | null
+          d1_sent_at?: string | null
+          id?: string
+          last_error?: string | null
+          name?: string | null
+          name_source?: string
+          phone?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_sales_targets_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sales_campaigns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       platform_settings: {
         Row: {
           campaign_safety_multiplier: number
@@ -9446,6 +9754,48 @@ export type Database = {
           min_balance_to_create_campaign_cents?: number
           platform_fee_percent?: number
           updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_usage_billing: {
+        Row: {
+          amount_cents: number
+          balance_after_cents: number | null
+          blocks: number | null
+          charged_at: string | null
+          consultant_id: string
+          created_at: string
+          duration_sec: number | null
+          id: string
+          kind: string
+          metadata: Json
+          provider_ref: string
+        }
+        Insert: {
+          amount_cents: number
+          balance_after_cents?: number | null
+          blocks?: number | null
+          charged_at?: string | null
+          consultant_id: string
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          kind: string
+          metadata?: Json
+          provider_ref: string
+        }
+        Update: {
+          amount_cents?: number
+          balance_after_cents?: number | null
+          blocks?: number | null
+          charged_at?: string | null
+          consultant_id?: string
+          created_at?: string
+          duration_sec?: number | null
+          id?: string
+          kind?: string
+          metadata?: Json
+          provider_ref?: string
         }
         Relationships: []
       }
@@ -9558,6 +9908,78 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      pos_venda_prepared_audio: {
+        Row: {
+          audio_url: string
+          consultant_id: string
+          customer_id: string
+          id: string
+          planned_send_at: string
+          prepared_at: string
+          saudacao_bucket: string
+          spoken_text: string
+          stage_key: string
+        }
+        Insert: {
+          audio_url: string
+          consultant_id: string
+          customer_id: string
+          id?: string
+          planned_send_at: string
+          prepared_at?: string
+          saudacao_bucket: string
+          spoken_text: string
+          stage_key: string
+        }
+        Update: {
+          audio_url?: string
+          consultant_id?: string
+          customer_id?: string
+          id?: string
+          planned_send_at?: string
+          prepared_at?: string
+          saudacao_bucket?: string
+          spoken_text?: string
+          stage_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_venda_prepared_audio_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "pos_venda_prepared_audio_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_venda_prepared_audio_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pos_venda_prepared_audio_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "pos_venda_prepared_audio_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       proactive_touch_log: {
         Row: {
@@ -13616,6 +14038,15 @@ export type Database = {
           value_numeric: number
         }[]
       }
+      claim_platform_low_balance_alert: {
+        Args: {
+          _balance_cents?: number
+          _consultant_id: string
+          _cooldown_hours?: number
+          _debt_cents?: number
+        }
+        Returns: boolean
+      }
       claim_recon_job: {
         Args: never
         Returns: {
@@ -13786,6 +14217,19 @@ export type Database = {
             }
             Returns: number
           }
+      debit_platform_usage_observation: {
+        Args: {
+          _amount_cents: number
+          _blocks?: number
+          _consultant_id: string
+          _description?: string
+          _duration_sec?: number
+          _kind: string
+          _metadata?: Json
+          _provider_ref: string
+        }
+        Returns: Json
+      }
       enqueue_facebook_capi_event: {
         Args: {
           _consultant_id: string
@@ -13827,6 +14271,10 @@ export type Database = {
           _variant: string
         }
         Returns: string
+      }
+      ensure_consultant_wallet: {
+        Args: { _consultant_id: string }
+        Returns: Json
       }
       ensure_qa_media_slots: {
         Args: { _kinds?: string[]; _qa_id: string }
