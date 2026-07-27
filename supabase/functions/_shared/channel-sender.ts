@@ -319,6 +319,7 @@ async function guardOk(supabase: any, instanceName: string, label: string): Prom
 /**
  * Contexto de envio com chave estável (sem Date.now).
  * Mesma ação lógica → mesma chave → dedupe via outbound_message_log.
+ * Use `stablePart` para separar partes (img/audio/text) do mesmo estágio.
  */
 export function ctx(
   consultantId: string,
@@ -341,15 +342,16 @@ async function sendText(
   jid: string,
   text: string,
   sendCtx: SendContext,
+  opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!(await guardOk(supabase, channel.instanceName, "text"))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, "text"))) return false;
   try {
     const r = await channel.adapter.sendText(jid, text, { ...sendCtx, supabase });
     if (!r.ok) {
       console.error(`[${channel.kind}] sendText falhou:`, (r as any).detail);
       return false;
     }
-    await registerSend(supabase, channel.instanceName);
+    if (!opts?.skipRegister) await registerSend(supabase, channel.instanceName);
     return true;
   } catch (e) {
     console.error(`[${channel.kind}] sendText exception:`, (e as Error)?.message);
@@ -365,19 +367,20 @@ async function sendMedia(
   caption: string,
   kind: "image" | "video" | "document",
   sendCtx: SendContext,
+  opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!(await guardOk(supabase, channel.instanceName, kind))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, kind))) return false;
   const media =
     kind === "document"
       ? { kind, url, filename: "arquivo", caption }
       : { kind, url, caption };
   try {
-    const r = await channel.adapter.sendMedia(jid, media as any, sendCtx);
+    const r = await channel.adapter.sendMedia(jid, media as any, { ...sendCtx, supabase });
     if (!r.ok) {
       console.error(`[${channel.kind}] sendMedia(${kind}) falhou:`, (r as any).detail);
       return false;
     }
-    await registerSend(supabase, channel.instanceName);
+    if (!opts?.skipRegister) await registerSend(supabase, channel.instanceName);
     return true;
   } catch (e) {
     console.error(`[${channel.kind}] sendMedia(${kind}) exception:`, (e as Error)?.message);
@@ -391,15 +394,20 @@ async function sendAudio(
   jid: string,
   url: string,
   sendCtx: SendContext,
+  opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!(await guardOk(supabase, channel.instanceName, "audio"))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, "audio"))) return false;
   try {
-    const r = await channel.adapter.sendMedia(jid, { kind: "audio", url, ptt: true }, sendCtx);
+    const r = await channel.adapter.sendMedia(
+      jid,
+      { kind: "audio", url, ptt: true },
+      { ...sendCtx, supabase },
+    );
     if (!r.ok) {
       console.error(`[${channel.kind}] sendAudio falhou:`, (r as any).detail);
       return false;
     }
-    await registerSend(supabase, channel.instanceName);
+    if (!opts?.skipRegister) await registerSend(supabase, channel.instanceName);
     return true;
   } catch (e) {
     console.error(`[${channel.kind}] sendAudio exception:`, (e as Error)?.message);
@@ -413,13 +421,16 @@ async function sendAudioWithRetry(
   jid: string,
   url: string,
   sendCtx: SendContext,
+  opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  const ok = await sendAudio(supabase, channel, jid, url, sendCtx);
+  const ok = await sendAudio(supabase, channel, jid, url, sendCtx, opts);
   if (ok) return true;
-  if (channel.kind !== "evolution") return false;
-  // Evolution: 1 retry leve com backoff curto (áudio .ogg falha intermitente).
+  // 1 retry leve (Whapi e Evolution) — áudio .ogg falha intermitente.
   await new Promise((r) => setTimeout(r, 1500));
-  return await sendAudio(supabase, channel, jid, url, sendCtx);
+  return await sendAudio(supabase, channel, jid, url, sendCtx, {
+    ...opts,
+    skipQuota: true, // já passou na 1ª tentativa / pacote
+  });
 }
 
 
@@ -440,12 +451,154 @@ async function renderVoiceTemplate(
   }
 }
 
+const SOFIA_VOICE_ID = "EJV7H2baGt5ab95tOoSG";
+
+function textForTts(raw: string): string {
+  return String(raw || "")
+    .replace(/\*+/g, "")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function sha16(input: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(buf))
+    .slice(0, 8)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * TTS ElevenLabs (Opus) do texto já personalizado ({{nome}}/{{saudacao}}).
+ * Cache em ai_media_library por hash do texto — evita re-gerar no retry.
+ */
+async function renderPersonalizedTtsAudio(
+  supabase: any,
+  consultantId: string,
+  personalizedText: string,
+): Promise<string | null> {
+  const spoken = textForTts(personalizedText);
+  if (spoken.length < 8) return null;
+
+  const key = Deno.env.get("ELEVENLABS_API_KEY") || "";
+  if (!key) {
+    console.warn("[channel-sender] ELEVENLABS_API_KEY ausente — sem TTS personalizado");
+    return null;
+  }
+
+  const hash = await sha16(spoken);
+  const slotKey = `pv_tts_${hash}`;
+
+  try {
+    const { data: cached } = await supabase
+      .from("ai_media_library")
+      .select("url")
+      .eq("consultant_id", consultantId)
+      .eq("slot_key", slotKey)
+      .eq("active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (cached?.url) return String(cached.url);
+  } catch {
+    /* cache miss ok */
+  }
+
+  try {
+    const elRes = await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${SOFIA_VOICE_ID}?output_format=opus_48000_64`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "xi-api-key": key,
+          Accept: "audio/ogg",
+        },
+        body: JSON.stringify({
+          text: spoken,
+          model_id: "eleven_v3",
+          language_code: "pt",
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: true,
+            speed: 1.0,
+          },
+        }),
+        signal: AbortSignal.timeout(90_000),
+      },
+    );
+    if (!elRes.ok) {
+      const err = await elRes.text().catch(() => "");
+      console.error("[channel-sender] elevenlabs TTS falhou", elRes.status, err.slice(0, 160));
+      return null;
+    }
+    const bytes = new Uint8Array(await elRes.arrayBuffer());
+    if (bytes.byteLength < 256) return null;
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (!supabaseUrl || !serviceRole) return null;
+
+    const fd = new FormData();
+    fd.append("file", new Blob([bytes as BlobPart], { type: "audio/ogg" }), `${slotKey}.ogg`);
+    fd.append("scope", "admin");
+    fd.append("consultant_id", consultantId);
+    fd.append("kind", "audio");
+    fd.append("slug", slotKey.slice(0, 80));
+    const uploadRes = await fetch(`${supabaseUrl}/functions/v1/upload-media`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole },
+      body: fd,
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!uploadRes.ok) {
+      console.error("[channel-sender] upload TTS falhou", uploadRes.status);
+      return null;
+    }
+    const uploaded = await uploadRes.json();
+    const url = uploaded?.url ? String(uploaded.url) : null;
+    if (!url) return null;
+
+    try {
+      await supabase.from("ai_media_library").insert({
+        consultant_id: consultantId,
+        slot_key: slotKey,
+        url,
+        kind: "audio",
+        label: `pv_tts_${hash}`,
+        transcript: spoken.slice(0, 500),
+        active: true,
+        is_public: false,
+        is_draft: false,
+        step_tags: [],
+        intent_tags: ["pos_venda_tts"],
+        priority: 0,
+      });
+    } catch {
+      /* cache write best-effort */
+    }
+    return url;
+  } catch (e) {
+    console.error("[channel-sender] TTS exception", (e as Error)?.message);
+    return null;
+  }
+}
+
 interface MsgConfig {
   message_type: string;
   message_text: string | null;
   media_url: string | null;
   image_url: string | null;
   voice_template_id?: string | null;
+}
+
+export interface SendPackOpts {
+  /** Retry após img:ok — não reenvia a mesma imagem ao cliente. */
+  skipImage?: boolean;
 }
 
 export interface SendResult {
@@ -489,6 +642,7 @@ async function sendSingleMessage(
   sendCtx: SendContext,
   customerName?: string,
   nameSource?: string | null,
+  packOpts?: SendPackOpts,
 ): Promise<SendResult> {
   const messageText = applyOutboundTemplateVars(msg.message_text || "", {
     customerName,
@@ -499,37 +653,73 @@ async function sendSingleMessage(
 
   const result: SendResult = emptyResult();
 
+  // Pacote pós-venda canônico: imagem + áudio (1 envio lógico).
+  // Texto NÃO vai no Zap — o roteiro com {{nome}}/{{saudacao}} vira áudio ElevenLabs.
+  if (!(await guardOk(supabase, channel.instanceName, "stage_pack"))) {
+    return result;
+  }
+  const pack = { skipQuota: true, skipRegister: true } as const;
+  let anyOk = false;
+
   // Imagem "extra" quando msgType=audio com image_url anexada.
-  if (msg.image_url && msgType !== "image") {
-    result.image_ok = await sendMedia(supabase, channel, jid, msg.image_url, "", "image", sendCtx);
+  if (!packOpts?.skipImage && msg.image_url && msgType !== "image") {
+    const imgCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:img` };
+    result.image_ok = await sendMedia(
+      supabase, channel, jid, msg.image_url, "", "image", imgCtx, pack,
+    );
+    if (result.image_ok) anyOk = true;
+    if (result.image_ok) await new Promise((r) => setTimeout(r, 800));
+  } else if (packOpts?.skipImage && msg.image_url && msgType !== "image") {
+    // Já enviou imagem no attempt anterior — não repetir.
+    result.image_ok = true;
   }
 
   let audioUrl = msg.media_url;
   if (msgType === "audio" && msg.voice_template_id) {
     const rendered = await renderVoiceTemplate(supabase, msg.voice_template_id, customerName || "");
     if (rendered) audioUrl = rendered;
+  } else if (msgType === "audio" && messageText) {
+    // Personaliza com nome/saudação via ElevenLabs (cache por hash do texto).
+    const ttsUrl = await renderPersonalizedTtsAudio(
+      supabase,
+      sendCtx.consultantId,
+      messageText,
+    );
+    if (ttsUrl) audioUrl = ttsUrl;
   }
 
   if (msgType === "audio" && audioUrl) {
-    result.audio_ok = await sendAudioWithRetry(supabase, channel, jid, audioUrl, sendCtx);
-    // Fallback: se áudio falhou definitivamente, manda link curto para o cliente
-    // ainda conseguir ouvir (sem trocar de canal).
-    if (result.audio_ok === false) {
-      await sendText(supabase, channel, jid, `🎧 Áudio: ${audioUrl}`, sendCtx);
-    }
-    if (messageText) {
-      result.text_ok = await sendText(supabase, channel, jid, messageText, sendCtx);
-    }
+    const audioCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:audio` };
+    result.audio_ok = await sendAudioWithRetry(
+      supabase, channel, jid, audioUrl, audioCtx, pack,
+    );
+    if (result.audio_ok) anyOk = true;
+    // Sem texto no Zap e sem link de fallback — pacote = imagem + áudio.
+  } else if (msgType === "audio" && !audioUrl) {
+    result.audio_ok = false;
   } else if (msgType === "image" && msg.media_url) {
-    result.image_ok = await sendMedia(supabase, channel, jid, msg.media_url, messageText, "image", sendCtx);
-    if (messageText) result.text_ok = result.image_ok; // caption embutido
+    const imgCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:img_main` };
+    result.image_ok = await sendMedia(
+      supabase, channel, jid, msg.media_url, "", "image", imgCtx, pack,
+    );
+    if (result.image_ok) anyOk = true;
   } else if (msgType === "video" && msg.media_url) {
-    const ok = await sendMedia(supabase, channel, jid, msg.media_url, messageText, "video", sendCtx);
+    const vidCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:video` };
+    const ok = await sendMedia(
+      supabase, channel, jid, msg.media_url, "", "video", vidCtx, pack,
+    );
     result.image_ok = ok;
-    if (messageText) result.text_ok = ok;
+    if (ok) anyOk = true;
   } else if (messageText) {
-    result.text_ok = await sendText(supabase, channel, jid, messageText, sendCtx);
+    // Só texto quando o estágio é tipicamente text-only (sem áudio/imagem).
+    const textCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:text` };
+    result.text_ok = await sendText(
+      supabase, channel, jid, messageText, textCtx, pack,
+    );
+    if (result.text_ok) anyOk = true;
   }
+
+  if (anyOk) await registerSend(supabase, channel.instanceName);
 
   result.preview = messageText || "[mídia]";
   return result;
@@ -561,6 +751,7 @@ export async function sendStageAutoMessages(
   dealOrigin?: string | null,
   customerName?: string,
   nameSource?: string | null,
+  packOpts?: SendPackOpts,
 ): Promise<SendResult> {
   const sendCtx = ctx(consultantId, customerId, stageData.stage_key);
 
@@ -585,7 +776,7 @@ export async function sendStageAutoMessages(
         await new Promise((r) => setTimeout(r, msg.delay_seconds * 1000));
       }
       const r = await sendSingleMessage(
-        supabase, channel, jid, phone, msg, sendCtx, customerName, nameSource,
+        supabase, channel, jid, phone, msg, sendCtx, customerName, nameSource, packOpts,
       );
       acc = mergeResults(acc, r);
     }
@@ -597,7 +788,7 @@ export async function sendStageAutoMessages(
       message_text: stageData.auto_message_text,
       media_url: stageData.auto_message_media_url,
       image_url: stageData.auto_message_image_url,
-    }, sendCtx, customerName, nameSource);
+    }, sendCtx, customerName, nameSource, packOpts);
   }
 
   return acc;

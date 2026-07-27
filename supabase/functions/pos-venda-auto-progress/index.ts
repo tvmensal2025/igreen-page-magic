@@ -129,27 +129,56 @@ async function processCustomer(
   // Checar se já enviou para este estágio (idempotência)
   const { data: existingLog } = await supabase
     .from("customer_auto_message_log")
-    .select("id, status, created_at")
+    .select("id, status, created_at, message_preview")
     .eq("customer_id", customer.id)
     .eq("stage_key", stageKey)
     .maybeSingle();
   let staleClaimId: string | null = null;
+  /** Se a tentativa anterior já entregou a imagem, no retry só manda o áudio. */
+  let skipImageOnRetry = false;
   if (existingLog) {
+    const st = String(existingLog.status || "");
+    const prevPreview = String(existingLog.message_preview || "");
+    skipImageOnRetry = /\[img:ok/.test(prevPreview);
+    // partial:audio* / failed → retenta. status=sent NUNCA retenta (não duplica).
+    const retriablePartial =
+      st.startsWith("partial:") ||
+      st === "failed" ||
+      st === "no_content" ||
+      st.startsWith("no_channel:") ||
+      st === "claimed_retry";
     // Claim órfão (worker morreu antes de finalizar): retoma após 60min via
     // CAS — somente um worker vence o UPDATE condicionado ao status.
     const isStaleClaim = existingLog.status === "claimed" &&
       existingLog.created_at &&
       Date.now() - new Date(existingLog.created_at).getTime() > 60 * 60_000;
-    if (!isStaleClaim) return { moved: true, sent: false };
-    const { data: retaken } = await supabase
-      .from("customer_auto_message_log")
-      .update({ status: "claimed_retry" })
-      .eq("id", existingLog.id)
-      .eq("status", "claimed")
-      .select("id")
-      .maybeSingle();
-    if (!retaken?.id) return { moved: true, sent: false };
-    staleClaimId = String(retaken.id);
+    if (retriablePartial) {
+      if (st === "claimed_retry") {
+        staleClaimId = String(existingLog.id);
+      } else {
+        const { data: retaken } = await supabase
+          .from("customer_auto_message_log")
+          .update({ status: "claimed_retry" })
+          .eq("id", existingLog.id)
+          .eq("status", existingLog.status)
+          .select("id")
+          .maybeSingle();
+        if (!retaken?.id) return { moved: true, sent: false };
+        staleClaimId = String(retaken.id);
+      }
+    } else if (!isStaleClaim) {
+      return { moved: true, sent: false };
+    } else {
+      const { data: retaken } = await supabase
+        .from("customer_auto_message_log")
+        .update({ status: "claimed_retry" })
+        .eq("id", existingLog.id)
+        .eq("status", "claimed")
+        .select("id")
+        .maybeSingle();
+      if (!retaken?.id) return { moved: true, sent: false };
+      staleClaimId = String(retaken.id);
+    }
   }
 
   // Buscar config do stage do consultor dono
@@ -241,6 +270,8 @@ async function processCustomer(
   const dealOrigin =
     targetStage === "reprovado" || targetStage === "retentativa" ? "reprovado" : "aprovado";
 
+  const packOpts = skipImageOnRetry ? { skipImage: true } : undefined;
+
   let result: SendResult;
   if (consultantHasContent) {
     // Caminho normal: usa a config do consultor (multi-msg ou legacy do kanban).
@@ -256,6 +287,7 @@ async function processCustomer(
       dealOrigin,
       customer.name || "",
       (customer as any).name_source ?? null,
+      packOpts,
     );
   } else {
     // Fallback: config-padrão global. Monta um stageData sintético e reusa o
@@ -280,6 +312,7 @@ async function processCustomer(
       dealOrigin,
       customer.name || "",
       (customer as any).name_source ?? null,
+      packOpts,
     );
   }
 
@@ -359,6 +392,17 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "pos_venda_auto_messages" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
+    // Filtro opcional (ops): só processa estes customer_ids — evita reprocessar massa.
+    let onlyCustomerIds: Set<string> | null = null;
+    try {
+      const body = await req.json().catch(() => null);
+      const raw = Array.isArray(body?.customer_ids) ? body.customer_ids : [];
+      const ids = raw.map((x: unknown) => String(x || "").trim()).filter(Boolean);
+      if (ids.length > 0) onlyCustomerIds = new Set(ids);
+    } catch {
+      onlyCustomerIds = null;
+    }
+
 
     const { data: settingsRows } = await supabase.from("settings").select("key, value");
     const settings: Record<string, string> = {};
@@ -416,6 +460,7 @@ Deno.serve(async (req) => {
       );
 
     const runOne = async (c: any, target: string) => {
+      if (onlyCustomerIds && !onlyCustomerIds.has(String(c.id))) return;
       // Estágio já foi enviado antes → só reconcilia sem consumir cota.
       if (!canSendMore()) {
         // Ainda deixa mover o estágio no banco (não gera mensagem), mas
