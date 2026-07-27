@@ -9674,6 +9674,8 @@ export type Database = {
           crm_updated_at: string | null
           d0_sent_at: string | null
           d1_sent_at: string | null
+          demo_flow_state: string
+          demo_last_stage: string | null
           id: string
           last_error: string | null
           name: string | null
@@ -9690,6 +9692,8 @@ export type Database = {
           crm_updated_at?: string | null
           d0_sent_at?: string | null
           d1_sent_at?: string | null
+          demo_flow_state?: string
+          demo_last_stage?: string | null
           id?: string
           last_error?: string | null
           name?: string | null
@@ -9706,6 +9710,8 @@ export type Database = {
           crm_updated_at?: string | null
           d0_sent_at?: string | null
           d1_sent_at?: string | null
+          demo_flow_state?: string
+          demo_last_stage?: string | null
           id?: string
           last_error?: string | null
           name?: string | null
