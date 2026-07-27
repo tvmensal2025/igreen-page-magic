@@ -677,11 +677,13 @@ async function sendSingleMessage(
   }
 
   let audioUrl = msg.media_url;
-  if (msgType === "audio" && msg.voice_template_id) {
+  // Precedência: áudio aprovado (media_url no MinIO) SEMPRE ganha.
+  // TTS/voice_template só entra quando não há áudio salvo — evita regenerar
+  // texto antigo por cima do áudio atualizado que o consultor aprovou.
+  if (msgType === "audio" && !audioUrl && msg.voice_template_id) {
     const rendered = await renderVoiceTemplate(supabase, msg.voice_template_id, customerName || "");
     if (rendered) audioUrl = rendered;
-  } else if (msgType === "audio" && messageText) {
-    // Personaliza com nome/saudação via ElevenLabs (cache por hash do texto).
+  } else if (msgType === "audio" && !audioUrl && messageText) {
     const ttsUrl = await renderPersonalizedTtsAudio(
       supabase,
       sendCtx.consultantId,
