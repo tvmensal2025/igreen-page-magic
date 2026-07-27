@@ -76,8 +76,6 @@ export function groupSentStageKeys(
   return map;
 }
 
-const RETENTATIVA_DAYS = 60;
-
 /**
  * Calcula próximos envios automáticos do pós-venda (não vão para scheduled_messages).
  * Datas derivadas apenas de pos_venda_approved_at + marcos 30/60/90/120/150/180/210.
