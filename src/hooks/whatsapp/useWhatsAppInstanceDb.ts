@@ -52,13 +52,57 @@ export function useWhatsAppInstanceDb(consultantId: string): UseWhatsAppInstance
           inst?.owner ??
           "";
         const phone = typeof ownerJid === "string" ? ownerJid.replace(/@.*$/, "") : "";
+        const connectedDigits = phone.replace(/\D/g, "");
 
-        if (phone) {
-          const update: WhatsappInstanceUpdate = { connected_phone: phone };
+        if (!connectedDigits) return;
+
+        const update: WhatsappInstanceUpdate = { connected_phone: connectedDigits };
+        await supabase
+          .from("whatsapp_instances")
+          .update(update)
+          .eq("consultant_id", consultantId);
+
+        // Espelha no cadastro: sem phone o banner fica pedindo "Revalidar" para sempre
+        // e os envios automáticos ficam bloqueados (proactive-send-guard).
+        const { data: cons } = await supabase
+          .from("consultants")
+          .select("phone")
+          .eq("id", consultantId)
+          .maybeSingle();
+        const existingDigits = String(cons?.phone || "").replace(/\D/g, "");
+        const sameNumber =
+          !!existingDigits &&
+          existingDigits.slice(-11) === connectedDigits.slice(-11);
+
+        if (!existingDigits || sameNumber) {
           await supabase
-            .from("whatsapp_instances")
-            .update(update)
-            .eq("consultant_id", consultantId);
+            .from("consultants")
+            .update({
+              phone: existingDigits || connectedDigits,
+              phone_verified_at: new Date().toISOString(),
+            })
+            .eq("id", consultantId);
+
+          if (!existingDigits) {
+            try {
+              await supabase.from("consultant_ad_settings").upsert(
+                {
+                  consultant_id: consultantId,
+                  whatsapp_destination_number: connectedDigits,
+                  updated_at: new Date().toISOString(),
+                },
+                { onConflict: "consultant_id" },
+              );
+            } catch {
+              /* non-critical */
+            }
+          }
+        }
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("igreen-wa-phone-synced", {
+            detail: { consultantId, connectedPhone: connectedDigits },
+          }));
         }
       } catch {
         // Non-critical

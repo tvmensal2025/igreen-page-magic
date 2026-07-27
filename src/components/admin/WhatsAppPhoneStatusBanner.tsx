@@ -70,12 +70,40 @@ export function WhatsAppPhoneStatusBanner({ consultantId }: Props) {
     setState({ status, consultantPhone, connectedPhone, verifiedAt });
   };
 
-  useEffect(() => { void load(); }, [consultantId]);
+  useEffect(() => {
+    void load();
+    const onSync = () => { void load(); };
+    window.addEventListener("igreen-wa-phone-synced", onSync);
+    // Após escanear o QR, o número chega assíncrono — recheca um pouco.
+    const t1 = window.setTimeout(() => void load(), 2500);
+    const t2 = window.setTimeout(() => void load(), 8000);
+    return () => {
+      window.removeEventListener("igreen-wa-phone-synced", onSync);
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, [consultantId]);
 
   const handleRevalidate = async () => {
     if (!consultantId) return;
     setRevalidating(true);
     try {
+      // Se o Zap já conectou mas o cadastro está sem telefone, assume o número conectado.
+      if (!state.consultantPhone && state.connectedPhone) {
+        const digits = state.connectedPhone.replace(/\D/g, "");
+        const { error: upErr } = await supabase
+          .from("consultants")
+          .update({ phone: digits, phone_verified_at: new Date().toISOString() })
+          .eq("id", consultantId);
+        if (upErr) throw upErr;
+        toast({
+          title: "✅ WhatsApp verificado",
+          description: `Usamos o número conectado (${formatBrazilPhone(digits)}) no seu cadastro.`,
+        });
+        await load();
+        return;
+      }
+
       const { data, error } = await supabase.rpc("check_consultant_phone_match", { _consultant_id: consultantId });
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
@@ -105,12 +133,16 @@ export function WhatsAppPhoneStatusBanner({ consultantId }: Props) {
 
   const variants = {
     no_phone: {
-      title: "Telefone WhatsApp não cadastrado",
-      body: "Cadastre seu WhatsApp no painel para liberar os envios automáticos.",
+      title: state.connectedPhone
+        ? "Falta gravar o WhatsApp no cadastro"
+        : "Telefone WhatsApp não cadastrado",
+      body: state.connectedPhone
+        ? `Seu Zap já está conectado (${formatBrazilPhone(state.connectedPhone)}). Clique em Revalidar para liberar os envios automáticos.`
+        : "Cadastre seu WhatsApp no painel para liberar os envios automáticos.",
     },
     no_instance: {
       title: "Nenhuma instância WhatsApp conectada",
-      body: "Conecte sua instância em Configurações > WhatsApp. Enquanto isso, disparos automáticos ficam pausados para proteger sua conta.",
+      body: "Conecte sua instância em WhatsApp. Enquanto isso, disparos automáticos ficam pausados para proteger sua conta.",
     },
     mismatch: {
       title: "WhatsApp do cadastro diferente do conectado",
