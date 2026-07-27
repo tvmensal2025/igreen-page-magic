@@ -151,7 +151,24 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   const oAConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "a" : "o";
   const doDaConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "da" : "do";
   // IA do consultor — cada um cadastra em Dados (`assistant_name`).
-  const assistente = String(vars.assistente || "").trim() || "assistente virtual";
+  // Guard: nomes reservados só podem ser usados pelo consultor dono.
+  // Sofia = Rafael, Yasmin = Abel, Sol = Bruna, Luciana = Sirlene.
+  // Se outro consultor tentar renderizar um desses, cai no fallback genérico.
+  const RESERVED_ASSISTANT_OWNERS: Record<string, string> = {
+    sofia: "Rafael",
+    yasmin: "Abel",
+    sol: "Bruna",
+    luciana: "Sirlene",
+  };
+  const rawAssistant = String(vars.assistente || "").trim();
+  const reservedOwner = RESERVED_ASSISTANT_OWNERS[rawAssistant.toLowerCase()];
+  const consultantFirstToken = rep.split(/\s+/)[0] || "";
+  const assistentIsReservedByOther =
+    !!reservedOwner &&
+    consultantFirstToken.toLowerCase() !== reservedOwner.toLowerCase();
+  const assistente = assistentIsReservedByOther || !rawAssistant
+    ? "assistente virtual"
+    : rawAssistant;
   const billNum = typeof vars.valor_conta === "number"
     ? vars.valor_conta
     : Number(vars.valor_conta);
