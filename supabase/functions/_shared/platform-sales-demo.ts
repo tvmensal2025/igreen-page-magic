@@ -2,8 +2,10 @@
  * Demo pós-venda no Zap — só alvos de platform_sales (consultor piloto).
  * Botões Whapi ≤3; menu 1–8 = texto numerado.
  * Textos vêm de pos_venda_default_media (cliente), não inventados.
+ * Nome no áudio = prenome do consultor (alvo); sem nome usável → Maria.
  */
 import { applyOutboundTemplateVars } from "./outbound-template-vars.ts";
+import { safeFirstNameForAddress } from "./customer-display-name.ts";
 
 export const PS_DEMO_CLIENT_NAME = "Maria";
 export const PS_DEMO_NAME_SOURCE = "manual";
@@ -16,27 +18,29 @@ export const PS_DEMO_BTN_REOPEN = "ps_demo_reopen";
 export type PsDemoFlowState = "idle" | "cta_sent" | "menu" | "done";
 
 export const PS_DEMO_MENU = [
-  { n: 1, stage: "aprovado", label: "Aprovado" },
-  { n: 2, stage: "d30", label: "30 dias" },
-  { n: 3, stage: "d60", label: "60 dias" },
-  { n: 4, stage: "d90", label: "90 dias" },
-  { n: 5, stage: "d120", label: "120 dias" },
-  { n: 6, stage: "d150", label: "150 dias" },
-  { n: 7, stage: "d180", label: "180 dias" },
-  { n: 8, stage: "d210", label: "210 dias" },
+  { n: 1, stage: "aprovado", label: "Aprovado", emoji: "✅" },
+  { n: 2, stage: "d30", label: "30 dias", emoji: "📅" },
+  { n: 3, stage: "d60", label: "60 dias", emoji: "📅" },
+  { n: 4, stage: "d90", label: "90 dias", emoji: "📅" },
+  { n: 5, stage: "d120", label: "120 dias", emoji: "🗓️" },
+  { n: 6, stage: "d150", label: "150 dias", emoji: "🗓️" },
+  { n: 7, stage: "d180", label: "180 dias", emoji: "🗓️" },
+  { n: 8, stage: "d210", label: "210 dias", emoji: "🏁" },
 ] as const;
 
 export type PsDemoStage = (typeof PS_DEMO_MENU)[number]["stage"];
 
 export const PS_DEMO_CTA_PROMPT =
-  "Quer ouvir as mensagens enviadas ao *cliente* até o fechamento?\n\nSão os roteiros reais do pós-venda (aprovado → 210 dias).";
+  "🎧 *Quer ouvir as mensagens enviadas ao cliente até o fechamento?*\n\n" +
+  "São os *roteiros reais* do pós-venda — do *aprovado* até *210 dias*.";
 
 export function buildPsDemoMenuText(): string {
-  const lines = PS_DEMO_MENU.map((m) => `*${m.n}.* ${m.label}`);
+  const lines = PS_DEMO_MENU.map((m) => `*${m.n}.* ${m.emoji} *${m.label}*`);
   return (
-    `Quer ouvir qual mensagem o *cliente* recebe?\n\n` +
+    `📋 *Qual mensagem o cliente recebe?*\n\n` +
     `${lines.join("\n")}\n\n` +
-    `_Digite o número (1 a 8)._`
+    `_Digite o número de *1* a *8*._\n` +
+    `_Ou digite *sair* para encerrar._`
   );
 }
 
@@ -45,14 +49,33 @@ export function stageForDemoNumber(n: number): PsDemoStage | null {
   return hit ? hit.stage : null;
 }
 
+/**
+ * Nome falado no áudio da demo: prenome do consultor (alvo), senão Maria.
+ * Limpa sufixos tipo "( Igreen )" / " - Franquia".
+ */
+export function resolvePsDemoClientName(raw: string | null | undefined): string {
+  let cleaned = String(raw || "")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\s*[-–—|/].*$/, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  cleaned = cleaned
+    .replace(/\b(consultora?|franquia|acionista|lead|crm|vivo|bni)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const first = safeFirstNameForAddress(cleaned, PS_DEMO_NAME_SOURCE);
+  return first || PS_DEMO_CLIENT_NAME;
+}
+
 export function composePsDemoClientMessage(
   rawTemplate: string,
-  now: Date = new Date(),
+  opts?: { customerName?: string | null; now?: Date },
 ): string {
+  const name = resolvePsDemoClientName(opts?.customerName);
   return applyOutboundTemplateVars(rawTemplate, {
-    customerName: PS_DEMO_CLIENT_NAME,
+    customerName: name,
     nameSource: PS_DEMO_NAME_SOURCE,
-    now,
+    now: opts?.now ?? new Date(),
   }).trim();
 }
 
@@ -84,17 +107,21 @@ export function parsePsDemoIntent(
     if (n >= 1 && n <= 8) return { kind: "number", n };
   }
 
-  if (/^(sim|quero|quero ouvir|ouvir|ver|ver mensagens|1\s*sim)\b/i.test(raw)) {
-    return { kind: "yes" };
-  }
-  if (/^(nao|não|agora nao|agora não|depois|2)\b/i.test(raw)) {
-    return { kind: "later" };
+  // Menu / reabrir ANTES de "ver" genérico (senão "Ver menu" vira yes).
+  if (
+    /^(menu|abrir(\s+menu)?|ver\s+menu|de novo|novamente)\b/i.test(raw) ||
+    raw === "abrir menu"
+  ) {
+    return { kind: "reopen" };
   }
   if (/^(encerrar|fechar|parar|sair|obrigad)/i.test(raw)) {
     return { kind: "close" };
   }
-  if (/^(menu|abrir|de novo|novamente)/i.test(raw)) {
-    return { kind: "reopen" };
+  if (/^(sim|quero|quero ouvir|ouvir|ver mensagens|1\s*sim)\b/i.test(raw)) {
+    return { kind: "yes" };
+  }
+  if (/^(nao|não|agora nao|agora não|depois)\b/i.test(raw)) {
+    return { kind: "later" };
   }
 
   return { kind: "unknown" };
@@ -147,25 +174,40 @@ export function resolvePsDemoAction(
 }
 
 export const PS_DEMO_LATER_TEXT =
-  "Combinado. Quando quiser ouvir as mensagens do *cliente*, toque no botão ou digite *Sim*.";
+  "👍 *Combinado.*\n\nQuando quiser ouvir as mensagens do *cliente*, toque no botão ou digite *Sim*.";
 
 export const PS_DEMO_CLOSE_TEXT =
-  "Pronto! Se quiser ouvir de novo, toque em *Abrir menu* ou digite *menu*.";
+  "✅ *Pronto!*\n\nSe quiser ouvir de novo, toque em *Abrir menu* ou digite *menu*.";
 
 export const PS_DEMO_FALLBACK_CTA =
-  "Não entendi. Toque em *Sim, quero ouvir* ou *Agora não* (ou digite *1* / *2*).";
+  "🤔 *Não entendi.*\n\nToque em *Sim, quero ouvir* ou *Agora não* (ou digite *1* / *2*).";
 
 export const PS_DEMO_FALLBACK_MENU =
-  "Não entendi. Digite um número de *1* a *8* para ouvir a mensagem daquele momento.";
+  "🤔 *Não entendi.*\n\nDigite um número de *1* a *8* para ouvir a mensagem daquele momento.";
 
 export type PsDemoOutbound =
   | { type: "text"; text: string }
-  | { type: "buttons"; text: string; buttons: Array<{ id: string; title: string }> };
+  | { type: "buttons"; text: string; buttons: Array<{ id: string; title: string }> }
+  | { type: "image"; url: string }
+  | { type: "audio"; url: string };
 
-/** Monta a sequência de envios para uma ação (nunca vazia, exceto ignore). */
+/** Consultor dono do cache TTS da demo (Rafael / Whapi SuperAdmin). */
+export const PS_DEMO_TTS_CONSULTANT_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
+
+/**
+ * Pós-venda canônico no Zap = imagem + áudio (sem bolha de texto).
+ * O roteiro de `pos_venda_default_media.message_text` vira TTS; `stageText`
+ * só entra se o pacote de mídia falhar por completo.
+ */
 export function buildPsDemoOutbounds(
   resolved: ReturnType<typeof resolvePsDemoAction>,
-  stageText?: string | null,
+  opts?: {
+    stageText?: string | null;
+    imageUrl?: string | null;
+    audioUrl?: string | null;
+    /** true = imagem/áudio já entram na sequência; sem fallback de texto do roteiro */
+    mediaPackOk?: boolean;
+  },
 ): PsDemoOutbound[] {
   if (resolved.action === "ignore") return [];
 
@@ -184,19 +226,23 @@ export function buildPsDemoOutbounds(
   }
 
   if (resolved.action === "send_stage") {
-    const body = String(stageText || "").trim() || "(Roteiro indisponível no momento.)";
-    return [
-      { type: "text", text: body },
-      { type: "text", text: buildPsDemoMenuText() },
-      {
-        type: "buttons",
-        text: "Quer encerrar a demonstração?",
-        buttons: [
-          { id: PS_DEMO_BTN_CLOSE, title: "Encerrar" },
-          { id: PS_DEMO_BTN_REOPEN, title: "Ver menu" },
-        ],
-      },
-    ];
+    const outs: PsDemoOutbound[] = [];
+    const imageUrl = String(opts?.imageUrl || "").trim();
+    const audioUrl = String(opts?.audioUrl || "").trim();
+    if (imageUrl) outs.push({ type: "image", url: imageUrl });
+    if (audioUrl) outs.push({ type: "audio", url: audioUrl });
+
+    // Sem mídia utilizável → fallback texto do roteiro (último recurso).
+    if (!opts?.mediaPackOk) {
+      const body =
+        String(opts?.stageText || "").trim() ||
+        "⚠️ Não consegui montar o áudio agora. Digite outro número de *1* a *8*.";
+      outs.push({ type: "text", text: body });
+    }
+
+    // Ordem canônica: imagem → áudio → *mesmo* menu do 1º envio (sem botões extras).
+    outs.push({ type: "text", text: buildPsDemoMenuText() });
+    return outs;
   }
 
   if (resolved.action === "send_close") {

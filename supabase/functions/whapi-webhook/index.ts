@@ -400,7 +400,8 @@ Deno.serve(async (req) => {
     const phoneLocal = phone.startsWith("55") ? phone.slice(2) : phone;
 
     // ─── Demo pós-venda (Venda da plataforma — só alvos piloto) ─────────
-    // Após dedup. Menu 1–8 = texto; botões ≤3. Não cria lead / cadência.
+    // Após dedup. Menu 1–8 → pacote canônico imagem+áudio (como pós-venda).
+    // Botões ≤3. Não cria lead / cadência.
     try {
       if (messageText || buttonId) {
         const { handlePlatformSalesDemoInbound } = await import(
@@ -420,6 +421,8 @@ Deno.serve(async (req) => {
             sender: {
               sendText: (jid, text) => demoSender.sendText(jid, text),
               sendButtons: (jid, msg, buttons) => demoSender.sendButtons(jid, msg, buttons),
+              sendMedia: (jid, url, caption, mediatype) =>
+                demoSender.sendMedia(jid, url, caption, mediatype),
             },
           });
           if (demoRes.handled) {
@@ -746,21 +749,17 @@ Deno.serve(async (req) => {
           }).eq("id", otpCustomer.id);
 
           // Mesma prioridade do buildPortal2Payload:
-          // override > partner_igreen_id > cli > dono
+          // override > cli(abonador) > dono; partner_igreen_id = cliente (não abona)
           const oc: any = otpCustomer;
           const overrideRaw = Number(oc.portal_idconsultor_override || 0);
           const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
           const donoIgreenId = oc.consultants?.igreen_id ? Number(oc.consultants.igreen_id) : null;
-          const partnerIgreenId = oc.referral_partners?.partner_igreen_id
-            ? Number(oc.referral_partners.partner_igreen_id) : 0;
           const partnerCli = oc.referral_partners?.cli ? Number(oc.referral_partners.cli) : 0;
-          const partnerAsConsultant =
-            (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
-              ? partnerIgreenId
-              : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+          const abonadorId =
+            (Number.isFinite(partnerCli) && partnerCli > 0) ? partnerCli : 0;
           const idconsultor = overrideId > 0
             ? overrideId
-            : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
+            : (abonadorId > 0 ? abonadorId : donoIgreenId);
           const idcliente = otpCustomer.portal2_idcliente
             ? Number(otpCustomer.portal2_idcliente)
             : null;

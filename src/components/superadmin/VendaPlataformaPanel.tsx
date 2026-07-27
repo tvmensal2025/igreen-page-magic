@@ -49,6 +49,7 @@ import {
   CheckSquare,
   Square,
   Eye,
+  Pencil,
   UserPlus,
 } from "lucide-react";
 import {
@@ -66,6 +67,14 @@ import {
   type PlatformSalesDemoStage,
 } from "@/lib/platformSalesDemoCatalog";
 import { cn } from "@/lib/utils";
+
+/** E.164 BR (55…) para alvos da venda da plataforma. */
+function normalizePlatformSalesPhone(raw: string): string | null {
+  let d = String(raw || "").replace(/\D/g, "");
+  if (d.length === 10 || d.length === 11) d = `55${d}`;
+  if (!d.startsWith("55") || d.length < 12 || d.length > 13) return null;
+  return d;
+}
 
 type Campaign = {
   id: string;
@@ -156,6 +165,12 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
   const [groupName, setGroupName] = useState("Igreen Liderança");
   const [importBusy, setImportBusy] = useState(false);
   const [listFilter, setListFilter] = useState("");
+  const [phoneEdit, setPhoneEdit] = useState<{
+    targetId: string;
+    name: string;
+    oldPhone: string;
+    draft: string;
+  } | null>(null);
 
   const loadTargets = useCallback(async (campaignId: string, mode: "reset" | "preserve" = "reset") => {
     const { data: t } = await db
@@ -515,6 +530,58 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
       setEdgeOk(false);
       toast({
         title: "Reenvio falhou",
+        description: e instanceof Error ? e.message : String(e),
+        variant: "destructive",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const savePhoneChange = async () => {
+    if (!phoneEdit || !selectedId) return;
+    const next = normalizePlatformSalesPhone(phoneEdit.draft);
+    if (!next) {
+      toast({
+        title: "Número inválido",
+        description: "Use DDD + celular (ex.: 11999998888 ou 5511999998888).",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (next === phoneEdit.oldPhone) {
+      setPhoneEdit(null);
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error } = await db
+        .from("platform_sales_targets")
+        .update({ phone: next, updated_at: new Date().toISOString() })
+        .eq("id", phoneEdit.targetId);
+      if (error) {
+        if (/unique|duplicate/i.test(error.message)) {
+          throw new Error("Este número já está em outro destinatário desta campanha.");
+        }
+        throw new Error(error.message);
+      }
+      // Espelha na lista mestre de contatos (se o antigo existir).
+      await db
+        .from("platform_sales_contacts")
+        .update({ phone: next, updated_at: new Date().toISOString() })
+        .eq("phone", phoneEdit.oldPhone);
+      setTargets((prev) =>
+        prev.map((t) => (t.id === phoneEdit.targetId ? { ...t, phone: next } : t)),
+      );
+      toast({
+        title: "Número atualizado",
+        description: `${phoneEdit.name || "Consultor"}: ${phoneEdit.oldPhone} → ${next}`,
+      });
+      setPhoneEdit(null);
+      await loadLogs(selectedId);
+    } catch (e) {
+      toast({
+        title: "Não foi possível trocar o número",
         description: e instanceof Error ? e.message : String(e),
         variant: "destructive",
       });
@@ -937,7 +1004,7 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
                 <div className="rounded-xl border border-emerald-700/25 bg-emerald-500/5 px-3 py-3 space-y-2">
                   <p className="text-xs font-semibold text-foreground">{PS_DEMO_CTA_LABEL}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    No LIVE: 2 botões (Sim / Agora não). Depois o consultor digita 1–8.
+                    No LIVE: 2 botões (Sim / Agora não). Depois digita 1–8 → *imagem + áudio* (igual pós-venda).
                   </p>
                   <div className="flex flex-wrap gap-1.5">
                     <Badge className="text-[10px] bg-emerald-700 text-white hover:bg-emerald-700">1 · Sim, quero ouvir</Badge>
@@ -971,9 +1038,14 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
                               {open ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
                             </button>
                             {open && (
-                              <pre className="text-[11px] whitespace-pre-wrap font-sans text-foreground leading-relaxed bg-muted rounded-md p-2 mb-2 max-h-40 overflow-auto m-0">
-                                {preview}
-                              </pre>
+                              <div className="mb-2 space-y-1">
+                                <p className="text-[10px] text-muted-foreground px-0.5">
+                                  No Zap: imagem + áudio TTS (sem texto). Roteiro falado:
+                                </p>
+                                <pre className="text-[11px] whitespace-pre-wrap font-sans text-foreground leading-relaxed bg-muted rounded-md p-2 max-h-40 overflow-auto m-0">
+                                  {preview}
+                                </pre>
+                              </div>
                             )}
                           </div>
                         );
@@ -1089,13 +1161,33 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
             return (
               <div key={card.targetId} className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/50 flex flex-wrap items-center justify-between gap-2 bg-muted/20">
-                  <div>
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold">{card.name}</p>
-                    <p className="text-[10px] font-mono text-muted-foreground">{card.phone}</p>
+                    <p className="text-[10px] font-mono text-muted-foreground truncate">{card.phone}</p>
                   </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    {new Date(card.latest).toLocaleString("pt-BR")}
-                  </p>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px] gap-1"
+                      disabled={busy}
+                      onClick={() =>
+                        setPhoneEdit({
+                          targetId: card.targetId,
+                          name: card.name,
+                          oldPhone: card.phone,
+                          draft: card.phone,
+                        })
+                      }
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Trocar número
+                    </Button>
+                    <p className="text-[10px] text-muted-foreground hidden sm:block">
+                      {new Date(card.latest).toLocaleString("pt-BR")}
+                    </p>
+                  </div>
                 </div>
                 <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {chip("WhatsApp", card.whatsapp, "enviado")}
@@ -1217,6 +1309,61 @@ export function VendaPlataformaPanel({ userId: _userId }: { userId: string }) {
               }}
             >
               {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Confirmar envio"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!phoneEdit}
+        onOpenChange={(open) => {
+          if (!open) setPhoneEdit(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Trocar número</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Consultor:{" "}
+                  <strong className="text-foreground">{phoneEdit?.name || "—"}</strong>
+                </p>
+                <p>
+                  Atual:{" "}
+                  <span className="font-mono text-foreground">{phoneEdit?.oldPhone}</span>
+                </p>
+                <div className="space-y-1.5 text-left">
+                  <Label htmlFor="ps-phone-edit" className="text-foreground">
+                    Novo número (com DDD)
+                  </Label>
+                  <Input
+                    id="ps-phone-edit"
+                    inputMode="tel"
+                    placeholder="11999998888"
+                    value={phoneEdit?.draft || ""}
+                    onChange={(e) =>
+                      setPhoneEdit((prev) => (prev ? { ...prev, draft: e.target.value } : prev))
+                    }
+                    className="font-mono"
+                  />
+                  <p className="text-[11px]">
+                    Depois de salvar, use Religar / Reenviar no card com o número novo.
+                  </p>
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                void savePhoneChange();
+              }}
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar número"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
