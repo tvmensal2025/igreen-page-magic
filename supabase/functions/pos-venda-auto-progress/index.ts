@@ -435,17 +435,9 @@ Deno.serve(async (req) => {
       await runOne(c, "aprovado");
     }
 
-    // 2. Clientes REPROVADOS PELO CONSULTOR (pos_venda_manual=true).
-    const { data: rejectedCustomers } = await supabase
-      .from("customers")
-      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_rejected_at, status, andamento_igreen")
-      .eq("customer_origin", "igreen_sync")
-      .eq("pos_venda_stage", "reprovado")
-      .eq("pos_venda_manual", true);
-
-    for (const c of rejectedCustomers || []) {
-      await runOne(c, "reprovado");
-    }
+    // 2. REPROVADOS / RETENTATIVA / DEVOLUTIVA — DESATIVADO por decisão do produto.
+    //    O foco do pós-venda automático é APENAS aprovado + progressão D30…D210.
+    //    Não enviar nada para reprovado, devolutiva ou retentativa.
 
     // 3. Progressão aprovados → 30/60/90/120/150/180/210 (somente quem já passou por aprovado)
     //    O marco temporal é a DATA DE APROVAÇÃO (pos_venda_approved_at), não o
@@ -463,31 +455,11 @@ Deno.serve(async (req) => {
       const ref = c.pos_venda_approved_at ? new Date(c.pos_venda_approved_at).getTime() : now;
       const days = Math.floor((now - ref) / (1000 * 60 * 60 * 24));
       const targetKey = findBucket(days);
-      // Ainda em "aprovado" e <30 dias: o bloco 1 já cuida do pv_aprovado.
       if (!targetKey) continue;
-      const target = targetKey.replace("pv_", ""); // 'd30' etc.
+      const target = targetKey.replace("pv_", "");
       await runOne(c, target);
     }
 
-    // 4. Retentativa: reprovado há >= 60 dias → coluna retentativa + msg com botão.
-    //    Também reprocessa quem já está em `retentativa` (envio/botão pendente).
-    //    Filtro de data em JS (ISO com ":" quebra o parser .or do PostgREST).
-    const retentativaCutoffMs = now - PV_RETENTATIVA_DAYS * 24 * 60 * 60 * 1000;
-    const { data: retentativaCandidates } = await supabase
-      .from("customers")
-      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_rejected_at, status, andamento_igreen")
-      .eq("customer_origin", "igreen_sync")
-      .eq("pos_venda_manual", true)
-      .in("pos_venda_stage", ["reprovado", "retentativa"]);
-
-    for (const c of retentativaCandidates || []) {
-      if (c.pos_venda_stage === "reprovado") {
-        if (!c.pos_venda_rejected_at) continue;
-        const rejectedMs = new Date(c.pos_venda_rejected_at).getTime();
-        if (!Number.isFinite(rejectedMs) || rejectedMs > retentativaCutoffMs) continue;
-      }
-      await runOne(c, "retentativa");
-    }
 
     return new Response(
       JSON.stringify({
