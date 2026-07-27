@@ -344,6 +344,9 @@ const SuperAdmin = () => {
             <Button variant="outline" size="sm" onClick={() => navigate("/super-admin/portais")} className="gap-2">
               <Link2 className="w-4 h-4" /> <span className="hidden sm:inline">Portais</span>
             </Button>
+            <Button variant="outline" size="sm" onClick={() => navigate("/super-admin/venda-plataforma")} className="gap-2">
+              <Megaphone className="w-4 h-4" /> <span className="hidden sm:inline">Venda plataforma</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.location.assign("/super-admin/suporte")} className="gap-2">
               <Shield className="w-4 h-4" /> <span className="hidden sm:inline">Suporte Remoto</span>
             </Button>

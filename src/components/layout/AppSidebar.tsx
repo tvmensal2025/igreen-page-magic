@@ -22,6 +22,8 @@ import {
   CalendarClock,
   Receipt,
   CircleHelp,
+  Shield,
+  Rocket,
 } from "lucide-react";
 
 
@@ -42,14 +44,20 @@ export type AdminTabId =
   | "materiais"
   | "audio-studio"
   | "voz"
-  | "academy";
+  | "academy"
+  | "venda-plataforma";
+
+/** Itens de navegação (tabs internas + atalhos href). */
+type SidebarNavId = AdminTabId | "super-admin";
 
 interface NavItem {
-  id: AdminTabId;
+  id: SidebarNavId;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: number | string;
   href?: string;
+  /** Só aparece para SuperAdmin (ex.: Rafael). */
+  superAdminOnly?: boolean;
 }
 
 interface NavGroup {
@@ -67,6 +75,19 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "conversao", label: "Conversão", icon: Flame },
       { id: "clientes", label: "Base de clientes", icon: Database },
       { id: "financeiro", label: "Financeiro", icon: Receipt },
+      {
+        id: "venda-plataforma",
+        label: "Venda plataforma",
+        icon: Rocket,
+        superAdminOnly: true,
+      },
+      {
+        id: "super-admin",
+        label: "Super Admin",
+        icon: Shield,
+        href: "/super-admin",
+        superAdminOnly: true,
+      },
     ],
   },
   {
@@ -108,6 +129,8 @@ interface AppSidebarProps {
   onOpenSettings?: () => void;
   /** Badge dinâmico por tab (ex.: contagem de boletos vencendo hoje). */
   badges?: Partial<Record<AdminTabId, number | string | undefined>>;
+  /** Atalhos SuperAdmin (Venda plataforma / Super Admin). */
+  isSuperAdmin?: boolean;
 }
 
 
@@ -125,13 +148,14 @@ export function AppSidebar({
   onCollapse,
   onOpenSettings,
   badges,
+  isSuperAdmin = false,
 }: AppSidebarProps) {
 
   const handleItemClick = (item: NavItem) => {
     if (item.href && onNavigate) {
       onNavigate(item.href);
-    } else {
-      onTabChange(item.id);
+    } else if (!item.href) {
+      onTabChange(item.id as AdminTabId);
     }
     onOpenChange?.(false);
     // Auto-collapse on desktop after navigation
@@ -142,8 +166,8 @@ export function AppSidebar({
 
   const renderNavButton = (item: NavItem) => {
     const Icon = item.icon;
-    const isActive = activeTab === item.id;
-    const dynamicBadge = badges?.[item.id];
+    const isActive = !item.href && activeTab === item.id;
+    const dynamicBadge = item.id in (badges || {}) ? badges?.[item.id as AdminTabId] : undefined;
     const badge = dynamicBadge ?? item.badge;
     return (
       <button
@@ -222,15 +246,19 @@ export function AppSidebar({
         {/* Nav — grupos completos em qualquer tela (mobile e desktop) */}
         <nav className={`flex-1 ${collapsed ? "px-1" : "px-3"} pb-4 overflow-y-auto overflow-x-hidden`}>
           <div className="block">
-          {NAV_GROUPS.map((group) => (
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter((item) => !item.superAdminOnly || isSuperAdmin);
+            if (items.length === 0) return null;
+            return (
             <div key={group.label}>
               {!collapsed && <div className="pe-sidebar-section">{group.label}</div>}
               {collapsed && <div className="my-2 mx-3 h-px bg-white/5" />}
               <div className="space-y-0.5">
-                {group.items.map((item) => renderNavButton(item))}
+                {items.map((item) => renderNavButton(item))}
               </div>
             </div>
-          ))}
+            );
+          })}
           </div>
 
 

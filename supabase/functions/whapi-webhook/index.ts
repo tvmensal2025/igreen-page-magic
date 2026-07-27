@@ -398,6 +398,43 @@ Deno.serve(async (req) => {
 
     const phone = normalizePhone(remoteJid.replace("@s.whatsapp.net", ""));
     const phoneLocal = phone.startsWith("55") ? phone.slice(2) : phone;
+
+    // ─── Demo pós-venda (Venda da plataforma — só alvos piloto) ─────────
+    // Após dedup. Menu 1–8 = texto; botões ≤3. Não cria lead / cadência.
+    try {
+      if (messageText || buttonId) {
+        const { handlePlatformSalesDemoInbound } = await import(
+          "../_shared/platform-sales-demo-handler.ts"
+        );
+        const { createWhapiSender } = await import("../_shared/whapi-api.ts");
+        const demoToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
+        const demoBase = settings.whapi_api_url || Deno.env.get("WHAPI_API_URL") || "https://gate.whapi.cloud";
+        if (demoToken) {
+          const demoSender = createWhapiSender(demoToken, demoBase);
+          const demoRes = await handlePlatformSalesDemoInbound({
+            supabase: supabase as any,
+            remoteJid,
+            phone,
+            messageText: messageText || null,
+            buttonId: buttonId || null,
+            sender: {
+              sendText: (jid, text) => demoSender.sendText(jid, text),
+              sendButtons: (jid, msg, buttons) => demoSender.sendButtons(jid, msg, buttons),
+            },
+          });
+          if (demoRes.handled) {
+            console.log(`[whapi-webhook] platform-sales-demo handled (${demoRes.reason})`);
+            return new Response(
+              JSON.stringify({ ok: true, msg: "platform_sales_demo", reason: demoRes.reason }),
+              { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error("⚠️ Falha platform-sales-demo:", (e as Error).message);
+    }
+
     let resetMarker: any = null;
     try {
       const { data: resetRow, error: resetErr } = await supabase

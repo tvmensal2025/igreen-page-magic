@@ -67,6 +67,9 @@ const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => {
   return { default: m.VozTab };
 }));
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
+const VendaPlataformaPanel = lazy(() =>
+  import("@/components/superadmin/VendaPlataformaPanel").then((m) => ({ default: m.VendaPlataformaPanel })),
+);
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
 const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
 const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/FinanceiroPanel").then(m => ({ default: m.FinanceiroPanel })));
@@ -77,12 +80,13 @@ const ADMIN_ACTIVE_TAB_KEY = "igreen_admin_active_tab_v1";
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "financeiro", "produtos",
   "captacao", "parceiros", "whatsapp", "agendamentos", "central-anuncios", "links",
-  "materiais", "audio-studio", "voz", "academy",
+  "materiais", "audio-studio", "voz", "academy", "venda-plataforma",
 ];
 
 const AdminContent = () => {
   const { privacyMode, togglePrivacy } = usePrivacyMode();
   const { loading, approved, userId, form, photoPreview, setPhotoPreview, handleFormChange, handleLogout, setForm } = useAdminAuth();
+  const { isSuperAdmin } = useUserRole(userId);
   const { saving, photoPreview: localPhotoPreview, handlePhotoChange, handleSave } = useConsultantForm(userId, form, setForm, setPhotoPreview);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -447,6 +451,7 @@ const AdminContent = () => {
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
     "voz": { title: "Ligação", subtitle: "Ligações com número da empresa e histórico detalhado" },
     "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
+    "venda-plataforma": { title: "Venda da plataforma", subtitle: "Piloto SuperAdmin — WhatsApp, SMS e ligação para consultores" },
   };
   const currentMeta = TAB_META[activeTab];
 
@@ -733,6 +738,16 @@ const AdminContent = () => {
           {activeTab === "academy" && (
             <AcademyTab />
           )}
+          {activeTab === "venda-plataforma" && userId && (
+            isSuperAdmin ? (
+              <VendaPlataformaPanel userId={userId} />
+            ) : (
+              <PageStatus
+                title="Acesso restrito"
+                description="Esta área é exclusiva do SuperAdmin."
+              />
+            )
+          )}
 
         </Suspense>
       </main>
@@ -830,7 +845,13 @@ function AdminSidebarWithBadges({
   const { isSuperAdmin, isAdmin } = useUserRole(userId);
   const scope: "all" | "self" = isSuperAdmin || isAdmin ? "all" : "self";
   const { data: alertas } = useAlertasBoletosCount(userId ?? undefined, scope);
-  return <AppSidebar {...rest} badges={{ financeiro: alertas && alertas > 0 ? alertas : undefined }} />;
+  return (
+    <AppSidebar
+      {...rest}
+      isSuperAdmin={isSuperAdmin}
+      badges={{ financeiro: alertas && alertas > 0 ? alertas : undefined }}
+    />
+  );
 }
 
 

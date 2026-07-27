@@ -355,6 +355,9 @@ verify_jwt = false
 [functions.pos-venda-bucket-cron]
 verify_jwt = false
 
+[functions.pos-venda-audio-prep]
+verify_jwt = false
+
 [functions.flow-d-health-cron]
 verify_jwt = false
 
@@ -365,5 +368,9 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.crm-auto-progress]
+verify_jwt = false
+
+# Venda da plataforma (SuperAdmin) — JWT do usuário; dry_run default.
+[functions.platform-sales-dispatch]
 verify_jwt = false
 
