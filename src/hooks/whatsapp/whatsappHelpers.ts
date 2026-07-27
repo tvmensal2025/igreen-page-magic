@@ -56,6 +56,16 @@ export function getFixedInstanceName(consultantId: string): string {
   return `igreen-${slug}`;
 }
 
+/**
+ * Nome único por tentativa de conexão.
+ * Evita reaproveitar sessão Evolution antiga (WhatsApp interpreta como risco).
+ */
+export function getFreshInstanceName(consultantId: string): string {
+  const slug = consultantId.replace(/-/g, "").slice(0, 12);
+  const suffix = Date.now().toString(36);
+  return `igreen-${slug}-${suffix}`;
+}
+
 export function isNotFoundError(message: string): boolean {
   return /404|not found|does not exist|instance.*not|inst[âa]ncia.*n[ãa]o/i.test(
     message,

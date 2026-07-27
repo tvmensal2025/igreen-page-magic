@@ -19,6 +19,7 @@ import {
   logEntry,
   sanitize,
   getFixedInstanceName,
+  getFreshInstanceName,
   isAuthError,
   isRecoverableConnectionError,
   sleep,
@@ -337,37 +338,34 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     }
 
 
-    // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para a mesma
-    // instância. Pedidos de QR duplos/rápidos são interpretados como bot pelo
-    // WhatsApp e contribuem para banimento. Best-effort: BroadcastChannel só
-    // funciona se duas abas estiverem abertas no mesmo navegador.
+    // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para o mesmo
+    // consultor. Pedidos de QR duplos/rápidos são interpretados como bot pelo
+    // WhatsApp e contribuem para banimento.
     try {
-      const name0 = getFixedInstanceName(consultantId);
+      const lockKey = `consultant:${consultantId}`;
       const ch = new BroadcastChannel("whatsapp-qr-lock");
       let blocked = false;
       const onMsg = (ev: MessageEvent) => {
-        if (ev.data?.instance === name0 && ev.data?.type === "qr-lock-active") blocked = true;
+        if (ev.data?.instance === lockKey && ev.data?.type === "qr-lock-active") blocked = true;
       };
       ch.addEventListener("message", onMsg);
-      ch.postMessage({ type: "qr-lock-query", instance: name0, ts: Date.now() });
+      ch.postMessage({ type: "qr-lock-query", instance: lockKey, ts: Date.now() });
       await new Promise((r) => setTimeout(r, 250));
       ch.removeEventListener("message", onMsg);
       if (blocked) {
         ch.close();
-        addLog("⚠️ Outra aba já está gerando QR para esta instância. Use aquela aba.");
-        setError("Outra aba já está gerando QR para esta instância. Feche-a antes de tentar aqui.");
+        addLog("⚠️ Outra aba já está gerando QR. Use aquela aba.");
+        setError("Outra aba já está gerando QR. Feche-a antes de tentar aqui.");
         return;
       }
-      // Anuncia lock e mantém o canal vivo até finalizar
       const lockInterval = setInterval(() => {
-        ch.postMessage({ type: "qr-lock-active", instance: name0, ts: Date.now() });
+        ch.postMessage({ type: "qr-lock-active", instance: lockKey, ts: Date.now() });
       }, 2000);
       ch.addEventListener("message", (ev) => {
-        if (ev.data?.type === "qr-lock-query" && ev.data?.instance === name0) {
-          ch.postMessage({ type: "qr-lock-active", instance: name0, ts: Date.now() });
+        if (ev.data?.type === "qr-lock-query" && ev.data?.instance === lockKey) {
+          ch.postMessage({ type: "qr-lock-active", instance: lockKey, ts: Date.now() });
         }
       });
-      // Libera após 5 min
       setTimeout(() => { clearInterval(lockInterval); ch.close(); }, 5 * 60 * 1000);
     } catch { /* navegador sem BroadcastChannel, não bloquear */ }
 
@@ -385,68 +383,44 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     setHealth("healthy");
     stopPolling();
 
-    const name = getFixedInstanceName(consultantId);
-    setInstanceName(name);
+    const previousName = instanceName || getFixedInstanceName(consultantId);
 
     try {
-      addLog("Verificando conexão...");
-      const state = await checks.checkState(name);
+      addLog("Verificando se o WhatsApp já está conectado...");
+      const state = await checks.checkState(previousName);
       if (!mountedRef.current) return;
 
       if (state === "open") {
-        await markConnected(name, "✅ WhatsApp já está conectado!");
-        startPolling(name);
+        setInstanceName(previousName);
+        await markConnected(previousName, "✅ WhatsApp já está conectado!");
+        startPolling(previousName);
         return;
       }
 
-      if (state === "connecting" || state === "close") {
-        addLog("⏳ Recuperando QR Code...");
-        setHealth("recovering");
-        const qrAttempt = await checks.tryGetQr(name);
-        const recoveredConnection = qrAttempt.alreadyConnected || (
-          !qrAttempt.qr && await checks.confirmConnectedState(name, 2, 1000)
-        );
-        if (!mountedRef.current) return;
-
-        if (recoveredConnection) {
-          await markConnected(name, "✅ WhatsApp já está conectado!");
-          startPolling(name);
-          return;
-        }
-
-        if (qrAttempt.qr) {
-          health.resetRecoveryCounter();
-          await saveInstance(name);
-          instanceSavedRef.current = true; setHasInstance(true);
-          setQrCode(qrAttempt.qr);
-          setQrGeneratedAt(Date.now());
-          setStatus("connecting");
-          setHealth("needs_qr");
-          addLog("📱 QR Code gerado — escaneie com seu celular");
-          startPolling(name);
-          return;
-        }
-
-        await saveInstance(name);
-        instanceSavedRef.current = true; setHasInstance(true);
-        setStatus("connecting");
-        addLog("⏳ Aguardando QR Code...");
-        startPolling(name);
-        return;
+      // Sempre sessão nova: reusar instância antiga dispara segurança do WhatsApp.
+      addLog("Preparando sessão limpa (nova instância)...");
+      setHealth("recovering");
+      try { await withTimeout(logoutInstance(previousName), 8000); } catch { /* ok */ }
+      try { await withTimeout(deleteInstance(previousName), 8000); } catch { /* ok */ }
+      const fixed = getFixedInstanceName(consultantId);
+      if (fixed !== previousName) {
+        try { await withTimeout(logoutInstance(fixed), 5000); } catch { /* ok */ }
+        try { await withTimeout(deleteInstance(fixed), 5000); } catch { /* ok */ }
       }
+      await deleteInstanceDb();
+      instanceSavedRef.current = false;
 
-      if (state === "unknown") {
-        addLog("⚠️ Servidor instável. Tentando criar ou recuperar a conexão...");
-        setHealth("degraded");
-      }
+      const name = getFreshInstanceName(consultantId);
+      setInstanceName(name);
+      addLog("Criando nova instância...");
 
-      addLog("Criando instância...");
       try {
-        const response = await withTimeout(createInstance(name), 15000);
+        const response = await withTimeout(createInstance(name), 20000);
         if (!mountedRef.current) return;
 
         await saveInstance(name);
-        instanceSavedRef.current = true; setHasInstance(true);
+        instanceSavedRef.current = true;
+        setHasInstance(true);
         const qr = response?.qrcode?.base64 || null;
 
         if (qr) {
@@ -458,6 +432,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           addLog("📱 QR Code gerado — escaneie com seu celular");
         } else {
           setStatus("connecting");
+          setHealth("recovering");
           addLog("⏳ Instância criada. Aguardando QR Code...");
         }
         startPolling(name);
@@ -468,16 +443,19 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (msg.includes("already") || msg.includes("403") || msg.includes("409") || msg.includes("exists")) {
           await saveInstance(name);
-          instanceSavedRef.current = true; setHasInstance(true);
+          instanceSavedRef.current = true;
+          setHasInstance(true);
           setStatus("connecting");
-          addLog("⏳ Instância já existe. Conectando...");
+          setHealth("recovering");
+          addLog("⏳ Instância já existe no servidor. Conectando...");
           startPolling(name);
           return;
         }
 
         if (isRecoverableConnectionError(msg)) {
           await saveInstance(name);
-          instanceSavedRef.current = true; setHasInstance(true);
+          instanceSavedRef.current = true;
+          setHasInstance(true);
           setStatus("connecting");
           setError(null);
           setHealth("degraded");
@@ -500,7 +478,9 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         setError(null);
         setHealth("degraded");
         addLog("⏳ Conexão instável. Tentando novamente...");
-        startPolling(name);
+        const fallback = getFreshInstanceName(consultantId);
+        setInstanceName(fallback);
+        startPolling(fallback);
       } else {
         setStatus("disconnected");
         setError(msg);
@@ -511,7 +491,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultantId, addLog, handleAuthFailure, markConnected, saveInstance, setHealth, setStatus, startPolling, stopPolling]);
+  }, [consultantId, instanceName, fatalLocked, addLog, handleAuthFailure, markConnected, saveInstance, deleteInstanceDb, setHealth, setStatus, startPolling, stopPolling]);
 
   /* ── Refresh QR ── */
   const refreshQr = useCallback(async () => {
@@ -595,7 +575,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     }
     lockRef.current = true;
 
-    const name = instanceName || getFixedInstanceName(consultantId);
+    const name = getFreshInstanceName(consultantId);
     setIsLoading(true);
     setHealth("resetting");
     stopPolling();
@@ -603,12 +583,13 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     addLog("🔄 Iniciando reset seguro da conexão...");
 
     try {
+      const previousName = instanceName || getFixedInstanceName(consultantId);
       addLog("1/4 — Encerrando sessão WhatsApp...");
-      try { await withTimeout(logoutInstance(name), 10000); } catch { /* ok */ }
+      try { await withTimeout(logoutInstance(previousName), 10000); } catch { /* ok */ }
       await sleep(2000);
 
       addLog("2/4 — Removendo instância antiga...");
-      try { await withTimeout(deleteInstance(name), 10000); } catch { /* ok */ }
+      try { await withTimeout(deleteInstance(previousName), 10000); } catch { /* ok */ }
       await sleep(2000);
 
       addLog("3/4 — Limpando registros locais...");
