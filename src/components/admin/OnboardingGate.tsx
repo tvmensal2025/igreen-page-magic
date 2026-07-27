@@ -20,13 +20,15 @@ interface OnboardingGateProps {
 type FieldErrors = Partial<Record<"name" | "igreen_id" | "phone" | "notification_phone" | "assistant_name" | "gender", string>>;
 
 // Campos opcionais ficam apenas como avisos (não bloqueiam o painel).
-// O painel libera com o mínimo: nome + ID iGreen.
+// O painel libera com: nome + ID iGreen + nome da IA (prefs de automação vêm depois).
 function validate(form: ConsultantForm): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.name?.trim() || form.name.trim().length < 3) errors.name = "Digite seu nome completo";
   const igreen = (form.igreen_id || "").replace(/\D/g, "");
   if (!igreen || igreen.length < 4) errors.igreen_id = "ID iGreen inválido (mínimo 4 dígitos)";
-  // Soft warnings (não bloqueiam) — telefone/IA/gênero podem ser preenchidos depois na aba Dados.
+  const ia = (form.assistant_name || "").trim();
+  if (!ia || ia.length < 2) errors.assistant_name = "Digite o nome da sua IA (ex.: Yasmin, Sol)";
+  // Soft warnings (não bloqueiam) — telefone/gênero podem ser preenchidos depois na aba Dados.
   const phoneV = validateBrazilPhone(form.phone);
   if (form.phone && !phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
   const notifV = validateBrazilPhone(form.notification_phone);
@@ -40,6 +42,7 @@ function blockingErrors(form: ConsultantForm): FieldErrors {
   const out: FieldErrors = {};
   if (e.name) out.name = e.name;
   if (e.igreen_id) out.igreen_id = e.igreen_id;
+  if (e.assistant_name) out.assistant_name = e.assistant_name;
   return out;
 }
 
@@ -122,7 +125,9 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </div>
             <h2 className="text-xl font-heading font-bold text-foreground">Bem-vindo ao iGreen!</h2>
             <p className="text-sm text-muted-foreground">
-              Só precisamos do seu nome e ID iGreen para liberar o painel. Você completa o resto depois na aba <strong>Dados</strong>.
+              Precisamos do seu nome, do ID iGreen e do nome da sua IA. Depois disso
+              você escolhe as mensagens automáticas. O restante completa na aba{" "}
+              <strong>Dados</strong>.
             </p>
           </div>
 
@@ -159,12 +164,27 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 className="bg-secondary border-border"
               />
             </Field>
+
+            <Field
+              label="Nome da sua IA"
+              error={showErr("assistant_name")}
+              hint="Como a assistente se apresenta no WhatsApp. É só sua — não é a IA de outro consultor."
+            >
+              <Input
+                value={form.assistant_name}
+                onBlur={() => setTouched((t) => ({ ...t, assistant_name: true }))}
+                onChange={(e) => applyChange({ assistant_name: e.target.value.slice(0, 20) })}
+                placeholder="Ex.: Yasmin, Sol, Ana…"
+                maxLength={20}
+                className="bg-secondary border-border"
+              />
+            </Field>
           </div>
 
           {submitAttempted && Object.keys(blocking).length > 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Preencha nome e ID iGreen para liberar o painel.</span>
+              <span>Preencha nome, ID iGreen e o nome da sua IA para liberar o painel.</span>
             </div>
           )}
 

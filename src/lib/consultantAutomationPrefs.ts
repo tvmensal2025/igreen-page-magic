@@ -54,6 +54,19 @@ export const CEREBRO_OPT_IN = {
   suggestedOnFirstAck: false,
 } as const;
 
+/**
+ * Quando o 1º modal de mensagens automáticas pode abrir sozinho.
+ * Exige nome do consultor + nome da IA (nunca antes disso).
+ */
+export function canAutoPromptAutomationPrefs(opts: {
+  consultantName?: string | null;
+  assistantName?: string | null;
+}): boolean {
+  const name = String(opts.consultantName || "").trim();
+  const ia = String(opts.assistantName || "").trim();
+  return name.length >= 3 && ia.length >= 2;
+}
+
 export type CerebroOptInCopy = {
   title: string;
   help: string;

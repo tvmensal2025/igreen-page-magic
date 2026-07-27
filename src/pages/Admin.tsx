@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { LogOut, Copy, Download, X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  canAutoPromptAutomationPrefs,
+} from "@/lib/consultantAutomationPrefs";
 import { OnboardingGate } from "@/components/admin/OnboardingGate";
 import { ConsultantAutomationPrefsModal } from "@/components/admin/ConsultantAutomationPrefsModal";
 import { ConsultantAutomationPrefsCard } from "@/components/admin/ConsultantAutomationPrefsCard";
@@ -508,7 +511,13 @@ const AdminContent = () => {
       <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
 
       {userId && (
-        <ConsultantAutomationPrefsModal consultantId={userId} autoPrompt />
+        <ConsultantAutomationPrefsModal
+          consultantId={userId}
+          autoPrompt={canAutoPromptAutomationPrefs({
+            consultantName: form.name,
+            assistantName: form.assistant_name,
+          })}
+        />
       )}
 
       {/* Content */}
