@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,50 +53,31 @@ function isComplete(form: ConsultantForm) {
 export function OnboardingGate({ form, saving, onFormChange, onSave, children }: OnboardingGateProps) {
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  // `dirty` = o consultor mexeu em algum campo e ainda não salvou.
-  // Enquanto estiver "sujo", o modal NÃO fecha só por estar válido — ele só
-  // fecha depois que o save grava de verdade no banco. Sem isso, o modal
-  // sumia no instante em que o último campo ficava válido (antes de salvar),
-  // os dados se perdiam e o modal voltava obrigando a digitar tudo de novo.
-  const [dirty, setDirty] = useState(false);
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Só libera o painel depois de clicar em "Liberar painel" e o save gravar.
+  // Sem auto-save: preencher os campos NÃO fecha o modal.
+  const [releasedBySave, setReleasedBySave] = useState(false);
+  // Se o perfil já estava completo no banco ao abrir (sem editar), não mostra o gate de novo.
+  const [editedInSession, setEditedInSession] = useState(false);
 
   const errors = useMemo(() => validate(form), [form]);
   const blocking = useMemo(() => blockingErrors(form), [form]);
   const complete = Object.keys(blocking).length === 0;
 
-  // Aplica mudanças marcando o formulário como "sujo" (tem alteração não salva).
   const applyChange = (updates: Record<string, string>) => {
-    setDirty(true);
+    setEditedInSession(true);
     onFormChange(updates);
   };
 
-  // Salva e devolve se deu certo. Em caso de sucesso, limpa o "sujo" — aí o
-  // modal pode fechar com segurança porque os dados já estão no banco.
   const doSave = async (e: React.FormEvent): Promise<boolean> => {
     const ok = await onSave(e);
-    if (ok) setDirty(false);
+    if (ok) setReleasedBySave(true);
     return ok;
   };
 
-  // Auto-save: assim que os campos obrigatórios estão preenchidos e há algo
-  // não salvo, grava sozinho (com um pequeno atraso pra não salvar a cada
-  // tecla). É isso que faz "digitou e já fica salvo".
-  useEffect(() => {
-    if (!complete || !dirty || saving) return;
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => {
-      void doSave({ preventDefault() {} } as React.FormEvent);
-    }, 700);
-    return () => {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complete, dirty, saving]);
-
-  // Só libera o painel quando está completo E não há alteração pendente —
-  // ou seja, os dados completos já foram persistidos.
-  if (complete && !dirty) return <>{children}</>;
+  // Já completo no banco e usuário não mexeu → entra no painel.
+  // Se mexeu ou ainda incompleto → fica no modal até clicar em salvar com sucesso.
+  if (releasedBySave) return <>{children}</>;
+  if (complete && !editedInSession) return <>{children}</>;
 
   const showErr = (key: keyof FieldErrors) => (submitAttempted || touched[key]) ? errors[key] : undefined;
 
@@ -107,26 +88,37 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
     await doSave(e);
   };
 
-
   return (
     <>
-      <div aria-hidden="true" className="pointer-events-none opacity-30 blur-sm">
+      <div aria-hidden="true" className="pointer-events-none opacity-30 blur-sm select-none">
         {children}
       </div>
 
-      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto">
+      <div
+        className="fixed inset-0 z-[120] flex items-center justify-center bg-background/80 backdrop-blur-md p-4 overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-gate-title"
+        onKeyDown={(e) => {
+          // Não fecha com Escape — só com salvar.
+          if (e.key === "Escape") e.preventDefault();
+        }}
+      >
         <form
           onSubmit={handleSubmit}
           className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl my-8"
+          onClick={(e) => e.stopPropagation()}
         >
           <div className="text-center space-y-2">
             <div className="w-14 h-14 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto">
               <Sparkles className="w-7 h-7 text-primary" />
             </div>
-            <h2 className="text-xl font-heading font-bold text-foreground">Bem-vindo ao iGreen!</h2>
+            <h2 id="onboarding-gate-title" className="text-xl font-heading font-bold text-foreground">
+              Bem-vindo ao iGreen!
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Precisamos do seu nome, do ID iGreen e do nome da sua IA. Depois disso
-              você escolhe as mensagens automáticas. O restante completa na aba{" "}
+              Precisamos do seu nome, do ID iGreen e do nome da sua IA. Clique em{" "}
+              <strong>Liberar painel</strong> para continuar — o restante completa na aba{" "}
               <strong>Dados</strong>.
             </p>
           </div>
@@ -184,10 +176,9 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
           {submitAttempted && Object.keys(blocking).length > 0 && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Preencha nome, ID iGreen e o nome da sua IA para liberar o painel.</span>
+              <span>Preencha nome, ID iGreen e o nome da sua IA. Depois clique em Liberar painel.</span>
             </div>
           )}
-
 
           <Button
             type="submit"
