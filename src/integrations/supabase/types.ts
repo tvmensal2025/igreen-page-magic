@@ -3779,6 +3779,8 @@ export type Database = {
           gender: string | null
           google_analytics_id: string | null
           id: string
+          identity_media_bootstrapped_at: string | null
+          identity_media_fingerprint: string | null
           igreen_consultor_id: string | null
           igreen_credential_checked_at: string | null
           igreen_credential_error: string | null
@@ -3827,6 +3829,8 @@ export type Database = {
           gender?: string | null
           google_analytics_id?: string | null
           id: string
+          identity_media_bootstrapped_at?: string | null
+          identity_media_fingerprint?: string | null
           igreen_consultor_id?: string | null
           igreen_credential_checked_at?: string | null
           igreen_credential_error?: string | null
@@ -3875,6 +3879,8 @@ export type Database = {
           gender?: string | null
           google_analytics_id?: string | null
           id?: string
+          identity_media_bootstrapped_at?: string | null
+          identity_media_fingerprint?: string | null
           igreen_consultor_id?: string | null
           igreen_credential_checked_at?: string | null
           igreen_credential_error?: string | null
