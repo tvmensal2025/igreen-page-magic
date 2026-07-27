@@ -1,5 +1,6 @@
 // Engine de autoprogressão Pós-Venda iGreen.
-// - Move clientes entre pv_aprovado / pv_d30…pv_d210 / pv_reprovado / pv_retentativa.
+// - Move clientes entre pv_aprovado / pv_d30…pv_d210.
+// - Reprovado/devolutiva/retentativa ficam mudos por decisão do produto.
 // - Dispara mídia via resolveChannelForCustomerWithFailover (Whapi primeiro; Evolution fallback).
 // - NÃO usa bot_global_enabled — só toggle pos_venda_auto_messages + pos_venda_manual.
 // - Janela seg–sáb 08:00–20:00 BRT (pos-venda-send-window); fora = skip até próximo slot.
@@ -84,6 +85,12 @@ async function processCustomer(
 ): Promise<{ moved: boolean; sent: boolean }> {
   const stageKey = STAGE_TO_KEY[targetStage];
   if (!stageKey) return { moved: false, sent: false };
+
+  // Fail-closed: reprovado/devolutiva/retentativa NÃO podem disparar mensagem
+  // nem aparecer como ação automática de pós-venda.
+  if (targetStage === "reprovado" || targetStage === "retentativa") {
+    return { moved: false, sent: false };
+  }
 
   const prefs = await getConsultantAutomationPrefs(supabase, customer.consultant_id);
   if (!isConsultantAutoAllowed(prefs, "pos_venda")) {
