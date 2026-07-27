@@ -270,7 +270,10 @@ async function processCustomer(
   const dealOrigin =
     targetStage === "reprovado" || targetStage === "retentativa" ? "reprovado" : "aprovado";
 
-  const packOpts = skipImageOnRetry ? { skipImage: true } : undefined;
+  const packOpts = {
+    ...(skipImageOnRetry ? { skipImage: true } : {}),
+    forbidText: true,
+  };
 
   let result: SendResult;
   if (consultantHasContent) {

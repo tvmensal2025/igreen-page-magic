@@ -599,6 +599,8 @@ interface MsgConfig {
 export interface SendPackOpts {
   /** Retry após img:ok — não reenvia a mesma imagem ao cliente. */
   skipImage?: boolean;
+  /** Pós-venda: nunca manda bolha de texto no Zap (só imagem + áudio). */
+  forbidText?: boolean;
 }
 
 export interface SendResult {
@@ -694,7 +696,7 @@ async function sendSingleMessage(
       supabase, channel, jid, audioUrl, audioCtx, pack,
     );
     if (result.audio_ok) anyOk = true;
-    // Sem texto no Zap e sem link de fallback — pacote = imagem + áudio.
+    // Sem texto no Zap — pacote = imagem + áudio.
   } else if (msgType === "audio" && !audioUrl) {
     result.audio_ok = false;
   } else if (msgType === "image" && msg.media_url) {
@@ -710,8 +712,14 @@ async function sendSingleMessage(
     );
     result.image_ok = ok;
     if (ok) anyOk = true;
-  } else if (messageText) {
-    // Só texto quando o estágio é tipicamente text-only (sem áudio/imagem).
+  } else if (
+    messageText &&
+    !packOpts?.forbidText &&
+    msgType === "text" &&
+    !msg.image_url &&
+    !msg.media_url
+  ) {
+    // Texto só em estágio tipicamente text-only (sem mídia anexada).
     const textCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:text` };
     result.text_ok = await sendText(
       supabase, channel, jid, messageText, textCtx, pack,
