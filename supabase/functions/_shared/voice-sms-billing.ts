@@ -188,11 +188,15 @@ async function maybeNotifyLowBalance(
     await notifyConsultant(
       consultantId,
       "warning",
-      "Crédito de SMS e ligação acabou",
+      "Crédito do iGreen Fone acabou",
       [
-        "Seu saldo para SMS e ligações (iGreen Fone) zerou.",
-        "WhatsApp e chatbot continuam sem custo por mensagem.",
-        "Para adicionar crédito, fale com o administrador da plataforma.",
+        "Seu saldo de *SMS* e *ligações* chegou a *zero*.",
+        "",
+        "✅ *WhatsApp* e *chatbot* → continuam *grátis*",
+        "📲 *SMS* → R$ 0,10 por envio",
+        "📞 *Ligação* → R$ 0,10 a cada 30s (só se atender)",
+        "",
+        "👉 Fale com o *administrador* para adicionar crédito e seguir o acompanhamento.",
       ].join("\n"),
     );
   } catch (e) {
