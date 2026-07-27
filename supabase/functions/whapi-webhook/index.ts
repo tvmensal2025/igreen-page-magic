@@ -552,16 +552,18 @@ Deno.serve(async (req) => {
 
     // Nome humano só — slug/login (silviaclaudiaalmeida) NUNCA vai pro lead.
     // Usa só o PRIMEIRO NOME — soa mais natural no WhatsApp ("Rafael" em vez de "Rafael Ferreira").
-    const { resolvePublicConsultantLabel } = await import("../_shared/consultant-public-label.ts");
+    const { resolvePublicConsultantLabel, resolveAssistantDisplayName, resolveConsultantRoleGender } = await import("../_shared/consultant-public-label.ts");
     const _fullName = resolvePublicConsultantLabel(
       consultantData?.name,
       consultantData?.display_name,
       "iGreen Energy",
     );
     const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
-    const nomeAssistente = String(consultantData?.assistant_name || "").trim() || "Sofia";
-    const consultorGender: "consultor" | "consultora" =
-      String(consultantData?.gender || "").trim() === "consultora" ? "consultora" : "consultor";
+    const nomeAssistente = resolveAssistantDisplayName(consultantData?.assistant_name);
+    const consultorGender: "consultor" | "consultora" = resolveConsultantRoleGender(
+      consultantData?.gender,
+      nomeRepresentante || consultantData?.name || consultantData?.display_name,
+    );
     const consultorId = consultantData?.igreen_id || "124170";
     console.log(`✅ Whapi super admin: ${nomeRepresentante} (full: ${_fullName}, iGreen ID: ${consultorId}, IA: ${nomeAssistente}, gender: ${consultorGender})`);
 

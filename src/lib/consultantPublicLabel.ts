@@ -19,6 +19,39 @@ export function doDaConsultor(gender?: ConsultantGender | string | null): "do" |
   return String(gender || "").trim() === "consultora" ? "da" : "do";
 }
 
+/**
+ * Gênero do consultor para textos (do/da, o/a).
+ * Usa Dados → gender; se vazio, infere pelo primeiro nome (Sirlene → consultora).
+ */
+export function resolveConsultantRoleGender(
+  gender: string | null | undefined,
+  nameHint?: string | null,
+): ConsultantGender {
+  const g = String(gender || "").trim();
+  if (g === "consultora" || g === "consultor") return g;
+  const first = String(nameHint || "").trim().split(/\s+/)[0] || "";
+  const n = first
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  if (!n) return "consultor";
+  // Exceções masculinas curtas
+  if (/^(rene|eugene|luca|nicola|joshua|andrea)$/.test(n)) return "consultor";
+  if (/(ene|ine|ane|elle|ette|ice|cia|lia|ria|ene)$/.test(n)) return "consultora";
+  if (n.endsWith("a")) return "consultora";
+  return "consultor";
+}
+
+/** Nome da IA do consultor — nunca herdar "Sofia" de outro. */
+export const DEFAULT_ASSISTANT_DISPLAY_NAME = "Assistente";
+
+export function resolveAssistantDisplayName(
+  assistantName: string | null | undefined,
+): string {
+  const n = String(assistantName || "").trim();
+  return n || DEFAULT_ASSISTANT_DISPLAY_NAME;
+}
+
 /** Fallback possessivo: "seu consultor" | "sua consultora". */
 export function possessiveConsultantFallback(
   gender?: ConsultantGender | string | null,

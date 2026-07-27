@@ -373,16 +373,18 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Instance found: ${instanceName} (consultant: ${consultantData?.display_name || consultantData?.name || "unknown"})`);
     // Nome humano só — slug/login (silviaclaudiaalmeida) NUNCA vai pro lead.
-    const { resolvePublicConsultantLabel } = await import("../_shared/consultant-public-label.ts");
+    const { resolvePublicConsultantLabel, resolveAssistantDisplayName, resolveConsultantRoleGender } = await import("../_shared/consultant-public-label.ts");
     const _fullName = resolvePublicConsultantLabel(
       consultantData?.name,
       consultantData?.display_name,
       "iGreen Energy",
     );
     const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
-    const nomeAssistente = String(consultantData?.assistant_name || "").trim() || "Sofia";
-    const consultorGender: "consultor" | "consultora" =
-      String(consultantData?.gender || "").trim() === "consultora" ? "consultora" : "consultor";
+    const nomeAssistente = resolveAssistantDisplayName(consultantData?.assistant_name);
+    const consultorGender: "consultor" | "consultora" = resolveConsultantRoleGender(
+      consultantData?.gender,
+      nomeRepresentante || consultantData?.name || consultantData?.display_name,
+    );
     const consultorId = consultantData?.igreen_id || "124170";
 
     if (!EVOLUTION_API_URL || !EVOLUTION_API_KEY) {

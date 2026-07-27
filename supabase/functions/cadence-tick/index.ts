@@ -45,7 +45,7 @@ import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
-import { resolveConsultantPresentationLabel, oAConsultor } from "../_shared/consultant-public-label.ts";
+import { resolveConsultantPresentationLabel, oAConsultor, resolveAssistantDisplayName, resolveConsultantRoleGender } from "../_shared/consultant-public-label.ts";
 import {
   loadCadenceThemes,
   loadLastThemeId,
@@ -591,9 +591,13 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       .from("consultants")
       .select("name, display_name, assistant_name, gender")
       .eq("id", consultantId).maybeSingle();
-    assistantName = String((c as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia";
-    const g = String((c as { gender?: string | null })?.gender || "").trim();
-    consultantGender = g === "consultora" ? "consultora" : "consultor";
+    assistantName = resolveAssistantDisplayName(
+      (c as { assistant_name?: string | null })?.assistant_name,
+    );
+    consultantGender = resolveConsultantRoleGender(
+      (c as { gender?: string | null })?.gender,
+      (c as { name?: string | null })?.name || (c as { display_name?: string | null })?.display_name,
+    );
     // Label de apresentação (nome ou "consultor"/"consultora") + {{o_a_consultor}} no template.
     // Slug sem display → substantivo — "é o consultor" / "é a consultora".
     consultantName = resolveConsultantPresentationLabel(

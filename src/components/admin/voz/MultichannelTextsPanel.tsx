@@ -118,7 +118,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useUserRole } from "@/hooks/useUserRole";
-import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
+import { firstNameFromPublicConsultant, resolveAssistantDisplayName, resolveConsultantRoleGender } from "@/lib/consultantPublicLabel";
 import { cn } from "@/lib/utils";
 import { normalizeBrazilPhone, validateBrazilPhone, formatBrazilPhone } from "@/lib/phone";
 import { whapiSendMedia } from "@/services/whapiApi";
@@ -244,10 +244,17 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       );
       setConsultantDisplayName(display);
       setConsultantAssistantName(
-        String((data as { assistant_name?: string | null })?.assistant_name || "").trim() || "Sofia",
+        resolveAssistantDisplayName(
+          (data as { assistant_name?: string | null })?.assistant_name,
+        ),
       );
       const g = String((data as { gender?: string | null })?.gender || "").trim();
-      setConsultantGender(g === "consultora" || g === "consultor" ? g : "");
+      setConsultantGender(
+        resolveConsultantRoleGender(
+          g,
+          display || (data as { name?: string | null })?.name,
+        ),
+      );
     })();
     return () => {
       cancelled = true;

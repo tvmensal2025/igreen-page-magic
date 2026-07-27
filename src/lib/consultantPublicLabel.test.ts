@@ -61,3 +61,18 @@ describe("o/a consultor — apresentação", () => {
     expect(resolveConsultantPresentationLabel("Ana Silva", null, "consultora")).toBe("Ana Silva");
   });
 });
+
+describe("resolveConsultantRoleGender / assistente", () => {
+  it("Sirlene sem gender → consultora (da, não do)", async () => {
+    const {
+      resolveConsultantRoleGender,
+      resolveAssistantDisplayName,
+      doDaConsultor,
+    } = await import("./consultantPublicLabel");
+    expect(resolveConsultantRoleGender(null, "Sirlene Correa")).toBe("consultora");
+    expect(doDaConsultor(resolveConsultantRoleGender(null, "Sirlene"))).toBe("da");
+    expect(resolveAssistantDisplayName(null)).toBe("Assistente");
+    expect(resolveAssistantDisplayName("Yasmin")).toBe("Yasmin");
+    expect(resolveAssistantDisplayName("Sofia")).toBe("Sofia");
+  });
+});

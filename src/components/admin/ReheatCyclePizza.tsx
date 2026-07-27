@@ -49,7 +49,7 @@ import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog"
 import { HandoffLeadsBanner } from "@/components/admin/HandoffLeadsDialog";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
 import { formatBrazilPhone, normalizeBrazilPhone, phonesMatch, validateBrazilPhone } from "@/lib/phone";
-import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
+import { firstNameFromPublicConsultant, resolveAssistantDisplayName, resolveConsultantRoleGender } from "@/lib/consultantPublicLabel";
 import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
 import {
   STAGE_CHANNEL,
@@ -413,7 +413,7 @@ async function loadSliceHistoryInner(
 
   let consultorFirst = "";
   let consultorPhone = "";
-  let assistente = "Sofia";
+  let assistente = "Assistente";
   let consultorGender: "consultor" | "consultora" = "consultor";
   if (consultantId) {
     const { data: cons } = await (supabase as any)
@@ -422,8 +422,11 @@ async function loadSliceHistoryInner(
       .eq("id", consultantId)
       .maybeSingle();
     consultorFirst = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
-    assistente = String(cons?.assistant_name || "").trim() || "Sofia";
-    consultorGender = cons?.gender === "consultora" ? "consultora" : "consultor";
+    assistente = resolveAssistantDisplayName(cons?.assistant_name);
+    consultorGender = resolveConsultantRoleGender(
+      cons?.gender,
+      consultorFirst || cons?.name || cons?.display_name,
+    );
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")

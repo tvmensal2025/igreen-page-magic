@@ -913,7 +913,7 @@ export function renderCadenceBody(
     : "https://wa.me/{{consultor_phone}}";
   // Dados do consultor — sem inventar "Rafael". Slug/vazio mantém {{…}} p/ o painel bloquear TTS.
   const consultor = firstNameFromConsultantLabel(opts.consultor);
-  const assistente = String(opts.assistente || "").trim() || "Sofia";
+  const assistente = String(opts.assistente || "").trim() || "Assistente";
   const isConsultora = opts.consultorGender === "consultora";
   const doDaConsultor = isConsultora ? "da" : "do";
   const oAConsultor = isConsultora ? "a" : "o";

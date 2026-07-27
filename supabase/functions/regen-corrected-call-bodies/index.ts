@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     .eq("id", consultantId)
     .maybeSingle();
 
-  const assistente = String(cons?.assistant_name || "Sofia").trim() || "Sofia";
+  const assistente = String(cons?.assistant_name || "Assistente").trim() || "Assistente";
   const consultor = firstName(
     String(resolvePublicConsultantLabel(cons?.name, cons?.display_name, "consultor")).trim() || "consultor",
   );

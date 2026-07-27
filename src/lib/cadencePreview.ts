@@ -4,7 +4,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { getTemplate, renderCadenceBody } from "@/lib/multichannelCadenceTexts";
-import { firstNameFromPublicConsultant } from "@/lib/consultantPublicLabel";
+import { firstNameFromPublicConsultant, resolveAssistantDisplayName, resolveConsultantRoleGender } from "@/lib/consultantPublicLabel";
 import {
   formatPersonName,
   isAddressableNameSource,
@@ -210,7 +210,7 @@ export function renderHistoryTemplate(
     nome: vars.nome,
     consultor: vars.consultor,
     consultorPhone: vars.consultor_phone,
-    assistente: vars.assistente || "Sofia",
+    assistente: vars.assistente || "Assistente",
     consultorGender: vars.consultorGender || "consultor",
   });
   if (!vars.nome.trim()) out = scrubEmptyNameUi(out);
@@ -274,7 +274,7 @@ export async function loadStepPreviewTemplates(
 
   let consultor = "";
   let consultorPhone = "";
-  let assistente = "Sofia";
+  let assistente = "Assistente";
   let consultorGender: "consultor" | "consultora" = "consultor";
   if (consultantId) {
     const { data: cons } = await (supabase as any)
@@ -283,8 +283,11 @@ export async function loadStepPreviewTemplates(
       .eq("id", consultantId)
       .maybeSingle();
     consultor = firstNameFromPublicConsultant(cons?.name, cons?.display_name);
-    assistente = String(cons?.assistant_name || "").trim() || "Sofia";
-    consultorGender = cons?.gender === "consultora" ? "consultora" : "consultor";
+    assistente = resolveAssistantDisplayName(cons?.assistant_name);
+    consultorGender = resolveConsultantRoleGender(
+      cons?.gender,
+      consultor || cons?.name || cons?.display_name,
+    );
     const { data: waInst } = await (supabase as any)
       .from("whatsapp_instances")
       .select("connected_phone")

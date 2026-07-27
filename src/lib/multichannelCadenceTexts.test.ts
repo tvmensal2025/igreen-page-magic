@@ -469,6 +469,17 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(inferSpeechGender("Michel")).toBe("masculino");
   });
 
+  it("renderCadenceBody sem assistente não inventa Sofia", () => {
+    const out = renderCadenceBody(SOFIA_OPENING, {
+      consultor: "Sirlene",
+      consultorGender: "consultora",
+    });
+    expect(out).toContain("Assistente");
+    expect(out).toContain("da Sirlene");
+    expect(out).not.toContain("Sofia");
+    expect(out).not.toContain("do Sirlene");
+  });
+
   it("cadenceBodyAudioUrlKey marca corpo sem nome", () => {
     expect(cadenceBodyAudioUrlKey("a2_audio_activate_name", "masculino")).toBe(
       "a2_audio_activate_name__body_masculino",
