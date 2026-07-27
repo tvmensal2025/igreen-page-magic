@@ -490,7 +490,13 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ moved, sent }),
+      JSON.stringify({
+        moved,
+        sent,
+        batch_limit: BATCH_LIMIT,
+        daily_cap: DAILY_CAP,
+        sent_last_24h: sentCounter,
+      }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
