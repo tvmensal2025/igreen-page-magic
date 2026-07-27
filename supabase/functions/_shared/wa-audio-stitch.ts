@@ -535,8 +535,25 @@ async function upsertActiveMedia(
 }
 
 /**
- * Corpo FIXO da biblioteca (já gravado no painel / lote Sofia).
- * NUNCA regenera TTS aqui — só Olá+nome e Nome são gerados sob demanda.
+ * Fallback de template: recusa MP3 com identidade de OUTRO consultor
+ * (ex.: "Sofia, assistente virtual do Rafael") — senão vaza nome errado.
+ */
+function isForeignIdentityBody(storedText: string): boolean {
+  const t = String(storedText || "").trim();
+  if (!t) return false;
+  // "assistente virtual do/da X" onde X ≠ iGreen
+  if (/assistente virtual d[oa]\s+(?!igreen\b)/i.test(t)) return true;
+  // Abertura nominal tipicamente assada no lote antigo
+  if (/\beu sou a\s+sofia\b/i.test(t)) return true;
+  if (/\bgestor(a)?\s+da\s+igreen\b/i.test(t)) return true;
+  return false;
+}
+
+/**
+ * Corpo FIXO da biblioteca (painel / bootstrap / lote).
+ * Preferência: consultor do lead → template genérico seguro.
+ * Se só existir fallback com identidade alheia (ou nada), gera o texto esperado
+ * e grava sob o consultor do lead (uma vez).
  */
 async function ensureBodyUrl(
   admin: any,
@@ -545,24 +562,60 @@ async function ensureBodyUrl(
   gender: SpeechGender,
   bodyText: string,
   gendered: boolean,
+  /** Dono do template público — só se o consultor do lead ainda não tem corpo próprio. */
+  fallbackConsultantId?: string | null,
 ): Promise<string> {
   const bodySlot = gendered
     ? `${baseSlot}__body_${gender}`
     : `${baseSlot}__body`;
   const expected = String(bodyText || "").trim();
 
-  const { data: rows, error } = await admin
-    .from("ai_media_library")
-    .select("id, url, text_content")
-    .eq("consultant_id", consultantId)
-    .eq("slot_key", bodySlot)
-    .eq("active", true)
-    .limit(1);
-  if (error) throw new Error(`body_lookup_failed:${bodySlot}`);
+  const owners = [consultantId, String(fallbackConsultantId || "").trim()].filter(
+    (id, i, arr) => !!id && arr.indexOf(id) === i,
+  );
 
-  const row = Array.isArray(rows) ? rows[0] : null;
+  let row: { id: string; url: string; text_content?: string | null } | null = null;
+  let usedOwner = consultantId;
+  for (const ownerId of owners) {
+    const { data: rows, error } = await admin
+      .from("ai_media_library")
+      .select("id, url, text_content")
+      .eq("consultant_id", ownerId)
+      .eq("slot_key", bodySlot)
+      .eq("active", true)
+      .limit(1);
+    if (error) throw new Error(`body_lookup_failed:${bodySlot}`);
+    const hit = Array.isArray(rows) ? rows[0] : null;
+    if (!hit?.url) continue;
+    const storedHit = String(hit.text_content || "").trim();
+    // Nunca reutilizar corpo de outro dono com identidade assada (Rafael/Sofia…).
+    if (ownerId !== consultantId && isForeignIdentityBody(storedHit)) {
+      console.warn(
+        `[wa-stitch] fallback rejeitado (identidade alheia) slot=${bodySlot} owner=${ownerId}`,
+      );
+      continue;
+    }
+    row = hit;
+    usedOwner = ownerId;
+    break;
+  }
+
   if (!row?.url) {
-    throw new Error(`fixed_body_missing:${bodySlot}`);
+    if (!expected) throw new Error(`fixed_body_missing:${bodySlot}`);
+    // Gera corpo genérico/esperado só para o consultor do lead (evita vazar Rafael).
+    console.log(`[wa-stitch] gerando corpo sob demanda slot=${bodySlot} consultant=${consultantId}`);
+    const bytes = await synthesizePhraseMp3(expected.replace(/\s+/g, " ").trim());
+    const slug = `body-${baseSlot}-${gendered ? gender : "x"}-${Date.now()}`.slice(0, 80);
+    const url = await uploadMp3(bytes, consultantId, slug);
+    await upsertActiveMedia(
+      admin,
+      consultantId,
+      bodySlot,
+      url,
+      `Corpo ${bodySlot} · auto`.slice(0, 120),
+      expected,
+    );
+    return url;
   }
 
   const stored = String(row?.text_content || "").trim();
@@ -576,7 +629,11 @@ async function ensureBodyUrl(
     } catch { /* best-effort */ }
   }
 
-  console.log(`[wa-stitch] corpo FIXO reutilizado slot=${bodySlot}`);
+  console.log(
+    `[wa-stitch] corpo FIXO reutilizado slot=${bodySlot} owner=${usedOwner}${
+      usedOwner !== consultantId ? " (fallback_template)" : ""
+    }`,
+  );
   return String(row.url);
 }
 
@@ -600,12 +657,15 @@ export type WaStitchResult = {
 export async function pickSafePersonalizedWaAudio(
   admin: any,
   opts: {
+    /** Consultor do lead — corpos próprios têm prioridade. */
     consultantId: string;
     slotKey: string;
     customerName: string | null | undefined;
     /** customers.name_source — push Zap / unknown → skip áudio nominal. */
     nameSource?: string | null;
     timeoutMs?: number;
+    /** Dono do template A público (fallback de corpo se o lead ainda não bootstrapou). */
+    mediaOwnerId?: string | null;
   },
 ): Promise<WaStitchResult> {
   if (!isPersonalizedWaAudioSlot(opts.slotKey)) {
@@ -626,6 +686,7 @@ export async function pickSafePersonalizedWaAudio(
         "masculino",
         spec.bodyText("masculino"),
         false,
+        opts.mediaOwnerId,
       );
       return { ok: true, url, mode: "body_only", cached: true };
     } catch (e) {
@@ -644,6 +705,7 @@ export async function pickSafePersonalizedWaAudio(
     slotKey: opts.slotKey,
     customerName: opts.customerName,
     nameSource: opts.nameSource,
+    mediaOwnerId: opts.mediaOwnerId,
   };
 
   // Olá+nome + só nome na biblioteca antes de montar stitch (A2/A3/A5).
@@ -1149,6 +1211,7 @@ export async function resolvePersonalizedWaAudio(
     slotKey: string;
     customerName: string | null | undefined;
     nameSource?: string | null;
+    mediaOwnerId?: string | null;
   },
 ): Promise<WaStitchResult> {
   const spec = SPECS[opts.slotKey];
@@ -1191,6 +1254,7 @@ export async function resolvePersonalizedWaAudio(
         gender,
         spec.bodyText(gender),
         spec.genderedBody,
+        opts.mediaOwnerId,
       );
       return downloadUrlBytes(bodyUrl);
     })();

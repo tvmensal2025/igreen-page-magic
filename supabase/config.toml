@@ -303,6 +303,10 @@ verify_jwt = false
 [functions.cadence-tick]
 verify_jwt = false
 
+# Gera A2 + call bodies com identidade do consultor (JWT do próprio user).
+[functions.consultant-identity-bootstrap]
+verify_jwt = true
+
 # UI administrativa: JWT de usuário + role admin/super_admin dentro da edge.
 [functions.cadence-tick-manual]
 verify_jwt = true

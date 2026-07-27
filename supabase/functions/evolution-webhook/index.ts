@@ -35,6 +35,7 @@ import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assi
 import {
   resolveCanonicalFlowVariant,
 } from "../_shared/bot/canonical-flow-variant.ts";
+import { resolveFlowId } from "../_shared/resolve-flow.ts";
 
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
 import { captureError } from "../_shared/sentry.ts";
@@ -2168,20 +2169,14 @@ Deno.serve(async (req) => {
       currentStep === "welcome" || currentStep === "menu_inicial" || !customer.conversation_step;
     if (isOpeningTurn) {
       try {
-        // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
-        // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
-        // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
+        // Template público A conta: consultor sem bot_flows A próprio (só D seed)
+        // ainda tem abertura Sofia — senão a IA KB rouba o "Oi".
         const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
-        const { data: activeFlows } = await supabase
-          .from("bot_flows")
-          .select("id")
-          .eq("consultant_id", instanceData.consultant_id)
-          .eq("is_active", true)
-          .eq("variant", variant)
-          .order("created_at", { ascending: true })
-          .limit(1);
-        const activeFlow = activeFlows?.[0] || null;
-        const flowId = (activeFlow as any)?.id ?? null;
+        const flowOwnerId = String(
+          (customer as any)?.consultant_id || instanceData.consultant_id || "",
+        );
+        const resolved = await resolveFlowId(supabase, flowOwnerId, variant);
+        const flowId = resolved?.id ?? null;
         if (flowId) {
           // (a) primeiro step ativo da sequência (`bot_flow_steps`)
           const { data: firstStep } = await supabase
@@ -2198,6 +2193,7 @@ Deno.serve(async (req) => {
               consultant_id: instanceData.consultant_id,
               customer_id: customer.id,
               source: "bot_flow_steps",
+              flow_id: flowId,
               step_key: (firstStep as any).step_key,
               position: (firstStep as any).position,
               v2_flag: v2Flag,
@@ -2216,6 +2212,7 @@ Deno.serve(async (req) => {
                 consultant_id: instanceData.consultant_id,
                 customer_id: customer.id,
                 source: "bot_flow_qa",
+                flow_id: flowId,
                 v2_flag: v2Flag,
               });
             }
@@ -2682,24 +2679,18 @@ Deno.serve(async (req) => {
 
       if (engine === "sys" && !isCadastroStep && !bridgeForcedSysForCapture && consultantFlag && customerOverride !== false && _fbVariantLegacy !== "B") {
         try {
-          // Seleção determinística por variante (espelho 1:1 do whapi-webhook):
-          // .eq("variant").order("created_at").limit(1) → no máximo 1 fluxo,
-          // nunca lança para 0/1/N fluxos ativos (substitui .maybeSingle()).
+          // Usa resolveFlowId (próprio OU template público A) — consultor sem
+          // bot_flows variant A (ex.: só D) ainda entra no funil Sofia igual ao Rafael.
           const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
-          const { data: activeFlows } = await supabase
-            .from("bot_flows")
-            .select("id")
-            .eq("consultant_id", instanceData.consultant_id)
-            .eq("is_active", true)
-            .eq("variant", variant)
-            .order("created_at", { ascending: true })
-            .limit(1);
-          const activeFlow = activeFlows?.[0] || null;
-          if ((activeFlow as any)?.id) {
+          const flowOwnerId = String(
+            (customer as any)?.consultant_id || instanceData.consultant_id || "",
+          );
+          const resolved = await resolveFlowId(supabase, flowOwnerId, variant);
+          if (resolved?.id) {
             const { count } = await supabase
               .from("bot_flow_steps")
               .select("id", { count: "exact", head: true })
-              .eq("flow_id", (activeFlow as any).id)
+              .eq("flow_id", resolved.id)
               .eq("is_active", true);
             if ((count || 0) > 0) {
               engine = "flow";
@@ -2707,8 +2698,21 @@ Deno.serve(async (req) => {
               if (!keepFlowStep) {
                 (customer as any).conversation_step = null;
               }
-              console.log(`🚀 [router] forçado para flow (consultor=${instanceData.consultant_id}, step legado="${stepBefore}", keepStep=${keepFlowStep})`);
+              if (!(customer as any).flow_variant) {
+                (customer as any).flow_variant = variant;
+              }
+              console.log(
+                `🚀 [router] forçado para flow via resolveFlowId (consultor=${flowOwnerId}, flow=${resolved.id}, variant=${variant}, step legado="${stepBefore}", keepStep=${keepFlowStep})`,
+              );
+            } else {
+              console.warn(
+                `[router] flow ${resolved.id} (variant=${variant}) sem steps ativos — mantendo sys`,
+              );
             }
+          } else {
+            console.warn(
+              `[router] resolveFlowId vazio variant=${variant} consultor=${flowOwnerId} — mantendo sys`,
+            );
           }
         } catch (e) {
           console.warn("[router] falha ao verificar flow ativo:", (e as any)?.message);

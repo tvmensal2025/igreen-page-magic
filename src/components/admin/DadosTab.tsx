@@ -259,6 +259,15 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       }
       setPersonaName(trimmed);
       toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
+      // Só regenera se Zap já estiver conectado.
+      try {
+        const { maybeBootstrapConsultantIdentity } = await import(
+          "@/lib/consultantIdentityBootstrap"
+        );
+        void maybeBootstrapConsultantIdentity({ consultantId: userId, force: true });
+      } catch (bootErr) {
+        console.warn("[identity-bootstrap] após nome IA:", bootErr);
+      }
     } catch (e: any) {
       toast({ title: "Erro ao salvar nome da IA", description: e?.message || String(e), variant: "destructive" });
     } finally {
@@ -587,6 +596,50 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <p className="text-[11px] text-muted-foreground">
             Salvo ao sair do campo. Esse nome aparece em todas as conversas com seus leads.
           </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="mt-2 h-auto px-0 text-xs text-muted-foreground hover:text-foreground"
+            onClick={async () => {
+              if (!userId) return;
+              const { maybeBootstrapConsultantIdentity } = await import("@/lib/consultantIdentityBootstrap");
+              toast({ title: "Gerando voz…", description: "Áudios e ligações com o nome da sua IA.", duration: 2500 });
+              const r = await maybeBootstrapConsultantIdentity({ consultantId: userId, force: true });
+              if (r.reason === "whatsapp_not_connected") {
+                toast({
+                  title: "Conecte o WhatsApp primeiro",
+                  description: "A voz personalizada só é gerada com o Zap conectado.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              if (r.reason === "identity_incomplete") {
+                toast({
+                  title: "Complete nome, IA e telefone",
+                  description: "Salve seus dados antes de gerar a voz.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              if (r.ok) {
+                toast({
+                  title: r.skipped ? "Já estava atualizado" : "Voz atualizada",
+                  description: r.skipped
+                    ? "Identidade sem mudança — nada a regenerar."
+                    : "Áudios WhatsApp e ligações personalizados.",
+                });
+              } else {
+                toast({
+                  title: "Não foi possível gerar a voz",
+                  description: r.error || "Tente de novo em instantes.",
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Atualizar voz com meu nome
+          </Button>
 
         </div>
       </div>

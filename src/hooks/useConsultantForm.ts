@@ -163,6 +163,26 @@ export function useConsultantForm(
         console.warn("[useConsultantForm] check_consultant_phone_match falhou", verifyErr);
       }
 
+      // Áudios só se Zap já estiver conectado (não gera no cadastro seco).
+      try {
+        const { maybeBootstrapConsultantIdentity } = await import(
+          "@/lib/consultantIdentityBootstrap"
+        );
+        void maybeBootstrapConsultantIdentity({ consultantId: userId }).then((r) => {
+          if (r.ok && !r.skipped) {
+            toast({
+              title: "Voz da sua IA em preparação",
+              description: "Áudios e ligações serão personalizados com o nome da sua assistente.",
+              duration: 3500,
+            });
+          } else if (!r.ok && r.error && !/assistant_name|phone_required|name_required/.test(r.error)) {
+            console.warn("[identity-bootstrap]", r.error);
+          }
+        });
+      } catch (bootErr) {
+        console.warn("[identity-bootstrap] invoke falhou", bootErr);
+      }
+
       toast({ title: "✅ Dados salvos com sucesso!", ...(licenseAdjusted ? { description: `A licença foi ajustada automaticamente para ${savedConsultant?.license || finalLicense}.` } : {}) });
       return true;
     } catch (error: unknown) {

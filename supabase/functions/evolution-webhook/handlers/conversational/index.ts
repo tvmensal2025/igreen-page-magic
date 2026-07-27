@@ -522,7 +522,8 @@ async function sendStepMedia(
       let safe: Awaited<ReturnType<typeof pickSafePersonalizedWaAudio>>;
       try {
         safe = await pickSafePersonalizedWaAudio(ctx.supabase, {
-          consultantId: mediaOwnerId,
+          consultantId: consultantId || mediaOwnerId,
+          mediaOwnerId,
           slotKey: String(slotKey),
           customerName: (ctx.customer as any)?.name,
           nameSource: (ctx.customer as any)?.name_source,

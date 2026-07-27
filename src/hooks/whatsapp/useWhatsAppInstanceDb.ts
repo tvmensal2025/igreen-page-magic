@@ -104,6 +104,16 @@ export function useWhatsAppInstanceDb(consultantId: string): UseWhatsAppInstance
             detail: { consultantId, connectedPhone: connectedDigits },
           }));
         }
+
+        // Ao conectar/sincronizar Zap: gera voz da IA (só este consultor).
+        try {
+          const { maybeBootstrapConsultantIdentity } = await import(
+            "@/lib/consultantIdentityBootstrap"
+          );
+          void maybeBootstrapConsultantIdentity({ consultantId });
+        } catch {
+          /* non-critical */
+        }
       } catch {
         // Non-critical
       }

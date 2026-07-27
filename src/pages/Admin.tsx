@@ -216,6 +216,28 @@ const AdminContent = () => {
 
   const { instanceName, isWhapi, connectionStatus } = useWhatsApp(userId || "");
 
+  // Ao entrar no painel com Zap já conectado: gera voz da IA (idempotente).
+  useEffect(() => {
+    if (!userId) return;
+    const connected = !!isWhapi || connectionStatus === "connected";
+    if (!connected) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { maybeBootstrapConsultantIdentity } = await import(
+          "@/lib/consultantIdentityBootstrap"
+        );
+        if (cancelled) return;
+        await maybeBootstrapConsultantIdentity({ consultantId: userId });
+      } catch {
+        /* non-critical */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, isWhapi, connectionStatus]);
+
   // Presença do consultor: mantém heartbeat na tabela `consultant_presence`
   // a cada 25s. O bot consulta antes de mandar dados de OCR pro cliente —
   // se o consultor está aqui olhando, pausa pra ele decidir no painel.

@@ -45,6 +45,7 @@ import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts
 import {
   resolveCanonicalFlowVariant,
 } from "../_shared/bot/canonical-flow-variant.ts";
+import { resolveFlowId } from "../_shared/resolve-flow.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
@@ -3085,25 +3086,18 @@ Deno.serve(async (req) => {
         _fbVariantLegacy !== "B"
       ) {
         try {
-          // 🔑 FIX: Rafael tem fluxos A/B/C ativos simultâneos. Filtrar pela
-          // variant do customer (default "A") evita o erro "multiple rows"
-          // que antes deixava activeFlow=null e fazia o engine cair em sys
-          // (que disparava a IA do welcome legacy em vez do Fluxo da Camila).
+          // resolveFlowId: próprio OU template público A (paridade Evolution /
+          // consultores sem bot_flows A — só D — ainda entram no funil Sofia).
           const variant = resolveCanonicalFlowVariant((customer as any)?.flow_variant);
-          const { data: activeFlows } = await supabase
-            .from("bot_flows")
-            .select("id")
-            .eq("consultant_id", superAdminConsultantId)
-            .eq("is_active", true)
-            .eq("variant", variant)
-            .order("created_at", { ascending: true })
-            .limit(1);
-          const activeFlow = activeFlows?.[0] || null;
-          if (activeFlow?.id) {
+          const flowOwnerId = String(
+            (customer as any)?.consultant_id || superAdminConsultantId || "",
+          );
+          const resolved = await resolveFlowId(supabase, flowOwnerId, variant);
+          if (resolved?.id) {
             const { count } = await supabase
               .from("bot_flow_steps")
               .select("id", { count: "exact", head: true })
-              .eq("flow_id", (activeFlow as any).id)
+              .eq("flow_id", resolved.id)
               .eq("is_active", true);
             if ((count || 0) > 0) {
               engine = "flow";
@@ -3112,12 +3106,17 @@ Deno.serve(async (req) => {
               if (!keepFlowStep) {
                 (customer as any).conversation_step = null;
               }
-              console.log(`🚀 [router] forçado para flow (consultor=${superAdminConsultantId}, variant=${variant}, step legado="${stepBefore}", keepStep=${keepFlowStep})`);
+              if (!(customer as any).flow_variant) {
+                (customer as any).flow_variant = variant;
+              }
+              console.log(
+                `🚀 [router] forçado para flow via resolveFlowId (consultor=${flowOwnerId}, flow=${resolved.id}, variant=${variant}, step legado="${stepBefore}", keepStep=${keepFlowStep})`,
+              );
             } else {
-              console.warn(`[router] flow ${activeFlow.id} (variant=${variant}) sem steps ativos — mantendo sys`);
+              console.warn(`[router] flow ${resolved.id} (variant=${variant}) sem steps ativos — mantendo sys`);
             }
           } else {
-            console.warn(`[router] nenhum bot_flow ativo para variant=${variant} consultor=${superAdminConsultantId} — mantendo sys`);
+            console.warn(`[router] resolveFlowId vazio variant=${variant} consultor=${flowOwnerId} — mantendo sys`);
           }
         } catch (e) {
           console.warn("[router] falha ao verificar flow ativo:", (e as any)?.message);
