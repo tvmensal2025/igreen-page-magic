@@ -162,6 +162,10 @@ async function processCustomer(
     .eq("stage_scope", "pos_venda")
     .maybeSingle();
 
+  if (stageData?.auto_message_enabled === false) {
+    return { moved: true, sent: false };
+  }
+
   // Conteúdo configurado pelo próprio consultor? (multi-msg OU legacy no kanban)
   let msgCount = 0;
   if (stageData) {
