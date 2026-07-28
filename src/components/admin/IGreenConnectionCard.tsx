@@ -341,7 +341,12 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
     }
     setSavingAccountId(accountId);
     try {
-      const patch: Record<string, unknown> = {
+      const patch: {
+        portal_email: string;
+        label: string | null;
+        updated_at: string;
+        portal_password?: string;
+      } = {
         portal_email: email,
         label: editLabel.trim() || null,
         updated_at: new Date().toISOString(),
