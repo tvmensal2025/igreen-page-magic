@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-28** (Grupo A UUID ≠ Cérebro + reset Leandro).
+Última atualização: **2026-07-28** (abertura welcome sem Gestor/consultora).
+
+## 2026-07-28 — Abertura “Gestor” / “consultora” no protocolo (Leandro)
+Msg real: `Aqui é *Rafael Ferreira*, *Gestor* da *iGreen*` + `IGR-IGR-4900`. Causa: `buildWelcomeHeaderProtocol` legado com `, *Gestor*` hardcoded (removido em 26/07 mas edge antiga ainda rodou); fallback sem nome virava literal `*consultora*`. Fix: `scrubLegacyWelcomeRoleLeak` + sem nome → “atendimento da iGreen”; presentation label só nome humano; strip cargo no nome. Armadilha #41. Deploy: whapi/evolution/start-customer-attendance.
 
 ## 2026-07-28 — Grupo A UUID caía no Cérebro (Leandro Severiano)
 Lead novo no Sofia A com `conversation_step` = UUID de `a1_ask_name`: `_emCadastro` só checava `CADASTRO_STEPS` (keys legadas) → `false` → Cérebro assumia (“outro fluxo”). Msg start_attendance com protocolo vazio virava `Protocolo:**`. Fix: `_emCadastro |= isActiveConversationalFunnelStep` (whapi+evolution); scrub linha protocolo vazia em `attendance-flow`; template start_attendance do Rafael alinhado ao A1; badge PAUSED na pizza usa `operationalGroup`. Armadilha #40. Lead resetado → `welcome` + cadence `NEW`.

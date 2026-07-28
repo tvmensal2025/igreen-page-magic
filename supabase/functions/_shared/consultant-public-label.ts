@@ -69,17 +69,26 @@ export function possessiveConsultantFallback(
 }
 
 /**
- * Label pra "Aqui é o/a *X*": nome humano, senão substantivo "consultor"/"consultora"
- * (o artigo {{o_a_consultor}} fica no template → "é o consultor" / "é a consultora").
+ * Label pra "Aqui é o/a *X*": só nome humano.
+ * Vazio se slug/lixo — o caller usa "Aqui é o atendimento da iGreen"
+ * (nunca coloca "consultor"/"consultora" entre asteriscos; bug "falando consultora").
  */
 export function resolveConsultantPresentationLabel(
   name: string | null | undefined,
   displayName: string | null | undefined,
-  gender?: ConsultantGender | string | null,
+  _gender?: ConsultantGender | string | null,
 ): string {
-  const label = resolvePublicConsultantLabel(name, displayName, "");
-  if (label) return label;
-  return String(gender || "").trim() === "consultora" ? "consultora" : "consultor";
+  // Cargo grudado no cadastro — limpar ANTES do shortLabel (senão vira "Rafael Ferreira,").
+  const clean = (raw: string | null | undefined) =>
+    String(raw || "")
+      .replace(/[,–—\-]\s*(gestor|gestora|consultor|consultora)\b.*$/i, "")
+      .replace(/\s+(gestor|gestora)\s*$/i, "")
+      .trim();
+  const label = resolvePublicConsultantLabel(clean(name), clean(displayName), "");
+  if (!label) return "";
+  const cleaned = label.replace(/[,–—\-;:\s]+$/g, "").trim();
+  if (/^(seu |sua )?(consultor|consultora)$/i.test(cleaned)) return "";
+  return cleaned;
 }
 
 function stripDiacritics(s: string): string {

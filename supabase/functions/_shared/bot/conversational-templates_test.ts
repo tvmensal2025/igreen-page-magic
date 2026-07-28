@@ -56,3 +56,14 @@ Deno.test("buildGrupoAOpenAttendanceText — consultora", () => {
   });
   assertStringIncludes(full, "Aqui é a *Ana Silva* da *iGreen*.");
 });
+
+Deno.test("buildGrupoAOpenAttendanceText — sem nome nunca fala consultora/Gestor", () => {
+  const full = buildGrupoAOpenAttendanceText({
+    consultantName: "",
+    protocol: "IGR-XXX-0001",
+    gender: "consultora",
+  });
+  assertStringIncludes(full, "Aqui é o atendimento da *iGreen*.");
+  assertEquals(/consultora/i.test(full), false);
+  assertEquals(/gestor/i.test(full), false);
+});

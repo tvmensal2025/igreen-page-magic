@@ -18,6 +18,7 @@ import {
   scrubEmptyNameGreeting,
 } from "./customer-display-name.ts";
 import { resolvePublicConsultantLabel } from "./consultant-public-label.ts";
+import { scrubLegacyWelcomeRoleLeak } from "./protocol.ts";
 
 export type RenderVars = {
   name?: string | null;
@@ -133,21 +134,21 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   const legacyName = String(vars.representante || "").trim();
   let rep = resolvePublicConsultantLabel(legacyName, displayName, "");
   if (!rep) {
-    // slug-like legado sem display → substantivo (artigo vem de {{o_a_consultor}})
+    // slug-like legado sem display → vazio (nunca "consultora" entre *asteriscos*)
     const isSlugLike =
       legacyName.length > 0 &&
       !/\s/.test(legacyName) &&
       legacyName === legacyName.toLowerCase() &&
       (/\d/.test(legacyName) || legacyName.length >= 9);
-    const gender = String(vars.consultor_gender || "").trim();
-    rep = isSlugLike
-      ? (gender === "consultora" ? "consultora" : "consultor")
-      : legacyName;
+    rep = isSlugLike ? "" : legacyName;
   }
-  if (!rep) {
-    const gender = String(vars.consultor_gender || "").trim();
-    rep = gender === "consultora" ? "consultora" : "consultor";
-  }
+  // Substantivo de papel NÃO é nome — deixa vazio; scrub limpa "é o  da iGreen".
+  if (/^(seu |sua )?(consultor|consultora)$/i.test(rep)) rep = "";
+  // Cargo grudado (legado "Nome, Gestor")
+  rep = rep
+    .replace(/[,–—\-]\s*(gestor|gestora|consultor|consultora)\b.*$/i, "")
+    .replace(/\s+(gestor|gestora)\s*$/i, "")
+    .trim();
   const oAConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "a" : "o";
   const doDaConsultor = String(vars.consultor_gender || "").trim() === "consultora" ? "da" : "do";
   // IA do consultor — cada um cadastra em Dados (`assistant_name`).
@@ -253,5 +254,6 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   if (!firstName) {
     out = scrubEmptyNameGreeting(out);
   }
-  return out;
+  // Nunca vazar ", *Gestor*" nem "*consultora*" no lugar do nome (welcome/cadência).
+  return scrubLegacyWelcomeRoleLeak(out);
 }

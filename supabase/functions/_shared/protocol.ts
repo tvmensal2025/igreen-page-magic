@@ -119,38 +119,89 @@ export async function assignProtocolToCustomer(
 }
 
 
+/** Remove cargo/título grudado no nome (ex.: "Rafael Ferreira, Gestor"). */
+export function stripConsultantRoleSuffix(name: string | null | undefined): string {
+  return String(name || "")
+    .replace(/[,–—\-]\s*(gestor|gestora|consultor|consultora)\b.*$/i, "")
+    .replace(/\s+\*?(gestor|gestora|consultor|consultora)\*?\s*$/i, "")
+    .trim();
+}
+
+/** True se o label é só o substantivo de papel — nunca vai entre *asteriscos* na abertura. */
+export function isConsultantRoleNounLabel(raw: string | null | undefined): boolean {
+  const s = String(raw || "").trim().toLowerCase();
+  return /^(seu |sua )?(consultor|consultora)$/.test(s);
+}
+
+/**
+ * Remove vazamentos legados na abertura (bug 2026-07-28 Leandro):
+ * - `, *Gestor*` hardcoded (buildWelcome antigo)
+ * - `*consultora*` / `*consultor*` no lugar do nome
+ * - artigo órfão após nome vazio (`Aqui é o  da`)
+ */
+export function scrubLegacyWelcomeRoleLeak(text: string): string {
+  let out = String(text || "");
+  // ", *Gestor*" / ", gestor" imediatamente antes de "da iGreen"
+  out = out.replace(/,\s*\*?gestor(?:a)?\*?\s+(?=da\b)/gi, " ");
+  // Nome + cargo no mesmo bold: "*Rafael, Gestor*" → "*Rafael*"
+  out = out.replace(
+    /\*([^*\n]+?),\s*(gestor|gestora|consultor|consultora)\*/gi,
+    (_m, nome: string) => `*${String(nome).trim()}*`,
+  );
+  // Substantivo de papel no lugar do nome humano
+  out = out.replace(
+    /Aqui é\s+(o|a)\s+\*?(seu |sua )?(consultor|consultora)\*?\s+da/gi,
+    "Aqui é o atendimento da",
+  );
+  // Artigo órfão quando {{consultor}} veio vazio: "Aqui é o  da" / "Aqui é a * * da"
+  out = out.replace(/Aqui é\s+(o|a)\s+\*?\s*\*?\s+da/gi, "Aqui é o atendimento da");
+  out = out.replace(/👤\s*Consultor\(a\):\s*\*?[^*\n]*\*?\s*/gi, "");
+  return out
+    .replace(/\*\s*\*/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export function buildWelcomeHeaderGreeting(consultantName?: string | null): string {
-  const who = (consultantName || "").trim();
+  const who = stripConsultantRoleSuffix(consultantName);
   const lines = [
     `Olá! ${greetingForNow()}`,
     "Este é o canal de atendimento especializado da *iGreen Energy*.",
   ];
-  if (who) lines.push(`Você será atendido(a) por *${who}*.`);
+  if (who && !isConsultantRoleNounLabel(who)) {
+    lines.push(`Você será atendido(a) por *${who}*.`);
+  }
   return lines.join("\n");
 }
 
 /**
  * Bloco profissional de abertura (marca + protocolo).
  * Artigo o/a conforme gender do consultor (nunca "Aqui é consultor" sem artigo).
+ * Sem nome humano → "Aqui é o atendimento da iGreen" (nunca "a *consultora*").
+ * Nunca hardcodar cargo (Gestor/Gestora).
  */
 export function buildWelcomeHeaderProtocol(
   protocol: string,
   consultantName?: string | null,
   opts?: { gender?: "consultor" | "consultora" | string | null },
 ): string {
-  const who = (consultantName || "").trim() || (
-    String(opts?.gender || "").trim() === "consultora" ? "consultora" : "consultor"
-  );
+  const whoRaw = stripConsultantRoleSuffix(consultantName);
+  const who = whoRaw && !isConsultantRoleNounLabel(whoRaw) ? whoRaw : "";
   const oa = String(opts?.gender || "").trim() === "consultora" ? "a" : "o";
   const proto = String(protocol || "").trim();
-  return [
+  const intro = who
+    ? `Olá! Aqui é ${oa} *${who}* da *iGreen*.`
+    : "Olá! Aqui é o atendimento da *iGreen*.";
+  return scrubLegacyWelcomeRoleLeak([
     "*iGreen | Conta de Luz Mais Barata 🌱*",
     "",
-    `Olá! Aqui é ${oa} *${who}* da *iGreen*.`,
+    intro,
     "",
     "Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.",
     proto ? `\n📋 *Protocolo:* ${proto}` : null,
-  ].filter((l) => l !== null).join("\n");
+  ].filter((l) => l !== null).join("\n"));
 }
 
 /** Texto único A1 / abertura: cabeçalho + pedido do nome. */

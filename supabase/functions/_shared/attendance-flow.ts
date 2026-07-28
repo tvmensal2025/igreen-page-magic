@@ -10,6 +10,7 @@ import {
   assignProtocolToCustomer,
   buildWelcomeHeaderGreeting,
   buildWelcomeHeaderProtocol,
+  scrubLegacyWelcomeRoleLeak,
 } from "./protocol.ts";
 import {
   resolveChannelForCustomer,
@@ -430,6 +431,8 @@ export async function sendWelcomeHeader(
         .replace(/\n{3,}/g, "\n\n")
         .trim();
     }
+    // Nunca enviar ", *Gestor*" nem "*consultora*" no lugar do nome.
+    text = scrubLegacyWelcomeRoleLeak(text);
     const sendCtxOv = {
       customerId,
       consultantId: consultantId || "",
@@ -501,7 +504,7 @@ export async function sendWelcomeHeader(
   }
 
 
-  const greeting = buildWelcomeHeaderGreeting(consultantName);
+  const greeting = scrubLegacyWelcomeRoleLeak(buildWelcomeHeaderGreeting(consultantName));
   const askName = await resolveAttendanceTpl(
     supabase,
     consultantId,
@@ -509,7 +512,7 @@ export async function sendWelcomeHeader(
     NAME_ASK_TEXT,
     { consultor: consultantName || "", protocolo: protocol },
   );
-  const protocolTpl = await resolveAttendanceTpl(
+  const protocolTpl = scrubLegacyWelcomeRoleLeak(await resolveAttendanceTpl(
     supabase,
     consultantId,
     "attendance_protocol_block",
@@ -519,8 +522,8 @@ export async function sendWelcomeHeader(
       protocolo: protocol,
       o_a_consultor: consultantGender === "consultora" ? "a" : "o",
     },
-  );
-  const protoBlock = `${protocolTpl}\n\n${askName}`;
+  ));
+  const protoBlock = scrubLegacyWelcomeRoleLeak(`${protocolTpl}\n\n${askName}`);
 
   const sendCtx = {
     customerId,
