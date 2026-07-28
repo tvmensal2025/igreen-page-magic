@@ -64,7 +64,7 @@ const ProdutoPremiumPage = () => {
     cadastroUrl,
     track,
     firstName,
-  } = usePremiumConsultant(slug || "produto-premium");
+  } = usePremiumConsultant(slug ? `${slug}-premium` : "produto-premium");
 
   useReveal(rootRef);
 

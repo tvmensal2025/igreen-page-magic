@@ -60,8 +60,8 @@ const ADS_SOURCES = [
  * - `useConsultant` / `useInstancePhone`: resolvem o consultor e o número de
  *   atendimento com a mesma regra da LP original (instância Whapi tem
  *   prioridade sobre o telefone do perfil).
- * - `useTrackView` / `trackClickEvent`: as métricas da premium caem no mesmo
- *   funil, então dá para comparar as duas versões lado a lado.
+ * - `useTrackView` / `trackClickEvent`: métricas da premium usam `client-premium`
+ *   (separado do Green normal = `client`) no mesmo painel de Resultados.
  * - `PixelInjector`: Pixel da plataforma + Pixel/GA do consultor (Dados).
  * - `CanonicalLicenseRedirect`: mantém a licença canônica na URL.
  */
@@ -73,7 +73,7 @@ const ConexaoGreenPremiumPage = () => {
   const { data: consultant, isLoading } = useConsultant(licenca || "");
   const { data: instancePhone } = useInstancePhone(consultant?.id);
 
-  useTrackView(consultant?.id, "client");
+  useTrackView(consultant?.id, "client-premium");
   useReveal(rootRef);
 
   // Sobe o FAB global de WhatsApp para ele não colidir com o dock do mobile.
@@ -86,7 +86,7 @@ const ConexaoGreenPremiumPage = () => {
   const consultantId = consultant?.id;
   const track = useCallback(
     (target: string) => {
-      if (consultantId) trackClickEvent(consultantId, target, "client");
+      if (consultantId) trackClickEvent(consultantId, target, "client-premium");
     },
     [consultantId],
   );

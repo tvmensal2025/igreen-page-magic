@@ -46,10 +46,10 @@ export interface PremiumConsultantState {
  * - Telefone: `whatsapp_instances_public.connected_phone` tem prioridade sobre
  *   `consultants.phone`, porque é o número que de fato está conectado ao Whapi.
  * - Prefixo 55 aplicado uma única vez.
- * - `page_type` no tracking recebe o slug da página, então dá para comparar o
- *   desempenho da premium contra a original no mesmo relatório.
+ * - `page_type` no tracking: premium usa sufixo `-premium` (ex.: `conexao-telecom-premium`)
+ *   para o painel separar Normal × Premium. Expansão = `expansao-premium`.
  *
- * @param pageType Identificador da página nas métricas (ex.: "conexao-telecom").
+ * @param pageType Identificador da página nas métricas (ex.: "conexao-telecom-premium").
  */
 export function usePremiumConsultant(pageType: string): PremiumConsultantState {
   const { licenca } = useParams<{ licenca: string }>();

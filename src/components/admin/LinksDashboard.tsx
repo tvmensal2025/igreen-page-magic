@@ -3,10 +3,8 @@ import { Eye, Smartphone, Monitor, MousePointerClick, MessageCircle, UserPlus, T
 import { supabase } from "@/integrations/supabase/client";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-// ════════════════════════════════════════════════
-// Dashboard de métricas das landing pages do consultor
-// Lê page_views (visitas) e page_events (cliques) dos últimos N dias.
-// ════════════════════════════════════════════════
+// Dashboard de métricas das landing pages do consultor.
+// Lê page_views + page_events (todo período ou N dias) e filtra Normal / Premium / Todas.
 
 interface LinksDashboardProps {
   consultantId?: string;
@@ -23,6 +21,8 @@ const FAIXAS_HORARIO = [
 
 /** `all` = desde o primeiro registro (nada de fora). */
 type Period = 7 | 30 | 90 | "all";
+/** Filtro do painel Resultados — independente do botão Normal/Premium em Meus Links. */
+type VersionFilter = "all" | "normal" | "premium";
 
 const PERIOD_OPTS: { value: Period; label: string }[] = [
   { value: 7, label: "7 dias" },
@@ -30,6 +30,60 @@ const PERIOD_OPTS: { value: Period; label: string }[] = [
   { value: 90, label: "90 dias" },
   { value: "all", label: "Todo período" },
 ];
+
+const VERSION_OPTS: { value: VersionFilter; label: string }[] = [
+  { value: "all", label: "Todas" },
+  { value: "normal", label: "Só normais" },
+  { value: "premium", label: "Só premium" },
+];
+
+/** Premium = page_type com `-premium` / `premium` (green = `client-premium`). */
+function isPremiumPageType(pageType: string | null | undefined): boolean {
+  const p = String(pageType || "").toLowerCase();
+  return p.includes("premium");
+}
+
+function labelPageType(pageType: string): string {
+  const map: Record<string, string> = {
+    client: "Green (normal)",
+    "client-premium": "Green (premium)",
+    licenciada: "Expansão (normal)",
+    "expansao-premium": "Expansão (premium)",
+    cadastro: "Cadastro Rápido",
+    "conexao-telecom": "Telecom (normal)",
+    "conexao-telecom-premium": "Telecom (premium)",
+    "conexao-seguros": "Seguros (normal)",
+    "conexao-seguros-premium": "Seguros (premium)",
+    "conexao-solar": "Solar (normal)",
+    "conexao-solar-premium": "Solar (premium)",
+    "conexao-placas": "Placas (normal)",
+    "conexao-placas-premium": "Placas (premium)",
+    "conexao-livre": "Livre (normal)",
+    "conexao-livre-premium": "Livre (premium)",
+    "conexao-club": "Club (normal)",
+    "conexao-club-premium": "Club (premium)",
+    "conexao-club-pj": "Club PJ (normal)",
+    "conexao-club-pj-premium": "Club PJ (premium)",
+  };
+  return map[pageType] || pageType;
+}
+
+function labelSource(src: string): string {
+  const map: Record<string, string> = {
+    direto: "Direto / sem UTM",
+    instagram: "Instagram",
+    facebook: "Facebook",
+    whatsapp: "WhatsApp",
+    tiktok: "TikTok",
+    youtube: "YouTube",
+    google: "Google",
+    ads: "Anúncio",
+    meta: "Meta / Ads",
+    ig: "Instagram",
+    fb: "Facebook",
+  };
+  return map[src.toLowerCase()] || src;
+}
 
 /** Busca todas as linhas (pagina além do limite default 1000 do PostgREST). */
 async function fetchAllRows<T>(
@@ -49,6 +103,7 @@ async function fetchAllRows<T>(
 
 export function LinksDashboard({ consultantId }: LinksDashboardProps) {
   const [period, setPeriod] = useState<Period>("all");
+  const [version, setVersion] = useState<VersionFilter>("all");
   const [views, setViews] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,79 +160,90 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
     return () => { cancelled = true; };
   }, [consultantId, period]);
 
-  // ─── Cálculos ───
+  // ─── Cálculos (filtro Normal / Premium / Todas) ───
   const metrics = useMemo(() => {
-    const totalViews = views.length;
-    const mobile = views.filter((v) => v.device_type === "mobile").length;
+    const matchVersion = (pageType: string | null | undefined) => {
+      if (version === "all") return true;
+      const prem = isPremiumPageType(pageType);
+      return version === "premium" ? prem : !prem;
+    };
+
+    const filteredViews = views.filter((v) => matchVersion(v.page_type));
+    const filteredEvents = events.filter((e) => matchVersion(e.page_type));
+
+    const totalViews = filteredViews.length;
+    const mobile = filteredViews.filter((v) => v.device_type === "mobile").length;
     const desktop = totalViews - mobile;
 
-    // Cliques
-    const whatsappClicks = events.filter((e) => e.event_target === "whatsapp").length;
-    const cadastroClicks = events.filter((e) => e.event_target === "cadastro").length;
-    const totalClicks = events.length;
+    const whatsappClicks = filteredEvents.filter((e) => e.event_target === "whatsapp").length;
+    const cadastroClicks = filteredEvents.filter((e) => e.event_target === "cadastro").length;
+    const totalClicks = filteredEvents.length;
     const conversao = totalViews > 0 ? Math.round((totalClicks / totalViews) * 100) : 0;
 
-    // Por dia
     const dayMap: Record<string, number> = {};
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const d = v.created_at?.slice(0, 10);
       if (d) dayMap[d] = (dayMap[d] || 0) + 1;
     });
     const daily = Object.entries(dayMap).sort((a, b) => a[0].localeCompare(b[0])).map(([date, n]) => ({ date: date.slice(5), visitas: n }));
 
-    // Por dia da semana
     const weekMap = [0, 0, 0, 0, 0, 0, 0];
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const wd = new Date(v.created_at).getDay();
       weekMap[wd]++;
     });
     const byWeekday = DIAS_SEMANA.map((label, i) => ({ dia: label, visitas: weekMap[i] }));
     const bestWeekday = weekMap.indexOf(Math.max(...weekMap));
 
-    // Por faixa de horário
     const hourBuckets = FAIXAS_HORARIO.map((f) => ({ ...f, visitas: 0 }));
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const h = new Date(v.created_at).getHours();
       const bucket = hourBuckets.find((b) => h >= b.min && h <= b.max);
       if (bucket) bucket.visitas++;
     });
     const bestHourBucket = hourBuckets.reduce((a, b) => (b.visitas > a.visitas ? b : a), hourBuckets[0]);
 
-    // Por hora exata (para heatmap simples)
     const hourMap = Array.from({ length: 24 }, (_, h) => ({ hora: `${h}h`, visitas: 0 }));
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const h = new Date(v.created_at).getHours();
       hourMap[h].visitas++;
     });
 
-    // Fontes
     const srcMap: Record<string, number> = {};
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const s = v.utm_source || "direto";
       srcMap[s] = (srcMap[s] || 0) + 1;
     });
-    const bySource = Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 7).map(([name, value]) => ({ name, value }));
+    const bySource = Object.entries(srcMap)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 8)
+      .map(([name, value]) => ({ name: labelSource(name), value, raw: name }));
 
-    // Páginas mais visitadas
     const pageMap: Record<string, number> = {};
-    views.forEach((v) => {
+    filteredViews.forEach((v) => {
       const p = v.page_type || "outro";
       pageMap[p] = (pageMap[p] || 0) + 1;
     });
-    const byPage = Object.entries(pageMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+    const byPage = Object.entries(pageMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name: labelPageType(name), value, raw: name }));
+
+    const premiumCount = views.filter((v) => isPremiumPageType(v.page_type)).length;
+    const normalCount = views.length - premiumCount;
 
     return {
       totalViews, mobile, desktop, whatsappClicks, cadastroClicks, totalClicks, conversao,
       daily, byWeekday, bestWeekday, hourBuckets, bestHourBucket, hourMap, bySource, byPage,
+      premiumCount, normalCount, rawTotal: views.length,
     };
-  }, [views, events]);
+  }, [views, events, version]);
 
   const periodLabel =
     period === "all" ? "todo o período" : period === 7 ? "7 dias" : period === 30 ? "30 dias" : "90 dias";
 
   return (
     <div className="space-y-6">
-      {/* Cabeçalho + seletor de período */}
+      {/* Cabeçalho + período */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-primary" />
@@ -197,13 +263,43 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
         </div>
       </div>
 
+      {/* Filtro Normal × Premium (só neste painel — Meus Links é outra aba) */}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">Versão do link:</span>
+        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
+          {VERSION_OPTS.map((v) => (
+            <button
+              key={v.value}
+              type="button"
+              onClick={() => setVersion(v.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${version === v.value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+        {!loading && metrics.rawTotal > 0 && (
+          <span className="text-[11px] text-muted-foreground">
+            Base: {metrics.rawTotal} visitas · {metrics.normalCount} normal · {metrics.premiumCount} premium
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground -mt-3">
+        Instagram / Facebook só aparecem em “De onde vêm” se o visitante abriu o link com rastreio
+        (botão 📸 Instagram em Meus Links). Sem UTM cai em <strong className="font-medium text-foreground/80">Direto</strong>.
+      </p>
+
       {loading ? (
         <div className="h-64 flex items-center justify-center text-muted-foreground">Carregando dados...</div>
       ) : metrics.totalViews === 0 ? (
         <div className="bg-card rounded-2xl border border-border p-10 text-center">
           <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="font-heading font-bold text-foreground">Ainda sem visitas neste período</p>
-          <p className="text-sm text-muted-foreground mt-1">Compartilhe seus links e os dados aparecem aqui automaticamente.</p>
+          <p className="font-heading font-bold text-foreground">Ainda sem visitas neste filtro</p>
+          <p className="text-sm text-muted-foreground mt-1">
+            {version === "premium"
+              ? "Ainda não há visitas marcadas como premium neste período. Visitas antigas da Green premium podem estar em “Só normais” (antes do marcador separado)."
+              : "Compartilhe seus links e os dados aparecem aqui automaticamente."}
+          </p>
         </div>
       ) : (
         <>
@@ -231,6 +327,28 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                 <Area type="monotone" dataKey="visitas" stroke="hsl(var(--primary))" strokeWidth={2} fill="url(#gViews)" />
               </AreaChart>
             </ResponsiveContainer>
+          </ChartCard>
+
+          {/* ─── Páginas (Green / Premium / Telecom…) ─── */}
+          <ChartCard title="Qual página foi visitada" icon={<Eye className="w-4 h-4" />}>
+            {metrics.byPage.length > 0 ? (
+              <div className="space-y-2">
+                {metrics.byPage.map((p) => {
+                  const pct = metrics.totalViews > 0 ? Math.round((p.value / metrics.totalViews) * 100) : 0;
+                  return (
+                    <div key={p.raw} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <span className="text-foreground/90 truncate">{p.name}</span>
+                        <span className="font-bold text-foreground shrink-0">{p.value} · {pct}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : <EmptyMini />}
           </ChartCard>
 
           {/* ─── Melhor dia + Melhor horário (destaques) ─── */}
@@ -276,7 +394,7 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
 
           {/* ─── Fontes + Dispositivo ─── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <ChartCard title="De onde vêm as visitas" icon={<TrendingUp className="w-4 h-4" />}>
+            <ChartCard title="De onde vêm as visitas (Instagram, WhatsApp…)" icon={<TrendingUp className="w-4 h-4" />}>
               {metrics.bySource.length > 0 ? (
                 <div className="flex items-center gap-4">
                   <ResponsiveContainer width={150} height={150}>
@@ -289,7 +407,7 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                   </ResponsiveContainer>
                   <div className="space-y-1.5 flex-1">
                     {metrics.bySource.map((s, i) => (
-                      <div key={s.name} className="flex items-center gap-2 text-xs">
+                      <div key={s.raw} className="flex items-center gap-2 text-xs">
                         <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
                         <span className="text-foreground/80 flex-1 capitalize">{s.name}</span>
                         <span className="font-bold text-foreground">{s.value}</span>
