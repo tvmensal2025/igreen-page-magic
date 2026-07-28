@@ -2,7 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { PartnerDashboard } from "./PartnerDashboard";
 import { PartnerForm } from "./PartnerForm";
 import { PartnerQrCode } from "./PartnerQrCode";
-import { ConsultantBannerDownloadModal } from "./ConsultantBannerDownloadModal";
+import {
+  ConsultantBannerDownloadModal,
+  type BannerSpot,
+} from "./ConsultantBannerDownloadModal";
 import { ManualReviewQueueCard } from "./ManualReviewQueueCard";
 import {
   useReferralPartners,
@@ -16,7 +19,6 @@ interface ParceirosTabProps {
   consultantPhone: string;
   consultantName?: string;
   consultantIgreenId?: string;
-  /** Licença do consultor — usada para montar o link curto do redirect. */
   license?: string | null;
 }
 
@@ -33,17 +35,20 @@ export function ParceirosTab({
   );
   const [qrPartner, setQrPartner] = useState<ReferralPartner | null>(null);
   const [bannerOpen, setBannerOpen] = useState(false);
-  const [bannerKeywords, setBannerKeywords] = useState<string[]>([]);
+  const [bannerSpots, setBannerSpots] = useState<BannerSpot[]>([]);
+  const [bannerDefaultPhrase, setBannerDefaultPhrase] = useState<string | null>(
+    null,
+  );
   const [whapiPhone, setWhapiPhone] = useState(consultantPhone);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
 
   const loadConsultantBannerData = useCallback(async () => {
     if (!consultantId) return;
-    const [{ data: cons }, { data: inst }] = await Promise.all([
+    const [{ data: cons }, { data: inst }, { data: spots }] = await Promise.all([
       supabase
         .from("consultants")
-        .select("banner_keywords, phone, igreen_id")
+        .select("banner_keywords, banner_default_phrase, phone, igreen_id")
         .eq("id", consultantId)
         .maybeSingle(),
       supabase
@@ -54,11 +59,20 @@ export function ParceirosTab({
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from("consultant_banner_spots")
+        .select("id, code, keyword, phrase, is_active")
+        .eq("consultant_id", consultantId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: true }),
     ]);
-    const kws = Array.isArray((cons as { banner_keywords?: string[] } | null)?.banner_keywords)
-      ? ((cons as { banner_keywords: string[] }).banner_keywords || []).filter(Boolean)
-      : [];
-    setBannerKeywords(kws);
+    setBannerDefaultPhrase(
+      String(
+        (cons as { banner_default_phrase?: string | null } | null)
+          ?.banner_default_phrase || "",
+      ).trim() || null,
+    );
+    setBannerSpots((spots as BannerSpot[] | null) || []);
     const connected = String(inst?.connected_phone || "").replace(/\D/g, "");
     const fallback = String(
       consultantPhone || (cons as { phone?: string } | null)?.phone || "",
@@ -128,18 +142,6 @@ export function ParceirosTab({
     setEditingPartner(null);
   };
 
-  const handleSaveConsultantKeyword = async (keyword: string) => {
-    const next = Array.from(
-      new Set([...bannerKeywords, keyword.trim()].filter(Boolean)),
-    );
-    const { error } = await supabase
-      .from("consultants")
-      .update({ banner_keywords: next })
-      .eq("id", consultantId);
-    if (error) throw error;
-    setBannerKeywords(next);
-  };
-
   const handleSavePartnerKeyword = async (keyword: string) => {
     if (!qrPartner) return;
     const next = Array.from(
@@ -150,9 +152,6 @@ export function ParceirosTab({
     await update.mutateAsync({ id: qrPartner.id, keywords: next });
     setQrPartner({ ...qrPartner, keywords: next });
   };
-
-  const licenseOrIgreen =
-    (consultantIgreenId || "").trim() || (license || "").trim();
 
   return (
     <>
@@ -182,12 +181,15 @@ export function ParceirosTab({
       <ConsultantBannerDownloadModal
         open={bannerOpen}
         onClose={() => setBannerOpen(false)}
-        licenseOrIgreenId={licenseOrIgreen}
+        consultantId={consultantId}
         consultantName={consultantName}
         consultantIgreenId={consultantIgreenId}
         consultantPhone={whapiPhone || consultantPhone}
-        savedKeywords={bannerKeywords}
-        onSaveKeyword={handleSaveConsultantKeyword}
+        defaultPhrase={bannerDefaultPhrase}
+        spots={bannerSpots}
+        onSpotsChanged={() => {
+          void loadConsultantBannerData();
+        }}
       />
 
       <PartnerQrCode

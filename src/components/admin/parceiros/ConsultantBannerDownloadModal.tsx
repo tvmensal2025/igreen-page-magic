@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
@@ -12,43 +12,54 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   drawFlyerFooter,
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, FileText, Loader2, MapPin, Wifi } from "lucide-react";
+import { Download, FileText, Loader2, MapPin, Wifi, Pencil } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useToast } from "@/hooks/use-toast";
-import { PUBLIC_PARTNER_BASE } from "@/lib/partnerShortLink";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  buildConsultantBannerInitials,
+  buildConsultantLiveBannerUrl,
+  slugifyBannerSpotCode,
+} from "@/lib/consultantBannerLink";
 import {
   buildDefaultQrPhrase,
-  resolveQrMessage,
   isGenericKeyword,
   QR_PHRASE_MAX,
 } from "./qrPhrase";
+import { HelpHint } from "@/components/ui/help-hint";
 
 type Format = "a4" | "banner";
+
+export type BannerSpot = {
+  id: string;
+  code: string;
+  keyword: string;
+  phrase: string | null;
+  is_active: boolean;
+};
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  /** Licença ou igreen_id — segmento do link /r/{ref}. Preferir igreen_id. */
-  licenseOrIgreenId: string;
+  consultantId: string;
   consultantName?: string;
   consultantIgreenId?: string;
-  /** Telefone exibido no rodapé (Whapi conectado preferencial). */
   consultantPhone: string;
-  /** Keywords já salvas em consultants.banner_keywords. */
-  savedKeywords?: string[];
-  /** Persiste keyword no consultor (não em parceiro). */
-  onSaveKeyword: (keyword: string) => Promise<void>;
+  /** Frase padrão do QR raiz /{ini}/{id} */
+  defaultPhrase?: string | null;
+  spots: BannerSpot[];
+  onSpotsChanged: () => void;
 }
 
 const TEMPLATES: Record<
   Format,
   {
-    label: string;
     bg: string;
     canvasW: number;
     canvasH: number;
@@ -62,7 +73,6 @@ const TEMPLATES: Record<
   }
 > = {
   a4: {
-    label: "Folha A4",
     bg: "/images/banner-a4.jpg",
     canvasW: 905,
     canvasH: 1280,
@@ -75,7 +85,6 @@ const TEMPLATES: Record<
     footerH: 2.6,
   },
   banner: {
-    label: "Banner 504×904mm",
     bg: "/images/banner-504x904.jpg",
     canvasW: 1008,
     canvasH: 1808,
@@ -170,58 +179,199 @@ function slugify(s: string): string {
 }
 
 /**
- * Banner do CONSULTOR (arte oficial A4/Banner).
- * QR aponta para /r/{igreen_id|licença} → Whapi/instância conectada.
- * Palavra-chave grava em consultants.banner_keywords (não em parceiro).
+ * Banner VIVO do consultor.
+ * QR = igreen.cloud/{iniciais}/{igreen_id}/{local?}
+ * Frase/keyword no Supabase — edita sem reimprimir.
  */
 export function ConsultantBannerDownloadModal({
   open,
   onClose,
-  licenseOrIgreenId,
+  consultantId,
   consultantName = "",
   consultantIgreenId = "",
   consultantPhone,
-  savedKeywords = [],
-  onSaveKeyword,
+  defaultPhrase = null,
+  spots,
+  onSpotsChanged,
 }: Props) {
   const { toast } = useToast();
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
 
   const [format, setFormat] = useState<Format>("a4");
-  const [locationKeyword, setLocationKeyword] = useState("");
-  const [saveKeyword, setSaveKeyword] = useState(true);
+  const [mode, setMode] = useState<"root" | "spot">("spot");
+  const [selectedSpotId, setSelectedSpotId] = useState<string>("");
+  const [newKeyword, setNewKeyword] = useState("");
+  const [newCode, setNewCode] = useState("");
+  const [editPhrase, setEditPhrase] = useState("");
+  const [rootPhrase, setRootPhrase] = useState("");
+  const [saving, setSaving] = useState(false);
   const [rendering, setRendering] = useState(false);
-  const [keywordError, setKeywordError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const template = TEMPLATES[format];
-  const keyword = locationKeyword.trim();
+  const initials = useMemo(
+    () => buildConsultantBannerInitials(consultantName),
+    [consultantName],
+  );
+  const igreenId = String(consultantIgreenId || "").replace(/\D/g, "");
+
+  const selectedSpot =
+    spots.find((s) => s.id === selectedSpotId) || spots[0] || null;
 
   useEffect(() => {
     if (!open) return;
     setFormat("a4");
-    setLocationKeyword("");
-    setSaveKeyword(true);
-    setKeywordError(null);
-  }, [open]);
-
-  const phrase = useMemo(() => {
-    if (!keyword) {
-      return buildDefaultQrPhrase("").slice(0, QR_PHRASE_MAX);
+    setMode(spots.length > 0 ? "spot" : "spot");
+    setSelectedSpotId(spots[0]?.id || "");
+    setNewKeyword("");
+    setNewCode("");
+    setError(null);
+    setRootPhrase(defaultPhrase || "");
+    if (spots[0]) {
+      setEditPhrase(spots[0].phrase || buildDefaultQrPhrase(spots[0].keyword));
     }
-    return resolveQrMessage(null, keyword, null);
-  }, [keyword]);
+  }, [open, spots, defaultPhrase]);
 
-  const ref =
-    (consultantIgreenId || "").trim() ||
-    (licenseOrIgreenId || "").trim();
+  useEffect(() => {
+    if (!selectedSpot) return;
+    setEditPhrase(
+      selectedSpot.phrase || buildDefaultQrPhrase(selectedSpot.keyword),
+    );
+  }, [selectedSpot?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const qrUrl = useMemo(() => {
-    if (!ref) return "https://igreen.cloud";
-    const u = new URL(`${PUBLIC_PARTNER_BASE}/r/${encodeURIComponent(ref)}`);
-    if (phrase) u.searchParams.set("msg", phrase.slice(0, 200));
-    if (keyword) u.searchParams.set("k", keyword);
-    return u.toString();
-  }, [ref, phrase, keyword]);
+    if (!igreenId) return "https://igreen.cloud";
+    if (mode === "root") {
+      return buildConsultantLiveBannerUrl({ initials, igreenId });
+    }
+    const code = selectedSpot?.code;
+    if (!code) return buildConsultantLiveBannerUrl({ initials, igreenId });
+    return buildConsultantLiveBannerUrl({
+      initials,
+      igreenId,
+      spotCode: code,
+    });
+  }, [initials, igreenId, mode, selectedSpot?.code]);
+
+  const previewPhrase = useMemo(() => {
+    if (mode === "root") {
+      return (rootPhrase || defaultPhrase || "").trim() ||
+        "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
+    }
+    if (!selectedSpot) return "Cadastre um local abaixo para gerar o QR.";
+    return (
+      editPhrase.trim() ||
+      buildDefaultQrPhrase(selectedSpot.keyword)
+    );
+  }, [mode, rootPhrase, defaultPhrase, selectedSpot, editPhrase]);
+
+  const syncBannerKeywords = useCallback(
+    async (extraKeyword?: string) => {
+      const fromSpots = spots.map((s) => s.keyword.trim()).filter(Boolean);
+      const next = Array.from(
+        new Set(
+          [...fromSpots, extraKeyword?.trim()].filter(Boolean) as string[],
+        ),
+      );
+      await supabase
+        .from("consultants")
+        .update({ banner_keywords: next })
+        .eq("id", consultantId);
+    },
+    [consultantId, spots],
+  );
+
+  const handleCreateSpot = async () => {
+    const kw = newKeyword.trim();
+    if (!kw) {
+      setError("Informe a palavra-chave do local.");
+      return;
+    }
+    if (isGenericKeyword(kw)) {
+      setError("Palavra-chave genérica demais. Use o nome do local.");
+      return;
+    }
+    const code =
+      slugifyBannerSpotCode(newCode || kw) ||
+      slugifyBannerSpotCode(kw);
+    if (!code) {
+      setError("Código do local inválido.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const phrase = buildDefaultQrPhrase(kw);
+      const { data, error: err } = await supabase
+        .from("consultant_banner_spots")
+        .insert({
+          consultant_id: consultantId,
+          code,
+          keyword: kw,
+          phrase,
+        } as never)
+        .select("id, code, keyword, phrase, is_active")
+        .single();
+      if (err) throw err;
+      await syncBannerKeywords(kw);
+      onSpotsChanged();
+      if (data) {
+        setSelectedSpotId((data as BannerSpot).id);
+        setEditPhrase(phrase);
+        setMode("spot");
+      }
+      setNewKeyword("");
+      setNewCode("");
+      toast({
+        title: "Local criado",
+        description: `QR vivo: /${initials}/${igreenId}/${code}`,
+      });
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Falha ao criar local.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSavePhrase = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (mode === "root") {
+        const phrase = rootPhrase.trim().slice(0, QR_PHRASE_MAX + 40);
+        const { error: err } = await supabase
+          .from("consultants")
+          .update({ banner_default_phrase: phrase || null } as never)
+          .eq("id", consultantId);
+        if (err) throw err;
+        onSpotsChanged();
+        toast({
+          title: "Frase padrão salva",
+          description: "Banners raiz já impressos passam a abrir esta frase.",
+        });
+      } else if (selectedSpot) {
+        const phrase = editPhrase.trim().slice(0, QR_PHRASE_MAX + 40);
+        const { error: err } = await supabase
+          .from("consultant_banner_spots")
+          .update({
+            phrase: phrase || null,
+            updated_at: new Date().toISOString(),
+          } as never)
+          .eq("id", selectedSpot.id);
+        if (err) throw err;
+        onSpotsChanged();
+        toast({
+          title: "Frase do local salva",
+          description:
+            "Banner já impresso deste local abre a frase nova — sem reimprimir.",
+        });
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Falha ao salvar.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
     template.canvasW,
@@ -229,17 +379,14 @@ export function ConsultantBannerDownloadModal({
     PREVIEW_W,
     PREVIEW_MAX_H,
   );
-
   const qrCorePxPreview = (template.qrSize / 100) * PREVIEW_W_EFF;
   const qrFramePxPreview =
     qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
-
   const nomeUpper = (consultantName || "CONSULTOR IGREEN").toUpperCase();
-  const idLabel = consultantIgreenId ? ` • ID ${consultantIgreenId}` : "";
+  const idLabel = igreenId ? ` • ID ${igreenId}` : "";
   const phoneFmt = formatBrPhone(consultantPhone) || "FALE COMIGO";
   const footerLeft = `LICENCIADO: ${nomeUpper}${idLabel}`;
   const footerRight = `WHATSAPP: +55 ${phoneFmt}`;
-
   const { bandTop: footerTopPreview, bandHeight: footerHPreview } =
     clampFooterBand(PREVIEW_H, template.footerY, template.footerH);
   const footerFontPreview = previewFooterFontSize(
@@ -250,49 +397,9 @@ export function ConsultantBannerDownloadModal({
     "900",
   );
 
-  const validateKeyword = (): boolean => {
-    if (!keyword) {
-      setKeywordError("Informe a palavra-chave deste local / banner.");
-      return false;
-    }
-    if (isGenericKeyword(keyword)) {
-      setKeywordError(
-        "Muito genérica. Use algo do local (ex.: Posto Shell Centro).",
-      );
-      return false;
-    }
-    setKeywordError(null);
-    return true;
-  };
-
-  const ensureKeywordSaved = async (): Promise<boolean> => {
-    if (!validateKeyword()) return false;
-    if (!saveKeyword) return true;
-    const already = savedKeywords.some(
-      (k) => k.trim().toLowerCase() === keyword.toLowerCase(),
-    );
-    if (already) return true;
-    try {
-      await onSaveKeyword(keyword);
-      toast({
-        title: "Palavra-chave salva no seu ID",
-        description: `"${keyword}" — leads com essa frase aparecem no rastreio do seu banner.`,
-      });
-      return true;
-    } catch (err: unknown) {
-      toast({
-        title: "Não foi possível salvar a palavra-chave",
-        description: err instanceof Error ? err.message : "Tente novamente.",
-        variant: "destructive",
-      });
-      return false;
-    }
-  };
-
   const renderToCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
     if (!svgEl) return null;
-
     const CW = template.canvasW * 2;
     const CH = template.canvasH * 2;
     const canvas = document.createElement("canvas");
@@ -300,17 +407,14 @@ export function ConsultantBannerDownloadModal({
     canvas.height = CH;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
-
     try {
       const bg = await loadImage(template.bg);
       drawImageCover(ctx, bg, 0, 0, CW, CH);
-    } catch (e) {
-      console.warn("[consultant-banner] bg load failed", e);
+    } catch {
+      /* ignore */
     }
-
     const svgData = new XMLSerializer().serializeToString(svgEl);
     const svgUrl =
       "data:image/svg+xml;base64," +
@@ -318,16 +422,18 @@ export function ConsultantBannerDownloadModal({
     await new Promise<void>((resolve) => {
       const img = new Image();
       img.onload = () => {
-        const qrPx = (template.qrSize / 100) * CW;
-        const cx = (template.qrX / 100) * CW;
-        const cy = (template.qrY / 100) * CH;
-        drawQrWithThinFrame(ctx, img, cx, cy, qrPx);
+        drawQrWithThinFrame(
+          ctx,
+          img,
+          (template.qrX / 100) * CW,
+          (template.qrY / 100) * CH,
+          (template.qrSize / 100) * CW,
+        );
         resolve();
       };
       img.onerror = () => resolve();
       img.src = svgUrl;
     });
-
     drawFlyerFooter(ctx, {
       canvasW: CW,
       canvasH: CH,
@@ -340,26 +446,27 @@ export function ConsultantBannerDownloadModal({
       fontFamily: 'Montserrat, "Arial Black", sans-serif',
       fontWeight: "900",
     });
-
     return canvas;
   };
 
   const fileBase = () => {
-    const idSlug = slugify(consultantIgreenId || licenseOrIgreenId || "consultor");
-    const kwSlug = slugify(keyword || "local");
-    return `${format === "a4" ? "panfleto-a4" : "banner-504x904"}-${idSlug}-${kwSlug}`;
+    const spot = mode === "spot" ? selectedSpot?.code || "local" : "raiz";
+    return `${format === "a4" ? "panfleto-a4" : "banner-504x904"}-${initials}-${igreenId}-${slugify(spot)}`;
   };
 
+  const canDownload =
+    !!igreenId && (mode === "root" || !!selectedSpot);
+
   const downloadPNG = async () => {
+    if (!canDownload) return;
     setRendering(true);
     try {
-      if (!(await ensureKeywordSaved())) return;
       const canvas = await renderToCanvas();
       if (!canvas) return;
-      const link = document.createElement("a");
-      link.download = `${fileBase()}.png`;
-      link.href = canvas.toDataURL("image/png");
-      link.click();
+      const a = document.createElement("a");
+      a.download = `${fileBase()}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
       toast({ title: "PNG baixado!" });
     } finally {
       setRendering(false);
@@ -367,9 +474,9 @@ export function ConsultantBannerDownloadModal({
   };
 
   const downloadPDF = async () => {
+    if (!canDownload) return;
     setRendering(true);
     try {
-      if (!(await ensureKeywordSaved())) return;
       const canvas = await renderToCanvas();
       if (!canvas) return;
       const { pdfWmm: wmm, pdfHmm: hmm } = template;
@@ -378,7 +485,14 @@ export function ConsultantBannerDownloadModal({
         unit: "mm",
         format: [wmm, hmm],
       });
-      pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, wmm, hmm);
+      pdf.addImage(
+        canvas.toDataURL("image/jpeg", 0.95),
+        "JPEG",
+        0,
+        0,
+        wmm,
+        hmm,
+      );
       pdf.save(`${fileBase()}.pdf`);
       toast({ title: "PDF baixado!" });
     } finally {
@@ -391,11 +505,26 @@ export function ConsultantBannerDownloadModal({
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[95dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-5 h-5 text-primary" /> Meu Banner
+            <FileText className="w-5 h-5 text-primary" /> Meu Banner (vivo)
+            <HelpHint
+              size={14}
+              title="Banner vivo do consultor"
+              summary="Frase no banco — muda sem reimprimir"
+              details={
+                "O QR aponta para igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
+                "A frase fica salva no sistema. Edite e salve aqui — banners já impressos usam a frase nova no próximo scan.\n\n" +
+                "Se trocar o WhatsApp conectado, o mesmo QR continua válido (vai para o número novo)."
+              }
+              example="Rafael Ferreira Dias → igreen.cloud/rfd/130392"
+            />
           </DialogTitle>
           <DialogDescription>
-            Arte do consultor (seu ID). O QR abre o WhatsApp da instância
-            conectada (Whapi). Cada local pode ter uma palavra-chave sua.
+            QR permanente:{" "}
+            <span className="font-mono text-foreground">
+              igreen.cloud/{initials}/{igreenId || "SEU_ID"}
+            </span>
+            . Toque no <span className="font-semibold">?</span> para ver como
+            mudar a frase sem reimprimir.
           </DialogDescription>
         </DialogHeader>
 
@@ -451,7 +580,10 @@ export function ConsultantBannerDownloadModal({
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px] flex items-center gap-1.5 justify-center">
               <Wifi className="h-3.5 w-3.5" />
-              WhatsApp do QR = número conectado (Whapi / instância)
+              WhatsApp = número conectado agora (Whapi)
+            </p>
+            <p className="text-[10px] font-mono text-muted-foreground break-all text-center max-w-[320px]">
+              {qrUrl}
             </p>
           </div>
 
@@ -465,7 +597,7 @@ export function ConsultantBannerDownloadModal({
                   variant={format === "a4" ? "default" : "outline"}
                   onClick={() => setFormat("a4")}
                 >
-                  Folha A4 (210×297mm)
+                  Folha A4
                 </Button>
                 <Button
                   type="button"
@@ -478,63 +610,165 @@ export function ConsultantBannerDownloadModal({
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <Label className="text-sm flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" />
-                Palavra-chave deste local (seu ID)
-              </Label>
-              <p className="text-[11px] text-muted-foreground leading-snug">
-                Ex.: &quot;Mercado Central&quot;, &quot;Posto BR Centro&quot;.
-                Quantas quiser — cada banner um local. Não é de parceiro.
-              </p>
-              <Input
-                value={locationKeyword}
-                onChange={(e) => {
-                  setLocationKeyword(e.target.value);
-                  if (keywordError) setKeywordError(null);
-                }}
-                placeholder="Nome do local ou ponto de divulgação"
-                className="h-9"
-              />
-              {keywordError && (
-                <p className="text-[11px] text-destructive">{keywordError}</p>
-              )}
-              {savedKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 pt-1">
-                  {savedKeywords.map((kw) => (
-                    <button
-                      key={kw}
-                      type="button"
-                      onClick={() => {
-                        setLocationKeyword(kw);
-                        setKeywordError(null);
-                      }}
-                      className="text-[11px] rounded-full border border-border bg-background px-2 py-0.5 hover:bg-muted"
-                    >
-                      {kw}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer mt-1">
-                <input
-                  type="checkbox"
-                  checked={saveKeyword}
-                  onChange={(e) => setSaveKeyword(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-input"
-                />
-                Salvar no meu ID ao baixar (para rastrear o local)
-              </label>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "spot" ? "default" : "outline"}
+                onClick={() => setMode("spot")}
+              >
+                Local (rastreio)
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={mode === "root" ? "default" : "outline"}
+                onClick={() => setMode("root")}
+              >
+                Banner geral (sem local)
+              </Button>
             </div>
 
-            <div className="text-xs text-muted-foreground space-y-1 rounded-md border border-border/40 bg-card/50 p-2.5">
+            {mode === "spot" ? (
+              <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <Label className="text-sm flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5" /> Locais cadastrados
+                </Label>
+                {spots.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {spots.map((s) => (
+                      <Button
+                        key={s.id}
+                        type="button"
+                        size="sm"
+                        className="h-7 text-xs"
+                        variant={
+                          selectedSpot?.id === s.id ? "default" : "outline"
+                        }
+                        onClick={() => setSelectedSpotId(s.id)}
+                      >
+                        {s.keyword}
+                        <span className="opacity-60 ml-1">/{s.code}</span>
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Nenhum local ainda. Crie o primeiro abaixo.
+                  </p>
+                )}
+
+                <div className="grid gap-2 sm:grid-cols-2 pt-1">
+                  <div>
+                    <Label className="text-[11px]">Palavra-chave / local</Label>
+                    <Input
+                      value={newKeyword}
+                      onChange={(e) => {
+                        setNewKeyword(e.target.value);
+                        if (!newCode) {
+                          setNewCode(slugifyBannerSpotCode(e.target.value));
+                        }
+                      }}
+                      placeholder="Posto Shell Centro"
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">
+                      Código na URL (não mude depois)
+                    </Label>
+                    <Input
+                      value={newCode}
+                      onChange={(e) =>
+                        setNewCode(slugifyBannerSpotCode(e.target.value))
+                      }
+                      placeholder="posto-shell-centro"
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={saving || !newKeyword.trim()}
+                  onClick={handleCreateSpot}
+                  className="w-full"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Criar local e liberar QR"
+                  )}
+                </Button>
+
+                {selectedSpot && (
+                  <div className="space-y-1.5 pt-2 border-t border-border/40">
+                    <Label className="text-[11px] flex items-center gap-1">
+                      <Pencil className="h-3 w-3" />
+                      Frase deste local (viva no Supabase)
+                    </Label>
+                    <Textarea
+                      value={editPhrase}
+                      onChange={(e) => setEditPhrase(e.target.value)}
+                      rows={3}
+                      className="text-xs resize-none"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSavePhrase}
+                      disabled={saving}
+                      className="w-full"
+                    >
+                      Salvar frase (atualiza banners já impressos)
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+                <Label className="text-sm">Frase do banner geral</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Link: /{initials}/{igreenId} — sem código de local.
+                </p>
+                <Textarea
+                  value={rootPhrase}
+                  onChange={(e) => setRootPhrase(e.target.value)}
+                  rows={3}
+                  className="text-xs resize-none"
+                  placeholder="Oi! Vi sobre a iGreen e quero economizar na conta de luz."
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleSavePhrase}
+                  disabled={saving}
+                >
+                  Salvar frase padrão
+                </Button>
+              </div>
+            )}
+
+            {error && (
+              <p className="text-[11px] text-destructive">{error}</p>
+            )}
+
+            <div className="text-xs text-muted-foreground rounded-md border border-border/40 bg-card/50 p-2.5 space-y-1">
               <p>
-                WhatsApp abre com:{" "}
+                Ao escanear, abre com:{" "}
                 <span className="font-medium text-foreground">
-                  &quot;{phrase}&quot;
+                  &quot;{previewPhrase}&quot;
                 </span>
               </p>
-              <p className="text-[10px] break-all opacity-70">{qrUrl}</p>
+              <p className="text-[10px]">
+                Exemplos: você →{" "}
+                <span className="font-mono">
+                  /{initials}/{igreenId || "130392"}
+                </span>
+                ; outro consultor Maria Silva ID 998877 →{" "}
+                <span className="font-mono">/ms/998877</span>
+              </p>
             </div>
           </div>
         </div>
@@ -546,7 +780,7 @@ export function ConsultantBannerDownloadModal({
           <Button
             variant="outline"
             onClick={downloadPNG}
-            disabled={rendering || !ref}
+            disabled={rendering || !canDownload}
             className="gap-2"
           >
             {rendering ? (
@@ -558,7 +792,7 @@ export function ConsultantBannerDownloadModal({
           </Button>
           <Button
             onClick={downloadPDF}
-            disabled={rendering || !ref}
+            disabled={rendering || !canDownload}
             className="gap-2"
           >
             {rendering ? (
@@ -566,7 +800,7 @@ export function ConsultantBannerDownloadModal({
             ) : (
               <FileText className="h-4 w-4" />
             )}
-            Baixar PDF ({template.pdfWmm}×{template.pdfHmm}mm)
+            Baixar PDF
           </Button>
         </DialogFooter>
       </DialogContent>

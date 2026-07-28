@@ -5,6 +5,9 @@
 // - NÃO usa bot_global_enabled — só toggle pos_venda_auto_messages + pos_venda_manual.
 // - Janela seg–sáb 08:00–20:00 BRT (pos-venda-send-window); fora = skip até próximo slot.
 // - Idempotente via customer_auto_message_log (UNIQUE customer_id+stage_key).
+// - Anti-duplicata Zap: telefone sync com colisão (`5511…_igreenCode`) NÃO
+//   dispara; e se outro customer_id já enviou o mesmo stage_key para o mesmo
+//   chat limpo, pula (UNIQUE por customer não protege 2 rows da mesma pessoa).
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
@@ -77,6 +80,18 @@ const STAGE_TO_KEY: Record<string, string> = {
   d210:      "pv_d210",
 };
 
+/** Sync iGreen grava colisão como `5511…_igreenCode` — mesma pessoa, outro row. */
+function isSyncCollisionPhone(phoneWhatsapp: string | null | undefined): boolean {
+  if (!phoneWhatsapp) return false;
+  return /^\d{10,15}_\d+$/.test(String(phoneWhatsapp).trim());
+}
+
+/** Digits do Zap limpo (parte antes de `_`; ignore lixo não-numérico). */
+function cleanWaDigits(raw: string | null | undefined): string {
+  const base = String(raw || "").split("_")[0];
+  return base.replace(/\D/g, "");
+}
+
 async function processCustomer(
   supabase: any,
   env: ChannelEnv,
@@ -91,6 +106,29 @@ async function processCustomer(
   // nem aparecer como ação automática de pós-venda.
   if (targetStage === "reprovado" || targetStage === "retentativa") {
     return { moved: false, sent: false };
+  }
+
+  // Excluído do pós-venda pelo consultor — nunca dispara.
+  if (customer.pos_venda_invalid === true) {
+    return { moved: false, sent: false };
+  }
+
+  // Row sombra da colisão sync: o número limpo é quem manda. Sem isso,
+  // 2 customer_ids → 2× (img+áudio) = 4 bolhas no mesmo Zap.
+  if (isSyncCollisionPhone(customer.phone_whatsapp)) {
+    console.warn(
+      `[pos-venda] skip shadow collision phone customer=${customer.id} phone=${customer.phone_whatsapp}`,
+    );
+    await supabase.from("customer_auto_message_log").upsert({
+      customer_id: customer.id,
+      consultant_id: customer.consultant_id,
+      stage_key: stageKey,
+      remote_jid: null,
+      customer_name: customer.name,
+      message_preview: "[skipped:sync_phone_collision]",
+      status: "skipped_duplicate_phone",
+    }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
+    return { moved: true, sent: false };
   }
 
   const prefs = await getConsultantAutomationPrefs(supabase, customer.consultant_id);
@@ -151,7 +189,8 @@ async function processCustomer(
       st === "sent" ||
       st.startsWith("sent") ||
       st === "dismissed" ||
-      st === "skipped_prior"
+      st === "skipped_prior" ||
+      st === "skipped_duplicate_phone"
     ) {
       return { moved: true, sent: false };
     }
@@ -234,9 +273,51 @@ async function processCustomer(
   if (!consultantHasContent && !useDefault) return { moved: true, sent: false };
 
   // Validações de envio
-  const phoneRaw = (customer as any).whatsapp_chat_id || customer.phone_whatsapp || "";
+  const phoneRaw =
+    (customer as any).whatsapp_chat_id ||
+    String(customer.phone_whatsapp || "").split("_")[0] ||
+    "";
   if (!isValidJid(`${phoneRaw}@s.whatsapp.net`)) return { moved: true, sent: false };
-  const phone = phoneRaw.replace(/\D/g, "");
+  const phone = cleanWaDigits(phoneRaw);
+  if (phone.length < 10) return { moved: true, sent: false };
+
+  // Belt-and-suspenders: outro customer_id já mandou este marco pro mesmo Zap
+  // (UNIQUE é por customer_id — não cobre 2 rows da mesma pessoa).
+  const { data: siblingLogs } = await supabase
+    .from("customer_auto_message_log")
+    .select("id, customer_id, status")
+    .eq("consultant_id", ownerId)
+    .eq("stage_key", stageKey)
+    .neq("customer_id", customer.id)
+    .eq("remote_jid", `${phone}@s.whatsapp.net`)
+    .limit(20);
+  const siblingHit = (siblingLogs || []).find((row: { status?: string }) => {
+    const st = String(row.status || "");
+    return (
+      st === "sent" ||
+      st.startsWith("sent") ||
+      st === "claimed" ||
+      st === "claimed_retry" ||
+      st === "dismissed" ||
+      st === "skipped_prior" ||
+      st.startsWith("partial:")
+    );
+  });
+  if (siblingHit) {
+    console.warn(
+      `[pos-venda] skip duplicate chat customer=${customer.id} sibling=${siblingHit.customer_id} stage=${stageKey} phone=${phone}`,
+    );
+    await supabase.from("customer_auto_message_log").upsert({
+      customer_id: customer.id,
+      consultant_id: ownerId,
+      stage_key: stageKey,
+      remote_jid: `${phone}@s.whatsapp.net`,
+      customer_name: customer.name,
+      message_preview: `[skipped:duplicate_chat:${siblingHit.customer_id}]`,
+      status: "skipped_duplicate_phone",
+    }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
+    return { moved: true, sent: false };
+  }
 
   if (await isConsultantAIDisabled(supabase, ownerId)) {
     // Claim já reservado (retry) → libera para retentar depois.
@@ -576,10 +657,11 @@ Deno.serve(async (req) => {
     // recebeu o marco inicial / o D* mais próximo.
     const { data: approvedCustomers } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen, pos_venda_approved_at")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_invalid, status, andamento_igreen, pos_venda_approved_at")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "aprovado")
       .eq("pos_venda_manual", true)
+      .eq("pos_venda_invalid", false)
       .order("pos_venda_approved_at", { ascending: true, nullsFirst: false });
 
     for (const c of approvedCustomers || []) {
@@ -596,9 +678,10 @@ Deno.serve(async (req) => {
     //    pendente (idempotente via customer_auto_message_log).
     const { data: approvedTrack } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_invalid, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_manual", true)
+      .eq("pos_venda_invalid", false)
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"])
       .not("pos_venda_approved_at", "is", null);
 

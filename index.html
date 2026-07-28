@@ -16,20 +16,38 @@
         } catch (e) { /* keep class=light do html */ }
       })();
     </script>
-    <!-- /r/{ref}/{code} → WhatsApp DIRETO (302 na edge). Antes do React/cookies. -->
+    <!-- /r/{ref}/{code} → WhatsApp DIRETO (302 na edge). Antes do React/cookies.
+         Banner VIVO: /{iniciais}/{igreen_id}[/{spot}] ex.: /rfd/130392/posto-shell -->
     <script>
       (function () {
         try {
+          var EDGE = "https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect";
+          var q = new URLSearchParams(location.search);
           var m = location.pathname.match(/^\/r\/([^\/]+)(?:\/([^\/]+))?\/?$/);
-          if (!m) return;
-          var u = new URL("https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect");
-          u.searchParams.set("l", decodeURIComponent(m[1]));
-          if (m[2]) u.searchParams.set("c", decodeURIComponent(m[2]));
-          var msg = new URLSearchParams(location.search).get("msg");
-          if (msg) u.searchParams.set("msg", msg);
-          var k = new URLSearchParams(location.search).get("k");
-          if (k) u.searchParams.set("k", k);
-          location.replace(u.toString());
+          if (m) {
+            var u = new URL(EDGE);
+            u.searchParams.set("l", decodeURIComponent(m[1]));
+            if (m[2]) u.searchParams.set("c", decodeURIComponent(m[2]));
+            var msg = q.get("msg");
+            if (msg) u.searchParams.set("msg", msg);
+            var k = q.get("k");
+            if (k) u.searchParams.set("k", k);
+            location.replace(u.toString());
+            return;
+          }
+          // Banner vivo: /rfd/130392 ou /rfd/130392/posto-shell
+          var live = location.pathname.match(/^\/([a-z]{2,8})\/(\d{3,})(?:\/([a-z0-9]+(?:-[a-z0-9]+)*))?\/?$/i);
+          if (!live) return;
+          var reserved = {
+            admin:1, auth:1, crm:1, reset:1, install:1, tutorial:1, premium:1,
+            login:1, logout:1, help:1, docs:1, api:1, app:1, www:1, cdn:1
+          };
+          var ini = String(live[1] || "").toLowerCase();
+          if (reserved[ini]) return;
+          var u2 = new URL(EDGE);
+          u2.searchParams.set("ig", live[2]);
+          if (live[3]) u2.searchParams.set("s", String(live[3]).toLowerCase());
+          location.replace(u2.toString());
         } catch (e) { /* deixa o SPA tentar */ }
       })();
     </script>

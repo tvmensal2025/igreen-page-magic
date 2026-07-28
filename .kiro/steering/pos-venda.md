@@ -49,7 +49,12 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
 
 **Multi-conta:** com `pos_venda_auto_messages` + `pos_venda_auto_validate` ligados, o fluxo vale para **todas** as `igreen_portal_accounts` do consultor (não só a principal). `recompute_pos_venda_stages` também preenche `pending` quando o cliente já está em `espera` com pending null (órfãos de subconta) — migration `20260728190000_recompute_pos_venda_fix_espera_pending`.
 
-**Sync dashboard (`sync_all`):** puxa todas as contas → `recompute` → `auto_confirm_pending_pos_venda` (se Validar sozinho ON) → dispara `pos-venda-auto-progress` (fire-and-forget). Envio é **idempotente** por `(customer_id, stage_key)` — `sent`/`skipped_prior`/`dismissed` nunca reenviam o mesmo marco.
+**Sync dashboard (`sync_all`):** puxa todas as contas → `recompute` → `auto_confirm_pending_pos_venda` (se Validar sozinho ON) → dispara `pos-venda-auto-progress` (fire-and-forget). Envio é **idempotente** por `(customer_id, stage_key)` — `sent`/`skipped_prior`/`dismissed`/`skipped_duplicate_phone` nunca reenviam o mesmo marco.
+
+**Anti-duplicata Zap (obrigatório):** sync pode criar **2 rows** da mesma pessoa — número limpo + `5511…_igreenCode`, ambos com o mesmo `whatsapp_chat_id`. UNIQUE por `customer_id` **não** impede 2× (img+áudio) = **4 bolhas** no mesmo chat. O motor:
+1. **Nunca** dispara de row com telefone de colisão (`…_igreenCode`) → status `skipped_duplicate_phone`
+2. Se outro `customer_id` já tem log `sent`/`partial`/`claimed` no mesmo `remote_jid` + `stage_key` → pula
+3. Só lista `pos_venda_invalid=false`
 
 **Cliente ≠ lead:** telefone com colisão sync (`5511…_igreenCode`) resolve inbound pela carteira (`_shared/inbound-customer-resolve.ts`). Lead sombra no número limpo é absorvido (pausa+DNC). Origem `igreen_sync`/`igreen_extension` → canal novidades, nunca Grupo A.
 

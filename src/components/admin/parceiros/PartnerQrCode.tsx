@@ -4,6 +4,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ import {
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
 import { useToast } from "@/hooks/use-toast";
+import { HelpHint } from "@/components/ui/help-hint";
 
 interface PartnerQrCodeProps {
   open: boolean;
@@ -62,11 +64,12 @@ function buildShortLink(
   shortCode?: string | null,
   consultantIgreenId?: string | null,
   keyword?: string | null,
+  msg?: string | null,
 ): string | null {
   const ref = (consultantIgreenId ?? "").trim() || (license ?? "").trim();
   const code = (shortCode ?? "").trim();
   if (!ref || !code) return null;
-  return buildPartnerPublicShortLink(ref, code, { keyword });
+  return buildPartnerPublicShortLink(ref, code, { keyword, msg });
 }
 
 /**
@@ -422,11 +425,14 @@ export function PartnerQrCode({
   const phrase = resolveQrMessage(phraseSource, activeKeyword, shortCode);
   // Link curto com marca (igreen.cloud/r/...) — bounce imediato → WhatsApp.
   // O short_code atribui o parceiro; a keyword (`?k=`) muda o texto/local.
+  // Frase custom neste download vai em `?msg=` (precisa baixar de novo).
+  // Frase permanente sem reimprimir: editar o parceiro → "Frase QR Code".
   const shortLink = buildShortLink(
     license,
     shortCode,
     consultantIgreenId,
     activeKeyword,
+    useCustomPhrase ? phrase : null,
   );
   const url =
     shortLink ??
@@ -853,7 +859,25 @@ export function PartnerQrCode({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>Baixar Banner / QR — {partnerName}</DialogTitle>
+          <DialogTitle className="flex items-center gap-1.5">
+            Baixar Banner / QR — {partnerName}
+            <HelpHint
+              size={14}
+              title="Como funciona este QR"
+              summary="Toque no ? para ver onde mudar a frase e o que acontece se trocar o WhatsApp"
+              details={
+                "1) O link curto abre o WhatsApp do consultor conectado agora — se trocar o número, o mesmo QR continua válido.\n\n" +
+                "2) A palavra-chave (ex.: Daniel) identifica de onde veio o lead.\n\n" +
+                "3) Para mudar a frase SEM reimprimir: edite o parceiro → campo \"Frase QR Code\" e salve.\n\n" +
+                "4) Neste modal, marque \"Editar frase do WhatsApp\" só para personalizar ESTE download — aí baixe de novo."
+              }
+              example="Link do Daniel: igreen.cloud/r/130392/365524?k=Daniel — o 365524 é o código do parceiro; o telefone não fica gravado no papel."
+            />
+          </DialogTitle>
+          <DialogDescription className="text-xs sm:text-sm">
+            Toque no <span className="font-semibold">?</span> ao lado do título
+            para ver onde editar a frase e o que muda se trocar o WhatsApp.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
@@ -950,7 +974,19 @@ export function PartnerQrCode({
           {/* Controls */}
           <div className="flex flex-col gap-4 min-w-0">
             <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-              <Label className="text-sm">Palavra-chave deste banner</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-sm">Palavra-chave deste banner</Label>
+                <HelpHint
+                  size={13}
+                  title="Palavra-chave"
+                  summary="Identifica a origem do lead neste banner"
+                  details={
+                    "Escolha ou digite uma palavra (ex.: Daniel, Posto Shell). Ela entra no link (?k=) e na frase do WhatsApp.\n\n" +
+                    "Trocar a palavra e baixar de novo gera outro material — o parceiro continua o mesmo (código na URL)."
+                  }
+                  example="Daniel → igreen.cloud/r/.../365524?k=Daniel"
+                />
+              </div>
               <p className="text-[11px] text-muted-foreground leading-snug">
                 Troque a palavra-chave e baixe de novo para gerar vários
                 banners. O QR continua atribuindo o mesmo parceiro.
@@ -1024,7 +1060,20 @@ export function PartnerQrCode({
                   }}
                   className="h-3.5 w-3.5 rounded border-input"
                 />
-                Editar frase do WhatsApp neste banner
+                <span className="flex items-center gap-1">
+                  Editar frase do WhatsApp neste banner
+                  <HelpHint
+                    size={12}
+                    title="Onde editar a frase"
+                    summary="Duas formas: permanente (sem reimprimir) ou só neste download"
+                    details={
+                      "• Sem reimprimir: feche este modal → Editar o parceiro → campo \"Frase QR Code\" → Salvar. Banners já impressos passam a usar a frase nova.\n\n" +
+                      "• Só neste download: marque esta opção, escreva a frase e baixe de novo (a frase vai no link).\n\n" +
+                      "Trocar o WhatsApp conectado NÃO apaga o QR — o próximo scan usa o número novo."
+                    }
+                    example='Editar parceiro Daniel → Frase QR Code → "Vim pelo Daniel, quero economizar na luz"'
+                  />
+                </span>
               </label>
               {useCustomPhrase && (
                 <div className="space-y-1">
@@ -1282,8 +1331,18 @@ function PartnerLinkCard({
   };
   return (
     <div className="w-full max-w-full sm:max-w-[320px] rounded-lg border bg-card p-2.5 space-y-2">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {isShort ? "Link curto para compartilhar" : "Link direto para WhatsApp"}
+        <HelpHint
+          size={12}
+          title="Link e WhatsApp"
+          summary="O telefone não fica gravado no link"
+          details={
+            "Este link abre o WhatsApp do consultor que estiver conectado agora.\n\n" +
+            "Se trocar o número no sistema, o mesmo link/QR continua funcionando — você não perde o material impresso.\n\n" +
+            "Para mudar a frase sem reimprimir: edite o parceiro → Frase QR Code."
+          }
+        />
       </div>
       <div className="text-[11px] break-all font-mono leading-snug text-foreground/90 bg-muted/40 rounded px-2 py-1.5">
         {url}

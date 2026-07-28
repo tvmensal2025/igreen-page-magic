@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 import { buildDefaultQrPhrase, isGenericKeyword } from "./qrPhrase";
+import { HelpHint } from "@/components/ui/help-hint";
 import {
   Tooltip,
   TooltipContent,
@@ -492,9 +493,22 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             </div>
 
             <div className="space-y-1">
-              <Label htmlFor="partner-qr-phrase" className="text-xs">
-                Frase QR Code <span className="text-muted-foreground">(opcional)</span>
-              </Label>
+              <div className="flex items-center gap-1">
+                <Label htmlFor="partner-qr-phrase" className="text-xs">
+                  Frase QR Code{" "}
+                  <span className="text-muted-foreground">(opcional)</span>
+                </Label>
+                <HelpHint
+                  size={12}
+                  title="Frase permanente do parceiro"
+                  summary="Muda a mensagem do WhatsApp sem reimprimir o banner"
+                  details={
+                    "Salve aqui a frase padrão deste parceiro. Banners/QR já impressos (link curto sem frase fixa) passam a abrir com o texto novo.\n\n" +
+                    "Trocar o WhatsApp do consultor não invalida o QR — o link usa o número conectado agora."
+                  }
+                  example='Ex.: "Vim pelo Daniel, quero reduzir minha conta de luz"'
+                />
+              </div>
               <Input
                 id="partner-qr-phrase"
                 value={qrPhrase}

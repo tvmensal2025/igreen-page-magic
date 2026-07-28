@@ -1,7 +1,15 @@
 // Formatação compartilhada para telefones e estágios pós-venda.
 
+/** Sync iGreen: colisão vira `5511…_igreenCode` (mesma pessoa, outro row). */
+export function isSyncCollisionPhone(phone: string | null | undefined): boolean {
+  if (!phone) return false;
+  return /^\d{10,15}_\d+$/.test(String(phone).trim());
+}
+
 export function isPlaceholderPhone(phone: string | null | undefined): boolean {
   if (!phone) return true;
+  // Sombra sync não deve entrar em "Próximos envios" nem parecer enviável.
+  if (isSyncCollisionPhone(phone)) return true;
   return /^sem_celular/i.test(phone) || phone.replace(/\D/g, "").length < 10;
 }
 

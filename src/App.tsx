@@ -62,6 +62,7 @@ const InstallPage = lazy(() => import("./pages/InstallPage"));
 const PoliticaPrivacidade = lazy(() => import("./pages/PoliticaPrivacidade"));
 const ResetApp = lazy(() => import("./pages/ResetApp"));
 const PartnerRedirectPage = lazy(() => import("./pages/PartnerRedirectPage"));
+const BannerLiveRedirectPage = lazy(() => import("./pages/BannerLiveRedirectPage"));
 const Tutorial = lazy(() => import("./pages/Tutorial"));
 import { CookieBanner } from "@/components/CookieBanner";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -197,6 +198,11 @@ const App = () => (
 
               {/* Link curto de parceiro: /r/{licenca}/{short_code?} → qr-redirect */}
               <Route path="/r/:licenca/:code?" element={<PartnerRedirectPage />} />
+              {/* Banner VIVO: /rfd/130392[/posto-shell] — valida iniciais+ID numérico */}
+              <Route
+                path="/:initials/:igreenId/:spot?"
+                element={<BannerLiveRedirectPage />}
+              />
 
               {/* ⚠️ Catch-all de 1º nível: captura o slug público do consultor.
                   Mantenha QUALQUER rota nova ACIMA desta linha, senão ela será
