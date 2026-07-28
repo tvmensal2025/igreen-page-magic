@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PartnerDashboard } from "./PartnerDashboard";
 import { PartnerForm } from "./PartnerForm";
 import { PartnerQrCode } from "./PartnerQrCode";
+import { ConsultantBannerDownloadModal } from "./ConsultantBannerDownloadModal";
 import { ManualReviewQueueCard } from "./ManualReviewQueueCard";
 import {
   useReferralPartners,
   type ReferralPartner,
 } from "./hooks/useReferralPartners";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ParceirosTabProps {
   consultantId: string;
@@ -30,9 +32,43 @@ export function ParceirosTab({
     null,
   );
   const [qrPartner, setQrPartner] = useState<ReferralPartner | null>(null);
+  const [bannerOpen, setBannerOpen] = useState(false);
+  const [bannerKeywords, setBannerKeywords] = useState<string[]>([]);
+  const [whapiPhone, setWhapiPhone] = useState(consultantPhone);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
 
+  const loadConsultantBannerData = useCallback(async () => {
+    if (!consultantId) return;
+    const [{ data: cons }, { data: inst }] = await Promise.all([
+      supabase
+        .from("consultants")
+        .select("banner_keywords, phone, igreen_id")
+        .eq("id", consultantId)
+        .maybeSingle(),
+      supabase
+        .from("whatsapp_instances")
+        .select("connected_phone, updated_at")
+        .eq("consultant_id", consultantId)
+        .not("connected_phone", "is", null)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const kws = Array.isArray((cons as { banner_keywords?: string[] } | null)?.banner_keywords)
+      ? ((cons as { banner_keywords: string[] }).banner_keywords || []).filter(Boolean)
+      : [];
+    setBannerKeywords(kws);
+    const connected = String(inst?.connected_phone || "").replace(/\D/g, "");
+    const fallback = String(
+      consultantPhone || (cons as { phone?: string } | null)?.phone || "",
+    ).replace(/\D/g, "");
+    setWhapiPhone(connected || fallback);
+  }, [consultantId, consultantPhone]);
+
+  useEffect(() => {
+    void loadConsultantBannerData();
+  }, [loadConsultantBannerData]);
 
   const handleSave = (data: {
     nome: string;
@@ -92,6 +128,32 @@ export function ParceirosTab({
     setEditingPartner(null);
   };
 
+  const handleSaveConsultantKeyword = async (keyword: string) => {
+    const next = Array.from(
+      new Set([...bannerKeywords, keyword.trim()].filter(Boolean)),
+    );
+    const { error } = await supabase
+      .from("consultants")
+      .update({ banner_keywords: next })
+      .eq("id", consultantId);
+    if (error) throw error;
+    setBannerKeywords(next);
+  };
+
+  const handleSavePartnerKeyword = async (keyword: string) => {
+    if (!qrPartner) return;
+    const next = Array.from(
+      new Set(
+        [...(qrPartner.keywords ?? []), keyword.trim()].filter(Boolean),
+      ),
+    );
+    await update.mutateAsync({ id: qrPartner.id, keywords: next });
+    setQrPartner({ ...qrPartner, keywords: next });
+  };
+
+  const licenseOrIgreen =
+    (consultantIgreenId || "").trim() || (license || "").trim();
+
   return (
     <>
       <ManualReviewQueueCard consultantId={consultantId} />
@@ -103,8 +165,11 @@ export function ParceirosTab({
         onEdit={handleEdit}
         onDelete={handleDelete}
         onQrCode={setQrPartner}
+        onDownloadBanner={() => {
+          void loadConsultantBannerData();
+          setBannerOpen(true);
+        }}
       />
-
 
       <PartnerForm
         open={formOpen}
@@ -114,17 +179,30 @@ export function ParceirosTab({
         onDelete={handleDelete}
       />
 
+      <ConsultantBannerDownloadModal
+        open={bannerOpen}
+        onClose={() => setBannerOpen(false)}
+        licenseOrIgreenId={licenseOrIgreen}
+        consultantName={consultantName}
+        consultantIgreenId={consultantIgreenId}
+        consultantPhone={whapiPhone || consultantPhone}
+        savedKeywords={bannerKeywords}
+        onSaveKeyword={handleSaveConsultantKeyword}
+      />
+
       <PartnerQrCode
         open={!!qrPartner}
         onClose={() => setQrPartner(null)}
         partnerName={qrPartner?.nome ?? ""}
         keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
-        consultantPhone={consultantPhone}
+        keywords={qrPartner?.keywords ?? []}
+        consultantPhone={whapiPhone || consultantPhone}
         consultantName={consultantName}
         consultantIgreenId={consultantIgreenId}
         qrPhrase={qrPartner?.qr_phrase}
         license={license}
         shortCode={qrPartner?.short_code}
+        onSaveKeyword={handleSavePartnerKeyword}
       />
     </>
   );

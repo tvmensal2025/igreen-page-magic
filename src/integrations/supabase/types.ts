@@ -3785,6 +3785,7 @@ export type Database = {
           ai_provider_pref: string
           approved: boolean | null
           assistant_name: string | null
+          banner_keywords: string[]
           bot_engine_mode: string
           cadastro_url: string
           cerebro_ativo: string
@@ -3835,6 +3836,7 @@ export type Database = {
           ai_provider_pref?: string
           approved?: boolean | null
           assistant_name?: string | null
+          banner_keywords?: string[]
           bot_engine_mode?: string
           cadastro_url: string
           cerebro_ativo?: string
@@ -3885,6 +3887,7 @@ export type Database = {
           ai_provider_pref?: string
           approved?: boolean | null
           assistant_name?: string | null
+          banner_keywords?: string[]
           bot_engine_mode?: string
           cadastro_url?: string
           cerebro_ativo?: string

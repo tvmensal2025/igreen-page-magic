@@ -15,6 +15,7 @@ export default function PartnerRedirectPage() {
   const { licenca, code } = useParams<{ licenca: string; code?: string }>();
   const [searchParams] = useSearchParams();
   const msg = searchParams.get("msg");
+  const keyword = searchParams.get("k");
 
   useEffect(() => {
     const lic = (licenca ?? "").trim();
@@ -23,8 +24,10 @@ export default function PartnerRedirectPage() {
       return;
     }
     // 302 real na edge → wa.me (sem fetch JSON, sem página de escolha).
-    window.location.replace(buildPartnerWaRedirectUrl(lic, code, msg));
-  }, [licenca, code, msg]);
+    window.location.replace(
+      buildPartnerWaRedirectUrl(lic, code, msg, keyword),
+    );
+  }, [licenca, code, msg, keyword]);
 
   return (
     <div className="flex h-screen items-center justify-center bg-background">

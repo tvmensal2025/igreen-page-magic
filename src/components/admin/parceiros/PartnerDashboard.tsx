@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Plus, Sparkles, Handshake, AlertTriangle } from "lucide-react";
+import { Plus, Sparkles, Handshake, AlertTriangle, Download } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -29,6 +29,8 @@ interface Props {
   onEdit: (p: ReferralPartner) => void;
   onDelete: (id: string) => void;
   onQrCode: (p: ReferralPartner) => void;
+  /** Abre o modal simples A4/Banner com palavra-chave do local. */
+  onDownloadBanner: () => void;
 }
 
 export function PartnerDashboard({
@@ -38,6 +40,7 @@ export function PartnerDashboard({
   onEdit,
   onDelete,
   onQrCode,
+  onDownloadBanner,
 }: Props) {
   const { data: analytics = [], isLoading: analyticsLoading } =
     usePartnerAnalytics();
@@ -65,23 +68,47 @@ export function PartnerDashboard({
 
   if (partners.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="py-16 flex flex-col items-center text-center gap-4">
-          <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
-            <Sparkles className="h-8 w-8" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold">Nenhum parceiro ainda</h3>
-            <p className="text-sm text-muted-foreground max-w-md mt-1">
-              Cadastre indicadores e acompanhe captação, conversão e cashback de
-              cada um em tempo real.
+      <div className="pe-page space-y-6">
+        <div className="pe-page-header">
+          <div className="min-w-0">
+            <h2 className="pe-page-title">Dashboard de Parceiros</h2>
+            <p className="pe-page-sub">
+              Performance de indicação, conversão e cashback em tempo real
             </p>
           </div>
-          <Button onClick={onNew} className="gap-2">
-            <Plus className="h-4 w-4" /> Cadastrar primeiro parceiro
-          </Button>
-        </CardContent>
-      </Card>
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <Button
+              variant="outline"
+              onClick={onDownloadBanner}
+              className="gap-2 h-8"
+            >
+              <Download className="h-4 w-4" />
+              Meu Banner
+            </Button>
+            <Button onClick={onNew} className="gap-2 h-8">
+              <Plus className="h-4 w-4" /> Novo Parceiro
+            </Button>
+          </div>
+        </div>
+        <Card className="border-dashed">
+          <CardContent className="py-16 flex flex-col items-center text-center gap-4">
+            <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
+              <Sparkles className="h-8 w-8" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">Nenhum parceiro ainda</h3>
+              <p className="text-sm text-muted-foreground max-w-md mt-1">
+                Cadastre indicadores e acompanhe captação, conversão e cashback de
+                cada um em tempo real. Seu banner (consultor) já pode ser baixado
+                pelo botão acima.
+              </p>
+            </div>
+            <Button onClick={onNew} className="gap-2">
+              <Plus className="h-4 w-4" /> Cadastrar primeiro parceiro
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -95,7 +122,15 @@ export function PartnerDashboard({
             Performance de indicação, conversão e cashback em tempo real
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            onClick={onDownloadBanner}
+            className="gap-2 h-8"
+          >
+            <Download className="h-4 w-4" />
+            Meu Banner
+          </Button>
           <Button
             variant="outline"
             onClick={() => setOpenList(true)}

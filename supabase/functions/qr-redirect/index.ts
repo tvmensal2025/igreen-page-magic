@@ -258,16 +258,19 @@ Deno.serve(async (req) => {
     }
 
     if (partner) {
-      // Keyword principal do parceiro. Mantida no texto como FALLBACK
-      // (compatibilidade com `matchKeyword` do webhook). Mas a atribuição
-      // determinística vem do MARCADOR `#R{short_code}` anexado abaixo —
-      // ver `resolveQrMessage`/`extractShortCodeMarker`. Sem keyword cai no
-      // nome do parceiro (defesa em profundidade — o form exige keyword).
+      // Keyword do LOCAL (?k=) tem prioridade sobre keywords[0] — permite
+      // vários banners do mesmo parceiro (posto X, padaria Y) e rastrear
+      // de qual ponto veio o lead. A atribuição do parceiro continua pelo
+      // marcador `#R{short_code}` anexado em resolveQrMessage.
+      const fromQuery = (keywordParam ?? "").trim();
       const rawKw = Array.isArray(partner.keywords) ? (partner.keywords[0] ?? "") : "";
-      const keyword =
+      const fallbackKw =
         typeof rawKw === "string" && rawKw.trim() ? rawKw : (partner.nome ?? "");
+      const keyword = fromQuery || fallbackKw;
+      // ?msg= personaliza a frase; senão usa qr_phrase do parceiro.
+      const phraseSource = (msgParam ?? "").trim() || (partner.qr_phrase as string | null);
       message = resolveQrMessage(
-        partner.qr_phrase as string | null,
+        phraseSource,
         keyword,
         partner.short_code,
       );

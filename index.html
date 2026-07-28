@@ -27,6 +27,8 @@
           if (m[2]) u.searchParams.set("c", decodeURIComponent(m[2]));
           var msg = new URLSearchParams(location.search).get("msg");
           if (msg) u.searchParams.set("msg", msg);
+          var k = new URLSearchParams(location.search).get("k");
+          if (k) u.searchParams.set("k", k);
           location.replace(u.toString());
         } catch (e) { /* deixa o SPA tentar */ }
       })();

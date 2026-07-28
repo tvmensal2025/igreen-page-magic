@@ -1472,10 +1472,19 @@ Deno.serve(async (req) => {
               matchedPartnerId = byCode.id as string;
               matchedKeyword = `#R${markerCode}`;
               matchedSource = "short_code";
+              const partnerKws = Array.isArray(byCode.keywords)
+                ? (byCode.keywords as string[])
+                : [];
+              if (partnerKws.length > 0) {
+                const loc = matchKeyword(messageText, [
+                  { partnerId: byCode.id as string, keywords: partnerKws },
+                ]);
+                if (loc?.keyword) matchedKeyword = loc.keyword;
+              }
             }
           }
 
-          // 2º) Fallback: keyword no texto.
+          // 2º) Fallback: keyword no texto (parceiros).
           if (!matchedPartnerId) {
             const { data: partners } = await supabase
               .from("referral_partners")
@@ -1494,6 +1503,33 @@ Deno.serve(async (req) => {
                 matchedKeyword = match.keyword;
                 matchedScore = match.score;
                 matchedSource = "keyword";
+              }
+            }
+          }
+
+          // 3º) Banner do CONSULTOR (sem parceiro).
+          if (!matchedPartnerId) {
+            const { data: consBanner } = await supabase
+              .from("consultants")
+              .select("banner_keywords")
+              .eq("id", instanceData.consultant_id)
+              .maybeSingle();
+            const bannerKws = Array.isArray(consBanner?.banner_keywords)
+              ? (consBanner!.banner_keywords as string[]).filter(Boolean)
+              : [];
+            if (bannerKws.length > 0) {
+              const loc = matchKeyword(messageText, [
+                { partnerId: instanceData.consultant_id, keywords: bannerKws },
+              ]);
+              if (loc?.keyword) {
+                matchedKeyword = loc.keyword;
+                await supabase.from("customers").update({
+                  referral_keyword_matched: matchedKeyword,
+                  referral_detected_at: new Date().toISOString(),
+                }).eq("id", customer.id);
+                console.log(
+                  `[banner-keyword] customer=${customer.id} consultant=${instanceData.consultant_id} keyword="${matchedKeyword}"`,
+                );
               }
             }
           }

@@ -9,6 +9,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
@@ -17,7 +19,12 @@ import {
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { resolveQrMessage } from "./qrPhrase";
+import {
+  resolveQrMessage,
+  buildDefaultQrPhrase,
+  QR_PHRASE_MAX,
+  isGenericKeyword,
+} from "./qrPhrase";
 import {
   templatePlaceholderArt,
   templateSizeHint,
@@ -32,6 +39,8 @@ interface PartnerQrCodeProps {
   onClose: () => void;
   partnerName: string;
   keyword: string;
+  /** Todas as palavras-chave do parceiro — permite trocar e baixar vários banners. */
+  keywords?: string[];
   consultantPhone: string;
   consultantName?: string;
   consultantIgreenId?: string;
@@ -40,6 +49,8 @@ interface PartnerQrCodeProps {
   license?: string | null;
   /** Código numérico do parceiro (gerado no banco) — vai na URL curta. */
   shortCode?: string | null;
+  /** Ao baixar com keyword nova, persiste no parceiro. */
+  onSaveKeyword?: (keyword: string) => Promise<void>;
 }
 
 /**
@@ -50,11 +61,12 @@ function buildShortLink(
   license?: string | null,
   shortCode?: string | null,
   consultantIgreenId?: string | null,
+  keyword?: string | null,
 ): string | null {
   const ref = (consultantIgreenId ?? "").trim() || (license ?? "").trim();
   const code = (shortCode ?? "").trim();
   if (!ref || !code) return null;
-  return buildPartnerPublicShortLink(ref, code);
+  return buildPartnerPublicShortLink(ref, code, { keyword });
 }
 
 /**
@@ -359,24 +371,119 @@ export function PartnerQrCode({
   onClose,
   partnerName,
   keyword,
+  keywords = [],
   consultantPhone,
   consultantName = "",
   consultantIgreenId = "",
   qrPhrase,
   license,
   shortCode,
+  onSaveKeyword,
 }: PartnerQrCodeProps) {
+  const keywordOptions = Array.from(
+    new Set(
+      [...keywords, keyword]
+        .map((k) => (k ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+  const [selectedKeyword, setSelectedKeyword] = useState(
+    () => keywordOptions[0] || keyword || "",
+  );
+  /** Frase custom só para este download (não grava no banco). */
+  const [customPhrase, setCustomPhrase] = useState("");
+  const [useCustomPhrase, setUseCustomPhrase] = useState(false);
+  const [newKeywordDraft, setNewKeywordDraft] = useState("");
+
+  // Ao reabrir o modal, alinha a keyword selecionada ao parceiro atual.
+  useEffect(() => {
+    if (!open) return;
+    const opts = Array.from(
+      new Set(
+        [...keywords, keyword]
+          .map((k) => (k ?? "").trim())
+          .filter(Boolean),
+      ),
+    );
+    setSelectedKeyword(opts[0] || keyword || "");
+    setCustomPhrase("");
+    setUseCustomPhrase(false);
+    setNewKeywordDraft("");
+  }, [open, keyword, keywords]);
+
+  const activeKeyword = selectedKeyword.trim() || keyword || "";
+  const phraseSource = useCustomPhrase
+    ? customPhrase.trim() || null
+    : qrPhrase;
   // `phrase` é a mensagem que o lead vai ver no WhatsApp (exibida no card).
   // Inclui o marcador `#R{short_code}` quando há short_code — esse é o sinal
   // determinístico que o webhook usa para atribuir o lead a este parceiro
   // mesmo se o lead apagar/editar o resto da mensagem.
-  const phrase = resolveQrMessage(qrPhrase, keyword, shortCode);
+  const phrase = resolveQrMessage(phraseSource, activeKeyword, shortCode);
   // Link curto com marca (igreen.cloud/r/...) — bounce imediato → WhatsApp.
-  const shortLink = buildShortLink(license, shortCode, consultantIgreenId);
+  // O short_code atribui o parceiro; a keyword (`?k=`) muda o texto/local.
+  const shortLink = buildShortLink(
+    license,
+    shortCode,
+    consultantIgreenId,
+    activeKeyword,
+  );
   const url =
-    shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase, shortCode);
+    shortLink ??
+    buildWaMeUrl(consultantPhone, activeKeyword, phraseSource, shortCode);
   const { toast } = useToast();
   const [sharingWa, setSharingWa] = useState(false);
+  const [savingKw, setSavingKw] = useState(false);
+
+  const persistKeywordIfNeeded = async (): Promise<boolean> => {
+    const kw = activeKeyword.trim();
+    if (!kw || !onSaveKeyword) return true;
+    const known = keywordOptions.some(
+      (k) => k.trim().toLowerCase() === kw.toLowerCase(),
+    );
+    if (known) return true;
+    if (isGenericKeyword(kw)) {
+      toast({
+        title: "Palavra-chave genérica demais",
+        description: "Use algo único do local / parceiro.",
+        variant: "destructive",
+      });
+      return false;
+    }
+    setSavingKw(true);
+    try {
+      await onSaveKeyword(kw);
+      toast({
+        title: "Palavra-chave salva no parceiro",
+        description: `"${kw}" — assim você sabe de qual banner/local veio o lead.`,
+      });
+      return true;
+    } catch (err: unknown) {
+      toast({
+        title: "Não foi possível salvar a palavra-chave",
+        description: err instanceof Error ? err.message : "Tente novamente.",
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setSavingKw(false);
+    }
+  };
+
+  const applyNewKeywordDraft = () => {
+    const kw = newKeywordDraft.trim();
+    if (!kw) return;
+    if (isGenericKeyword(kw)) {
+      toast({
+        title: "Palavra-chave genérica demais",
+        description: "Use algo único do parceiro (ex.: nome + cidade).",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSelectedKeyword(kw);
+    setNewKeywordDraft("");
+  };
 
   // Template selecionado (Sulfite A4 ou Banner 504×904mm).
   const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
@@ -587,16 +694,28 @@ export function PartnerQrCode({
     return canvas;
   };
 
+  const slugName = partnerName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const slugKw = activeKeyword
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 40);
+  const fileBase = `flyer-${templateId}-${slugName}${slugKw ? `-${slugKw}` : ""}`;
+
   const handleDownload = async () => {
+    if (!(await persistKeywordIfNeeded())) return;
     const canvas = await renderToCanvas();
     if (!canvas) return;
     const a = document.createElement("a");
-    a.download = `flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.png`;
+    a.download = `${fileBase}.png`;
     a.href = canvas.toDataURL("image/png");
     a.click();
   };
 
   const handleDownloadPDF = async () => {
+    if (!(await persistKeywordIfNeeded())) return;
     const canvas = await renderToCanvas();
     if (!canvas) return;
     const { pdfWmm: wmm, pdfHmm: hmm } = TEMPLATE_DIMS[templateId];
@@ -606,7 +725,7 @@ export function PartnerQrCode({
     // a arte preenche a página inteira sem esticar e sem barras (borda do lado).
     const imgData = canvas.toDataURL("image/png");
     pdf.addImage(imgData, "PNG", 0, 0, wmm, hmm);
-    pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
+    pdf.save(`${fileBase}.pdf`);
   };
 
   /** Gera PNG em alta (canvas full) e abre o share do celular / fallback desktop. */
@@ -632,9 +751,7 @@ export function PartnerQrCode({
         });
         return;
       }
-      const fileName = `flyer-${templateId}-${partnerName
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")}.png`;
+      const fileName = `${fileBase}.png`;
       const file = new File([blob], fileName, { type: "image/png" });
       const shareText = shortLink
         ? `Meu link: ${shortLink}`
@@ -736,7 +853,7 @@ export function PartnerQrCode({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
         <DialogHeader>
-          <DialogTitle>QR Code — {partnerName}</DialogTitle>
+          <DialogTitle>Baixar Banner / QR — {partnerName}</DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
@@ -832,6 +949,102 @@ export function PartnerQrCode({
 
           {/* Controls */}
           <div className="flex flex-col gap-4 min-w-0">
+            <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
+              <Label className="text-sm">Palavra-chave deste banner</Label>
+              <p className="text-[11px] text-muted-foreground leading-snug">
+                Troque a palavra-chave e baixe de novo para gerar vários
+                banners. O QR continua atribuindo o mesmo parceiro.
+              </p>
+              {keywordOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {keywordOptions.map((kw) => (
+                    <Button
+                      key={kw}
+                      type="button"
+                      size="sm"
+                      variant={selectedKeyword === kw ? "default" : "outline"}
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        setSelectedKeyword(kw);
+                        if (useCustomPhrase) {
+                          setCustomPhrase(buildDefaultQrPhrase(kw));
+                        }
+                      }}
+                    >
+                      {kw}
+                    </Button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1.5">
+                <Input
+                  value={newKeywordDraft}
+                  onChange={(e) => setNewKeywordDraft(e.target.value)}
+                  placeholder="Outra palavra / frase só neste banner"
+                  className="h-8 text-xs"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      applyNewKeywordDraft();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0"
+                  onClick={applyNewKeywordDraft}
+                  disabled={!newKeywordDraft.trim()}
+                >
+                  Usar
+                </Button>
+              </div>
+              {selectedKeyword && !keywordOptions.includes(selectedKeyword) && (
+                <p className="text-[11px] text-primary">
+                  Usando agora: <strong>{selectedKeyword}</strong>
+                </p>
+              )}
+
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer mt-1">
+                <input
+                  type="checkbox"
+                  checked={useCustomPhrase}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    setUseCustomPhrase(on);
+                    if (on && !customPhrase.trim()) {
+                      setCustomPhrase(
+                        buildDefaultQrPhrase(activeKeyword).replace(
+                          /\s*#R\d+\s*$/i,
+                          "",
+                        ),
+                      );
+                    }
+                  }}
+                  className="h-3.5 w-3.5 rounded border-input"
+                />
+                Editar frase do WhatsApp neste banner
+              </label>
+              {useCustomPhrase && (
+                <div className="space-y-1">
+                  <Textarea
+                    value={customPhrase}
+                    onChange={(e) => setCustomPhrase(e.target.value)}
+                    rows={3}
+                    maxLength={QR_PHRASE_MAX + 20}
+                    placeholder="Frase que o cliente verá ao abrir o WhatsApp"
+                    className="text-xs resize-none"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    A palavra-chave entra na frase automaticamente se faltar.
+                    Limite ~{QR_PHRASE_MAX} caracteres (o marcador do parceiro
+                    é acrescentado sozinho).
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-col gap-2">
               <Label className="text-sm">Formato do template</Label>
               <div className="flex flex-wrap gap-2">
@@ -996,6 +1209,10 @@ export function PartnerQrCode({
                 Ao escanear o QR ou abrir o link, abre WhatsApp com:{" "}
                 <span className="font-medium">&quot;{phrase}&quot;</span>
               </p>
+              <p className="text-[10px]">
+                Dica: escolha outra palavra-chave acima e baixe de novo — cada
+                arquivo fica com frase diferente; o parceiro continua o mesmo.
+              </p>
             </div>
           </div>
         </div>
@@ -1017,10 +1234,20 @@ export function PartnerQrCode({
             )}
             Enviar no WhatsApp (alta qualidade)
           </Button>
-          <Button variant="outline" onClick={handleDownload} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={handleDownload}
+            disabled={savingKw}
+            className="gap-2"
+          >
             <Download className="h-4 w-4" /> Baixar PNG
           </Button>
-          <Button onClick={handleDownloadPDF} className="gap-2" variant="outline">
+          <Button
+            onClick={handleDownloadPDF}
+            className="gap-2"
+            variant="outline"
+            disabled={savingKw}
+          >
             <FileText className="h-4 w-4" />
             Baixar PDF ({TEMPLATE_DIMS[templateId].pdfWmm}×{TEMPLATE_DIMS[templateId].pdfHmm}mm)
           </Button>

@@ -1634,10 +1634,22 @@ Deno.serve(async (req) => {
               matchedPartnerId = byCode.id as string;
               matchedKeyword = `#R${markerCode}`;
               matchedSource = "short_code";
+              // Se a mensagem trouxe uma keyword de LOCAL do parceiro
+              // (vários banners / pontos), grava ela em referral_keyword_matched
+              // para saber de qual local veio — sem trocar o parceiro.
+              const partnerKws = Array.isArray(byCode.keywords)
+                ? (byCode.keywords as string[])
+                : [];
+              if (partnerKws.length > 0) {
+                const loc = matchKeyword(messageText, [
+                  { partnerId: byCode.id as string, keywords: partnerKws },
+                ]);
+                if (loc?.keyword) matchedKeyword = loc.keyword;
+              }
             }
           }
 
-          // 2º) Fallback: keyword no texto.
+          // 2º) Fallback: keyword no texto (parceiros).
           if (!matchedPartnerId) {
             const { data: partners } = await supabase
               .from("referral_partners")
@@ -1656,6 +1668,46 @@ Deno.serve(async (req) => {
                 matchedKeyword = match.keyword;
                 matchedScore = match.score;
                 matchedSource = "keyword";
+              }
+            }
+          }
+
+          // 3º) Banner do CONSULTOR (sem parceiro): consultants.banner_keywords.
+          // Grava só referral_keyword_matched — lead fica do consultor, não de indicador.
+          if (!matchedPartnerId) {
+            const { data: consBanner } = await supabase
+              .from("consultants")
+              .select("banner_keywords")
+              .eq("id", superAdminConsultantId)
+              .maybeSingle();
+            const bannerKws = Array.isArray(consBanner?.banner_keywords)
+              ? (consBanner!.banner_keywords as string[]).filter(Boolean)
+              : [];
+            if (bannerKws.length > 0) {
+              const loc = matchKeyword(messageText, [
+                { partnerId: superAdminConsultantId, keywords: bannerKws },
+              ]);
+              if (loc?.keyword) {
+                matchedKeyword = loc.keyword;
+                matchedSource = "keyword";
+                await supabase.from("customers").update({
+                  referral_keyword_matched: matchedKeyword,
+                  referral_detected_at: new Date().toISOString(),
+                }).eq("id", customer.id);
+                console.log(
+                  `[banner-keyword] customer=${customer.id} consultant=${superAdminConsultantId} keyword="${matchedKeyword}"`,
+                );
+                try {
+                  await supabase.from("campaign_match_log").insert({
+                    customer_id: customer.id,
+                    campaign_id: null,
+                    method: "banner_keyword",
+                    similarity: 1,
+                    message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                  });
+                } catch (e) {
+                  console.warn("[campaign-match-log] banner insert falhou:", (e as Error).message);
+                }
               }
             }
           }
