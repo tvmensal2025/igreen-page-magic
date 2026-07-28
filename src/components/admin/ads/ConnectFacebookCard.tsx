@@ -229,13 +229,13 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
       </div>
 
       <div className="rounded-xl border border-border/60 bg-background/40 p-3 space-y-2">
-        <div className="text-sm font-medium text-foreground">WhatsApp dos anúncios (CTWA)</div>
+        <div className="text-sm font-medium text-foreground">WhatsApp dos anúncios</div>
         <p className="text-xs text-muted-foreground">
           WhatsApp Business · 1 número por conta (SMS uma vez). Para anunciar, fale com o Rafael e peça saldo.
         </p>
         <Button size="sm" variant="default" className="gap-1.5" onClick={() => setWaImplantOpen(true)}>
           <Smartphone className="w-3.5 h-3.5" />
-          {connection.whatsapp_destination_number ? "Ver / gerenciar número CTWA" : "Cadastrar número WhatsApp (SMS)"}
+          {connection.whatsapp_destination_number ? "Ver / gerenciar número" : "Cadastrar número WhatsApp (SMS)"}
         </Button>
       </div>
 

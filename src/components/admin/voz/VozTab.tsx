@@ -135,8 +135,8 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
         <div>
           <h2 className="pe-page-title">Ligação · SMS</h2>
           <p className="pe-page-sub">
-            Textos do plano multicanal em <strong>Textos Multicanal</strong>. Kit diário em{" "}
-            <strong>Programação do ciclo</strong>. Status do envio automático fica no Multicanal e na Pizza A·B·C.
+            Textos de WhatsApp, SMS e ligação em <strong>Textos automáticos</strong>. Kit diário em{" "}
+            <strong>Programação do ciclo</strong>. Status do envio automático fica no acompanhamento (novos / esfriaram / sumiram).
           </p>
         </div>
       </div>
@@ -151,7 +151,7 @@ export function VozTab({ consultantId, onOpenChat }: Props) {
             <TabsTrigger value="bases" className="gap-1.5 shrink-0 text-xs sm:text-sm"><Users className="h-4 w-4" /> Bases</TabsTrigger>
             <TabsTrigger value="dnc" className="gap-1.5 shrink-0 text-xs sm:text-sm"><ShieldBan className="h-4 w-4" /> <span className="sm:hidden">Bloq.</span><span className="hidden sm:inline">Não Perturbe</span></TabsTrigger>
             <TabsTrigger value="kit" className="gap-1.5 shrink-0 text-xs sm:text-sm"><RefreshCw className="h-4 w-4" /> <span className="sm:hidden">Ciclo</span><span className="hidden sm:inline">Programação do ciclo</span></TabsTrigger>
-            <TabsTrigger value="textos" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BookOpen className="h-4 w-4" /> <span className="sm:hidden">Textos</span><span className="hidden sm:inline">Textos Multicanal</span></TabsTrigger>
+            <TabsTrigger value="textos" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BookOpen className="h-4 w-4" /> <span className="sm:hidden">Textos</span><span className="hidden sm:inline">Textos automáticos</span></TabsTrigger>
             <TabsTrigger value="historico" className="gap-1.5 shrink-0 text-xs sm:text-sm"><History className="h-4 w-4" /> Histórico</TabsTrigger>
             <TabsTrigger value="painel" className="gap-1.5 shrink-0 text-xs sm:text-sm"><BarChart3 className="h-4 w-4" /> Painel</TabsTrigger>
             <TabsTrigger value="ajuda" className="gap-1.5 shrink-0 text-xs sm:text-sm"><HelpCircle className="h-4 w-4" /> Ajuda</TabsTrigger>

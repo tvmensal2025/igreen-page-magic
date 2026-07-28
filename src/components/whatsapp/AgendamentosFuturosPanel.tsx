@@ -149,23 +149,23 @@ export function AgendamentosFuturosPanel({ loading, timeline, stats, onSelectIte
   ];
 
   const pizzaChips: Array<{ id: PizzaFilter; label: string }> = [
-    { id: "all", label: "Pizza" },
-    { id: "A", label: "A" },
-    { id: "B", label: "B" },
-    { id: "C", label: "C" },
+    { id: "all", label: "Acompanhamento" },
+    { id: "A", label: "Novos" },
+    { id: "B", label: "Esfriaram" },
+    { id: "C", label: "Sumiram" },
   ];
 
   const motorChips: Array<{ id: MotorFilter; label: string }> = [
-    { id: "all", label: "Todos motores" },
-    { id: "cadence_send", label: "Motor A→B→C" },
-    { id: "daily_reheat", label: "Reheat" },
+    { id: "all", label: "Todos os envios" },
+    { id: "cadence_send", label: "Mensagens automáticas" },
+    { id: "daily_reheat", label: "Fila diária" },
     { id: "manual_scheduled", label: "Manual" },
     { id: "pos_venda_auto", label: "Pós-venda" },
     { id: "bot_followup", label: "Follow-up" },
     { id: "bulk_campaign", label: "Campanha WA" },
     { id: "voice_campaign", label: "Campanha voz" },
-    { id: "voice_retry", label: "Retry voz" },
-    { id: "pending_media", label: "Mídia bot" },
+    { id: "voice_retry", label: "Nova tentativa de ligação" },
+    { id: "pending_media", label: "Fila de mídia" },
   ];
 
   const kpis = [
@@ -174,9 +174,9 @@ export function AgendamentosFuturosPanel({ loading, timeline, stats, onSelectIte
     { label: "WhatsApp", value: stats.byChannel.whatsapp, tone: "text-primary" },
     { label: "SMS", value: stats.byChannel.sms, tone: "text-info" },
     { label: "Ligações", value: stats.byChannel.voice, tone: "text-warning" },
-    { label: "Pizza A", value: stats.byPizza.A, tone: "text-primary" },
-    { label: "Pizza B", value: stats.byPizza.B, tone: "text-warning" },
-    { label: "Pizza C", value: stats.byPizza.C, tone: "text-info" },
+    { label: "Novos", value: stats.byPizza.A, tone: "text-primary" },
+    { label: "Esfriaram", value: stats.byPizza.B, tone: "text-warning" },
+    { label: "Sumiram", value: stats.byPizza.C, tone: "text-info" },
   ];
 
   return (

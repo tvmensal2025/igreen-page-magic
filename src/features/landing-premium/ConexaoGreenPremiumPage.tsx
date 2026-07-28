@@ -31,6 +31,7 @@ import {
   PremiumSolution,
 } from "./components/PremiumSections";
 import { PremiumConsultant, PremiumFaq, PremiumFinal } from "./components/PremiumClosing";
+import { isPremiumReservedSegment } from "./shared/premiumRoutes";
 
 const DEFAULT_CADASTRO_URL = "https://digital.igreenenergy.com.br/?sendcontract=true";
 
@@ -61,7 +62,7 @@ const ADS_SOURCES = [
  *   prioridade sobre o telefone do perfil).
  * - `useTrackView` / `trackClickEvent`: as métricas da premium caem no mesmo
  *   funil, então dá para comparar as duas versões lado a lado.
- * - `PixelInjector`: pixel do Facebook e GA do consultor.
+ * - `PixelInjector`: Pixel da plataforma + Pixel/GA do consultor (Dados).
  * - `CanonicalLicenseRedirect`: mantém a licença canônica na URL.
  */
 const ConexaoGreenPremiumPage = () => {
@@ -94,13 +95,25 @@ const ConexaoGreenPremiumPage = () => {
   const trackCadastro = useCallback(() => track("cadastro"), [track]);
   const trackSimulator = useCallback(() => track("whatsapp_simulador"), [track]);
 
+  // `/premium/conexao-telecom` (sem licença) cai nesta rota genérica. Não é
+  // consultor privado — é URL incompleta. A mensagem correta evita o falso
+  // "Consultor não encontrado" em páginas que são 100% públicas.
+  if (isPremiumReservedSegment(licenca)) {
+    return (
+      <PageStatus
+        title="Link incompleto"
+        description={`Falta a licença do consultor no final da URL. Ex.: /premium/${licenca}/sua-licenca`}
+      />
+    );
+  }
+
   if (isLoading) return <LoadingScreen />;
 
   if (!consultant) {
     return (
       <PageStatus
         title="Consultor não encontrado"
-        description="Verifique o link e tente novamente."
+        description="Verifique o link e tente novamente. As landing pages são públicas — o endereço precisa terminar com a licença do consultor."
       />
     );
   }

@@ -62,7 +62,7 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
 
 
       if (isSuper) {
-        setBot({ status: "ok", label: "WhatsApp do bot conectado", detail: "WhatsApp (super admin)" });
+        setBot({ status: "ok", label: "WhatsApp conectado", detail: "WhatsApp (super admin)" });
       } else {
         const { data: inst } = await supabase
           .from("whatsapp_instances")
@@ -72,20 +72,20 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
         if (inst?.connected_phone) {
           setBot({
             status: "ok",
-            label: "WhatsApp do bot conectado",
+            label: "WhatsApp conectado",
             detail: `+${inst.connected_phone}`,
           });
         } else {
           setBot({
             status: "fail",
-            label: "WhatsApp do bot NÃO conectado",
-            hint: "Abra a aba WhatsApp e escaneie o QR Code para o bot poder responder leads.",
+            label: "WhatsApp ainda não conectado",
+            hint: "Abra a aba WhatsApp e escaneie o QR Code para poder atender os clientes.",
           });
         }
       }
     } catch (e) {
       console.warn("[ctwa-preflight] bot check failed", e);
-      setBot({ status: "fail", label: "Erro ao verificar bot" });
+      setBot({ status: "fail", label: "Erro ao verificar WhatsApp" });
     }
 
     // 2) Facebook + Pixel — consulta o status consolidado da CONTA PLATAFORMA
@@ -96,7 +96,7 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
       const { data, error } = await supabase.functions.invoke("ctwa-status");
       if (error || !data?.ok) {
         setFacebook({ status: "fail", label: "Erro ao verificar Facebook", hint: (data as any)?.error || error?.message });
-        setPixel({ status: "fail", label: "Erro ao verificar Pixel" });
+        setPixel({ status: "fail", label: "Erro ao verificar rastreamento" });
       } else {
         setFacebook(data.facebook);
         setPixel(data.pixel);
@@ -105,7 +105,7 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
     } catch (e) {
       console.warn("[ctwa-preflight] ctwa-status failed", e);
       setFacebook({ status: "fail", label: "Erro ao verificar Facebook" });
-      setPixel({ status: "fail", label: "Erro ao verificar Pixel" });
+      setPixel({ status: "fail", label: "Erro ao verificar rastreamento" });
     }
 
 
@@ -117,7 +117,7 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
         if (error || !data?.ok) {
           setWaba({
             status: "fail",
-            label: "WABA não detectado",
+            label: "WhatsApp Business não encontrado",
             hint: data?.hint || "Vincule seu WhatsApp Business à Página no Meta Business Suite.",
           });
         } else if (!data.connected) {
@@ -129,23 +129,23 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
         } else if (!data.matches) {
           setWaba({
             status: "fail",
-            label: "Número não bate com a WABA",
-            detail: `WABA tem ${data.numbers?.map((n: any) => n.display).join(", ")}`,
-            hint: "Escolha um dos números oficiais da WABA em Anúncios → Configurações e clique em Reverificar.",
+            label: "Número diferente do cadastrado na Meta",
+            detail: `Números na Meta: ${data.numbers?.map((n: any) => n.display).join(", ")}`,
+            hint: "Escolha um dos números oficiais em Anúncios e clique em Reverificar.",
           });
         } else {
           setWaba({
             status: "ok",
-            label: "WABA validado",
+            label: "WhatsApp Business ligado à Página",
             detail: data.numbers?.[0]?.display || data.current_number,
           });
         }
       } catch (e: any) {
         console.warn("[ctwa-preflight] waba check failed", e);
-        setWaba({ status: "fail", label: "Erro ao consultar WABA", detail: e?.message });
+        setWaba({ status: "fail", label: "Erro ao consultar WhatsApp Business", detail: e?.message });
       }
     } else {
-      setWaba({ status: "fail", label: "WABA não verificado", hint: "Conecte a Página primeiro." });
+      setWaba({ status: "fail", label: "WhatsApp Business não verificado", hint: "Conecte a Página primeiro." });
     }
 
     setLoading(false);

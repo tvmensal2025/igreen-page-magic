@@ -107,3 +107,22 @@ export const PRODUTO_SLUGS = [
 ] as const;
 
 export type ProdutoSlug = (typeof PRODUTO_SLUGS)[number];
+
+/**
+ * Segmentos reservados sob `/premium/:licenca`.
+ *
+ * A rota curta do Green é `/premium/{licenca-do-consultor}`. Se alguém abrir
+ * `/premium/conexao-telecom` (sem a licença no final), o React Router casa com
+ * essa rota e o sistema tenta achar um consultor chamado "conexao-telecom" —
+ * daí o falso "Consultor não encontrado". Estes segmentos NUNCA são licença.
+ */
+export const PREMIUM_RESERVED_SEGMENTS = new Set<string>([
+  "expansao",
+  "conexao-green",
+  ...PRODUTO_SLUGS,
+]);
+
+export function isPremiumReservedSegment(segment: string | undefined): boolean {
+  if (!segment) return false;
+  return PREMIUM_RESERVED_SEGMENTS.has(segment.trim().toLowerCase());
+}

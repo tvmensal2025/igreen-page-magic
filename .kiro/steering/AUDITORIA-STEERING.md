@@ -6,9 +6,15 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-27** (prep TTS pós-venda + pacote só imagem/áudio).
+Última atualização: **2026-07-28** (sync multi-conta promove telefone de subconta).
 
-## 2026-07-27 — Pós-venda: pré-gerar áudio dos agendamentos
+## 2026-07-28 — Sync multi-conta: telefone de subconta sempre atualiza
+Bug: cliente entrava pela Conta principal (rede) como `sem_celular_*`; subconta (Oseias/Nilma/…) trazia celular real mas upsert por `phone_whatsapp` batia no unique `(consultant_id, igreen_code)` e o enrich filtrava por `igreen_account_id`. Fix em `persistCustomers` (UPDATE por id / promove placeholder) + `applyCustomerDetails` (sem filtro de conta) + `enrich_only` reprocessa `sem_celular_*` pelo `registered_by`. Doc: `#igreen-sync-oficial` · AGENTS sync.
+
+## 2026-07-28 — Cadência B→A muda + protocolo start_attendance
+- Trigger `cadence_on_inbound_message` (migration 25/07) apagava COLD_/SMS_ → `AI_QUALIFYING` antes do router TS; lead respondia COLD_1 e não entrava no Grupo A. Fix: `20260728160000_restore_cadence_inbound_preserve_bc` (+ cliente guard). Armadilha #37.
+- `start-customer-attendance` passava `protocolo:""` → `applyVars` apagava `{{protocolo}}` antes do assign. Template `Consultor(a)` → `{{o_a_consultor}} *{{consultor}}*` + `Protocolo`.
+
 Tabela `pos_venda_prepared_audio` + edge `pos-venda-audio-prep` (cron :05) gera TTS (Olá nome + saudação do slot + corpo) antes do envio. Auto-progress consome se `saudacao_bucket` bater; senão TTS ao vivo. Pacote Zap = só imagem+áudio. Helpers: `_shared/pos-venda-tts.ts`, `_shared/pos-venda-audio-prep.ts`. Doc: `#pos-venda`.
 
 ## 2026-07-27 — Pós-venda: áudio TTS do roteiro (não legacy.ogg)

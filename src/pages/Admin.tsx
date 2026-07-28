@@ -71,7 +71,6 @@ const VendaPlataformaPanel = lazy(() =>
   import("@/components/superadmin/VendaPlataformaPanel").then((m) => ({ default: m.VendaPlataformaPanel })),
 );
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
-const EndpointDiscoveryCard = lazy(() => import("@/features/produtos/carteira-green/EndpointDiscoveryCard").then(m => ({ default: m.EndpointDiscoveryCard })));
 const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/FinanceiroPanel").then(m => ({ default: m.FinanceiroPanel })));
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
@@ -434,20 +433,20 @@ const AdminContent = () => {
 
   // Labels e subtítulos por aba — alimenta o AppTopbar
   const TAB_META: Record<AdminTabId, { title: string; subtitle: string }> = {
-    "dashboard": { title: "Dashboard", subtitle: "Resumo operacional do dia" },
-    "crm": { title: "Clientes interessados", subtitle: "Funil de clientes interessados do WhatsApp até finalizar cadastro" },
-    "crm-clientes": { title: "Clientes ativos", subtitle: "Pós-venda iGreen — Em Espera, Aprovado, Reprovado e progressão 30/60/90/120 dias" },
+    "dashboard": { title: "Painel", subtitle: "Resumo do seu dia" },
+    "crm": { title: "Clientes interessados", subtitle: "Do WhatsApp até finalizar o cadastro" },
+    "crm-clientes": { title: "Clientes ativos", subtitle: "Já cadastrados: aguardando, aprovados, reprovados e acompanhamento mês a mês" },
     "conversao": { title: "Conversão", subtitle: "Fila priorizada para reativar e fechar" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
     "financeiro": { title: "Financeiro", subtitle: "Boletos, vencimentos e recebimentos da sua rede iGreen" },
-    "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, pipeline, ganhos e faturas Green" },
-    "captacao": { title: "Captação", subtitle: "Novos clientes interessados e originação" },
+    "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, vendas em andamento, ganhos e faturas Green" },
+    "captacao": { title: "Captação", subtitle: "Novos interessados que chegaram agora" },
     "parceiros": { title: "Parceiros", subtitle: "Rede de parcerias e indicações" },
-    "whatsapp": { title: "WhatsApp", subtitle: "Atendimento, automação e disparo" },
-    "agendamentos": { title: "Agendamentos", subtitle: "Central unificada de envios programados e automações" },
-    "central-anuncios": { title: "Central de Anúncios", subtitle: "Performance de campanhas" },
-    "links": { title: "Links", subtitle: "Sua landing, QR Codes e materiais" },
-    "materiais": { title: "Materiais", subtitle: "Biblioteca de assets de divulgação" },
+    "whatsapp": { title: "WhatsApp", subtitle: "Conversas, mensagens prontas e envios agendados" },
+    "agendamentos": { title: "Agendamentos", subtitle: "Envios programados e mensagens automáticas" },
+    "central-anuncios": { title: "Central de Anúncios", subtitle: "Resultados das suas campanhas" },
+    "links": { title: "Links", subtitle: "Sua página, QR Codes e materiais" },
+    "materiais": { title: "Materiais", subtitle: "Arquivos prontos para divulgar" },
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
     "voz": { title: "Ligação", subtitle: "Ligações com número da empresa e histórico detalhado" },
     "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
@@ -768,8 +767,14 @@ const AdminContent = () => {
             <SheetTitle>Configurações</SheetTitle>
           </SheetHeader>
           <div className="mt-6 space-y-6">
-            {userId && (
-              <Suspense fallback={null}>
+            <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
+            <Suspense fallback={null}>
+              {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}
+              {userId && <IGreenConnectionCard userId={userId} />}
+              {userId && <IGreenSyncStatusBar consultantId={userId} />}
+              <BonusTiersAdminCard />
+              <ChangePasswordCard />
+              {userId && (
                 <WhatsAppConnectionSettingsCard
                   isWhapi={!!isWhapi}
                   connectionStatus={connectionStatus}
@@ -782,20 +787,6 @@ const AdminContent = () => {
                     setActiveTab("whatsapp");
                   }}
                 />
-              </Suspense>
-            )}
-            <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
-            <Suspense fallback={null}>
-              {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}
-              {userId && <IGreenConnectionCard userId={userId} />}
-              {userId && <IGreenSyncStatusBar consultantId={userId} />}
-              <BonusTiersAdminCard />
-              <ChangePasswordCard />
-              {userId && (
-                <div className="space-y-2">
-                  <h3 className="text-sm font-semibold text-foreground">Diagnóstico iGreen</h3>
-                  <EndpointDiscoveryCard consultantId={userId} />
-                </div>
               )}
             </Suspense>
           </div>

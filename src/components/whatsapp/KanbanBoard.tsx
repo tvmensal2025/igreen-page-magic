@@ -170,18 +170,18 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold text-foreground">Funil de clientes</h3>
+          <h3 className="text-sm font-semibold text-foreground">Quadro de interessados</h3>
           <HelpHint
-            title="Funil de clientes"
-            summary="Arraste clientes interessados entre estágios para acompanhar o funil"
-            details="Cada coluna representa uma etapa padronizada do funil (Novo lead → Aguardando conta → Cadastro enviado → etc). A auto-progressão move o lead automaticamente quando o bot detecta evento-chave (ex: OCR da conta concluído). Você pode arrastar manualmente também."
-            example="Cliente respondeu mas parou no 'Aguardando conta' por 3 dias? Mova manualmente para 'Sem resposta' e dispare uma mensagem de retomada."
+            title="Quadro de interessados"
+            summary="Arraste interessados entre etapas para acompanhar o cadastro"
+            details="Cada coluna é uma etapa (Novo → Aguardando conta → Cadastro enviado → etc). O avanço automático move o contato quando o sistema detecta um evento-chave (ex.: conta de luz lida). Você também pode arrastar manualmente."
+            example="Cliente respondeu mas parou no 'Aguardando conta' por 3 dias? Mova manualmente para 'Sem resposta' e envie uma mensagem de retomada."
           />
-          <Badge variant="secondary" className="text-[9px] gap-1"><Zap className="h-2.5 w-2.5" />Auto-progressão ativa</Badge>
+          <Badge variant="secondary" className="text-[9px] gap-1"><Zap className="h-2.5 w-2.5" />Avanço automático ligado</Badge>
           <HelpHint
-            title="Auto-progressão"
-            summary="O bot move o lead de coluna conforme detecta eventos"
-            details="Quando ativo, eventos como 'OCR da conta lido', 'documento aprovado' ou 'cadastro finalizado' movem o lead para o próximo estágio sem intervenção. Desative apenas se quiser controle 100% manual."
+            title="Avanço automático"
+            summary="O sistema move o contato de coluna conforme detecta eventos"
+            details="Quando ativo, eventos como 'conta de luz lida', 'documento aprovado' ou 'cadastro finalizado' movem o contato para a próxima etapa sem intervenção. Desative apenas se quiser controle 100% manual."
           />
         </div>
         <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:flex-wrap sm:items-center sm:w-auto">
@@ -214,7 +214,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg">
-              <DialogHeader><DialogTitle className="text-sm">Configurar colunas do funil</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-sm">Configurar colunas do quadro</DialogTitle></DialogHeader>
               <p className="text-[11px] text-muted-foreground -mt-1">O funil de cadastro vai até <strong>Finalizando</strong>. <strong>Ganho</strong>/<strong>Perdido</strong> são desfechos manuais. Quando a carteira iGreen sincronizar, o interessado vira <strong>cliente ativo</strong> e segue no CRM Pós-Venda.</p>
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {stages.map((stage) => (

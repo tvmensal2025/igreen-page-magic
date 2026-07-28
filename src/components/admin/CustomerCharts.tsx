@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, ScanFace, TrendingUp, MessageCircle, Trash2, Plus, Percent } from "lucide-react";
+import { Trophy, ScanFace, TrendingUp, MessageCircle, Trash2, Plus, Percent, SlidersHorizontal } from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -22,11 +22,13 @@ import {
 import { Combobox } from "@/components/ui/combobox";
 import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 import { useEntradaRules, useGreenSettings } from "@/features/produtos/acompanhamento/greenHooks";
+import { EntradaRulesDialog } from "@/features/produtos/acompanhamento/EntradaRulesDialog";
 import {
   resolveEntradaTier,
   type CountMode,
   type EntradaRule,
 } from "@/features/produtos/acompanhamento/greenCommission";
+import { useAdBonusTiers } from "@/hooks/useAdBonusTiers";
 
 interface FunnelPerson {
   id: string;
@@ -103,7 +105,7 @@ const COLOR_PENDENTE = "hsl(38 92% 50%)";
 
 const KIND_LABEL: Record<SliceKind, string> = {
   ganhos: "Ganhos",
-  faltaFacial: "Falta facial",
+  faltaFacial: "Falta foto do rosto",
   cadastros: "Cadastros",
 };
 
@@ -164,7 +166,7 @@ function ChartTooltip({ active, payload, label }: any) {
         <div className="flex items-center justify-between gap-6">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <span className="w-2 h-2 rounded-full" style={{ background: COLOR_PENDENTE }} />
-            Falta facial
+            Falta foto do rosto
           </span>
           <span className="font-semibold tabular-nums text-foreground">{row?.faltaFacial ?? 0}</span>
         </div>
@@ -189,6 +191,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
 
   const { data: entradaRules = [] } = useEntradaRules(consultantId);
   const { data: greenSettings } = useGreenSettings(consultantId);
+  const { tiers: bonusTiers } = useAdBonusTiers();
   const countMode: CountMode = greenSettings?.countMode ?? "somado";
 
   useEffect(() => {
@@ -422,26 +425,79 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
 
           <div className="relative flex flex-col flex-1">
             <div className="flex items-start justify-between gap-3 mb-1">
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-heading font-bold text-foreground flex items-center gap-2">
-                  <Trophy className="w-4 h-4 text-primary" /> Ganhos do funil
+                  <Trophy className="w-4 h-4 text-primary" /> Ganhos do cadastro
                 </h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Cadastros do funil · ganho = Encerrar (Ganho) ou OTP + facial
+                  Cadastros · ganho = Encerrar (Ganho) ou código do celular + foto do rosto
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5">Clique na barra ou no card pra ver quem é</p>
               </div>
-              <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground shrink-0 pt-1">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: COLOR_GANHO }} />
-                  Ganhos
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full" style={{ background: COLOR_PENDENTE }} />
-                  Falta facial
-                </span>
+              <div className="flex flex-col items-end gap-2 shrink-0 pt-0.5">
+                <div className="hidden sm:flex items-center gap-3 text-[10px] text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: COLOR_GANHO }} />
+                    Ganhos
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full" style={{ background: COLOR_PENDENTE }} />
+                    Falta foto do rosto
+                  </span>
+                </div>
+                {consultantId ? (
+                  <EntradaRulesDialog
+                    consultantId={consultantId}
+                    trigger={
+                      <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg text-xs">
+                        <SlidersHorizontal className="w-3.5 h-3.5" />
+                        Bônus / cidades
+                        {entradaRules.length > 0 ? (
+                          <span className="tabular-nums text-muted-foreground">({entradaRules.length})</span>
+                        ) : null}
+                      </Button>
+                    }
+                  />
+                ) : null}
               </div>
             </div>
+
+            {consultantId ? (
+              <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5 space-y-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                  <Percent className="w-3 h-3" /> Bônus de entrada (editável nas Configurações)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">
+                      Alto até {bonusTiers.alto.percent}%
+                    </p>
+                    <p>
+                      {bonusTiers.alto.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
+                    </p>
+                    <p className="text-[10px] mt-1">
+                      {bonusTiers.alto.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground mb-0.5">
+                      Médio até {bonusTiers.medio.percent}%
+                    </p>
+                    <p>
+                      {bonusTiers.medio.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
+                    </p>
+                    <p className="text-[10px] mt-1">
+                      {bonusTiers.medio.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  {entradaRules.length === 0
+                    ? "Nenhuma faixa sua ainda — abra Bônus / cidades e aplique a tabela oficial."
+                    : `${entradaRules.length} faixa(s) ativas · modo ${countMode === "somado" ? "somado" : "individual"}. Edite quando quiser.`}
+                </p>
+              </div>
+            ) : null}
 
             <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2 sm:gap-3 mt-4 mb-2 min-w-0">
               {kpis.map(({ label, slice }) => (
@@ -521,7 +577,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
                   />
                   <Bar
                     dataKey="faltaFacial"
-                    name="Falta facial"
+                    name="Falta foto do rosto"
                     fill="url(#gPendente)"
                     radius={[8, 8, 4, 4]}
                     maxBarSize={42}
@@ -543,10 +599,10 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
                 onClick={() => openSlice("Agora", "faltaFacial", faltaFacialPeopleAgora, 0)}
               >
                 <ScanFace className="w-3.5 h-3.5 text-warning" />
-                Falta facial agora:{" "}
+                Falta foto do rosto agora:{" "}
                 <span className="font-semibold tabular-nums text-foreground">{faltaFacialAberta}</span>
               </button>
-              <p className="text-[10px] text-muted-foreground whitespace-nowrap">Ganho · funil</p>
+              <p className="text-[10px] text-muted-foreground whitespace-nowrap">Ganho · cadastro</p>
             </div>
           </div>
         </div>
@@ -584,7 +640,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
                     onChange={(v) => setAddId(v || "")}
                     placeholder="Buscar cadastro…"
                     searchPlaceholder="Nome ou telefone…"
-                    emptyText="Nenhum cadastro do funil"
+                    emptyText="Nenhum cadastro neste período"
                   />
                 </div>
                 <Button type="button" size="sm" className="h-9 shrink-0" disabled={!addId} onClick={handleAddManual}>

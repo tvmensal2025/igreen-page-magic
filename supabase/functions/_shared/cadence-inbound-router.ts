@@ -187,6 +187,14 @@ export function isCadenceReturnContext(input: CadenceInboundInput): boolean {
 export function isActiveGroupAConversation(step: string | null | undefined): boolean {
   const s = String(step || "").trim();
   if (!s) return false;
+  // Pesquisa/encerramento de atendimento humano ≠ funil de cadastro.
+  // Sem isso, lead em aguardando_avaliacao_* após COLD_1 não entra no router B→A.
+  if (
+    s === "aguardando_avaliacao_atendimento" ||
+    s === "atendimento_finalizado"
+  ) {
+    return false;
+  }
   if (s.startsWith("flow:") || s.startsWith("passo_")) return true;
   if (UUID_RE.test(s)) return true;
   if (/^a\d_/.test(s) || s.startsWith("a1_") || s.startsWith("a2_") || s.startsWith("a3_")) return true;

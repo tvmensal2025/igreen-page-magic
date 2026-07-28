@@ -93,7 +93,7 @@ const ProdutoPremiumPage = () => {
     return (
       <PageStatus
         title="Consultor não encontrado"
-        description="Verifique o link e tente novamente."
+        description="Verifique o link e tente novamente. A página é pública — o endereço precisa terminar com a licença do consultor (ex.: /premium/conexao-telecom/sua-licenca)."
       />
     );
   }

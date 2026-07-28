@@ -5,6 +5,8 @@ import { MetaAudiencePanel } from "./MetaAudiencePanel";
 import { WalletChip } from "./WalletChip";
 import { AdTemplatesGallery } from "./AdTemplatesGallery";
 import { CtwaConnectGuide } from "./CtwaConnectGuide";
+import { CtwaPreflightCard } from "./CtwaPreflightCard";
+import { CtwaWaImplantDialog } from "./CtwaWaImplantDialog";
 import { SyncMetricsButton } from "./SyncMetricsButton";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { SmartAnchorCampaignDialog } from "./SmartAnchorCampaignDialog";
@@ -27,6 +29,7 @@ import {
   TrendingUp,
   BadgeDollarSign,
   HelpCircle,
+  Smartphone,
 } from "lucide-react";
 import { useManagedConsultants } from "@/hooks/useManagedConsultants";
 import { AdMetricsCards } from "../dashboard/AdMetricsCards";
@@ -52,6 +55,8 @@ export function AdsCentralTab({ consultantId }: Props) {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [smartOpen, setSmartOpen] = useState(false);
   const [createHelpOpen, setCreateHelpOpen] = useState(false);
+  const [waImplantOpen, setWaImplantOpen] = useState(false);
+  const [preflightKey, setPreflightKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [view, setView] = useState<View>("dashboard");
   const [periodDays, setPeriodDays] = useState<number>(30);
@@ -79,11 +84,11 @@ export function AdsCentralTab({ consultantId }: Props) {
   }, [toast]);
 
   const navItems: { id: View; label: string; icon: any }[] = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { id: "dashboard", label: "Resumo", icon: LayoutDashboard },
     { id: "gallery", label: "Modelos", icon: LayoutGrid },
     { id: "campaigns", label: "Campanhas", icon: ListChecks },
-    { id: "performance", label: "Performance", icon: TrendingUp },
-    { id: "intel", label: "Cérebro", icon: Brain },
+    { id: "performance", label: "Resultados", icon: TrendingUp },
+    { id: "intel", label: "Assistente", icon: Brain },
     { id: "commissions", label: "Comissões", icon: BadgeDollarSign },
   ];
 
@@ -96,12 +101,23 @@ export function AdsCentralTab({ consultantId }: Props) {
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
           <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
-            Cérebro inteligente = rápido · Criar campanha = você monta tudo.
+            Anunciar rápido = recomendado · Montar completo = você escolhe tudo.
           </span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 w-full sm:w-auto">
           <SyncMetricsButton consultantId={consultantId} onSynced={() => setRefreshKey((k) => k + 1)} />
           <WalletChip consultantId={consultantId} />
+          <AdsButton
+            variant="secondary"
+            size="sm"
+            onClick={() => setWaImplantOpen(true)}
+            title="Cadastrar WhatsApp Business do anúncio (SMS, uma vez)"
+            aria-label="Cadastrar WhatsApp do anúncio com SMS"
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="sm:hidden">WhatsApp</span>
+            <span className="hidden sm:inline">WhatsApp do anúncio</span>
+          </AdsButton>
           <AdsButton
             variant="ghost"
             size="sm"
@@ -111,17 +127,17 @@ export function AdsCentralTab({ consultantId }: Props) {
             className="px-2"
           >
             <HelpCircle className="w-3.5 h-3.5" />
-            <span className="hidden md:inline text-[11px]">Qual usar?</span>
+            <span className="hidden md:inline text-[11px]">Ajuda</span>
           </AdsButton>
           <AdsButton
             variant="secondary"
             size="sm"
             onClick={() => setSmartOpen(true)}
-            title="Rápido: cidade da sede + Cérebro cuida do orçamento"
+            title="Rápido: cidade da sede + o sistema cuida do orçamento"
           >
             <Brain className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Cérebro</span>
-            <span className="hidden sm:inline">Cérebro inteligente</span>
+            <span className="sm:hidden">Rápido</span>
+            <span className="hidden sm:inline">Anunciar rápido</span>
           </AdsButton>
           <AdsButton
             variant="cta"
@@ -130,14 +146,20 @@ export function AdsCentralTab({ consultantId }: Props) {
             title="Completo: você escolhe cidade, textos e dias"
           >
             <Plus className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Criar</span>
-            <span className="hidden sm:inline">Criar campanha</span>
+            <span className="sm:hidden">Completo</span>
+            <span className="hidden sm:inline">Montar completo</span>
           </AdsButton>
         </div>
       </header>
 
       <div className="p-3 sm:p-4 md:p-5 space-y-4 min-w-0 max-w-full">
+        <CtwaPreflightCard key={preflightKey} consultantId={consultantId} />
         <CtwaConnectGuide consultantId={consultantId} />
+        <CtwaWaImplantDialog
+          open={waImplantOpen}
+          onOpenChange={setWaImplantOpen}
+          onDone={() => setPreflightKey((k) => k + 1)}
+        />
 
         <div className="ads-nav-pill" role="tablist" aria-label="Seções da Central de Anúncios">
           {navItems.map((n) => {
@@ -178,7 +200,7 @@ export function AdsCentralTab({ consultantId }: Props) {
                 className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-primary/30 bg-primary/5 hover:bg-primary/10 text-[11px] font-medium text-primary transition-colors"
               >
                 <Brain className="w-3.5 h-3.5" />
-                Abrir Cérebro
+                Abrir assistente
               </button>
             </div>
 
@@ -212,7 +234,7 @@ export function AdsCentralTab({ consultantId }: Props) {
               <AdsTile
                 delay={160}
                 className="w-full lg:w-[var(--ads-left-w)] lg:max-w-[min(55%,var(--ads-left-w))] min-w-0"
-                label="CPC por destino"
+                label="Custo por clique"
               >
                 <CpcPanel
                   data={(analytics as any)?.cpcByTarget}
@@ -232,7 +254,7 @@ export function AdsCentralTab({ consultantId }: Props) {
               </AdsTile>
             </div>
 
-            <AdsTile delay={240} label="Funil de conversão" icon={<Sparkles className="w-3 h-3" />}>
+            <AdsTile delay={240} label="Caminho até o cliente" icon={<Sparkles className="w-3 h-3" />}>
               <FunnelStrip funnel={(analytics as any)?.funnel} />
             </AdsTile>
 
@@ -287,8 +309,8 @@ export function AdsCentralTab({ consultantId }: Props) {
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">
             <Brain className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
             <div>
-              Em dúvida? Use o <strong className="text-[hsl(var(--ads-emerald-2))]">Cérebro inteligente</strong>
-              {" "}(rápido, o sistema cuida do orçamento).{" "}
+              Em dúvida? Use <strong className="text-[hsl(var(--ads-emerald-2))]">Anunciar rápido</strong>
+              {" "}(o sistema cuida do orçamento).{" "}
               <button
                 type="button"
                 className="underline text-primary hover:opacity-80"

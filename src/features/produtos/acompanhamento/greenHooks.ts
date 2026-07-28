@@ -12,6 +12,7 @@ import {
   saveGreenProfile,
   upsertEntradaRule,
   deleteEntradaRule,
+  seedOfficialEntradaRules,
   type UpsertEntradaRuleInput,
 } from "./greenData";
 import type { CountMode } from "./greenCommission";
@@ -77,6 +78,14 @@ export function useDeleteEntradaRule(consultantId: string | undefined) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => deleteEntradaRule(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [GREEN_KEY, "rules", consultantId] }),
+  });
+}
+
+export function useSeedOfficialEntradaRules(consultantId: string | undefined) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => seedOfficialEntradaRules(consultantId as string),
     onSuccess: () => qc.invalidateQueries({ queryKey: [GREEN_KEY, "rules", consultantId] }),
   });
 }

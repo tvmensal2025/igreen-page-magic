@@ -1,4 +1,5 @@
 import type { PosVendaStage } from "@/lib/posVenda/format";
+import { isPlaceholderPhone } from "@/lib/posVenda/format";
 import { clampToPosVendaSendWindow, isPosVendaSendWindow } from "@/lib/posVendaSendWindow";
 
 /** Espelha PROGRESSION em pos-venda-auto-progress/index.ts */
@@ -96,6 +97,8 @@ export function buildUpcomingPosVendaMessages(
 
     const sent = sentByCustomer.get(c.id) ?? new Set<string>();
     const phone = c.phone_whatsapp || "";
+    // sem_celular_* / lixo: motor não envia — não poluir "Próximos envios" com "Vai sair agora".
+    if (isPlaceholderPhone(phone)) continue;
     const name = (c.name || "").trim() || "Sem nome";
 
     if (stage === "reprovado" || stage === "retentativa") {

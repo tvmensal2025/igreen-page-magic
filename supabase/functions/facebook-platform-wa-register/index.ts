@@ -8,7 +8,7 @@
  * - save_official (plataforma): só SuperAdmin
  * - create/verify: consultor grava em consultant_ad_settings; se já tiver phone_id, bloqueia (única vez) salvo force + SuperAdmin
  */
-import { authConsultant, corsHeaders } from "../_shared/fb-graph.ts";
+import { authConsultant, corsHeaders, adminClient } from "../_shared/fb-graph.ts";
 import {
   assertSuperAdmin,
   createWabaPhoneNumber,
@@ -69,6 +69,30 @@ Deno.serve(async (req) => {
     const wabaId = wabaDiscovery.id;
     const numbers = await listWabaPhones(wabaId, token);
     const mine = await loadConsultantWaLock(auth.id);
+
+    // Telefone do cadastro do consultor — usado p/ detectar vínculo errado
+    // (ex.: número da plataforma/Rafael colado na conta de outra pessoa).
+    const { data: consultantRow } = await adminClient()
+      .from("consultants")
+      .select("phone")
+      .eq("id", auth.id)
+      .maybeSingle();
+    const consultantPhoneDigits = digitsOf(consultantRow?.phone || "");
+
+    const mineMatchesConsultantPhone = (() => {
+      if (!mine.digits || !consultantPhoneDigits) return false;
+      const a = digitsOf(mine.digits);
+      const b = consultantPhoneDigits;
+      if (a === b) return true;
+      const aNat = a.startsWith("55") ? a.slice(2) : a;
+      const bNat = b.startsWith("55") ? b.slice(2) : b;
+      return aNat === bNat || a.endsWith(bNat) || b.endsWith(aNat);
+    })();
+
+    /** Já travado com o próprio número → bloqueia troca (salvo SuperAdmin+force). */
+    const hardLocked = Boolean(mine.locked && mineMatchesConsultantPhone && !force);
+    /** Travado com número de outro (plataforma/compartilhado) → pode cadastrar o dele. */
+    const canReplaceWrongLock = Boolean(mine.locked && !mineMatchesConsultantPhone);
 
     if (action === "status" || action === "limits") {
       // Probe Business: verificação + contagem de números em todas as WABAs acessíveis
@@ -156,7 +180,10 @@ Deno.serve(async (req) => {
           locked: mine.locked,
           digits: mine.digits,
           phone_number_id: mine.phone_number_id,
+          matches_consultant_phone: mineMatchesConsultantPhone,
+          can_replace: canReplaceWrongLock || Boolean(force) || (mine.locked && isSa),
         },
+        consultant_phone: consultantPhoneDigits || null,
         official: {
           waba_id: row.waba_id || null,
           whatsapp_destination_number: row.whatsapp_destination_number || null,
@@ -205,12 +232,19 @@ Deno.serve(async (req) => {
     }
 
     if (action === "save_for_me") {
-      if (mine.locked && !force) {
+      if (hardLocked) {
         return json({
           error:
-            "Você já cadastrou um número CTWA (única vez). Se precisar trocar, peça ao SuperAdmin.",
+            "Você já cadastrou o seu número CTWA (única vez). Se precisar trocar, peça ao SuperAdmin.",
           mine,
         }, 409);
+      }
+      // Só SuperAdmin pode “pegar” número já na WABA. Consultor comum cadastra o dele via SMS.
+      if (!isSa) {
+        return json({
+          error:
+            "Para cadastrar o seu WhatsApp, digite o número e peça o SMS. A lista da WABA é só para o SuperAdmin.",
+        }, 403);
       }
       const phoneNumberId = String(body?.phone_number_id || "").replace(/\D/g, "");
       if (!phoneNumberId) return json({ error: "phone_number_id obrigatório." }, 400);
@@ -247,10 +281,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create") {
-      if (mine.locked && !force) {
+      if (hardLocked) {
         return json({
           error:
-            "Você já cadastrou um número CTWA (única vez). Troca só com SuperAdmin.",
+            "Você já cadastrou o seu número CTWA (única vez). Troca só com SuperAdmin.",
           mine,
           limit_hint: LIMIT_HINT,
         }, 409);
@@ -367,9 +401,9 @@ Deno.serve(async (req) => {
     }
 
     if (action === "verify_and_register") {
-      if (mine.locked && !force) {
+      if (hardLocked) {
         return json({
-          error: "Você já cadastrou um número CTWA (única vez).",
+          error: "Você já cadastrou o seu número CTWA (única vez).",
           mine,
         }, 409);
       }

@@ -11,7 +11,7 @@
 // iGreen. As tabelas de % seguem o manual oficial (LicConexaoGreen):
 //   CP (Conexão Própria):  4% na maioria · 2% em ES(EDP), RS(CEEE), SE(Energisa)
 //   CI (Conexão Indireta): 1% na maioria · 0,5% nos mesmos 3 casos
-//   Carreira: Sênior +0,2% · G-Expansão +0,3% · Gestor +0,5% · E-Expansão +0,6%
+//   Carreira: S-Expansão/Sênior +0,2% · G-Expansão +0,3% · Gestor +0,5% · E-Expansão +0,6%
 //             · Executivo +0,8% · D-Expansão +1% · Diretor +1,4% · Acionista +1,8%
 // =============================================================================
 
@@ -52,10 +52,14 @@ export interface GraduacaoOption {
   bonusPct: number;
 }
 
-/** Graduações Green — fonte única para Dados, dashboard e motor. */
+/**
+ * Graduações Green — fonte única para Dados, dashboard e motor.
+ * % alinhados a LicConexaoGreen (manual oficial Conexão Green).
+ * S-Expansão e Sênior são o mesmo degrau de bônus (+0,2%).
+ */
 export const GRADUACAO_OPTIONS: GraduacaoOption[] = [
   { value: "licenciado", label: "Licenciado", bonusPct: 0 },
-  { value: "senior", label: "Sênior", bonusPct: 0.2 },
+  { value: "senior", label: "S-Expansão / Sênior", bonusPct: 0.2 },
   { value: "g-expansao", label: "G-Expansão", bonusPct: 0.3 },
   { value: "gestor", label: "Gestor", bonusPct: 0.5 },
   { value: "e-expansao", label: "E-Expansão", bonusPct: 0.6 },
@@ -65,8 +69,15 @@ export const GRADUACAO_OPTIONS: GraduacaoOption[] = [
   { value: "acionista", label: "Acionista", bonusPct: 1.8 },
 ];
 
+/** Aliases do sync/portal → chave canônica em GRADUACAO_OPTIONS. */
+const GRADUACAO_ALIASES: Record<string, string> = {
+  "s-expansao": "senior",
+  "s-exp": "senior",
+};
+
 function normGraduacao(g?: string | null): string {
-  return norm(g).toLowerCase().replace(/\s+/g, "-");
+  const key = norm(g).toLowerCase().replace(/\s+/g, "-");
+  return GRADUACAO_ALIASES[key] || key;
 }
 
 export function graduacaoDisplay(graduacao?: string | null): GraduacaoOption {
@@ -102,7 +113,11 @@ export const DEFAULT_TARIFA_KWH = 0.95;
 export interface GreenSettings {
   graduacao: string;
   countMode: CountMode;
-  /** IDs iGreen extras que contam como CP (além do igreen_id do perfil). */
+  /**
+   * IDs iGreen extras (legado). CP oficial = só `myIgreenId` do perfil.
+   * Mantido para filtros de rede no dashboard (IDs de licenciados), não para
+   * o consultor cadastrar códigos manuais em Dados.
+   */
   cadastroIgreenIds: string[];
   consultantName: string | null;
   myIgreenId: string | null;
@@ -163,8 +178,9 @@ function normalizePersonName(name?: string | null): string {
 }
 
 /**
- * Cliente direto (CP): registered_by_igreen_id bate com meu ID ou IDs extras,
- * OU nome do cadastrador contém meu nome (fallback sync com código errado).
+ * Cliente direto (CP): registered_by_igreen_id = ID iGreen do perfil
+ * (`myIgreenId`), OU nome do cadastrador contém meu nome (fallback sync).
+ * `cadastroIgreenIds` só entra quando o caller expandiu a lista (ex.: rede).
  */
 export function isDirectCustomer(
   registeredByIgreenId: string | null | undefined,

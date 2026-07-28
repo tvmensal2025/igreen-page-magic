@@ -20,10 +20,24 @@ export type SyncResult =
  *
  * Sem auto-retry: proxy residencial (Evomi) custa por uso — só dispara no clique.
  */
-export async function runIgreenSync(consultantId: string, mode: SyncMode = "sync_all"): Promise<SyncResult> {
+export async function runIgreenSync(
+  consultantId: string,
+  mode: SyncMode = "sync_all",
+  opts?: { accountId?: string; portalEmail?: string; portalPassword?: string },
+): Promise<SyncResult> {
   try {
+    const body: Record<string, string> = {
+      consultant_id: consultantId,
+      mode,
+      source: "ui_click",
+    };
+    if (opts?.accountId) body.account_id = opts.accountId;
+    // Credenciais da conta específica: na edge antiga (sem account_id) isso força
+    // o login certo; na nova, account_id + creds amarram status no card.
+    if (opts?.portalEmail) body.portal_email = opts.portalEmail;
+    if (opts?.portalPassword) body.portal_password = opts.portalPassword;
     const { data, error } = await supabase.functions.invoke("sync-igreen-customers", {
-      body: { consultant_id: consultantId, mode, source: "ui_click" },
+      body,
     });
     if (error) return { ok: false, reason: "failed", error: error.message };
 

@@ -335,17 +335,33 @@ async function updateAutomationTimestamps(supabase: any, consultantId: string | 
 }
 
 // deno-lint-ignore no-explicit-any
+async function updateAccountCredentialStatus(
+  supabase: any,
+  accountId: string | null | undefined,
+  success: boolean,
+  errText?: string | null,
+): Promise<void> {
+  if (!accountId) return;
+  const status = success ? "valid" : classifyError(errText || undefined);
+  await supabase.from("igreen_portal_accounts").update({
+    credential_status: status,
+    credential_checked_at: new Date().toISOString(),
+  }).eq("id", accountId);
+}
+
+// deno-lint-ignore no-explicit-any
 async function logSyncFinish(
   supabase: any,
   runId: string | null,
   consultantId: string | null,
   result: Record<string, unknown>,
+  accountId?: string | null,
 ): Promise<void> {
   const success = Boolean(result?.success);
   const errText = success ? null : String(result?.error || "");
   const status = success ? "ok" : classifyError(errText || undefined);
   const counts: Record<string, unknown> = {};
-  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics","full_extras","full_extras_error"]) {
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics","full_extras","full_extras_error","results","accounts_synced"]) {
     if (result[k] != null) counts[k] = result[k];
   }
   if (runId) {
@@ -360,6 +376,9 @@ async function logSyncFinish(
       igreen_credential_error: errText,
     }).eq("id", consultantId);
   }
+  // Status por conta (multi-conta): badge na UI do card.
+  const fromResult = typeof result?.account_id === "string" ? result.account_id : null;
+  await updateAccountCredentialStatus(supabase, accountId || fromResult, success, errText);
   await updateAutomationTimestamps(supabase, consultantId, result);
 }
 
@@ -616,6 +635,53 @@ async function runSyncAllBackgroundPhase(
         out.pos_venda_auto_confirm = auto.error
           ? { error: auto.error.message }
           : auto.data;
+
+        // Com toggles ON: dispara o motor de envio (idempotente por stage_key).
+        // Sem isso, o sync só valida e o WhatsApp espera o cron horário.
+        if (consultantId && !auto.error) {
+          try {
+            const { getConsultantAutomationPrefs, isConsultantAutoAllowed } =
+              await import("../_shared/consultant-automation-prefs.ts");
+            const { isAutomationEnabled } = await import("../_shared/automation-gate.ts");
+            const prefs = await getConsultantAutomationPrefs(supabase, consultantId);
+            const globalOn = await isAutomationEnabled(supabase, "pos_venda_auto_messages");
+            if (globalOn && isConsultantAutoAllowed(prefs, "pos_venda") && prefs.pos_venda_auto_validate) {
+              const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+              const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+              if (base && srk) {
+                // Fire-and-forget: não bloqueia o sync; claim UNIQUE evita duplicata.
+                void fetch(`${base}/functions/v1/pos-venda-auto-progress`, {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bearer ${srk}`,
+                    apikey: srk,
+                    "Content-Type": "application/json",
+                  },
+                  body: "{}",
+                }).then(async (resp) => {
+                  const txt = await resp.text().catch(() => "");
+                  console.log(`[sync-all] pos-venda-auto-progress → ${resp.status} ${txt.slice(0, 200)}`);
+                }).catch((e) => {
+                  console.warn("[sync-all] pos-venda trigger:", e instanceof Error ? e.message : String(e));
+                });
+                out.pos_venda_dispatch = { triggered: true };
+              }
+            } else {
+              out.pos_venda_dispatch = {
+                triggered: false,
+                reason: !globalOn
+                  ? "global_toggle_off"
+                  : !isConsultantAutoAllowed(prefs, "pos_venda")
+                  ? "consultant_pref_off"
+                  : "auto_validate_off",
+              };
+            }
+          } catch (e) {
+            out.pos_venda_dispatch = {
+              error: e instanceof Error ? e.message : String(e),
+            };
+          }
+        }
       }
     } catch (e) {
       out.pos_venda_recompute = { error: e instanceof Error ? e.message : String(e) };
@@ -673,12 +739,17 @@ async function syncAllAccountsForConsultant(
   mode: string,
   fallbackEmail?: string | null,
   fallbackPassword?: string | null,
+  /** Se informado, sincroniza só esta linha de `igreen_portal_accounts` (botão por conta na UI). */
+  onlyAccountId?: string | null,
 ): Promise<Record<string, unknown>> {
-  const { data: accounts } = await supabase
+  let q = supabase
     .from("igreen_portal_accounts")
     .select("id, position, label, portal_email, portal_password, last_sync_at")
     .eq("consultant_id", consultantId)
     .order("position", { ascending: true });
+  if (onlyAccountId) q = q.eq("id", onlyAccountId);
+
+  const { data: accounts } = await q;
 
   const list = (accounts || []) as Array<{ id: string; position: number; label: string | null; portal_email: string; portal_password: string; last_sync_at: string | null }>;
 
@@ -686,6 +757,9 @@ async function syncAllAccountsForConsultant(
   // ainda (ex.: credencial antiga não migrada) — usa o fallback direto, sem
   // account_id (comportamento legado).
   if (list.length === 0) {
+    if (onlyAccountId) {
+      return { success: false, error: "Conta iGreen não encontrada para este consultor." };
+    }
     if (!fallbackEmail || !fallbackPassword) {
       return { success: false, error: "Nenhuma conta iGreen configurada para este consultor." };
     }
@@ -694,7 +768,18 @@ async function syncAllAccountsForConsultant(
 
   const results: Record<string, unknown>[] = [];
   const STALE_MS = 6 * 60 * 60 * 1000; // 6 h
-  for (const acc of list) {
+  // Contas nunca sincronizadas / stale primeiro — evita estourar o tempo da edge
+  // e deixar subcontas novas (ex.: Dijalma) de fora no fim da fila.
+  const ordered = [...list].sort((a, b) => {
+    const score = (acc: typeof a) => {
+      const last = acc.last_sync_at ? new Date(acc.last_sync_at).getTime() : 0;
+      if (!last) return 0; // nunca syncou
+      if (Date.now() - last > STALE_MS) return 1;
+      return 2;
+    };
+    return score(a) - score(b) || a.position - b.position;
+  });
+  for (const acc of ordered) {
     // FORÇA sync_all na PRIMEIRA vez que uma subconta é encontrada (last_sync_at NULL)
     // ou quando a última sync completa é > 6 h. Assim, contas recém-adicionadas
     // (ex.: Nilma) puxam TODOS os clientes + rede na primeira execução, mesmo
@@ -706,6 +791,12 @@ async function syncAllAccountsForConsultant(
     try {
       const r = await syncOneConsultant(supabase, worker, acc.portal_email, acc.portal_password, consultantId, accMode, acc.id);
       results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, ...r });
+      await updateAccountCredentialStatus(
+        supabase,
+        acc.id,
+        Boolean(r?.success),
+        r?.success ? null : String(r?.error || ""),
+      );
       // Marca last_sync_at após qualquer sync completa (não só quando o worker
       // atualiza igreen_consultor_id). Sem isso, a subconta ficaria eternamente
       // sendo forçada a sync_all a cada 6 h mesmo com sync bem-sucedida.
@@ -715,13 +806,29 @@ async function syncAllAccountsForConsultant(
           .eq("id", acc.id);
       }
     } catch (err) {
-      results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, success: false, error: err instanceof Error ? err.message : String(err) });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, success: false, error: errMsg });
+      await updateAccountCredentialStatus(supabase, acc.id, false, errMsg);
     }
     // Pausa entre contas para não sobrecarregar o proxy/portal com logins em sequência.
     await new Promise((res) => setTimeout(res, 2000));
   }
   const anySuccess = results.some((r) => r.success);
-  return { success: anySuccess, mode, accounts_synced: results.length, results };
+  // Sucesso parcial: se alguma conta falhou, ainda reporta success=true se
+  // outras gravaram — mas inclui falhas em `results` para a UI/telemetria.
+  const failed = results.filter((r) => !r.success);
+  return {
+    success: anySuccess,
+    mode,
+    accounts_synced: results.length,
+    accounts_failed: failed.length,
+    results,
+    error: !anySuccess
+      ? (failed[0]?.error as string) || "Nenhuma conta sincronizou."
+      : failed.length > 0
+      ? `${failed.length} conta(s) falharam (demais OK).`
+      : undefined,
+  };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -1477,25 +1584,29 @@ async function persistDevolutivas(supabase: any, consultantId: string | null, it
 async function prioritizeUnenrichedCodes(supabase: any, consultantId: string | null, codes: string[]): Promise<string[]> {
   if (!consultantId || !Array.isArray(codes) || codes.length === 0) return codes;
   try {
-    const enriched = new Set<string>();
+    const enrichedOk = new Set<string>(); // já tem ficha E telefone real
     for (let i = 0; i < codes.length; i += 200) {
       const chunk = codes.slice(i, i + 200);
       const { data } = await supabase
         .from("customers")
-        .select("igreen_code")
+        .select("igreen_code, phone_whatsapp, last_enriched_at")
         .eq("consultant_id", consultantId)
-        .not("last_enriched_at", "is", null)
         .in("igreen_code", chunk);
-      for (const c of (data || []) as Array<{ igreen_code: string }>) {
-        if (c.igreen_code) enriched.add(String(c.igreen_code));
+      for (const c of (data || []) as Array<{ igreen_code: string; phone_whatsapp: string | null; last_enriched_at: string | null }>) {
+        if (!c.igreen_code) continue;
+        const phone = String(c.phone_whatsapp || "");
+        const hasRealPhone = !!phone && !phone.startsWith("sem_celular_");
+        // Placeholder ou nunca enriquecido → continua pendente (subconta pode
+        // trazer o celular que a Conta principal mascara).
+        if (c.last_enriched_at && hasRealPhone) {
+          enrichedOk.add(String(c.igreen_code));
+        }
       }
     }
-    const pending = codes.filter((c) => !enriched.has(c));
-    const done = codes.filter((c) => enriched.has(c));
-    // Pendentes primeiro; os já enriquecidos no fim (re-checagem se sobrar tempo).
+    const pending = codes.filter((c) => !enrichedOk.has(c));
+    const done = codes.filter((c) => enrichedOk.has(c));
     return [...pending, ...done];
   } catch {
-    // Em qualquer falha, mantém a ordem original (não quebra o sync).
     return codes;
   }
 }
@@ -1544,7 +1655,14 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
     const nasc = safeStr(d.dtnasc || d.nascimento);
     if (nasc && /^\d{4}-\d{2}-\d{2}/.test(nasc)) patch.data_nascimento = nasc.slice(0, 10);
     const email = safeStr(d.email); if (email) patch.email = email;
-    const cel = safeStr(d.celular); if (cel) patch.phone_whatsapp = normalizePhone(String(cel));
+    // Só grava telefone se normalizar para um número real — nunca "" sobre placeholder.
+    const cel = safeStr(d.celular);
+    if (cel) {
+      const phoneNorm = normalizePhone(String(cel));
+      if (phoneNorm && !phoneNorm.startsWith("sem_celular_")) {
+        patch.phone_whatsapp = phoneNorm;
+      }
+    }
     // Endereço COMPLETO (novo)
     const cep = safeStr(d.cep); if (cep) patch.cep = cep.replace(/\D/g, "");
     const rua = safeStr(d.endereco || d.logradouro); if (rua) patch.address_street = rua;
@@ -1578,33 +1696,48 @@ async function applyCustomerDetails(supabase: any, consultantId: string | null, 
       patch.possui_procurador = true;
     }
     patch.last_enriched_at = new Date().toISOString();
+    // Conta que trouxe a ficha completa (com celular) passa a ser a fonte de
+    // contato — mesmo se a linha nasceu na Conta principal sem número.
+    if (igreenAccountId && patch.phone_whatsapp) {
+      patch.igreen_account_id = igreenAccountId;
+    }
     if (Object.keys(patch).length === 1) continue; // apenas last_enriched_at
 
-    let updQuery = supabase
+    // SEMPRE por (consultant_id, igreen_code) — NÃO filtrar por igreen_account_id.
+    // Cliente da rede do Rafael fica na Conta principal como sem_celular_*; o
+    // enrich da subconta (Oseias/Nilma/…) precisa atualizar ESSA linha.
+    let { error } = await supabase
       .from("customers")
       .update(patch)
       .eq("consultant_id", consultantId)
-      .eq("igreen_code", code);
-    if (igreenAccountId) updQuery = updQuery.eq("igreen_account_id", igreenAccountId);
-    let { error } = await updQuery;
-    // Alguns clientes têm registros DUPLICADOS com o mesmo igreen_code (dado
-    // legado/importação). O update acima afeta as duas linhas de uma vez; se
-    // o telefone real colidir com o índice único (phone_whatsapp,
-    // consultant_id) — porque a outra linha duplicada ainda tem um placeholder
-    // "sem_celular_..." — o update falha por completo e o enrich nunca marca
-    // last_enriched_at, travando esse cliente para sempre. Retry sem o
-    // telefone resolve: aplica os demais dados (CPF, endereço, etc.) e marca
-    // como enriquecido mesmo assim.
+      .eq("igreen_code", code)
+      .eq("customer_origin", "igreen_sync");
+    // Colisão de phone único: aplica o resto e tenta promover só placeholders.
     if (error && patch.phone_whatsapp) {
-      const { phone_whatsapp: _drop, ...patchNoPhone } = patch;
-      let retryQuery = supabase
+      const { phone_whatsapp: newPhone, igreen_account_id: accId, ...patchNoPhone } = patch;
+      const retry = await supabase
         .from("customers")
         .update(patchNoPhone)
         .eq("consultant_id", consultantId)
-        .eq("igreen_code", code);
-      if (igreenAccountId) retryQuery = retryQuery.eq("igreen_account_id", igreenAccountId);
-      const retry = await retryQuery;
+        .eq("igreen_code", code)
+        .eq("customer_origin", "igreen_sync");
       error = retry.error;
+      if (!error) {
+        const phonePatch: Record<string, unknown> = { phone_whatsapp: newPhone };
+        if (accId) phonePatch.igreen_account_id = accId;
+        const { error: phoneErr } = await supabase
+          .from("customers")
+          .update(phonePatch)
+          .eq("consultant_id", consultantId)
+          .eq("igreen_code", code)
+          .eq("customer_origin", "igreen_sync")
+          .like("phone_whatsapp", "sem_celular_%");
+        if (phoneErr) {
+          console.warn(
+            `[enrich] phone upgrade bloqueado igreen_code=${code} phone=${newPhone}: ${phoneErr.message}`,
+          );
+        }
+      }
     }
     if (!error) applied++;
     else console.warn(`[enrich] update falhou para igreen_code=${code}:`, error.message);
@@ -1818,20 +1951,51 @@ async function syncOneConsultant(
   if (mode === "enrich_only") {
     console.log(`[worker] enrich-only for ${emailNorm}`);
     const enrichCap = 120; // 4 lotes de 30 por chamada
+    // Fila: nunca enriquecidos OU ainda sem_celular (re-tenta com credencial
+    // da subconta — Conta principal mascara celular da rede).
     let pendQuery = supabase
       .from("customers")
-      .select("igreen_code")
+      .select("igreen_code, phone_whatsapp, last_enriched_at, registered_by_igreen_id, igreen_account_id")
       .eq("consultant_id", consultantId)
       .in("customer_origin", ["igreen_sync", "igreen_extension"])
-      .is("last_enriched_at", null)
       .not("igreen_code", "is", null)
-      .limit(enrichCap);
-    // Multi-conta: se veio de uma conta específica, enriquece só os clientes
-    // dela (evita usar a credencial errada em clientes de outra conta).
-    if (igreenAccountId) pendQuery = pendQuery.eq("igreen_account_id", igreenAccountId);
-    const { data: pend } = await pendQuery;
-    const codes = ((pend || []) as Array<{ igreen_code: string }>)
-      .map((c) => String(c.igreen_code)).filter(Boolean);
+      .or("last_enriched_at.is.null,phone_whatsapp.like.sem_celular_%")
+      .limit(enrichCap * 3); // sobra para filtrar por conta abaixo
+
+    const { data: pendRaw } = await pendQuery;
+    let pendRows = (pendRaw || []) as Array<{
+      igreen_code: string;
+      phone_whatsapp: string | null;
+      last_enriched_at: string | null;
+      registered_by_igreen_id: string | null;
+      igreen_account_id: string | null;
+    }>;
+
+    if (igreenAccountId) {
+      const { data: acc } = await supabase
+        .from("igreen_portal_accounts")
+        .select("igreen_consultor_id")
+        .eq("id", igreenAccountId)
+        .maybeSingle();
+      const consultorId = acc?.igreen_consultor_id != null ? String(acc.igreen_consultor_id) : "";
+      pendRows = pendRows.filter((r) => {
+        if (r.igreen_account_id === igreenAccountId) return true;
+        // Placeholder na Conta principal mas licenciado = esta subconta
+        if (
+          consultorId &&
+          String(r.registered_by_igreen_id || "") === consultorId &&
+          String(r.phone_whatsapp || "").startsWith("sem_celular_")
+        ) {
+          return true;
+        }
+        return false;
+      });
+    }
+
+    const codes = pendRows
+      .map((c) => String(c.igreen_code))
+      .filter(Boolean)
+      .slice(0, enrichCap);
     if (codes.length === 0) {
       return { success: true, mode: "enrich_only", details_applied: 0, pending_remaining: 0, message: "nada a enriquecer" };
     }
@@ -1858,7 +2022,7 @@ async function syncOneConsultant(
       .select("id", { count: "exact", head: true })
       .eq("consultant_id", consultantId)
       .in("customer_origin", ["igreen_sync", "igreen_extension"])
-      .is("last_enriched_at", null);
+      .or("last_enriched_at.is.null,phone_whatsapp.like.sem_celular_%");
     if (igreenAccountId) remainingQuery = remainingQuery.eq("igreen_account_id", igreenAccountId);
     const { count: remaining } = await remainingQuery;
     return { success: true, mode: "enrich_only", details_received: received, details_applied: applied, pending_remaining: remaining ?? null };
@@ -2083,14 +2247,21 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   let skippedNoPhone = 0;
 
   // ---------------------------------------------------------------------------
-  // Anti-duplicação: quando o portal iGreen devolve o cliente sem celular numa
-  // run posterior, buildRecord gera placeholder 'sem_celular_<code>'. Se já
-  // existe uma linha desse mesmo cliente com telefone real (identificada por
-  // igreen_code + consultant_id), reusamos o telefone real — assim o upsert
-  // por (phone_whatsapp,consultant_id) atualiza a linha existente em vez de
-  // criar uma segunda cópia. Índice único parcial em (consultant_id,igreen_code)
-  // também bloqueia o problema a partir do banco.
+  // Anti-duplicação + upgrade multi-conta
+  //
+  // 1) Placeholder na run atual + telefone real já no banco → reusa o real
+  //    (upsert por phone atualiza a linha certa).
+  // 2) Telefone REAL na run (ex.: sync da subconta Oseias) + linha existente
+  //    com sem_celular_* (nasceu na Conta principal / rede) → UPDATE por
+  //    igreen_code (NÃO upsert por phone — senão INSERT novo bate no unique
+  //    consultant_id+igreen_code e o número nunca cola).
   // ---------------------------------------------------------------------------
+  type ExistingByCode = {
+    id: string;
+    phone_whatsapp: string | null;
+    igreen_account_id: string | null;
+  };
+  const codeToExisting = new Map<string, ExistingByCode>();
   const codeToRealPhone = new Map<string, string>();
   if (consultantId) {
     const codes = new Set<string>();
@@ -2103,13 +2274,20 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
       const chunk = codeList.slice(i, i + 200);
       const { data, error } = await supabase
         .from("customers")
-        .select("igreen_code, phone_whatsapp")
+        .select("id, igreen_code, phone_whatsapp, igreen_account_id")
         .eq("consultant_id", consultantId)
+        .eq("customer_origin", "igreen_sync")
         .in("igreen_code", chunk);
       if (!error && data) {
-        for (const row of data as Array<{ igreen_code: string; phone_whatsapp: string | null }>) {
+        for (const row of data as Array<ExistingByCode & { igreen_code: string }>) {
+          if (!row.igreen_code) continue;
+          codeToExisting.set(String(row.igreen_code), {
+            id: row.id,
+            phone_whatsapp: row.phone_whatsapp,
+            igreen_account_id: row.igreen_account_id,
+          });
           const p = String(row.phone_whatsapp || "");
-          if (row.igreen_code && p && !p.startsWith("sem_celular_")) {
+          if (p && !p.startsWith("sem_celular_")) {
             codeToRealPhone.set(String(row.igreen_code), p);
           }
         }
@@ -2125,16 +2303,15 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     const record = buildRecord(c);
     if (!record || !record.phone_whatsapp) { skippedNoPhone++; continue; }
     let phone = String(record.phone_whatsapp);
+    const icode = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo", "Código"));
+    if (icode) record.igreen_code = icode;
 
     // Se buildRecord gerou placeholder mas já temos telefone real no banco,
     // reusa o real para o upsert atualizar a linha existente.
     if (phone.startsWith("sem_celular_")) {
-      const icode = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo", "Código"));
       const real = icode ? codeToRealPhone.get(icode) : undefined;
       if (real) {
         record.phone_whatsapp = real;
-        // Se voltou a ter telefone real, o status não deve ser 'contato_incompleto'.
-        // Preserva o que já está no banco removendo os campos derivados do placeholder.
         if (record.status === "contato_incompleto") delete record.status;
         phone = real;
         placeholderReused++;
@@ -2142,14 +2319,18 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     }
 
     if (seenPhones.has(phone)) {
-      const icode = safeStr(get(c, "codigoCliente", "codigoIgreen", "codigo"));
       if (icode) {
         const uniquePhone = `${phone}_${icode}`;
         record.phone_whatsapp = uniquePhone;
+        // Unique exige sufixo, mas o envio (WA) usa whatsapp_chat_id || phone.
+        record.whatsapp_chat_id = phone;
         seenPhones.set(uniquePhone, String(record.name || "unknown"));
       } else continue;
     } else {
       seenPhones.set(phone, String(record.name || "unknown"));
+      if (!phone.startsWith("sem_celular_")) {
+        record.whatsapp_chat_id = phone;
+      }
     }
 
     if (consultantId) record.consultant_id = consultantId;
@@ -2202,12 +2383,23 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   };
 
   const allPhones = records.map((r) => String(r.phone_whatsapp));
+  // Também olha o dígito limpo (whatsapp_chat_id / sem sufixo _codigo).
+  // Sem isso, lead sombra no número limpo nunca flipa quando a carteira
+  // gravou phone_whatsapp com colisão `5511…_igreenCode`.
+  const cleanPhones = records
+    .map((r) => {
+      const chat = String(r.whatsapp_chat_id || "").replace(/\D/g, "");
+      if (chat.length >= 12) return chat;
+      return String(r.phone_whatsapp || "").split("_")[0].replace(/\D/g, "");
+    })
+    .filter((p) => p.length >= 12);
+  const lookupPhones = [...new Set([...allPhones, ...cleanPhones])];
   const midConvoPhones = new Set<string>();
   const recadastroPhones = new Set<string>();
   const flippingToWalletIds: string[] = [];
   const flipCompleteStepIds: string[] = [];
-  for (let i = 0; i < allPhones.length; i += 200) {
-    const chunk = allPhones.slice(i, i + 200);
+  for (let i = 0; i < lookupPhones.length; i += 200) {
+    const chunk = lookupPhones.slice(i, i + 200);
     let q = supabase
       .from("customers")
       .select("id, phone_whatsapp, conversation_step, customer_origin, status, pos_venda_recadastro_at")
@@ -2260,10 +2452,100 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
 
   let updatedCount = 0;
   let errorCount = 0;
+  let upgradedFromPlaceholder = 0;
+  let updatedByCode = 0;
   const failedSamples: Array<Record<string, unknown>> = [];
+
+  // Particiona: linha já existe por igreen_code → UPDATE por id (permite
+  // trocar sem_celular_* → telefone real sem bater no unique do código).
+  // Senão → upsert clássico por (phone_whatsapp, consultant_id).
+  const toInsert: Record<string, unknown>[] = [];
+  const toUpdateById: Array<{ id: string; patch: Record<string, unknown>; wasPlaceholder: boolean }> = [];
+  const phonesClaimedInBatch = new Set<string>();
+
+  for (const rec of records) {
+    const code = String(rec.igreen_code || "");
+    const existing = code ? codeToExisting.get(code) : undefined;
+    if (!existing?.id) {
+      toInsert.push(rec);
+      continue;
+    }
+    const incoming = String(rec.phone_whatsapp || "");
+    const current = String(existing.phone_whatsapp || "");
+    const incomingReal = !!incoming && !incoming.startsWith("sem_celular_");
+    const currentReal = !!current && !current.startsWith("sem_celular_");
+    const patch: Record<string, unknown> = { ...rec };
+    delete patch.id;
+    // Merge de telefone: real sempre vence placeholder; dois reais → incoming
+    // (subconta que acabou de sincronizar é a fonte do contato).
+    if (incomingReal) {
+      const clean = incoming.includes("_") ? incoming.split("_")[0] : incoming;
+      if (phonesClaimedInBatch.has(clean)) {
+        patch.phone_whatsapp = `${clean}_${code}`;
+      } else {
+        phonesClaimedInBatch.add(clean);
+        patch.phone_whatsapp = clean;
+      }
+      patch.whatsapp_chat_id = clean;
+    } else if (currentReal) {
+      patch.phone_whatsapp = current;
+    }
+    toUpdateById.push({
+      id: existing.id,
+      patch,
+      wasPlaceholder: !currentReal && incomingReal,
+    });
+  }
+
+  for (let i = 0; i < toUpdateById.length; i += 25) {
+    const chunk = toUpdateById.slice(i, i + 25);
+    await Promise.all(chunk.map(async ({ id, patch, wasPlaceholder }) => {
+      const phoneWanted = String(patch.phone_whatsapp || "");
+      let { error } = await supabase.from("customers").update(patch).eq("id", id);
+      if (error && phoneWanted && !phoneWanted.startsWith("sem_celular_")) {
+        const { phone_whatsapp: _drop, ...noPhone } = patch;
+        const retry = await supabase.from("customers").update(noPhone).eq("id", id);
+        error = retry.error;
+        if (!error) {
+          const phoneOnly = await supabase
+            .from("customers")
+            .update({
+              phone_whatsapp: phoneWanted,
+              ...(patch.igreen_account_id ? { igreen_account_id: patch.igreen_account_id } : {}),
+              ...(patch.status && patch.status !== "contato_incompleto" ? { status: patch.status } : {}),
+            })
+            .eq("id", id)
+            .like("phone_whatsapp", "sem_celular_%");
+          if (phoneOnly.error) {
+            console.warn(`[persistCustomers] phone upgrade bloqueado id=${id}: ${phoneOnly.error.message}`);
+          } else if (wasPlaceholder) {
+            upgradedFromPlaceholder++;
+          }
+        }
+      } else if (!error) {
+        updatedByCode++;
+        if (wasPlaceholder) upgradedFromPlaceholder++;
+      }
+      if (error) {
+        errorCount++;
+        if (failedSamples.length < 10) {
+          failedSamples.push({
+            name: patch.name,
+            phone_whatsapp: patch.phone_whatsapp,
+            igreen_code: patch.igreen_code,
+            error: error.message,
+            path: "update_by_code",
+          });
+        }
+      } else {
+        updatedCount++;
+      }
+    }));
+  }
+
   const BATCH_SIZE = 100;
-  for (let i = 0; i < records.length; i += BATCH_SIZE) {
-    const batch = records.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+    const batch = toInsert.slice(i, i + BATCH_SIZE);
     const { data, error } = await supabase
       .from("customers")
       .upsert(batch, { onConflict: "phone_whatsapp,consultant_id", ignoreDuplicates: false })
@@ -2277,6 +2559,21 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
           .select("id")
           .maybeSingle();
         if (rowError) {
+          // Fallback: unique igreen_code — promove a linha existente.
+          const code = String(rec.igreen_code || "");
+          if (code && consultantId && /igreen_code|unique/i.test(rowError.message)) {
+            const { error: upErr } = await supabase
+              .from("customers")
+              .update(rec)
+              .eq("consultant_id", consultantId)
+              .eq("igreen_code", code)
+              .eq("customer_origin", "igreen_sync");
+            if (!upErr) {
+              updatedCount++;
+              updatedByCode++;
+              continue;
+            }
+          }
           errorCount++;
           if (failedSamples.length < 10) {
             failedSamples.push({
@@ -2294,6 +2591,10 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     } else {
       updatedCount += (data?.length || 0);
     }
+  }
+
+  if (upgradedFromPlaceholder > 0) {
+    console.log(`[persistCustomers] ${upgradedFromPlaceholder} placeholders promovidos a telefone real (multi-conta)`);
   }
 
   // Cleanup de resíduo: leads que viraram carteira
@@ -2339,8 +2640,25 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     }
   }
 
+  // Leads sombra no número limpo (carteira com sufixo _codigo): pausa+DNC.
+  let absorbedShadows = 0;
+  if (consultantId && cleanPhones.length > 0) {
+    try {
+      const { absorbLeadShadowsForWalletPhones } = await import(
+        "../_shared/inbound-customer-resolve.ts"
+      );
+      const abs = await absorbLeadShadowsForWalletPhones(supabase, consultantId, cleanPhones);
+      absorbedShadows = abs.absorbed;
+      if (absorbedShadows > 0) {
+        console.log(`[persistCustomers] absorbed ${absorbedShadows} lead shadows (wallet phone collision)`);
+      }
+    } catch (e) {
+      console.warn("[persistCustomers] absorb shadows:", e instanceof Error ? e.message : String(e));
+    }
+  }
+
   console.log(
-    `[sync-igreen-customers] upsert done consultant=${consultantId} total_from_portal=${allCustomers.length} processed=${records.length} updated=${updatedCount} errors=${errorCount} skipped_no_phone=${skippedNoPhone}`,
+    `[sync-igreen-customers] upsert done consultant=${consultantId} total_from_portal=${allCustomers.length} processed=${records.length} updated=${updatedCount} by_code=${updatedByCode} phone_upgrades=${upgradedFromPlaceholder} insert=${toInsert.length} errors=${errorCount} skipped_no_phone=${skippedNoPhone}`,
   );
 
   return {
@@ -2348,12 +2666,16 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
     processed: records.length,
     skipped_no_phone: skippedNoPhone,
     updated: updatedCount,
+    updated_by_code: updatedByCode,
+    phone_upgrades_from_placeholder: upgradedFromPlaceholder,
+    inserted_or_upserted: toInsert.length,
     errors: errorCount,
     failed_samples: failedSamples,
     cleaned_insights: cleanedInsights,
     cleaned_deals: cleanedDeals,
     completed_steps: completedSteps,
     flipped_to_wallet: flippingToWalletIds.length,
+    absorbed_lead_shadows: absorbedShadows,
   };
 }
 
@@ -2377,6 +2699,8 @@ Deno.serve(async (req) => {
     let mode = "sync";
     let source = "";
     let credsFromBody = false;
+    /** Sync de uma subconta só (UI: botão por card). */
+    let onlyAccountId: string | null = null;
 
     try {
       const body = await req.json();
@@ -2385,6 +2709,8 @@ Deno.serve(async (req) => {
       if (body.consultant_id) consultantId = body.consultant_id;
       if (body.mode) mode = body.mode;
       if (body.source) source = body.source;
+      if (body.account_id) onlyAccountId = String(body.account_id);
+      else if (body.igreen_account_id) onlyAccountId = String(body.igreen_account_id);
     } catch (_) { /* sem body */ }
 
 
@@ -2530,9 +2856,24 @@ Deno.serve(async (req) => {
     }
 
     // ========================================================
-    // MANUAL MODE: single consultant
+    // MANUAL MODE: single consultant (opcional: uma subconta só)
     // ========================================================
-    if (consultantId && !credsFromBody) {
+    if (consultantId && onlyAccountId && !credsFromBody) {
+      const { data: acc } = await supabase
+        .from("igreen_portal_accounts")
+        .select("id, portal_email, portal_password")
+        .eq("id", onlyAccountId)
+        .eq("consultant_id", consultantId)
+        .maybeSingle();
+      if (!acc?.portal_email || !acc?.portal_password) {
+        return new Response(
+          JSON.stringify({ success: false, error: "Conta iGreen não encontrada ou sem e-mail/senha salvos." }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+      portalEmail = acc.portal_email;
+      portalPassword = acc.portal_password;
+    } else if (consultantId && !credsFromBody) {
       const { data: cred } = await supabase
         .from("consultants")
         .select("igreen_portal_email, igreen_portal_password")
@@ -2563,8 +2904,12 @@ Deno.serve(async (req) => {
     // Modo validate roda inline e responde na hora (é leve).
     if (mode === "validate") {
       const runId = await logSyncStart(supabase, consultantId, mode);
-      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
-      await logSyncFinish(supabase, runId, consultantId, r);
+      const r = await syncOneConsultant(
+        supabase, worker, portalEmail!, portalPassword!, consultantId, mode,
+        onlyAccountId || null,
+      );
+      if (onlyAccountId) r.account_id = onlyAccountId;
+      await logSyncFinish(supabase, runId, consultantId, r, onlyAccountId);
       return new Response(JSON.stringify(r), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -2575,31 +2920,38 @@ Deno.serve(async (req) => {
     // do cliente HTTP; dentro do background ele executa Fase A antes dos extras.
     if (mode === "sync_now" || mode === "sync_customers_now") {
       const runId = await logSyncStart(supabase, consultantId, mode);
-      const r = await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, "sync");
-      await logSyncFinish(supabase, runId, consultantId, r);
+      const r = await syncOneConsultant(
+        supabase, worker, portalEmail!, portalPassword!, consultantId, "sync",
+        onlyAccountId || null,
+      );
+      if (onlyAccountId) r.account_id = onlyAccountId;
+      await logSyncFinish(supabase, runId, consultantId, r, onlyAccountId);
       return new Response(JSON.stringify(r), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
     // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
+    const accountFilter = onlyAccountId;
     const runOne = async () => {
       const runId = await logSyncStart(supabase, consultantId, mode);
       let r: Record<string, unknown> = { success: false, error: "unknown" };
       try {
         // MULTI-CONTA: quando há consultant_id e não veio credencial explícita
         // no body (fluxo normal do botão/cron), percorre TODAS as contas
-        // iGreen do consultor em ordem (1, 2, 3...). Se só houver a conta
-        // principal, o resultado é o mesmo de antes.
+        // iGreen do consultor em ordem (1, 2, 3...). Com account_id no body,
+        // sincroniza só aquela conta.
         r = (consultantId && !credsFromBody)
-          ? await syncAllAccountsForConsultant(supabase, worker, consultantId, mode, portalEmail, portalPassword)
-          : await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode);
+          ? await syncAllAccountsForConsultant(supabase, worker, consultantId, mode, portalEmail, portalPassword, accountFilter)
+          : await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode, accountFilter);
+        if (accountFilter) r.account_id = accountFilter;
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
       } catch (err) {
         r = { success: false, error: err instanceof Error ? err.message : String(err) };
+        if (accountFilter) r.account_id = accountFilter;
         console.error(`[bg] sync single error:`, err);
       } finally {
-        await logSyncFinish(supabase, runId, consultantId, r);
+        await logSyncFinish(supabase, runId, consultantId, r, accountFilter);
       }
     };
     // @ts-ignore EdgeRuntime existe no Supabase edge runtime
@@ -2610,7 +2962,10 @@ Deno.serve(async (req) => {
       background: true,
       mode,
       consultant_id: consultantId,
-      message: "Sincronização iniciada em segundo plano. Os dados serão atualizados em instantes.",
+      account_id: onlyAccountId || null,
+      message: onlyAccountId
+        ? "Sincronização desta conta iniciada em segundo plano."
+        : "Sincronização iniciada em segundo plano. Os dados serão atualizados em instantes.",
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

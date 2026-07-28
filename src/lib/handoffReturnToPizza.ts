@@ -1,6 +1,9 @@
 /**
- * Handoff humano fora da pizza → devolver ao ciclo A/B/C.
- * Limpa pausa de cadência + bot e resolve alertas abertos.
+ * Handoff humano fora da pizza → painel do dashboard.
+ * Ações: voltar ao acompanhamento · esquecer acompanhamento · bloquear.
+ *
+ * Fonte: TODO lead com handoff humano entra — cadence `handoff_humano`
+ * OU customers.bot_paused com motivo humano / assigned_human_id.
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -48,14 +51,34 @@ const REASON_LABEL: Record<string, string> = {
   cadastro_falhou: "Cadastro no portal falhou",
   no_media_received: "Não enviou foto/documento pedido",
   step_misconfigured_or_lead_off_topic: "Passo mal configurado ou lead saiu do roteiro",
-  handoff_humano: "Atendimento humano (handoff)",
-  ai_handoff_duvidas: "Handoff por dúvidas",
+  handoff_humano: "Você precisa atender",
+  ai_handoff_duvidas: "IA pediu ajuda (dúvidas)",
+  low_confidence_handoff: "IA sem certeza — precisa de você",
+  lead_pediu_humano: "Cliente pediu atendimento humano",
   humano_assumiu: "Você assumiu o atendimento",
+  humano_assumiu_audio: "Você assumiu (enviou áudio)",
+  humano_assumiu_midia: "Você assumiu (enviou mídia)",
+  humano_assumiu_whatsapp: "Você assumiu pelo WhatsApp",
+  humano_assumiu_template: "Você assumiu (mensagem pronta)",
+  flow_button_humano: "Cliente escolheu falar com humano",
 };
+
+/** Motivos de bot_paused que devem aparecer no painel de handoff. */
+export function isHandoffBotPauseReason(reason: string | null | undefined): boolean {
+  const r = String(reason || "").trim().toLowerCase();
+  if (!r) return false;
+  if (r.includes("humano") || r.includes("human")) return true;
+  if (r.includes("handoff")) return true;
+  if (r === "lead_pediu_humano" || r.startsWith("lead_pediu_humano")) return true;
+  if (r === "ai_handoff_duvidas" || r === "low_confidence_handoff") return true;
+  if (r === "flow_button_humano") return true;
+  if (r.startsWith("muitas_duvidas")) return true;
+  return false;
+}
 
 export function formatHandoffReason(reason: string | null | undefined): string {
   const r = String(reason || "").trim();
-  if (!r) return "Handoff — aguardando você";
+  if (!r) return "Aguardando você atender";
   return REASON_LABEL[r] || r.replace(/_/g, " ");
 }
 
@@ -82,7 +105,7 @@ const SECURITY_PAUSE_PREFIXES = ["dnc:", "not_lead_outside_ddd"];
 export function classifyPauseReason(reason: string | null | undefined): BlockedCategory {
   const r = String(reason || "").trim().toLowerCase();
   if (!r) return "other";
-  if (r === HANDOFF_PAUSE_REASON) return "handoff";
+  if (r === HANDOFF_PAUSE_REASON || isHandoffBotPauseReason(r)) return "handoff";
   if ((SECURITY_PAUSE_REASONS as readonly string[]).includes(r)) return "security";
   if (SECURITY_PAUSE_PREFIXES.some((p) => r.startsWith(p))) return "security";
   return "other";
@@ -117,99 +140,238 @@ export function hasUsableHandoffPhone(phone: string | null | undefined): boolean
   return false;
 }
 
+type CadenceRow = {
+  id: string;
+  customer_id: string;
+  stage: string;
+  paused_until: string | null;
+  paused_reason: string | null;
+  updated_at?: string | null;
+};
+
+type CustomerRow = {
+  id: string;
+  name: string | null;
+  phone_whatsapp: string | null;
+  conversation_step: string | null;
+  bot_paused: boolean | null;
+  bot_paused_reason: string | null;
+  assigned_human_id?: string | null;
+  name_source?: string | null;
+  last_inbound_media_url?: string | null;
+  last_inbound_media_kind?: string | null;
+  do_not_contact?: boolean | null;
+  consultant_id?: string;
+};
+
+function buildHandoffLead(
+  customerId: string,
+  c: CustomerRow | undefined,
+  cadence: CadenceRow | null,
+  alert: {
+    id: string;
+    reason: string | null;
+    user_message: string | null;
+    created_at: string;
+  } | null,
+): HandoffLead | null {
+  const phone = c?.phone_whatsapp || "";
+  if (!hasUsableHandoffPhone(phone)) return null;
+  if (c?.do_not_contact) return null;
+
+  const name = String(c?.name || "").trim();
+  const display = resolveLeadPanelDisplayName({
+    name: c?.name,
+    nameSource: c?.name_source,
+  });
+  const stage = String(cadence?.stage || "NEW");
+  const grupo = cadenceStageGroup(stage);
+  const pausedReason =
+    cadence?.paused_reason ||
+    c?.bot_paused_reason ||
+    (c?.assigned_human_id ? "humano_assumiu" : HANDOFF_PAUSE_REASON);
+  const category = classifyPauseReason(pausedReason);
+  const mediaKind = String(c?.last_inbound_media_kind || "");
+  const mediaUrl = String(c?.last_inbound_media_url || "").trim();
+  const photoUrl =
+    mediaUrl && /image|photo|picture|sticker/i.test(mediaKind) ? mediaUrl : null;
+
+  return {
+    cadenceId: cadence?.id || `customer:${customerId}`,
+    customerId,
+    stage,
+    stageLabel: labelCadenceStage(stage, "short"),
+    grupo,
+    grupoLabel: grupo ? CADENCE_GROUP_BADGE[grupo] || grupo : "—",
+    name: name || "(sem nome)",
+    displayName: display.displayName || name || "(sem nome)",
+    phone,
+    phoneFormatted: formatPhoneBr(phone),
+    conversationStep: c?.conversation_step ?? null,
+    botPaused: !!c?.bot_paused || !!c?.assigned_human_id,
+    botPausedReason: c?.bot_paused_reason ?? null,
+    pausedUntil: cadence?.paused_until ?? null,
+    pausedReasonRaw: pausedReason,
+    category,
+    alertId: alert?.id ?? null,
+    alertReason: alert?.reason ?? null,
+    alertMessage: alert?.user_message ?? null,
+    alertAt: alert?.created_at ?? null,
+    photoUrl,
+  };
+}
+
 /**
- * Lista leads do consultor fora da pizza que ainda precisam de ação:
- * só handoff humano com telefone útil.
+ * Lista leads do consultor em handoff que ainda precisam de ação:
+ * voltar ao acompanhamento · esquecer · bloquear.
  *
- * Não lista: invalid_phone / sem_celular / DNC / opt-out — já estão
- * resolvidos (bloqueados ou inúteis) e não há o que fazer no painel.
+ * Entram:
+ * - cadence `paused_reason = handoff_humano`
+ * - customers com bot_paused humano / assigned_human_id (takeover)
+ *
+ * Não lista: sem telefone útil / já bloqueado (DNC) / já esquecido (WON/manual_won).
  */
 export async function loadHandoffLeads(consultantId: string): Promise<HandoffLead[]> {
-  const { data: cadenceRows, error } = await supabase
-    .from("lead_cadence_state")
-    .select("id, customer_id, stage, paused_until, paused_reason, next_action_at, updated_at")
-    .eq("consultant_id", consultantId)
-    .eq("paused_reason", HANDOFF_PAUSE_REASON)
-    .order("updated_at", { ascending: false })
-    .limit(300);
+  const [{ data: cadenceHandoff, error: cadErr }, { data: pausedCustomers, error: custErr }] =
+    await Promise.all([
+      supabase
+        .from("lead_cadence_state")
+        .select("id, customer_id, stage, paused_until, paused_reason, updated_at")
+        .eq("consultant_id", consultantId)
+        .eq("paused_reason", HANDOFF_PAUSE_REASON)
+        .order("updated_at", { ascending: false })
+        .limit(300),
+      supabase
+        .from("customers")
+        .select(
+          "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
+        )
+        .eq("consultant_id", consultantId)
+        .eq("bot_paused", true)
+        .or("do_not_contact.is.null,do_not_contact.eq.false")
+        .order("bot_paused_at", { ascending: false })
+        .limit(300),
+    ]);
 
-  if (error) throw new Error(error.message);
-  const rows = cadenceRows || [];
-  if (!rows.length) return [];
+  if (cadErr) throw new Error(cadErr.message);
+  if (custErr) throw new Error(custErr.message);
 
-  const customerIds = rows.map((r) => r.customer_id).filter(Boolean) as string[];
+  const humanPausedCustomers = (pausedCustomers || []).filter((c) => {
+    if (c.do_not_contact) return false;
+    if (c.assigned_human_id) return true;
+    return isHandoffBotPauseReason(c.bot_paused_reason);
+  }) as CustomerRow[];
 
-  const [{ data: customers }, { data: alerts }] = await Promise.all([
+  const customerIds = new Set<string>();
+  for (const r of cadenceHandoff || []) {
+    if (r.customer_id) customerIds.add(r.customer_id);
+  }
+  for (const c of humanPausedCustomers) customerIds.add(c.id);
+
+  if (!customerIds.size) return [];
+
+  const ids = Array.from(customerIds);
+
+  const [{ data: allCustomers }, { data: allCadence }, { data: alerts }] = await Promise.all([
     supabase
       .from("customers")
       .select(
-        "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
+        "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
       )
-      .in("id", customerIds),
+      .in("id", ids),
+    supabase
+      .from("lead_cadence_state")
+      .select("id, customer_id, stage, paused_until, paused_reason, updated_at")
+      .in("customer_id", ids),
     supabase
       .from("bot_handoff_alerts")
       .select("id, customer_id, reason, user_message, created_at")
       .eq("consultant_id", consultantId)
-      .in("customer_id", customerIds)
+      .in("customer_id", ids)
       .is("resolved_at", null)
       .order("created_at", { ascending: false }),
   ]);
 
-  const custById = new Map((customers || []).map((c) => [c.id, c]));
+  const custById = new Map((allCustomers || []).map((c) => [c.id, c as CustomerRow]));
+  const cadenceByCustomer = new Map<string, CadenceRow>();
+  for (const row of allCadence || []) {
+    if (!row.customer_id) continue;
+    // Prefer handoff_humano row; senão a mais recente.
+    const prev = cadenceByCustomer.get(row.customer_id);
+    if (!prev || row.paused_reason === HANDOFF_PAUSE_REASON) {
+      cadenceByCustomer.set(row.customer_id, row as CadenceRow);
+    }
+  }
+
   const alertByCustomer = new Map<
     string,
-    { id: string; customer_id: string | null; reason: string | null; user_message: string | null; created_at: string }
+    { id: string; reason: string | null; user_message: string | null; created_at: string }
   >();
   for (const a of alerts || []) {
     if (!a.customer_id) continue;
-    if (!alertByCustomer.has(a.customer_id)) alertByCustomer.set(a.customer_id, a);
+    if (!alertByCustomer.has(a.customer_id)) {
+      alertByCustomer.set(a.customer_id, {
+        id: a.id,
+        reason: a.reason,
+        user_message: a.user_message,
+        created_at: a.created_at,
+      });
+    }
   }
 
   const out: HandoffLead[] = [];
-  for (const row of rows) {
-    const c = custById.get(row.customer_id);
-    const phone = c?.phone_whatsapp || "";
-    // Sem número útil ou já bloqueado → não aparece (nada a fazer aqui).
-    if (!hasUsableHandoffPhone(phone)) continue;
-    if ((c as { do_not_contact?: boolean | null } | undefined)?.do_not_contact) continue;
+  for (const customerId of ids) {
+    const c = custById.get(customerId);
+    const cadence = cadenceByCustomer.get(customerId) || null;
 
-    const alert = alertByCustomer.get(row.customer_id);
-    const name = String(c?.name || "").trim();
-    const display = resolveLeadPanelDisplayName({
-      name: c?.name,
-      nameSource: (c as { name_source?: string | null } | undefined)?.name_source,
-    });
-    const grupo = cadenceStageGroup(String(row.stage));
-    const category = classifyPauseReason(row.paused_reason);
-    const mediaKind = String((c as { last_inbound_media_kind?: string | null } | undefined)?.last_inbound_media_kind || "");
-    const mediaUrl = String((c as { last_inbound_media_url?: string | null } | undefined)?.last_inbound_media_url || "").trim();
-    const photoUrl =
-      mediaUrl && /image|photo|picture|sticker/i.test(mediaKind) ? mediaUrl : null;
-    out.push({
-      cadenceId: row.id,
-      customerId: row.customer_id,
-      stage: String(row.stage),
-      stageLabel: labelCadenceStage(String(row.stage), "short"),
-      grupo,
-      grupoLabel: grupo ? CADENCE_GROUP_BADGE[grupo] || grupo : "—",
-      name: name || "(sem nome)",
-      displayName: display.displayName || name || "(sem nome)",
-      phone,
-      phoneFormatted: formatPhoneBr(phone),
-      conversationStep: c?.conversation_step ?? null,
-      botPaused: !!c?.bot_paused,
-      botPausedReason: c?.bot_paused_reason ?? null,
-      pausedUntil: row.paused_until,
-      pausedReasonRaw: row.paused_reason ?? null,
-      category,
-      alertId: alert?.id ?? null,
-      alertReason: alert?.reason ?? null,
-      alertMessage: alert?.user_message ?? null,
-      alertAt: alert?.created_at ?? null,
-      photoUrl,
-    });
+    // Já esquecido (WON) e sem bot humano ativo → não lista.
+    const stage = String(cadence?.stage || "");
+    const cadReason = String(cadence?.paused_reason || "");
+    const alreadyForgotten =
+      stage === "WON" ||
+      cadReason === "manual_won" ||
+      cadReason.startsWith("won:");
+    const stillHumanPaused =
+      !!c?.assigned_human_id ||
+      (!!c?.bot_paused && isHandoffBotPauseReason(c?.bot_paused_reason)) ||
+      cadReason === HANDOFF_PAUSE_REASON;
+    if (alreadyForgotten && !stillHumanPaused) continue;
+
+    const lead = buildHandoffLead(
+      customerId,
+      c,
+      cadence,
+      alertByCustomer.get(customerId) || null,
+    );
+    if (lead) out.push(lead);
   }
+
+  out.sort((a, b) => {
+    const ta = a.alertAt || a.pausedUntil || "";
+    const tb = b.alertAt || b.pausedUntil || "";
+    return tb.localeCompare(ta);
+  });
+
   return out;
+}
+
+/**
+ * Marca a cadência do lead como handoff — tira da pizza e manda pro painel.
+ * Idempotente. Sem linha de cadência = noop (lead ainda entra via bot_paused).
+ */
+export async function pauseCadenceForHandoff(customerId: string): Promise<void> {
+  if (!customerId) return;
+  const { error } = await supabase
+    .from("lead_cadence_state")
+    .update({
+      paused_reason: HANDOFF_PAUSE_REASON,
+      next_action_at: null,
+    } as never)
+    .eq("customer_id", customerId)
+    .neq("stage", "WON");
+  if (error) {
+    console.warn("[pauseCadenceForHandoff]", error.message);
+  }
 }
 
 export type ReturnHandoffResult = {
@@ -218,7 +380,8 @@ export type ReturnHandoffResult = {
 };
 
 /**
- * Devolve um lead ao ciclo: limpa pausa de cadência, despausa bot, resolve alertas.
+ * Devolve um lead ao acompanhamento: limpa pausa de cadência, despausa bot,
+ * remove assigned_human, resolve alertas.
  */
 export async function returnHandoffToPizza(opts: {
   customerId: string;
@@ -229,6 +392,8 @@ export async function returnHandoffToPizza(opts: {
   const now = new Date().toISOString();
 
   let cadenceId = opts.cadenceId;
+  if (cadenceId?.startsWith("customer:")) cadenceId = null;
+
   if (!cadenceId) {
     const { data } = await supabase
       .from("lead_cadence_state")
@@ -250,7 +415,6 @@ export async function returnHandoffToPizza(opts: {
       .eq("id", cadenceId);
     if (cadErr) return { ok: false, error: cadErr.message };
   } else {
-    // Sem linha handoff: ainda tenta limpar qualquer pausa handoff do customer
     const { error: cadErr } = await supabase
       .from("lead_cadence_state")
       .update({
@@ -269,7 +433,9 @@ export async function returnHandoffToPizza(opts: {
       bot_paused: false,
       bot_paused_reason: null,
       bot_paused_at: null,
-    })
+      bot_paused_until: null,
+      assigned_human_id: null,
+    } as never)
     .eq("id", customerId);
   if (custErr) return { ok: false, error: custErr.message };
 
@@ -279,7 +445,6 @@ export async function returnHandoffToPizza(opts: {
     .eq("customer_id", customerId)
     .is("resolved_at", null);
   if (alertErr) {
-    // Não bloqueia o retorno à pizza se só o alerta falhar
     console.warn("[returnHandoffToPizza] resolve alert:", alertErr.message);
   }
 
@@ -310,8 +475,8 @@ export async function returnHandoffsToPizza(opts: {
 }
 
 /**
- * Esquecer lead: marca WON / já cliente — sai do ciclo automático,
- * WhatsApp manual continua ok (não é bloqueio).
+ * Esquecer acompanhamento: marca WON / já cliente — sai do ciclo automático,
+ * WhatsApp manual continua ok (não é bloqueio). Use quando já é cliente na conversa.
  */
 export async function forgetHandoffLeads(opts: {
   items: Array<{ customerId: string; cadenceId: string }>;
@@ -322,30 +487,54 @@ export async function forgetHandoffLeads(opts: {
   const now = new Date().toISOString();
 
   for (const item of opts.items) {
-    const { error: cadErr } = await supabase
-      .from("lead_cadence_state")
-      .update({
-        stage: "WON",
-        paused_until: null,
-        paused_reason: "manual_won",
-        next_action_at: null,
-      } as never)
-      .eq("id", item.cadenceId);
+    const realCadenceId = item.cadenceId.startsWith("customer:")
+      ? null
+      : item.cadenceId;
 
-    if (cadErr) {
-      failed++;
-      lastError = cadErr.message;
-      continue;
+    if (realCadenceId) {
+      const { error: cadErr } = await supabase
+        .from("lead_cadence_state")
+        .update({
+          stage: "WON",
+          paused_until: null,
+          paused_reason: "manual_won",
+          next_action_at: null,
+          won_at: now,
+        } as never)
+        .eq("id", realCadenceId);
+
+      if (cadErr) {
+        failed++;
+        lastError = cadErr.message;
+        continue;
+      }
+    } else {
+      const { error: cadErr } = await supabase
+        .from("lead_cadence_state")
+        .update({
+          stage: "WON",
+          paused_until: null,
+          paused_reason: "manual_won",
+          next_action_at: null,
+          won_at: now,
+        } as never)
+        .eq("customer_id", item.customerId);
+
+      if (cadErr) {
+        // Sem linha de cadência — ainda limpa o customer (cliente na conversa).
+        console.warn("[forgetHandoffLeads] cadence:", cadErr.message);
+      }
     }
 
-    // Despausa bot para não ficar “preso” no handoff visual, mas sem reativar ciclo.
     await supabase
       .from("customers")
       .update({
         bot_paused: false,
         bot_paused_reason: null,
         bot_paused_at: null,
-      })
+        bot_paused_until: null,
+        assigned_human_id: null,
+      } as never)
       .eq("id", item.customerId);
 
     await supabase

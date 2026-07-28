@@ -115,9 +115,9 @@ export function cadenceStageGroup(stage: string | null | undefined): CadenceStag
 }
 
 export const CADENCE_GROUP_BADGE: Record<CadenceStageGroup, string> = {
-  A: "Quente",
-  B: "Onda 10 dias",
-  C: "Longo prazo",
+  A: "Leads novos",
+  B: "Quem esfriou",
+  C: "Quem sumiu",
   fim: "Encerrado",
 };
 

@@ -24,7 +24,7 @@ import { botRequestStore, isTestPhone, logTestOutbound } from "../_shared/test-m
 import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, notifyOwnerManualReview } from "../_shared/notify-consultant.ts";
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
-import { isCustomerPausedByHuman, isConsultantAIDisabled } from "../_shared/bot/paused.ts";
+import { isCustomerPausedByHuman, isConsultantAIDisabled, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
@@ -46,6 +46,7 @@ import {
   resolveCanonicalFlowVariant,
 } from "../_shared/bot/canonical-flow-variant.ts";
 import { resolveFlowId } from "../_shared/resolve-flow.ts";
+import { findCustomerForInboundPhone } from "../_shared/inbound-customer-resolve.ts";
 
 // `pickFlowVariant` (A/D 50/50) descontinuado — usamos a RPC
 // `assign_flow_variant` que respeita `consultants.active_variants`.
@@ -269,11 +270,37 @@ Deno.serve(async (req) => {
               bot_paused_at: new Date().toISOString(),
               bot_paused_until: null,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
+              bot_processing_until: null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
           if (updErr) console.error("⚠️ update bot_paused (outboundHuman):", updErr);
-          else console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
+          else {
+            console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
+            // Entra no painel do dashboard (voltar / esquecer / bloquear).
+            await supabase
+              .from("lead_cadence_state")
+              .update({
+                paused_reason: "handoff_humano",
+                next_action_at: null,
+              })
+              .eq("customer_id", cust.id)
+              .neq("stage", "WON");
+          }
+        } else if (cust?.bot_paused && cust.assigned_human_id) {
+          // Já pausado: só limpa processing pra cortar reply atrasado.
+          await supabase
+            .from("customers")
+            .update({ bot_processing_until: null, bot_paused_at: new Date().toISOString() })
+            .eq("id", cust.id);
+          await supabase
+            .from("lead_cadence_state")
+            .update({
+              paused_reason: "handoff_humano",
+              next_action_at: null,
+            })
+            .eq("customer_id", cust.id)
+            .neq("stage", "WON");
         } else if (!cust) {
           console.warn(`⚠️ Nenhum customer encontrado para ${outPhone} — bot não foi pausado`);
         }
@@ -581,7 +608,16 @@ Deno.serve(async (req) => {
       downloadMedia: realSender.downloadMedia?.bind(realSender) ?? (async () => null),
     };
 
-    const sender = realServices ? mirrorSender : (sandboxPhone ? mockSender : realSender);
+    const rawSender = realServices ? mirrorSender : (sandboxPhone ? mockSender : realSender);
+    // Ref mutável: preenchido quando o customer é resolvido. O guard re-lê o DB
+    // antes de cada outbound — corta reply atrasado se o consultor assumiu no meio.
+    const pauseGuardCustomerId: { current: string | null } = { current: null };
+    const sender = wrapSenderWithLivePauseGuard(rawSender as any, {
+      supabase,
+      phone,
+      consultantId: superAdminConsultantId,
+      getCustomerId: () => pauseGuardCustomerId.current,
+    });
 
 
     // ─── Identificar consultor super admin (id já validado no topo) ────
@@ -887,21 +923,15 @@ Deno.serve(async (req) => {
     // 🚨 NUNCA filtrar a busca por status — se filtrarmos, leads em
     // awaiting_otp/awaiting_signature/registered_igreen/complete ficam
     // "invisíveis" e o código cria um customer NOVO com step=welcome,
-    // disparando o áudio inicial de novo. Sempre buscar o registro mais
-    // recente do telefone e decidir o que fazer baseado no status.
-    let activeQuery = supabase
-      .from("customers")
-      .select("*")
-      .eq("phone_whatsapp", phone)
-      .eq("consultant_id", superAdminConsultantId)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    // Modo Real do simulador deve isolar o lead de teste e nunca reaproveitar
-    // um customer real antigo do mesmo telefone (ex.: capture_mode=manual).
-    if (realMode) activeQuery = activeQuery.eq("is_test_lead", true);
-    let { data: activeRecords } = await activeQuery;
-
-    let customer = activeRecords?.[0] || null;
+    // disparando o áudio inicial de novo.
+    // Prioriza carteira (igreen_sync) mesmo se phone_whatsapp tiver sufixo
+    // `_igreenCode` de colisão no sync — senão o lead sombra recebe Grupo A.
+    let customer = await findCustomerForInboundPhone(
+      supabase,
+      superAdminConsultantId,
+      phone,
+      { onlyTestLead: !!realMode },
+    );
 
     // Status pós-cadastro — manter como está; handlers de bot-flow
     // (aguardando_otp / aguardando_assinatura / cadastro_em_analise / complete)
@@ -1012,26 +1042,33 @@ Deno.serve(async (req) => {
       // Dispara se: (a) não há inbound nas últimas 24h (lead voltou depois de sumir)
       // ou (b) foi acabado de reativar (automation_failed / RESUMABLE_STATUSES acima).
       // O helper tem dedup interno de 60s, evita duplicatas em rajada.
-      try {
-        const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
-        const { count } = await supabase
-          .from("conversations")
-          .select("id", { count: "exact", head: true })
-          .eq("customer_id", customer.id)
-          .eq("message_direction", "inbound")
-          .gte("created_at", since);
-        if ((count ?? 0) === 0) {
-          notifyNewLead(superAdminConsultantId, {
-            id: customer.id,
-            name: (customer as any).name,
-            name_source: (customer as any).name_source,
-            phone_whatsapp: (customer as any).phone_whatsapp,
-          }).catch((e) => console.warn("[notify-new-lead reentry] falhou:", (e as Error).message));
+      // NUNCA notifica carteira iGreen como "novo lead".
+      const _originNotify = String((customer as any).customer_origin || "").toLowerCase();
+      const _isWalletNotify = _originNotify === "igreen_sync" || _originNotify === "igreen_extension";
+      if (!_isWalletNotify) {
+        try {
+          const since = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+          const { count } = await supabase
+            .from("conversations")
+            .select("id", { count: "exact", head: true })
+            .eq("customer_id", customer.id)
+            .eq("message_direction", "inbound")
+            .gte("created_at", since);
+          if ((count ?? 0) === 0) {
+            notifyNewLead(superAdminConsultantId, {
+              id: customer.id,
+              name: (customer as any).name,
+              name_source: (customer as any).name_source,
+              phone_whatsapp: (customer as any).phone_whatsapp,
+            }).catch((e) => console.warn("[notify-new-lead reentry] falhou:", (e as Error).message));
+          }
+        } catch (e) {
+          console.warn("[notify-new-lead reentry] check falhou:", (e as Error).message);
         }
-      } catch (e) {
-        console.warn("[notify-new-lead reentry] check falhou:", (e as Error).message);
       }
     }
+
+    if (customer?.id) pauseGuardCustomerId.current = customer.id;
 
     // ─── Heal origin Whapi: leads legados / sync sem origin_channel ───
     if (customer && (!customer.origin_channel || !customer.origin_instance_name)) {

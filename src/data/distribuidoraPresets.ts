@@ -1,5 +1,9 @@
 // Presets de distribuidoras para campanhas Facebook Ads.
-// Baseado na tabela de Bônus Extra iGreen (Maio 2026) — Conexão Green.
+// Bônus de entrada Conexão Green — ver `entradaBonusTiers.ts` (faixas oficiais).
+//   Alto (CPFL, Cemig, Copel…): teto 60%
+//   Médio (Elektro…): teto 40%
+//   Sem bônus: só recorrente / outras regras
+// Ex-Piratininga: unificada na CPFL (não existe mais como concessionária separada).
 // Cada preset traz cidades-chave (capital + interior relevante) que serão
 // resolvidas via Marketing API (/search) na hora de adicionar à campanha.
 
@@ -7,22 +11,22 @@ export interface DistribuidoraPreset {
   id: string;
   nome: string;        // Ex: "CPFL Paulista"
   uf: string;          // Ex: "SP"
-  bonusMax: number;    // Ex: 100 (até 100% de bônus extra)
-  bonusLabel: string;  // Ex: "50% + 50%"
+  bonusMax: number;    // Teto do bônus de entrada (60 / 40 / 0)
+  bonusLabel: string;  // Ex: "até 60%"
   tier: "alto" | "medio" | "sem_bonus";
   cidades: string[];   // Cidades-chave para anúncio
 }
 
 export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
-  // ===== TIER ALTO (até 100% bônus) =====
+  // ===== TIER ALTO (até 60% bônus de entrada) =====
   {
     id: "cpfl-paulista",
-    nome: "CPFL Paulista",
+    nome: "CPFL",
     uf: "SP",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
-    // Concessão CPFL Paulista (NÃO inclui Sorocaba/Jundiaí — essas são CPFL Piratininga).
+    // Concessão CPFL SP (API iGreen unificou Paulista+ex-Piratininga → CPFL).
     cidades: [
       "Campinas", "Ribeirão Preto", "Bauru", "Piracicaba", "Limeira", "Americana",
       "Araraquara", "São Carlos", "Franca", "Marília", "Presidente Prudente",
@@ -68,38 +72,16 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
       "Onda Verde", "Icém", "Palestina", "Nhandeara", "General Salgado",
       "Magda", "Auriflama", "Floreal", "Votuporanga", "Fernandópolis",
       "Jales", "Santa Fé do Sul", "Jaboticabal", "Monte Alto", "Vista Alegre do Alto",
+      "Sorocaba", "Jundiaí", "Indaiatuba", "Itu", "Salto", "Atibaia", "Itapetininga", "Tatuí", "Várzea Paulista", "Campo Limpo Paulista", "Itupeva", "Louveira", "Santos", "São Vicente", "Praia Grande", "Cubatão", "Guarujá", "Bertioga", "Mongaguá", "Itanhaém", "Peruíbe", "Iperó", "Araçoiaba da Serra", "Votorantim", "Mairinque", "Alumínio", "Salto de Pirapora", "Piedade", "Pilar do Sul", "Capela do Alto", "Cesário Lange", "Quadra", "São Miguel Arcanjo", "Tapiraí", "Juquiá", "Miracatu", "Pedro de Toledo", "Itariri", "Jarinu", "Vargem", "Joanópolis", "Piracaia", "Bom Jesus dos Perdões", "Nazaré Paulista", "Itatiba", "Morungaba", "Capão Bonito", "Buri", "Itapeva", "Itararé", "Apiaí"
     ],
   },
-  // ⚠️ CPFL Piratininga separada propositalmente — NÃO faz parte do bônus 100%.
-  // Mantida em tier "sem_bonus" pra evitar mistura com cidades 100%.
-  {
-    id: "cpfl-piratininga",
-    nome: "CPFL Piratininga",
-    uf: "SP",
-    bonusMax: 0,
-    bonusLabel: "Sem bônus extra",
-    tier: "sem_bonus",
-    // Concessão CPFL Piratininga — Sorocaba, Jundiaí, Santos, baixada e região.
-    cidades: [
-      "Sorocaba", "Jundiaí", "Indaiatuba", "Itu", "Salto", "Atibaia",
-      "Bragança Paulista", "Itapetininga", "Tatuí", "Várzea Paulista",
-      "Campo Limpo Paulista", "Itupeva", "Louveira", "Santos", "São Vicente",
-      "Praia Grande", "Cubatão", "Guarujá", "Bertioga", "Mongaguá", "Itanhaém",
-      "Peruíbe", "Iperó", "Araçoiaba da Serra", "Votorantim", "Mairinque",
-      "Alumínio", "Salto de Pirapora", "Piedade", "Pilar do Sul", "Capela do Alto",
-      "Cesário Lange", "Quadra", "Porangaba", "Torre de Pedra", "São Miguel Arcanjo",
-      "Tapiraí", "Juquiá", "Miracatu", "Pedro de Toledo", "Itariri",
-      "Jarinu", "Vargem", "Pinhalzinho", "Joanópolis", "Piracaia", "Bom Jesus dos Perdões",
-      "Nazaré Paulista", "Itatiba", "Morungaba", "Tuiuti", "Pedra Bela",
-      "Capão Bonito", "Buri", "Itapeva", "Itararé", "Apiaí",
-    ],
-  },
+  
   {
     id: "copel-pr",
     nome: "Copel",
     uf: "PR",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Curitiba", "Londrina", "Maringá", "Ponta Grossa", "Cascavel", "São José dos Pinhais",
@@ -120,8 +102,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "cemig-mg",
     nome: "Cemig",
     uf: "MG",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Belo Horizonte", "Uberlândia", "Contagem", "Juiz de Fora", "Betim",
@@ -147,8 +129,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "equatorial-go",
     nome: "Equatorial Goiás",
     uf: "GO",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Goiânia", "Aparecida de Goiânia", "Anápolis", "Rio Verde", "Luziânia",
@@ -168,8 +150,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "equatorial-pi",
     nome: "Equatorial Piauí",
     uf: "PI",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Teresina", "Parnaíba", "Picos", "Piripiri", "Floriano", "Campo Maior",
@@ -185,8 +167,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "equatorial-al",
     nome: "Equatorial Alagoas",
     uf: "AL",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Maceió", "Arapiraca", "Rio Largo", "Palmeira dos Índios",
@@ -204,8 +186,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "coelba-ba",
     nome: "Coelba",
     uf: "BA",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Salvador", "Feira de Santana", "Vitória da Conquista", "Camaçari",
@@ -229,8 +211,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "enel-ce",
     nome: "Enel Ceará",
     uf: "CE",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Fortaleza", "Caucaia", "Juazeiro do Norte", "Maracanaú", "Sobral",
@@ -250,8 +232,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "neoenergia-pe",
     nome: "Neoenergia Pernambuco",
     uf: "PE",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Recife", "Jaboatão dos Guararapes", "Olinda", "Caruaru", "Petrolina",
@@ -278,8 +260,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-mt",
     nome: "Energisa Mato Grosso",
     uf: "MT",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Cuiabá", "Várzea Grande", "Rondonópolis", "Sinop", "Tangará da Serra",
@@ -302,8 +284,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-ms",
     nome: "Energisa Mato Grosso do Sul",
     uf: "MS",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Campo Grande", "Dourados", "Três Lagoas", "Corumbá", "Ponta Porã",
@@ -322,8 +304,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-minas-rio",
     nome: "Energisa Minas Rio (RJ)",
     uf: "RJ",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Nova Friburgo", "Cabo Frio", "Macaé", "Teresópolis", "Petrópolis",
@@ -346,8 +328,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "cosern-rn",
     nome: "Cosern",
     uf: "RN",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Natal", "Mossoró", "Parnamirim", "São Gonçalo do Amarante", "Macaíba",
@@ -369,8 +351,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-sul-sudeste",
     nome: "Energisa Sul-Sudeste",
     uf: "SP/PR/MS",
-    bonusMax: 100,
-    bonusLabel: "50% + 50%",
+    bonusMax: 60,
+    bonusLabel: "até 60%",
     tier: "alto",
     cidades: [
       "Ourinhos", "Avaré", "Itapeva", "Itararé", "Capão Bonito", "Paranavaí",
@@ -386,13 +368,13 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     ],
   },
 
-  // ===== TIER MÉDIO (até 50% bônus) =====
+  // ===== TIER MÉDIO (até 40% bônus de entrada) =====
   {
     id: "elektro-sp",
     nome: "Elektro (SP/MS)",
     uf: "SP",
-    bonusMax: 50,
-    bonusLabel: "25% + 25%",
+    bonusMax: 40,
+    bonusLabel: "até 40%",
     tier: "medio",
     cidades: ["Sumaré", "Indaiatuba", "Itu", "Salto", "Atibaia", "Bragança Paulista", "Itapeva", "Avaré"],
   },
@@ -400,8 +382,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-pb",
     nome: "Energisa Paraíba",
     uf: "PB",
-    bonusMax: 50,
-    bonusLabel: "25% + 25%",
+    bonusMax: 40,
+    bonusLabel: "até 40%",
     tier: "medio",
     cidades: ["João Pessoa", "Campina Grande", "Santa Rita", "Patos", "Bayeux", "Sousa", "Cajazeiras"],
   },
@@ -409,8 +391,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "energisa-to",
     nome: "Energisa Tocantins",
     uf: "TO",
-    bonusMax: 50,
-    bonusLabel: "25% + 25%",
+    bonusMax: 40,
+    bonusLabel: "até 40%",
     tier: "medio",
     cidades: ["Palmas", "Araguaína", "Gurupi", "Porto Nacional", "Paraíso do Tocantins"],
   },
@@ -418,8 +400,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "rge-rs",
     nome: "RGE",
     uf: "RS",
-    bonusMax: 50,
-    bonusLabel: "25% + 25%",
+    bonusMax: 40,
+    bonusLabel: "até 40%",
     tier: "medio",
     cidades: ["Caxias do Sul", "Passo Fundo", "Bento Gonçalves", "Erechim", "Vacaria", "Farroupilha", "Bagé", "Santa Cruz do Sul"],
   },
@@ -427,8 +409,8 @@ export const DISTRIBUIDORAS_PRESETS: DistribuidoraPreset[] = [
     id: "celesc-sc",
     nome: "Celesc",
     uf: "SC",
-    bonusMax: 50,
-    bonusLabel: "25% + 25%",
+    bonusMax: 40,
+    bonusLabel: "até 40%",
     tier: "medio",
     cidades: ["Florianópolis", "Joinville", "Blumenau", "São José", "Chapecó", "Itajaí", "Lages", "Criciúma", "Jaraguá do Sul", "Palhoça", "Balneário Camboriú"],
   },

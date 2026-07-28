@@ -44,6 +44,19 @@ Stack/estrutura detalhada: `tech.md` + `structure.md` (always). Domínios sob de
 - Ligar motor/massa novo sem pedido
 - Cérebro conduzindo o Grupo A inteiro / Cérebro = cadência A/B/C
 
+## Bônus de entrada Conexão Green (Ads / tiers)
+
+Canônico: `src/data/entradaBonusTiers.ts` + tabela oficial Jul/2026 em `oficialEntradaTabela.ts`.
+UI editável: card **Ganhos do funil** → botão **Bônus / cidades** (`EntradaRulesDialog`) + Configurações `BonusTiersAdminCard`.
+
+| Tier | Teto | Exemplos (arte Jul/2026) |
+|---|---|---|
+| Alto | **60%** | AL Equatorial, BA Coelba, CE Enel, GO Equatorial, MG Cemig, MS/MT Energisa, PE Neoenergia, PI Equatorial, PR Copel, RJ/MG Energisa Minas Rio, RN Cosern, SP CPFL + Energisa Sul-Sudeste |
+| Médio | **40%** (trava em 40 pessoas) | PB Energisa, SP/MS Elektro, TO Energisa, RS RGE, SC Celesc |
+| Sem bônus | **0%** entrada | lista vazia (editável); **CPFL Piratininga não existe mais** |
+
+Faixas e distribuidoras ficam em `ad_bonus_tiers.faixas` / `.distribuidoras` (JSON) — editar em Configurações → Bônus por tier.
+
 ## Regras de ouro
 
 - Automações com cadeados; **não apagar** migrations/toggles/flags

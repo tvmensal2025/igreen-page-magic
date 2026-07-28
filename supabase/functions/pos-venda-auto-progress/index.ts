@@ -145,7 +145,16 @@ async function processCustomer(
       /\[img:ok/.test(prevPreview) ||
       st.startsWith("partial:audio") ||
       (st === "failed" && /\[img:ok/.test(prevPreview));
-    // partial:audio* / failed → retenta. status=sent NUNCA retenta (não duplica).
+    // partial:audio* / failed → retenta.
+    // sent / dismissed / skipped_prior → NUNCA retenta (não duplica / consultor esqueceu).
+    if (
+      st === "sent" ||
+      st.startsWith("sent") ||
+      st === "dismissed" ||
+      st === "skipped_prior"
+    ) {
+      return { moved: true, sent: false };
+    }
     const retriablePartial =
       st.startsWith("partial:") ||
       st === "failed" ||
@@ -157,6 +166,11 @@ async function processCustomer(
     const isStaleClaim = existingLog.status === "claimed" &&
       existingLog.created_at &&
       Date.now() - new Date(existingLog.created_at).getTime() > 60 * 60_000;
+    // Imagem vai ANTES do áudio. Claim órfão / retry = risco alto de foto
+    // já ter chegado — nunca reenviar imagem nesses casos.
+    if (isStaleClaim || st === "claimed_retry" || retriablePartial) {
+      skipImageOnRetry = true;
+    }
     if (retriablePartial) {
       if (st === "claimed_retry") {
         staleClaimId = String(existingLog.id);
@@ -224,8 +238,29 @@ async function processCustomer(
   if (!isValidJid(`${phoneRaw}@s.whatsapp.net`)) return { moved: true, sent: false };
   const phone = phoneRaw.replace(/\D/g, "");
 
-  if (await isConsultantAIDisabled(supabase, ownerId)) return { moved: true, sent: false };
-  if (await isPausedByPhone(supabase, phone, ownerId)) return { moved: true, sent: false };
+  if (await isConsultantAIDisabled(supabase, ownerId)) {
+    // Claim já reservado (retry) → libera para retentar depois.
+    if (staleClaimId) {
+      await supabase.from("customer_auto_message_log").update({
+        status: "partial:audio_missing",
+        message_preview: "[blocked:ai_disabled]",
+      }).eq("id", staleClaimId);
+    }
+    return { moved: true, sent: false };
+  }
+  if (await isPausedByPhone(supabase, phone, ownerId)) {
+    // Pós-venda D* não deve ficar preso em claimed_retry quando humano assumiu
+    // no meio do pacote (imagem ok / áudio faltando).
+    if (staleClaimId) {
+      await supabase.from("customer_auto_message_log").update({
+        status: skipImageOnRetry ? "partial:audio_missing" : "failed",
+        message_preview: skipImageOnRetry
+          ? "[img:ok|audio:fail] blocked:humano_assumiu"
+          : "[blocked:humano_assumiu]",
+      }).eq("id", staleClaimId);
+    }
+    return { moved: true, sent: false };
+  }
 
   const channel = await resolveChannelForCustomerWithFailover(supabase, customer.id, env);
   if (isUnavailable(channel)) {
@@ -541,7 +576,7 @@ Deno.serve(async (req) => {
     // recebeu o marco inicial / o D* mais próximo.
     const { data: approvedCustomers } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen, pos_venda_approved_at")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen, pos_venda_approved_at")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "aprovado")
       .eq("pos_venda_manual", true)
@@ -561,7 +596,7 @@ Deno.serve(async (req) => {
     //    pendente (idempotente via customer_auto_message_log).
     const { data: approvedTrack } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_approved_at, status, andamento_igreen")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_manual", true)
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"])

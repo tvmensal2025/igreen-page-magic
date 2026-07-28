@@ -28,14 +28,14 @@ Domínio: `customers.customer_origin = igreen_sync` + kanban `stage_scope=pos_ve
 | `pos-venda-bucket-cron` | Só `rpc('recompute_pos_venda_stages')` — sem envio |
 | `sync-igreen-customers` | Após sync chama `recompute_pos_venda_stages`; protege `pos_venda_recadastro_at` |
 
-UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `PendingApprovalDialog` · schedule: #[[file:src/lib/posVendaSchedule.ts]]
+UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `PendingApprovalDialog`, `PosVendaSendFailuresDialog` · schedule: #[[file:src/lib/posVendaSchedule.ts]]
 
 ## Colunas / tabelas
-- `customers`: `pos_venda_stage`, `pos_venda_approved_at`, `pos_venda_rejected_at`, `pos_venda_recadastro_at`, `pos_venda_manual`, `pos_venda_pending_stage`, `pos_venda_reason`
+- `customers`: `pos_venda_stage`, `pos_venda_approved_at`, `pos_venda_rejected_at`, `pos_venda_recadastro_at`, `pos_venda_manual`, `pos_venda_pending_stage`, `pos_venda_reason`, `pos_venda_invalid`
 - Kanban: keys `pv_espera|pv_aprovado|pv_reprovado|pv_retentativa|pv_d30|…|pv_d210`
 - Mídia: `pos_venda_default_media`, `consultant_pos_venda_media`
 - Prep: `pos_venda_prepared_audio` (customer+stage_key UNIQUE; `saudacao_bucket` manha|tarde|noite)
-- Log idempotente: `customer_auto_message_log` (UNIQUE customer+stage_key)
+- Log idempotente: `customer_auto_message_log` (UNIQUE customer+stage_key). Statuses: `sent` · `failed` · `partial:audio*` · `no_channel:*` · `claimed`/`claimed_retry` · `skipped_prior` · **`dismissed`** (consultor esqueceu / tirou do PV — **não retenta**)
 - Helper: `_shared/pos-venda-retentativa.ts` (botão `pv_retentativa_cadastro`) · `_shared/pos-venda-audio-prep.ts` · `_shared/pos-venda-tts.ts`
 
 ## Cadeados
@@ -47,6 +47,12 @@ UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `Pendin
 ## Fluxo
 Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação → `espera` + `pos_venda_pending_stage`; consultor confirma → `pos_venda_manual=true`; auto-progress manda `pv_aprovado`/`pv_reprovado` e avança D30→D210 a partir de **`pos_venda_approved_at`**.
 
+**Multi-conta:** com `pos_venda_auto_messages` + `pos_venda_auto_validate` ligados, o fluxo vale para **todas** as `igreen_portal_accounts` do consultor (não só a principal). `recompute_pos_venda_stages` também preenche `pending` quando o cliente já está em `espera` com pending null (órfãos de subconta) — migration `20260728190000_recompute_pos_venda_fix_espera_pending`.
+
+**Sync dashboard (`sync_all`):** puxa todas as contas → `recompute` → `auto_confirm_pending_pos_venda` (se Validar sozinho ON) → dispara `pos-venda-auto-progress` (fire-and-forget). Envio é **idempotente** por `(customer_id, stage_key)` — `sent`/`skipped_prior`/`dismissed` nunca reenviam o mesmo marco.
+
+**Cliente ≠ lead:** telefone com colisão sync (`5511…_igreenCode`) resolve inbound pela carteira (`_shared/inbound-customer-resolve.ts`). Lead sombra no número limpo é absorvido (pausa+DNC). Origem `igreen_sync`/`igreen_extension` → canal novidades, nunca Grupo A.
+
 ### Validação (popup) — data iGreen obrigatória no marco
 - Ao **Validar**, `confirm_pending_classification` carimba `pos_venda_approved_at` com a data iGreen (`data_ativo` → `data_validado` → `data_cadastro`, nunca futura) e calcula o bucket D* sozinho.
 - Áudio/imagem já estão em `pos_venda_default_media`; o consultor não precisa “olhar” nem escolher 30/60/90.
@@ -54,6 +60,14 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
 - Helper UI: `src/lib/posVendaReferenceDate.ts`.
 - Cliente carteira (`igreen_sync` / `igreen_extension`) **nunca** fala com Grupo A — origin-guard no webhook → **canal de novidades** (`cliente-canal-novidades.ts`); Cérebro só se o toggle do canal estiver OFF.
 - UI: botão **Canal novidades** no Kanban (`ClienteCanalNovidadesDialog`) — edita texto, liga/desliga, reserva `cliente_canal_flow_id` (fluxo futuro, ainda não dispara).
+
+### Modal de falhas de envio (`PosVendaSendFailuresDialog`)
+- Abre sozinho no Kanban quando há log `failed` / `partial:*` / `no_channel:*` / `claimed_retry` (cliente `pos_venda_invalid=false`).
+- Botão **Falhas no envio** no header (badge com contagem).
+- Ações por cliente:
+  1. **Esquecer** → `pos_venda_manual=false` + log `dismissed` (motor não retenta)
+  2. **Editar número** → canonical BR em `phone_whatsapp` + `whatsapp_chat_id` (libera duplicata se preciso) + retry via `pos-venda-auto-progress` (fallback: próxima rodada do cron)
+  3. **Excluir do pós-venda** → `pos_venda_invalid=true` + `pos_venda_manual=false` + log `dismissed` (**não** hard-delete da carteira)
 
 ### Toggle “Validar sozinho” (`pos_venda_auto_validate`)
 - Coluna em `consultant_automation_prefs` — **default OFF**.

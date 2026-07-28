@@ -7,6 +7,7 @@ import LazyVideo from "@/components/ui/LazyVideo";
 import { conexaoVideoUrl, conexaoPosterUrl } from "@/lib/conexaoVideos";
 import WhatsAppFloat from "@/components/WhatsAppFloat";
 import SEOHead from "@/components/SEOHead";
+import PixelInjector from "@/components/PixelInjector";
 import LoadingScreen from "@/components/LoadingScreen";
 import PageStatus from "@/components/common/PageStatus";
 import { CanonicalLicenseRedirect } from "@/components/common/CanonicalLicenseRedirect";
@@ -73,6 +74,10 @@ const ConexaoProductPage = () => {
 
   return (
     <>
+      <PixelInjector
+        facebookPixelId={consultant.facebook_pixel_id}
+        googleAnalyticsId={consultant.google_analytics_id}
+      />
       <SEOHead
         title={`${product.name} – ${consultant.name}`}
         description={product.heroSubtitle}

@@ -37,5 +37,9 @@ Env no Easy Panel do Sync:
 - `WORKER_TOKEN` (ou `SYNC_AI_AUDIT_SECRET`) = mesmo secret da edge (`IGREEN_SYNC_WORKER_SECRET` / `WORKER_SECRET` / `PORTAL2_WORKER_SECRET`)
 - Opcional: `SYNC_AI_AUDIT_DISABLED=true` · `SYNC_AI_AUDIT_LIMIT=0`
 
+## Multi-conta / telefone
+
+Subcontas em `igreen_portal_accounts`. A API da Conta principal mascara `celular` da rede; a subconta dona devolve o número. Unique `(consultant_id, igreen_code)` = 1 linha. Sync **sempre promove** `sem_celular_*` → telefone real via UPDATE por código (não só upsert por phone). Enrich da subconta atualiza a linha mesmo se ela nasceu na Conta principal. Novas subcontas: cadastrar login + sync_all — telefones têm que colar sozinhos.
+
 ## Proibido
-localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` para sync · re-mapear sem helper+/health.
+localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` para sync · re-mapear sem helper+/health · filtrar enrich por `igreen_account_id` de forma que bloqueie upgrade de placeholder na principal.

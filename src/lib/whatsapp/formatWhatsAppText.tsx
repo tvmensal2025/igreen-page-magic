@@ -118,8 +118,8 @@ export function WhatsAppFormattedText({
 }) {
   const tokens = tokenizeInline(text || "");
   return (
-    <p
-      className={className}
+    <span
+      className={`block ${className}`}
       style={{
         // Figtree/Outfit no Linux não cobrem emoji colorido — fallback explícito.
         fontFamily:
@@ -127,6 +127,6 @@ export function WhatsAppFormattedText({
       }}
     >
       {tokens.map((t, i) => renderToken(t, i))}
-    </p>
+    </span>
   );
 }

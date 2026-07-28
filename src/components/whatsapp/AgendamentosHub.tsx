@@ -126,24 +126,24 @@ function describeSource(item: AgendamentoTimelineItem): {
       };
     case "cadence_send":
       return {
-        where: "Motor A→B→C (cadência automática)",
-        hint: "Envio programado pelo motor de reengajamento. Para pausar/editar textos, abra Grupo B ou o Motor de Cadência.",
+        where: "Mensagens automáticas",
+        hint: "Envio programado de reativação. Para pausar ou editar textos, abra Quem esfriou ou a programação automática.",
         targetTab: item.pizzaGroup === "A" ? "grupo-a" : item.pizzaGroup === "C" ? "grupo-c" : "grupo-b",
-        ctaLabel: item.pizzaGroup === "A" ? "Abrir Grupo A" : item.pizzaGroup === "C" ? "Abrir Grupo C" : "Abrir Grupo B",
+        ctaLabel: item.pizzaGroup === "A" ? "Abrir Leads novos" : item.pizzaGroup === "C" ? "Abrir Quem sumiu" : "Abrir Quem esfriou",
       };
     case "daily_reheat":
       return {
-        where: "Reheat diário (pizza)",
-        hint: "Passo da fila diária A/B. Textos e kit ficam na pizza / Programação do ciclo.",
+        where: "Fila diária de acompanhamento",
+        hint: "Passo da fila diária. Textos e kit ficam no acompanhamento automático.",
         targetTab: item.pizzaGroup === "A" ? "grupo-a" : "grupo-b",
-        ctaLabel: "Abrir pizza",
+        ctaLabel: "Abrir acompanhamento",
       };
     case "pending_media":
       return {
-        where: "Fila de mídia (bot)",
-        hint: "Cauda de mídia do fluxo conversacional. Sai sozinha no horário; não edita aqui.",
+        where: "Fila de mídia",
+        hint: "Mídia do atendimento conversacional. Sai sozinha no horário; não edita aqui.",
         targetTab: "grupo-a",
-        ctaLabel: "Abrir Grupo A",
+        ctaLabel: "Abrir Leads novos",
       };
     case "voice_retry":
       return {
@@ -525,8 +525,8 @@ export function AgendamentosHub({
     },
     {
       id: "grupo-b" as const,
-      title: "Grupo B — Leads frios",
-      desc: "Separar DDD, ligar envio dos 10 primeiros dias.",
+      title: "Quem esfriou",
+      desc: "Separar DDD e ligar o envio dos primeiros dias.",
       icon: Zap,
       badge: "Principal",
       badgeOn: true,
@@ -773,9 +773,9 @@ export function AgendamentosHub({
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(normalizeHubTab(v as AgendamentosHubTab))} className="space-y-4">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
             <TabsTrigger value="mapa" className="text-xs font-semibold">Mapa</TabsTrigger>
-            <TabsTrigger value="grupo-a" className="text-xs">Grupo A</TabsTrigger>
-            <TabsTrigger value="grupo-b" className="text-xs font-semibold">Grupo B</TabsTrigger>
-            <TabsTrigger value="grupo-c" className="text-xs">Grupo C</TabsTrigger>
+            <TabsTrigger value="grupo-a" className="text-xs">Leads novos</TabsTrigger>
+            <TabsTrigger value="grupo-b" className="text-xs font-semibold">Quem esfriou</TabsTrigger>
+            <TabsTrigger value="grupo-c" className="text-xs">Quem sumiu</TabsTrigger>
             <TabsTrigger value="agenda" className="text-xs">Agenda</TabsTrigger>
             <TabsTrigger value="futuros" className="text-xs font-semibold">Futuros</TabsTrigger>
             <TabsTrigger value="carteira" className="text-xs">Carteira</TabsTrigger>

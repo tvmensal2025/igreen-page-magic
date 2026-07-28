@@ -39,11 +39,10 @@ const PAGE_PRODUCT_SLUG: Record<string, string | null> = {
 
 // ─── Páginas (sem duplicatas: Green=cliente, Expansão=licenciado) ───
 //
-// `path`        → landing atual, que segue sendo o link padrão do consultor.
-// `premiumPath` → versão premium da MESMA página, rodando em paralelo.
+// `path`        → landing atual (link normal).
+// `premiumPath` → versão premium da MESMA página, em paralelo.
 //
-// As duas são públicas e funcionam ao mesmo tempo. Nada foi substituído: quem
-// já divulgou o link antigo continua atendido por ele.
+// As duas são públicas e funcionam ao mesmo tempo. Nada foi substituído.
 function getAllPages(slug: string) {
   return [
     { id: "green", emoji: "🌱", label: "Conexão Green", sublabel: "Desconto na conta de luz", path: slug, premiumPath: `premium/${slug}` },
@@ -62,9 +61,9 @@ function getAllPages(slug: string) {
 
 export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: LinksTabProps) {
   const [tab, setTab] = useState<"dashboard" | "links">("dashboard");
+  /** Dentro de Meus Links: só normais OU só premium — nunca misturados. */
+  const [linkVersion, setLinkVersion] = useState<"normal" | "premium">("normal");
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
-  /** Por página: se os links de rede social apontam para a versão premium. */
-  const [socialPremium, setSocialPremium] = useState<Record<string, boolean>>({});
   const [consultantId, setConsultantId] = useState<string>();
   const [clubCadastroUrl, setClubCadastroUrl] = useState<string>("");
   const { data: activeProducts } = useProducts();
@@ -87,6 +86,11 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
     return () => { cancelled = true; };
   }, [slug]);
 
+  // Ao trocar Normal ↔ Premium, fecha o accordion aberto.
+  useEffect(() => {
+    setExpandedPage(null);
+  }, [linkVersion]);
+
   const pages = useMemo(() => {
     const all = getAllPages(slug);
     // Enquanto o catálogo não carrega, lista completa; depois filtra is_active.
@@ -98,6 +102,11 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
       return activeSlugs.has(productSlug);
     });
   }, [slug, activeProducts]);
+
+  const pagesDaVersao = useMemo(() => {
+    if (linkVersion === "normal") return pages;
+    return pages.filter((p) => !!p.premiumPath);
+  }, [pages, linkVersion]);
 
   return (
     <div className="space-y-6">
@@ -125,13 +134,39 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
             </div>
           )}
 
+          {/* Dois botões claros: Normal OU Premium — nunca misturados no mesmo card */}
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/20 p-1.5">
+            <VersionTab
+              active={linkVersion === "normal"}
+              onClick={() => setLinkVersion("normal")}
+              icon={<LinkIcon className="w-4 h-4" />}
+              label="Links normais"
+              hint="Landing que você já divulga"
+            />
+            <VersionTab
+              active={linkVersion === "premium"}
+              onClick={() => setLinkVersion("premium")}
+              icon={<Sparkles className="w-4 h-4" />}
+              label="Links premium"
+              hint="Layout novo, vídeo automático"
+            />
+          </div>
+
           <p className="text-xs text-muted-foreground">
-            Cada produto tem <strong className="text-foreground">dois links públicos</strong>: o
-            normal e o premium. Os dois funcionam ao mesmo tempo — use o que preferir ou teste os
-            dois. Toque no produto para ver os links por rede social.
+            {linkVersion === "normal" ? (
+              <>
+                Mostrando só os <strong className="text-foreground">links normais</strong>. Todas as
+                páginas são públicas — qualquer pessoa abre sem login.
+              </>
+            ) : (
+              <>
+                Mostrando só os <strong className="text-foreground">links premium</strong>. Também
+                são 100% públicos e rodam em paralelo aos normais.
+              </>
+            )}
           </p>
 
-          {clubCadastroUrl && (
+          {clubCadastroUrl && linkVersion === "normal" && (
             <div className="bg-card rounded-2xl border border-primary/30 overflow-hidden shadow-sm p-4 flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center text-2xl shrink-0 ring-1 ring-primary/20">
                 🛍️
@@ -154,14 +189,12 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
             </div>
           )}
 
-          {pages.map((page) => {
-            const fullUrl = `https://${baseUrl}/${page.path}`;
-            const premiumUrl = page.premiumPath ? `https://${baseUrl}/${page.premiumPath}` : null;
+          {pagesDaVersao.map((page) => {
+            const pathDaVersao = linkVersion === "premium" ? page.premiumPath! : page.path;
+            const fullUrl = `https://${baseUrl}/${pathDaVersao}`;
             const isExpanded = expandedPage === page.id;
-            // Qual versão os links de rede social usam. Padrão: a atual, para
-            // não mudar silenciosamente o que o consultor já compartilha.
-            const usarPremium = socialPremium[page.id] === true && !!premiumUrl;
-            const baseParaRedes = usarPremium && premiumUrl ? premiumUrl : fullUrl;
+            const labelQr =
+              linkVersion === "premium" ? `${page.label} — Premium` : page.label;
 
             return (
               <div key={page.id} className="bg-card rounded-2xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
@@ -176,7 +209,7 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
                   <div className="flex-1 min-w-0">
                     <p className="font-heading font-bold text-sm text-foreground flex items-center gap-1.5 flex-wrap">
                       {page.label}
-                      {premiumUrl && (
+                      {linkVersion === "premium" && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-primary/35 bg-primary/10 px-1.5 py-px text-[9px] font-bold uppercase tracking-wider text-primary">
                           <Sparkles className="w-2.5 h-2.5" /> Premium
                         </span>
@@ -190,65 +223,30 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
                   {isExpanded ? <ChevronUp className="w-4 h-4 text-primary shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
                 </button>
 
-                {/* ─── Os dois links, sempre visíveis e lado a lado ───
-                    Ficam FORA do accordion de propósito: o link normal e o
-                    premium são os dois links principais do produto, e esconder
-                    qualquer um deles atrás de um clique faz parecer que só
-                    existe um. O accordion abaixo guarda só os links por rede
-                    social, que são um detalhe de campanha. */}
+                {/* Um link só — o da versão escolhida no botão acima */}
                 <div className="border-t border-border bg-muted/10 px-4 py-3">
-                  {/* grid-cols-1 explícito: sem ele a coluna implícita é `auto`
-                      e cresce até o tamanho da URL, empurrando os botões de
-                      copiar/QR para fora do card no celular. */}
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <LinkRow
-                      titulo="Link normal"
-                      descricao="A landing que você já divulga"
-                      url={fullUrl}
-                      onCopy={onCopy}
-                      onQrOpen={() => onQrOpen(fullUrl, page.label)}
-                    />
-                    {premiumUrl && (
-                      <LinkRow
-                        titulo="Link premium"
-                        descricao="Layout novo, vídeo automático, mais rápida no celular"
-                        url={premiumUrl}
-                        destaque
-                        onCopy={onCopy}
-                        onQrOpen={() => onQrOpen(premiumUrl, `${page.label} — Premium`)}
-                      />
-                    )}
-                  </div>
+                  <LinkRow
+                    titulo={linkVersion === "premium" ? "Link premium" : "Link normal"}
+                    descricao={
+                      linkVersion === "premium"
+                        ? "Layout novo, vídeo automático, mais rápida no celular"
+                        : "A landing que você já divulga"
+                    }
+                    url={fullUrl}
+                    destaque={linkVersion === "premium"}
+                    onCopy={onCopy}
+                    onQrOpen={() => onQrOpen(fullUrl, labelQr)}
+                  />
                 </div>
 
                 {isExpanded && (
                   <div className="border-t border-border bg-muted/10 px-4 pb-4 pt-3">
-                    <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-                      <p className="text-xs font-heading font-bold text-muted-foreground">
-                        📲 Compartilhe por rede social:
-                      </p>
-                      {/* Escolhe para qual versão os links rastreados apontam.
-                          Assim dá para rodar um teste real: divulgar a premium
-                          no Instagram e a atual no WhatsApp, por exemplo, e
-                          comparar em "Resultados". */}
-                      {premiumUrl && (
-                        <div className="inline-flex rounded-lg border border-border bg-card p-0.5">
-                          <VersaoBotao
-                            ativo={usarPremium !== true}
-                            onClick={() => setSocialPremium((p) => ({ ...p, [page.id]: false }))}
-                            label="Atual"
-                          />
-                          <VersaoBotao
-                            ativo={usarPremium === true}
-                            onClick={() => setSocialPremium((p) => ({ ...p, [page.id]: true }))}
-                            label="Premium"
-                          />
-                        </div>
-                      )}
-                    </div>
+                    <p className="text-xs font-heading font-bold text-muted-foreground mb-2">
+                      📲 Compartilhe por rede social ({linkVersion === "premium" ? "premium" : "normal"}):
+                    </p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                       {SOCIAL_SOURCES.map((s) => {
-                        const trackedUrl = `${baseParaRedes}?utm_source=${s.source}`;
+                        const trackedUrl = `${fullUrl}?utm_source=${s.source}`;
                         return (
                           <div key={s.source} className="flex items-center gap-2 bg-card rounded-xl border border-border p-3 hover:border-primary/30 transition-colors">
                             <span className="text-xl shrink-0">{s.icon}</span>
@@ -330,18 +328,36 @@ function LinkRow({
   );
 }
 
-/** Botão do seletor "Atual | Premium" dos links de rede social. */
-function VersaoBotao({ ativo, onClick, label }: { ativo: boolean; onClick: () => void; label: string }) {
+/** Botão grande Normal | Premium no topo de Meus Links. */
+function VersionTab({
+  active,
+  onClick,
+  icon,
+  label,
+  hint,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  hint: string;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-pressed={ativo}
-      className={`rounded-md px-2.5 py-1 text-[10px] font-bold transition-colors ${
-        ativo ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+      aria-pressed={active}
+      className={`flex flex-col items-start gap-0.5 rounded-xl px-3 py-2.5 text-left transition-colors ${
+        active
+          ? "bg-card text-foreground shadow-sm ring-1 ring-primary/30"
+          : "text-muted-foreground hover:bg-card/60 hover:text-foreground"
       }`}
     >
-      {label}
+      <span className={`inline-flex items-center gap-1.5 text-sm font-bold ${active ? "text-primary" : ""}`}>
+        {icon}
+        {label}
+      </span>
+      <span className="text-[10px] leading-snug opacity-80">{hint}</span>
     </button>
   );
 }

@@ -67,11 +67,11 @@ interface WhatsAppTabProps {
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
 
 const SUB_TABS: { key: SubTab; label: string; shortLabel: string; icon: React.ElementType }[] = [
-  { key: "dashboard", label: "Dashboard", shortLabel: "Início", icon: BarChart3 },
+  { key: "dashboard", label: "Início", shortLabel: "Início", icon: BarChart3 },
   { key: "conversas", label: "Conversas", shortLabel: "Chats", icon: MessageSquare },
   { key: "agente", label: "Atendente IA", shortLabel: "IA", icon: Bot },
   { key: "envio_massa", label: "Envio em Massa", shortLabel: "Massa", icon: Send },
-  { key: "templates", label: "Templates", shortLabel: "Modelos", icon: FileText },
+  { key: "templates", label: "Mensagens prontas", shortLabel: "Modelos", icon: FileText },
   { key: "agendamentos", label: "Agendamentos", shortLabel: "Agenda", icon: Clock },
   { key: "historico", label: "Histórico", shortLabel: "Hist.", icon: History },
 ];
@@ -377,7 +377,7 @@ export function WhatsAppTab({
                   <DropdownMenuItem asChild>
                     <Link to="/admin/fluxos" className="flex items-center cursor-pointer">
                       <Workflow className="h-4 w-4 mr-2" />
-                      Construtor de Fluxos
+                      Roteiros do bot
                     </Link>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -388,11 +388,11 @@ export function WhatsAppTab({
               {SUB_TABS.map((tab) => renderTabBtn(tab, tab.label))}
               <Link
                 to="/admin/fluxos"
-                aria-label="Construtor de Fluxos"
+                aria-label="Roteiros do bot"
                 className={`${tabBtnClass(false)} text-muted-foreground hover:text-foreground hover:bg-muted/40`}
               >
                 <Workflow className="h-3.5 w-3.5 shrink-0" />
-                <span>Construtor de Fluxos</span>
+                <span>Roteiros do bot</span>
               </Link>
             </div>
           </>

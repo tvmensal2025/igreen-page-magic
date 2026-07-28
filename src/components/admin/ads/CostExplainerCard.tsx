@@ -114,7 +114,7 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           count={leads}
           cost={cpl}
           costLabel="Custo por conversa"
-          explanation="Conversas iniciadas reportadas pela Meta (CTWA). É o denominador certo do CPL operacional em anúncio de WhatsApp."
+          explanation="Conversas iniciadas no WhatsApp a partir do anúncio. É o número certo para ver o custo de cada conversa."
           accent="bg-primary/15 border-primary/40 text-primary"
         />
 
@@ -127,19 +127,19 @@ export function CostExplainerCard({ spendCents, clicks, leads, approved }: Props
           label="3. Virou cliente"
           count={approved}
           cost={cpa}
-          costLabel="Custo por CLIENTE (CPA)"
-          explanation="Cliente interessado que foi até o fim do funil e chegou no estágio 'Aprovado'. Aqui sim é cliente iGreen."
+          costLabel="Custo por cliente"
+          explanation="Cliente interessado que foi até o fim e chegou em 'Aprovado'. Aqui sim é cliente iGreen."
           accent="bg-primary/15 border-primary/40 text-primary dark:text-primary"
         />
       </div>
 
       <div className="mt-5 pt-4 border-t border-border/40 text-[11px] sm:text-xs text-muted-foreground leading-relaxed">
         <strong className="text-foreground">Como ler:</strong> a etapa 2 usa{" "}
-        <strong className="text-primary">conversas Meta (CTWA)</strong>. Contatos no CRM
+        <strong className="text-primary">conversas que abriram o WhatsApp pelo anúncio</strong>. Contatos no seu painel
         com prova de anúncio aparecem nos cards abaixo. Só viram{" "}
         <strong className="text-primary">cliente</strong> quando chegam em{" "}
-        <em>Aprovado</em>. O <strong>custo/conversa</strong> é o CPL operacional; o{" "}
-        <strong>CPA</strong>, o custo de cada aprovado.
+        <em>Aprovado</em>. O <strong>custo por conversa</strong> é o do WhatsApp; o{" "}
+        <strong>custo por cliente</strong>, o de cada aprovado.
       </div>
     </Card>
   );

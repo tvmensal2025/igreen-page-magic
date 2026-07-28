@@ -16,8 +16,8 @@ const solarPlants = [
 ];
 
 const states = [
-  "Minas Gerais (CEMIG)", "Minas Gerais (Energisa Minas Rio)", "São Paulo (Energisa)", "São Paulo (CPFL Paulista)",
-  "São Paulo (CPFL Piratininga)", "São Paulo (CPFL Santa Cruz)", "São Paulo (Elektro)", "Rio de Janeiro (Energisa Minas-Rio)",
+  "Minas Gerais (CEMIG)", "Minas Gerais (Energisa Minas Rio)", "São Paulo (Energisa)", "São Paulo (CPFL)",
+  "São Paulo (CPFL Santa Cruz)", "São Paulo (Elektro)", "Rio de Janeiro (Energisa Minas-Rio)",
   "Rio de Janeiro (Enel)", "Espírito Santo (EDP)", "Goiás (Equatorial)", "Mato Grosso (Energisa)",
   "Mato Grosso do Sul (Energisa)", "Paraná (Copel)", "Santa Catarina (Celesc)", "Rio Grande do Sul (CEEE)",
   "Rio Grande do Sul (RGE)", "Alagoas (Equatorial)", "Ceará (Enel)", "Paraíba (Energisa)",

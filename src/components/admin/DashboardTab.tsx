@@ -458,6 +458,8 @@ export function DashboardTab({
       //    sem esperar o worker (10-40s). Cobre o caso "cliquei e continua zero".
       await refreshDashboardQueries();
 
+      // Sempre sync_all = TODAS as contas iGreen do consultor + lista completa
+      // (Fase A Kanban + Fase B varredura). Não usa account_id (não filtra).
       const res = await runIgreenSync(userId, "sync_all");
       if (res.ok === false) {
         if (res.reason === "not_configured") {
@@ -465,25 +467,32 @@ export function DashboardTab({
         } else if (res.reason === "waf_blocked") {
           toast({ title: "Portal temporariamente bloqueado", description: "O escritório iGreen está bloqueando o acesso automático agora. Tente de novo em alguns minutos.", variant: "destructive" });
         } else if (res.reason === "invalid_credentials") {
-          toast({ title: "Login iGreen inválido", description: "Confira o e-mail e a senha do escritório iGreen na aba Dados.", variant: "destructive" });
+          toast({ title: "Login iGreen inválido", description: "Confira o e-mail e a senha do escritório iGreen na aba Dados / Conexão iGreen.", variant: "destructive" });
         } else {
           toast({ title: "Erro na sincronização", description: res.error, variant: "destructive" });
         }
         return;
       }
       startCooldown();
-      toast({ title: "✅ Sincronização enviada!", description: "Energia aparece primeiro; rede, Telecom e Seguros entram em instantes." });
+      toast({
+        title: "Sincronizando todas as contas",
+        description: "Puxando a lista completa de clientes de cada login iGreen (parceiros inclusive). Pode levar alguns minutos.",
+      });
       // 2) Invalidação com prefixo — pega todas as variantes de queryKey.
       await refreshDashboardQueries();
       // 3) Worker finaliza segundos depois: aguarda extras e repolla tudo.
       void (async () => {
-        const finished = await waitIgreenSyncFinished(userId, { minStartedAt: requestedAt });
+        const finished = await waitIgreenSyncFinished(userId, { minStartedAt: requestedAt, timeoutMs: 300_000 });
         await refreshDashboardQueries();
         if (finished) {
           const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
           const telecom = extras.telecom?.telecom_received ?? extras.telecom?.telecom_saved;
           const seguros = extras.seguros?.seguros_received ?? extras.seguros?.seguros_saved;
-          toast({ title: "✅ Sincronização concluída!", description: `Rede e produtos atualizados. Telecom: ${telecom ?? "—"} · Seguros: ${seguros ?? "—"}.` });
+          const accountsSynced = finished.counts?.accounts_synced;
+          toast({
+            title: "Sincronização concluída",
+            description: `${accountsSynced != null ? `${accountsSynced} conta(s). ` : ""}Telecom: ${telecom ?? "—"} · Seguros: ${seguros ?? "—"}.`,
+          });
         }
       })();
     } catch (err: unknown) {
@@ -556,7 +565,7 @@ export function DashboardTab({
               {licenciadoOptions.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={handleDashboardSync} disabled={syncingDashboard || syncCooldown > 0} className="h-7 text-[11px] px-2 gap-1" title="Sincronizar iGreen">
+          <Button variant="outline" size="sm" onClick={handleDashboardSync} disabled={syncingDashboard || syncCooldown > 0} className="h-7 text-[11px] px-2 gap-1" title="Sincronizar TODAS as contas iGreen (lista completa de clientes)">
             {syncingDashboard ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             <span className="hidden lg:inline">{syncingDashboard ? "Sincronizando..." : syncCooldown > 0 ? `${syncCooldown}s` : "Sincronizar"}</span>
           </Button>

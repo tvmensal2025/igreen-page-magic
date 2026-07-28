@@ -215,8 +215,8 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
     try {
       await publishSmartAnchorCampaign(consultantId, preview);
       toast({
-        title: "Cérebro Inteligente publicado",
-        description: "Campanha criada. O Cérebro vai subir ou descer o valor sozinho conforme o custo do lead.",
+        title: "Anúncio rápido publicado",
+        description: "Campanha criada. O sistema sobe ou desce o valor sozinho conforme o custo do contato.",
       });
       onCreated?.();
       onClose();
@@ -241,7 +241,7 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ads-gradient-emerald)] text-[hsl(45_60%_95%)]">
               <Brain className="h-4 w-4" />
             </span>
-            Cérebro inteligente
+            Anunciar rápido
           </DialogTitle>
         </DialogHeader>
 
@@ -314,14 +314,14 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
                 Você escolhe título, foto ou vídeo, e o <strong>quanto pode gastar por dia</strong>.
               </p>
               <div className="rounded-md bg-background/60 border border-[hsl(var(--ads-border))] p-2 space-y-1.5 text-[11px]">
-                <div className="font-medium text-[hsl(var(--ads-text))]">Como o Cérebro mexe no dinheiro sozinho</div>
+                <div className="font-medium text-[hsl(var(--ads-text))]">Como o sistema mexe no dinheiro sozinho</div>
                 <div className="flex gap-2 items-start">
                   <ArrowUp className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                  <span>Lead barato (até ~R$ 7,50) → <strong>sobe ~15%</strong> o valor do dia</span>
+                  <span>Contato barato (até ~R$ 7,50) → <strong>sobe ~15%</strong> o valor do dia</span>
                 </div>
                 <div className="flex gap-2 items-start">
                   <ArrowDown className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
-                  <span>Lead caro → <strong>desce ~15%</strong></span>
+                  <span>Contato caro → <strong>desce ~15%</strong></span>
                 </div>
                 <div className="flex gap-2 items-start">
                   <Minus className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
@@ -395,7 +395,7 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
                   className="h-9"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  O Cérebro sobe até aqui. Máx. R$ {(SMART_ANCHOR_HARD_MAX_CENTS / 100).toFixed(0)}.
+                  O sistema sobe até aqui. Máx. R$ {(SMART_ANCHOR_HARD_MAX_CENTS / 100).toFixed(0)}.
                 </p>
               </div>
             </div>

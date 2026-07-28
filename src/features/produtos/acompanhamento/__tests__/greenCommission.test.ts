@@ -77,6 +77,8 @@ describe("careerBonusPercent", () => {
     expect(careerBonusPercent("Gestor")).toBe(0.5);
     expect(careerBonusPercent("EXECUTIVO")).toBe(0.8);
     expect(careerBonusPercent("acionista")).toBe(1.8);
+    expect(careerBonusPercent("S-Expansão")).toBe(0.2);
+    expect(careerBonusPercent("senior")).toBe(0.2);
     expect(careerBonusPercent("desconhecido")).toBe(0);
   });
 });
@@ -85,6 +87,7 @@ describe("resolveGraduacao", () => {
   it("escolhe a graduação mais alta entre fontes", () => {
     expect(resolveGraduacao("licenciado", "Gestor")).toBe("gestor");
     expect(resolveGraduacao("senior", "gestor", "licenciado")).toBe("gestor");
+    expect(resolveGraduacao("s-expansao", "licenciado")).toBe("senior");
     expect(resolveGraduacao(null, undefined, "executivo")).toBe("executivo");
   });
 

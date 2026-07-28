@@ -10,7 +10,7 @@ import { whapiListMessages, whapiListMessagesForChat, whapiDownloadMedia } from 
 import { sendWhatsAppMessage, resolveRecipient, normalizeBrazilPhone } from "@/services/messageSender";
 import { supabase } from "@/integrations/supabase/client";
 import { createLogger } from "@/lib/logger";
-import { autoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
+import { autoTakeoverByPhone, autoTakeoverByCustomerId } from "@/lib/whatsapp/auto-takeover";
 import { applyTemplate } from "@/hooks/useTemplates";
 
 const logger = createLogger("useMessages");
@@ -780,6 +780,17 @@ export function useMessages(
 
       logger.debug("sending to:", recipient, "instance:", instanceName, "text:", outgoingText.slice(0, 50));
 
+      // Auto-takeover ANTES do envio: silencia o bot e corta reply atrasado.
+      try {
+        if (customerId) {
+          await autoTakeoverByCustomerId(customerId, "humano_assumiu");
+        } else {
+          await autoTakeoverByPhone(recipient, "humano_assumiu");
+        }
+      } catch (e) {
+        logger.warn("auto-takeover error (não bloqueia envio):", e);
+      }
+
       try {
         const result = await sendWhatsAppMessage({
           instanceName: instanceName || "",
@@ -801,14 +812,6 @@ export function useMessages(
           logger.warn("message send pending confirmation", { recipient, remoteJid, status: result.status });
         } else {
           logger.debug("message sent successfully", { messageId: result.messageId });
-        }
-
-        // Auto-takeover: ao consultor enviar manualmente, assume o controle
-        // e silencia o bot até "Devolver para o passo" via UI.
-        try {
-          await autoTakeoverByPhone(recipient, "humano_assumiu");
-        } catch (e) {
-          logger.warn("auto-takeover error (não bloqueia envio):", e);
         }
 
         // Vínculo consultor + parceiro do rodízio (quando seguro) + protocolo

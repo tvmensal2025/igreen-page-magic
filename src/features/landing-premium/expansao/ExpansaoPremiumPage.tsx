@@ -71,7 +71,7 @@ const ExpansaoPremiumPage = () => {
     return (
       <PageStatus
         title="Licenciado não encontrado"
-        description="Verifique o link e tente novamente."
+        description="Verifique o link e tente novamente. A página é pública — o endereço precisa terminar com a licença (ex.: /premium/expansao/sua-licenca)."
       />
     );
   }

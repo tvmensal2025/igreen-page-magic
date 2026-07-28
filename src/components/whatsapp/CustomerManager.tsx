@@ -245,19 +245,22 @@ export function CustomerManager({
       startCooldown();
       const syncedAt = new Date().toISOString();
       setLastSync(syncedAt);
-      toast({ title: "✅ Sincronização enviada!", description: "Energia aparece primeiro; rede, Telecom e Seguros entram em instantes." });
+      toast({
+        title: "Sincronizando todas as contas",
+        description: "Lista completa de clientes de cada login iGreen (parceiros inclusive).",
+      });
       await refreshIgreenQueries();
       // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
       // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
       void (async () => {
-        const finished = await waitIgreenSyncFinished(consultantId, { minStartedAt: requestedAt });
+        const finished = await waitIgreenSyncFinished(consultantId, { minStartedAt: requestedAt, timeoutMs: 300_000 });
         await refreshIgreenQueries();
         if (finished) {
           const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
           const telecom = extras.telecom?.telecom_received ?? extras.telecom?.telecom_saved;
           const seguros = extras.seguros?.seguros_received ?? extras.seguros?.seguros_saved;
           toast({
-            title: "✅ Sincronização concluída!",
+            title: "Sincronização concluída",
             description: `Clientes, rede e produtos atualizados. Telecom: ${telecom ?? "—"} · Seguros: ${seguros ?? "—"}.`,
           });
         }

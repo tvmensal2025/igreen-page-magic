@@ -46,7 +46,7 @@ VALUES
   (NULL, 'attendance_protocol_block', 'Atendimento — bloco protocolo',
    'Bloco “Atendimento iniciado” + chamado. Variáveis: {{consultor}}, {{protocolo}}.',
    'atendimento',
-   E'✅ *Atendimento iniciado*\n\n👤 Consultor(a): *{{consultor}}*\n📋 Chamado: *{{protocolo}}*',
+   E'✅ *Atendimento iniciado*\n\nAqui é {{o_a_consultor}} *{{consultor}}* da *iGreen*.\n\n📋 *Protocolo:* {{protocolo}}',
    '["consultor","protocolo","nome"]'::jsonb),
 
   -- Postpone / adiamento

@@ -158,6 +158,23 @@ Deno.test("isCadenceReturnContext: GREETED/NEW/AI_QUALIFYING NÃO é retorno B/C
   );
 });
 
+Deno.test("isCadenceReturnContext: aguardando_avaliacao NÃO bloqueia retorno B/C", () => {
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { conversation_step: "aguardando_avaliacao_atendimento" },
+      cadencePausedReason: "lead_responded:COLD_1",
+    }),
+    true,
+  );
+  assertEquals(
+    isCadenceReturnContext({
+      customer: { conversation_step: "atendimento_finalizado" },
+      cadenceStage: "COLD_1",
+    }),
+    true,
+  );
+});
+
 Deno.test("resolveCadenceInboundRoute: oi com origin_recovery mas GREETED → null (Grupo A)", () => {
   const r = resolveCadenceInboundRoute({
     customer: { name: "Marilsa", origin_recovery: "cadence" },

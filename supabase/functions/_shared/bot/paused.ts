@@ -103,3 +103,69 @@ export async function isAutomationBlocked(
   }
   return { blocked: false, reason: null };
 }
+
+type OutboundSender = {
+  sendText: (jid: string, text: string) => Promise<unknown>;
+  sendButtons?: (jid: string, message: string, buttons: unknown[]) => Promise<unknown>;
+  sendMedia?: (jid: string, mediaUrl: string, caption: string, mediatype: string) => Promise<unknown>;
+  sendPresence?: (...args: unknown[]) => Promise<unknown>;
+  downloadMedia?: (...args: unknown[]) => Promise<unknown>;
+  [key: string]: unknown;
+};
+
+/**
+ * Re-lê o DB antes de CADA outbound. Corta corrida: consultor mandou msg no
+ * meio do bot-flow → pause grava → reply atrasado do bot NÃO sai.
+ */
+export function wrapSenderWithLivePauseGuard<T extends OutboundSender>(
+  base: T,
+  opts: {
+    supabase: SupabaseClient;
+    phone?: string;
+    getPhone?: () => string | null | undefined;
+    consultantId?: string | null;
+    getCustomerId?: () => string | null | undefined;
+  },
+): T {
+  const allowSpeak = async (): Promise<boolean> => {
+    const customerId = opts.getCustomerId?.() || null;
+    if (customerId) {
+      const { data } = await opts.supabase
+        .from("customers")
+        .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
+        .eq("id", customerId)
+        .maybeSingle();
+      if (isCustomerPausedByHuman(data as PausableCustomer | null)) {
+        console.log(`🔇 [pause-guard] abort outbound customer=${customerId} — humano assumiu`);
+        return false;
+      }
+      return true;
+    }
+    const phone = String(opts.getPhone?.() || opts.phone || "").replace(/\D/g, "");
+    if (phone && await isPausedByPhone(opts.supabase, phone, opts.consultantId)) {
+      console.log(`🔇 [pause-guard] abort outbound phone=${phone} — humano assumiu`);
+      return false;
+    }
+    return true;
+  };
+
+  return {
+    ...base,
+    sendText: async (jid: string, text: string) => {
+      if (!(await allowSpeak())) return false;
+      return base.sendText(jid, text);
+    },
+    sendButtons: base.sendButtons
+      ? async (jid: string, message: string, buttons: unknown[]) => {
+          if (!(await allowSpeak())) return false;
+          return base.sendButtons!(jid, message, buttons);
+        }
+      : undefined,
+    sendMedia: base.sendMedia
+      ? async (jid: string, mediaUrl: string, caption: string, mediatype: string) => {
+          if (!(await allowSpeak())) return false;
+          return base.sendMedia!(jid, mediaUrl, caption, mediatype);
+        }
+      : undefined,
+  } as T;
+}

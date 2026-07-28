@@ -348,7 +348,7 @@ export async function resolveWabaPhone(
           : "business_waba_phone_scan",
         next_steps: [
           `Se a Meta ainda recusar, vincule a WABA ${businessMatch.waba_id || "encontrada"} à Página ${pageId}`,
-          "Depois clique em Validar e corrigir WhatsApp automaticamente",
+          "Depois vá em Central de anúncios → WhatsApp dos anúncios (CTWA) e confira o número Business",
         ],
       };
     }
@@ -391,7 +391,7 @@ export async function resolveWabaPhone(
       next_steps: missingPermissions.length
         ? [
           "Reconecte a conta Facebook da plataforma e aceite a permissão WhatsApp Business Management.",
-          "Depois volte em Dados → WhatsApp dos anúncios Meta e clique em Validar e corrigir automático.",
+          "Depois vá em Central de anúncios → WhatsApp dos anúncios (CTWA) e cadastre/gerencie o número Business.",
         ]
         : nextStepsNoWaba,
       missing_permissions: missingPermissions,

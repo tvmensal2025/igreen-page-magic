@@ -1,6 +1,6 @@
 /**
  * Modal CTWA — cadastrar número WhatsApp Business na WABA da Página (SMS).
- * Qualquer consultor logado; cadastro único por conta (troca só SuperAdmin).
+ * Cada consultor cadastra O SEU número. Atalho “já na WABA” só SuperAdmin.
  */
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -33,10 +33,13 @@ type StatusPayload = {
   limit_hint?: string;
   limit_initial?: number;
   limit_verified?: number;
+  consultant_phone?: string | null;
   mine?: {
     locked?: boolean;
     digits?: string | null;
     phone_number_id?: string | null;
+    matches_consultant_phone?: boolean;
+    can_replace?: boolean;
   };
   official?: {
     whatsapp_destination_number?: string | null;
@@ -70,6 +73,8 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
   const [loading, setLoading] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
   const [status, setStatus] = useState<StatusPayload | null>(null);
+  /** Usuário pediu explicitamente cadastrar/trocar o próprio número (não ficar no da plataforma). */
+  const [forceOwnNumber, setForceOwnNumber] = useState(false);
 
   const [phone, setPhone] = useState("");
   const [verifiedName, setVerifiedName] = useState("iGreen Energy");
@@ -81,17 +86,39 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
   const [ackBusiness, setAckBusiness] = useState(false);
   const [ackOnce, setAckOnce] = useState(false);
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(async (opts?: { preferOwnForm?: boolean }) => {
     setStatusLoading(true);
     try {
       const data = await invokeWa({ action: "status" });
-      setStatus(data as StatusPayload);
-      const mine = (data as StatusPayload).mine;
-      if (mine?.locked && mine.phone_number_id) {
-        setPhoneNumberId(mine.phone_number_id);
-        setDigits(mine.digits || "");
-        setDisplay(mine.digits ? `+${mine.digits}` : "");
+      const payload = data as StatusPayload;
+      setStatus(payload);
+
+      const mine = payload.mine;
+      const ownPhone = (payload.consultant_phone || "").replace(/\D/g, "");
+      setPhone((prev) => (prev.trim() ? prev : ownPhone));
+
+      const apiKnowsMatch = typeof mine?.matches_consultant_phone === "boolean";
+      const lockedOk =
+        Boolean(mine?.locked && mine.phone_number_id) &&
+        (apiKnowsMatch ? mine.matches_consultant_phone === true : true);
+      const wrongLock =
+        Boolean(mine?.locked && mine.phone_number_id) &&
+        apiKnowsMatch &&
+        mine.matches_consultant_phone === false;
+      const preferForm = Boolean(opts?.preferOwnForm);
+
+      if (lockedOk && !preferForm) {
+        setPhoneNumberId(mine!.phone_number_id!);
+        setDigits(mine!.digits || "");
+        setDisplay(mine!.digits ? `+${mine!.digits}` : "");
         setStep("done");
+      } else {
+        setStep("number");
+        if (wrongLock) {
+          setPhoneNumberId("");
+          setDigits("");
+          setDisplay("");
+        }
       }
     } catch (e) {
       setStatus({ error: (e as Error).message });
@@ -103,9 +130,11 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
   useEffect(() => {
     if (!open) return;
     setStep("number");
+    setForceOwnNumber(false);
     setSmsCode("");
     setTwoStepPin("");
     setPhoneNumberId("");
+    setPhone("");
     setAckBusiness(false);
     setAckOnce(false);
     void loadStatus();
@@ -133,9 +162,10 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
       setDisplay(String(data.display || ""));
       if (data.step === "done" || data.skipped_sms) {
         setTwoStepPin(String(data.two_step_pin || ""));
+        setForceOwnNumber(false);
         setStep("done");
         toast({
-          title: "WhatsApp CTWA pronto",
+          title: "WhatsApp do anúncio pronto",
           description: String(data.message || "Vinculado sem SMS."),
         });
         await loadStatus();
@@ -195,10 +225,11 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
       setDigits(String(data.digits || digits));
       setDisplay(String(data.display || display));
       setTwoStepPin(String(data.two_step_pin || ""));
+      setForceOwnNumber(false);
       setStep("done");
       toast({
         title: "Número cadastrado",
-        description: String(data.message || "Pronto para anúncios CTWA."),
+        description: String(data.message || "Pronto para anunciar no WhatsApp."),
       });
       await loadStatus();
       onDone?.();
@@ -214,6 +245,14 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
   }
 
   async function handleSaveForMe(id: string) {
+    if (!status?.is_super_admin) {
+      toast({
+        title: "Indisponível",
+        description: "Digite o seu número e valide com SMS. A lista de números da Meta é só do SuperAdmin.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!ackBusiness || !ackOnce) {
       toast({
         title: "Confirme os avisos",
@@ -227,7 +266,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
       const data = await invokeWa({
         action: "save_for_me",
         phone_number_id: id,
-        force: Boolean(status?.is_super_admin && status?.mine?.locked),
+        force: Boolean(status?.mine?.locked),
       });
       toast({
         title: "Número vinculado",
@@ -236,6 +275,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
       setDigits(String(data.digits || ""));
       setDisplay(String(data.display || ""));
       setPhoneNumberId(String(data.phone_number_id || id));
+      setForceOwnNumber(false);
       setStep("done");
       await loadStatus();
       onDone?.();
@@ -250,8 +290,16 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
     }
   }
 
-  const locked = Boolean(status?.mine?.locked);
-  const canEdit = !locked || Boolean(status?.is_super_admin);
+  const apiKnowsMatch = typeof status?.mine?.matches_consultant_phone === "boolean";
+  const lockedOk =
+    Boolean(status?.mine?.locked) &&
+    (apiKnowsMatch ? status?.mine?.matches_consultant_phone === true : true);
+  const wrongLock =
+    Boolean(status?.mine?.locked) &&
+    apiKnowsMatch &&
+    status?.mine?.matches_consultant_phone === false;
+  const showNumberForm =
+    step === "number" && (!lockedOk || forceOwnNumber || Boolean(status?.is_super_admin) || wrongLock);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -259,10 +307,11 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Smartphone className="w-4 h-4 text-primary" />
-            WhatsApp dos anúncios (CTWA)
+            WhatsApp dos anúncios
           </DialogTitle>
           <DialogDescription>
-            Cadastre o número que vai receber os clientes do anúncio. Feito uma vez por conta.
+            Cadastre <strong>o seu</strong> número (Business) que vai receber os clientes do anúncio.
+            Use SMS uma vez por conta.
           </DialogDescription>
         </DialogHeader>
 
@@ -275,16 +324,12 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               pessoal costuma ser rejeitado pela Meta no anúncio.
             </p>
             <p>
-              Você pode conectar <strong>apenas 1 número</strong> na sua conta (cadastro único
-              com SMS). Depois disso, troca só com suporte.
+              Cada consultor cadastra <strong>o próprio número</strong> (não o da plataforma).
+              Depois disso, troca só com suporte.
             </p>
             <p>
               Para <strong>anunciar</strong> é preciso ter <strong>saldo na carteira</strong>.
-              Fale com o <strong>Rafael</strong> para liberar o crédito — o saldo é colocado
-              manualmente.
-            </p>
-            <p className="text-muted-foreground">
-              O chip precisa receber SMS. Número não pode estar só no WhatsApp pessoal.
+              Fale com o <strong>Rafael</strong> para liberar o crédito.
             </p>
           </AlertDescription>
         </Alert>
@@ -301,11 +346,17 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               <p>
                 Página: <strong>{status?.page_name || status?.page_id || "—"}</strong>
               </p>
-              <p>Regra: <strong>1 WhatsApp Business</strong> por conta · saldo com o Rafael para anunciar</p>
+              <p>
+                Seu celular no cadastro:{" "}
+                <strong>
+                  {status?.consultant_phone ? `+${status.consultant_phone}` : "—"}
+                </strong>
+              </p>
               {status?.mine?.phone_number_id && (
-                <p className="text-primary">
-                  Seu número: {status.mine.digits ? `+${status.mine.digits}` : "—"}
-                  {locked ? " · já cadastrado" : ""}
+                <p className={wrongLock ? "text-destructive" : "text-primary"}>
+                  Número no anúncio: {status.mine.digits ? `+${status.mine.digits}` : "—"}
+                  {lockedOk ? " · ok" : ""}
+                  {wrongLock ? " · não é o seu — cadastre o seu abaixo" : ""}
                 </p>
               )}
             </>
@@ -313,7 +364,18 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
           {status?.hint && <p className="text-muted-foreground">{status.hint}</p>}
         </div>
 
-        {step === "number" && canEdit && (
+        {wrongLock && step !== "sms" && (
+          <Alert className="border-destructive/40 bg-destructive/5">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTitle className="text-sm">Número da plataforma / outro consultor</AlertTitle>
+            <AlertDescription className="text-xs">
+              Foi vinculado o +{status?.mine?.digits}, que não é o do seu cadastro. Digite o{" "}
+              <strong>seu</strong> WhatsApp Business e envie o SMS.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {showNumberForm && (
           <div className="space-y-3">
             <label className="flex items-start gap-2 text-xs cursor-pointer">
               <input
@@ -331,17 +393,23 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
                 checked={ackOnce}
                 onChange={(e) => setAckOnce(e.target.checked)}
               />
-              <span>Entendo que só posso conectar 1 número e que preciso de saldo (falar com o Rafael) para anunciar.</span>
+              <span>
+                Entendo que só posso conectar 1 número (o meu) e que preciso de saldo (falar com o
+                Rafael) para anunciar.
+              </span>
             </label>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px]">Número (55 + DDD + celular)</Label>
+              <Label className="text-[11px]">Seu número (55 + DDD + celular)</Label>
               <Input
                 placeholder="5534984314317"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 inputMode="tel"
               />
+              <p className="text-[11px] text-muted-foreground">
+                Prefira o mesmo número do app WhatsApp Business que você usa com o bot.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label className="text-[11px]">Nome exibido no WhatsApp</Label>
@@ -352,9 +420,9 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               />
             </div>
 
-            {(status?.numbers?.length || 0) > 0 && (
+            {status?.is_super_admin && (status?.numbers?.length || 0) > 0 && (
               <div className="space-y-1.5">
-                <Label className="text-[11px]">Já na WABA — usar este</Label>
+                <Label className="text-[11px]">SuperAdmin — já cadastrado na Meta</Label>
                 <div className="flex flex-wrap gap-1.5">
                   {status!.numbers!.map((n) => (
                     <Button
@@ -373,12 +441,6 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               </div>
             )}
           </div>
-        )}
-
-        {step === "number" && !canEdit && (
-          <p className="text-sm text-muted-foreground">
-            Seu número CTWA já está cadastrado. Peça ao SuperAdmin se precisar trocar.
-          </p>
         )}
 
         {step === "sms" && (
@@ -410,7 +472,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
           </div>
         )}
 
-        {step === "done" && (
+        {step === "done" && !forceOwnNumber && (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2">
             <div className="flex items-center gap-2 text-primary font-medium">
               <CheckCircle2 className="w-4 h-4" />
@@ -425,11 +487,25 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
                 PIN 2 etapas (guarde): <strong className="text-foreground">{twoStepPin}</strong>
               </p>
             )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="mt-2"
+              onClick={() => {
+                setForceOwnNumber(true);
+                setStep("number");
+                const own = (status?.consultant_phone || "").replace(/\D/g, "");
+                if (own) setPhone(own);
+              }}
+            >
+              Cadastrar meu número (SMS)
+            </Button>
           </div>
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          {step === "number" && canEdit && (
+          {showNumberForm && (
             <>
               <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
                 Fechar
@@ -443,9 +519,6 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               </Button>
             </>
           )}
-          {step === "number" && !canEdit && (
-            <Button onClick={() => onOpenChange(false)}>Fechar</Button>
-          )}
           {step === "sms" && (
             <>
               <Button variant="outline" onClick={() => setStep("number")} disabled={loading}>
@@ -457,7 +530,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               </Button>
             </>
           )}
-          {step === "done" && (
+          {step === "done" && !forceOwnNumber && (
             <Button onClick={() => onOpenChange(false)}>Concluir</Button>
           )}
         </DialogFooter>

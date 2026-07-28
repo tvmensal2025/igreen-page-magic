@@ -12,6 +12,7 @@
 //   await autoTakeoverByPhone(rawPhone, "humano_assumiu");
 
 import { supabase } from "@/integrations/supabase/client";
+import { pauseCadenceForHandoff } from "@/lib/handoffReturnToPizza";
 
 type Reason =
   | "humano_assumiu"
@@ -34,9 +35,11 @@ async function applyPause(customerId: string, reason: Reason) {
     bot_paused_at: new Date().toISOString(),
     bot_paused_until: pausedUntil,
     assigned_human_id: uid,
+    // Corta reply atrasado do bot-flow que ainda está processando.
+    bot_processing_until: null,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await supabase.from("customers").update(patch).eq("id", customerId);
+  const { error } = await supabase.from("customers").update(patch as never).eq("id", customerId);
   if (error) {
     console.warn("[auto-takeover] update RLS falhou — tentando edge:", error.message);
     const { error: invErr } = await supabase.functions.invoke("customer-takeover", {
@@ -47,6 +50,8 @@ async function applyPause(customerId: string, reason: Reason) {
       return false;
     }
   }
+  // Entra no painel do dashboard (voltar / esquecer / bloquear).
+  await pauseCadenceForHandoff(customerId);
   return true;
 }
 
@@ -70,7 +75,11 @@ export async function takeoverByCustomerIdDetailed(
       .eq("id", customerId)
       .maybeSingle();
     if (!cust) return "fail";
-    if (cust.bot_paused && cust.assigned_human_id) return "already";
+    // Já pausado com humano: só reforça timestamp/processing (sem toast "novo").
+    if (cust.bot_paused && cust.assigned_human_id) {
+      await applyPause(customerId, reason);
+      return "already";
+    }
     const ok = await applyPause(customerId, reason);
     return ok ? "new" : "fail";
   } catch (e) {
@@ -105,7 +114,10 @@ export async function takeoverByPhoneDetailed(
       console.warn(`[auto-takeover] nenhum customer encontrado para ${phoneDigits}`);
       return "fail";
     }
-    if (cust.bot_paused && cust.assigned_human_id) return "already";
+    if (cust.bot_paused && cust.assigned_human_id) {
+      await applyPause(cust.id, reason);
+      return "already";
+    }
     const ok = await applyPause(cust.id, reason);
     return ok ? "new" : "fail";
   } catch (e) {
@@ -147,6 +159,16 @@ export async function undoTakeoverByPhone(rawPhone: string): Promise<boolean> {
       });
       if (invErr) return false;
     }
+    // Tira do painel de handoff se estava lá.
+    await supabase
+      .from("lead_cadence_state")
+      .update({
+        paused_reason: null,
+        paused_until: null,
+        next_action_at: new Date().toISOString(),
+      } as never)
+      .eq("customer_id", cust.id)
+      .eq("paused_reason", "handoff_humano");
     return true;
   } catch {
     return false;

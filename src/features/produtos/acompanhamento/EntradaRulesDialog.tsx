@@ -5,6 +5,8 @@
 // validadas → X% de entrada (parcela agora + parcela depois)". Também escolhe
 // se a contagem das faixas é SOMADA (todas as distribuidoras) ou INDIVIDUAL.
 // As regras são recorrentes: valem até o consultor editar.
+//
+// Tabela oficial Jul/2026: `oficialEntradaTabela.ts` + botão “Aplicar tabela”.
 // =============================================================================
 
 import { useMemo, useState } from "react";
@@ -18,14 +20,27 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, SlidersHorizontal, Layers, Building2 } from "lucide-react";
+import { Plus, Trash2, SlidersHorizontal, Layers, Building2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { DISTRIBUIDORAS_POR_UF } from "@/lib/captacao/distribuidoras";
-import { useEntradaRules, useSaveCountMode, useUpsertEntradaRule, useDeleteEntradaRule, useGreenSettings } from "./greenHooks";
+import {
+  ENTRADA_BONUS_TIER_META,
+} from "@/data/entradaBonusTiers";
+import {
+  OFICIAL_ENTRADA_ALTO,
+  OFICIAL_ENTRADA_MEDIO,
+} from "@/data/oficialEntradaTabela";
+import {
+  useEntradaRules,
+  useSaveCountMode,
+  useUpsertEntradaRule,
+  useDeleteEntradaRule,
+  useGreenSettings,
+  useSeedOfficialEntradaRules,
+} from "./greenHooks";
 import type { CountMode } from "./greenCommission";
 import type { EntradaRuleRow } from "./greenData";
 
-// Lista única e ordenada de distribuidoras conhecidas (allow-list).
 const ALL_DISTRIBUIDORAS: string[] = Array.from(
   new Set(Object.values(DISTRIBUIDORAS_POR_UF).flat()),
 ).sort((a, b) => a.localeCompare(b));
@@ -42,8 +57,8 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
   const saveMode = useSaveCountMode(consultantId);
   const upsert = useUpsertEntradaRule(consultantId);
   const remove = useDeleteEntradaRule(consultantId);
+  const seedOfficial = useSeedOfficialEntradaRules(consultantId);
 
-  // Formulário de nova faixa
   const [distribuidora, setDistribuidora] = useState<string>("");
   const [minPessoas, setMinPessoas] = useState<string>("");
   const [pctImediato, setPctImediato] = useState<string>("");
@@ -55,11 +70,11 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
   const grouped = useMemo(() => {
     const map = new Map<string, EntradaRuleRow[]>();
     for (const r of rules) {
-      const list = map.get(r.distribuidora) ?? [];
+      const list = map.get(r.distribuidora) || [];
       list.push(r);
       map.set(r.distribuidora, list);
     }
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [rules]);
 
   function resetForm() {
@@ -71,12 +86,11 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
   }
 
   async function handleAdd() {
+    if (!distribuidora) { toast.error("Escolha a distribuidora."); return; }
     const min = parseInt(minPessoas, 10);
     const imediato = parseFloat(pctImediato.replace(",", "."));
     const diferido = parseFloat(pctDiferido.replace(",", "."));
     const dias = parseInt(diasDiferido, 10);
-
-    if (!distribuidora) { toast.error("Escolha a distribuidora."); return; }
     if (!Number.isFinite(min) || min < 0) { toast.error("Informe a quantidade de pessoas (a partir de)."); return; }
     if (!Number.isFinite(imediato) || imediato < 0) { toast.error("Informe a % imediata."); return; }
     if (!Number.isFinite(diferido) || diferido < 0) { toast.error("Informe a % diferida."); return; }
@@ -114,6 +128,15 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
     }
   }
 
+  async function handleSeedOfficial() {
+    try {
+      const n = await seedOfficial.mutateAsync();
+      toast.success(`Tabela oficial aplicada (${n} faixas). Você pode editar qualquer uma.`);
+    } catch (e: any) {
+      toast.error("Erro ao aplicar tabela: " + (e?.message || String(e)));
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -128,15 +151,61 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Building2 className="w-5 h-5 text-primary" />
-            Regras de entrada por distribuidora
+            Bônus de entrada · cidades e faixas
           </DialogTitle>
           <DialogDescription>
-            Defina, para cada distribuidora, a partir de quantas pessoas validadas você ganha cada %.
-            A entrada é paga uma vez (parcela agora + parcela depois). As regras valem até você alterar.
+            Tabela oficial Conexão Green (Jul/2026). Aplique no seu painel e edite por distribuidora.
+            Entrada = % da fatura (agora + na injeção).
           </DialogDescription>
         </DialogHeader>
 
-        {/* Modo de contagem: somado vs individual */}
+        {/* Tabela oficial (referência + seed) */}
+        <div className="rounded-xl border border-primary/25 bg-primary/5 p-3 space-y-3">
+          <div className="flex items-start justify-between gap-2 flex-wrap">
+            <div>
+              <p className="text-xs font-semibold text-foreground">Tabela oficial · Julho 2026</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Validada contra a arte comercial. Clique em aplicar para gravar nas suas regras.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="default"
+              className="gap-1.5 shrink-0"
+              onClick={handleSeedOfficial}
+              disabled={seedOfficial.isPending}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {seedOfficial.isPending ? "Aplicando…" : "Aplicar tabela oficial"}
+            </Button>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border/60 bg-card/60 p-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-foreground">{ENTRADA_BONUS_TIER_META.alto.title}</p>
+              <ul className="text-[10px] text-muted-foreground space-y-0.5 list-disc pl-3.5">
+                {ENTRADA_BONUS_TIER_META.alto.faixas.map((f) => (
+                  <li key={f.label}>{f.label}</li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                {OFICIAL_ENTRADA_ALTO.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ")}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-card/60 p-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-foreground">{ENTRADA_BONUS_TIER_META.medio.title}</p>
+              <ul className="text-[10px] text-muted-foreground space-y-0.5 list-disc pl-3.5">
+                {ENTRADA_BONUS_TIER_META.medio.faixas.map((f) => (
+                  <li key={f.label}>{f.label}</li>
+                ))}
+              </ul>
+              <p className="text-[10px] text-muted-foreground pt-1 border-t border-border/40">
+                {OFICIAL_ENTRADA_MEDIO.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ")}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="rounded-xl border border-border/60 p-3 space-y-2">
           <Label className="text-xs text-muted-foreground">Como contar as pessoas para destravar a faixa</Label>
           <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
@@ -166,11 +235,11 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
           </p>
         </div>
 
-        {/* Lista de faixas por distribuidora */}
         <div className="space-y-3">
+          <p className="text-xs font-semibold text-foreground">Suas faixas (editáveis)</p>
           {grouped.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-4">
-              Nenhuma faixa cadastrada ainda. Adicione abaixo.
+              Nenhuma faixa ainda. Aplique a tabela oficial ou adicione abaixo.
             </p>
           ) : (
             grouped.map(([dist, list]) => (
@@ -206,10 +275,9 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
           )}
         </div>
 
-        {/* Formulário de nova faixa */}
         <div className="rounded-xl border border-dashed border-border p-3 space-y-3">
           <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Adicionar faixa
+            <Plus className="w-3.5 h-3.5" /> Adicionar / ajustar faixa
           </div>
           <div className="space-y-1.5">
             <Label className="text-[11px] text-muted-foreground">Distribuidora</Label>
@@ -247,7 +315,7 @@ export function EntradaRulesDialog({ consultantId, trigger }: Props) {
               </span>
             </p>
             <Button size="sm" onClick={handleAdd} disabled={upsert.isPending} className="gap-1.5">
-              <Plus className="w-3.5 h-3.5" /> {upsert.isPending ? "Salvando…" : "Adicionar"}
+              <Plus className="w-3.5 h-3.5" /> {upsert.isPending ? "Salvando…" : "Salvar faixa"}
             </Button>
           </div>
         </div>

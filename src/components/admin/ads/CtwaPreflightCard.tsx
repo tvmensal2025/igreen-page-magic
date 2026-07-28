@@ -69,7 +69,7 @@ export function CtwaPreflightCard({ consultantId, onReadyChange, compact }: Prop
             <AlertTriangle className="w-5 h-5 text-warning" />
           )}
           <div className="font-bold text-sm">
-            {ready ? "Tudo pronto pra anunciar" : "Pré-checagem CTWA"}
+            {ready ? "Tudo pronto pra anunciar" : "Antes de anunciar"}
           </div>
         </div>
         <Button size="sm" variant="ghost" onClick={refresh} disabled={loading} className="h-7 gap-1">

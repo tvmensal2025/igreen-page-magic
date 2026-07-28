@@ -213,7 +213,7 @@ export function usePublish({ consultantId, consultantPhone, isSuperAdmin, state,
       toast({
         title: isWaba ? "WhatsApp Business não validado na Meta" : "Falha ao criar campanha",
         description: isWaba
-          ? `${msg}\n\nVá em Admin → Dados → WhatsApp dos anúncios Meta e clique em “Validar e corrigir automático”.${nextSteps.length ? `\n\n${nextSteps.join("\n")}` : ""}`
+          ? `${msg}\n\nVá em Central de anúncios → WhatsApp dos anúncios (CTWA) e cadastre/gerencie o número Business (SMS).${nextSteps.length ? `\n\n${nextSteps.join("\n")}` : ""}`
           : msg,
         variant: "destructive",
       });

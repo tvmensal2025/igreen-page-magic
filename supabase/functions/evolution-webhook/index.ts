@@ -51,7 +51,7 @@ import {
 import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts";
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
-import { isConsultantAIDisabled, isCustomerPausedByHuman } from "../_shared/bot/paused.ts";
+import { isConsultantAIDisabled, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
@@ -401,7 +401,18 @@ Deno.serve(async (req) => {
     // estourado, sender.sendX() retorna `false` SEM enviar — handlers que já
     // checam o retorno (`if (await sender.sendText(...))`) não avançam step.
     const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
-    const sender = wrapSenderWithGuard(rawSender, { supabase, instanceName });
+    const antiBanSender = wrapSenderWithGuard(rawSender, { supabase, instanceName });
+    // Corta reply atrasado se o consultor mandou msg no meio do turno.
+    const pauseGuardCtx: { phone: string | null; customerId: string | null } = {
+      phone: null,
+      customerId: null,
+    };
+    const sender = wrapSenderWithLivePauseGuard(antiBanSender as any, {
+      supabase: supabase as any,
+      consultantId: instanceData.consultant_id,
+      getPhone: () => pauseGuardCtx.phone,
+      getCustomerId: () => pauseGuardCtx.customerId,
+    });
 
     // Phase A — Task 8 (whatsapp-flow-architecture-v3): instancia o adapter
     // em paralelo SEM trocar o sender legado. Apenas confirma que `getAdapter`
@@ -521,10 +532,32 @@ Deno.serve(async (req) => {
               bot_paused_at: new Date().toISOString(),
               bot_paused_until: null,
               assigned_human_id: cust.consultant_id ?? cust.assigned_human_id ?? null,
+              bot_processing_until: null,
               updated_at: new Date().toISOString(),
             })
             .eq("id", cust.id);
           console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
+          await supabase
+            .from("lead_cadence_state")
+            .update({
+              paused_reason: "handoff_humano",
+              next_action_at: null,
+            })
+            .eq("customer_id", cust.id)
+            .neq("stage", "WON");
+        } else if (cust?.bot_paused && cust.assigned_human_id) {
+          await supabase
+            .from("customers")
+            .update({ bot_processing_until: null, bot_paused_at: new Date().toISOString() })
+            .eq("id", cust.id);
+          await supabase
+            .from("lead_cadence_state")
+            .update({
+              paused_reason: "handoff_humano",
+              next_action_at: null,
+            })
+            .eq("customer_id", cust.id)
+            .neq("stage", "WON");
         }
 
         if (cust?.id && (outText || outType !== "text")) {
@@ -612,6 +645,7 @@ Deno.serve(async (req) => {
     }
 
     const phone = normalizePhone(remoteJid.replace("@s.whatsapp.net", ""));
+    pauseGuardCtx.phone = phone;
 
     // ─── Rate limit (legacy in-memory + v2 persistent RPC, gated by flag) ──
     // Legacy: per-instance Map → known to leak at multi-container scale (2.33).
@@ -798,6 +832,15 @@ Deno.serve(async (req) => {
     }
 
     // ─── 5) Find or create customer ────────────────────────────────────
+    // Prioriza carteira (igreen_sync) mesmo com phone sufixado no sync.
+    // Sem isso, lead sombra no número limpo recebe Grupo A.
+    const { findCustomerForInboundPhone } = await import("../_shared/inbound-customer-resolve.ts");
+    let customer = await findCustomerForInboundPhone(
+      supabase,
+      instanceData.consultant_id,
+      phone,
+    );
+
     const statusFinalizados = [
       'data_complete', 'portal_submitting', 'awaiting_otp', 'validating_otp',
       'awaiting_manual_submit', 'portal_submitted', 'registered_igreen',
@@ -805,16 +848,18 @@ Deno.serve(async (req) => {
     ];
     const stepsFinalizados = ['complete', 'portal_submitting'];
 
-    let { data: activeRecords } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("phone_whatsapp", phone)
-      .eq("consultant_id", instanceData.consultant_id)
-      .not("status", "in", `(${statusFinalizados.join(",")})`)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    let customer = activeRecords?.[0] || null;
+    // Fallback legado: se helper não achou, tenta exact sem status finalizado.
+    if (!customer) {
+      const { data: activeRecords } = await supabase
+        .from("customers")
+        .select("*")
+        .eq("phone_whatsapp", phone)
+        .eq("consultant_id", instanceData.consultant_id)
+        .not("status", "in", `(${statusFinalizados.join(",")})`)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      customer = activeRecords?.[0] || null;
+    }
 
     // ── Status que devem ser resetados quando o cliente volta a interagir ──
     // abandoned/stuck_*: cliente sumiu mas voltou; retomar de onde parou (não resetar step)
@@ -927,6 +972,8 @@ Deno.serve(async (req) => {
         console.warn("[notify-new-lead reentry] check falhou:", (e as Error).message);
       }
     }
+
+    if (customer?.id) pauseGuardCtx.customerId = customer.id;
 
     // ─── 5.4) Reconciliação de sinal forte do Meta em mensagem subsequente ─
     // Se uma mensagem POSTERIOR trouxer ad_id/ctwa_clid apontando para uma

@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
 
     const { data: consultant } = await supabase
       .from("consultants")
-      .select("name, display_name")
+      .select("name, display_name, gender")
       .eq("id", ownerConsultantId)
       .maybeSingle();
     const consultantName = resolvePublicConsultantLabel(
@@ -153,13 +153,21 @@ Deno.serve(async (req) => {
       (consultant as { display_name?: string } | null)?.display_name,
       "seu consultor",
     );
+    const consultorGender =
+      String((consultant as { gender?: string } | null)?.gender || "").trim() === "consultora"
+        ? "consultora"
+        : "consultor";
 
     // Resolve template do DONO (nunca de outro consultor logado).
+    // protocolo fica como placeholder literal — sendWelcomeHeader substitui
+    // depois do assignProtocol. Se passar "" aqui, applyVars apaga {{protocolo}}
+    // e o lead recebe só "Seu protocolo de atendimento é **." (bug prod).
     const tpl = await resolveConsultantMessage(supabase, ownerConsultantId, "start_attendance", {
       saudacao: greetingByHour(),
       consultor: consultantName,
+      o_a_consultor: consultorGender === "consultora" ? "a" : "o",
       nome: (customer as { name?: string }).name || "",
-      protocolo: "", // será preenchido pela sendWelcomeHeader após assignProtocol
+      protocolo: "{{protocolo}}",
     }, "");
 
     const channelEnv = await loadChannelEnv(supabase);

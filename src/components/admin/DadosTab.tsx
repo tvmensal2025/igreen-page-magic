@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Camera, CheckCircle2, ExternalLink, Settings, Globe, Save, Bot, Loader2, GraduationCap, Wand2 } from "lucide-react";
+import { Camera, Settings, Globe, Save, Bot, Loader2, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { autoFixWhatsApp, startFacebookOAuth, type AutoFixWhatsAppResult } from "@/services/facebookAds";
 import {
   GRADUACAO_OPTIONS,
   graduacaoDisplay,
@@ -54,37 +53,10 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
   const { data: greenSettings } = useGreenSettings(userId);
   const saveGreenProfile = useSaveGreenProfile(userId);
   const [graduacao, setGraduacao] = useState<string>("licenciado");
-  const [cadastroIdsText, setCadastroIdsText] = useState<string>("");
-  const [cadastroIdsSaving, setCadastroIdsSaving] = useState<boolean>(false);
-  const [ctwaNumber, setCtwaNumber] = useState<string>("");
-  const [ctwaPhoneId, setCtwaPhoneId] = useState<string>("");
-  const [ctwaSaving, setCtwaSaving] = useState<boolean>(false);
-  const [ctwaAutoFixing, setCtwaAutoFixing] = useState<boolean>(false);
-  const [ctwaReconnecting, setCtwaReconnecting] = useState<boolean>(false);
-  const [ctwaAutoFixResult, setCtwaAutoFixResult] = useState<AutoFixWhatsAppResult | null>(null);
 
   useEffect(() => {
     if (greenSettings?.graduacao) setGraduacao(greenSettings.graduacao);
-    if (greenSettings?.cadastroIgreenIds?.length) {
-      setCadastroIdsText(greenSettings.cadastroIgreenIds.join(", "));
-    }
-  }, [greenSettings?.graduacao, greenSettings?.cadastroIgreenIds]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!userId) return;
-      const { data } = await supabase
-        .from("consultant_ad_settings")
-        .select("whatsapp_destination_number, whatsapp_phone_number_id")
-        .eq("consultant_id", userId)
-        .maybeSingle();
-      if (cancelled) return;
-      setCtwaNumber(String((data as any)?.whatsapp_destination_number || form.phone || ""));
-      setCtwaPhoneId(String((data as any)?.whatsapp_phone_number_id || ""));
-    })();
-    return () => { cancelled = true; };
-  }, [userId, form.phone]);
+  }, [greenSettings?.graduacao]);
 
   const gradInfo = graduacaoDisplay(graduacao);
   const bonusPct = careerBonusPercent(graduacao);
@@ -98,7 +70,8 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
     if (!userId) return;
     setGraduacao(value);
     try {
-      await saveGreenProfile.mutateAsync({ graduacao: value });
+      // Zera códigos CP extras legados — CP oficial = só igreen_id do perfil.
+      await saveGreenProfile.mutateAsync({ graduacao: value, cadastroIgreenIds: [] });
       const info = graduacaoDisplay(value);
       toast({
         title: "✅ Graduação salva",
@@ -108,98 +81,6 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       toast({ title: "Erro ao salvar graduação", description: msg, variant: "destructive" });
-    }
-  };
-
-  const saveCadastroIds = async () => {
-    if (!userId) return;
-    setCadastroIdsSaving(true);
-    const ids = cadastroIdsText
-      .split(/[,;\s]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    try {
-      await saveGreenProfile.mutateAsync({ cadastroIgreenIds: ids });
-      toast({
-        title: "✅ Códigos de cadastro salvos",
-        description: ids.length ? `${ids.length} ID(s) extras para contagem CP.` : "Nenhum ID extra.",
-        duration: 1800,
-      });
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      toast({ title: "Erro ao salvar códigos", description: msg, variant: "destructive" });
-    } finally {
-      setCadastroIdsSaving(false);
-    }
-  };
-
-  const saveCtwaSettings = async () => {
-    if (!userId) return;
-    const number = ctwaNumber.replace(/\D/g, "");
-    const phoneId = ctwaPhoneId.replace(/\D/g, "");
-    if (number.length < 12 || number.length > 13) {
-      toast({ title: "WhatsApp CTWA inválido", description: "Use 55 + DDD + número, só dígitos.", variant: "destructive" });
-      return;
-    }
-    if (!phoneId) {
-      toast({ title: "phone_number_id obrigatório", description: "Cole o ID numérico real do WhatsApp Manager. Não usamos mais fallback saved:*.", variant: "destructive" });
-      return;
-    }
-    setCtwaSaving(true);
-    try {
-      const { error } = await supabase.from("consultant_ad_settings").upsert(
-        {
-          consultant_id: userId,
-          whatsapp_destination_number: number,
-          whatsapp_phone_number_id: phoneId,
-          whatsapp_last_verified_at: null,
-          updated_at: new Date().toISOString(),
-        } as any,
-        { onConflict: "consultant_id" },
-      );
-      if (error) throw error;
-      setCtwaNumber(number);
-      setCtwaPhoneId(phoneId);
-      toast({ title: "WhatsApp dos anúncios salvo", description: "Clique em Reverificar na Central de Anúncios antes de publicar.", duration: 2200 });
-    } catch (e: any) {
-      toast({ title: "Erro ao salvar WhatsApp CTWA", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setCtwaSaving(false);
-    }
-  };
-
-  const runCtwaAutoFix = async () => {
-    setCtwaAutoFixing(true);
-    setCtwaAutoFixResult(null);
-    try {
-      const result = await autoFixWhatsApp();
-      setCtwaAutoFixResult(result);
-      const realPhoneId = result.chosen && /^\d+$/.test(result.chosen.id || "");
-      if (result.chosen) {
-        setCtwaNumber(result.chosen.digits || "");
-        if (realPhoneId) setCtwaPhoneId(result.chosen.id || "");
-      }
-      toast({
-        title: result.ok && realPhoneId ? "WhatsApp validado automaticamente" : "Meta ainda bloqueou o WhatsApp",
-        description: result.message || result.error || result.hint || "Validação concluída.",
-        variant: result.ok && realPhoneId ? "default" : "destructive",
-        duration: result.ok && realPhoneId ? 2600 : 7000,
-      });
-    } catch (e: any) {
-      toast({ title: "Erro na validação automática", description: e?.message || String(e), variant: "destructive" });
-    } finally {
-      setCtwaAutoFixing(false);
-    }
-  };
-
-  const reconnectPlatformFacebook = async () => {
-    setCtwaReconnecting(true);
-    try {
-      const result = await startFacebookOAuth({ mode: "rerequest", scope: "platform" });
-      window.location.href = result.url;
-    } catch (e: any) {
-      toast({ title: "Erro ao reconectar Meta", description: e?.message || String(e), variant: "destructive" });
-      setCtwaReconnecting(false);
     }
   };
 
@@ -446,120 +327,6 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         </div>
       </div>
 
-      <div className="bg-card rounded-2xl border border-border p-6">
-        <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
-          <Globe className="w-5 h-5 text-primary" /> WhatsApp dos anúncios Meta
-        </h3>
-        <p className="text-xs text-muted-foreground mb-4">
-          Número Business e phone_number_id real usados em campanhas Click-to-WhatsApp.
-        </p>
-        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-4 space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
-                <Wand2 className="w-4 h-4 text-primary" /> Correção automática Meta
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Busca WABAs e telefones na Meta, salva o phone_number_id correto e testa se a Página aceita o número.
-              </p>
-            </div>
-            <Button type="button" size="sm" onClick={runCtwaAutoFix} disabled={ctwaAutoFixing} className="shrink-0 gap-2">
-              {ctwaAutoFixing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
-              Validar e corrigir automático
-            </Button>
-          </div>
-
-          {ctwaAutoFixResult && (
-            <div className={`rounded-lg border p-3 text-sm ${ctwaAutoFixResult.ok ? "border-success/30 bg-success/10" : "border-destructive/30 bg-destructive/10"}`}>
-              <p className="font-semibold text-foreground flex items-center gap-2">
-                {ctwaAutoFixResult.ok && /^[0-9]+$/.test(ctwaAutoFixResult.chosen?.id || "") ? <CheckCircle2 className="w-4 h-4 text-success" /> : <AlertTriangle className="w-4 h-4 text-destructive" />}
-                {ctwaAutoFixResult.ok && /^[0-9]+$/.test(ctwaAutoFixResult.chosen?.id || "") ? "Pronto para publicar" : "Ação pendente na Meta"}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {ctwaAutoFixResult.message || ctwaAutoFixResult.error || ctwaAutoFixResult.hint || "Resultado recebido."}
-              </p>
-              {ctwaAutoFixResult.chosen && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Número usado: {ctwaAutoFixResult.chosen.display}
-                  {/^[0-9]+$/.test(ctwaAutoFixResult.chosen.id || "") ? ` · ID ${ctwaAutoFixResult.chosen.id}` : " · ID não exposto pela permissão atual"}
-                </p>
-              )}
-              {ctwaAutoFixResult.page_id && (
-                <p className="text-xs text-muted-foreground mt-1">Página: {ctwaAutoFixResult.page_id}{ctwaAutoFixResult.waba_id ? ` · WABA: ${ctwaAutoFixResult.waba_id}` : ""}</p>
-              )}
-              {!!ctwaAutoFixResult.numbers?.length && (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Telefones encontrados:</span> {ctwaAutoFixResult.numbers.map((n) => `${n.display} (${n.id})`).join(", ")}
-                </div>
-              )}
-              {ctwaAutoFixResult.meta_message && (
-                <p className="text-xs text-muted-foreground mt-2">Detalhe Meta: {ctwaAutoFixResult.meta_message}</p>
-              )}
-              {!!ctwaAutoFixResult.next_steps?.length && (
-                <ul className="list-disc pl-5 mt-2 space-y-1 text-xs text-muted-foreground">
-                  {ctwaAutoFixResult.next_steps.map((step) => <li key={step}>{step}</li>)}
-                </ul>
-              )}
-              {!!ctwaAutoFixResult.missing_permissions?.length && (
-                <Button type="button" size="sm" onClick={reconnectPlatformFacebook} disabled={ctwaReconnecting} className="mt-3 gap-2">
-                  {ctwaReconnecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-                  Reconectar Meta com permissão WhatsApp
-                </Button>
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
-              <a href="https://business.facebook.com/wa/manage/phone-numbers/" target="_blank" rel="noreferrer">
-                WhatsApp Manager <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </Button>
-            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
-              <a href="https://business.facebook.com/settings/whatsapp-business-accounts" target="_blank" rel="noreferrer">
-                Contas WhatsApp Business <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </Button>
-            <Button type="button" variant="outline" size="sm" className="gap-2" asChild>
-              <a href="https://business.facebook.com/settings/pages" target="_blank" rel="noreferrer">
-                Configurações da Página <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label htmlFor="ctwa_number" className="text-sm text-muted-foreground">Número WhatsApp Business</Label>
-            <Input
-              id="ctwa_number"
-              value={ctwaNumber}
-              onChange={(e) => setCtwaNumber(e.target.value.replace(/\D/g, "").slice(0, 13))}
-              placeholder="5534984314317"
-              inputMode="numeric"
-              className="bg-secondary border-border"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ctwa_phone_id" className="text-sm text-muted-foreground">phone_number_id da Meta</Label>
-            <Input
-              id="ctwa_phone_id"
-              value={ctwaPhoneId}
-              onChange={(e) => setCtwaPhoneId(e.target.value.replace(/\D/g, ""))}
-              placeholder="ID numérico do WhatsApp Manager"
-              inputMode="numeric"
-              className="bg-secondary border-border"
-            />
-          </div>
-        </div>
-        <p className="text-[11px] text-muted-foreground mt-3">
-          Copie em WhatsApp Manager → Phone numbers → selecione o número → ID. Sem esse ID real a Meta recusa com “phone number is not linked”.
-        </p>
-        <Button type="button" variant="outline" size="sm" onClick={saveCtwaSettings} disabled={ctwaSaving} className="mt-4 gap-2">
-          {ctwaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Salvar WhatsApp dos anúncios
-        </Button>
-      </div>
-
       {/* Sua IA — nome da persona usada em todo o sistema */}
       <div className="bg-card rounded-2xl border border-border p-6">
         <h3 className="font-heading font-bold text-foreground mb-1 flex items-center gap-2">
@@ -650,7 +417,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           <GraduationCap className="w-5 h-5 text-primary" /> Plano de Carreira
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Sua graduação na iGreen e códigos de cadastro CP. O bônus de carreira soma ao recorrente em todos os cálculos Green.
+          Sua graduação na iGreen. O bônus de carreira soma ao recorrente (CP/CI) nos cálculos Green. Cliente direto (CP) usa só o ID iGreen do seu perfil.
         </p>
 
         {/* Valor do bônus — sempre visível junto da graduação */}
@@ -683,35 +450,14 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               </SelectContent>
             </Select>
             <p className="text-[11px] text-muted-foreground">
-              {saveGreenProfile.isPending ? "Salvando…" : "Salvo automaticamente ao selecionar."}
+              {saveGreenProfile.isPending ? "Salvando…" : "Salvo automaticamente ao selecionar. Escala oficial Conexão Green."}
             </p>
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cadastro-ids" className="text-sm text-muted-foreground">
-              Códigos iGreen de cadastro (CP extras)
-            </Label>
-            <div className="flex gap-2">
-              <Input
-                id="cadastro-ids"
-                value={cadastroIdsText}
-                onChange={(e) => setCadastroIdsText(e.target.value)}
-                placeholder="Ex: 124170, 122160"
-                className="bg-secondary border-border"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={saveCadastroIds}
-                disabled={cadastroIdsSaving}
-                className="shrink-0"
-              >
-                {cadastroIdsSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              IDs além do seu perfil que contam como cliente direto. Use quando o sync traz código de cadastrador errado.
+          <div className="rounded-lg border border-border/60 bg-secondary/40 px-3 py-2">
+            <p className="text-xs text-muted-foreground">ID iGreen do perfil (único para CP)</p>
+            <p className="text-sm font-semibold text-foreground font-mono mt-0.5">
+              {form.igreen_id?.trim() || "— preencha o ID iGreen nos dados acima —"}
             </p>
           </div>
         </div>
@@ -722,7 +468,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         <h3 className="font-heading font-bold text-foreground mb-4 flex items-center gap-2">
           <Globe className="w-5 h-5 text-primary" /> Pixels de Rastreamento
         </h3>
-        <p className="text-xs text-muted-foreground mb-4">Cole seus IDs para rastrear conversões nas suas páginas</p>
+        <p className="text-xs text-muted-foreground mb-4">
+          Usados nas landings (normal e premium). O Pixel da plataforma continua ativo; o seu Pixel e o GA4 somam se preenchidos.
+        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
             <Label htmlFor="facebook_pixel_id" className="text-sm text-muted-foreground">Facebook Pixel ID</Label>

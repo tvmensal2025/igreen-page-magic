@@ -12,13 +12,14 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye, ClipboardCheck, Users,
+  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye, ClipboardCheck, Users, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import PendingApprovalDialog from "./PendingApprovalDialog";
+import PosVendaSendFailuresDialog from "./PosVendaSendFailuresDialog";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
 import PosVendaAutoConfigDialog from "./PosVendaAutoConfigDialog";
 import ClienteCanalNovidadesDialog from "./ClienteCanalNovidadesDialog";
@@ -125,6 +126,9 @@ export default function PosVendaKanban({
   const [viewCustomerId, setViewCustomerId] = useState<string | null>(null);
   // Sinal para abrir o diálogo de validação de clientes manualmente
   const [validateSignal, setValidateSignal] = useState(0);
+  // Sinal + contagem do modal de falhas de envio pós-venda
+  const [failuresSignal, setFailuresSignal] = useState(0);
+  const [failureCount, setFailureCount] = useState(0);
   /** Aprovação pendente de valor da conta (move manual para aprovado). */
   const [billPrompt, setBillPrompt] = useState<PosVendaCustomer | null>(null);
   // "mine" = registered_by_igreen_id = meu | "assigned" | "all" | <igreen_id específico>
@@ -413,6 +417,12 @@ export default function PosVendaKanban({
   return (
     <div className="space-y-4">
       <PendingApprovalDialog consultantId={consultantId} onResolved={load} openSignal={validateSignal} />
+      <PosVendaSendFailuresDialog
+        consultantId={consultantId}
+        onResolved={load}
+        openSignal={failuresSignal}
+        onCountChange={setFailureCount}
+      />
       <CustomerQuickViewDialog customerId={viewCustomerId} onClose={() => setViewCustomerId(null)} />
       <ApproveBillValueDialog
         customer={billPrompt}
@@ -492,6 +502,21 @@ export default function PosVendaKanban({
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span className="lg:hidden">Validar</span>
             <span className="hidden lg:inline">Validar novos clientes</span>
+          </Button>
+          <Button
+            size="sm"
+            variant={failureCount > 0 ? "destructive" : "outline"}
+            onClick={() => setFailuresSignal((n) => n + 1)}
+            className="gap-2 rounded-xl min-h-[44px] border-border/60"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="lg:hidden">Falhas</span>
+            <span className="hidden lg:inline">Falhas no envio</span>
+            {failureCount > 0 && (
+              <Badge variant="secondary" className="ml-0.5 h-5 min-w-5 px-1.5 text-[10px] font-bold bg-background/20 text-inherit border-0">
+                {failureCount}
+              </Badge>
+            )}
           </Button>
           <ClienteCanalNovidadesDialog consultantId={consultantId} />
           <PosVendaAutoConfigDialog consultantId={consultantId} />

@@ -46,7 +46,7 @@ const STATUS_OPTIONS: { value: string; label: string }[] = [
   { value: "lead", label: "Cliente interessado" },
   { value: "pending", label: "Pendente" },
   { value: "contato_incompleto", label: "Contato incompleto" },
-  { value: "awaiting_otp", label: "Aguardando OTP" },
+  { value: "awaiting_otp", label: "Aguardando código do celular" },
   { value: "awaiting_signature", label: "Aguardando assinatura" },
   { value: "approved", label: "✅ Aprovado" },
   { value: "devolutiva", label: "⚠️ Devolutiva" },

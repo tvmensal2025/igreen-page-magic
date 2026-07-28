@@ -281,6 +281,16 @@ export async function deleteEntradaRule(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Aplica a tabela oficial Jul/2026 (alto 60% / médio 40%) nas regras do consultor. */
+export async function seedOfficialEntradaRules(consultantId: string): Promise<number> {
+  const { buildOfficialEntradaSeedRows } = await import("@/data/oficialEntradaTabela");
+  const rows = buildOfficialEntradaSeedRows();
+  for (const row of rows) {
+    await upsertEntradaRule(consultantId, row);
+  }
+  return rows.length;
+}
+
 type RawCustomer = {
   id: string;
   name: string | null;

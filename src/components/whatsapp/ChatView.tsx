@@ -40,7 +40,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { createLogger } from "@/lib/logger";
-import { autoTakeoverByPhone, takeoverByPhoneDetailed, undoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
+import { takeoverByCustomerIdDetailed, takeoverByPhoneDetailed, undoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
 import { ToastAction } from "@/components/ui/toast";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -340,21 +340,31 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
   }, [consultantId]);
 
   // B10 — takeover com Desfazer (10s). Só notifica quando foi NOVO (não em mídias subsequentes).
-  const takeoverWithUndo = useCallback(async (phone: string, reason: "humano_assumiu_audio" | "humano_assumiu_midia" | "humano_assumiu") => {
-    const r = await takeoverByPhoneDetailed(phone, reason);
+  // Preferência: customerId (preciso) → telefone (fallback).
+  const takeoverWithUndo = useCallback(async (
+    phone: string,
+    reason: "humano_assumiu_audio" | "humano_assumiu_midia" | "humano_assumiu",
+  ) => {
+    const r = customerId
+      ? await takeoverByCustomerIdDetailed(customerId, reason)
+      : await takeoverByPhoneDetailed(phone, reason);
     if (r === "new") {
+      setBotPaused(true);
       toast({
         title: "🤖 Bot pausado — você assumiu",
         description: "A IA não vai responder neste cliente interessado enquanto você estiver na conversa.",
         action: (
           <ToastAction altText="Desfazer" onClick={async () => {
             const ok = await undoTakeoverByPhone(phone);
+            if (ok) setBotPaused(false);
             toast({ title: ok ? "Bot reativado" : "Não consegui reativar", variant: ok ? "default" : "destructive" });
           }}>Desfazer</ToastAction>
         ),
       });
+    } else if (r === "already") {
+      setBotPaused(true);
     }
-  }, [toast]);
+  }, [toast, customerId]);
 
 
 
@@ -854,7 +864,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             title="Remove da lista de Captação e vincula em Vendas/CRM/Comissão (o chat continua ativo)"
           >
             {closingCapture ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ClipboardCheck className="h-3.5 w-3.5" />}
-            <span className="text-[11px] font-semibold hidden md:inline">Encerrar captação</span>
+            <span className="text-[11px] font-semibold hidden md:inline">Encerrar cadastro</span>
             <span className="text-[11px] font-semibold md:hidden">Encerrar</span>
           </Button>
         )}
@@ -990,7 +1000,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                         onClick={() => setCloseCaptureOpen(true)}
                       >
                         <ClipboardCheck className="h-4 w-4 mr-2 text-emerald-700" />
-                        Encerrar captação
+                        Encerrar cadastro
                       </DropdownMenuItem>
                     )}
                   </>
@@ -1034,7 +1044,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                   disabled={resetting}
                   onClick={() => setResetDialogOpen(true)}
                 >
-                  <RotateCcw className="h-4 w-4 mr-2" /> Zerar conversa do bot
+                  <RotateCcw className="h-4 w-4 mr-2" /> Reiniciar conversa automática
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1269,7 +1279,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Zerar conversa deste cliente interessado?</AlertDialogTitle>
+              <AlertDialogTitle>Reiniciar conversa automática deste cliente?</AlertDialogTitle>
               <AlertDialogDescription>
                 Vai apagar o histórico de mensagens do bot, decisões da IA, áudios disparados e
                 resetar a etapa do funil. O cliente continua cadastrado, mas o bot vai começar do zero
@@ -1390,9 +1400,10 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
                 "Este contato ainda não expôs o telefone real (só ID criptografado). Peça uma mensagem do cliente ou cadastre o número manualmente para conseguir responder.",
               );
             }
-            // Regra absoluta: consultor mandou msg = IA desliga automaticamente.
+            // Regra absoluta: consultor mandou msg = IA pausa ANTES do envio
+            // (corta corrida com reply atrasado do bot-flow).
             const takeoverPhone = override || (await getResolvedPhone().catch(() => null));
-            if (takeoverPhone) void takeoverWithUndo(takeoverPhone, "humano_assumiu");
+            if (takeoverPhone) await takeoverWithUndo(takeoverPhone, "humano_assumiu");
             await sendMessage(text, override);
             scheduleScrollToBottom(true);
           } catch (err) {
@@ -1418,8 +1429,9 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         onSendAudio={async (base64) => {
           const phone = await getResolvedPhone();
           if (!phone) return;
-          void takeoverWithUndo(phone, "humano_assumiu_audio");
           try {
+            // Pausar antes do envio — evita bot falar por cima do áudio.
+            await takeoverWithUndo(phone, "humano_assumiu_audio");
             // useAudioRecorder já gera OGG/Opus real, formato aceito pelo WhatsApp/Whapi.
             const audioDataUrl = `data:audio/ogg;base64,${base64}`;
             const result = await sendWhatsAppMessage({
@@ -1440,8 +1452,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         onSendAudioUrl={async (audioUrl) => {
           const phone = await getResolvedPhone();
           if (!phone) return;
-          void takeoverWithUndo(phone, "humano_assumiu_audio");
           try {
+            await takeoverWithUndo(phone, "humano_assumiu_audio");
             const result = await sendWhatsAppMessage({
               instanceName, phone, mediaCategory: "audio", mediaUrl: audioUrl, isWhapi,
               customerId: customerId ?? undefined,
@@ -1460,8 +1472,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
         onSendMedia={async (mediaUrl, caption, mediaType) => {
           const phone = await getResolvedPhone();
           if (!phone) return;
-          void takeoverWithUndo(phone, "humano_assumiu_midia");
           try {
+            await takeoverWithUndo(phone, "humano_assumiu_midia");
             const category = mediaType as "image" | "video" | "document" | "sticker";
             const fileName = mediaType === "document"
               ? (mediaUrl.split("/").pop()?.split("?")[0] || "documento")
@@ -1567,4 +1579,6 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
 
   );
 }
+
+export default ChatView;
 

@@ -60,14 +60,14 @@ Deno.serve(async (req) => {
       // Pixel oficial da plataforma (igreen-oficial-remarketing).
       const pixelId = platform.pixel_id || FALLBACK_PIXEL_ID;
       pixel = platform.pixel_id
-        ? { status: "ok", label: "Pixel configurado", detail: `${platform.pixel_id}` }
-        : { status: "warn", label: "Pixel fallback", detail: pixelId, hint: "Rode Criar pixel igreen-oficial-remarketing no Super Admin." };
+        ? { status: "ok", label: "Rastreamento do Facebook ok", detail: `${platform.pixel_id}` }
+        : { status: "warn", label: "Rastreamento em modo reserva", detail: pixelId, hint: "Rode Criar pixel igreen-oficial-remarketing no Super Admin." };
     }
 
     const phone = settings?.whatsapp_destination_number || null;
     const whatsapp_number: Check = phone
-      ? { status: "ok", label: "WhatsApp do bot conectado", detail: phone }
-      : { status: "fail", label: "Número WhatsApp ausente", hint: "Conecte sua instância WhatsApp ou configure em Dados → WhatsApp." };
+      ? { status: "ok", label: "WhatsApp conectado", detail: phone }
+      : { status: "fail", label: "Número WhatsApp ausente", hint: "Cadastre o número em Central de anúncios → WhatsApp dos anúncios." };
 
     return jsonRes({ ok: true, facebook, pixel, whatsapp_number });
   } catch (e) {

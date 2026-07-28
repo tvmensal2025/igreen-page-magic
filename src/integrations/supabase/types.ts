@@ -142,6 +142,8 @@ export type Database = {
       ad_bonus_tiers: {
         Row: {
           created_at: string
+          distribuidoras: Json
+          faixas: Json
           label: string
           percent: number
           tier: string
@@ -150,6 +152,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          distribuidoras?: Json
+          faixas?: Json
           label: string
           percent?: number
           tier: string
@@ -158,6 +162,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          distribuidoras?: Json
+          faixas?: Json
           label?: string
           percent?: number
           tier?: string

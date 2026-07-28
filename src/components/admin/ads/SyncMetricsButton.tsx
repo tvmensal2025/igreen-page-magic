@@ -104,7 +104,7 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
         >
           {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           <span className="sm:hidden">{loading ? "…" : "Sync"}</span>
-          <span className="hidden sm:inline">{loading ? "Sincronizando..." : "Sincronizar agora"}</span>
+          <span className="hidden sm:inline">{loading ? "Atualizando..." : "Atualizar números"}</span>
         </Button>
         {result && !loading && (
           <Button size={size} variant="ghost" onClick={() => setReportOpen(true)} className="gap-1.5 text-xs">
@@ -191,7 +191,7 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
             <Button variant="outline" onClick={() => setReportOpen(false)}>Fechar</Button>
             <Button onClick={handleSync} disabled={loading}>
               {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <RefreshCw className="w-3.5 h-3.5 mr-1" />}
-              Sincronizar de novo
+              Atualizar de novo
             </Button>
           </DialogFooter>
         </DialogContent>

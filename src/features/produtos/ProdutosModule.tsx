@@ -30,7 +30,7 @@ interface ProdutosModuleProps {
 const TABS: { id: ProdutosTabId; label: string; shortLabel: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "acompanhamento", label: "Acompanhamento", shortLabel: "Acomp.", icon: LayoutDashboard },
   { id: "orcamentos", label: "Orçamentos", shortLabel: "Orçam.", icon: FileText },
-  { id: "pipeline", label: "Pipeline", shortLabel: "Pipe.", icon: KanbanSquare },
+  { id: "pipeline", label: "Vendas em andamento", shortLabel: "Vendas", icon: KanbanSquare },
   { id: "catalogo", label: "Catálogo", shortLabel: "Cat.", icon: PackageSearch },
 ];
 

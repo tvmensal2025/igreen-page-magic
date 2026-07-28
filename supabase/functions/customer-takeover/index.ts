@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
           bot_paused_at: new Date().toISOString(),
           bot_paused_until: null, // limpa timer pra não confundir crons
           assigned_human_id: userId,
+          bot_processing_until: null,
           updated_at: new Date().toISOString(),
         }
       : {
@@ -75,6 +76,28 @@ Deno.serve(async (req) => {
     if (error) {
       console.error("[customer-takeover] update falhou:", error);
       return json({ error: "update_failed", message: error.message, code: error.code, details: error.details }, 500);
+    }
+
+    // Painel do dashboard: takeover → handoff_humano na cadência.
+    if (body.paused) {
+      await supabase
+        .from("lead_cadence_state")
+        .update({
+          paused_reason: "handoff_humano",
+          next_action_at: null,
+        })
+        .eq("customer_id", body.customerId)
+        .neq("stage", "WON");
+    } else {
+      await supabase
+        .from("lead_cadence_state")
+        .update({
+          paused_reason: null,
+          paused_until: null,
+          next_action_at: new Date().toISOString(),
+        })
+        .eq("customer_id", body.customerId)
+        .eq("paused_reason", "handoff_humano");
     }
 
     // Phase B Task 14 (whatsapp-flow-architecture-v3): também escreve em

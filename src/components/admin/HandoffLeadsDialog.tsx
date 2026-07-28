@@ -84,7 +84,7 @@ export function HandoffLeadsDialog({
       setRows(list);
       setSelected(new Set());
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : "Erro ao carregar leads fora da pizza");
+      toast.error(e instanceof Error ? e.message : "Erro ao carregar atendimentos pausados");
     } finally {
       setLoading(false);
     }
@@ -123,13 +123,13 @@ export function HandoffLeadsDialog({
     const result = await returnHandoffsToPizza({ items, resolvedBy });
     setBusy(false);
     if (result.failed && !result.ok) {
-      toast.error(result.lastError || "Falha ao devolver à pizza");
+      toast.error(result.lastError || "Falha ao devolver ao acompanhamento");
       return;
     }
     if (result.failed) {
       toast.warning(`${result.ok} devolvido(s); ${result.failed} falhou(aram)`);
     } else {
-      toast.success(`${result.ok} lead(s) voltaram à pizza — motor retoma no próximo tick`);
+      toast.success(`${result.ok} contato(s) voltaram ao acompanhamento — o sistema retoma em breve`);
     }
     await reload();
     onChanged?.();
@@ -138,7 +138,7 @@ export function HandoffLeadsDialog({
   async function forgetSelected(ids: string[]) {
     if (!ids.length) return;
     const ok = window.confirm(
-      `Esquecer ${ids.length} lead(s)?\n\nEles saem do ciclo automático (como “já cliente”). Você ainda pode falar no WhatsApp à mão. Não é bloqueio.`,
+      `Esquecer acompanhamento de ${ids.length} lead(s)?\n\nEles saem do ciclo automático (como “já cliente”). Você ainda pode falar no WhatsApp à mão. Não é bloqueio.`,
     );
     if (!ok) return;
     setBusy(true);
@@ -173,7 +173,7 @@ export function HandoffLeadsDialog({
 
   async function blockContact(row: HandoffLead) {
     const ok = window.confirm(
-      `Bloquear ${row.displayName}?\n\nO lead sai do handoff e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para a pizza.`,
+      `Bloquear ${row.displayName}?\n\nO contato sai desta lista e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para o acompanhamento automático.`,
     );
     if (!ok) return;
     setBusy(true);
@@ -204,13 +204,13 @@ export function HandoffLeadsDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <HandHelping className="h-5 w-5 text-amber-600" />
-              Leads fora da pizza — escolha o que fazer
+              Atendimentos pausados — escolha o que fazer
             </DialogTitle>
             <DialogDescription>
-              Só handoff com telefone útil (sem celular / já bloqueados não entram). Clique no{" "}
-              <strong>nome</strong> para ver a conversa.{" "}
-              <strong>Voltar à pizza</strong> reativa o ciclo;{" "}
-              <strong>Esquecer</strong> tira do automático;{" "}
+              Todo contato em que a IA pausou (você assumiu ou pediu ajuda) entra aqui.
+              Clique no <strong>nome</strong> para ver a conversa.{" "}
+              <strong>Voltar ao acompanhamento</strong> reativa o ciclo;{" "}
+              <strong>Esquecer acompanhamento</strong> tira do automático (ex.: já é cliente);{" "}
               <strong>Bloquear</strong> encerra o contato.
             </DialogDescription>
           </DialogHeader>
@@ -237,7 +237,7 @@ export function HandoffLeadsDialog({
             </div>
           ) : filteredRows.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
-              {rows.length === 0 ? "Nenhum lead fora da pizza." : "Nenhum lead nesta categoria."}
+              {rows.length === 0 ? "Nenhum atendimento pausado aguardando." : "Nenhum contato nesta categoria."}
             </p>
           ) : (
             <Table>
@@ -295,7 +295,7 @@ export function HandoffLeadsDialog({
                       </TableCell>
                       <TableCell className="text-xs max-w-[200px]">
                         <Badge variant="secondary" className="mb-1 text-[10px]">
-                          Handoff
+                          Precisa de você
                         </Badge>
                         <div>
                           {formatHandoffReason(
@@ -304,7 +304,7 @@ export function HandoffLeadsDialog({
                         </div>
                         {row.botPaused && (
                           <Badge variant="outline" className="mt-1 text-[10px]">
-                            Bot pausado
+                            Automático pausado
                           </Badge>
                         )}
                       </TableCell>
@@ -332,10 +332,10 @@ export function HandoffLeadsDialog({
                             className="h-8 text-xs"
                             disabled={busy}
                             onClick={() => void returnSelected([row.cadenceId])}
-                            title="Devolve o lead à pizza A/B/C"
+                            title="Devolve o lead ao acompanhamento automático"
                           >
                             <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                            Voltar à pizza
+                            Voltar ao acompanhamento
                           </Button>
                           <Button
                             type="button"
@@ -344,10 +344,10 @@ export function HandoffLeadsDialog({
                             className="h-8 text-xs"
                             disabled={busy}
                             onClick={() => void forgetSelected([row.cadenceId])}
-                            title="Sai do ciclo automático — WhatsApp manual continua ok"
+                            title="Sai do ciclo automático — use se já é cliente. WhatsApp manual continua ok"
                           >
                             <UserMinus className="h-3.5 w-3.5 mr-1" />
-                            Esquecer
+                            Esquecer acompanhamento
                           </Button>
                           <Button
                             type="button"
@@ -356,7 +356,7 @@ export function HandoffLeadsDialog({
                             className="h-8 text-xs"
                             disabled={busy}
                             onClick={() => void blockContact(row)}
-                            title="Bloqueia contato e remove sem voltar para a pizza"
+                            title="Bloqueia contato e remove sem voltar ao acompanhamento automático"
                           >
                             <Ban className="h-3.5 w-3.5 mr-1" />
                             Bloquear
@@ -389,7 +389,7 @@ export function HandoffLeadsDialog({
                 ) : (
                   <UserMinus className="h-4 w-4 mr-1" />
                 )}
-                Esquecer selecionados
+                Esquecer acompanhamento
               </Button>
               <Button
                 type="button"
@@ -401,7 +401,7 @@ export function HandoffLeadsDialog({
                 ) : (
                   <RotateCcw className="h-4 w-4 mr-1" />
                 )}
-                Voltar selecionados à pizza
+                Voltar ao acompanhamento
               </Button>
             </div>
           </DialogFooter>
@@ -469,11 +469,12 @@ export function HandoffLeadsBanner({
         <HandHelping className="h-4 w-4 text-sky-700 shrink-0" />
         <div className="min-w-0 flex-1 text-sm">
           <span className="font-semibold text-sky-950 dark:text-sky-50">
-            {count} lead(s) em handoff — fora da pizza
+            {count} atendimento(s) pausado(s) — escolha o que fazer
           </span>
           <span className="block text-[11px] text-sky-900/80 dark:text-sky-100/80">
-            Clique no nome para ver a conversa. <strong>Voltar à pizza</strong>,{" "}
-            <strong>Esquecer</strong> ou <strong>Bloquear</strong>.
+            Clique no nome para ver a conversa.{" "}
+            <strong>Voltar ao acompanhamento</strong>,{" "}
+            <strong>Esquecer acompanhamento</strong> ou <strong>Bloquear</strong>.
           </span>
         </div>
         <Button type="button" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>
