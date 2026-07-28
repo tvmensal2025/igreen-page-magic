@@ -121,7 +121,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
         if (hits.length) localStorage.setItem(cacheKey(preset.id), JSON.stringify({ ts: Date.now(), cities: hits }));
       }
       if (!hits?.length) throw new Error("Não consegui carregar as cidades");
-      if (!selectedCity) throw new Error("Selecione 1 cidade para publicar (melhor CPL).");
+      if (!selectedCity) throw new Error("Selecione 1 cidade para publicar (melhor custo por conversa).");
       const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       const target = norm(selectedCity);
       let cities = hits.filter((c) => norm(c.name) === target).slice(0, 1);
@@ -248,7 +248,7 @@ export function UseTemplateDialog({ open, onClose, template, consultantId, onPub
                 ))}
               </div>
               <div className="text-[10px] text-muted-foreground">
-                1 cidade por campanha — baixa o CPL e melhora a conversão.
+                1 cidade por campanha — baixa o custo por conversa e melhora a conversão.
               </div>
             </div>
 

@@ -393,7 +393,7 @@ export default function FluxoBuilder() {
                       <TooltipContent>
                         {syncMode === "public"
                           ? "Personalize o fluxo antes de aplicar o template Sofia"
-                          : "Aplicar Sofia Multicanal (Grupo A) ou outros templates"}
+                          : "Aplicar Sofia (leads novos) ou outros modelos"}
                       </TooltipContent>
                     </Tooltip>
                     

@@ -111,7 +111,7 @@ export function SyncAllPanel() {
           style={{ background: "var(--gradient-green)" }}
         >
           {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          {running ? "Sincronizando..." : "Sincronizar agora"}
+          {running ? "Atualizando..." : "Atualizar agora"}
         </Button>
       </div>
 

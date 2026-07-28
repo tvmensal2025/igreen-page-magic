@@ -104,7 +104,7 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
     {
       id: "A",
       emoji: "🔥",
-      titulo: "Grupo A — Lead novo (quente)",
+      titulo: "Leads novos",
       subtitulo: "Quem manda mensagem agora e entra no cadastro",
       paraQuem: "Lead que acabou de falar no WhatsApp",
       status: "on",
@@ -113,17 +113,17 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
         "Robô conversa, pede nome, conta, foto, documento",
         "Áudios da Sofia + botões no WhatsApp",
         "Não usa o motor de leads frios",
-        "Textos: Voz → Multicanal → Grupo A",
+        "Textos: Ligação → Textos automáticos → Leads novos",
       ],
       acoes: [
-        { label: "Ver textos Grupo A", to: "/admin?tab=voz&sub=textos&cadenceGroup=A", variant: "outline" },
+        { label: "Ver textos de leads novos", to: "/admin?tab=voz&sub=textos&cadenceGroup=A", variant: "outline" },
         { label: "Abrir chat", to: "/admin?tab=whatsapp", variant: "ghost" },
       ],
     },
     {
       id: "B",
       emoji: "❄️",
-      titulo: "Grupo B — Lead frio (primeiros 10 dias)",
+      titulo: "Quem esfriou (primeiros 10 dias)",
       subtitulo: "Quem parou de responder — onda WhatsApp, SMS e ligação",
       paraQuem: `Leads no motor (${leadsNoMotor} hoje) · máx. ${capToday ?? 60}/dia`,
       status: grupoBStatus,
@@ -136,14 +136,14 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
       ],
       acoes: [
         { label: "Ligar e separar leads", onClick: () => onGoTab?.("grupo-b"), variant: "default" },
-        { label: "Ver textos Grupo B", to: "/admin?tab=voz&sub=textos&cadenceGroup=B", variant: "outline" },
+        { label: "Ver textos de quem esfriou", to: "/admin?tab=voz&sub=textos&cadenceGroup=B", variant: "outline" },
         { label: "Tela técnica", to: "/admin/motor", variant: "ghost" },
       ],
     },
     {
       id: "C",
       emoji: "📅",
-      titulo: "Grupo C — Longo prazo (meses depois)",
+      titulo: "Quem sumiu (meses depois)",
       subtitulo: "Meta + retornos 30d, 90d, 5m, 8m, 12m e anual",
       paraQuem: "Lead que terminou os 10 dias sem converter",
       status: grupoCStatus,
@@ -152,13 +152,13 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
         "Após dia 10: vai para público Meta (sem WhatsApp)",
         "Recalls: WhatsApp → SMS → ligação em cada marco",
         "Zap = mesmo canal de origem do lead (WhatsApp)",
-        "Conta no teto diário de frio (como o Grupo B)",
-        "Ligue só depois de validar o Grupo B",
-        "Textos: Voz → Multicanal → Grupo C",
+        "Conta no limite diário (como quem esfriou)",
+        "Ligue só depois de validar quem esfriou",
+        "Textos: Ligação → Textos automáticos → Quem sumiu",
       ],
       acoes: [
-        { label: "Ver Grupo C", onClick: () => onGoTab?.("grupo-c"), variant: "outline" },
-        { label: "Textos Grupo C", to: "/admin?tab=voz&sub=textos&cadenceGroup=C", variant: "ghost" },
+        { label: "Ver quem sumiu", onClick: () => onGoTab?.("grupo-c"), variant: "outline" },
+        { label: "Textos de quem sumiu", to: "/admin?tab=voz&sub=textos&cadenceGroup=C", variant: "ghost" },
         { label: "Meta Ads", to: "/admin/meta-ads", variant: "ghost" },
       ],
     },
@@ -166,7 +166,7 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
       id: "outros",
       emoji: "📬",
       titulo: "Outros envios automáticos",
-      subtitulo: "Coisas que você agenda ou o sistema cutuca",
+      subtitulo: "Coisas que você agenda ou o sistema lembra",
       paraQuem: "Leads e campanhas — não mistura com carteira",
       status: reactivationOn ? "partial" : "off",
       statusLabel: reactivationOn ? "Reaquecimento ligado" : "Maioria desligada",
@@ -218,7 +218,7 @@ export function AgendamentosJornadaMap({ onGoTab, stats }: Props) {
         {reheatOn && engineOn && (
           <p className="text-[11px] text-warning mt-2 flex items-center gap-1.5">
             <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-            Atenção: ciclo diário (reheat) e motor de cadência estão ligados — pode cutucar 2×. Use só um.
+            Atenção: fila diária e mensagens automáticas estão ligadas — pode lembrar 2×. Use só um.
           </p>
         )}
         <div className="flex flex-wrap gap-2 mt-3">

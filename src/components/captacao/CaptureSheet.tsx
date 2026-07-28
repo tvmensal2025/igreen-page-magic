@@ -168,7 +168,7 @@ function CaptureSheetInner({
     ? `⚠️ ${!billConfirmed ? "conta" : ""}${!billConfirmed && !docConfirmed ? "/" : ""}${!docConfirmed ? "doc" : ""} sem confirmação (envio mesmo assim)`
     : "";
   const submitTooltip = canSubmit
-    ? (hasUnconfirmedOcr ? `Enviar pro portal — ${ocrWarnLabel}` : "Enviar pro portal (VPS + OTP)")
+    ? (hasUnconfirmedOcr ? `Enviar pro portal — ${ocrWarnLabel}` : "Enviar pro portal (código no celular)")
     : [
         missingFieldLabels.length > 0 ? `Faltam: ${missingFieldLabels.slice(0, 3).join(", ")}${missingFieldLabels.length > 3 ? "…" : ""}` : "",
         invalidLabels.length > 0 ? `Inválido: ${invalidLabels.slice(0, 2).join(" · ")}` : "",

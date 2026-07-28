@@ -167,7 +167,7 @@ export function MetaAudiencePanel({ consultantId }: Props) {
         </div>
         <Button size="sm" onClick={() => void syncNow()} disabled={syncing} className="gap-1.5">
           {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-          Sincronizar agora
+          Atualizar agora
         </Button>
       </div>
 
@@ -242,7 +242,7 @@ export function MetaAudiencePanel({ consultantId }: Props) {
             <div className="text-xs font-medium mb-1.5">Adicionados por dia (últimos 14)</div>
             {days.length === 0 ? (
               <p className="text-[11px] text-muted-foreground">
-                Ainda sem log. Clique em Sincronizar (ou aguarde o motor/cadência) — cada upload grava o dia aqui.
+                Ainda sem log. Clique em Atualizar (ou aguarde as mensagens automáticas) — cada upload grava o dia aqui.
               </p>
             ) : (
               <div className="grid sm:grid-cols-2 gap-1.5">

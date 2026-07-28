@@ -9,11 +9,11 @@ const PASSOS_A = [
   "Áudio Sofia + pedir valor da conta",
   "Explicar economia + botões",
   "Clube iGreen + benefícios",
-  "Foto da conta (OCR)",
+  "Foto da conta de luz",
   "Documento",
   "E-mail",
   "Confirmar telefone",
-  "Portal + código OTP",
+  "Portal + código do celular",
   "Link da prova de vida (facial)",
 ];
 
@@ -29,7 +29,7 @@ export function AgendamentosGrupoAPanel() {
         </div>
         <p className="text-[12px] text-muted-foreground leading-relaxed">
           Quando alguém manda &quot;oi&quot; no WhatsApp, o <strong className="text-foreground">robô</strong> conduz
-          o cadastro. Isso <strong className="text-foreground">não</strong> usa o motor de leads frios (Grupo B).
+          o cadastro. Isso <strong className="text-foreground">não</strong> usa o acompanhamento de quem esfriou.
         </p>
       </div>
 
@@ -48,7 +48,7 @@ export function AgendamentosGrupoAPanel() {
             <span className="flex items-center gap-1.5 font-semibold">
               <MessageSquare className="w-3.5 h-3.5" /> Textos e mensagens
             </span>
-            <span className="text-[10px] opacity-80 font-normal">Multicanal → Grupo A</span>
+            <span className="text-[10px] opacity-80 font-normal">Textos automáticos → Leads novos</span>
           </Link>
         </Button>
         <Button asChild variant="outline" className="rounded-xl text-xs gap-2 h-auto py-3 flex-col items-start">

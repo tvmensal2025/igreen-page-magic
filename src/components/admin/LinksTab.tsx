@@ -230,7 +230,7 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
                     descricao={
                       linkVersion === "premium"
                         ? "Layout novo, vídeo automático, mais rápida no celular"
-                        : "A landing que você já divulga"
+                        : "A página que você já divulga"
                     }
                     url={fullUrl}
                     destaque={linkVersion === "premium"}

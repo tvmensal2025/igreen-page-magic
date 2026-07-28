@@ -65,9 +65,9 @@ export function AgendamentosGrupoCPanel() {
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 p-3 text-[12px]">
-        <p className="font-semibold text-foreground">Quando usar o Grupo C?</p>
+        <p className="font-semibold text-foreground">Quando usar quem sumiu?</p>
         <p className="text-muted-foreground mt-1">
-          Só depois que o <strong className="text-foreground">Grupo B</strong> (10 dias) estiver validado.
+          Só depois que <strong className="text-foreground">quem esfriou</strong> (10 dias) estiver validado.
           Aqui entram Meta e retornos de meses depois. Deixe tudo <strong>desligado</strong> no começo.
         </p>
       </div>
@@ -135,7 +135,7 @@ export function AgendamentosGrupoCPanel() {
             <AlertDialogTitle>Ligar este retorno longo?</AlertDialogTitle>
             <AlertDialogDescription>
               Leads neste marco podem receber WhatsApp, SMS ou ligação automática.
-              Confirme que o Grupo B já foi validado.
+              Confirme que quem esfriou já foi validado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

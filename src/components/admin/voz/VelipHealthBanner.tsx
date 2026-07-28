@@ -100,7 +100,7 @@ export function VelipHealthBanner() {
           <CheckCircle2 className="h-3.5 w-3.5" />
           <span className="font-medium">{PROVIDER_UI.fone} conectado</span>
           {state.webhook_configured === false && (
-            <span className={isOk ? "text-amber-100" : "text-amber-700 dark:text-amber-300"}>(webhook sem auth)</span>
+            <span className={isOk ? "text-amber-100" : "text-amber-700 dark:text-amber-300"}>(aviso técnico — fale com o suporte)</span>
           )}
         </div>
         <Button

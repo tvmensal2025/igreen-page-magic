@@ -68,20 +68,20 @@ export function describeReleaseNextStep(
   const step = stepByStage(stage);
 
   if (stage === "COLD_1") {
-    return "Grupo B · WhatsApp reabrir (dia 1) — toque COLD_1 no próximo horário comercial";
+    return "Quem esfriou · WhatsApp reabrir (dia 1) — no próximo horário comercial";
   }
   if (stage === "GREETED") {
-    return "Grupo A · motor agenda Onda B (COLD_1) — reabertura WhatsApp dia 1";
+    return "Leads novos · sistema agenda quem esfriou — reabertura WhatsApp dia 1";
   }
   if (stage === "AI_QUALIFYING") {
     const chat = String(conversationStep || "").toLowerCase();
     if (chat === "aguardando_conta" || chat.startsWith("flow:")) {
-      return "Grupo A · ainda no fluxo WhatsApp — daily-reheat pode retomar conversa; motor também pode avançar para Onda B";
+      return "Leads novos · ainda no fluxo WhatsApp — a fila diária pode retomar; depois pode ir para quem esfriou";
     }
     if (DEAD_CHAT_STEPS.has(chat)) {
       return "Chat já encerrado · motor avança para Onda B (COLD_1) — WhatsApp de reabertura";
     }
-    return "Grupo A residual · motor avança para Onda B (COLD_1)";
+    return "Leads novos · sistema avança para quem esfriou";
   }
   if (step?.channel === "whatsapp") {
     return `${CADENCE_GROUP_BADGE[step.cadenceGroup]} · WhatsApp — ${step.title}`;

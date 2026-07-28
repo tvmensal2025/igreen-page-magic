@@ -33,6 +33,10 @@ interface Props {
   customerId: string;
   consultantId: string;
   onClosed?: () => void;
+  /** Pré-seleciona Ganho ou Perdido ao abrir. */
+  defaultOutcome?: Outcome;
+  /** Pré-seleciona o motivo quando defaultOutcome = lost. */
+  defaultLostReason?: string;
 }
 
 interface Option {
@@ -43,6 +47,7 @@ interface Option {
 const LOST_REASONS = [
   { v: "sem_interesse", l: "Sem interesse" },
   { v: "nao_qualificado", l: "Não qualificado" },
+  { v: "nao_e_lead", l: "Não é lead / teste" },
   { v: "numero_invalido", l: "Número inválido" },
   { v: "sumiu", l: "Sumiu / não respondeu" },
   { v: "concorrente", l: "Fechou com concorrente" },
@@ -64,8 +69,10 @@ export function CloseCaptureDialog({
   customerId,
   consultantId,
   onClosed,
+  defaultOutcome = "won",
+  defaultLostReason = "sem_interesse",
 }: Props) {
-  const [outcome, setOutcome] = useState<Outcome>("won");
+  const [outcome, setOutcome] = useState<Outcome>(defaultOutcome);
   const [busy, setBusy] = useState(false);
 
   // won state — campanha e parceiro independentes (lead Meta+rodízio tem os dois)
@@ -109,6 +116,12 @@ export function CloseCaptureDialog({
     let cancelled = false;
     void (async () => {
       // Reset seleção a cada abertura para não herdar lead anterior
+      setOutcome(defaultOutcome);
+      setLostReason(
+        LOST_REASONS.some((r) => r.v === defaultLostReason)
+          ? defaultLostReason
+          : "sem_interesse",
+      );
       setSelectedCampaignId("");
       setSelectedPartnerId("");
       setSourceKind("organic");
@@ -204,7 +217,7 @@ export function CloseCaptureDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, customerId, consultantId]);
+  }, [open, customerId, consultantId, defaultOutcome, defaultLostReason]);
 
   const estimatedKwh = useMemo(() => {
     const k = Number(pointsKwh);
@@ -330,7 +343,7 @@ export function CloseCaptureDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Encerrar captação</DialogTitle>
+          <DialogTitle>Encerrar cadastro</DialogTitle>
           <DialogDescription>
             Registre o resultado deste lead. A conversa no WhatsApp continua ativa nos dois casos.
           </DialogDescription>

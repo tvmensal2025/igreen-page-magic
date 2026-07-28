@@ -215,7 +215,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader><DialogTitle className="text-sm">Configurar colunas do quadro</DialogTitle></DialogHeader>
-              <p className="text-[11px] text-muted-foreground -mt-1">O funil de cadastro vai até <strong>Finalizando</strong>. <strong>Ganho</strong>/<strong>Perdido</strong> são desfechos manuais. Quando a carteira iGreen sincronizar, o interessado vira <strong>cliente ativo</strong> e segue no CRM Pós-Venda.</p>
+              <p className="text-[11px] text-muted-foreground -mt-1">O cadastro vai até <strong>Finalizando</strong>. <strong>Ganho</strong>/<strong>Perdido</strong> são desfechos manuais. Quando a carteira iGreen sincronizar, o interessado vira <strong>cliente ativo</strong> e segue no CRM Pós-Venda.</p>
               <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
                 {stages.map((stage) => (
                   <div

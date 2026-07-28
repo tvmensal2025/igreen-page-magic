@@ -320,7 +320,7 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
   },
 
   {
-    def: { id: "admin-dados", title: "8. Admin › Dados (perfil + Sincronizar agora)", icon: <Cog className="w-5 h-5" />, area: "Admin" },
+    def: { id: "admin-dados", title: "8. Admin › Dados (perfil + Atualizar agora)", icon: <Cog className="w-5 h-5" />, area: "Admin" },
     content: (
       <>
         <p>Aqui você configura <strong>quem você é</strong> na plataforma e roda sincronizações manuais.</p>
@@ -332,8 +332,8 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
           { name: "Conexão iGreen (código)", desc: "Amarração com o portal oficial da iGreen para pegar clientes e comissões." },
           { name: "Salvar dados", desc: "Grava tudo. Sem clicar aqui, as mudanças não persistem." },
         ]} />
-        <h3 className="text-xl font-bold mt-6" id="sincronizar-agora">Sincronizar agora (SyncAllPanel)</h3>
-        <p>Antes, várias sincronizações rodavam sozinhas o dia todo, sobrecarregando o servidor. Agora ficam quietas até você <strong>clicar em "Sincronizar agora"</strong>.</p>
+        <h3 className="text-xl font-bold mt-6" id="sincronizar-agora">Atualizar agora</h3>
+        <p>Antes, várias sincronizações rodavam sozinhas o dia todo, sobrecarregando o servidor. Agora ficam quietas até você <strong>clicar em "Atualizar agora"</strong>.</p>
         <Callout kind="when">
           Rode <strong>1x por dia</strong> (de manhã) ou quando precisar de dados fresquinhos para uma reunião/relatório.
         </Callout>
@@ -515,7 +515,7 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
         <p>Reengaja leads que não respondem há X dias.</p>
         <ButtonRow items={[
           { name: "Público-alvo", desc: "Filtros: sem resposta há N dias, status, produto de interesse." },
-          { name: "Mensagens em cadência", desc: "1ª mensagem hoje, 2ª em 3 dias, 3ª em 7 dias — configurável." },
+          { name: "Mensagens automáticas", desc: "1ª mensagem hoje, 2ª em 3 dias, 3ª em 7 dias — configurável." },
           { name: "Kill switch", desc: "Botão vermelho: pausa TUDO imediatamente. Use se algo sair errado." },
           { name: "Simular", desc: "Mostra quantos leads seriam impactados antes de disparar." },
         ]} />
@@ -635,7 +635,7 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
     def: { id: "syncs", title: "26. Sincronizações manuais — o que cada botão dispara", icon: <RefreshCw className="w-5 h-5" />, area: "Admin" },
     content: (
       <>
-        <p>Todas as sincronizações antigas que rodavam em cron viraram <strong>botões manuais</strong> no painel <em>Sincronizar agora</em> (aba Dados).</p>
+        <p>Todas as sincronizações antigas que rodavam em cron viraram <strong>botões manuais</strong> no painel <em>Atualizar agora</em> (aba Dados).</p>
         <Callout kind="tip">Rotina recomendada: 1 clique de manhã, 1 clique no fim da tarde. Isso mantém tudo atualizado sem sobrecarga.</Callout>
         <ButtonRow items={[
           { name: "Ads Competitor Scraper", desc: "Analisa anúncios da concorrência. Custa tempo — semanal basta." },

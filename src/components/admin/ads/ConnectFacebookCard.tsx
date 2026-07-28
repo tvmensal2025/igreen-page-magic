@@ -145,9 +145,9 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
             <CheckCircle2 className="w-6 h-6 text-primary" />
           </div>
           <div className="flex-1">
-            <h3 className="text-lg font-bold text-foreground">Pixel da plataforma ativo</h3>
+            <h3 className="text-lg font-bold text-foreground">Rastreamento da plataforma ativo</h3>
             <p className="text-sm text-muted-foreground mt-1">
-              Você já está usando o Pixel oficial da iGreen (<code className="text-xs">igreen-app-oficial</code>). Todos os eventos (PageView, Cliente interessado, Cadastro) são rastreados automaticamente — não precisa conectar nada.
+              Você já está usando o rastreamento oficial da iGreen (<code className="text-xs">igreen-app-oficial</code>). Todos os eventos (PageView, Cliente interessado, Cadastro) são rastreados automaticamente — não precisa conectar nada.
             </p>
             <p className="text-xs text-muted-foreground/70 mt-2">
               Quer rodar campanhas no seu próprio Business Manager? Conecte abaixo (opcional).
@@ -223,7 +223,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
         <Field label="Conta de Anúncios" value={connection.ad_account_name} sub={connection.ad_account_currency} />
         <Field label="Página" value={connection.page_name} />
         <Field label="Instagram" value={connection.ig_account_username ? `@${connection.ig_account_username}` : null} />
-        <Field label="Pixel" value={connection.pixel_name || (connection.pixel_id ? "Pixel detectado" : null)} />
+        <Field label="Rastreamento" value={connection.pixel_name || (connection.pixel_id ? "Configurado" : null)} />
         <Field label="WhatsApp dos clientes interessados" value={connection.whatsapp_destination_number ? formatWhats(connection.whatsapp_destination_number) : null} />
         <Field label="Conexão expira em" value={daysLeft !== null ? `${daysLeft} dias` : null} />
       </div>
@@ -288,7 +288,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
                     <Input placeholder="1234567890123456" value={manualPage} onChange={e => setManualPage(e.target.value)} />
                   </div>
                   <div>
-                    <Label className="text-xs">ID do Pixel (opcional)</Label>
+                    <Label className="text-xs">ID do rastreamento Facebook (opcional)</Label>
                     <Input placeholder="1234567890" value={manualPixel} onChange={e => setManualPixel(e.target.value)} />
                   </div>
                 </div>
@@ -320,7 +320,7 @@ export function ConnectFacebookCard({ connection, onReconnect }: Props) {
               </div>
               {selAdAccount && (assets.pixels_by_ad_account[selAdAccount] || []).length > 0 && (
                 <div>
-                  <Label className="text-xs">Pixel (recomendado)</Label>
+                  <Label className="text-xs">Rastreamento Facebook (recomendado)</Label>
                   <Select value={selPixel} onValueChange={setSelPixel}>
                     <SelectTrigger><SelectValue placeholder="Sem pixel" /></SelectTrigger>
                     <SelectContent>

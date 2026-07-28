@@ -225,7 +225,7 @@ export function DashboardInsights({
       );
     }
     if (best) {
-      out.push(`Melhor CPL: ${best.cityLabel} (${fmtBRL(best.cpl_cents!)} · ${best.conversations} conversas)`);
+      out.push(`Melhor custo/conversa: ${best.cityLabel} (${fmtBRL(best.cpl_cents!)} · ${best.conversations} conversas)`);
     }
     if (walletCents != null && dailyBurn > 0) {
       const runway = walletCents / Math.round(dailyBurn * 1.2);
@@ -338,7 +338,7 @@ export function DashboardInsights({
                     formatter={(v: number, name: string) =>
                       name === "gasto"
                         ? [v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }), "Gasto"]
-                        : [v, name === "conversas" ? "Conversas" : "CPL"]
+                        : [v, name === "conversas" ? "Conversas" : "Custo/conversa"]
                     }
                     labelFormatter={(_, p) => p?.[0]?.payload?.full || ""}
                   />

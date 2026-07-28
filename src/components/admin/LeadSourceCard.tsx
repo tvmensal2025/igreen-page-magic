@@ -91,7 +91,7 @@ export function LeadSourceCard({ consultantId, periodDays }: LeadSourceCardProps
             <Megaphone className="w-4 h-4 text-primary shrink-0" />
             <span className="truncate">Origem dos clientes interessados</span>
           </h3>
-          <p className="text-xs text-muted-foreground">Últimos {periodDays} dias — CTWA / mensagem do anúncio</p>
+          <p className="text-xs text-muted-foreground">Últimos {periodDays} dias — anúncio / mensagem do WhatsApp</p>
         </div>
         {total > 0 && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">

@@ -150,10 +150,10 @@ export function cadenceStageLabel(stage: string): {
   if (stage === "AI_QUALIFYING") return { channel: "Sofia", label: "Sofia qualificando" };
   if (stage === "GREETED") return { channel: "Sofia", label: "Aguardando resposta" };
   if (stage === "NEW") return { channel: "Sofia", label: "Entrada no ciclo" };
-  if (stage === "A_NUDGE") return { channel: "WhatsApp", label: "Grupo A · retomada" };
-  if (stage === "A_SMS") return { channel: "SMS", label: "Grupo A · SMS reforço" };
-  if (stage === "A_CALL") return { channel: "Ligação", label: "Grupo A · ligação" };
-  if (stage === "A_CALL_RETRY") return { channel: "Ligação", label: "Grupo A · fecha A" };
+  if (stage === "A_NUDGE") return { channel: "WhatsApp", label: "Leads novos · retomada" };
+  if (stage === "A_SMS") return { channel: "SMS", label: "Leads novos · SMS reforço" };
+  if (stage === "A_CALL") return { channel: "Ligação", label: "Leads novos · ligação" };
+  if (stage === "A_CALL_RETRY") return { channel: "Ligação", label: "Leads novos · encerrar" };
   return { channel: "WhatsApp", label: labelCadenceStage(stage, "short") };
 }
 
@@ -448,12 +448,12 @@ export function buildAgendamentosTimeline(input: {
       preview: actions.length ? actions.join(" → ") : `Passo ${r.step}`,
       at,
       status: r.status === "claimed" ? "running" : statusAt(at, now),
-      badge: `Reheat diário · fila ${q || "?"}`,
+      badge: `Fila diária · ${q === "A" ? "novos" : q === "B" ? "esfriaram" : q || "?"}`,
       channel: channelFromPlannedActions(actions),
       pizzaGroup: pizza,
       customerId: r.customer_id,
       phone: r.customer_phone,
-      motorLabel: "Reheat diário",
+      motorLabel: "Fila diária",
       actionsPreview: actions.length ? actions : null,
       stage: r.step,
     });

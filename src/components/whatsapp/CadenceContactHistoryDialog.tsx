@@ -337,7 +337,7 @@ export function CadenceContactHistoryDialog({ contact, busy, onClose, onClassify
                     <p className="text-xs text-destructive text-center py-8">{error}</p>
                   ) : messages.length === 0 ? (
                     <p className="text-xs text-muted-foreground text-center py-8">
-                      Nenhuma mensagem registrada. Pode ser número novo ou só cadência automática ainda não enviada.
+                      Nenhuma mensagem registrada. Pode ser número novo ou só mensagem automática ainda não enviada.
                     </p>
                   ) : (
                     <>

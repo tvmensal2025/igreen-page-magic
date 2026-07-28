@@ -436,7 +436,7 @@ const AdminContent = () => {
     "dashboard": { title: "Painel", subtitle: "Resumo do seu dia" },
     "crm": { title: "Clientes interessados", subtitle: "Do WhatsApp até finalizar o cadastro" },
     "crm-clientes": { title: "Clientes ativos", subtitle: "Já cadastrados: aguardando, aprovados, reprovados e acompanhamento mês a mês" },
-    "conversao": { title: "Conversão", subtitle: "Fila priorizada para reativar e fechar" },
+    "conversao": { title: "Conversão", subtitle: "Quem atender agora para fechar" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
     "financeiro": { title: "Financeiro", subtitle: "Boletos, vencimentos e recebimentos da sua rede iGreen" },
     "produtos": { title: "Produtos & Vendas", subtitle: "Orçamentos, vendas em andamento, ganhos e faturas Green" },

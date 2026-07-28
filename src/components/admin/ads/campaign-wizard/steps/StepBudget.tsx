@@ -138,7 +138,7 @@ export function StepBudget({ open, state, patch, patchFn }: Props) {
               <button type="button" onClick={() => patch({ placementMode: "auto", placements: ALL_PLACEMENTS })}
                 className={`ads-select-card ${state.placementMode === "auto" ? "is-active" : ""}`}>
                 <div className="font-semibold text-xs flex items-center gap-1.5">{state.placementMode === "auto" && <Check className="w-3 h-3 text-[hsl(var(--ads-emerald-2))]" />} Automático</div>
-                <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">Advantage+ otimiza CPL. <strong className="text-[hsl(var(--ads-emerald-2))]">Recomendado.</strong></div>
+                <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">Advantage+ otimiza o custo por conversa. <strong className="text-[hsl(var(--ads-emerald-2))]">Recomendado.</strong></div>
               </button>
               <button type="button" onClick={() => patch({ placementMode: "manual" })}
                 className={`ads-select-card ${state.placementMode === "manual" ? "is-active" : ""}`}>

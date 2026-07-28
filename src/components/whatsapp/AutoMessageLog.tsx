@@ -384,7 +384,7 @@ export function AutoMessageLog({ consultantId }: AutoMessageLogProps) {
 
         <TabsContent value="crm" className="mt-3">
           <p className="text-[11px] text-muted-foreground mb-3">
-            Envios ao mover cards no funil de clientes interessados (WhatsApp).
+            Envios ao mover cards no quadro de clientes interessados (WhatsApp).
             Use ✕ para excluir; lápis para editar a anotação.
           </p>
           <LogList

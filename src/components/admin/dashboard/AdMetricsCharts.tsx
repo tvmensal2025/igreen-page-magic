@@ -101,7 +101,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0 max-w-full">
-      <ChartCard title="Gasto x Conversas Meta por dia" subtitle="Investimento Ads vs conversas CTWA reportadas pela Meta">
+      <ChartCard title="Gasto x Conversas no WhatsApp por dia" subtitle="Investimento em anúncios vs conversas abertas pelo anúncio">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
@@ -123,7 +123,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Custo por conversa Meta (diário)" subtitle="Gasto ÷ conversas CTWA do dia (não é lead CRM)">
+      <ChartCard title="Custo por conversa no WhatsApp (diário)" subtitle="Gasto ÷ conversas do dia (não é contato do painel)">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={dailyChart} margin={{ top: 5, right: 8, left: -10, bottom: 0 }}>
             <defs>
@@ -171,7 +171,7 @@ export function AdMetricsCharts({ consultantId, periodDays, managed }: Props) {
       )}
 
       <ChartCard
-        title="Clientes interessados por estágio do funil"
+        title="Clientes interessados por etapa do cadastro"
         subtitle="Onde estão os clientes interessados gerados no período"
         className={showByConsultant ? "" : "lg:col-span-2"}
       >

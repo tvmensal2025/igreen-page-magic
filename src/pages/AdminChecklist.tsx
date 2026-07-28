@@ -168,7 +168,7 @@ export default function AdminChecklist() {
         <p className="text-muted-foreground text-base leading-relaxed max-w-2xl">
           Valide <strong className="text-foreground">segurança</strong>,{" "}
           <strong className="text-foreground">motor</strong>,{" "}
-          <strong className="text-foreground">todos os textos</strong> (Grupo A/B, temas, SMS, voz)
+          <strong className="text-foreground">todos os textos</strong> (leads novos / quem esfriou, temas, SMS, voz)
           e Meta antes de ligar qualquer automação. O auto-check lê o banco em tempo real.
         </p>
       </div>

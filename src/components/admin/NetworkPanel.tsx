@@ -1275,7 +1275,7 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
             </div>
             <p className="text-sm text-muted-foreground mb-4">Nenhum licenciado encontrado.</p>
             <Button onClick={handleSync} size="sm" disabled={syncing || syncCooldown > 0} className="gap-1.5 rounded-xl">
-              <RefreshCw className="w-3.5 h-3.5" /> {syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar agora"}
+              <RefreshCw className="w-3.5 h-3.5" /> {syncing ? "Atualizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Atualizar agora"}
             </Button>
           </div>
         ) : viewMode === "tree" ? (

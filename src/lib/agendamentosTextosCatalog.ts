@@ -169,7 +169,7 @@ export const TEXTOS_CATALOGO: TextoCatalogItem[] = [
     id: "bot_followup_sumiu",
     grupo: "ia",
     nome: "Lembrar quem sumiu (6–48h)",
-    oQueFaz: "Cron diário cutuca lead parado.",
+    oQueFaz: "Fila diária lembra lead parado.",
     fonte: "consultant_message_templates",
     templateKey: "bot_followup_sumiu",
     toggle: "bot_followup_checker",

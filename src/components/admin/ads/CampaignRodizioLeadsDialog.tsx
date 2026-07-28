@@ -269,7 +269,7 @@ export function CampaignRodizioLeadsDialog({
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium">Atualizações no WhatsApp dos parceiros</div>
                     <div className="text-[11px] text-muted-foreground">
-                      1× ao aprovar na Meta · depois gasto, CTR, conversas, CPL e leads · aviso se pausar
+                      1× ao aprovar no Facebook · depois gasto, cliques, conversas, custo e contatos · aviso se pausar
                     </div>
                   </div>
                   <Select value={String(interval)} onValueChange={handleIntervalChange} disabled={savingInterval}>

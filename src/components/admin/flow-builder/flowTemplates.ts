@@ -339,10 +339,10 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
   },
   {
     id: "sofia_ativacao_multicanal",
-    name: "Sofia — Ativação Multicanal",
+    name: "Sofia — Cadastro (leads novos)",
     emoji: "🌱",
     description:
-      "Grupo A 100%: 1 nome → 2 áudio+valor → 3 texto+áudio+botões → 4 clube → 5 conta → 6 doc → 7 e-mail → 8 tel → 9 OTP → 10 facial. Sem SP/MG.",
+      "Roteiro oficial: 1 nome → 2 áudio+valor → 3 texto+áudio+botões → 4 clube → 5 conta → 6 doc → 7 e-mail → 8 tel → 9 código do celular → 10 foto do rosto.",
     steps: [
       {
         step_key: "a1_ask_name",

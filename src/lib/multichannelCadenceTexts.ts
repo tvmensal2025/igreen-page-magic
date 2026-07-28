@@ -1635,7 +1635,7 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     key: "a_nudge_wa",
     group: "A",
     channel: "whatsapp_text",
-    title: "Escada · Retomada no WhatsApp (cutuca)",
+    title: "Lembrete · Retomada no WhatsApp",
     timing: "Após ~2h de silêncio em GREETED / Ativo · A_NUDGE",
     canGenerateAudio: false,
     notes:
@@ -1694,8 +1694,8 @@ Você chegou a *iniciar sua simulação*, mas não finalizamos.
     key: "a_nudge_call_retry",
     group: "A",
     channel: "call_script",
-    title: "Escada · Fecha A (última tentativa)",
-    timing: "~30 min após 1ª ligação · A_CALL_RETRY → Grupo B",
+    title: "Lembrete · Encerrar leads novos (última tentativa)",
+    timing: "~30 min após 1ª ligação · depois vai para quem esfriou",
     canGenerateAudio: true,
     notes:
       "Ligação GRAVADA · A_CALL_RETRY. Só CTA WhatsApp. Sem resposta → COLD_1.",

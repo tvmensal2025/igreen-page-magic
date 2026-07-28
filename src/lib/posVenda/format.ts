@@ -109,7 +109,7 @@ export type PosVendaStage =
 export const POS_VENDA_STAGES: { key: PosVendaStage; label: string; description: string }[] = [
   { key: "aprovado", label: "Aprovado", description: "Mensagem de boas-vindas após validação" },
   { key: "reprovado", label: "Reprovado", description: "Devolutiva quando o cadastro não passa" },
-  { key: "retentativa", label: "Retentativa", description: "Nova chance ~60d após reprovado (botão ou digite *1* → Grupo A)" },
+  { key: "retentativa", label: "Retentativa", description: "Nova chance ~60d após reprovado (botão ou digite *1* → leads novos)" },
   { key: "d30", label: "30 dias", description: "Acompanhamento no primeiro mês" },
   { key: "d60", label: "60 dias", description: "Check-in de segundo mês" },
   { key: "d90", label: "90 dias", description: "Reativação trimestral" },

@@ -8,16 +8,22 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, RefreshCw, Sparkles, Send, MessageSquare, Copy, BellOff, Clock,
-  ImagePlus, Film, X, LayoutTemplate,
+  ImagePlus, Film, X, LayoutTemplate, Trophy, XCircle, UserX,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatStuck, priorityTier, TIER_META, type Temp } from "./score";
 import type { LeadRow } from "./ConversaoCockpit";
+import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
+import { formatPhoneBR } from "@/lib/posVenda/format";
 
 const TEMP_META_LABEL: Record<Temp, string> = {
-  hot: "Quente", warm: "Morno", cold: "Frio", dead: "Morto",
-  objection: "Objeção", rescue: "Resgate",
+  hot: "Pronto pra fechar",
+  warm: "Interessado",
+  cold: "Esfriando",
+  dead: "Difícil recuperar",
+  objection: "Travou",
+  rescue: "Vale resgatar",
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -61,15 +67,71 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
   const [uploading, setUploading] = useState(false);
   const [templates, setTemplates] = useState<TplOption[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeOutcome, setCloseOutcome] = useState<"won" | "lost">("lost");
+  const [closeLostReason, setCloseLostReason] = useState("sem_interesse");
+  const [quickClosing, setQuickClosing] = useState(false);
 
   useEffect(() => {
     if (!lead) return;
     setDraft(lead.next_msg_draft ?? "");
     setMedia(null);
+    setCloseOpen(false);
     loadMessages(lead.customer_id);
     loadTemplates(lead.conversation_step);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead?.customer_id]);
+
+  function openClose(outcome: "won" | "lost", lostReason = "sem_interesse") {
+    setCloseOutcome(outcome);
+    setCloseLostReason(lostReason);
+    setCloseOpen(true);
+  }
+
+  async function markNotLead() {
+    if (!lead || quickClosing) return;
+    const ok = window.confirm(
+      `Tirar "${lead.name || "esta pessoa"}" da fila?\n\nUse quando não for cliente de verdade (teste, consultor, número errado).\nO chat no WhatsApp continua — só some da Conversão.`,
+    );
+    if (!ok) return;
+    setQuickClosing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("close-capture-and-register-sale", {
+        body: {
+          customerId: lead.customer_id,
+          consultantId,
+          outcome: "lost",
+          lostReason: "nao_e_lead",
+          notes: "Não é lead / teste — removido da fila de Conversão",
+          notifyPartner: false,
+        },
+      });
+      if (error) throw new Error(error.message || "Falha ao tirar da fila");
+      const res = (data as any) || {};
+      if (!res.ok && !res.alreadyClosed) throw new Error(res.error || "Falha ao tirar da fila");
+
+      // Para de mandar automático para quem não é lead.
+      await supabase
+        .from("customers")
+        .update({ bot_paused: true, bot_paused_reason: "nao_e_lead" } as any)
+        .eq("id", lead.customer_id);
+
+      toast.success("Saiu da fila", {
+        description: "Marcado como não é lead. O WhatsApp continua disponível se precisar.",
+      });
+      onClose();
+      onReload();
+    } catch (e: any) {
+      toast.error("Não deu para tirar da fila", { description: e.message });
+    } finally {
+      setQuickClosing(false);
+    }
+  }
+
+  function handleClosedFromDialog() {
+    onClose();
+    onReload();
+  }
 
   async function loadTemplates(step: string | null) {
     if (!step) { setTemplates([]); return; }
@@ -125,7 +187,7 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
       .not("message_text", "like", "[__safety_ping__]%")
       .not("message_text", "like", "[inline-sent]%")
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(50);
     setMsgs(((data as Msg[]) || []).reverse());
     setLoadingMsgs(false);
   }
@@ -174,19 +236,32 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
         {lead && (
           <>
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                {lead.name || "Lead"}
+              <SheetTitle className="flex flex-wrap items-center gap-2">
+                <span className="min-w-0 truncate">{lead.name || "Cliente"}</span>
                 {lead.bot_paused && (
-                  <span className="inline-flex items-center gap-1 rounded border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
-                    <BellOff className="h-3 w-3" /> bot pausado
+                  <span className="inline-flex items-center gap-1 rounded border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[10px] font-normal text-destructive">
+                    <BellOff className="h-3 w-3" /> Você precisa falar
                   </span>
                 )}
               </SheetTitle>
+              {lead.phone && (
+                <p className="text-sm font-medium tabular-nums text-foreground">
+                  {formatPhoneBR(lead.phone) || lead.phone}
+                </p>
+              )}
               <SheetDescription className="flex flex-wrap items-center gap-2">
                 {tier && <Badge variant="outline" className={TIER_META[tier].cls}>{TIER_META[tier].label}</Badge>}
                 {lead.temperature && <span className="text-xs">{TEMP_META_LABEL[lead.temperature]}</span>}
                 {lead.conversion_chance != null && <span className="text-xs">· {lead.conversion_chance}% de chance</span>}
-                <span className="inline-flex items-center gap-1 text-xs"><Clock className="h-3 w-3" /> {formatStuck(lead.hours_stuck)}</span>
+                <span className="inline-flex items-center gap-1 text-xs">
+                  <Clock className="h-3 w-3" />
+                  {(() => {
+                    const t = formatStuck(lead.hours_stuck);
+                    if (t === "agora") return "Falou agora";
+                    if (t === "—") return "Sem histórico";
+                    return `Sem resposta há ${t}`;
+                  })()}
+                </span>
                 {lead.classification_source && lead.classification_source !== "cache" && (
                   <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {SOURCE_LABEL[lead.classification_source] ?? lead.classification_source}
@@ -199,14 +274,59 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
               {/* Alerta bot pausado */}
               {lead.bot_paused && (lead.temperature === "hot" || lead.temperature === "rescue") && (
                 <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-                  Lead quente com a IA pausada. Ele não recebe mensagens automáticas — assuma manualmente abaixo.
+                  Esta pessoa estava perto de fechar, mas a mensagem automática está pausada.
+                  Ela não recebe lembretes sozinha — fale com ela abaixo ou no chat.
                 </div>
               )}
+
+              {/* Tirar da fila — Ganho / Perdido / Não é lead (sem apagar o WhatsApp) */}
+              <div className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-2">
+                <div>
+                  <div className="text-[11px] font-medium text-foreground">Tirar da fila</div>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Some da Conversão. O chat no WhatsApp continua. Não apaga o cadastro.
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-auto flex-col gap-0.5 py-2 text-[11px] border-emerald-500/40 text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-400"
+                    onClick={() => openClose("won")}
+                  >
+                    <Trophy className="h-3.5 w-3.5" />
+                    Ganho
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-auto flex-col gap-0.5 py-2 text-[11px] border-rose-500/40 text-rose-700 hover:bg-rose-500/10 dark:text-rose-400"
+                    onClick={() => openClose("lost", "sem_interesse")}
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                    Perdido
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-auto flex-col gap-0.5 py-2 text-[11px]"
+                    disabled={quickClosing}
+                    onClick={() => void markNotLead()}
+                    title="Teste, consultor, número errado — não é cliente"
+                  >
+                    {quickClosing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
+                    Não é lead
+                  </Button>
+                </div>
+              </div>
 
               {/* Insight da IA */}
               {!lead.classified_at ? (
                 <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-                  Lead ainda não analisado pela IA.
+                  Ainda sem análise. Clique para entender a situação.
                   <Button size="sm" className="mt-3 w-full" onClick={() => onClassify(lead.customer_id)}>
                     <Sparkles className="mr-1 h-3.5 w-3.5" /> Analisar agora
                   </Button>
@@ -215,11 +335,11 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
                 <>
                   {lead.summary && <InsightBlock cls="border-primary/40" label="Resumo" text={lead.summary} />}
                   {lead.main_doubt && <InsightBlock cls="border-info/40" label="Dúvida principal" text={lead.main_doubt} />}
-                  {lead.main_objection && <InsightBlock cls="border-warning/40" label="Objeção" text={lead.main_objection} />}
-                  {lead.loss_reason && <InsightBlock cls="border-destructive/40" label="Por que parou" text={lead.loss_reason} />}
+                  {lead.main_objection && <InsightBlock cls="border-warning/40" label="O que travou" text={lead.main_objection} />}
+                  {lead.loss_reason && <InsightBlock cls="border-destructive/40" label="Por que esfriou" text={lead.loss_reason} />}
                   {lead.next_action && (
                     <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-                      <div className="text-[10px] uppercase text-primary">Próxima ação sugerida</div>
+                      <div className="text-[10px] uppercase text-primary">O que fazer agora</div>
                       <p className="mt-0.5 font-medium text-foreground">{lead.next_action}</p>
                     </div>
                   )}
@@ -234,7 +354,7 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
                 ) : msgs.length === 0 ? (
                   <p className="py-2 text-center text-xs text-muted-foreground">Sem mensagens registradas.</p>
                 ) : (
-                  <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border border-border/40 bg-muted/20 p-2">
+                  <div className="max-h-[min(55vh,28rem)] min-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-border/40 bg-muted/20 p-2">
                     {msgs.map((m) => {
                       const inbound = m.message_direction === "inbound";
                       const txt = m.message_text || `[${m.message_type || "evento"}]`;
@@ -278,13 +398,13 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
               )}
 
               <div className="mb-1 flex items-center justify-between">
-                <span className="text-[10px] uppercase text-muted-foreground">Mensagem de reativação</span>
+                <span className="text-[10px] uppercase text-muted-foreground">Mensagem para enviar</span>
                 {lead.next_msg_draft && (
                   <button
                     className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline"
                     onClick={() => setDraft(lead.next_msg_draft!)}
                   >
-                    <Copy className="h-3 w-3" /> usar sugestão da IA
+                    <Copy className="h-3 w-3" /> usar sugestão
                   </button>
                 )}
               </div>
@@ -305,25 +425,35 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
                 </div>
               )}
 
-              <Textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva a mensagem que vai reativar este lead…" />
+              <Textarea rows={3} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Escreva a mensagem para esta pessoa…" />
 
               <div className="mt-2 flex gap-2">
                 <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => fileRef.current?.click()} disabled={uploading} title="Anexar imagem/vídeo">
                   {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
                 </Button>
                 <Button variant="outline" size="sm" className="flex-1" onClick={() => navigate(`/admin?tab=whatsapp&phone=${lead.phone ?? ""}`)}>
-                  <MessageSquare className="mr-1 h-3.5 w-3.5" /> Chat
+                  <MessageSquare className="mr-1 h-3.5 w-3.5" /> Abrir chat
                 </Button>
                 <Button size="sm" className="flex-1" onClick={handleSend} disabled={sending || (!draft.trim() && !media)}>
                   {sending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Send className="mr-1 h-3.5 w-3.5" />}
-                  Reativar
+                  Enviar
                 </Button>
-                <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => onClassify(lead.customer_id)} title="Reclassificar">
+                <Button size="icon" variant="ghost" className="h-9 w-9" onClick={() => onClassify(lead.customer_id)} title="Analisar de novo">
                   <RefreshCw className="h-3.5 w-3.5" />
                 </Button>
               </div>
               <input ref={fileRef} type="file" accept="image/*,video/*" className="hidden" onChange={onPickFile} />
             </div>
+
+            <CloseCaptureDialog
+              open={closeOpen}
+              onOpenChange={setCloseOpen}
+              customerId={lead.customer_id}
+              consultantId={consultantId}
+              defaultOutcome={closeOutcome}
+              defaultLostReason={closeLostReason}
+              onClosed={handleClosedFromDialog}
+            />
           </>
         )}
       </SheetContent>

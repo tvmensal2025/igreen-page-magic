@@ -301,7 +301,7 @@ export function TemplateInfoCard({
                 <Stat icon={<ImpressionIcon className="w-3 h-3" />} label="Impr." value={fmtInt(metrics.impressions)} small />
                 <Stat icon={<MousePointerClick className="w-3 h-3" />} label="Cliques" value={fmtInt(metrics.clicks)} small />
                 <Stat label="CTR" value={`${metrics.ctr_pct.toFixed(2)}%`} small />
-                <Stat label="CPL" value={metrics.cpl_cents > 0 ? fmtMoneyCents(metrics.cpl_cents) : "—"} small />
+                <Stat label="Custo/conversa" value={metrics.cpl_cents > 0 ? fmtMoneyCents(metrics.cpl_cents) : "—"} small />
               </div>
               {metrics.frequency_avg > 0 && (
                 <div className="text-[10px] text-muted-foreground text-center">

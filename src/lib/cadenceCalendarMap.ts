@@ -74,9 +74,9 @@ export type CalendarDay = {
 };
 
 export const CADENCE_GROUP_LABEL = {
-  A: "Grupo A — Lead novo (quente)",
-  B: "Grupo B — Reaquecimento (lead frio)",
-  C: "Grupo C — Longo prazo (Meta + recalls)",
+  A: "Leads novos",
+  B: "Quem esfriou",
+  C: "Quem sumiu",
 } as const;
 
 /** Timeline completa: onda B (D+1→D10) + escada C. */
@@ -84,7 +84,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d1",
     label: "Dia 1 (D+1)",
-    subtitle: "Grupo B — reabre o lead frio. 1 canal por vez; SMS/call só se silêncio.",
+    subtitle: "Quem esfriou — reabre o contato. 1 canal por vez; SMS/ligação só se silêncio.",
     group: "B",
     steps: [
       {
@@ -116,7 +116,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
         channel: "voice",
         title: "Ligação Sofia",
         when: "D+1 · 15h–17h · só se ainda silêncio",
-        hint: "Áudio Sofia no Multicanal (publish → voice_audio_clip_id). Sem clip, a ligação não sai.",
+        hint: "Áudio Sofia nos textos automáticos. Sem áudio, a ligação não sai.",
         templateKey: "b4_call_1",
         textsFromMultichannel: true,
         onlyIfSilent: true,
@@ -127,7 +127,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d2",
     label: "Dia 2",
-    subtitle: "Grupo B — nova abordagem com tema rotativo (diferente do D+1).",
+    subtitle: "Quem esfriou — nova abordagem com tema rotativo.",
     group: "B",
     steps: [
       {
@@ -159,7 +159,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d4",
     label: "Dia 4",
-    subtitle: "Grupo B — segunda ligação espaçada (anti-spam).",
+    subtitle: "Quem esfriou — segunda ligação espaçada.",
     group: "B",
     steps: [
       {
@@ -179,7 +179,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d6",
     label: "Dia 6",
-    subtitle: "Grupo B — segundo SMS (sem ligação no mesmo dia).",
+    subtitle: "Quem esfriou — segundo SMS (sem ligação no mesmo dia).",
     group: "B",
     steps: [
       {
@@ -199,7 +199,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d7",
     label: "Dia 7",
-    subtitle: "Grupo B — resposta fácil (1 toque) + SMS tema se silêncio.",
+    subtitle: "Quem esfriou — resposta fácil (1 toque) + SMS se silêncio.",
     group: "B",
     steps: [
       {
@@ -231,7 +231,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   {
     id: "d10",
     label: "Dia 10",
-    subtitle: "Grupo B — encerramento educado da onda curta → entra no Grupo C.",
+    subtitle: "Quem esfriou — encerramento educado → passa para quem sumiu.",
     group: "B",
     steps: [
       {
@@ -262,7 +262,7 @@ export const CADENCE_CALENDAR: CalendarDay[] = [
   },
   {
     id: "c",
-    label: "Grupo C — Longo prazo",
+    label: "Quem sumiu — longo prazo",
     subtitle: "Meta + cada marco: WA análise → SMS se silêncio → ligação se silêncio. Toggles no Motor.",
     group: "C",
     steps: [

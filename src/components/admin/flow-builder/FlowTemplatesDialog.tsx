@@ -165,7 +165,7 @@ export default function FlowTemplatesDialog({
             Templates de fluxo
           </DialogTitle>
           <DialogDescription>
-            Sofia Multicanal = Grupo A oficial (11 passos). Use &quot;Substituir passos&quot; na
+            Sofia = roteiro oficial de leads novos (11 passos). Use &quot;Substituir passos&quot; na
             variante A para gravar o fluxo limpo com botões e OCR.
           </DialogDescription>
         </DialogHeader>
@@ -192,7 +192,7 @@ export default function FlowTemplatesDialog({
                       {tpl.steps.length} passos
                     </Badge>
                     {tpl.id === "sofia_ativacao_multicanal" && (
-                      <Badge className="text-[10px]">Grupo A oficial</Badge>
+                      <Badge className="text-[10px]">Roteiro oficial</Badge>
                     )}
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">{tpl.description}</p>

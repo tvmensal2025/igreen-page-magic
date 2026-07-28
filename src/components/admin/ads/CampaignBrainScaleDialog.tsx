@@ -89,7 +89,7 @@ export function CampaignBrainScaleDialog({
       toast({
         title: "Cérebro por campanha não se aplica",
         description:
-          "Âncora e MG-ROT usam o Cérebro de Minas (slots/budget). Desligue aqui se já estava ligado por engano.",
+          "Âncora e campanhas rotativas usam o assistente de Minas. Desligue aqui se já estava ligado por engano.",
         variant: "destructive",
       });
       return;
@@ -123,7 +123,7 @@ export function CampaignBrainScaleDialog({
       toast({
         title: enabled ? `Cérebro ligado (+${step}%)` : "Cérebro desligado",
         description: enabled
-          ? "Sobe se CPL bom · desce se CPL ruim · mede 48h · degrau ~4h. Aviso no seu WhatsApp."
+          ? "Sobe se o custo por conversa estiver bom · desce se estiver alto · mede 48h · ajuste ~4h. Aviso no seu WhatsApp."
           : "Esta campanha não sobe/desce orçamento sozinha.",
       });
       onOpenChange(false);
@@ -182,7 +182,7 @@ export function CampaignBrainScaleDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-[11px]">CPL alvo (R$)</Label>
+              <Label className="text-[11px]">Custo-alvo por conversa (R$)</Label>
               <Input
                 type="number"
                 min={0.5}
@@ -207,7 +207,7 @@ export function CampaignBrainScaleDialog({
 
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             Budget atual: R$ {(campaign.daily_budget_cents / 100).toFixed(0)}/dia.
-            Sobe se CPL ≤ alvo · desce se CPL ruim · mede 48h · próximo degrau ~4h.
+            Sobe se custo ≤ alvo · desce se estiver alto · mede 48h · próximo ajuste ~4h.
             Você recebe aviso no WhatsApp quando mudar.
           </p>
         </div>

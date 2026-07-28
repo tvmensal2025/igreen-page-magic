@@ -13,7 +13,7 @@ export function VoiceHelpPanel() {
       <VozSection title="O que este módulo faz">
         <ul className="list-disc pl-5 space-y-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
           <li>Ligações via {PROVIDER_UI.fone} com áudio Sofia (ElevenLabs). TTS genérico desativado.</li>
-          <li>SMS outbound (manual, fallback após “não atendeu”, e cadência automática se ligada).</li>
+          <li>SMS (manual, se não atender, e automático se ligado).</li>
           <li>Bases de contatos reutilizáveis e lista Não Perturbe (bloqueados).</li>
           <li>Histórico e painel com custo/status das ligações.</li>
         </ul>
@@ -33,15 +33,15 @@ export function VoiceHelpPanel() {
         <ul className="list-disc pl-5 space-y-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
           <li>Aba SMS: envio manual em lote.</li>
           <li>Fallback: campo na campanha de ligação — só após esgotar tentativas em “não atendeu”.</li>
-          <li>Cadência: estágios SMS_1 / SMS_2 (Central de Automações — confira se o toggle está ON).</li>
-          <li>OTP do cadastro iGreen NÃO passa por aqui (API Portal).</li>
+          <li>Mensagens automáticas: SMS de reforço (Central de Automações — confira se o envio está ligado).</li>
+          <li>O código do celular do cadastro iGreen NÃO passa por aqui.</li>
         </ul>
       </VozSection>
 
       <VozSection title="Segurança e boas práticas">
         <ul className="list-disc pl-5 space-y-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
           <li>Use a lista Não Perturbe para quem pediu para não ser contactado.</li>
-          <li>Automação em massa (cadência) só dispara com toggles ligados na Central.</li>
+          <li>Envio automático em massa só dispara com os botões ligados na Central.</li>
           <li>Saldo e gasto aparecem no banner {PROVIDER_UI.fone} no topo desta aba.</li>
           <li>Templates de voz no chat WhatsApp (OGG) são outro sistema — aba Templates do WhatsApp.</li>
         </ul>

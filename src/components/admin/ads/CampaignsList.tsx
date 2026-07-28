@@ -744,14 +744,14 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                 label="Contatos atribuídos no CRM"
                 value={String(waCount)}
                 highlight={waCount > 0}
-                tooltip="Contatos identificados no CRM e ligados a esta campanha por ID do anúncio ou identificador CTWA."
+                tooltip="Contatos do seu painel ligados a esta campanha pelo anúncio."
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
                 label="Gasto"
                 value={`R$ ${(m.spend_cents / 100).toFixed(2)}`}
                 highlight
-                tooltip="Total gasto no período (desde o início da campanha ou últimos 30 dias — o que for mais curto). Vem direto da Meta."
+                tooltip="Total gasto no período (desde o início da campanha ou últimos 30 dias — o que for mais curto). Vem direto do Facebook."
               />
               <Stat
                 icon={<DollarSign className="w-3.5 h-3.5" />}
@@ -761,7 +761,7 @@ export function CampaignsList({ consultantId, refreshKey }: { consultantId: stri
                     ? `R$ ${(m.cost_per_lead_cents / 100).toFixed(2)}`
                     : "—"
                 }
-                tooltip="Gasto ÷ conversas iniciadas na Meta (CTWA). Se não houver conversa, usa leads de formulário Meta."
+                tooltip="Gasto ÷ conversas no WhatsApp pelo anúncio. Se não houver conversa, usa formulários do Facebook."
               />
             </div>
             {hasDayActivity && (

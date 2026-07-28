@@ -285,7 +285,7 @@ export function CampaignBrainPanel({
 
       const explorers = Number(brain.max_explorers) || 0;
       const cfgSummary = brain.geo_mode === "radius_sede"
-        ? `Modo sede · raio ${brain.sede_radius_km} km · CPL alvo R$ ${(Number(brain.target_cpl_cents) / 100).toFixed(2)}`
+        ? `Modo sede · raio ${brain.sede_radius_km} km · custo-alvo R$ ${(Number(brain.target_cpl_cents) / 100).toFixed(2)}`
         : `${1 + explorers} praças · R$ ${(Number(brain.explorer_budget_cents) / 100).toFixed(0)}/cidade · idade ${brain.age_min}+`;
 
       if (!apply) {
@@ -527,7 +527,7 @@ export function CampaignBrainPanel({
             <button
               type="button"
               aria-label="Abrir controles do Cérebro"
-              title="Controles do Cérebro"
+              title="Controles do assistente"
               onClick={() => setBrainModalOpen(true)}
               className="h-8 w-8 inline-flex items-center justify-center rounded-md opacity-[0.08] hover:opacity-70 focus:opacity-70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring transition-opacity"
             >
@@ -619,7 +619,7 @@ export function CampaignBrainPanel({
                 <h4 className="text-foreground font-semibold text-[13px]">Onde as regras ficam</h4>
                 <p>
                   Cada consultor tem o próprio <strong className="text-foreground font-medium">brain_config</strong>{" "}
-                  (banco). Você edita no ícone de engrenagem → <strong className="text-foreground font-medium">Controles do Cérebro</strong>.
+                  (banco). Você edita no ícone de engrenagem → <strong className="text-foreground font-medium">Controles do assistente</strong>.
                   Não precisa mexer em código: salva aqui e o motor + Express leem no próximo ciclo.
                 </p>
               </section>
@@ -627,7 +627,7 @@ export function CampaignBrainPanel({
               <section className="space-y-1.5">
                 <h4 className="text-foreground font-semibold text-[13px]">Por quê personalizado</h4>
                 <p>
-                  Sede, raio, CPL alvo e quantas cidades no ar mudam por consultor e por momento.
+                  Sede, raio, custo-alvo por conversa e quantas cidades no ar mudam por consultor e por momento.
                   Hardcoded no código travaria todo mundo no mesmo formato. Por isso a regra vive no config do consultor.
                 </p>
               </section>
@@ -636,8 +636,8 @@ export function CampaignBrainPanel({
                 <h4 className="text-foreground font-semibold text-[13px]">Objetivo</h4>
                 <p>
                   Proteger a carteira e escalar a campanha que funciona. A Meta barateia conversa com{" "}
-                  <strong className="text-foreground font-medium">1 CTWA ampla + budget concentrado</strong> —
-                  o Cérebro serve a esse formato, não fragmenta em dezenas de cidades miúdas.
+                  <strong className="text-foreground font-medium">1 anúncio amplo + orçamento concentrado</strong> —
+                  o assistente serve a esse formato, não fragmenta em dezenas de cidades miúdas.
                 </p>
               </section>
 
@@ -654,7 +654,7 @@ export function CampaignBrainPanel({
                   </li>
                   <li>
                     Toda campanha criada precisa de <strong className="text-foreground font-medium">mensagem inicial WhatsApp</strong>{" "}
-                    (frase CTWA única).
+                    (mensagem inicial única no WhatsApp).
                   </li>
                 </ul>
               </section>
@@ -663,12 +663,12 @@ export function CampaignBrainPanel({
                 <h4 className="text-foreground font-semibold text-[13px]">Escala da âncora</h4>
                 <ul className="list-disc pl-4 space-y-1">
                   <li>
-                    Mede custo por conversa (CPL) na janela de <strong className="text-foreground font-medium">48h</strong>.
+                    Mede custo por conversa na janela de <strong className="text-foreground font-medium">48h</strong>.
                   </li>
                   <li>
-                    Se CPL ≤ alvo (configurável; oficial R$&nbsp;7,50): sobe o budget em degraus, até o teto.
+                    Se o custo por conversa ≤ alvo (configurável; oficial R$&nbsp;7,50): sobe o budget em degraus, até o teto.
                   </li>
-                  <li>Se CPL ruim: desce no mesmo passo percentual.</li>
+                  <li>Se o custo por conversa estiver alto: desce no mesmo passo percentual.</li>
                   <li>
                     Não espera 48h entre subidas — só usa 48h para medir. Intervalo anti-spam de ~{" "}
                     <strong className="text-foreground font-medium">4h</strong> entre degraus.
@@ -686,7 +686,7 @@ export function CampaignBrainPanel({
               </section>
 
               <section className="space-y-1.5">
-                <h4 className="text-foreground font-semibold text-[13px]">Criativos e WhatsApp (CTWA)</h4>
+                <h4 className="text-foreground font-semibold text-[13px]">Criativos e WhatsApp do anúncio</h4>
                 <ul className="list-disc pl-4 space-y-1">
                   <li>Frase do WhatsApp <strong className="text-foreground font-medium">sem nome de cidade</strong>.</li>
                   <li>Quem decide campanha/parceiro é o sinal da Meta (AD ID), não a palavra da mensagem.</li>
@@ -698,7 +698,7 @@ export function CampaignBrainPanel({
                 <h4 className="text-foreground font-semibold text-[13px]">O que você controla</h4>
                 <p>
                   Engrenagem → Controles: estratégia (sede × cidades), sede/raio, mensagem obrigatória,
-                  budget da âncora, teto, CPL alvo, degrau %, exploradoras (se legado), idade e ordem das praças.
+                  orçamento da âncora, teto, custo-alvo, degrau %, exploradoras (se legado), idade e ordem das praças.
                   <strong className="text-foreground font-medium"> Salvar só config</strong> grava;
                   <strong className="text-foreground font-medium"> Salvar e alinhar ciclo</strong> grava
                   e chama o rotator com seu login (slots/budget conforme as regras — sem recriar anúncio).
@@ -719,13 +719,13 @@ export function CampaignBrainPanel({
         </DialogContent>
       </Dialog>
 
-      {/* Controles do Cérebro — só no modal (botão escondido ao lado de Atualizar) */}
+      {/* Controles do assistente — só no modal (botão escondido ao lado de Atualizar) */}
       <Dialog open={brainModalOpen} onOpenChange={setBrainModalOpen}>
         <DialogContent className="w-[calc(100%-1rem)] max-w-3xl max-h-[min(92dvh,920px)] p-4 sm:p-6 gap-3 overflow-hidden flex flex-col">
           <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2">
               <Settings2 className="w-4 h-4 text-primary" />
-              Controles do Cérebro
+              Controles do assistente
               <button
                 type="button"
                 aria-label="Como funciona o Cérebro"
@@ -853,7 +853,7 @@ export function CampaignBrainPanel({
                 />
                 <span>
                   <strong>Exigir mensagem inicial</strong> em toda campanha criada
-                  (frase CTWA única — sem isso o create bloqueia).
+                  (mensagem inicial única no WhatsApp — sem isso a publicação bloqueia).
                 </span>
               </label>
             </div>
@@ -874,10 +874,10 @@ export function CampaignBrainPanel({
                 value={(cfg.max_anchor_budget_cents / 100).toFixed(0)}
                 onChange={(e) => setCfg({ ...cfg, max_anchor_budget_cents: Math.round(Number(e.target.value || 0) * 100) })}
               />
-              <p className="text-[10px] text-muted-foreground mt-1">Escala sobe até aqui se CPL ok</p>
+              <p className="text-[10px] text-muted-foreground mt-1">Escala sobe até aqui se o custo por conversa estiver ok</p>
             </div>
             <div>
-              <Label className="text-[11px]">CPL alvo (R$)</Label>
+              <Label className="text-[11px]">Custo-alvo por conversa (R$)</Label>
               <Input
                 type="number" min={0.5} step={0.1}
                 value={(cfg.target_cpl_cents / 100).toFixed(2)}

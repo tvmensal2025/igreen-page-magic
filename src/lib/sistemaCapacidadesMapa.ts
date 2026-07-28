@@ -119,7 +119,7 @@ export const CAPACIDADES: CapacidadeItem[] = [
   {
     id: "nudge",
     nome: "Toque após tirar dúvida (±20 min)",
-    oQueFaz: "Lead perguntou, você (ou o robô) respondeu, e ele ficou quieto — o sistema cutuca de leve.",
+    oQueFaz: "Lead perguntou, você (ou o robô) respondeu, e ele ficou quieto — o sistema manda um lembrete de leve.",
     onde: "Este guia ou Central → Automações",
     grupo: "automatico",
     toggle: "faq_reengagement_nudge",
@@ -156,7 +156,7 @@ export const CAPACIDADES: CapacidadeItem[] = [
     grupo: "automatico",
     toggle: "reactivation_cron",
     risco: "avancado",
-    dica: "Não misture com várias cutucadas ao mesmo tempo.",
+    dica: "Não misture com vários lembretes ao mesmo tempo.",
   },
   {
     id: "ciclo-diario",
@@ -182,7 +182,7 @@ export const CAPACIDADES: CapacidadeItem[] = [
   },
   {
     id: "orquestrador",
-    nome: "Orquestrador (não cutucar 2 vezes)",
+    nome: "Orquestrador (não lembrar 2 vezes)",
     oQueFaz: "Impede vários robôs de mandar mensagem pro mesmo lead no mesmo período.",
     onde: "Central → parâmetros de retenção + Automações",
     grupo: "automatico",
@@ -266,7 +266,7 @@ export const PASSOS_SUGERIDOS: PassoSugerido[] = [
   {
     passo: 4,
     titulo: "Ligue o orquestrador",
-    porque: "Evita 3 robôs cutucando o mesmo lead.",
+    porque: "Evita 3 automações lembrando o mesmo lead.",
     como: "Interruptor retention_orchestrator (depois do cooldown salvo).",
     toggle: "retention_orchestrator",
   },

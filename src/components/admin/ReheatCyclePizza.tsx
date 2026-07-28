@@ -89,25 +89,25 @@ const C_SLICE_STAGES: Record<string, string[]> = {
 function editTargetsForSlice(group: "A" | "B" | "C", stepId: string): SliceEditTarget[] {
   if (group === "A") {
     if (stepId === "ask_name") {
-      return [{ label: "Multicanal · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" }];
+      return [{ label: "Textos · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" }];
     }
     if (stepId === "flow") {
       return [
-        { label: "Multicanal · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" },
-        { label: "Multicanal · áudio ativar", sub: "textos", cadenceKey: "a2_audio_activate_name" },
+        { label: "Textos · pedir nome", sub: "textos", cadenceKey: "a1_ask_name" },
+        { label: "Textos · áudio ativar", sub: "textos", cadenceKey: "a2_audio_activate_name" },
       ];
     }
     if (stepId === "nudge") {
-      return [{ label: "Multicanal · Retomada (cutuca)", sub: "textos", cadenceKey: "a_nudge_wa" }];
+      return [{ label: "Textos · Retomada WhatsApp", sub: "textos", cadenceKey: "a_nudge_wa" }];
     }
     if (stepId === "sms") {
-      return [{ label: "Multicanal · SMS da escada", sub: "textos", cadenceKey: "a_nudge_sms" }];
+      return [{ label: "Textos · SMS de reforço", sub: "textos", cadenceKey: "a_nudge_sms" }];
     }
     if (stepId === "call1") {
-      return [{ label: "Multicanal · Ligação da escada", sub: "textos", cadenceKey: "a_nudge_call" }];
+      return [{ label: "Textos · Ligação", sub: "textos", cadenceKey: "a_nudge_call" }];
     }
     if (stepId === "retry") {
-      return [{ label: "Multicanal · Fecha A", sub: "textos", cadenceKey: "a_nudge_call_retry" }];
+      return [{ label: "Textos · Encerrar leads novos", sub: "textos", cadenceKey: "a_nudge_call_retry" }];
     }
     return [];
   }
@@ -264,7 +264,7 @@ function labelDelivery(channel: string, delivery: string | null, status: string)
   if (channel === "voice") {
     const raw = String(delivery || "");
     const code = raw.toUpperCase();
-    // Motor de cadência suprimiu antes de discar (número já reprovado antes).
+    // Mensagens automáticas suprimiu antes de discar (número já reprovado antes).
     if (/^velip_reproved:/i.test(raw)) {
       const inner = raw.split(":")[1]?.toUpperCase() || "";
       if (inner === "IK") return "Número inexistente — suprimido";
@@ -851,8 +851,8 @@ const CYCLE_NOVO_STEPS: CycleStep[] = [
   {
     id: "retry",
     label: "Aguardando · fecha o A",
-    short: "Fecha A",
-    hint: "Última janela após a ligação. Sem resposta → entra no Grupo B (frio).",
+    short: "Encerra novos",
+    hint: "Última janela após a ligação. Sem resposta → entra em quem esfriou.",
     Icon: Hourglass,
   },
 ];
@@ -918,7 +918,7 @@ const FRIO_SLICE_META: Record<string, { hint: string; Icon: LucideIcon }> = {
     Icon: Hand,
   },
   d10: {
-    hint: "Fecha a onda: ligação final + Zap de encerramento. Sem retorno → Grupo C.",
+    hint: "Fecha a onda: ligação final + WhatsApp de encerramento. Sem retorno → quem sumiu.",
     Icon: Flag,
   },
 };
@@ -1818,7 +1818,7 @@ export function ReheatCyclePizza({
               ? "Carregando filas…"
               : total > 0
                 ? `${total} no radar · A ${countNovo} · B ${countFrio} · C ${countLongo}${
-                    admin ? ` · cadência devida hoje: ${cadenceDueToday}` : ""
+                    admin ? ` · mensagens devidas hoje: ${cadenceDueToday}` : ""
                   }`
                 : "Ninguém no ciclo A/B/C agora"}
           </p>
@@ -1870,8 +1870,8 @@ export function ReheatCyclePizza({
               disabled={savingKey === "cadence_engine"}
             />
             <div>
-              <div className="font-semibold text-foreground">Motor de cadência</div>
-              <div className="text-[10px] text-muted-foreground">Grupo B + C (24/7)</div>
+              <div className="font-semibold text-foreground">Mensagens automáticas</div>
+              <div className="text-[10px] text-muted-foreground">Quem esfriou + quem sumiu (24/7)</div>
             </div>
           </label>
           <label className="flex items-center gap-2 text-xs">
@@ -1932,7 +1932,7 @@ export function ReheatCyclePizza({
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-5 items-start justify-items-center">
         <PizzaRing
-          title="Grupo A — Lead novo"
+          title="Leads novos"
           subtitle="Entrada → ativo → aguardando → retomada → SMS → ligação → fecha A → B"
           steps={CYCLE_NOVO_STEPS}
           activeIndex={idxNovo}
@@ -1944,7 +1944,7 @@ export function ReheatCyclePizza({
           }
         />
         <PizzaRing
-          title="Grupo B — Frio"
+          title="Quem esfriou"
           subtitle="D+1→D10 · conta no teto diário · estado real"
           steps={CYCLE_FRIO_STEPS}
           activeIndex={idxFrio}
@@ -1956,7 +1956,7 @@ export function ReheatCyclePizza({
           }
         />
         <PizzaRing
-          title="Grupo C — Longo prazo"
+          title="Quem sumiu"
           subtitle="Meta + recalls · Zap do canal de origem · conta no teto"
           steps={CYCLE_LONGO_STEPS}
           activeIndex={idxLongo}
@@ -2019,7 +2019,7 @@ export function ReheatCyclePizza({
                     slicePick.step.id === "retry" ||
                     slicePick.step.id === "sms") && (
                     <p className="text-[10px] text-muted-foreground leading-snug">
-                      Grupo A (ciclo diário): ligação/SMS vêm do Kit — não do Multicanal B/C.
+                      Leads novos (ciclo diário): ligação/SMS vêm do Kit — não dos textos de quem esfriou/sumiu.
                     </p>
                   )}
               </div>

@@ -694,7 +694,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
             Todos os textos ajustáveis
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            Catálogo completo de mensagens de agendamento, atendimento, retenção, cadência,
+            Catálogo completo de mensagens de agendamento, atendimento, retenção, mensagens automáticas,
             reaquecimento, pós-venda e links para fluxos/voz. Salvar aqui grava o seu override —
             o envio automático só acontece se o toggle correspondente estiver ligado.
           </DialogDescription>
@@ -1368,7 +1368,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
           </TabsContent>
 
           <TabsContent value="calendario" className="flex-1 min-h-0 mt-0 overflow-auto p-4 space-y-3">
-            <p className="text-xs text-muted-foreground">Feriados que o motor de cadência e crons devem respeitar (não envia mensagens nestes dias).</p>
+            <p className="text-xs text-muted-foreground">Feriados que as mensagens automáticas devem respeitar (não envia mensagens nestes dias).</p>
             <div className="border rounded-xl p-3 space-y-2 bg-muted/30">
               <div className="text-xs font-semibold">Adicionar feriado</div>
               <div className="flex gap-2 flex-wrap">

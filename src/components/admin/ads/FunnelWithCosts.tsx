@@ -118,7 +118,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
             Funil Meta com custos
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Só contatos com prova de anúncio (AD/CTWA). {totalLeads} no funil · últimos{" "}
+            Só contatos com prova de anúncio. {totalLeads} no acompanhamento · últimos{" "}
             {periodDays} dias
           </p>
         </div>
@@ -132,8 +132,8 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
 
       {totalLeads === 0 ? (
         <div className="text-center py-10 text-sm text-muted-foreground">
-          Nenhum contato com prova Meta no período. Quando o AD ID / CTWA chegar junto com a
-          conversa, o funil aparece aqui.
+          Nenhum contato com prova de anúncio no período. Quando o Facebook enviar a identificação junto com a
+          conversa, o acompanhamento aparece aqui.
         </div>
       ) : (
         <div className="space-y-2">
@@ -182,7 +182,7 @@ export function FunnelWithCosts({ consultantId, spendCents, periodDays }: Props)
       <div className="mt-4 pt-4 border-t border-border/40 text-[11px] text-muted-foreground">
         <strong className="text-foreground">Custo/contato</strong> = gasto Ads ÷ contatos Meta
         na etapa · <strong className="text-foreground">CPA</strong> = custo por aprovado.
-        Indicação e orgânico ficam de fora deste funil.
+        Indicação e orgânico ficam de fora deste acompanhamento.
       </div>
     </Card>
   );

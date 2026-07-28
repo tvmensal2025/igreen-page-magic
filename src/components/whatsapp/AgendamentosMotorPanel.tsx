@@ -154,7 +154,7 @@ export function AgendamentosMotorPanel() {
     setEngineOn(true);
     setBusy(false);
     setConfirmGrupoB(false);
-    toast.success("Grupo B + motor ligados. Recalls/Meta continuam OFF.");
+    toast.success("Quem esfriou + envios automáticos ligados. Retornos longos continuam desligados.");
     await load();
   }
 
@@ -183,7 +183,7 @@ export function AgendamentosMotorPanel() {
           <div>
             <p className="text-sm font-semibold">Motor Zero Lead Perdido</p>
             <p className="text-[11px] text-muted-foreground">
-              {engineOn ? "Ligado" : "Desligado"} · Grupo B {grupoBOn ? "ON" : "parcial/OFF"} · Recalls {recallsOn ? "ON" : "OFF"}
+              {engineOn ? "Ligado" : "Desligado"} · Quem esfriou {grupoBOn ? "ligado" : "parcial/off"} · Retornos {recallsOn ? "ligados" : "off"}
             </p>
           </div>
         </div>
@@ -209,7 +209,7 @@ export function AgendamentosMotorPanel() {
       </div>
 
       <div className="rounded-xl border border-border/50 p-3 space-y-2">
-        <p className="text-xs font-semibold">Estágios Grupo B (onda curta)</p>
+        <p className="text-xs font-semibold">Etapas de quem esfriou (onda curta)</p>
         <div className="grid sm:grid-cols-2 gap-1.5">
           {GRUPO_B_TOGGLES.map(([key, label]) => (
             <div key={key} className="flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5">
@@ -225,7 +225,7 @@ export function AgendamentosMotorPanel() {
       </div>
 
       <div className="rounded-xl border border-violet-500/20 p-3 space-y-2">
-        <p className="text-xs font-semibold">Grupo C — recalls (status real nos badges)</p>
+        <p className="text-xs font-semibold">Quem sumiu — retornos (status real nos badges)</p>
         <div className="flex flex-wrap gap-1.5">
           {RECALL_TOGGLES.map((key) => (
             <Badge key={key} variant={toggleMap[key] ? "default" : "secondary"} className="text-[10px] font-mono">
@@ -239,7 +239,7 @@ export function AgendamentosMotorPanel() {
       <div className="flex flex-wrap gap-2">
         <Button size="sm" className="text-xs gap-1.5" disabled={busy} onClick={() => setConfirmGrupoB(true)}>
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-          Ligar motor + Grupo B
+          Ligar envios + quem esfriou
         </Button>
         <Button size="sm" variant="outline" className="text-xs gap-1.5" disabled={busy || !engineOn} onClick={() => void runTick()}>
           <Play className="w-3.5 h-3.5" /> Executar tick
@@ -275,7 +275,7 @@ export function AgendamentosMotorPanel() {
       <AlertDialog open={confirmGrupoB} onOpenChange={(o) => !busy && setConfirmGrupoB(o)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Ligar motor + todos estágios Grupo B?</AlertDialogTitle>
+            <AlertDialogTitle>Ligar envios + todas as etapas de quem esfriou?</AlertDialogTitle>
             <AlertDialogDescription>
               Liga cold/sms/call da onda curta. Recalls e Meta permanecem OFF.
               Confirme que na aba Lead só os DDD corretos estão liberados.
@@ -284,7 +284,7 @@ export function AgendamentosMotorPanel() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
             <AlertDialogAction disabled={busy} onClick={(e) => { e.preventDefault(); void enableGrupoB(); }}>
-              Ligar Grupo B
+              Ligar quem esfriou
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

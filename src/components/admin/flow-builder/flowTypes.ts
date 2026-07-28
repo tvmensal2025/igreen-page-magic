@@ -225,7 +225,7 @@ export const GUIDED_CAPTURE_OPTIONS: GuidedCaptureOption[] = [
 ];
 
 const VARIANT_LABEL_OVERRIDES: Partial<Record<Variant, string>> = {
-  A: "Sofia Multicanal (Grupo A)",
+  A: "Sofia — leads novos",
   B: "Fluxo B (IA livre)",
   C: "Fluxo C (legado)",
   D: "Fluxo D (padrão Camila)",

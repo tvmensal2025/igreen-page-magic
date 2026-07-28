@@ -125,7 +125,7 @@ export function CampaignWizardModal({ open, onClose, consultantId, onCreated }: 
       // Em vez de deixar o botão "morto", explicamos o que falta.
       if (!isSuperAdmin && !state.ctwaReady) {
         return toast({
-          title: "Falta concluir a pré-checagem",
+          title: "Falta concluir o checklist",
           description: "Revise os itens em amarelo/vermelho no topo (bot, Facebook, WhatsApp Business) e toque em 'Reverificar' antes de publicar.",
           variant: "destructive",
         });

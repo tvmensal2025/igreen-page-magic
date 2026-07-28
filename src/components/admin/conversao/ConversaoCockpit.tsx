@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase/client";
 import { useReferralPartners } from "@/components/admin/parceiros/hooks/useReferralPartners";
 import { Button } from "@/components/ui/button";
@@ -11,12 +10,12 @@ import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Loader2, RefreshCw, Flame, Cloud, Snowflake, Skull, AlertTriangle,
-  LifeBuoy, Search, Sparkles, Zap, Send, MessageSquare, BellOff, Clock, TrendingUp,
+  LifeBuoy, Search, Sparkles, Zap, Send, BellOff, Clock,
   CheckSquare, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
-  priorityScore, priorityTier, TIER_META, formatStuck, type Temp,
+  priorityScore, formatStuck, type Temp,
 } from "./score";
 import { stepLabel, loadFlowTitles } from "./stepLabels";
 import { ConversaoLeadDrawer } from "./ConversaoLeadDrawer";
@@ -24,14 +23,20 @@ import { FrasesPanel } from "./FrasesPanel";
 import { ConfigPanel } from "./ConfigPanel";
 import { ResultadosPanel } from "./ResultadosPanel";
 
+/** Labels em português simples (leigo) — a chave técnica (hot/warm…) não muda. */
 const TEMP_META: Record<Temp, { label: string; icon: any; cls: string }> = {
-  hot:       { label: "Quente",  icon: Flame,         cls: "bg-destructive/15 text-destructive border-destructive/30" },
-  warm:      { label: "Morno",   icon: Cloud,         cls: "bg-warning/15 text-warning border-warning/30" },
-  cold:      { label: "Frio",    icon: Snowflake,     cls: "bg-info/15 text-info border-info/30" },
-  dead:      { label: "Morto",   icon: Skull,         cls: "bg-muted text-muted-foreground border-border" },
-  objection: { label: "Objeção", icon: AlertTriangle, cls: "bg-warning/15 text-warning border-warning/30" },
-  rescue:    { label: "Resgate", icon: LifeBuoy,      cls: "bg-info/15 text-info border-info/30" },
+  hot:       { label: "Pronto pra fechar",  icon: Flame,         cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  warm:      { label: "Interessado",        icon: Cloud,         cls: "bg-warning/15 text-warning border-warning/30" },
+  cold:      { label: "Esfriando",          icon: Snowflake,     cls: "bg-info/15 text-info border-info/30" },
+  dead:      { label: "Difícil recuperar",  icon: Skull,         cls: "bg-muted text-muted-foreground border-border" },
+  objection: { label: "Travou",             icon: AlertTriangle, cls: "bg-warning/15 text-warning border-warning/30" },
+  rescue:    { label: "Vale resgatar",      icon: LifeBuoy,      cls: "bg-info/15 text-info border-info/30" },
 };
+
+/** Horas sem interação para entrar no balde “Quente sem resposta”. */
+const HOT_WAIT_HOURS = 24;
+
+type Bucket = "precisa" | "quente" | "todos";
 
 export interface LeadRow {
   customer_id: string;
@@ -57,6 +62,25 @@ export interface LeadRow {
   classification_source: string | null;
   // derivado
   score: number;
+}
+
+function isPrecisaDeVoce(r: LeadRow): boolean {
+  return !!r.bot_paused;
+}
+
+function isQuenteSemResposta(r: LeadRow): boolean {
+  return (
+    (r.temperature === "hot" || r.temperature === "rescue") &&
+    !r.bot_paused &&
+    (r.hours_stuck ?? 0) >= HOT_WAIT_HOURS
+  );
+}
+
+/** Tempo sem interação — nunca usa a palavra “parado” sozinha. */
+function labelSemResposta(hours: number | null): string {
+  const t = formatStuck(hours);
+  if (t === "—" || t === "agora") return t === "agora" ? "Falou agora" : "Sem histórico";
+  return `Sem resposta há ${t}`;
 }
 
 type OriginFilter = "all" | "meta_ads" | "whatsapp_direct" | "partner";
@@ -101,6 +125,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchSending, setBatchSending] = useState<{ done: number; total: number } | null>(null);
   const [activeView, setActiveView] = useState<string>(initialView || "fila");
+  const [bucket, setBucket] = useState<Bucket>("todos");
+  const [bucketReady, setBucketReady] = useState(false);
   const [searchParams] = useSearchParams();
   const { partners } = useReferralPartners();
 
@@ -110,6 +136,12 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     onViewConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialView]);
+
+  // Troca de consultor: recalcula o balde padrão.
+  useEffect(() => {
+    setBucketReady(false);
+    setBucket("todos");
+  }, [consultantId]);
   // Dispara a classificação sob demanda uma única vez por consultor ao abrir a
   // Central. Evita o trabalho ocioso do cron periódico: só processa quando
   // alguém realmente abre a tela.
@@ -133,6 +165,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null,origin_channel.in.(whapi,evolution)")
       .is("data_ativo", null)
       .is("data_validado", null)
+      // Encerrado (Ganho / Perdido / não é lead) sai da fila — chat WhatsApp continua.
+      .is("capture_closed_at", null)
       .order("last_bot_interaction_at", { ascending: false, nullsFirst: false })
       .limit(1000);
 
@@ -221,21 +255,29 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     if (p) setPartnerFilter(p);
   }, [searchParams]);
 
-  // ─── Métricas do topo ──────────────────────────────────────────────────────
+  // ─── Métricas do topo (baldes de ação) ─────────────────────────────────────
   const metrics = useMemo(() => {
     const classified = rows.filter((r) => r.classified_at);
     const unclassified = rows.length - classified.length;
-    const hotStuck = rows.filter(
-      (r) => (r.temperature === "hot" || r.temperature === "rescue") && r.bot_paused,
-    );
-    const revenueAtStake = rows
-      .filter((r) => (r.temperature === "hot" || r.temperature === "rescue") && r.bill_value)
-      .reduce((s, r) => s + (r.bill_value ?? 0), 0);
-    const avgChance = classified.length
-      ? Math.round(classified.reduce((s, r) => s + (r.conversion_chance ?? 0), 0) / classified.length)
-      : 0;
-    return { total: rows.length, classified: classified.length, unclassified, hotStuck: hotStuck.length, revenueAtStake, avgChance };
+    const precisaDeVoce = rows.filter(isPrecisaDeVoce);
+    const quenteSemResposta = rows.filter(isQuenteSemResposta);
+    return {
+      total: rows.length,
+      classified: classified.length,
+      unclassified,
+      precisaDeVoce: precisaDeVoce.length,
+      quenteSemResposta: quenteSemResposta.length,
+    };
   }, [rows]);
+
+  // Default ao abrir: Precisa de você → Quente sem resposta → Todos
+  useEffect(() => {
+    if (loading || bucketReady) return;
+    if (metrics.precisaDeVoce > 0) setBucket("precisa");
+    else if (metrics.quenteSemResposta > 0) setBucket("quente");
+    else setBucket("todos");
+    setBucketReady(true);
+  }, [loading, bucketReady, metrics.precisaDeVoce, metrics.quenteSemResposta]);
 
   // ─── Filtros + ordenação por score ──────────────────────────────────────────
   const partnerOptions: ComboboxOption[] = useMemo(() => [
@@ -246,6 +288,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
 
   const filtered = useMemo(() => {
     const out = rows.filter((r) => {
+      if (bucket === "precisa" && !isPrecisaDeVoce(r)) return false;
+      if (bucket === "quente" && !isQuenteSemResposta(r)) return false;
       if (tempFilter !== "all" && r.temperature !== tempFilter) return false;
       if (originFilter !== "all" && originOf(r.lead_source) !== originFilter) return false;
       if (partnerFilter === "none" && r.referral_partner_id) return false;
@@ -257,7 +301,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       return true;
     });
     return out.sort((a, b) => b.score - a.score);
-  }, [rows, tempFilter, originFilter, partnerFilter, search]);
+  }, [rows, bucket, tempFilter, originFilter, partnerFilter, search]);
 
   const tempCounts = useMemo(() => {
     const c: Record<Temp, number> = { hot: 0, warm: 0, cold: 0, dead: 0, objection: 0, rescue: 0 };
@@ -385,7 +429,15 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     void autoClassifyOnOpen();
   }, [loading, consultantId, autoClassifyOnOpen]);
 
-  // ─── Seleção + envio em lote ────────────────────────────────────────────────
+  // Se mudar para o balde “Precisa de você”, sai do modo seleção em lote
+  // (aí o certo é abrir o atendimento, não disparar reativação em massa).
+  useEffect(() => {
+    if (bucket === "precisa" && selectMode) {
+      setSelectMode(false);
+      setSelectedIds(new Set());
+    }
+  }, [bucket, selectMode]);
+
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -462,7 +514,7 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4 pb-24 min-w-0 max-w-full">
       <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
         <TabsList className="h-10 w-full min-w-0 justify-start gap-1 sm:w-auto">
-          <TabsTrigger value="fila" className="px-3 sm:px-4 shrink-0">Fila</TabsTrigger>
+          <TabsTrigger value="fila" className="px-3 sm:px-4 shrink-0">Atender</TabsTrigger>
           <TabsTrigger value="frases" className="px-3 sm:px-4 shrink-0">Frases</TabsTrigger>
           <TabsTrigger value="resultados" className="px-3 sm:px-4 shrink-0">Resultados</TabsTrigger>
           <TabsTrigger value="config" className="px-3 sm:px-4 shrink-0">Ajustes</TabsTrigger>
@@ -472,6 +524,8 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
       <TabsContent value="fila" className="space-y-3">
         <FilaToolbar
           metrics={metrics}
+          bucket={bucket}
+          setBucket={setBucket}
           bulk={bulk}
           onClassifyAll={classifyAll}
           onClassifyStale={classifyStale}
@@ -506,41 +560,27 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
           </Card>
         ) : filtered.length === 0 ? (
-          <EmptyState unclassified={metrics.unclassified} onClassifyAll={classifyAll} />
+          <EmptyState
+            unclassified={metrics.unclassified}
+            onClassifyAll={classifyAll}
+            bucket={bucket}
+            onShowAll={() => setBucket("todos")}
+          />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 min-w-0">
-            {filtered.length > 50 ? (
-              filtered.map((r) => (
-                <LeadCard
-                  key={r.customer_id}
-                  lead={r}
-                  stepLabelText={stepLabel(r.conversation_step, flowTitles)}
-                  classifying={classifying === r.customer_id}
-                  selectMode={selectMode}
-                  selected={selectedIds.has(r.customer_id)}
-                  onToggleSelect={() => toggleSelect(r.customer_id)}
-                  onOpen={() => setSelected(r)}
-                  onClassify={() => classifyOne(r.customer_id)}
-                  lite
-                />
-              ))
-            ) : (
-              <AnimatePresence mode="popLayout">
-                {filtered.map((r) => (
-                  <LeadCard
-                    key={r.customer_id}
-                    lead={r}
-                    stepLabelText={stepLabel(r.conversation_step, flowTitles)}
-                    classifying={classifying === r.customer_id}
-                    selectMode={selectMode}
-                    selected={selectedIds.has(r.customer_id)}
-                    onToggleSelect={() => toggleSelect(r.customer_id)}
-                    onOpen={() => setSelected(r)}
-                    onClassify={() => classifyOne(r.customer_id)}
-                  />
-                ))}
-              </AnimatePresence>
-            )}
+          <div className="overflow-hidden rounded-xl border border-border/50 bg-card divide-y divide-border/40 min-w-0">
+            {filtered.map((r) => (
+              <LeadRowItem
+                key={r.customer_id}
+                lead={r}
+                stepLabelText={stepLabel(r.conversation_step, flowTitles)}
+                classifying={classifying === r.customer_id}
+                selectMode={selectMode}
+                selected={selectedIds.has(r.customer_id)}
+                onToggleSelect={() => toggleSelect(r.customer_id)}
+                onOpen={() => setSelected(r)}
+                onClassify={() => classifyOne(r.customer_id)}
+              />
+            ))}
           </div>
         )}
       </TabsContent>
@@ -577,18 +617,19 @@ type Metrics = {
   total: number;
   classified: number;
   unclassified: number;
-  hotStuck: number;
-  revenueAtStake: number;
-  avgChance: number;
+  precisaDeVoce: number;
+  quenteSemResposta: number;
 };
 
 function FilaToolbar({
-  metrics, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading,
+  metrics, bucket, setBucket, bulk, onClassifyAll, onClassifyStale, staleLoading, onReload, loading,
   tempFilter, setTempFilter, tempCounts, originFilter, setOriginFilter,
   partnerOptions, partnerFilter, setPartnerFilter, hasPartners, search, setSearch,
   selectMode, selectedCount, batchSending, onToggleSelectMode, onSelectAll, onClearSelection, onSendBatch,
 }: {
   metrics: Metrics;
+  bucket: Bucket;
+  setBucket: (v: Bucket) => void;
   bulk: { done: number; total: number } | null;
   onClassifyAll: () => void;
   onClassifyStale: () => void;
@@ -615,11 +656,11 @@ function FilaToolbar({
   onSendBatch: () => void;
 }) {
   const ORIGIN_LABEL: Record<OriginFilter, string> = {
-    all: "Todas", meta_ads: "Meta Ads", whatsapp_direct: "WhatsApp", partner: "Parceiro",
+    all: "Todas as origens", meta_ads: "Anúncios", whatsapp_direct: "WhatsApp", partner: "Parceiro",
   };
   const totalTemp = (Object.keys(tempCounts) as Temp[]).reduce((s, t) => s + tempCounts[t], 0);
   const tempOptions: ComboboxOption[] = [
-    { value: "all", label: "Todos", hint: String(totalTemp) },
+    { value: "all", label: "Todas as situações", hint: String(totalTemp) },
     ...(Object.keys(TEMP_META) as Temp[]).map((t) => ({
       value: t,
       label: TEMP_META[t].label,
@@ -627,62 +668,108 @@ function FilaToolbar({
     })),
   ];
 
+  const showBatch = bucket === "quente" || bucket === "todos";
+
+  const buckets: { id: Bucket; label: string; hint: string; value: number; tone: "danger" | "warn" | "default" }[] = [
+    {
+      id: "precisa",
+      label: "Precisa de você",
+      hint: "Automação pausada — fale com a pessoa",
+      value: metrics.precisaDeVoce,
+      tone: metrics.precisaDeVoce > 0 ? "danger" : "default",
+    },
+    {
+      id: "quente",
+      label: "Quente sem resposta",
+      hint: "Pronto pra fechar, sem falar há 1 dia+",
+      value: metrics.quenteSemResposta,
+      tone: metrics.quenteSemResposta > 0 ? "warn" : "default",
+    },
+    {
+      id: "todos",
+      label: "Toda a fila",
+      hint: "Quem ainda não virou cliente",
+      value: metrics.total,
+      tone: "default",
+    },
+  ];
+
   return (
-    <div className="space-y-2.5 rounded-xl border border-border/50 bg-card p-3 min-w-0 max-w-full">
-      {/* KPIs + ações — empilha no mobile; linha no desktop */}
-      <div className="flex flex-col gap-2.5 lg:flex-row lg:items-end lg:gap-3 min-w-0">
-        <div className="grid min-w-0 flex-1 grid-cols-2 sm:grid-cols-4 gap-2">
-          <Kpi label="Na fila" value={String(metrics.total)} icon={<MessageSquare className="h-3 w-3" />} />
-          <Kpi
-            label="Quentes parados"
-            value={String(metrics.hotStuck)}
-            icon={<BellOff className="h-3 w-3" />}
-            tone={metrics.hotStuck > 0 ? "danger" : "default"}
-          />
-          <Kpi label="Receita em jogo" value={brl(metrics.revenueAtStake)} icon={<Flame className="h-3 w-3" />} tone="warn" />
-          <Kpi label="Chance média" value={`${metrics.avgChance}%`} icon={<TrendingUp className="h-3 w-3" />} />
+    <div className="space-y-3 rounded-xl border border-border/50 bg-card p-3 sm:p-4 min-w-0 max-w-full">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between min-w-0">
+        <div className="min-w-0">
+          <h2 className="text-base font-semibold text-foreground">Atender agora</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Pessoas que ainda não viraram cliente, na ordem de urgência.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 shrink-0">
           <Button variant="outline" size="sm" className="h-8 whitespace-nowrap" onClick={onReload} disabled={loading || !!bulk}>
-            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Recarregar
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Atualizar
           </Button>
           {metrics.unclassified > 0 && (
             <Button size="sm" className="h-8 gap-1.5 whitespace-nowrap" onClick={onClassifyAll} disabled={!!bulk}>
               {bulk ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
-              Classificar {metrics.unclassified}
+              Organizar {metrics.unclassified}
             </Button>
           )}
           {metrics.unclassified === 0 && metrics.classified > 0 && (
             <Button size="sm" variant="outline" className="h-8 gap-1.5 whitespace-nowrap" onClick={onClassifyStale} disabled={!!bulk || staleLoading}>
               {staleLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              <span className="sm:hidden">Reclassificar</span>
-              <span className="hidden sm:inline">Reclassificar 24h</span>
+              <span className="sm:hidden">Reorganizar</span>
+              <span className="hidden sm:inline">Reorganizar (24h)</span>
             </Button>
           )}
         </div>
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0">
+        {buckets.map((b) => {
+          const active = bucket === b.id;
+          const toneCls =
+            b.tone === "danger"
+              ? "text-destructive"
+              : b.tone === "warn"
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-foreground";
+          return (
+            <button
+              key={b.id}
+              type="button"
+              onClick={() => setBucket(b.id)}
+              className={`rounded-lg border px-3 py-2.5 text-left transition min-w-0 ${
+                active
+                  ? "border-primary/50 bg-primary/5 ring-1 ring-primary/30"
+                  : "border-border/40 bg-muted/20 hover:border-border hover:bg-muted/40"
+              }`}
+            >
+              <div className="text-[11px] font-medium text-muted-foreground">{b.label}</div>
+              <div className={`mt-0.5 text-xl font-bold tabular-nums leading-tight ${toneCls}`}>{b.value}</div>
+              <div className="mt-0.5 text-[10px] text-muted-foreground line-clamp-2">{b.hint}</div>
+            </button>
+          );
+        })}
+      </div>
+
       {bulk && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Classificando com IA…</span>
+            <span>Organizando a fila…</span>
             <span className="font-mono">{bulk.done}/{bulk.total}</span>
           </div>
           <Progress value={(bulk.done / Math.max(1, bulk.total)) * 100} className="h-1.5" />
         </div>
       )}
 
-
-      {/* Filtros + seleção — wrap no mobile */}
       <div className="flex flex-col gap-2 border-t border-border/40 pt-2.5 sm:flex-row sm:flex-wrap sm:items-center min-w-0">
         <div className="grid grid-cols-2 gap-2 sm:contents min-w-0">
-          <div className="w-full min-w-0 sm:w-40 sm:shrink-0">
+          <div className="w-full min-w-0 sm:w-44 sm:shrink-0">
             <Combobox
               options={tempOptions}
               value={tempFilter}
               onChange={(v) => setTempFilter((v as Temp | "all") ?? "all")}
-              placeholder="Temperatura"
-              searchPlaceholder="Buscar temperatura…"
+              placeholder="Situação"
+              searchPlaceholder="Buscar situação…"
               className="h-8"
             />
           </div>
@@ -715,180 +802,176 @@ function FilaToolbar({
         <div className="relative min-w-0 flex-1 w-full">
           <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar nome / resumo"
+            placeholder="Buscar por nome"
             className="h-8 w-full pl-7 text-xs"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-
-        <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
-          {!selectMode ? (
-            <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onToggleSelectMode}>
-              <CheckSquare className="h-3.5 w-3.5" /> Selecionar
-            </Button>
-          ) : (
-            <>
-              <span className="text-xs font-medium text-foreground">{selectedCount} sel.</span>
-              <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onSelectAll}>Todos</Button>
-              <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onClearSelection}>Limpar</Button>
-              {batchSending && (
-                <span className="font-mono text-[11px] text-muted-foreground">{batchSending.done}/{batchSending.total}</span>
-              )}
-              <Button
-                size="sm"
-                className="h-7 gap-1.5 text-[11px]"
-                disabled={selectedCount < 2 || !!batchSending}
-                onClick={onSendBatch}
-              >
-                {batchSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                Reativar
+        {showBatch && (
+          <div className="flex flex-wrap items-center gap-1.5 sm:ml-auto">
+            {!selectMode ? (
+              <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onToggleSelectMode}>
+                <CheckSquare className="h-3.5 w-3.5" /> Selecionar vários
               </Button>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleSelectMode} disabled={!!batchSending}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </>
-          )}
-        </div>
+            ) : (
+              <>
+                <span className="text-xs font-medium text-foreground">{selectedCount} marcados</span>
+                <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onSelectAll}>Todos</Button>
+                <Button variant="ghost" size="sm" className="h-7 text-[11px]" onClick={onClearSelection}>Limpar</Button>
+                {batchSending && (
+                  <span className="font-mono text-[11px] text-muted-foreground">{batchSending.done}/{batchSending.total}</span>
+                )}
+                <Button
+                  size="sm"
+                  className="h-7 gap-1.5 text-[11px]"
+                  disabled={selectedCount < 2 || !!batchSending}
+                  onClick={onSendBatch}
+                >
+                  {batchSending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                  Enviar mensagem
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onToggleSelectMode} disabled={!!batchSending}>
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function Kpi({ label, value, icon, tone = "default" }: {
-  label: string; value: string; icon: React.ReactNode;
-  tone?: "default" | "danger" | "warn";
-}) {
-  const toneCls =
-    tone === "danger"
-      ? "text-destructive"
-      : tone === "warn"
-        ? "text-amber-700 dark:text-amber-400"
-        : "text-foreground";
-  return (
-    <div className="rounded-lg border border-border/40 bg-muted/30 px-2.5 py-2">
-      <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {icon} <span className="truncate">{label}</span>
-      </div>
-      <div className={`mt-0.5 text-lg font-bold tabular-nums leading-tight ${toneCls}`}>{value}</div>
-    </div>
-  );
-}
-
-
-function LeadCard({ lead, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify, lite }: {
+function LeadRowItem({ lead, stepLabelText, classifying, selectMode, selected, onToggleSelect, onOpen, onClassify }: {
   lead: LeadRow; stepLabelText: string; classifying: boolean;
   selectMode: boolean; selected: boolean; onToggleSelect: () => void;
   onOpen: () => void; onClassify: () => void;
-  lite?: boolean;
 }) {
-  const tier = priorityTier(lead.score);
-  const TM = TIER_META[tier];
   const temp = lead.temperature ? TEMP_META[lead.temperature] : null;
   const TempIcon = temp?.icon;
   const isClassified = !!lead.classified_at;
-
-  const Wrapper: any = lite ? "div" : motion.div;
-  const wrapperProps = lite
-    ? {}
-    : {
-        layout: true,
-        initial: { opacity: 0, y: 8 },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.98 },
-        transition: { duration: 0.18 },
-      };
+  const precisa = isPrecisaDeVoce(lead);
 
   return (
-    <Wrapper {...wrapperProps}>
-      <Card
-        className={`group relative cursor-pointer overflow-hidden p-3 transition hover:border-primary/40 hover:shadow-sm ${selected ? "border-primary/60 ring-1 ring-primary/40" : ""}`}
-        onClick={selectMode ? onToggleSelect : onOpen}
-      >
-        <span className={`absolute left-0 top-0 h-full w-1 ${TM.dot}`} title={TM.label} />
+    <div
+      role="button"
+      tabIndex={0}
+      className={`group flex cursor-pointer items-start gap-3 px-3 py-3 transition hover:bg-muted/40 sm:items-center ${
+        selected ? "bg-primary/5" : ""
+      }`}
+      onClick={selectMode ? onToggleSelect : onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          (selectMode ? onToggleSelect : onOpen)();
+        }
+      }}
+    >
+      {selectMode && (
+        <span
+          className={`mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded border sm:mt-0 ${
+            selected ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card"
+          }`}
+        >
+          {selected && <CheckSquare className="h-3.5 w-3.5" />}
+        </span>
+      )}
 
-        {selectMode && (
-          <span
-            className={`absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded border ${selected ? "border-primary bg-primary text-primary-foreground" : "border-border/60 bg-card"}`}
-          >
-            {selected && <CheckSquare className="h-3.5 w-3.5" />}
+      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium ${
+        temp ? temp.cls : "border-border/40 bg-muted/40 text-muted-foreground"
+      }`}>
+        {initials(lead.name)}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="truncate text-sm font-semibold text-foreground">{lead.name || "(sem nome)"}</span>
+          {precisa ? (
+            <span className="inline-flex items-center gap-0.5 rounded border border-destructive/30 bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
+              <BellOff className="h-2.5 w-2.5" /> Você precisa falar
+            </span>
+          ) : temp && TempIcon ? (
+            <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] ${temp.cls}`}>
+              <TempIcon className="h-2.5 w-2.5" /> {temp.label}
+            </span>
+          ) : (
+            <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              Ainda sem análise
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+          <span className="inline-flex items-center gap-0.5">
+            <Clock className="h-2.5 w-2.5" /> {labelSemResposta(lead.hours_stuck)}
           </span>
-        )}
-
-        <div className="flex items-start gap-3 pl-1.5">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium ${temp ? temp.cls : "border-border/40 bg-muted/40 text-muted-foreground"}`}>
-            {initials(lead.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-semibold text-foreground">{lead.name || "(sem nome)"}</span>
-              {lead.bot_paused && (
-                <BellOff className="h-3 w-3 shrink-0 text-destructive" aria-label="Bot pausado" />
-              )}
-              <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground">
-                <Clock className="h-2.5 w-2.5" /> Parado {formatStuck(lead.hours_stuck)}
-              </span>
-            </div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              {temp && TempIcon ? (
-                <span className={`inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] ${temp.cls}`}>
-                  <TempIcon className="h-2.5 w-2.5" /> {temp.label}
-                </span>
-              ) : (
-                <span className="rounded border border-border/40 bg-muted/40 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  Sem classificação
-                </span>
-              )}
-              {lead.conversation_step && (
-                <span className="truncate text-[10px] text-muted-foreground">{stepLabelText}</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-1.5 text-[11px] text-muted-foreground">
           {lead.bill_value != null && (
-            <span>Conta <strong className="text-foreground">{brl(lead.bill_value)}</strong></span>
+            <span>Conta {brl(lead.bill_value)}</span>
           )}
-          {isClassified && lead.conversion_chance != null && (
-            <span>{lead.conversion_chance}%</span>
+          {lead.conversation_step && (
+            <span className="truncate">{stepLabelText}</span>
           )}
-          <span className="ml-auto font-mono tabular-nums text-muted-foreground/80">{Math.round(lead.score)}</span>
         </div>
-
-        {isClassified ? (
-          lead.next_action && (
-            <p className="mt-2 line-clamp-2 border-t border-border/30 pt-2 pl-1.5 text-[12px] text-foreground">
-              <span className="font-medium text-primary">Próximo:</span>{" "}
-              <span className="text-muted-foreground">{lead.next_action}</span>
-            </p>
-          )
-        ) : (
+        {isClassified && lead.next_action ? (
+          <p className="mt-1 line-clamp-1 text-[12px] text-muted-foreground">
+            <span className="font-medium text-primary">Próximo:</span> {lead.next_action}
+          </p>
+        ) : !isClassified ? (
           <Button
-            size="sm" variant="outline" className="mt-2 h-7 w-full gap-1 text-[11px]"
+            size="sm" variant="outline" className="mt-1.5 h-7 gap-1 text-[11px]"
             onClick={(e) => { e.stopPropagation(); onClassify(); }}
             disabled={classifying}
           >
             {classifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-            Analisar com IA
+            Analisar
           </Button>
-        )}
-      </Card>
-    </Wrapper>
+        ) : null}
+      </div>
+
+      {!selectMode && (
+        <Button
+          size="sm"
+          variant={precisa ? "default" : "outline"}
+          className="h-8 shrink-0 self-center"
+          onClick={(e) => { e.stopPropagation(); onOpen(); }}
+        >
+          Atender
+        </Button>
+      )}
+    </div>
   );
 }
 
-function EmptyState({ unclassified, onClassifyAll }: { unclassified: number; onClassifyAll: () => void }) {
+function EmptyState({
+  unclassified, onClassifyAll, bucket, onShowAll,
+}: {
+  unclassified: number;
+  onClassifyAll: () => void;
+  bucket: Bucket;
+  onShowAll: () => void;
+}) {
+  const msg =
+    bucket === "precisa"
+      ? "Ninguém com a automação pausada agora."
+      : bucket === "quente"
+        ? "Nenhum pronto pra fechar sem resposta no momento."
+        : "Ninguém com esses filtros.";
+
   return (
-    <Card className="p-16 text-center">
+    <Card className="p-12 text-center sm:p-16">
       <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-border/40 bg-muted/40">
         <Sparkles className="h-6 w-6 text-muted-foreground" />
       </div>
-      <p className="text-sm text-muted-foreground">Nenhum lead com esses filtros.</p>
-      {unclassified > 0 && (
+      <p className="text-sm text-muted-foreground">{msg}</p>
+      {bucket !== "todos" && (
+        <Button size="sm" variant="outline" className="mt-4" onClick={onShowAll}>
+          Ver toda a fila
+        </Button>
+      )}
+      {unclassified > 0 && bucket === "todos" && (
         <Button size="sm" className="mt-4 gap-1.5" onClick={onClassifyAll}>
-          <Zap className="h-3.5 w-3.5" /> Classificar {unclassified} agora
+          <Zap className="h-3.5 w-3.5" /> Organizar {unclassified} agora
         </Button>
       )}
     </Card>

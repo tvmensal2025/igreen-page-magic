@@ -101,7 +101,7 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
       if (prev.cities.length >= MAX_CITIES_PER_CAMPAIGN) {
         toast({
           title: `Máximo ${MAX_CITIES_PER_CAMPAIGN} cidades`,
-          description: "1 cidade por campanha baixa o CPL. Publique outra campanha para outra cidade.",
+          description: "1 cidade por campanha baixa o custo por conversa. Publique outra campanha para outra cidade.",
           variant: "destructive",
         });
         return {};
@@ -155,7 +155,7 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
           selectedPresetIds,
         };
       });
-      if (!opts?.silent) toast({ title: `${p.nome}`, description: `${added} cidade(s) — 1 por campanha melhora o CPL. Bônus: ${p.bonusLabel}.` });
+      if (!opts?.silent) toast({ title: `${p.nome}`, description: `${added} cidade(s) — 1 por campanha melhora o custo por conversa. Bônus: ${p.bonusLabel}.` });
       if (unresolved.length > 0) {
         const nomes = unresolved.slice(0, 5).map((u) => u.name).join(", ");
         toast({ title: `${unresolved.length} cidade(s) não encontradas no Meta`, description: `${nomes}${unresolved.length > 5 ? ` (+${unresolved.length - 5})` : ""}. Foram ignoradas pra evitar tráfego errado.` });
@@ -193,7 +193,7 @@ export function useRegionLogic({ open, state, patch, patchFn }: Deps) {
       if (added > 0) {
         toast({
           title: "1 cidade adicionada",
-          description: "Recomendado para CPL baixo. Busque outra cidade só se precisar.",
+          description: "Recomendado para custo baixo. Busque outra cidade só se precisar.",
         });
       }
     } finally { patch({ presetLoading: false, presetLoadingId: null }); }

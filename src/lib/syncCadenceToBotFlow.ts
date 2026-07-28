@@ -280,7 +280,7 @@ export async function persistCadenceLibraryRemote(
     consultant_id: consultantId,
     slot_key: REMOTE_LIBRARY_SLOT,
     kind: "text",
-    label: "Multicanal · biblioteca painel",
+    label: "Textos automáticos · biblioteca",
     url: "about:blank",
     text_content: payload.slice(0, 500_000),
     active: true,

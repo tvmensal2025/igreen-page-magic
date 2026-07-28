@@ -107,7 +107,7 @@ export default function ClienteCanalNovidadesDialog({ consultantId }: { consulta
         <DialogHeader>
           <DialogTitle>Canal de novidades (clientes)</DialogTitle>
           <DialogDescription>
-            Quando um cliente da carteira responder no WhatsApp, ele <strong>não entra no Grupo A</strong>
+            Quando um cliente da carteira responder no WhatsApp, ele <strong>não entra no acompanhamento de leads novos</strong>
             {" "}nem em cadastro. Recebe esta mensagem de recados/novidades.
             Você pode reservar um fluxo para o futuro (ainda não dispara).
           </DialogDescription>

@@ -69,7 +69,7 @@ const JOB_FRIENDLY: Record<string, { nome: string; paraQue: string }> = {
   },
   "cadence-tick-5min": {
     nome: "Sequência de etapas",
-    paraQue: "Motor de cadência.",
+    paraQue: "Mensagens automáticas.",
   },
   "pos-venda-auto-progress-daily": {
     nome: "Pós-venda 30/60/90",

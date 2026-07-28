@@ -131,7 +131,7 @@ export function RetentionSettingsCard({ canEdit = true }: { canEdit?: boolean })
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pause_call">Pausa cadência após ligação atendida (h)</Label>
+            <Label htmlFor="pause_call">Pausa mensagens automáticas após ligação atendida (h)</Label>
             <Input
               id="pause_call"
               type="number"

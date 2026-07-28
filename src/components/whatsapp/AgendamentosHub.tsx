@@ -610,7 +610,7 @@ export function AgendamentosHub({
     },
     {
       title: "Cutucadinha pós-FAQ",
-      desc: "Se o lead pergunta algo no FAQ e some por 20min, a IA dá uma cutucada. Só para leads.",
+      desc: "Se o lead pergunta algo no FAQ e some por 20min, a IA manda um lembrete. Só para leads.",
       icon: Zap,
       badge: "Automático",
       actionLabel: "Ver o que já saiu",
@@ -696,7 +696,7 @@ export function AgendamentosHub({
             <strong className="font-[Sora,ui-sans-serif] font-semibold">
               Clientes da carteira iGreen nunca recebem nada automático.
             </strong>{" "}
-            Reaquecimento, resgate e cutucada só rodam para leads do WhatsApp e cadastros manuais.
+            Reativação, resgate e lembretes só rodam para leads do WhatsApp e cadastros manuais.
             A esteira 30/60/90/120 dias do pós-venda só começa quando o consultor (ou admin) clica em <em>Aprovado</em>.
           </p>
         </div>

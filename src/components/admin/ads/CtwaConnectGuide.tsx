@@ -30,7 +30,7 @@ const STEPS = [
   {
     icon: Facebook,
     title: "2. Conecte sua conta do Facebook",
-    body: "Autorize sua Página oficial, conta de anúncios e (opcional) o Pixel. Isso permite criar campanhas em seu nome.",
+    body: "Autorize sua Página oficial, conta de anúncios e (opcional) o rastreamento do Facebook. Isso permite criar campanhas em seu nome.",
     cta: { label: "Conectar Facebook", href: "#facebook-connect" },
   },
   {
@@ -45,8 +45,8 @@ const STEPS = [
   },
   {
     icon: Rocket,
-    title: "4. Pré-checagem e publicação",
-    body: "Quando os 4 itens estiverem verdes no card de pré-checagem, o botão Publicar campanha libera. Pronto: anúncio CTWA nativo, sem link wa.me.",
+    title: "4. Checklist e publicação",
+    body: "Quando os 4 itens estiverem verdes no card Antes de anunciar, o botão Publicar libera. Pronto: anúncio que abre o WhatsApp, sem link wa.me.",
   },
 ];
 

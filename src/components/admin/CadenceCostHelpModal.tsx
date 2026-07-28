@@ -76,7 +76,7 @@ const STAGE_ORDER: Array<{ stage: string; group: "A" | "B" | "C" }> = [
 
 function previewBody(raw: string | undefined, channel: ChannelFilter): string {
   const t = String(raw || "").trim();
-  if (!t) return "Texto ainda não configurado no Multicanal.";
+  if (!t) return "Texto ainda não configurado nos textos automáticos.";
   if (/^\{\{\s*tema_sms\s*\}\}$/i.test(t) || t.includes("{{tema_sms}}")) {
     return "SMS do tema do dia (o motor escolhe o tema automaticamente).";
   }

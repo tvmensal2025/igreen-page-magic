@@ -218,7 +218,7 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
           if (failure.reason === "invalid_credentials") {
             toast({ title: "E-mail ou senha errados", description: `Não entrou no portal com ${email}.`, variant: "destructive" });
           } else if (failure.reason === "waf_blocked") {
-            toast({ title: "Portal bloqueado agora", description: "Cloudflare bloqueou o teste. Tente novamente em alguns minutos.", variant: "destructive" });
+            toast({ title: "Portal bloqueado agora", description: "O portal iGreen bloqueou o teste. Tente novamente em alguns minutos.", variant: "destructive" });
           } else {
             toast({ title: "Não consegui validar", description: failure.error, variant: "destructive" });
           }
@@ -263,7 +263,7 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
         } else if (res.reason === "invalid_credentials") {
           toast({ title: "E-mail ou senha errados", description: `Não sincronizou ${label}.`, variant: "destructive" });
         } else if (res.reason === "already_running") {
-          toast({ title: "Já tem sync em andamento", description: res.error, variant: "destructive" });
+          toast({ title: "Já tem atualização em andamento", description: res.error, variant: "destructive" });
         } else {
           toast({ title: "Falha na sincronização", description: res.error, variant: "destructive" });
         }
@@ -711,8 +711,8 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
                 </div>
                 <div className="text-[11px] text-muted-foreground">
                   {acc.igreen_consultor_id ? `ID iGreen ${acc.igreen_consultor_id}` : "Ainda não sincronizada"}
-                  {acc.last_sync_at ? ` • última sync ${formatDistanceToNow(new Date(acc.last_sync_at), { addSuffix: true, locale: ptBR })}` : ""}
-                  {syncingAccountId === acc.id ? " • sincronizando agora…" : ""}
+                  {acc.last_sync_at ? ` • última atualização ${formatDistanceToNow(new Date(acc.last_sync_at), { addSuffix: true, locale: ptBR })}` : ""}
+                  {syncingAccountId === acc.id ? " • atualizando agora…" : ""}
                 </div>
               </div>
               );
@@ -780,7 +780,7 @@ export function IGreenConnectionCard({ userId }: { userId: string }) {
                   localStorage.removeItem("sync_cooldown_until");
                 } catch { /* ignore */ }
                 void queryClient.invalidateQueries();
-                toast({ title: "Cache limpo", description: "A lista de clientes vai recarregar." });
+                toast({ title: "Lista limpa", description: "A lista de clientes vai recarregar." });
               }}
               title="Limpar cache local e recarregar a lista de clientes"
             >

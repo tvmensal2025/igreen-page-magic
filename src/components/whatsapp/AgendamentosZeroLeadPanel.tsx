@@ -460,7 +460,7 @@ export function AgendamentosZeroLeadPanel({
     }
     let blocked = 0;
     for (const r of naoLeads) {
-      if (await addToBlockList(r, `Grupo B: não-lead fora do DDD ${leadDdd}`)) blocked++;
+      if (await addToBlockList(r, `Quem esfriou: não é lead fora do DDD ${leadDdd}`)) blocked++;
     }
     toast.success(`${naoLeads.length} pausados · ${blocked} na lista de bloqueio`);
     setBusy(false); setConfirmPause(false); await load();
@@ -533,7 +533,7 @@ export function AgendamentosZeroLeadPanel({
     if (row && (action === "not_lead" || action === "lost")) {
       await addToBlockList(
         row,
-        action === "not_lead" ? "Grupo B: classificado como não é lead" : "Grupo B: classificado como perdido",
+        action === "not_lead" ? "Quem esfriou: classificado como não é lead" : "Quem esfriou: classificado como perdido",
       );
     }
     setBusy(false);
@@ -541,7 +541,7 @@ export function AgendamentosZeroLeadPanel({
       action === "not_lead" || action === "lost"
         ? "Classificado e bloqueado — sem mensagens automáticas"
         : action === "won"
-          ? "Marcado como ganhou — cadência encerrada"
+          ? "Marcado como ganhou — acompanhamento encerrado"
           : "Atualizado",
     );
     setHistoryContact(null);
@@ -698,7 +698,7 @@ export function AgendamentosZeroLeadPanel({
           <div className="rounded-2xl border border-border/60 bg-card/40 p-3 space-y-2">
             <p className="text-xs font-bold">Envio automático</p>
             <p className="text-[10px] text-warning bg-warning/10 border border-warning/20 rounded-lg px-2 py-1.5 leading-snug">
-              <strong>Global:</strong> ligar afeta a <strong>plataforma inteira</strong> (todos os consultores na fila de cadência),
+              <strong>Global:</strong> ligar afeta a <strong>plataforma inteira</strong> (todos os consultores na fila de mensagens automáticas),
               não só os {leadsLivres.length} lead(s) DDD {leadDdd} desta tela.
               {platformQueueCount != null && (
                 <> Hoje ~<strong>{platformQueueCount}</strong> contato(s) na fila ativa.</>
@@ -840,7 +840,7 @@ export function AgendamentosZeroLeadPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Pausar {naoLeads.length} não-leads?</AlertDialogTitle>
             <AlertDialogDescription>
-              Pausam no motor e entram na <strong>lista de bloqueio</strong> (sem WhatsApp, SMS, ligação ou cadência automática).
+              Pausam no motor e entram na <strong>lista de bloqueio</strong> (sem WhatsApp, SMS, ligação ou mensagens automáticas).
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -869,7 +869,7 @@ export function AgendamentosZeroLeadPanel({
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
                   <strong className="text-foreground">Atenção:</strong> isso é <strong className="text-foreground">global</strong> —
-                  todos os consultores. O motor processa a fila inteira de cadência (Grupo B/C),
+                  todos os consultores. O sistema processa a fila inteira (quem esfriou / quem sumiu),
                   não apenas os {leadsLivres.length} lead(s) DDD {leadDdd} liberados nesta tela.
                 </p>
                 {platformQueueCount != null && (

@@ -56,7 +56,7 @@ export const LEGACY_STEP_LABELS: Record<string, string> = {
   ask_finalizar: "Aguardando finalização",
   finalizando: "Finalizando",
   portal_submitting: "Enviando ao portal",
-  aguardando_otp: "Aguardando OTP",
+  aguardando_otp: "Aguardando código do celular",
   validando_otp: "Validando OTP",
   cadastro_em_analise: "Cadastro em análise",
   aguardando_assinatura: "Aguardando assinatura",

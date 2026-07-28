@@ -149,7 +149,7 @@ export function AddLeadDialog({ consultantId, stages, onLeadAdded }: AddLeadDial
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-sm">Adicionar cliente interessado ao funil</DialogTitle>
+          <DialogTitle className="text-sm">Adicionar cliente interessado ao quadro</DialogTitle>
         </DialogHeader>
 
         {/* Tab selector */}

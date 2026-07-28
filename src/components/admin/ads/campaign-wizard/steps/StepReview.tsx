@@ -104,7 +104,7 @@ export function StepReview({ state, derived, patch, publish, consultantId, consu
         </div>
         {consultantPhone && (
           <div className="text-[11px] border-t border-[hsl(var(--ads-border))] pt-1.5">
-            🎯 Destino CTWA: <strong className="text-[hsl(var(--ads-emerald-2))]">{formatBrPhone(consultantPhone)}</strong>
+            🎯 WhatsApp do anúncio: <strong className="text-[hsl(var(--ads-emerald-2))]">{formatBrPhone(consultantPhone)}</strong>
           </div>
         )}
       </Card>

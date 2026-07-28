@@ -139,13 +139,13 @@ export function ColdCadenceCapCard({ canEdit = true }: { canEdit?: boolean }) {
       </CardHeader>
       <CardContent className="space-y-4 text-sm">
         <p className="text-muted-foreground">
-          <strong>Grupo A</strong> (lead novo / inbound) é <strong>ilimitado</strong> — não conta e não alerta.
+          <strong>Leads novos</strong> (quem escreveu agora) são <strong>ilimitados</strong> — não contam e não alertam.
           <br />Alertas automáticos disparam ao atingir 60% / 85% / 100% em B, C e Global.
         </p>
 
         <div className="space-y-3">
-          <Bar label="Grupo B — Reengajamento" used={usedB} cap={capB} tone="b" />
-          <Bar label="Grupo C — Reciclagem (RECALL_*)" used={usedC} cap={capC} tone="c" />
+          <Bar label="Quem esfriou — reativação" used={usedB} cap={capB} tone="b" />
+          <Bar label="Quem sumiu — retornos longos" used={usedC} cap={capC} tone="c" />
           <Bar label="Global outreach (B + C, anti-ban)" used={usedB + usedC} cap={capG} tone="g" />
         </div>
 

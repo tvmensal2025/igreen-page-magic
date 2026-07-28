@@ -120,11 +120,11 @@ const NOVO_STEPS: TimelineStep[] = [
   { id: "ask_name", label: "Entrada no ciclo", hint: "WhatsApp — pede o nome (Sofia)", kind: "wa" },
   { id: "flow", label: "Ativo · início do fluxo", hint: "Conversa em andamento", kind: "flow" },
   { id: "wait", label: "Aguardando resposta (~2h)", hint: "Tempo fixo no motor", kind: "info" },
-  { id: "nudge", label: "Retomada no WhatsApp", hint: "Clique em Editar cutuca abaixo — Textos Multicanal", kind: "info" },
-  { id: "sms", label: "SMS de reforço", hint: "Textos Multicanal → Escada · SMS", kind: "info" },
-  { id: "call1", label: "Ligação (voz Sofia)", hint: "Textos Multicanal → Escada · Ligação", kind: "info" },
-  { id: "retry", label: "Aguardando · fecha o A", hint: "Textos Multicanal → Escada · Fecha A", kind: "info" },
-  { id: "to_b", label: "Entra no Grupo B", hint: "COLD_1 em diante", kind: "info" },
+  { id: "nudge", label: "Retomada no WhatsApp", hint: "Clique em Editar retomada abaixo — Textos automáticos", kind: "info" },
+  { id: "sms", label: "SMS de reforço", hint: "Textos automáticos → Lembretes · SMS", kind: "info" },
+  { id: "call1", label: "Ligação (voz Sofia)", hint: "Textos automáticos → Lembretes · Ligação", kind: "info" },
+  { id: "retry", label: "Aguardando · encerra leads novos", hint: "Textos automáticos → Encerrar leads novos", kind: "info" },
+  { id: "to_b", label: "Entra em quem esfriou", hint: "A partir do primeiro retorno de quem esfriou", kind: "info" },
 ];
 
 const FRIO_STEPS: TimelineStep[] = [
@@ -602,7 +602,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
         </TabsList>
         <TabsContent value="novo" className="mt-4 space-y-2">
           <p className="text-xs text-muted-foreground mb-3">
-            Escada A (cutuca / SMS / ligação): edite em Textos Multicanal — Grupo A (topo da lista).
+            Lembretes (WhatsApp / SMS / ligação): edite em Textos automáticos — Leads novos (topo da lista).
           </p>
           <Button
             type="button"
@@ -620,7 +620,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
               );
             }}
           >
-            Editar retomada (cutuca)
+            Editar retomada no WhatsApp
           </Button>
           {renderTimeline(NOVO_STEPS)}
         </TabsContent>

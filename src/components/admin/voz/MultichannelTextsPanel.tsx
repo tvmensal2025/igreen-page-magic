@@ -1,5 +1,5 @@
 /**
- * Biblioteca Multicanal — textos A/B + cortes TTS Sofia (aprovar → gerar → salvar).
+ * Textos automáticos — textos A/B + cortes TTS Sofia (aprovar → gerar → salvar).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -139,9 +139,9 @@ async function deactivatePersonalizedStitches(
 }
 
 const GROUP_TABS: { id: CadenceGroup | "all"; label: string }[] = [
-  { id: "A", label: "Grupo A — Novo" },
-  { id: "B", label: "Grupo B — Reaquecimento" },
-  { id: "C", label: "Grupo C — Longo prazo" },
+  { id: "A", label: "Leads novos" },
+  { id: "B", label: "Quem esfriou" },
+  { id: "C", label: "Quem sumiu" },
   { id: "theme", label: "Temas" },
   { id: "availability", label: "Disponibilidade" },
   { id: "all", label: "Todos" },
@@ -384,8 +384,8 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       if (!isSuperAdmin) {
         if (!opts?.quiet) {
           toast({
-            title: "Somente Super Admin publica o Multicanal oficial",
-            description: "Rascunho local salvo. Peça ao Super Admin para publicar Grupo A/B/C.",
+            title: "Somente Super Admin publica os textos oficiais",
+            description: "Rascunho local salvo. Peça ao Super Admin para publicar leads novos / quem esfriou / quem sumiu.",
           });
         }
         return { updated: [] as string[], errors: [] as string[] };
@@ -402,10 +402,10 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           const flowN = result.updated.filter((u) => !u.startsWith("motor:") && !u.startsWith("theme:")).length;
           const motorN = result.updated.filter((u) => u.startsWith("motor:")).length;
           toast({
-            title: "Publicado (Multicanal oficial)",
+            title: "Publicado (textos oficiais)",
             description:
               result.updated.length > 0
-                ? `Grupo A: ${flowN} passo(s) no fluxo público · Escada B/C: ${motorN} estágio(s) globais.`
+                ? `Leads novos: ${flowN} passo(s) no fluxo · Quem esfriou/sumiu: ${motorN} etapa(s).`
                 : "Nada a sincronizar neste fluxo/motor.",
           });
         }
@@ -1120,7 +1120,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           .from("voice_audio_clips")
           .insert({
             consultant_id: consultantId,
-            name: `[Multicanal] ${selected.title}${genderLabel}${isCall ? " · corpo" : ""}`.slice(0, 120),
+            name: `[Textos] ${selected.title}${genderLabel}${isCall ? " · corpo" : ""}`.slice(0, 120),
             audio_url: publicUrl,
             voice_id: VOICE_SOFIA_PROFESSIONAL,
             model_id: MODEL_V3,
@@ -1449,7 +1449,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
       <CadenceMissingAlert />
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/50 pb-3">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold tracking-tight">Biblioteca Multicanal</h3>
+          <h3 className="text-base font-semibold tracking-tight">Textos automáticos</h3>
           <p className="mt-0.5 text-[12px] text-muted-foreground">
             Clique no toque para editar · Sofia em cortes · envio automático{" "}
             {autoDispatchLive === null ? "…" : autoDispatchLive ? "ON" : "OFF"}
@@ -1530,12 +1530,12 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           {group === "A" && (
             <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5 text-xs text-muted-foreground space-y-2">
               <p className="font-medium text-foreground">
-                Grupo A — Lead novo + escada de silêncio
+                Leads novos + lembretes se silêncio
               </p>
               <p>
                 Passos Sofia vão para o fluxo do WhatsApp. A{" "}
                 <span className="text-foreground font-medium">escada</span> (Retomada / SMS /
-                Ligação / Fecha A) grava no motor — itens no topo da lista.
+                Ligação / Encerrar leads novos) grava no motor — itens no topo da lista.
               </p>
               <Button
                 type="button"
@@ -1544,19 +1544,19 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                 className="h-8"
                 onClick={() => openInspector("a_nudge_wa")}
               >
-                Editar retomada (cutuca)
+                Editar retomada no WhatsApp
               </Button>
             </div>
           )}
           {group === "B" && (
             <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">
-                Grupo B — Reaquecimento (lead frio)
+                Quem esfriou (reativação)
               </p>
               <p>
                 Lead que já está no CRM e parou. Onda curta D+1→D10: reabre no{" "}
                 <span className="text-foreground font-medium">D+1</span>; SMS/ligação só se houver
-                silêncio. Cap diário na Central de Automações. Grupo A (lead novo) não é limitado.
+                silêncio. Limite diário na Central de Automações. Leads novos não são limitados.
               </p>
               <p className="text-foreground/90">
                 Ao publicar: texto + botões (máx. 3) vão para{" "}
@@ -1569,7 +1569,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           {group === "C" && (
             <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 px-3 py-2.5 text-xs text-muted-foreground space-y-1">
               <p className="font-medium text-foreground">
-                Grupo C — Longo prazo (Meta + recalls)
+                Quem sumiu (longo prazo)
               </p>
               <p>
                 Começa após o Dia 10 (fim da onda B).{" "}
@@ -1760,7 +1760,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
                 {selected.linkedToStepKey && (
                   <div className="rounded-lg border border-dashed border-primary/30 bg-primary/[0.04] px-2.5 py-2 text-[11px] leading-snug text-muted-foreground">
-                    Erro OCR ligado a{" "}
+                    Erro na leitura da foto ligado a{" "}
                     <button
                       type="button"
                       className="font-medium text-primary underline-offset-2 hover:underline"
@@ -1796,7 +1796,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                   <div className="rounded-lg border border-info/30 bg-info/5 p-3 text-xs text-muted-foreground flex gap-2">
                     <AlertTriangle className="h-4 w-4 shrink-0 text-info" />
                     <span>
-                      Card informativo do Grupo C — <strong className="text-foreground">não envia mensagem</strong> ao
+                      Card informativo de quem sumiu — <strong className="text-foreground">não envia mensagem</strong> ao
                       lead. Use para documentar Meta/sync. Toggles na Central de Automações e clip de ligação no Motor.
                     </span>
                   </div>
@@ -2141,7 +2141,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
                 {(selected.group === "B" || selected.group === "C") && (
                   <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-200">
-                    Grupo {selected.group}: o motor de cadência envia texto, botões ou ligação
+                    Grupo {selected.group}: as mensagens automáticas enviam texto, botões ou ligação
                     (sem sequência multimodal de arquivos nesta versão). Use a aba Conteúdo /
                     Cortes quando houver áudio Sofia.
                   </div>
@@ -2439,7 +2439,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                         Adicione áudio, imagem ou vídeo e escolha a ordem (inclui o texto da aba
                         Conteúdo). Arquivos salvam ao enviar; a ordem grava nas setas — mesmo
                         caminho do FluxoBuilder (`ai_media_library` + ordem do consultor). Vale
-                        para o fluxo WhatsApp (Grupo A). B/C continuam texto/botões/ligação.
+                        para o fluxo WhatsApp (leads novos). Quem esfriou/sumiu continuam texto/botões/ligação.
                       </p>
                     </div>
                     <StepMediaPanel

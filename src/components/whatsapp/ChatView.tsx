@@ -1282,7 +1282,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
               <AlertDialogTitle>Reiniciar conversa automática deste cliente?</AlertDialogTitle>
               <AlertDialogDescription>
                 Vai apagar o histórico de mensagens do bot, decisões da IA, áudios disparados e
-                resetar a etapa do funil. O cliente continua cadastrado, mas o bot vai começar do zero
+                resetar a etapa do cadastro. O cliente continua cadastrado, mas a conversa automática recomeça do zero
                 na próxima mensagem que ele mandar. Útil pra você testar o fluxo.
               </AlertDialogDescription>
             </AlertDialogHeader>

@@ -38,15 +38,15 @@ export const CHECKLIST_GROUPS: Record<
     hint: "Escada D+1…D10, cap 60, anti-spam e estágios novos.",
   },
   grupoA: {
-    label: "Grupo A — Lead novo (NÃO alterar)",
+    label: "Leads novos (não alterar)",
     hint: "Congelado: textos, steps e bot-flow do lead quente.",
   },
   grupoB: {
-    label: "Grupo B — Reaquecimento (lead frio)",
-    hint: "Onda curta D+1 → Dia 10 no Multicanal.",
+    label: "Quem esfriou (reativação)",
+    hint: "Onda curta D+1 → Dia 10 nos textos automáticos.",
   },
   grupoC: {
-    label: "Grupo C — Longo prazo (Meta + recalls)",
+    label: "Quem sumiu (longo prazo)",
     hint: "Cada marco: WA análise → SMS → ligação se silêncio. Toggles OFF até validar onda B.",
   },
   temas: {
@@ -62,7 +62,7 @@ export const CHECKLIST_GROUPS: Record<
     hint: "Áudios D+1, Dia 4 e Dia 10 prontos e testáveis.",
   },
   meta: {
-    label: "Remarketing Meta (Grupo C)",
+    label: "Remarketing Facebook (quem sumiu)",
     hint: "Custom Audience + estágio RETARGET_ADS_15D (ainda OFF).",
   },
   ops: {
@@ -179,15 +179,15 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   // ── Grupo A ──
   {
     key: "a1_freeze",
-    title: "Grupo A intocado (lead novo)",
-    desc: "Não editar textos/steps/bot-flow do Grupo A nesta onda. Só conferir que continua igual.",
+    title: "Leads novos intocados",
+    desc: "Não editar textos/passos dos leads novos nesta onda. Só conferir que continua igual.",
     link: "/admin?tab=agendamentos",
     group: "grupoA",
   },
   {
     key: "a2_saudacao",
-    title: "Grupo A — saudação + qualificação",
-    desc: "Abrir Multicanal → Grupo A e confirmar abertura, áudios e botões do lead quente.",
+    title: "Leads novos — saudação + qualificação",
+    desc: "Abrir Textos automáticos → Leads novos e confirmar abertura, áudios e botões.",
     link: "/admin/agendamentos-central",
     group: "grupoA",
   },
@@ -217,7 +217,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   {
     key: "b3_sms1",
     title: "B — SMS D+1 (silêncio)",
-    desc: "Texto ≤160 com **https://wa.me/{{consultor_phone}}** e SAIR. Conferir prévia Multicanal.",
+    desc: "Texto ≤160 com **https://wa.me/{{consultor_phone}}** e SAIR. Conferir prévia nos textos automáticos.",
     link: "/admin/agendamentos-central",
     group: "grupoB",
     autoKey: "sms1_wame",
@@ -301,7 +301,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   {
     key: "c_meta_guia",
     title: "C — Meta: guias CLOSE_LOST / sync / ~15d",
-    desc: "Multicanal → Grupo C: cards informativos (não enviam WA). Toggles `facebook_retarget_sync` e `cadence_retarget_ads_15d` OFF.",
+    desc: "Textos automáticos → Quem sumiu: cards informativos (não enviam WhatsApp).",
     link: "/admin?tab=voz&sub=textos&cadenceGroup=C",
     group: "grupoC",
   },
@@ -375,7 +375,7 @@ export const ZERO_LEAD_CHECKLIST: ChecklistItem[] = [
   },
   {
     key: "sms2_preview",
-    title: "Prévia Multicanal com telefone real",
+    title: "Prévia dos textos com telefone real",
     desc: "Abrir prévia SMS e confirmar link `https://wa.me/` com telefone do consultor (não vazio nem literal `{{consultor_phone}}`).",
     link: "/admin/agendamentos-central",
     group: "sms",
@@ -553,7 +553,7 @@ export async function runZeroLeadAutoAudit(supabase: {
   results.push({
     key: "reheat_live_off",
     ok: reheat?.live_dispatch_enabled === false || reheat?.live_dispatch_enabled == null,
-    label: "Reheat live OFF",
+    label: "Fila diária ao vivo OFF",
     detail: reheat?.live_dispatch_enabled ? "LIGADO — perigo" : "OK desligado",
   });
 

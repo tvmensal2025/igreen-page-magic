@@ -153,7 +153,7 @@ export function SyncMetricsButton({ consultantId, onSynced, size = "sm" }: Props
                 <div className="rounded-lg bg-warning/10 border border-warning/30 p-2 text-xs">
                   <strong className="text-warning">⚠ {result.auto_paused} campanha(s) auto-pausada(s)</strong>
                   <p className="text-muted-foreground mt-0.5">
-                    Por saldo baixo, criativo cansado, ou CPL elevado. Veja a lista de campanhas para detalhes.
+                    Por saldo baixo, criativo cansado, ou custo por conversa alto. Veja a lista de campanhas para detalhes.
                   </p>
                 </div>
               )}

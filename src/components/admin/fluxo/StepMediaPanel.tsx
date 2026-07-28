@@ -514,7 +514,7 @@ export default function StepMediaPanel({
       }
       if (inserted === 0) {
         toast.message(
-          "Áudios Sofia já estavam no passo (ou gere o passo 3 em Voz → Textos Multicanal).",
+          "Áudios Sofia já estavam no passo (ou gere o passo 3 em Ligação → Textos automáticos).",
         );
       } else {
         toast.success(`${inserted} áudio(s) Sofia sincronizado(s) neste passo.`);

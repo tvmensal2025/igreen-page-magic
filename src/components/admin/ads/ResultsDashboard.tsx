@@ -269,7 +269,7 @@ export function ResultsDashboard({
             <div className="text-xs sm:text-sm">
               <p className="font-semibold text-foreground mb-1">Atribuição de anúncio pendente</p>
               <p className="text-muted-foreground">
-                Você teve <strong className="text-foreground">{totals.clicks} cliques</strong> no anúncio, mas nenhum contato no CRM possui prova de atribuição por ID do anúncio ou identificador CTWA ainda.
+                Você teve <strong className="text-foreground">{totals.clicks} cliques</strong> no anúncio, mas nenhum contato no painel ainda tem prova de que veio deste anúncio.
                 Isso pode acontecer quando a origem do anúncio não chega junto com a conversa ou quando o contato entrou antes da atribuição automática.
                 Os números abaixo mostram <strong className="text-foreground">apenas clientes interessados/clientes confirmados de anúncio</strong>.
               </p>

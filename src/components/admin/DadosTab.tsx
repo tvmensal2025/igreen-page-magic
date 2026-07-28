@@ -466,18 +466,18 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       {/* Pixel Tracking */}
       <div className="bg-card rounded-2xl border border-border p-6">
         <h3 className="font-heading font-bold text-foreground mb-4 flex items-center gap-2">
-          <Globe className="w-5 h-5 text-primary" /> Pixels de Rastreamento
+          <Globe className="w-5 h-5 text-primary" /> Rastreamento das páginas
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
-          Usados nas landings (normal e premium). O Pixel da plataforma continua ativo; o seu Pixel e o GA4 somam se preenchidos.
+          Usados nas suas páginas (normal e premium). O rastreamento da plataforma continua ativo; o seu Facebook Pixel e o Google Analytics somam se preenchidos.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="facebook_pixel_id" className="text-sm text-muted-foreground">Facebook Pixel ID</Label>
+            <Label htmlFor="facebook_pixel_id" className="text-sm text-muted-foreground">ID do Facebook Pixel (opcional)</Label>
             <Input id="facebook_pixel_id" value={form.facebook_pixel_id} onChange={(e) => onFormChange({ facebook_pixel_id: e.target.value })} placeholder="Ex: 123456789012345" className="bg-secondary border-border" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="google_analytics_id" className="text-sm text-muted-foreground">Google Analytics ID (GA4)</Label>
+            <Label htmlFor="google_analytics_id" className="text-sm text-muted-foreground">ID do Google Analytics (opcional)</Label>
             <Input id="google_analytics_id" value={form.google_analytics_id} onChange={(e) => onFormChange({ google_analytics_id: e.target.value })} placeholder="Ex: G-XXXXXXXXXX" className="bg-secondary border-border" />
           </div>
         </div>

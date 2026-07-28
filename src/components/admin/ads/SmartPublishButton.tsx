@@ -49,7 +49,7 @@ export function SmartPublishButton({ template, consultantId, onPublished, onFall
       } else if (isWaba) {
         const stepsTxt = nextSteps.length ? "\n\nPróximos passos:\n• " + nextSteps.join("\n• ") : "";
         const triedTxt = tried.length ? `\n\nCaminhos testados na Graph: ${tried.join(", ")}` : "";
-        const baseMsg = msg.replace(/^\[[^\]]+\]\s*/, "") || "A Meta rejeitou o número WABA.";
+        const baseMsg = msg.replace(/^\[[^\]]+\]\s*/, "") || "A Meta rejeitou o número do WhatsApp Business.";
         toast.error("WhatsApp Business não encontrado para esta Página", {
           id: toastId,
           duration: 20000,

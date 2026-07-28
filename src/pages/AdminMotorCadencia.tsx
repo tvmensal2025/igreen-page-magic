@@ -468,15 +468,15 @@ export default function AdminMotorCadencia() {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingToggle?.kind === "engine"
-                ? "Ligar o motor de cadência?"
+                ? "Ligar as mensagens automáticas?"
                 : `Ligar ${pendingToggle?.kind === "recall" ? pendingToggle.key : ""}?`}
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               {pendingToggle?.kind === "engine" ? (
                 <>
                   <span className="block">Isso pode disparar envios automáticos se os estágios/toggles estiverem ON.</span>
-                  <span className="block">• Grupo B: onda fria (D+1→D10)</span>
-                  <span className="block">• Grupo C: só com toggle de cada recall ON</span>
+                  <span className="block">• Quem esfriou: onda fria (D+1→D10)</span>
+                  <span className="block">• Quem sumiu: só com cada retorno ligado</span>
                   <span className="block font-medium text-foreground">Textos já estão no banco — não precisa ligar só para conferir texto.</span>
                 </>
               ) : (
@@ -514,7 +514,7 @@ export default function AdminMotorCadencia() {
               </p>
             </div>
             <Button asChild size="sm">
-              <Link to="/admin?tab=agendamentos&hubTab=grupo-b">Abrir Grupo B</Link>
+              <Link to="/admin?tab=agendamentos&hubTab=grupo-b">Abrir quem esfriou</Link>
             </Button>
           </div>
         </Card>
@@ -530,20 +530,20 @@ export default function AdminMotorCadencia() {
               <p className="text-xs text-muted-foreground leading-relaxed max-w-xl">
                 <strong className="text-foreground">Primeiros dias</strong> = mensagens do lead frio.
                 <strong className="text-foreground"> Longo prazo</strong> = retornos depois de semanas/meses.
-                Salve no Multicanal — o sistema usa esses textos.
+                Salve em Textos automáticos — o sistema usa esses textos.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button asChild size="sm" className="bg-emerald-600 hover:bg-emerald-700">
                 <Link to="/admin?tab=voz&sub=textos&cadenceGroup=B">
                   <FileText className="h-3.5 w-3.5 mr-1.5" />
-                  Grupo B — Reaquecimento
+                  Quem esfriou — reativação
                 </Link>
               </Button>
               <Button asChild size="sm" variant="outline" className="border-violet-500/40">
                 <Link to="/admin?tab=voz&sub=textos&cadenceGroup=C">
                   <FileText className="h-3.5 w-3.5 mr-1.5" />
-                  Grupo C — Longo prazo
+                  Quem sumiu — longo prazo
                 </Link>
               </Button>
             </div>
@@ -557,7 +557,7 @@ export default function AdminMotorCadencia() {
               <Megaphone className="h-4 w-4 text-violet-600" />
             </div>
             <div className="space-y-2 min-w-0 flex-1">
-              <div className="font-semibold text-sm">Grupo C — Meta / remarketing (sem imagem neste painel)</div>
+              <div className="font-semibold text-sm">Quem sumiu — Facebook / remarketing (sem imagem neste painel)</div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Depois do Dia 10 o lead vai para <strong className="text-foreground">Custom Audience</strong>
                 (telefone/e-mail em hash). <strong className="text-foreground">Não envia WhatsApp</strong> e
@@ -660,7 +660,7 @@ export default function AdminMotorCadencia() {
         <Card className="p-4 border-violet-500/20">
           <h2 className="text-sm font-semibold flex items-center gap-2 mb-2">
             <Megaphone className="h-4 w-4 text-violet-600" />
-            Toggles Grupo C — recalls longos
+            Retornos longos (quem sumiu)
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
             Cada marco precisa do toggle ON <strong>e</strong> do estágio ativo no calendário acima.
@@ -730,8 +730,8 @@ export default function AdminMotorCadencia() {
             <div>
               <h2 className="text-sm font-semibold">Calendário B + C</h2>
               <p className="text-xs text-muted-foreground mt-1 max-w-xl">
-                <span className="text-emerald-700 dark:text-emerald-400 font-medium">Grupo B</span> = reaquecimento (10 dias).
-                <span className="text-violet-700 dark:text-violet-400 font-medium"> Grupo C</span> = Meta + recalls.
+                <span className="text-emerald-700 dark:text-emerald-400 font-medium">Quem esfriou</span> = reativação (10 dias).
+                <span className="text-violet-700 dark:text-violet-400 font-medium"> Quem sumiu</span> = Facebook + retornos.
                 “Disparar após X horas” = espera antes deste toque.
               </p>
             </div>
@@ -759,7 +759,7 @@ export default function AdminMotorCadencia() {
                           variant={day.group === "B" ? "secondary" : "outline"}
                           className={day.group === "C" ? "border-violet-500/40 text-violet-700 dark:text-violet-300" : ""}
                         >
-                          {day.group === "B" ? "Grupo B" : "Grupo C"}
+                          {day.group === "B" ? "Quem esfriou" : "Quem sumiu"}
                         </Badge>
                       </div>
                       <div className="text-xs text-muted-foreground">{day.subtitle}</div>
@@ -774,7 +774,7 @@ export default function AdminMotorCadencia() {
                         const catalogBody = previewBody.get(step.stage);
                         const showPreview = step.textsFromMultichannel && !techMode;
                         const bodyShown = showPreview
-                          ? (catalogBody || row?.message_text || "(sem texto no Multicanal)")
+                          ? (catalogBody || row?.message_text || "(sem texto nos automáticos)")
                           : (row?.message_text || "");
 
                         return (
@@ -804,7 +804,7 @@ export default function AdminMotorCadencia() {
                                   <Badge variant="outline" className="font-mono text-[10px]">{step.stage}</Badge>
                                   {step.templateKey && (
                                     <Badge variant="secondary" className="text-[10px]">
-                                      Multicanal: {step.templateKey}
+                                      Texto: {step.templateKey}
                                     </Badge>
                                   )}
                                 </div>
@@ -847,10 +847,10 @@ export default function AdminMotorCadencia() {
                             {step.textsFromMultichannel && !step.editableConfig && step.templateKey && (
                               <div className="space-y-1">
                                 <Label className="text-[10px] text-muted-foreground">
-                                  Guia Multicanal (Grupo C) — somente leitura
+                                  Guia de textos (quem sumiu) — somente leitura
                                 </Label>
                                 <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/30 p-3 max-h-40 overflow-auto font-sans">
-                                  {catalogBody || "(ver Multicanal → Grupo C)"}
+                                  {catalogBody || "(ver Textos automáticos → Quem sumiu)"}
                                 </pre>
                               </div>
                             )}
@@ -860,7 +860,7 @@ export default function AdminMotorCadencia() {
                                 {showPreview ? (
                                   <div className="space-y-1">
                                     <Label className="text-[10px] text-muted-foreground">
-                                      Prévia do texto (Multicanal) — somente leitura
+                                      Prévia do texto — somente leitura
                                     </Label>
                                     <pre className="text-xs whitespace-pre-wrap rounded-md border bg-muted/30 p-3 max-h-40 overflow-auto font-sans">
                                       {bodyShown}
@@ -921,7 +921,7 @@ export default function AdminMotorCadencia() {
                                         });
                                       }}
                                     >
-                                      <option value="">Selecione clip Sofia (Estúdio / Multicanal)</option>
+                                      <option value="">Selecione áudio Sofia (Estúdio / Textos automáticos)</option>
                                       {clips.map((c) => (
                                         <option key={c.id} value={c.id}>
                                           {(c.name || c.id.slice(0, 8)) +

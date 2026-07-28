@@ -81,7 +81,7 @@ export function CloseCaptureButton({ customerId, consultantId, onClosed }: Props
         title="Registre se este lead virou cliente (Ganho) ou foi perdido"
       >
         <ClipboardCheck className="w-3.5 h-3.5" />
-        Encerrar captação
+        Encerrar cadastro
       </Button>
 
       <CloseCaptureDialog
