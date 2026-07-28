@@ -13,13 +13,18 @@ import { toWhatsappCanonical } from "./portal-phone.ts";
 // deno-lint-ignore no-explicit-any
 type SB = any;
 
-export type InboundCustomerRow = Record<string, unknown> & {
+export type InboundCustomerRow = {
   id: string;
   phone_whatsapp?: string | null;
   whatsapp_chat_id?: string | null;
   customer_origin?: string | null;
   status?: string | null;
   created_at?: string | null;
+  conversation_step?: string | null;
+  consultant_id?: string | null;
+  // Campos extras do select("*") — tipagem frouxa p/ não quebrar webhooks.
+  // deno-lint-ignore no-explicit-any
+  [key: string]: any;
 };
 
 function scoreRow(r: InboundCustomerRow): number {
@@ -50,7 +55,8 @@ export async function findCustomerForInboundPhone(
   consultantId: string,
   rawPhone: string,
   opts?: { onlyTestLead?: boolean },
-): Promise<InboundCustomerRow | null> {
+  // deno-lint-ignore no-explicit-any
+): Promise<any> {
   const phone = toWhatsappCanonical(rawPhone) || String(rawPhone || "").replace(/\D/g, "");
   if (!phone || phone.length < 10) return null;
 

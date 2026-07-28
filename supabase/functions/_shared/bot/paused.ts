@@ -8,7 +8,8 @@
 //   - bot_paused_until > now()  (pausa programada ainda no futuro)
 //   - ai_agent_config.enabled === false para o consultor (switch global desligado)
 
-import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+// deno-lint-ignore no-explicit-any
+type SB = any;
 
 export interface PausableCustomer {
   bot_paused?: boolean | null;
@@ -40,7 +41,7 @@ export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined):
  * Usar em loops/scheduled jobs onde só se tem phone+consultant_id.
  */
 export async function isPausedByPhone(
-  supabase: SupabaseClient,
+  supabase: SB,
   phone: string,
   consultantId?: string | null,
 ): Promise<boolean> {
@@ -68,7 +69,7 @@ const AI_ENABLED_TTL_MS = 5_000;
  * decisão explícita do dono dos leads).
  */
 export async function isConsultantAIDisabled(
-  supabase: SupabaseClient,
+  supabase: SB,
   consultantId: string | null | undefined,
 ): Promise<boolean> {
   if (!consultantId) return false;
@@ -91,7 +92,7 @@ export async function isConsultantAIDisabled(
  * Bloqueio total: humano assumiu OU IA globalmente desligada.
  */
 export async function isAutomationBlocked(
-  supabase: SupabaseClient,
+  supabase: SB,
   customer: PausableCustomer | null | undefined,
   consultantId: string | null | undefined,
 ): Promise<{ blocked: boolean; reason: string | null }> {
@@ -120,7 +121,9 @@ type OutboundSender = {
 export function wrapSenderWithLivePauseGuard<T extends OutboundSender>(
   base: T,
   opts: {
-    supabase: SupabaseClient;
+    // Tipagem frouxa: clientes supabase do webhook vs esm.sh divergem.
+    // deno-lint-ignore no-explicit-any
+    supabase: any;
     phone?: string;
     getPhone?: () => string | null | undefined;
     consultantId?: string | null;

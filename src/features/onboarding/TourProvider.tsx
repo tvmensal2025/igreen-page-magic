@@ -49,8 +49,8 @@ function computeHighlight(rect: DOMRect, selector: string | null | undefined): T
     ? vh - 16
     : Math.max(160, vh - CARD_RESERVE_BOTTOM - 24);
 
-  let top = clamp(rawTop, 8, vh - 24);
-  let left = clamp(rawLeft, 8, vw - 24);
+  const top = clamp(rawTop, 8, vh - 24);
+  const left = clamp(rawLeft, 8, vw - 24);
   let width = Math.min(rawWidth, vw - left - 8);
   let height = Math.min(rawHeight, maxHighlight, vh - top - 8);
 
