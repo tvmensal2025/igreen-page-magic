@@ -39,6 +39,9 @@ allowlist de slugs no workflow.
 **Docs antigos com `inputs.function_name` (singular) ou curl sem
 `expected_sha` / `confirm_production` estão OBSOLETOS — vão falhar.**
 
+> Validação `all`: só o token exato `all` (ou `,all,` na lista). Slugs como
+> `manual-step-send` são válidos — não usar match `*all*`.
+
 ### Passo a passo
 
 1. Commit + push em `origin main` (rebase se o remoto avançou).
