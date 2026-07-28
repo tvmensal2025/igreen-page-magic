@@ -117,8 +117,8 @@ function ContactRow({
   const pausedMeta = labelPausedReason(row.pausedReason);
   const stageShort = labelCadenceStage(row.stage, "short");
   const stageLong = labelCadenceStage(row.stage, "long");
-  const group = cadenceStageGroup(row.stage);
-  const groupLabel = group ? CADENCE_GROUP_BADGE[group] : null;
+  const group = operationalGroup(row);
+  const groupLabel = group && group !== "fim" ? CADENCE_GROUP_BADGE[group] : null;
   const bill = row.billAttention.active;
   return (
     <div

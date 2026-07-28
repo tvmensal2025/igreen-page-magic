@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-28** (sync multi-conta promove telefone de subconta).
+Última atualização: **2026-07-28** (Grupo A UUID ≠ Cérebro + reset Leandro).
+
+## 2026-07-28 — Grupo A UUID caía no Cérebro (Leandro Severiano)
+Lead novo no Sofia A com `conversation_step` = UUID de `a1_ask_name`: `_emCadastro` só checava `CADASTRO_STEPS` (keys legadas) → `false` → Cérebro assumia (“outro fluxo”). Msg start_attendance com protocolo vazio virava `Protocolo:**`. Fix: `_emCadastro |= isActiveConversationalFunnelStep` (whapi+evolution); scrub linha protocolo vazia em `attendance-flow`; template start_attendance do Rafael alinhado ao A1; badge PAUSED na pizza usa `operationalGroup`. Armadilha #40. Lead resetado → `welcome` + cadence `NEW`.
 
 ## 2026-07-28 — Sync multi-conta: telefone de subconta sempre atualiza
 Bug: cliente entrava pela Conta principal (rede) como `sem_celular_*`; subconta (Oseias/Nilma/…) trazia celular real mas upsert por `phone_whatsapp` batia no unique `(consultant_id, igreen_code)` e o enrich filtrava por `igreen_account_id`. Fix em `persistCustomers` (UPDATE por id / promove placeholder) + `applyCustomerDetails` (sem filtro de conta) + `enrich_only` reprocessa `sem_celular_*` pelo `registered_by`. Doc: `#igreen-sync-oficial` · AGENTS sync.

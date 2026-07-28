@@ -60,9 +60,29 @@ export async function assignProtocolToCustomer(
       }
     }
 
-    // _initials: se temos short_code, a RPC prioriza a coluna do parceiro;
-    // ainda assim passamos short_code/iniciais como hint de fallback.
-    const initialsHint = shortCode || partnerInitials(partnerName || opts.consultantName || "");
+    // Sem nome do consultor → busca no banco (evita IGR-IGR-####).
+    let consultantName = String(opts.consultantName || "").trim();
+    if (!consultantName && opts.consultantId) {
+      const { data: cons } = await supabase
+        .from("consultants")
+        .select("name, display_name")
+        .eq("id", opts.consultantId)
+        .maybeSingle();
+      consultantName = String(
+        (cons as { display_name?: string } | null)?.display_name ||
+          (cons as { name?: string } | null)?.name ||
+          "",
+      ).trim();
+    }
+
+    // _initials: short_code do parceiro > iniciais humanas. Nunca "IGR" no meio
+    // (senão vira IGR-IGR-4900 — bug Leandro 2026-07-28).
+    let initialsHint = shortCode || partnerInitials(partnerName || consultantName || "");
+    if (!initialsHint || initialsHint.toUpperCase() === "IGR") {
+      const fromCons = partnerInitials(consultantName);
+      if (fromCons && fromCons.toUpperCase() !== "IGR") initialsHint = fromCons;
+      else initialsHint = "XXX";
+    }
 
     const { data: gen, error } = await supabase.rpc("generate_partner_protocol_v2", {
       _partner_id: partnerId,
@@ -71,16 +91,25 @@ export async function assignProtocolToCustomer(
     if (error || !gen) {
       console.warn("[protocol] rpc v2 falhou:", error?.message);
       // Fallback local no MESMO formato IGR-XXX-####
-      const rawIni = (shortCode || partnerInitials(partnerName || opts.consultantName || "") || "IGR")
+      const rawIni = String(initialsHint || "XXX")
         .toUpperCase().replace(/[^A-Z0-9]/g, "");
-      const ini3 = (rawIni.length >= 3 ? rawIni.slice(0, 3) : rawIni.padEnd(3, "X"));
+      let ini3 = (rawIni.length >= 3 ? rawIni.slice(0, 3) : rawIni.padEnd(3, "X"));
+      if (ini3 === "IGR") ini3 = "XXX";
       const seq4 = String(Math.floor(1000 + Math.random() * 9000));
       const protocol = `IGR-${ini3}-${seq4}`;
       await supabase.from("customers").update({ tracking_protocol: protocol }).eq("id", customerId);
       return { protocol, isNew: true };
     }
 
-    const protocol = String(gen);
+    let protocol = String(gen);
+    // RPC ainda pode devolver IGR-IGR se _initials veio vazio no passado — saneia.
+    if (/^IGR-IGR-/i.test(protocol)) {
+      const seq = protocol.split("-").pop() || String(Math.floor(1000 + Math.random() * 9000));
+      const rawIni = String(initialsHint || "XXX").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      let ini3 = (rawIni.length >= 3 ? rawIni.slice(0, 3) : rawIni.padEnd(3, "X"));
+      if (ini3 === "IGR") ini3 = "XXX";
+      protocol = `IGR-${ini3}-${seq}`;
+    }
     await supabase.from("customers").update({ tracking_protocol: protocol }).eq("id", customerId);
     return { protocol, isNew: true };
   } catch (e) {

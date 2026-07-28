@@ -45,6 +45,7 @@ import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts
 import {
   resolveCanonicalFlowVariant,
 } from "../_shared/bot/canonical-flow-variant.ts";
+import { isActiveConversationalFunnelStep } from "../_shared/bot/cadastro-fixes.ts";
 import { resolveFlowId } from "../_shared/resolve-flow.ts";
 import { findCustomerForInboundPhone } from "../_shared/inbound-customer-resolve.ts";
 
@@ -3451,11 +3452,13 @@ Deno.serve(async (req) => {
       // determinístico). Só vira "freeform_question" quando o lead claramente
       // perguntou outra coisa, fora do objetivo do step.
       const { classifyCadastroInput } = await import("../_shared/cadastro-input-classifier.ts");
-      // 🛡️ Cadastro também inclui UUID de passos custom de captura/finalize
-      // (capture_conta/capture_documento/capture_email/confirm_phone/
-      // finalizar_cadastro). Sem isso, o Cérebro/IA livre engole o turno e o
-      // OCR/portal nunca roda — exatamente o bug reincidente no 11971254913.
-      const _emCadastro = CADASTRO_STEPS.has(stepBefore) || bridgeForcedSysForCapture;
+      // 🛡️ Cadastro = steps legados CADASTRO_STEPS + UUID/passo do funil
+      // (Sofia a1_ask_name, flow builder). Sem UUID, lead no Grupo A caía no
+      // Cérebro (Leandro Severiano 2026-07-28: step UUID → !_emCadastro → IA).
+      const _emCadastro =
+        CADASTRO_STEPS.has(stepBefore) ||
+        bridgeForcedSysForCapture ||
+        isActiveConversationalFunnelStep(stepBefore);
       const _cadKind = (_emCadastro && !_isAtivoOrigin)
         ? classifyCadastroInput({
           stepBefore,

@@ -417,9 +417,19 @@ export async function sendWelcomeHeader(
   // ▶ Override — se o consultor personalizou a msg de "abrir chamado", envia ela
   //   como mensagem única (protocolo/nome do consultor já são substituídos via {{var}}).
   if (args.customTemplate && args.customTemplate.text?.trim()) {
-    const text = args.customTemplate.text
+    let text = args.customTemplate.text
       .replaceAll("{{protocolo}}", protocol || "")
       .replaceAll("{{ protocolo }}", protocol || "");
+    // Sem protocolo: nunca enviar "Protocolo: **" / linha vazia (bug formatação).
+    if (!String(protocol || "").trim()) {
+      text = text
+        .replace(/^.*📋\s*\*?Protocolo.*$/gmi, "")
+        .replace(/^.*\bProtocolo\b[\s\S]*?\*\s*\*.*$/gmi, "")
+        .replace(/^.*\bProtocolo\b\s*(de\s+atendimento\s*)?[—–:-]?\s*\*?\s*\.?\s*$/gmi, "")
+        .replace(/\*\s*\*/g, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+    }
     const sendCtxOv = {
       customerId,
       consultantId: consultantId || "",

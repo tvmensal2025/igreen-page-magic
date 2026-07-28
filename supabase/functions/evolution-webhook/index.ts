@@ -35,6 +35,7 @@ import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assi
 import {
   resolveCanonicalFlowVariant,
 } from "../_shared/bot/canonical-flow-variant.ts";
+import { isActiveConversationalFunnelStep } from "../_shared/bot/cadastro-fixes.ts";
 import { resolveFlowId } from "../_shared/resolve-flow.ts";
 
 import { routeEngine as routeEngineV2 } from "../_shared/flow-router.ts";
@@ -2890,9 +2891,12 @@ Deno.serve(async (req) => {
       let _cerebroRespondeu = false;
       const _fbVarCerebro = String((customer as any)?.flow_variant || "").toUpperCase();
       const _midiaOcr = (hasImage || hasDocument) && !hasAudio;
-      // 🛡️ Cadastro também inclui UUID custom de captura/finalize — sem isso
-      // o Cérebro/IA livre engole a foto da conta e o OCR nunca roda.
-      const _emCadastro = CADASTRO_STEPS.has(stepBefore) || bridgeForcedSysForCapture;
+      // 🛡️ Cadastro = CADASTRO_STEPS + UUID/passo do funil (Sofia / builder).
+      // Sem UUID, Grupo A caía no Cérebro (paridade Whapi / Leandro 2026-07-28).
+      const _emCadastro =
+        CADASTRO_STEPS.has(stepBefore) ||
+        bridgeForcedSysForCapture ||
+        isActiveConversationalFunnelStep(stepBefore);
 
       // 🛡️ Guarda de origem: clientes já cadastrados/sincronizados
       // (`igreen_sync` = carteira XLSX/worker; `igreen_extension` = extensão
