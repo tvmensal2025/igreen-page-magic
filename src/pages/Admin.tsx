@@ -479,6 +479,10 @@ const AdminContent = () => {
             <a className="block text-sm text-primary break-all hover:underline" href={`${publicBase}/licenciado/${publicSlug}`} target="_blank" rel="noopener noreferrer">
               {publicBase}/licenciado/{publicSlug}
             </a>
+            {/* Versão premium da landing — também pública, roda em paralelo. */}
+            <a className="block text-sm text-primary break-all hover:underline" href={`${publicBase}/premium/${publicSlug}`} target="_blank" rel="noopener noreferrer">
+              {publicBase}/premium/{publicSlug}
+            </a>
             <Button
               type="button"
               size="sm"

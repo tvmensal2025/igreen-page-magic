@@ -1,0 +1,1931 @@
+/**
+ * Estilos da LP premium — TODOS escopados em `.lpx`.
+ *
+ * Por que escopado: a LP atual (/:licenca) usa as mesmas classes globais do
+ * design system (glass-card, section-heading...). Se a versão premium mexesse
+ * nessas classes, a página original mudaria junto. Aqui nada vaza: cada regra
+ * exige o ancestral `.lpx`.
+ *
+ * Sem @apply de propósito — CSS puro é processado direto pelo Vite, sem
+ * depender da ordem das layers do Tailwind, e evita surpresa no build.
+ *
+ * Animações: só transform/opacity (compostas na GPU) e todas desligadas em
+ * prefers-reduced-motion.
+ */
+
+.lpx {
+  /* Tokens locais derivados dos tokens globais (respeitam light/dark). */
+  --lpx-surface: hsl(var(--card));
+  --lpx-surface-2: hsl(var(--muted) / 0.45);
+  --lpx-line: hsl(var(--border));
+  --lpx-line-soft: hsl(var(--border) / 0.6);
+  --lpx-ink: hsl(var(--foreground));
+  --lpx-ink-soft: hsl(var(--muted-foreground));
+  --lpx-brand: hsl(var(--primary));
+  --lpx-brand-ink: hsl(var(--primary-text));
+
+  /* Elevação em camadas — sombra curta + sombra difusa (acabamento premium). */
+  --lpx-e1: 0 1px 2px hsl(220 20% 10% / 0.05), 0 1px 3px hsl(220 20% 10% / 0.04);
+  --lpx-e2: 0 2px 4px hsl(220 20% 10% / 0.05), 0 8px 24px -8px hsl(220 20% 10% / 0.1);
+  --lpx-e3: 0 4px 8px hsl(220 20% 10% / 0.06), 0 24px 48px -16px hsl(220 20% 10% / 0.16);
+
+  --lpx-radius: 18px;
+  --lpx-radius-sm: 12px;
+
+  /* Altura da barra fixa de CTA no mobile — usada no padding do <main>. */
+  --lpx-dock-h: 68px;
+
+  color: var(--lpx-ink);
+  background: hsl(var(--background));
+  /* Trava overflow horizontal sem criar contexto de scroll novo. */
+  overflow-x: clip;
+}
+
+.dark .lpx,
+html.dark .lpx {
+  --lpx-e1: 0 1px 2px hsl(0 0% 0% / 0.4);
+  --lpx-e2: 0 2px 4px hsl(0 0% 0% / 0.4), 0 8px 24px -8px hsl(0 0% 0% / 0.5);
+  --lpx-e3: 0 4px 8px hsl(0 0% 0% / 0.45), 0 24px 48px -16px hsl(0 0% 0% / 0.6);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Layout base
+   ───────────────────────────────────────────────────────────── */
+
+/* Largura útil: 100% no mobile com respiro lateral, teto de 1200px no desktop
+   para a linha de texto não ficar longa demais (legibilidade). */
+.lpx-wrap {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 20px;
+}
+@media (min-width: 640px) {
+  .lpx-wrap { padding-inline: 32px; }
+}
+@media (min-width: 1024px) {
+  .lpx-wrap { padding-inline: 40px; }
+}
+
+/* Ritmo vertical: compacto no mobile (menos rolagem), generoso no desktop. */
+.lpx-section {
+  padding-block: 56px;
+  position: relative;
+}
+@media (min-width: 768px) {
+  .lpx-section { padding-block: 88px; }
+}
+@media (min-width: 1024px) {
+  .lpx-section { padding-block: 112px; }
+}
+
+.lpx-section--tint { background: var(--lpx-surface-2); }
+
+/* Compensa a navbar fixa ao pular por âncora (#simulador etc). */
+.lpx-anchor {
+  scroll-margin-top: 76px;
+}
+
+/* Medida de leitura confortável (~60-70 caracteres). */
+.lpx-measure { max-width: 62ch; }
+.lpx-measure-narrow { max-width: 48ch; }
+
+/* ─────────────────────────────────────────────────────────────
+   Tipografia
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--lpx-brand-ink);
+  border: 1px solid hsl(var(--primary) / 0.28);
+  background: hsl(var(--primary) / 0.08);
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+.lpx-eyebrow__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lpx-brand);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.18);
+}
+
+/* H1 — clamp evita quebra feia entre 320px e ultrawide sem media query. */
+.lpx-h1 {
+  font-family: var(--font-heading);
+  font-weight: 900;
+  letter-spacing: -0.035em;
+  line-height: 1.06;
+  font-size: clamp(1.9rem, 7.4vw, 4rem);
+  text-wrap: balance;
+}
+.lpx-h2 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -0.028em;
+  line-height: 1.12;
+  font-size: clamp(1.55rem, 4.6vw, 2.75rem);
+  text-wrap: balance;
+}
+.lpx-h3 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  font-size: clamp(1.05rem, 2.4vw, 1.3rem);
+}
+.lpx-lead {
+  font-size: clamp(0.975rem, 2.3vw, 1.175rem);
+  line-height: 1.65;
+  color: var(--lpx-ink-soft);
+}
+.lpx-body {
+  font-size: 0.9375rem;
+  line-height: 1.68;
+  color: var(--lpx-ink-soft);
+}
+
+.lpx-grad {
+  background: linear-gradient(100deg, hsl(152 100% 34%), hsl(160 90% 30%) 55%, hsl(150 100% 26%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+/* Fallback: se o navegador não suportar text-fill transparente, mantém verde. */
+@supports not (-webkit-text-fill-color: transparent) {
+  .lpx-grad { color: var(--lpx-brand-ink); background: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Superfícies
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-card {
+  background: var(--lpx-surface);
+  border: 1px solid var(--lpx-line);
+  border-radius: var(--lpx-radius);
+  box-shadow: var(--lpx-e1);
+  padding: 20px;
+  position: relative;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+}
+@media (min-width: 768px) {
+  .lpx-card { padding: 24px; }
+}
+
+/* Hover só onde existe cursor: evita estado "preso" no toque. */
+@media (hover: hover) and (min-width: 768px) {
+  .lpx-card--lift:hover {
+    transform: translateY(-4px);
+    border-color: hsl(var(--primary) / 0.3);
+    box-shadow: var(--lpx-e3);
+  }
+}
+
+/* Borda superior em gradiente — detalhe de acabamento nos cards de destaque. */
+.lpx-card--edge::before {
+  content: "";
+  position: absolute;
+  inset-inline: 16%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.55), transparent);
+}
+
+.lpx-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: var(--lpx-brand-ink);
+  background: hsl(var(--primary) / 0.1);
+  border: 1px solid hsl(var(--primary) / 0.2);
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Botões
+   ───────────────────────────────────────────────────────────── */
+
+/* min-height 48px: alvo de toque confortável para o polegar (WCAG 2.5.5). */
+.lpx-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.25s ease, background-color 0.2s ease,
+    border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.lpx-btn:focus-visible {
+  outline: 2px solid var(--lpx-brand);
+  outline-offset: 3px;
+}
+@media (hover: hover) {
+  .lpx-btn:hover { transform: translateY(-2px); }
+}
+.lpx-btn:active { transform: translateY(0) scale(0.985); }
+
+.lpx-btn--primary {
+  color: #fff;
+  background: linear-gradient(135deg, hsl(152 100% 32%), hsl(150 100% 25%));
+  box-shadow: 0 8px 24px -10px hsl(152 100% 30% / 0.6);
+}
+@media (hover: hover) {
+  .lpx-btn--primary:hover { box-shadow: 0 14px 32px -10px hsl(152 100% 30% / 0.7); }
+}
+
+.lpx-btn--wa {
+  color: #fff;
+  background: #1faa54;
+  box-shadow: 0 8px 24px -10px hsl(145 60% 35% / 0.6);
+}
+@media (hover: hover) {
+  .lpx-btn--wa:hover { background: #1b9a4c; }
+}
+
+.lpx-btn--ghost {
+  color: var(--lpx-ink);
+  background: var(--lpx-surface);
+  border: 1px solid var(--lpx-line);
+  box-shadow: var(--lpx-e1);
+}
+@media (hover: hover) {
+  .lpx-btn--ghost:hover { border-color: hsl(var(--primary) / 0.45); }
+}
+
+.lpx-btn--block { width: 100%; }
+
+/* ─────────────────────────────────────────────────────────────
+   Navbar
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-nav {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+  z-index: 60;
+  transition: background-color 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease;
+  border-bottom: 1px solid transparent;
+}
+.lpx-nav[data-scrolled="true"] {
+  background: hsl(var(--background) / 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--lpx-line-soft);
+}
+.lpx-nav__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 60px;
+}
+/* Logo é link para o topo: precisa de área de toque própria (WCAG 2.5.8). */
+.lpx-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-height: 44px;
+  border-radius: 10px;
+}
+.lpx-nav__brand:focus-visible { outline: 2px solid var(--lpx-brand); outline-offset: 2px; }
+/* CTA compacto da navbar — menor que o CTA do corpo, mas ainda 44px de altura. */
+.lpx-nav__cta {
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 0.8125rem;
+}
+
+/* Link de texto que funciona como ação: cresce a área clicável sem virar
+   botão, e mantém pelo menos 24px de altura de toque. */
+.lpx-textlink {
+  display: inline-block;
+  padding: 6px 2px;
+  font-weight: 600;
+  color: var(--lpx-brand-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: hsl(var(--primary) / 0.45);
+  border-radius: 6px;
+}
+@media (hover: hover) {
+  .lpx-textlink:hover { text-decoration-color: var(--lpx-brand); }
+}
+.lpx-textlink:focus-visible { outline: 2px solid var(--lpx-brand); outline-offset: 2px; }
+@media (min-width: 768px) {
+  .lpx-nav__inner { height: 72px; }
+}
+.lpx-nav__links {
+  display: none;
+  align-items: center;
+  gap: 4px;
+}
+@media (min-width: 900px) {
+  .lpx-nav__links { display: flex; }
+}
+.lpx-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--lpx-ink-soft);
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+@media (hover: hover) {
+  .lpx-nav__link:hover { color: var(--lpx-ink); background: hsl(var(--muted) / 0.7); }
+}
+.lpx-nav__link:focus-visible {
+  outline: 2px solid var(--lpx-brand);
+  outline-offset: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Hero
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-hero {
+  position: relative;
+  padding-top: 84px;
+  padding-bottom: 48px;
+  isolation: isolate;
+  overflow: hidden;
+}
+@media (min-width: 768px) {
+  .lpx-hero { padding-top: 132px; padding-bottom: 80px; }
+}
+
+/* Brilho de fundo: gradiente estático (sem animação = sem custo de repaint). */
+.lpx-hero__glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -10%, hsl(152 100% 40% / 0.16), transparent 70%),
+    radial-gradient(ellipse 60% 40% at 85% 20%, hsl(165 90% 40% / 0.08), transparent 70%);
+}
+.lpx-hero__grid {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, hsl(var(--foreground) / 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, hsl(var(--foreground) / 0.045) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 70% 50% at 50% 0%, #000 20%, transparent 75%);
+}
+
+/* Pílulas de confiança.
+   Grade 2×2 no mobile em vez de faixa rolável: com scroll horizontal os dois
+   últimos selos ficam fora da tela e a maioria não descobre que dá para
+   arrastar. Aqui os quatro aparecem de uma vez, sem nada cortado.
+   width/max-width 100% são obrigatórios: o pai é flex column com
+   align-items:center, então o filho não recebe a largura do container. */
+.lpx-trust {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+}
+@media (min-width: 620px) {
+  .lpx-trust {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+.lpx-trust__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 7px;
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--lpx-line);
+  background: hsl(var(--card) / 0.7);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: center;
+}
+@media (min-width: 620px) {
+  .lpx-trust__item {
+    flex-wrap: nowrap;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+}
+.lpx-trust__label { font-weight: 700; color: var(--lpx-ink); }
+.lpx-trust__detail { color: var(--lpx-ink-soft); }
+/* No mobile a explicação vira segunda linha; o "·" só faz sentido em linha. */
+.lpx-trust__detail::before { content: ""; }
+@media (min-width: 620px) {
+  .lpx-trust__detail::before { content: "· "; }
+}
+
+/* Moldura do vídeo/mockup. aspect-ratio reserva o espaço → CLS zero. */
+.lpx-frame {
+  position: relative;
+  border-radius: var(--lpx-radius);
+  overflow: hidden;
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  box-shadow: var(--lpx-e3), 0 0 0 1px hsl(var(--primary) / 0.07),
+    0 0 80px -30px hsl(152 100% 40% / 0.35);
+}
+.lpx-frame__media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  background: hsl(var(--muted));
+}
+.lpx-frame__media > img,
+.lpx-frame__media > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.lpx-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: hsl(220 25% 8% / 0.28);
+  border: 0;
+  cursor: pointer;
+  transition: background-color 0.25s ease;
+}
+@media (hover: hover) {
+  .lpx-play:hover { background: hsl(220 25% 8% / 0.18); }
+}
+.lpx-play:focus-visible { outline: 3px solid var(--lpx-brand); outline-offset: -3px; }
+.lpx-play__ring {
+  width: 60px;
+  height: 60px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: hsl(152 100% 30% / 0.95);
+  box-shadow: 0 10px 30px -8px hsl(0 0% 0% / 0.5);
+  transition: transform 0.25s ease;
+}
+@media (hover: hover) {
+  .lpx-play:hover .lpx-play__ring { transform: scale(1.08); }
+}
+
+/* Faixa de números do hero. */
+.lpx-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--lpx-line-soft);
+  padding-top: 24px;
+}
+@media (min-width: 640px) { .lpx-stats { gap: 24px; padding-top: 32px; } }
+.lpx-stat { text-align: center; min-width: 0; }
+.lpx-stat__num {
+  font-family: var(--font-heading);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  font-size: clamp(1.4rem, 5.2vw, 2.5rem);
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(135deg, hsl(152 100% 34%), hsl(150 100% 26%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+@supports not (-webkit-text-fill-color: transparent) {
+  .lpx-stat__num { color: var(--lpx-brand-ink); background: none; }
+}
+.lpx-stat__label {
+  margin-top: 6px;
+  font-family: var(--font-heading);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lpx-ink-soft);
+  line-height: 1.35;
+}
+@media (min-width: 640px) { .lpx-stat__label { font-size: 0.75rem; } }
+
+/* ─────────────────────────────────────────────────────────────
+   Grids
+   ───────────────────────────────────────────────────────────── */
+
+/* Colunas fixas por faixa, não `auto-fit`.
+   Motivo: com auto-fit o número de colunas varia com a largura e as listas de
+   9 e 3 itens acabavam com um card órfão sozinho na última linha. Travando em
+   2 e depois 3 colunas, 9 vira 3×3 e 3 vira uma linha exata. */
+/* `minmax(0, 1fr)` em vez de deixar a coluna implícita: uma coluna `auto`
+   cresce até o max-content dos filhos e estoura o container em telas de 320px.
+   O `0` como mínimo autoriza a coluna a encolher além do conteúdo. */
+.lpx-grid-2,
+.lpx-grid-3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 640px) {
+  .lpx-grid-2,
+  .lpx-grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+}
+@media (min-width: 1024px) {
+  .lpx-grid-2 { gap: 20px; }
+  .lpx-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+}
+
+/* Duas colunas texto + mídia. */
+.lpx-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+@media (min-width: 900px) {
+  .lpx-split { grid-template-columns: 1fr 1fr; gap: 48px; }
+}
+.lpx-split--media-first > .lpx-split__media { order: -1; }
+@media (min-width: 900px) {
+  .lpx-split--media-first > .lpx-split__media { order: 0; }
+}
+
+.lpx-media {
+  border-radius: var(--lpx-radius);
+  overflow: hidden;
+  border: 1px solid var(--lpx-line);
+  box-shadow: var(--lpx-e2);
+  background: hsl(var(--muted));
+}
+.lpx-media > img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Passos numerados
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-step__num {
+  font-family: var(--font-heading);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: linear-gradient(135deg, hsl(152 100% 32%), hsl(150 100% 25%));
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.lpx-step__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--lpx-brand-ink);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Simulador
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-sim {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+@media (min-width: 900px) {
+  .lpx-sim { grid-template-columns: 1.05fr 1fr; gap: 32px; align-items: center; }
+}
+
+.lpx-field label {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--lpx-ink);
+}
+.lpx-input-money {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--lpx-line);
+  border-radius: 14px;
+  background: hsl(var(--background));
+  padding: 0 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.lpx-input-money:focus-within {
+  border-color: var(--lpx-brand);
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.16);
+}
+.lpx-input-money__prefix {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--lpx-ink-soft);
+  font-size: 1rem;
+}
+.lpx-input-money input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--lpx-ink);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  /* 16px+ evita o zoom automático do Safari iOS ao focar o campo. */
+  font-size: 1.125rem;
+  padding: 14px 0;
+  min-height: 48px;
+}
+
+/* Slider nativo estilizado — zero JS, acessível por teclado de graça. */
+.lpx-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+}
+.lpx-range:focus-visible { outline: 2px solid var(--lpx-brand); outline-offset: 4px; border-radius: 8px; }
+.lpx-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+.lpx-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+.lpx-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid hsl(152 100% 30%);
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.2);
+}
+.lpx-range::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid hsl(152 100% 30%);
+  box-shadow: 0 2px 8px hsl(0 0% 0% / 0.2);
+}
+
+.lpx-result {
+  border-radius: var(--lpx-radius);
+  border: 1px solid hsl(var(--primary) / 0.28);
+  background:
+    radial-gradient(ellipse 100% 90% at 50% 0%, hsl(152 100% 40% / 0.12), transparent 70%),
+    var(--lpx-surface);
+  box-shadow: var(--lpx-e2);
+  padding: 20px;
+}
+@media (min-width: 768px) { .lpx-result { padding: 26px; } }
+.lpx-result__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 10px;
+}
+.lpx-result__row + .lpx-result__row { border-top: 1px dashed var(--lpx-line); }
+.lpx-result__k { font-size: 0.8125rem; color: var(--lpx-ink-soft); }
+.lpx-result__v {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--lpx-ink);
+  white-space: nowrap;
+}
+.lpx-result__v--hero {
+  font-size: clamp(1.6rem, 6vw, 2.2rem);
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, hsl(152 100% 32%), hsl(150 100% 25%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+@supports not (-webkit-text-fill-color: transparent) {
+  .lpx-result__v--hero { color: var(--lpx-brand-ink); background: none; }
+}
+.lpx-result__note {
+  margin-top: 14px;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--lpx-ink-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Comparação
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-vs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 800px) {
+  .lpx-vs { grid-template-columns: 1fr 1fr; gap: 20px; }
+}
+.lpx-vs__col { border-radius: var(--lpx-radius); border: 1px solid var(--lpx-line); padding: 20px; }
+.lpx-vs__col--before { background: var(--lpx-surface-2); }
+.lpx-vs__col--after {
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, hsl(152 100% 40% / 0.1), transparent 70%),
+    var(--lpx-surface);
+  border-color: hsl(var(--primary) / 0.32);
+  box-shadow: var(--lpx-e2);
+}
+.lpx-vs__title {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.9375rem;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lpx-vs__list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lpx-vs__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.lpx-vs__mark { flex-shrink: 0; margin-top: 2px; }
+.lpx-vs__mark--no { color: hsl(var(--muted-foreground)); }
+.lpx-vs__mark--yes { color: var(--lpx-brand-ink); }
+
+/* ─────────────────────────────────────────────────────────────
+   Depoimentos (9:16)
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-vids {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 640px) { .lpx-vids { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } }
+@media (min-width: 1024px) { .lpx-vids { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.lpx-vid {
+  position: relative;
+  aspect-ratio: 9 / 16;
+  border-radius: var(--lpx-radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--lpx-line);
+  background: hsl(var(--muted));
+  box-shadow: var(--lpx-e1);
+}
+.lpx-vid > img,
+.lpx-vid > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lpx-vid .lpx-play__ring { width: 46px; height: 46px; }
+
+/* ─────────────────────────────────────────────────────────────
+   FAQ — <details> nativo (acessível, zero JS)
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-faq { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.lpx-faq__item {
+  border: 1px solid var(--lpx-line);
+  border-radius: var(--lpx-radius-sm);
+  background: var(--lpx-surface);
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+.lpx-faq__item[open] { border-color: hsl(var(--primary) / 0.32); }
+.lpx-faq__q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 14px 16px;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--lpx-ink);
+  list-style: none;
+}
+.lpx-faq__q::-webkit-details-marker { display: none; }
+.lpx-faq__q:focus-visible { outline: 2px solid var(--lpx-brand); outline-offset: -2px; }
+.lpx-faq__chev {
+  flex-shrink: 0;
+  color: var(--lpx-brand-ink);
+  transition: transform 0.25s ease;
+}
+.lpx-faq__item[open] .lpx-faq__chev { transform: rotate(180deg); }
+.lpx-faq__a {
+  padding: 0 16px 16px;
+  font-size: 0.875rem;
+  line-height: 1.68;
+  color: var(--lpx-ink-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Consultor + CTA final
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-consultant {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+@media (min-width: 800px) {
+  .lpx-consultant { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 40px; }
+}
+.lpx-consultant__photo {
+  position: relative;
+  width: min(240px, 68vw);
+  margin-inline: auto;
+  aspect-ratio: 1;
+  border-radius: 22px;
+  overflow: hidden;
+  border: 1px solid hsl(var(--primary) / 0.28);
+  box-shadow: var(--lpx-e3);
+  background: hsl(var(--muted));
+}
+@media (min-width: 800px) {
+  .lpx-consultant__photo { width: 100%; margin-inline: 0; }
+}
+.lpx-consultant__photo > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.lpx-final {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 110% at 50% 0%, hsl(152 100% 40% / 0.16), transparent 62%),
+    linear-gradient(180deg, var(--lpx-surface), hsl(var(--background)));
+  border-top: 1px solid var(--lpx-line-soft);
+}
+
+/* Ações: empilhadas e largura total no celular (alvo grande para o polegar);
+   lado a lado do tablet para cima. Acima de 768px cada botão volta a ter a
+   largura do próprio texto — com colunas iguais, o rótulo mais longo quebrava
+   em duas linhas e deixava os dois botões com alturas diferentes. */
+.lpx-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+@media (min-width: 480px) {
+  .lpx-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .lpx-actions > * { flex: 1 1 0; min-width: 0; }
+}
+@media (min-width: 768px) {
+  .lpx-actions { justify-content: center; }
+  .lpx-actions > * { flex: 0 1 auto; }
+}
+/* Força o empilhamento mesmo em telas grandes (colunas estreitas). */
+.lpx-actions--stack { display: grid; }
+.lpx-actions--stack > * { flex: none; }
+
+/* ─────────────────────────────────────────────────────────────
+   Dock de CTA no mobile
+   ───────────────────────────────────────────────────────────── */
+
+/* Barra fixa só no celular: o CTA principal fica sempre ao alcance do polegar.
+   safe-area-inset-bottom respeita o gesto do iPhone. */
+.lpx-dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 55;
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: hsl(var(--background) / 0.94);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--lpx-line);
+  transform: translateY(110%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lpx-dock[data-visible="true"] { transform: translateY(0); }
+.lpx-dock .lpx-btn { flex: 1; min-height: 48px; padding-inline: 12px; font-size: 0.875rem; }
+@media (min-width: 900px) {
+  .lpx-dock { display: none; }
+}
+
+/* Espaço para o dock não cobrir o fim da página. */
+.lpx-dock-spacer { height: var(--lpx-dock-h); }
+@media (min-width: 900px) {
+  .lpx-dock-spacer { display: none; }
+}
+
+/* O FAB global de WhatsApp sobe para não colidir com o dock. */
+@media (max-width: 899px) {
+  .lpx-has-dock .wa-float {
+    bottom: calc(var(--lpx-dock-h) + 12px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Rodapé
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-footer {
+  border-top: 1px solid var(--lpx-line);
+  background: var(--lpx-surface-2);
+  padding-block: 32px;
+  text-align: center;
+}
+.lpx-footer__legal {
+  margin-top: 14px;
+  font-size: 0.6875rem;
+  line-height: 1.6;
+  color: var(--lpx-ink-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Reveal ao rolar
+   ───────────────────────────────────────────────────────────── */
+
+/* Estado inicial só é aplicado quando o JS marca o container como pronto.
+   Sem JS (ou com erro), o conteúdo aparece normalmente — nunca invisível. */
+.lpx[data-reveal-ready="true"] [data-reveal] {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lpx[data-reveal-ready="true"] [data-reveal].is-in {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lpx *,
+  .lpx *::before,
+  .lpx *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .lpx[data-reveal-ready="true"] [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .lpx-dock { transition: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   AutoplayVideo
+   ───────────────────────────────────────────────────────────── */
+
+/* aspect-ratio no container = espaço reservado antes de qualquer byte de
+   mídia. É o que garante CLS zero mesmo quando o vídeo demora. */
+.lpx-video {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--lpx-radius);
+  background: hsl(var(--muted));
+  isolation: isolate;
+}
+.lpx-video[data-aspect="wide"] { aspect-ratio: 16 / 9; }
+.lpx-video[data-aspect="vertical"] { aspect-ratio: 9 / 16; }
+
+.lpx-video > video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Camada com o poster + botão. É um <button> inteiro: qualquer toque na área
+   do vídeo dispara o play, alvo generoso no celular. */
+.lpx-video__cover {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+}
+.lpx-video__cover > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Véu escuro só o suficiente para o botão ter contraste sobre qualquer poster. */
+.lpx-video__cover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: hsl(220 25% 8% / 0.3);
+  transition: background-color 0.25s ease;
+}
+@media (hover: hover) {
+  .lpx-video__cover:hover::after { background: hsl(220 25% 8% / 0.18); }
+}
+.lpx-video__cover:focus-visible { outline: 3px solid var(--lpx-brand); outline-offset: -3px; }
+
+.lpx-video__btn {
+  position: relative;
+  z-index: 1;
+  width: 62px;
+  height: 62px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: var(--lpx-accent, hsl(152 100% 30%));
+  box-shadow: 0 10px 30px -8px hsl(0 0% 0% / 0.55);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (hover: hover) {
+  .lpx-video__cover:hover .lpx-video__btn { transform: scale(1.08); }
+}
+
+.lpx-video__aviso {
+  position: absolute;
+  z-index: 1;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #fff;
+  text-shadow: 0 1px 3px hsl(0 0% 0% / 0.8);
+}
+
+/* Botão de som — o autoplay é mudo por exigência dos navegadores, então
+   precisa existir um caminho óbvio para ouvir. */
+.lpx-video__som {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: hsl(220 25% 8% / 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid hsl(0 0% 100% / 0.2);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+@media (hover: hover) {
+  .lpx-video__som:hover { background: hsl(220 25% 8% / 0.75); }
+}
+.lpx-video__som:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+@keyframes lpx-spin { to { transform: rotate(360deg); } }
+.lpx-video__spin {
+  position: absolute;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 999px;
+  border: 3px solid hsl(0 0% 100% / 0.25);
+  border-top-color: #fff;
+  animation: lpx-spin 0.8s linear infinite;
+}
+
+/* Moldura opcional em volta do vídeo (usada no hero). */
+.lpx-video--framed {
+  border: 1px solid var(--lpx-line);
+  box-shadow: var(--lpx-e3), 0 0 0 1px hsl(var(--primary) / 0.07),
+    0 0 80px -30px var(--lpx-accent-glow, hsl(152 100% 40% / 0.35));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lpx-video__spin { animation: none; }
+  .lpx-video__btn { transition: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Acento por produto
+   ─────────────────────────────────────────────────────────────
+   Cada LP de produto ganha uma cor de acento própria para não parecerem a
+   mesma página repetida, mas todas herdam o mesmo esqueleto (.lpx). O acento
+   entra por `data-produto` no container raiz — nenhum componente precisa saber
+   de cor nenhuma.
+
+   Os valores ficam próximos do verde da marca de propósito: identidade por
+   produto sem deixar de parecer iGreen. */
+
+.lpx { --lpx-accent: hsl(152 100% 30%); --lpx-accent-glow: hsl(152 100% 40% / 0.35); }
+
+/* Energia por assinatura — verde da marca. */
+.lpx[data-produto="conexao-green"],
+.lpx[data-produto="conexao-solar"] {
+  --lpx-accent: hsl(152 100% 30%);
+  --lpx-accent-glow: hsl(152 100% 42% / 0.35);
+}
+/* Telecom — teal/ciano: velocidade, sinal, tecnologia. */
+.lpx[data-produto="conexao-telecom"] {
+  --lpx-accent: hsl(184 82% 30%);
+  --lpx-accent-glow: hsl(184 85% 45% / 0.34);
+}
+/* Seguros — azul profundo: proteção, seriedade. */
+.lpx[data-produto="conexao-seguros"] {
+  --lpx-accent: hsl(214 78% 36%);
+  --lpx-accent-glow: hsl(214 85% 50% / 0.3);
+}
+/* Placas — âmbar solar: telhado, sol, equipamento. */
+.lpx[data-produto="conexao-placas"] {
+  --lpx-accent: hsl(32 92% 38%);
+  --lpx-accent-glow: hsl(36 95% 52% / 0.32);
+}
+/* Livre — verde-lima: liberdade de escolha, mercado aberto. */
+.lpx[data-produto="conexao-livre"] {
+  --lpx-accent: hsl(128 68% 30%);
+  --lpx-accent-glow: hsl(120 75% 45% / 0.32);
+}
+/* Club — magenta/rosé: consumo, varejo, benefício. */
+.lpx[data-produto="conexao-club"],
+.lpx[data-produto="conexao-club-pj"] {
+  --lpx-accent: hsl(330 62% 40%);
+  --lpx-accent-glow: hsl(330 75% 55% / 0.3);
+}
+/* Expansão — índigo: carreira, construção de negócio. */
+.lpx[data-produto="conexao-expansao"] {
+  --lpx-accent: hsl(250 55% 44%);
+  --lpx-accent-glow: hsl(250 70% 60% / 0.3);
+}
+
+/* Elementos que seguem o acento. Onde o acento não é definido, o fallback é o
+   verde da marca — nenhuma página fica sem cor. */
+.lpx-accent-text { color: var(--lpx-accent); }
+.lpx-accent-bg { background: var(--lpx-accent); }
+
+.lpx-eyebrow--accent {
+  color: var(--lpx-accent);
+  border-color: color-mix(in srgb, var(--lpx-accent) 32%, transparent);
+  background: color-mix(in srgb, var(--lpx-accent) 9%, transparent);
+}
+.lpx-eyebrow--accent .lpx-eyebrow__dot {
+  background: var(--lpx-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lpx-accent) 20%, transparent);
+}
+/* Navegadores sem color-mix caem no verde padrão do .lpx-eyebrow. */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  .lpx-eyebrow--accent {
+    color: var(--lpx-brand-ink);
+    border-color: hsl(var(--primary) / 0.28);
+    background: hsl(var(--primary) / 0.08);
+  }
+}
+
+.lpx-btn--accent {
+  color: #fff;
+  background: var(--lpx-accent);
+  box-shadow: 0 8px 24px -10px var(--lpx-accent-glow);
+}
+@media (hover: hover) {
+  .lpx-btn--accent:hover { box-shadow: 0 14px 32px -10px var(--lpx-accent-glow); }
+}
+
+.lpx-grad--accent {
+  color: var(--lpx-accent);
+}
+
+.lpx-step__num--accent { background: var(--lpx-accent); }
+.lpx-icon--accent {
+  color: var(--lpx-accent);
+  background: color-mix(in srgb, var(--lpx-accent) 11%, transparent);
+  border-color: color-mix(in srgb, var(--lpx-accent) 22%, transparent);
+}
+
+/* Brilho do hero seguindo o acento do produto. */
+.lpx-hero__glow--accent {
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -10%, var(--lpx-accent-glow), transparent 70%);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Navegação compartilhada (PremiumSiteNav)
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-nav__acoes {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.lpx-nav__link--btn {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  gap: 5px;
+}
+.lpx-nav__chev { transition: transform 0.22s ease; }
+.lpx-nav__chev[data-open="true"] { transform: rotate(180deg); }
+
+.lpx-nav__drop { position: relative; }
+
+/* Painel de soluções no desktop. */
+.lpx-nav__panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(680px, calc(100vw - 40px));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 18px;
+  padding: 16px;
+  border-radius: var(--lpx-radius);
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  box-shadow: var(--lpx-e3);
+}
+.lpx-nav__panel-grupo { min-width: 0; }
+.lpx-nav__panel-titulo {
+  font-family: var(--font-heading);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lpx-ink-soft);
+  padding: 8px 10px 4px;
+}
+.lpx-nav__item {
+  display: block;
+  padding: 9px 10px;
+  border-radius: 10px;
+  transition: background-color 0.18s ease;
+}
+@media (hover: hover) {
+  .lpx-nav__item:hover { background: hsl(var(--muted) / 0.8); }
+}
+.lpx-nav__item:focus-visible { outline: 2px solid var(--lpx-accent); outline-offset: -2px; }
+.lpx-nav__item[aria-current="page"] {
+  background: color-mix(in srgb, var(--lpx-accent) 10%, transparent);
+}
+.lpx-nav__item-label {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--lpx-ink);
+}
+.lpx-nav__item-resumo {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--lpx-ink-soft);
+}
+
+/* Botão hambúrguer — duas barras que viram X. */
+.lpx-nav__burger {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.lpx-nav__burger:focus-visible { outline: 2px solid var(--lpx-accent); outline-offset: 2px; }
+@media (min-width: 900px) {
+  .lpx-nav__burger { display: none; }
+}
+.lpx-nav__burger-bar {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--lpx-ink);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+}
+.lpx-nav__burger-bar[data-open="true"]:first-child { transform: translateY(3.5px) rotate(45deg); }
+.lpx-nav__burger-bar[data-open="true"]:last-child { transform: translateY(-3.5px) rotate(-45deg); }
+
+/* ── Painel mobile em tela cheia ── */
+.lpx-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+.lpx-sheet[data-open="true"] { pointer-events: auto; }
+@media (min-width: 900px) {
+  .lpx-sheet { display: none; }
+}
+
+.lpx-sheet__fundo {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: hsl(220 25% 8% / 0.5);
+  opacity: 0;
+  transition: opacity 0.28s ease;
+  cursor: pointer;
+}
+.lpx-sheet[data-open="true"] .lpx-sheet__fundo { opacity: 1; }
+
+.lpx-sheet__painel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: min(400px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: hsl(var(--background));
+  border-left: 1px solid var(--lpx-line);
+  box-shadow: var(--lpx-e3);
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* visibility evita que o painel fechado receba Tab mesmo com aria-hidden. */
+  visibility: hidden;
+}
+.lpx-sheet[data-open="true"] .lpx-sheet__painel {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.lpx-sheet__topo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--lpx-line);
+  /* Respeita a barra de status do iPhone. */
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
+}
+.lpx-sheet__titulo {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.9375rem;
+  color: var(--lpx-ink);
+}
+.lpx-sheet__fechar {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  color: var(--lpx-ink);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.lpx-sheet__fechar:focus-visible { outline: 2px solid var(--lpx-accent); outline-offset: 2px; }
+
+.lpx-sheet__corpo {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 12px 12px 4px;
+}
+.lpx-sheet__grupo + .lpx-sheet__grupo { margin-top: 14px; }
+.lpx-sheet__grupo-titulo {
+  font-family: var(--font-heading);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lpx-ink-soft);
+  padding: 6px 8px;
+}
+.lpx-sheet__item {
+  display: block;
+  min-height: 56px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  transition: background-color 0.18s ease;
+}
+@media (hover: hover) {
+  .lpx-sheet__item:hover { background: hsl(var(--muted) / 0.8); }
+}
+.lpx-sheet__item:focus-visible { outline: 2px solid var(--lpx-accent); outline-offset: -2px; }
+.lpx-sheet__item[aria-current="page"] {
+  background: color-mix(in srgb, var(--lpx-accent) 11%, transparent);
+}
+.lpx-sheet__item-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--lpx-ink);
+}
+.lpx-sheet__item-resumo {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--lpx-ink-soft);
+}
+.lpx-sheet__aqui {
+  font-family: var(--font-body);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lpx-accent);
+  border: 1px solid color-mix(in srgb, var(--lpx-accent) 35%, transparent);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.lpx-sheet__ancoras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 8px;
+}
+.lpx-sheet__ancora {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--lpx-ink);
+}
+.lpx-sheet__ancora:focus-visible { outline: 2px solid var(--lpx-accent); outline-offset: 2px; }
+
+.lpx-sheet__pe {
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--lpx-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lpx-sheet__painel,
+  .lpx-sheet__fundo,
+  .lpx-nav__burger-bar,
+  .lpx-nav__chev { transition: none; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Planos (cartões de plano com destaque)
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-plano {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 20px;
+  border-radius: var(--lpx-radius);
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  box-shadow: var(--lpx-e1);
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+@media (hover: hover) and (min-width: 768px) {
+  .lpx-plano:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--lpx-e3);
+  }
+}
+/* Plano recomendado: borda de acento e leve elevação permanente. Um só card
+   destacado — se todos brilham, nenhum brilha. */
+.lpx-plano[data-destaque="true"] {
+  border-color: color-mix(in srgb, var(--lpx-accent) 42%, transparent);
+  box-shadow: var(--lpx-e2), 0 0 0 1px color-mix(in srgb, var(--lpx-accent) 18%, transparent);
+  background:
+    radial-gradient(ellipse 100% 70% at 50% 0%, var(--lpx-accent-glow), transparent 62%),
+    var(--lpx-surface);
+}
+.lpx-plano__selo {
+  position: absolute;
+  top: -11px;
+  left: 20px;
+  font-family: var(--font-heading);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--lpx-accent);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.lpx-plano__resumo {
+  margin-top: 6px;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--lpx-accent);
+}
+.lpx-plano__itens {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 9px;
+}
+.lpx-plano__itens > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--lpx-ink-soft);
+}
+.lpx-plano__itens svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--lpx-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Galeria de produto
+   ─────────────────────────────────────────────────────────────
+   Três formatos, porque o conteúdo é diferente:
+   - planos: tabelas verticais, precisam ser lidas → 1-2 colunas, sem recorte
+   - clientes: fotos de instalação → grid denso, recorte aceitável
+   - marcas: logos quadrados → grid pequeno
+   - documento: material institucional → 1-2 colunas, sem recorte */
+
+.lpx-galeria {
+  display: grid;
+  gap: 12px;
+  margin-top: 32px;
+}
+.lpx-galeria__item { margin: 0; min-width: 0; }
+.lpx-galeria__item > img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--lpx-radius-sm);
+  border: 1px solid var(--lpx-line);
+  background: hsl(var(--muted));
+  box-shadow: var(--lpx-e1);
+}
+
+/* Planos e documentos: nunca recortar — o valor está no texto da imagem. */
+.lpx-galeria[data-formato="planos"],
+.lpx-galeria[data-formato="documento"] {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 460px;
+  margin-inline: auto;
+}
+@media (min-width: 700px) {
+  .lpx-galeria[data-formato="planos"],
+  .lpx-galeria[data-formato="documento"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-width: 940px;
+    gap: 16px;
+  }
+}
+@media (min-width: 1100px) {
+  .lpx-galeria[data-formato="planos"] { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 1160px; }
+}
+
+/* Fotos de clientes: proporção uniforme deixa o grid limpo. */
+.lpx-galeria[data-formato="clientes"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 1100px;
+  margin-inline: auto;
+}
+@media (min-width: 700px) { .lpx-galeria[data-formato="clientes"] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } }
+@media (min-width: 1024px) { .lpx-galeria[data-formato="clientes"] { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lpx-galeria[data-formato="clientes"] .lpx-galeria__item > img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+}
+
+/* Logos de marcas: quadrado, contido (não cortar logo). */
+.lpx-galeria[data-formato="marcas"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-width: 1000px;
+  margin-inline: auto;
+}
+@media (min-width: 600px) { .lpx-galeria[data-formato="marcas"] { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; } }
+@media (min-width: 1024px) { .lpx-galeria[data-formato="marcas"] { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.lpx-galeria[data-formato="marcas"] .lpx-galeria__item > img {
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+/* Coluna "depois" da comparação seguindo o acento do produto. */
+.lpx-vs__col--accent {
+  border-color: color-mix(in srgb, var(--lpx-accent) 34%, transparent);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, var(--lpx-accent-glow), transparent 70%),
+    var(--lpx-surface);
+}
+.lpx-vs__col--accent .lpx-eyebrow__dot { background: var(--lpx-accent); }
+
+/* ─────────────────────────────────────────────────────────────
+   Hero de produto
+   ───────────────────────────────────────────────────────────── */
+
+.lpx-hero__publico {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 14px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px dashed var(--lpx-line);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--lpx-ink-soft);
+}
+
+/* Números do hero de produto (valores textuais, não contadores). */
+.lpx-numeros {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  border-top: 1px solid var(--lpx-line-soft);
+  padding-top: 22px;
+}
+@media (min-width: 640px) { .lpx-numeros { gap: 24px; padding-top: 30px; } }
+.lpx-numero { text-align: center; min-width: 0; }
+.lpx-numero__v {
+  font-family: var(--font-heading);
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  font-size: clamp(1.15rem, 4.4vw, 2.1rem);
+  line-height: 1.05;
+  color: var(--lpx-accent);
+  overflow-wrap: break-word;
+}
+.lpx-numero__r {
+  margin-top: 6px;
+  font-family: var(--font-heading);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--lpx-ink-soft);
+  line-height: 1.35;
+}
+@media (min-width: 640px) { .lpx-numero__r { font-size: 0.75rem; } }
+
+/* ─────────────────────────────────────────────────────────────
+   Expansão — aviso, níveis de carreira, listas
+   ───────────────────────────────────────────────────────────── */
+
+/* Aviso destacado. Fica ANTES dos valores do plano de carreira de propósito:
+   quem lê "R$ 50.000" precisa saber na mesma hora que é meta, não salário. */
+.lpx-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 14px 16px;
+  border-radius: var(--lpx-radius-sm);
+  border: 1px solid hsl(var(--warning) / 0.35);
+  background: hsl(var(--warning) / 0.08);
+}
+.lpx-aviso > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: hsl(var(--warning));
+}
+.lpx-aviso p {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--lpx-ink);
+}
+.lpx-aviso strong { font-weight: 700; }
+
+/* Níveis do plano de carreira. */
+.lpx-niveis {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.lpx-nivel {
+  position: relative;
+  padding: 18px 20px 18px 22px;
+  border-radius: var(--lpx-radius);
+  border: 1px solid var(--lpx-line);
+  background: var(--lpx-surface);
+  box-shadow: var(--lpx-e1);
+  overflow: hidden;
+}
+/* Faixa lateral de acento: dá leitura de "trilha" sem precisar de linha
+   conectora, que quebraria no mobile. */
+.lpx-nivel::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--lpx-accent);
+}
+
+.lpx-nivel__topo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+@media (min-width: 560px) {
+  .lpx-nivel__topo {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+}
+.lpx-nivel__id { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lpx-nivel__ordem {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 0.9375rem;
+  color: #fff;
+  background: var(--lpx-accent);
+}
+.lpx-nivel__meta {
+  margin-top: 2px;
+  font-size: 0.8125rem;
+  color: var(--lpx-ink-soft);
+}
+.lpx-nivel__bonus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+@media (min-width: 560px) {
+  .lpx-nivel__bonus { align-items: flex-end; text-align: right; }
+}
+.lpx-nivel__bonus-v {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.0625rem;
+  color: var(--lpx-ink);
+  font-variant-numeric: tabular-nums;
+}
+.lpx-nivel__bonus-r {
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lpx-ink-soft);
+}
+.lpx-nivel__extra {
+  margin-top: 5px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--lpx-accent);
+  border: 1px solid color-mix(in srgb, var(--lpx-accent) 30%, transparent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.lpx-nivel__lista {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+@media (min-width: 640px) {
+  .lpx-nivel__lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+}
+@media (min-width: 1024px) {
+  .lpx-nivel__lista { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.lpx-nivel__lista > li {
+  position: relative;
+  padding: 6px 10px 6px 20px;
+  border-radius: 8px;
+  background: hsl(var(--muted) / 0.5);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--lpx-ink-soft);
+}
+.lpx-nivel__lista > li::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 13px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--lpx-accent);
+}
+
+/* Lista com marcador de check, reaproveitada na mecânica de equipe. */
+.lpx-lista-check {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.lpx-lista-check > li {
+  position: relative;
+  padding-left: 22px;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--lpx-ink-soft);
+}
+.lpx-lista-check > li::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--lpx-accent);
+}

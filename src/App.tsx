@@ -46,6 +46,15 @@ const RedirectConexaoGreen = lazy(() =>
 const RedirectConexaoExpansao = lazy(() =>
   import("./pages/ConexaoCanonicalRedirects").then((m) => ({ default: m.RedirectConexaoExpansao })),
 );
+const ConexaoGreenPremiumPage = lazy(
+  () => import("./features/landing-premium/ConexaoGreenPremiumPage"),
+);
+const ProdutoPremiumPage = lazy(
+  () => import("./features/landing-premium/produto/ProdutoPremiumPage"),
+);
+const ExpansaoPremiumPage = lazy(
+  () => import("./features/landing-premium/expansao/ExpansaoPremiumPage"),
+);
 const ProposalPublicPage = lazy(() => import("./pages/ProposalPublicPage"));
 const SolarDesignPage = lazy(() => import("./features/solar-3d/pages/SolarDesignPage"));
 const SolarDesignDetailPage = lazy(() => import("./features/solar-3d/pages/SolarDesignDetailPage"));
@@ -162,6 +171,23 @@ const App = () => (
               <Route path="/conexao-livre/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-club/:licenca" element={<ConexaoProductPage />} />
               <Route path="/conexao-club-pj/:licenca" element={<ConexaoProductPage />} />
+              {/* ═══ LPs premium — rodam em paralelo às originais ═══
+                  Nenhuma rota original foi alterada: /conexao-* continua na
+                  ConexaoProductPage e /licenciado na LicenciadaPage.
+
+                  Ordem importa: as rotas com segmento fixo (/premium/expansao,
+                  /premium/conexao-*) vêm ANTES de /premium/:licenca, senão o
+                  slug do produto seria interpretado como licença. */}
+              <Route path="/premium/expansao/:licenca" element={<ExpansaoPremiumPage />} />
+              <Route path="/premium/conexao-telecom/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-seguros/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-solar/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-placas/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-livre/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-club/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/premium/conexao-club-pj/:licenca" element={<ProdutoPremiumPage />} />
+              <Route path="/conexao-green-premium/:licenca" element={<ConexaoGreenPremiumPage />} />
+              <Route path="/premium/:licenca" element={<ConexaoGreenPremiumPage />} />
               {/* Green/Expansão canônicos no menu: /:licenca e /licenciado/:licenca */}
               <Route path="/conexao-green/:licenca" element={<RedirectConexaoGreen />} />
               <Route path="/conexao-expansao/:licenca" element={<RedirectConexaoExpansao />} />
