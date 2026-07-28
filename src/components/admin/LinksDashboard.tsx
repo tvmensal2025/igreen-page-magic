@@ -21,10 +21,34 @@ const FAIXAS_HORARIO = [
   { label: "Noite", sub: "18h-24h", min: 18, max: 23 },
 ];
 
-type Period = 7 | 30 | 90;
+/** `all` = desde o primeiro registro (nada de fora). */
+type Period = 7 | 30 | 90 | "all";
+
+const PERIOD_OPTS: { value: Period; label: string }[] = [
+  { value: 7, label: "7 dias" },
+  { value: 30, label: "30 dias" },
+  { value: 90, label: "90 dias" },
+  { value: "all", label: "Todo período" },
+];
+
+/** Busca todas as linhas (pagina além do limite default 1000 do PostgREST). */
+async function fetchAllRows<T>(
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
+): Promise<T[]> {
+  const pageSize = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await build(from, from + pageSize - 1);
+    if (error) break;
+    const chunk = data || [];
+    out.push(...chunk);
+    if (chunk.length < pageSize) break;
+  }
+  return out;
+}
 
 export function LinksDashboard({ consultantId }: LinksDashboardProps) {
-  const [period, setPeriod] = useState<Period>(30);
+  const [period, setPeriod] = useState<Period>("all");
   const [views, setViews] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,18 +56,53 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
   useEffect(() => {
     if (!consultantId) { setLoading(false); return; }
     setLoading(true);
-    const since = new Date();
-    since.setDate(since.getDate() - period);
-    const sinceIso = since.toISOString();
+    let cancelled = false;
 
-    Promise.all([
-      supabase.from("page_views").select("page_type, device_type, utm_source, created_at").eq("consultant_id", consultantId).gte("created_at", sinceIso),
-      supabase.from("page_events").select("event_target, page_type, device_type, utm_source, created_at").eq("consultant_id", consultantId).gte("created_at", sinceIso),
-    ]).then(([v, e]) => {
-      setViews(v.data || []);
-      setEvents(e.data || []);
+    const sinceIso =
+      period === "all"
+        ? null
+        : (() => {
+            const since = new Date();
+            since.setDate(since.getDate() - period);
+            return since.toISOString();
+          })();
+
+    (async () => {
+      const [v, e] = await Promise.all([
+        fetchAllRows((from, to) => {
+          let q = supabase
+            .from("page_views")
+            .select("page_type, device_type, utm_source, created_at")
+            .eq("consultant_id", consultantId)
+            .order("created_at", { ascending: true })
+            .range(from, to);
+          if (sinceIso) q = q.gte("created_at", sinceIso);
+          return q;
+        }),
+        fetchAllRows((from, to) => {
+          let q = supabase
+            .from("page_events")
+            .select("event_target, page_type, device_type, utm_source, created_at")
+            .eq("consultant_id", consultantId)
+            .order("created_at", { ascending: true })
+            .range(from, to);
+          if (sinceIso) q = q.gte("created_at", sinceIso);
+          return q;
+        }),
+      ]);
+      if (cancelled) return;
+      setViews(v);
+      setEvents(e);
       setLoading(false);
+    })().catch(() => {
+      if (!cancelled) {
+        setViews([]);
+        setEvents([]);
+        setLoading(false);
+      }
     });
+
+    return () => { cancelled = true; };
   }, [consultantId, period]);
 
   // ─── Cálculos ───
@@ -113,7 +172,8 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
     };
   }, [views, events]);
 
-  const periodLabel = period === 7 ? "7 dias" : period === 30 ? "30 dias" : "90 dias";
+  const periodLabel =
+    period === "all" ? "todo o período" : period === 7 ? "7 dias" : period === 30 ? "30 dias" : "90 dias";
 
   return (
     <div className="space-y-6">
@@ -123,14 +183,15 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
           <TrendingUp className="w-5 h-5 text-primary" />
           Painel de Resultados
         </h2>
-        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
-          {([7, 30, 90] as Period[]).map((p) => (
+        <div className="flex gap-1 bg-muted/50 rounded-lg p-1 flex-wrap">
+          {PERIOD_OPTS.map((p) => (
             <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${period === p ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              key={String(p.value)}
+              type="button"
+              onClick={() => setPeriod(p.value)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${period === p.value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
-              {p === 7 ? "7 dias" : p === 30 ? "30 dias" : "90 dias"}
+              {p.label}
             </button>
           ))}
         </div>
