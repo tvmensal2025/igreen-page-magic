@@ -3444,6 +3444,68 @@ export type Database = {
           },
         ]
       }
+      consultant_banner_spots: {
+        Row: {
+          code: string
+          consultant_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          keyword: string
+          phrase: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          consultant_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword: string
+          phrase?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword?: string
+          phrase?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "consultant_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "consultant_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "consultant_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
+      }
       consultant_commission_settings: {
         Row: {
           cadastro_igreen_ids: string[]
@@ -3791,6 +3853,7 @@ export type Database = {
           ai_provider_pref: string
           approved: boolean | null
           assistant_name: string | null
+          banner_default_phrase: string | null
           banner_keywords: string[]
           bot_engine_mode: string
           cadastro_url: string
@@ -3842,6 +3905,7 @@ export type Database = {
           ai_provider_pref?: string
           approved?: boolean | null
           assistant_name?: string | null
+          banner_default_phrase?: string | null
           banner_keywords?: string[]
           bot_engine_mode?: string
           cadastro_url: string
@@ -3893,6 +3957,7 @@ export type Database = {
           ai_provider_pref?: string
           approved?: boolean | null
           assistant_name?: string | null
+          banner_default_phrase?: string | null
           banner_keywords?: string[]
           bot_engine_mode?: string
           cadastro_url?: string
