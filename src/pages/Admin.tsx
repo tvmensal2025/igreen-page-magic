@@ -598,6 +598,7 @@ const AdminContent = () => {
             <LinksTab
               slug={slug}
               baseUrl={baseUrl}
+              consultantId={userId}
               onCopy={copyLink}
               onQrOpen={(url, label) => setQrPanfleto({ url, label })}
               onPanfletoOpen={() => setPanfletoOpen(true)}

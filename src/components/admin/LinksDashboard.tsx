@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Eye, Smartphone, Monitor, MousePointerClick, MessageCircle, UserPlus, TrendingUp, Clock, CalendarDays } from "lucide-react";
+import { Eye, Smartphone, Monitor, MousePointerClick, MessageCircle, UserPlus, TrendingUp, Clock, CalendarDays, FileText as FileTextIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
@@ -87,18 +87,18 @@ function labelSource(src: string): string {
 
 /** Busca todas as linhas (pagina além do limite default 1000 do PostgREST). */
 async function fetchAllRows<T>(
-  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>,
-): Promise<T[]> {
+  build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message?: string } | null }>,
+): Promise<{ rows: T[]; error: string | null }> {
   const pageSize = 1000;
   const out: T[] = [];
   for (let from = 0; ; from += pageSize) {
     const { data, error } = await build(from, from + pageSize - 1);
-    if (error) break;
+    if (error) return { rows: out, error: error.message || "erro ao ler métricas" };
     const chunk = data || [];
     out.push(...chunk);
     if (chunk.length < pageSize) break;
   }
-  return out;
+  return { rows: out, error: null };
 }
 
 export function LinksDashboard({ consultantId }: LinksDashboardProps) {
@@ -107,10 +107,18 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
   const [views, setViews] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!consultantId) { setLoading(false); return; }
+    if (!consultantId) {
+      setLoading(true);
+      setViews([]);
+      setEvents([]);
+      setLoadError(null);
+      return;
+    }
     setLoading(true);
+    setLoadError(null);
     let cancelled = false;
 
     const sinceIso =
@@ -123,7 +131,7 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
           })();
 
     (async () => {
-      const [v, e] = await Promise.all([
+      const [vRes, eRes] = await Promise.all([
         fetchAllRows((from, to) => {
           let q = supabase
             .from("page_views")
@@ -146,13 +154,16 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
         }),
       ]);
       if (cancelled) return;
-      setViews(v);
-      setEvents(e);
+      const err = vRes.error || eRes.error;
+      setLoadError(err);
+      setViews(vRes.rows);
+      setEvents(eRes.rows);
       setLoading(false);
-    })().catch(() => {
+    })().catch((e) => {
       if (!cancelled) {
         setViews([]);
         setEvents([]);
+        setLoadError(String((e as Error)?.message || e));
         setLoading(false);
       }
     });
@@ -173,10 +184,12 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
 
     const totalViews = filteredViews.length;
     const mobile = filteredViews.filter((v) => v.device_type === "mobile").length;
-    const desktop = totalViews - mobile;
+    const tablet = filteredViews.filter((v) => v.device_type === "tablet").length;
+    const desktop = filteredViews.filter((v) => v.device_type !== "mobile" && v.device_type !== "tablet").length;
 
     const whatsappClicks = filteredEvents.filter((e) => e.event_target === "whatsapp").length;
     const cadastroClicks = filteredEvents.filter((e) => e.event_target === "cadastro").length;
+    const panfletoClicks = filteredEvents.filter((e) => e.event_target === "panfleto").length;
     const totalClicks = filteredEvents.length;
     const conversao = totalViews > 0 ? Math.round((totalClicks / totalViews) * 100) : 0;
 
@@ -232,7 +245,7 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
     const normalCount = views.length - premiumCount;
 
     return {
-      totalViews, mobile, desktop, whatsappClicks, cadastroClicks, totalClicks, conversao,
+      totalViews, mobile, tablet, desktop, whatsappClicks, cadastroClicks, panfletoClicks, totalClicks, conversao,
       daily, byWeekday, bestWeekday, hourBuckets, bestHourBucket, hourMap, bySource, byPage,
       premiumCount, normalCount, rawTotal: views.length,
     };
@@ -289,8 +302,15 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
         (botão 📸 Instagram em Meus Links). Sem UTM cai em <strong className="font-medium text-foreground/80">Direto</strong>.
       </p>
 
-      {loading ? (
-        <div className="h-64 flex items-center justify-center text-muted-foreground">Carregando dados...</div>
+      {loading || !consultantId ? (
+        <div className="h-64 flex items-center justify-center text-muted-foreground">
+          {!consultantId ? "Carregando seu painel…" : "Carregando dados reais…"}
+        </div>
+      ) : loadError ? (
+        <div className="bg-card rounded-2xl border border-destructive/30 p-8 text-center">
+          <p className="font-heading font-bold text-foreground">Não consegui ler as visitas</p>
+          <p className="text-sm text-muted-foreground mt-1">{loadError}</p>
+        </div>
       ) : metrics.totalViews === 0 ? (
         <div className="bg-card rounded-2xl border border-border p-10 text-center">
           <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
@@ -304,10 +324,11 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
       ) : (
         <>
           {/* ─── Cards principais ─── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <BigCard icon={<Eye />} value={metrics.totalViews} label="Visitas" sub={`em ${periodLabel}`} color="from-primary/20 to-primary/5" iconColor="text-primary" />
             <BigCard icon={<MessageCircle />} value={metrics.whatsappClicks} label="Cliques WhatsApp" sub="quiseram falar" color="from-[#25D366]/20 to-[#25D366]/5" iconColor="text-[#25D366]" />
             <BigCard icon={<UserPlus />} value={metrics.cadastroClicks} label="Cliques Cadastro" sub="foram se cadastrar" color="from-blue-500/20 to-blue-500/5" iconColor="text-blue-500" />
+            <BigCard icon={<FileTextIcon />} value={metrics.panfletoClicks} label="Cliques Panfleto" sub="baixar / ver panfleto" color="from-violet-500/20 to-violet-500/5" iconColor="text-violet-500" />
             <BigCard icon={<MousePointerClick />} value={`${metrics.conversao}%`} label="Conversão" sub="visitas que agiram" color="from-warning/20 to-warning/5" iconColor="text-warning" />
           </div>
 
@@ -418,12 +439,26 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
               ) : <EmptyMini />}
             </ChartCard>
 
-            <ChartCard title="Celular vs Computador" icon={<Smartphone className="w-4 h-4" />}>
+            <ChartCard title="Celular, tablet e computador" icon={<Smartphone className="w-4 h-4" />}>
               <div className="flex items-center gap-4">
                 <ResponsiveContainer width={150} height={150}>
                   <PieChart>
-                    <Pie data={[{ name: "Celular", value: metrics.mobile }, { name: "Computador", value: metrics.desktop }]} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={65} strokeWidth={2}>
+                    <Pie
+                      data={[
+                        { name: "Celular", value: metrics.mobile },
+                        { name: "Tablet", value: metrics.tablet },
+                        { name: "Computador", value: metrics.desktop },
+                      ].filter((d) => d.value > 0)}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={38}
+                      outerRadius={65}
+                      strokeWidth={2}
+                    >
                       <Cell fill="#3b82f6" />
+                      <Cell fill="#f59e0b" />
                       <Cell fill="#a855f7" />
                     </Pie>
                     <Tooltip contentStyle={tooltipStyle} />
@@ -434,6 +469,11 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                     <Smartphone className="w-4 h-4 text-blue-500" />
                     <span className="text-foreground/80 flex-1">Celular</span>
                     <span className="font-bold text-foreground">{metrics.mobile}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="w-4 h-4 text-amber-500 text-center text-xs font-bold">T</span>
+                    <span className="text-foreground/80 flex-1">Tablet</span>
+                    <span className="font-bold text-foreground">{metrics.tablet}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Monitor className="w-4 h-4 text-purple-500" />

@@ -8,6 +8,8 @@ import { resolvePublicConsultant } from "@/lib/resolvePublicConsultant";
 interface LinksTabProps {
   slug: string;
   baseUrl: string;
+  /** ID do consultor logado — obrigatório para o painel ler page_views (RLS). */
+  consultantId?: string;
   onCopy: (url: string) => void;
   onQrOpen: (url: string, label: string) => void;
   onPanfletoOpen?: () => void;
@@ -59,14 +61,17 @@ function getAllPages(slug: string) {
   ];
 }
 
-export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: LinksTabProps) {
+export function LinksTab({ slug, baseUrl, consultantId: consultantIdProp, onCopy, onQrOpen, onPanfletoOpen }: LinksTabProps) {
   const [tab, setTab] = useState<"dashboard" | "links">("dashboard");
   /** Dentro de Meus Links: só normais OU só premium — nunca misturados. */
   const [linkVersion, setLinkVersion] = useState<"normal" | "premium">("normal");
   const [expandedPage, setExpandedPage] = useState<string | null>(null);
-  const [consultantId, setConsultantId] = useState<string>();
+  const [consultantIdResolved, setConsultantIdResolved] = useState<string>();
   const [clubCadastroUrl, setClubCadastroUrl] = useState<string>("");
   const { data: activeProducts } = useProducts();
+
+  // Preferência: ID do login (Admin). Fallback: resolve pela license pública.
+  const consultantId = consultantIdProp || consultantIdResolved;
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +79,7 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
       try {
         const resolved = await resolvePublicConsultant(slug);
         if (cancelled || !resolved) return;
-        setConsultantId(resolved.consultant.id);
+        if (!consultantIdProp) setConsultantIdResolved(resolved.consultant.id);
         const row = resolved.consultant;
         const club = (row.club_cadastro_url || "").trim()
           || (row.igreen_id ? `https://club.igreenenergy.com.br/?id=${String(row.igreen_id).replace(/\D/g, "")}` : "");
@@ -84,7 +89,7 @@ export function LinksTab({ slug, baseUrl, onCopy, onQrOpen, onPanfletoOpen }: Li
       }
     })();
     return () => { cancelled = true; };
-  }, [slug]);
+  }, [slug, consultantIdProp]);
 
   // Ao trocar Normal ↔ Premium, fecha o accordion aberto.
   useEffect(() => {
